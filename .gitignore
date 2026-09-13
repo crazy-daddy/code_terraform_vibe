@@ -1,0 +1,16 @@
+/.vscode
+/builtins.pyi
+/CODE-TERRAFORM-IDE.txt
+/codeterraform-scripts.json
+/codeterraform-workspace.json
+/dataclasses.pyi
+/functools.pyi
+/logs
+/pyrightconfig.codeterraform.json
+/pyrightconfig.json
+/random.pyi
+/re.pyi
+/save_mtzkzly3_4ww80o_scripts.code-workspace
+/typeshed-LICENSE.txt
+/__builtins__.pyi
+/__pycache__
