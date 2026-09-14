@@ -82,7 +82,8 @@ power = get_component("power_control")
 comms = get_component("comms")
 
 # 2. Reusable controller pattern
-from terraforming import SolarController, HeatController, OxygenController, PressureController
+from terraforming import HeatController, OxygenController, PressureController
+from power import SolarController
 from rover import RoverController
 from bio import BioCollectorController, BioLabController, BioExchangeController
 from harvesting import HarvesterController

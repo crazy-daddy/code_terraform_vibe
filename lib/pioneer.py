@@ -53,7 +53,7 @@ class PioneerController(VehicleController):
 
         if coords:
             print(f"[{self.name}] Driving to construction site at {coords}...")
-            reached = self.drive_to(coords[0], coords[1], precision=2.0)
+            reached = self.drive_with_recharge(coords[0], coords[1], precision=2.0)
             if not reached:
                 print(f"[{self.name}] Could not reach construction site at {coords} safely.")
                 return False
@@ -68,6 +68,24 @@ class PioneerController(VehicleController):
         self.publish_telemetry("CONSTRUCTING", blueprint_id)
         res = self.vehicle.constructor.execute(blueprint_id)
         print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
+
+        # If construction was paused or ran out of power, recharge at nearest station and retry!
+        if res.status in ["paused_no_power", "paused"]:
+            print(f"[{self.name}] Construction paused ({res.status}). Diverting to nearest station to recharge.")
+            nearest_cs, _ = self.get_nearest_charging_station()
+            if self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
+                self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
+                if coords:
+                    print(f"[{self.name}] Resuming construction at {coords} after recharge...")
+                    if self.drive_with_recharge(coords[0], coords[1], precision=2.0):
+                        if hasattr(self.vehicle, "nav"):
+                            try:
+                                self.vehicle.nav.brake()
+                            except Exception:
+                                pass
+                        res = self.vehicle.constructor.execute(blueprint_id)
+                        print(f"[{self.name}] Constructor retry result: {res.status} - {res.message}")
+
         return res.status == "ok"
 
     def cargo_count(self, item_id):
@@ -263,12 +281,13 @@ class PioneerController(VehicleController):
                     if lvl < 0.90:
                         self.recharge_at_station(target_level=1.0)
 
-                # 2. Field Battery Floor: If energy drops near return reserve, return to base
+                # 2. Field Battery Floor: If energy drops near return reserve, return to nearest station
                 curr_wh, _, _ = self.get_battery()
                 if curr_wh <= self.energy_needed_to_return_now():
-                    print(f"[{self.name}] Return reserve reached in field; returning to base to recharge.")
-                    self.return_to_base()
-                    self.recharge_at_station(target_level=1.0)
+                    print(f"[{self.name}] Return reserve reached in field; returning to nearest station to recharge.")
+                    nearest_st, _ = self.get_nearest_charging_station()
+                    self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
+                    self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
                     continue
 
                 # Query paused and pending constructions
@@ -301,8 +320,7 @@ class PioneerController(VehicleController):
                     job_id = getattr(job, "id", None)
                     if not job_id or job_id in failed_jobs:
                         continue
-                    job_pos = getattr(job, "position", None)
-                    coords = (job_pos.x, job_pos.y) if job_pos else None
+                    coords = self.extract_coords(getattr(job, "position", None))
                     if not coords:
                         continue
                     budget = self.calculate_trip_energy(coords, planned_drill_units=0, planned_scans=0)
@@ -310,16 +328,16 @@ class PioneerController(VehicleController):
                         active_job = job
                         break
                     elif self.distance_to_home() > 3.0:
-                        # Cannot reach safely from current field position; return home to recharge
-                        print(f"[{self.name}] Insufficient energy to reach paused job safely; returning home.")
-                        self.return_to_base()
-                        self.recharge_at_station(target_level=1.0)
+                        # Cannot reach safely from current field position; recharge at nearest station
+                        print(f"[{self.name}] Insufficient energy to reach paused job safely; recharging at nearest station.")
+                        nearest_st, _ = self.get_nearest_charging_station()
+                        self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
+                        self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
                         break
 
                 if active_job:
                     job_id = getattr(active_job, "id", None)
-                    job_pos = getattr(active_job, "position", None)
-                    coords = (job_pos.x, job_pos.y) if job_pos else None
+                    coords = self.extract_coords(getattr(active_job, "position", None))
                     print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
                     if not self.execute_construction(job_id, coords):
                         failed_jobs.add(job_id)
@@ -341,11 +359,10 @@ class PioneerController(VehicleController):
 
                 if matching_jobs:
                     # Sort matching jobs by proximity to current vehicle coordinates
-                    matching_jobs.sort(key=lambda j: self.distance_between(current_pos, (j.position.x, j.position.y)) if getattr(j, "position", None) else 999999)
+                    matching_jobs.sort(key=lambda j: self.distance_between(current_pos, self.extract_coords(getattr(j, "position", None)) or (9999, 9999)))
                     candidate = None
                     for job in matching_jobs:
-                        job_pos = getattr(job, "position", None)
-                        coords = (job_pos.x, job_pos.y) if job_pos else None
+                        coords = self.extract_coords(getattr(job, "position", None))
                         if not coords:
                             continue
                         budget = self.calculate_trip_energy(coords, planned_drill_units=0, planned_scans=0)
@@ -355,22 +372,64 @@ class PioneerController(VehicleController):
 
                     if candidate:
                         job_id = getattr(candidate, "id", getattr(candidate, "blueprint_id", None))
-                        job_pos = getattr(candidate, "position", None)
-                        coords = (job_pos.x, job_pos.y) if job_pos else None
+                        coords = self.extract_coords(getattr(candidate, "position", None))
                         print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
                         if not self.execute_construction(job_id, coords):
                             failed_jobs.add(job_id)
                             sleep(2.0)
                         continue
-                    elif self.distance_to_home() > 3.0:
-                        # Battery too low to reach the next matching job and return; go home to recharge
-                        print(f"[{self.name}] Insufficient energy to reach next construction site; returning to base.")
-                        self.return_to_base()
-                        self.recharge_at_station(target_level=1.0)
-                        continue
+                    else:
+                        # We have cargo matching pending jobs, but cannot reach any right now
+                        nearest_st, _ = self.get_nearest_charging_station()
+                        if self.distance_between(current_pos, nearest_st) > 3.0:
+                            print(f"[{self.name}] Insufficient energy to reach next construction site; recharging at nearest station.")
+                            self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
+                            self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
+                            continue
+                        else:
+                            curr_wh, cap_wh, lvl = self.get_battery()
+                            if lvl < 0.98:
+                                print(f"[{self.name}] At station with materials but need charge ({lvl*100:.0f}%); recharging to full.")
+                                self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
+                                continue
+                            else:
+                                # Even at full charge, none of the matching jobs can be reached within battery capacity!
+                                req_details = []
+                                for job in matching_jobs:
+                                    j_id = getattr(job, "id", getattr(job, "blueprint_id", "unknown"))
+                                    j_coords = self.extract_coords(getattr(job, "position", None))
+                                    if j_coords:
+                                        j_budget = self.calculate_trip_energy(j_coords, planned_drill_units=0, planned_scans=0)
+                                        req_details.append(f"{j_id} ({j_budget['total_required_wh']:.1f} Wh)")
+                                    else:
+                                        req_details.append(f"{j_id}")
+                                    failed_jobs.add(j_id)
+                                print(f"[{self.name}] Advisory: Matching construction job(s) exceed maximum battery range ({cap_wh:.1f} Wh): {', '.join(req_details)}.")
+                                sleep(5.0)
+                                continue
 
                 # 5. No matching jobs with current cargo: return to base, offload, and restock
-                target_jobs = [j for j in pending if getattr(j, "id", getattr(j, "blueprint_id", None)) not in failed_jobs]
+                # Filter out jobs that permanently exceed maximum vehicle battery capacity from nearest station
+                _, cap_wh, _ = self.get_battery()
+                achievable_targets = []
+                for j in pending:
+                    j_id = getattr(j, "id", getattr(j, "blueprint_id", None))
+                    if not j_id or j_id in failed_jobs:
+                        continue
+                    j_coords = self.extract_coords(getattr(j, "position", None))
+                    if j_coords:
+                        # Check whether job can be serviced from the closest charging station in the network
+                        st_near, _ = self.get_nearest_charging_station(from_coords=j_coords)
+                        dist_station_leg = self.distance_between(st_near, j_coords) * 2.0
+                        required_wh = (dist_station_leg * self.wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+                        if required_wh > cap_wh:
+                            if j_id not in failed_jobs:
+                                print(f"[{self.name}] Construction job '{j_id}' at {j_coords} permanently exceeds battery capacity from nearest station ({required_wh:.1f} Wh required, {cap_wh:.1f} Wh max capacity). Marking failed.")
+                                failed_jobs.add(j_id)
+                            continue
+                    achievable_targets.append(j)
+
+                target_jobs = achievable_targets
                 if not target_jobs:
                     # All pending jobs currently marked failed; clear failure set and wait
                     failed_jobs.clear()
@@ -389,9 +448,9 @@ class PioneerController(VehicleController):
                 if self.distance_to_home() > 3.0:
                     self.return_to_base()
 
-                # Ensure vehicle is charged before embarking on a new batch
+                # Ensure vehicle is fully charged before embarking on a new batch
                 _, _, lvl = self.get_battery()
-                if lvl < 0.90:
+                if lvl < 0.98:
                     self.recharge_at_station(target_level=1.0)
 
                 if required_item and required_count > 0:
@@ -411,11 +470,16 @@ class PioneerController(VehicleController):
                     batch_needed = self.batch_required_count(target_jobs, required_item, max_limit=free_space)
                     batch_needed = max(required_count, batch_needed)
 
-                    print(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
-                    if not self.load_construction_materials(target_job, target_count=batch_needed):
-                        print(f"[{self.name}] Could not load materials for job {job_id}; retrying in 10s.")
-                        sleep(10.0)
-                        continue
+                    # Check if we already have the materials loaded
+                    if self.cargo_count(required_item) < required_count:
+                        print(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
+                        if not self.load_construction_materials(target_job, target_count=batch_needed):
+                            print(f"[{self.name}] Could not load materials for job {job_id}; retrying in 10s.")
+                            sleep(10.0)
+                            continue
+                    else:
+                        # Already have materials loaded; avoid rapid cycling
+                        sleep(2.0)
                 else:
                     # Deconstruction job - ensure cargo has space for reclaimed materials
                     if hasattr(self.vehicle, "cargo") and self.vehicle.cargo.full():

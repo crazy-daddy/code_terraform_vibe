@@ -159,6 +159,8 @@ class RoverController(VehicleController):
 
         # Step 4: Drive to target
         reached = self.drive_to(coords[0], coords[1])
+        # Step 4: Drive to target (using intermediate recharge stops if needed)
+        reached = self.drive_with_recharge(coords[0], coords[1])
         if not reached:
             print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
             self.return_to_base()
@@ -169,6 +171,33 @@ class RoverController(VehicleController):
             self.scan_and_survey()
         elif target["type"] == "mine":
             self.mine_current_site(max_units=10)
+
+            # If mining was interrupted for battery and cargo is not full, recharge and resume!
+            while getattr(self, "mining_interrupted_battery", False) and not self.vehicle.cargo.full():
+                print(f"[{self.name}] Mining job at {coords} interrupted by low battery. Diverting to recharge and resume.")
+                if self.current_target_key:
+                    self.refresh_claim(self.current_target_key)
+
+                nearest_cs, _ = self.get_nearest_charging_station()
+                reached_cs = self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
+                if not reached_cs:
+                    print(f"[{self.name}] Failed to reach charging station during mining interruption.")
+                    break
+
+                self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
+
+                print(f"[{self.name}] Recharged to 100%. Returning to resume mining at {coords}...")
+                self.publish_telemetry("OUTBOUND", target["name"])
+                reached_site = self.drive_with_recharge(coords[0], coords[1], precision=1.5)
+                if not reached_site:
+                    print(f"[{self.name}] Could not reach mining site after recharge.")
+                    break
+
+                remaining_space = 10 - self.vehicle.cargo.count()
+                if remaining_space > 0:
+                    self.mine_current_site(max_units=remaining_space)
+                else:
+                    break
 
         # Step 6: Return to base (releases target claim upon return)
         self.return_to_base()

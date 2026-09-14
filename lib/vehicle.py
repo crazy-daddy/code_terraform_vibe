@@ -80,8 +80,111 @@ class VehicleController:
         """Backward compatibility alias for rover index."""
         return self.get_vehicle_index()
 
+    @staticmethod
+    def extract_coords(pos):
+        """Safely extracts (x, y) float tuple from tuple/list, dict, or Position object."""
+        if pos is None:
+            return None
+        if isinstance(pos, (tuple, list)) and len(pos) >= 2:
+            return (float(pos[0]), float(pos[1]))
+        if isinstance(pos, dict) and "x" in pos and "y" in pos:
+            return (float(pos["x"]), float(pos["y"]))
+        x = getattr(pos, "x", None)
+        y = getattr(pos, "y", None)
+        if x is not None and y is not None:
+            return (float(x), float(y))
+        return None
+
+    def get_all_charging_stations(self):
+        """
+        Discovers all known vehicle charging stations across the home base and all outposts.
+        Returns a list of dicts: [{"id": str, "coords": (float, float), "component": obj}]
+        """
+        stations = []
+        found_ids = set()
+
+        outpost_net = get_component("outpost_network")
+        if outpost_net:
+            outposts_to_check = []
+            if hasattr(outpost_net, "home"):
+                try:
+                    home = outpost_net.home()
+                    if home:
+                        outposts_to_check.append(home)
+                except Exception:
+                    pass
+            if hasattr(outpost_net, "outposts"):
+                try:
+                    for op in outpost_net.outposts():
+                        outposts_to_check.append(op)
+                except Exception:
+                    pass
+
+            for op in outposts_to_check:
+                if hasattr(op, "buildings"):
+                    try:
+                        for b in op.buildings():
+                            b_type = getattr(b, "type_id", "")
+                            b_id = getattr(b, "id", "")
+                            if "charging" in b_type or "charging" in b_id:
+                                pos = self.extract_coords(getattr(b, "position", None))
+                                if pos:
+                                    st_id = b_id or b_type
+                                    if st_id not in found_ids:
+                                        found_ids.add(st_id)
+                                        comp = get_component(st_id) or b
+                                        stations.append({
+                                            "id": st_id,
+                                            "coords": pos,
+                                            "component": comp
+                                        })
+                    except Exception:
+                        pass
+
+        # Check standalone / registered charging station components
+        standalone_candidates = ["vehicle_charging_station"] + [f"charging_station_{i}" for i in range(1, 8)]
+        for cand_id in standalone_candidates:
+            if cand_id not in found_ids:
+                try:
+                    comp = get_component(cand_id)
+                    if comp:
+                        pos = None
+                        if hasattr(comp, "position"):
+                            pos = self.extract_coords(comp.position)
+                        elif hasattr(comp, "x") and hasattr(comp, "y"):
+                            pos = (float(comp.x), float(comp.y))
+                        if pos:
+                            found_ids.add(cand_id)
+                            stations.append({
+                                "id": cand_id,
+                                "coords": pos,
+                                "component": comp
+                            })
+                except Exception:
+                    pass
+
+        return stations
+
+    def get_nearest_charging_station(self, from_coords=None):
+        """
+        Returns the closest known charging station tuple: (coords, station_info_dict).
+        If no station is detected, falls back to (self.home_coords, {}).
+        """
+        ref_coords = from_coords if from_coords is not None else self.get_position()
+        stations = self.get_all_charging_stations()
+        if not stations:
+            fallback = self.get_charging_station_coords() or self.home_coords
+            return fallback, {"id": "home_slot", "coords": fallback, "component": None}
+
+        best_station = min(
+            stations,
+            key=lambda st: self.distance_between(ref_coords, st["coords"])
+        )
+        return best_station["coords"], best_station
+
     def get_charging_station_coords(self):
         """Locates the charging station's exact position if available."""
+        """Locates the primary base charging station's exact position if available."""
         outpost_net = get_component("outpost_network")
         if outpost_net and hasattr(outpost_net, "home"):
             try:
@@ -92,6 +195,9 @@ class VehicleController:
                         b_id = getattr(b, "id", "")
                         if "charging" in b_type or "charging" in b_id:
                             return getattr(b, "position", (0.0, 0.0))
+                            pos = self.extract_coords(getattr(b, "position", None))
+                            if pos:
+                                return pos
             except Exception:
                 pass
         return None
@@ -504,11 +610,14 @@ class VehicleController:
         2. Energy to scan & survey: planned_scans * SONAR_WH_BUDGET
         3. Energy to mine: planned_drill_units * MINE_WH_PER_UNIT
         4. Energy to drive home from target: dist_target_to_home * wh_per_meter
+        4. Energy to drive to nearest charging station from target: dist_target_to_nearest_cs * wh_per_meter
         5. Safety buffer (35% margin) + hard emergency floor (8 Wh)
         """
         current_pos = self.get_position()
         dist_outbound = self.distance_between(current_pos, target_coords)
         dist_inbound = self.distance_between(target_coords, self.assigned_slot_coords)
+        nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
+        dist_inbound = self.distance_between(target_coords, nearest_cs_from_target)
 
         drive_out_wh = dist_outbound * self.wh_per_meter
         drive_home_wh = dist_inbound * self.wh_per_meter
@@ -524,6 +633,7 @@ class VehicleController:
         return {
             "dist_outbound": dist_outbound,
             "dist_inbound": dist_inbound,
+            "nearest_cs_coords": nearest_cs_from_target,
             "drive_out_wh": drive_out_wh,
             "drive_home_wh": drive_home_wh,
             "sonar_wh": sonar_wh,
@@ -534,10 +644,24 @@ class VehicleController:
             "is_achievable": curr_wh >= total_required_wh
         }
 
+    def energy_needed_to_reach(self, target_coords):
+        """Calculates minimum energy required to reach target coordinates with safety buffer."""
+        dist = self.distance_between(self.get_position(), target_coords)
+        drive_wh = dist * self.wh_per_meter
+        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+
+    def energy_needed_to_reach_base(self):
+        """Calculates energy required to drive back to home base staging slot."""
+        return self.energy_needed_to_reach(self.assigned_slot_coords)
+
     def energy_needed_to_return_now(self):
         """Calculates minimum energy strictly required to drive straight home right now."""
         dist_home = self.distance_to_home()
         drive_wh = dist_home * self.wh_per_meter
+        """Calculates minimum energy strictly required to drive to the nearest charging station right now."""
+        nearest_cs, _ = self.get_nearest_charging_station()
+        dist_cs = self.distance_between(self.get_position(), nearest_cs)
+        drive_wh = dist_cs * self.wh_per_meter
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
     def calibrate_wh_per_meter(self, delta_dist, delta_wh):
@@ -607,6 +731,18 @@ class VehicleController:
                 print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to return). Aborting trip!")
                 self.vehicle.nav.brake()
                 return False
+            nearest_cs, _ = self.get_nearest_charging_station()
+            is_driving_to_station = (
+                self.distance_between((target_x, target_y), nearest_cs) <= 3.0
+                or self.distance_between((target_x, target_y), self.assigned_slot_coords) <= 3.0
+            )
+            dist_to_cs = self.distance_between(curr_pos, nearest_cs)
+            if not is_driving_to_station and dist_to_cs > 3.0:
+                energy_needed = self.energy_needed_to_return_now()
+                if curr_wh <= energy_needed:
+                    print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest station at {nearest_cs}). Aborting trip!")
+                    self.vehicle.nav.brake()
+                    return False
 
             # Stall detection: if vehicle hasn't moved >0.3m in 8 seconds
             step_dist = self.distance_between(last_pos, curr_pos)
@@ -628,17 +764,99 @@ class VehicleController:
         self.vehicle.nav.brake()
         return False
 
+    def drive_with_recharge(self, target_x, target_y, precision=1.5, max_stops=5):
+        """
+        Drives to (target_x, target_y), planning intermediate stops at charging stations
+        along the route if the direct trip exceeds available or single-charge battery range.
+        """
+        stops = 0
+        while stops < max_stops:
+            curr_pos = self.get_position()
+            target_coords = (float(target_x), float(target_y))
+            dist_to_target = self.distance_between(curr_pos, target_coords)
+
+            if dist_to_target <= precision:
+                return True
+
+            curr_wh, cap_wh, _ = self.get_battery()
+            energy_to_target = self.energy_needed_to_reach(target_coords)
+            nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
+            energy_target_to_cs = (self.distance_between(target_coords, nearest_cs_from_target) * self.wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+            total_required = energy_to_target + energy_target_to_cs
+
+            if curr_wh >= total_required:
+                reached = self.drive_to(target_x, target_y, precision=precision)
+                return reached
+
+            # Find an intermediate charging station closer to target that we can currently reach
+            stations = self.get_all_charging_stations()
+            best_station = None
+            best_progress = 0.0
+
+            for st in stations:
+                st_coords = st["coords"]
+                dist_to_st = self.distance_between(curr_pos, st_coords)
+                if dist_to_st < 2.0:
+                    continue
+
+                energy_to_st = (dist_to_st * self.wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+                if curr_wh < energy_to_st:
+                    continue
+
+                dist_st_to_target = self.distance_between(st_coords, target_coords)
+                progress = dist_to_target - dist_st_to_target
+                if progress > 3.0 and progress > best_progress:
+                    best_progress = progress
+                    best_station = st
+
+            if best_station:
+                st_coords = best_station["coords"]
+                st_id = best_station.get("id", "station")
+                print(f"[{self.name}] Destination ({target_x:.1f}, {target_y:.1f}) exceeds direct battery ({curr_wh:.1f} Wh < {total_required:.1f} Wh). Stopping at intermediate station '{st_id}' at {st_coords} to recharge.")
+                reached = self.drive_to(st_coords[0], st_coords[1], precision=1.0)
+                if not reached:
+                    print(f"[{self.name}] Failed to reach intermediate station '{st_id}'.")
+                    return False
+                self.recharge_at_station(target_level=1.0, station_coords=st_coords, station_id=best_station.get("id"))
+                stops += 1
+                continue
+            else:
+                nearest_cs, n_info = self.get_nearest_charging_station()
+                dist_near_cs = self.distance_between(curr_pos, nearest_cs)
+                if dist_near_cs > 2.0 and curr_wh < (cap_wh * 0.90):
+                    print(f"[{self.name}] Topping off at nearest station '{n_info.get('id', 'station')}' before proceeding.")
+                    reached = self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
+                    if reached:
+                        self.recharge_at_station(target_level=1.0, station_coords=nearest_cs, station_id=n_info.get("id"))
+                        stops += 1
+                        continue
+
+                return self.drive_to(target_x, target_y, precision=precision)
+
+        return self.drive_to(target_x, target_y, precision=precision)
+
     def return_to_base(self):
         """Safely drives back to the vehicle's assigned base staging slot."""
+        """Safely drives back to the vehicle's assigned base staging slot, using intermediate charging if needed."""
         self.publish_telemetry("RETURNING_HOME")
         slot_x, slot_y = self.get_home_slot_coords()
         self.assigned_slot_coords = (slot_x, slot_y)
         print(f"[{self.name}] Returning to base slot ({slot_x:.1f}, {slot_y:.1f})...")
         reached = self.drive_to(slot_x, slot_y, precision=1.0)
+        reached = self.drive_with_recharge(slot_x, slot_y, precision=1.0)
 
         if self.current_target_key:
             self.release_target_claim(self.current_target_key)
 
+        return reached
+
+    def return_to_nearest_station(self):
+        """Drives to the nearest charging station in the network to recharge."""
+        st_coords, st_info = self.get_nearest_charging_station()
+        st_id = st_info.get("id", "charging_station")
+        print(f"[{self.name}] Heading to nearest charging station '{st_id}' at {st_coords}...")
+        self.publish_telemetry("RETURNING_TO_STATION")
+        reached = self.drive_to(st_coords[0], st_coords[1], precision=1.0)
         return reached
 
     def unload_cargo(self):
@@ -765,10 +983,11 @@ class VehicleController:
             except Exception:
                 pass
 
-    def recharge_at_station(self, target_level=1.0):
+    def recharge_at_station(self, target_level=1.0, station_coords=None, station_id=None):
         """
         Parks at Vehicle Charging Station / base staging slot and charges until target level.
         Cooperates with the station controller (charging_station_1.py) which handles hardware
+        Cooperates with the station controller (charging_station_*.py) which handles hardware
         charge() calls locally.
         """
         curr_wh, cap_wh, lvl = self.get_battery()
@@ -777,14 +996,42 @@ class VehicleController:
             return True
 
         cs = get_component("vehicle_charging_station")
+        cs = None
+        if station_coords is None:
+            station_coords, st_info = self.get_nearest_charging_station()
+            if not station_id:
+                station_id = st_info.get("id")
+            cs = st_info.get("component")
+        else:
+            station_coords = (float(station_coords[0]), float(station_coords[1]))
+            if station_id:
+                cs = get_component(station_id)
+            if not cs:
+                for st in self.get_all_charging_stations():
+                    if self.distance_between(st["coords"], station_coords) < 2.0:
+                        cs = st.get("component")
+                        if not station_id:
+                            station_id = st.get("id")
+                        break
+
         if not cs:
             for i in range(1, 5):
                 cand = get_component(f"charging_station_{i}") or get_component(f"vehicle_charging_station_{i}")
                 if cand:
                     cs = cand
                     break
+            if station_id:
+                cs = get_component(station_id)
+            if not cs:
+                for cand_id in ["vehicle_charging_station"] + [f"charging_station_{i}" for i in range(1, 8)]:
+                    cand = get_component(cand_id)
+                    if cand:
+                        cs = cand
+                        station_id = cand_id
+                        break
 
         cs_coords = self.get_charging_station_coords() or self.home_coords
+        cs_coords = station_coords or self.get_charging_station_coords() or self.home_coords
 
         # Verify whether vehicle is actually inside the station's docked set
         is_docked = False
@@ -799,9 +1046,11 @@ class VehicleController:
             dist_to_cs = self.distance_to(cs_coords[0], cs_coords[1])
             if dist_to_cs > 1.2:
                 print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station. Driving to docking pad...")
+                print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
                 self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
             else:
                 self.return_to_base()
+                self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
 
         if hasattr(self.vehicle, "nav"):
             try:
@@ -812,6 +1061,7 @@ class VehicleController:
         sleep(0.5)
         self.publish_telemetry("CHARGING")
         print(f"[{self.name}] Docked at base slot. Waiting for charging station ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
+        print(f"[{self.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
 
         wait_cycles = 0
         last_reported_lvl = lvl
@@ -843,8 +1093,11 @@ class VehicleController:
                         queued = get_queue_fn() if get_queue_fn else []
                         if self.name not in active and self.name not in queued:
                             print(f"[{self.name}] Advisory: Vehicle is docked, but charging_station has not queued it yet. Ensure 'charging_station_1.py' is running!")
+                            st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
+                            print(f"[{self.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
                             try:
                                 notify(f"[{self.name}] Docked and waiting. Ensure 'charging_station_1.py' is running!", level="info", duration_seconds=8.0)
+                                notify(f"[{self.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
                             except Exception:
                                 pass
                 except Exception:
@@ -909,6 +1162,8 @@ class VehicleController:
 
         self.publish_telemetry("MINING")
         mined_count = 0
+        self.mining_interrupted_battery = False
+
         while mined_count < max_units:
             if self.vehicle.cargo.full():
                 print(f"[{self.name}] Cargo hold full (10/10). Finishing mining operation.")
@@ -918,6 +1173,8 @@ class VehicleController:
             needed_to_return = self.energy_needed_to_return_now()
             if curr_wh <= (needed_to_return + self.MINE_WH_PER_UNIT * 1.5):
                 print(f"[{self.name}] Reached return energy threshold ({curr_wh:.1f} Wh left). Ceasing extraction.")
+                print(f"[{self.name}] Reached return energy threshold ({curr_wh:.1f} Wh left). Ceasing extraction for recharge.")
+                self.mining_interrupted_battery = True
                 break
 
             m_res = self.vehicle.drill.mine()

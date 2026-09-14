@@ -1,0 +1,192 @@
+# Map Markers from Unsupported Targets
+# Reads survey.unsupported_targets from the Data Archive and creates
+# colored visual map markers on the Planet Map for all blacklisted contacts.
+
+from archive import archive
+
+# Prefix used for all markers created by this script
+MARKER_PREFIX = "unsupported."
+
+
+def safe_get_component(name):
+    try:
+        return get_component(name)
+    except Exception:
+        return None
+
+
+def resolve_coordinates(key, entry, journal_sites=None):
+    """
+    Extracts (x, y) coordinates for a target entry from key naming conventions,
+    payload fields, or the exploration journal.
+    """
+    # 1. Payload coords field
+    if isinstance(entry, dict) and "coords" in entry:
+        c = entry["coords"]
+        if isinstance(c, (list, tuple)) and len(c) >= 2:
+            try:
+                return float(c[0]), float(c[1])
+            except (ValueError, TypeError):
+                pass
+
+    # 2. Key format: poi_X_Y
+    if key.startswith("poi_"):
+        parts = key.split("_")
+        if len(parts) >= 3:
+            try:
+                return float(parts[1]), float(parts[2])
+            except (ValueError, TypeError):
+                pass
+
+    # 3. Legacy key format: X:Y
+    if ":" in key and not key.startswith("site"):
+        parts = key.split(":")
+        if len(parts) >= 2:
+            try:
+                return float(parts[0]), float(parts[1])
+            except (ValueError, TypeError):
+                pass
+
+    # 4. Site lookup in Journal
+    if journal_sites:
+        clean_site_id = key.replace("site_", "")
+        for s in journal_sites:
+            if str(getattr(s, "id", "")) == clean_site_id:
+                if hasattr(s, "x") and hasattr(s, "y"):
+                    return float(s.x), float(s.y)
+
+    return None
+
+
+def get_marker_style(reason, entry):
+    """
+    Returns (icon, color, label, note) tailored to the limitation reason.
+    Icons: pin, x, check, circle, flag, crosshair, warning, hammer, resource, power, fluid, star
+    Colors: neutral, accent, success, warning, error, violet
+    """
+    scanner_tier = entry.get("scanner_tier", "basic")
+    h_limit = entry.get("hardness_limit", 1.0)
+    vehicle = entry.get("vehicle", entry.get("rover", "fleet"))
+    msg = entry.get("message", "")
+
+    if reason in ["too_hard", "tier_too_low"]:
+        icon = "warning"
+        color = "warning"
+        label = f"Limit: >{scanner_tier} T{h_limit}"[:48]
+        note = f"Hardness/Tier limit: Requires > {scanner_tier} (limit {h_limit}). Reported by {vehicle}. {msg}"[:240]
+
+    elif reason == "research_required":
+        icon = "star"
+        color = "violet"
+        label = "Tech Locked Contact"[:48]
+        note = f"Survey research required to resolve this contact. Reported by {vehicle}."[:240]
+
+    elif reason == "wrong_scanner":
+        icon = "fluid"
+        color = "accent"
+        label = "Bio Contact (Bio Scanner)"[:48]
+        note = f"Biological signature detected. Requires a Bio Scanner. Reported by {vehicle}."[:240]
+
+    elif reason in ["depleted", "empty"]:
+        icon = "x"
+        color = "neutral"
+        label = "Depleted Site"[:48]
+        note = f"Resource site is empty or depleted. Reported by {vehicle}."[:240]
+
+    else:
+        icon = "warning"
+        color = "warning"
+        label = f"Unsupported: {reason}"[:48]
+        note = f"{reason}: {msg} (reported by {vehicle})"[:240]
+
+    return icon, color, label, note
+
+
+def update_unsupported_markers(clear_previous=True):
+    """
+    Places map markers for all unsupported targets stored in the archive.
+    """
+    markers = safe_get_component("markers")
+    if not markers:
+        print("[ERROR] Map Markers component ('markers') is unavailable. Unlocked by Cartography research.")
+        return 0
+
+    if not archive or not archive.available:
+        print("[ERROR] Data Archive ('notebook') is unavailable or locked.")
+        return 0
+
+    # Read unsupported targets
+    unsupported = archive.get("survey.unsupported_targets", None)
+    if unsupported is None:
+        unsupported = archive.get("rover.unsupported_targets", {}) or {}
+
+    if not isinstance(unsupported, dict) or not unsupported:
+        print("[INFO] No unsupported targets found in archive.")
+        if clear_previous:
+            markers.clear(MARKER_PREFIX)
+            print(f"[INFO] Cleared existing '{MARKER_PREFIX}' markers.")
+        return 0
+
+    # Load journal sites for site coordinate lookups
+    journal = safe_get_component("journal")
+    journal_sites = []
+    if journal and hasattr(journal, "discovered_sites"):
+        try:
+            journal_sites = journal.discovered_sites("nocturna") or []
+        except Exception:
+            pass
+
+    # Clear previous markers if requested to stay in sync with archive
+    if clear_previous:
+        clear_res = markers.clear(MARKER_PREFIX)
+        cleared_count = getattr(clear_res, "count", 0)
+        if cleared_count > 0:
+            print(f"[INFO] Cleared {cleared_count} previous unsupported target markers.")
+
+    placed_count = 0
+    skipped_count = 0
+    breakdown = {}
+
+    print(f"Syncing {len(unsupported)} unsupported target entries to Planet Map markers...")
+
+    for key, entry in unsupported.items():
+        if not isinstance(entry, dict):
+            skipped_count += 1
+            continue
+
+        coords = resolve_coordinates(key, entry, journal_sites)
+        if not coords:
+            print(f"  [SKIP] Could not resolve coordinates for '{key}'")
+            skipped_count += 1
+            continue
+
+        reason = entry.get("reason", entry.get("status", "unknown"))
+        icon, color, label, note = get_marker_style(reason, entry)
+
+        marker_id = f"{MARKER_PREFIX}{key}"[:64]
+        res = markers.place(
+            id=marker_id,
+            x=coords[0],
+            y=coords[1],
+            label=label,
+            icon=icon,
+            color=color,
+            note=note
+        )
+
+        if getattr(res, "status", "") == "ok":
+            placed_count += 1
+            breakdown[reason] = breakdown.get(reason, 0) + 1
+        else:
+            print(f"  [FAIL] Failed placing marker for '{key}': {res.status} - {getattr(res, 'message', '')}")
+
+    print(f"\n[DONE] Successfully placed {placed_count} map markers ({skipped_count} skipped).")
+    for r, count in breakdown.items():
+        print(f"  - {r}: {count} markers")
+
+    return placed_count
+
+
+# Execute when run directly as a script
+update_unsupported_markers(clear_previous=True)
+

@@ -29,6 +29,18 @@ class ChargingStationController:
     def charging_station_coords(self):
         """Returns known charging-station coordinates, nearest first when available."""
         coords = []
+
+        def parse_pos(pos):
+            if pos is None:
+                return None
+            if isinstance(pos, (tuple, list)) and len(pos) >= 2:
+                return (float(pos[0]), float(pos[1]))
+            x = getattr(pos, "x", None)
+            y = getattr(pos, "y", None)
+            if x is not None and y is not None:
+                return (float(x), float(y))
+            return None
+
         network = get_component("outpost_network")
         if network and hasattr(network, "outposts"):
             try:
@@ -37,6 +49,9 @@ class ChargingStationController:
                         position = getattr(building, "position", None)
                         if position:
                             coords.append((position.x, position.y))
+                        pos_tuple = parse_pos(getattr(building, "position", None))
+                        if pos_tuple and pos_tuple not in coords:
+                            coords.append(pos_tuple)
             except Exception:
                 pass
 
@@ -46,6 +61,13 @@ class ChargingStationController:
             fallback = (position.x, position.y)
             if fallback not in coords:
                 coords.append(fallback)
+        pos_tuple = parse_pos(getattr(station_outpost, "position", None))
+        if pos_tuple and pos_tuple not in coords:
+            coords.append(pos_tuple)
+        if station_outpost:
+            pos_tuple = parse_pos(getattr(station_outpost, "position", None))
+            if pos_tuple and pos_tuple not in coords:
+                coords.append(pos_tuple)
         return coords
 
     def rescue_target_level(self, vehicle_ref):
