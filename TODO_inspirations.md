@@ -224,7 +224,8 @@ The attached panel designs suggest a useful second layer beyond read-only monito
 - [ ] Add a card:
   - [ ] Choose Pioneer mission policy: `auto`, `scout`, `constructor`, `nearest_outpost`, or `hold`.
   - [ ] Toggle directional exploration, water scouting, explorer fit, and rescue-dependent range policy.
-  - [ ] Add commands for `resume`, `recall`, `clear survey retries`, and `refresh outpost sites`.
+  - [ ] Add commands for `resume`, `clear survey retries`, and `refresh outpost sites`.
+  - [x] `recall`: per-vehicle `vehicle.recall:<name>` archive flag (`lib/vehicle_claims.py` `is_recalled()`/`handle_recall_if_active()`), toggled via `panel_2.py`'s Fleet card switch. On -> abandons the current target and returns to base now; off -> resumes normal operations. Wired into every vehicle run loop plus `drive_to()` itself (guarded so it never blocks the trip home it's asking for).
   - [ ] Add a `vehicle.speedmode` toggle (`conserve`/`highspeed`) driving the throttle formulas in `lib/vehicle_energy.py`.
   - [ ] Display every ground vehicle's current mission, battery, rescue state, and reason for its target.
   - [ ] Route commands through a queue with acknowledgements; panels must not call vehicle actions directly.

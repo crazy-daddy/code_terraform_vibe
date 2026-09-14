@@ -121,6 +121,14 @@ copies of tier lists, thresholds, or budgeting formulas.
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims
   (mirrored to `rover.claims` / `survey.claims` for legacy compatibility), heartbeat-renewed via
   `refresh_claim()`, expiring after `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour).
+- Recall (`lib/vehicle_claims.py`): `vehicle.recall:<name>` archive flag (`vehicle_recall_key()`,
+  `is_recalled()`), toggled per-vehicle via `panel_2.py`'s Fleet card switch. On -> the vehicle
+  abandons its current target (`release_target_claim()`) and drives to base now
+  (`handle_recall_if_active()`, called at the top of every vehicle run loop); off -> resumes normal
+  operations. Also checked inside `drive_to()`'s own tick loop for an immediate mid-trip abort, and
+  inside `mine_current_site()`/`mine_until_full_or_exhausted()` so mining stops promptly — both
+  guarded with the same `is_driving_to_station` exemption as the return-reserve check, so recall can
+  never block the very trip home it's asking for.
 - Navigation timeout (`lib/vehicle_navigation.py` `drive_timeout_ticks()`): `drive_to()`'s
   `timeout_ticks` defaults to `None` and is computed per-leg from expected travel time
   (`distance / speed-at-chosen-throttle`), converted from world-clock hours to the tick-scale

@@ -266,6 +266,10 @@ class VehicleSurveyMixin:
         print(f"Survey Controller ({self.name}) online. Starting battery-safe survey.")
         while True:
             try:
+                if self.handle_recall_if_active():
+                    sleep(5.0)
+                    continue
+
                 # Only top off before departing on a fresh expedition (i.e. when
                 # actually at base). A reload mid-trip must not detour all the
                 # way home just to satisfy this check before resuming.
@@ -297,6 +301,9 @@ class VehicleSurveyMixin:
                 ):
                     if hasattr(self.vehicle, "is_being_rescued") and self.vehicle.is_being_rescued():
                         print(f"[{self.name}] Rescue in progress; pausing survey loop.")
+                        break
+                    if self.is_recalled():
+                        print(f"[{self.name}] Recall requested; pausing spiral survey.")
                         break
 
                     budget = self.calculate_trip_energy(

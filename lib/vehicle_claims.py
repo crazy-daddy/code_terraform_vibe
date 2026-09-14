@@ -18,6 +18,15 @@ LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
 MISSION_KEY_PREFIX = "vehicle.mission:"
+RECALL_KEY_PREFIX = "vehicle.recall:"
+
+
+def vehicle_recall_key(vehicle_name):
+    """
+    Module-level so non-vehicle scripts (e.g. panel_2.py's Fleet card) can
+    build the same archive key without instantiating a VehicleController.
+    """
+    return f"{RECALL_KEY_PREFIX}{vehicle_name}"
 
 
 class VehicleClaimsMixin:
@@ -69,6 +78,36 @@ class VehicleClaimsMixin:
         self.current_target_key = target_key
         self.current_target = record.get("target")
         return record
+
+    def is_recalled(self):
+        """
+        True when the operator has set this vehicle's recall flag (the Fleet
+        card's toggle in panel_2.py, or a direct archive.set()). Checked every
+        loop cycle -- see handle_recall_if_active() -- so an active mission is
+        abandoned promptly rather than only at the next natural idle point.
+        """
+        return bool(archive.get(vehicle_recall_key(self.name), False))
+
+    def handle_recall_if_active(self):
+        """
+        If recalled, abandons any current target and heads to base (or just
+        idles there if already home). Returns True when recall is active, so
+        callers should skip their normal cycle this pass:
+            if self.handle_recall_if_active():
+                sleep(5.0)
+                continue
+        """
+        if not self.is_recalled():
+            return False
+
+        if self.is_at_base():
+            self.publish_telemetry("RECALLED")
+        else:
+            print(f"[{self.name}] Recall active; returning to base.")
+            self.publish_telemetry("RECALLED")
+            self.release_target_claim()
+            self.return_to_base()
+        return True
 
     def claim_target(self, target_key, target_info):
         """

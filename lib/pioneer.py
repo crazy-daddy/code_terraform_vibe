@@ -298,6 +298,10 @@ class PioneerController(VehicleController):
         print(f"Pioneer Transport Controller ({self.name}) online. Awaiting route configuration.")
         while True:
             try:
+                if self.handle_recall_if_active():
+                    sleep(poll_interval)
+                    continue
+
                 route = archive.get("pioneer.transport.route", {}) or {}
                 if route:
                     self.publish_telemetry("TRANSPORT", f"{route.get('item_id', 'unknown')} route")
@@ -321,6 +325,10 @@ class PioneerController(VehicleController):
 
         while True:
             try:
+                if self.handle_recall_if_active():
+                    sleep(5.0)
+                    continue
+
                 # 1. Base Battery & Staging: If parked at home, ensure charged before departing
                 if self.is_at_base():
                     _, _, lvl = self.get_battery()
@@ -576,6 +584,10 @@ class PioneerController(VehicleController):
         print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         while True:
             try:
+                if self.handle_recall_if_active():
+                    sleep(5.0)
+                    continue
+
                 if not hasattr(self.vehicle, "drill"):
                     print(f"[{self.name}] No Drill Module mounted; mining role idle. Mount an Industrial/Heavy Drill to begin.")
                     self.publish_telemetry("IDLE_NO_DRILL")

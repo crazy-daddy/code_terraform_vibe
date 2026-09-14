@@ -136,6 +136,10 @@ class MiningMixin:
                 print(f"[{self.name}] Cargo hold full ({cargo_capacity}/{cargo_capacity}). Finishing mining operation.")
                 break
 
+            if self.is_recalled():
+                print(f"[{self.name}] Recall requested; ceasing extraction to return to base.")
+                break
+
             curr_wh, _, _ = self.get_battery()
             needed_to_return = self.energy_needed_to_return_now()
             if curr_wh <= (needed_to_return + self.MINE_WH_PER_UNIT * 1.5):
@@ -173,6 +177,9 @@ class MiningMixin:
         self.mine_current_site()
 
         while getattr(self, "mining_interrupted_battery", False) and not self.vehicle.cargo.full():
+            if self.is_recalled():
+                print(f"[{self.name}] Recall requested; not resuming mining after recharge.")
+                return
             print(f"[{self.name}] Mining job at {target_coords} interrupted by low battery. Diverting to recharge and resume.")
             if self.current_target_key:
                 self.refresh_claim(self.current_target_key)

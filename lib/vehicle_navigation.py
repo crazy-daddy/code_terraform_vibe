@@ -118,6 +118,14 @@ class VehicleNavigationMixin:
                 print(f"[{self.name}] Rescue in progress; navigation suspended.")
                 return False
 
+            # Skipped when driving to the station/base itself, same reasoning as the
+            # return-reserve check below -- recall must never block the trip home
+            # it is asking for, or the vehicle deadlocks aborting its own recall.
+            if self.is_recalled() and not is_driving_to_station:
+                self.vehicle.nav.brake()
+                print(f"[{self.name}] Recall requested mid-trip; aborting to return to base.")
+                return False
+
             curr_pos = self.get_position()
             curr_wh, _, _ = self.get_battery()
             dist_remaining = self.vehicle.nav.get_distance_to(target_x, target_y) if hasattr(self.vehicle.nav, "get_distance_to") else self.distance_to(target_x, target_y)

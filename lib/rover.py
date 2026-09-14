@@ -143,6 +143,9 @@ class RoverController(VehicleController):
         print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         while True:
             try:
+                if self.handle_recall_if_active():
+                    sleep(5.0)
+                    continue
                 self.run_expedition_cycle()
             except Exception as e:
                 print(f"[{self.name}] Mission exception: {e}. Executing emergency failsafe brake.")
