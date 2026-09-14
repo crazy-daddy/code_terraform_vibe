@@ -231,35 +231,52 @@ class VehicleSurveyMixin:
         """Scans multiple known contacts in one battery-safe outward route."""
         completed = 0
         visited = set()
+
+        # A target restored from a saved mission (see vehicle_claims.py) after
+        # a script reload takes priority over discovery, so we continue toward
+        # the same destination instead of restarting the search from scratch.
+        resumed = None
+        if self.current_target_key and self.current_target and self.current_target.get("coords"):
+            resumed = (self.current_target_key, tuple(self.current_target["coords"]))
+            print(f"[{self.name}] Resuming previously claimed POI '{resumed[0]}' at {resumed[1]} after reload.")
+
         while completed < max_points:
-            points = self.unscanned_pois()
             current_pos = self.get_position()
-            candidates = [
-                p for p in points
-                if (getattr(p, "x", None), getattr(p, "y", None)) not in visited
-            ]
-            candidates.sort(key=lambda p: self.distance_between(current_pos, (p.x, p.y)))
 
-            poi = None
-            for candidate in candidates:
-                key = (candidate.x, candidate.y)
-                budget = self.calculate_trip_energy((candidate.x, candidate.y), planned_scans=4)
-                if budget["is_achievable"]:
-                    poi = candidate
-                    visited.add(key)
+            if resumed:
+                target_key, target = resumed
+                resumed = None
+            else:
+                points = self.unscanned_pois()
+                candidates = [
+                    p for p in points
+                    if (getattr(p, "x", None), getattr(p, "y", None)) not in visited
+                ]
+                candidates.sort(key=lambda p: self.distance_between(current_pos, (p.x, p.y)))
+
+                poi = None
+                for candidate in candidates:
+                    key = (candidate.x, candidate.y)
+                    budget = self.calculate_trip_energy((candidate.x, candidate.y), planned_scans=4)
+                    if budget["is_achievable"]:
+                        poi = candidate
+                        visited.add(key)
+                        break
+                if poi is None:
+                    if candidates:
+                        print(f"[{self.name}] Remaining known POIs exceed the current route budget; returning home.")
                     break
-            if poi is None:
-                if candidates:
-                    print(f"[{self.name}] Remaining known POIs exceed the current route budget; returning home.")
-                break
 
-            target = (poi.x, poi.y)
-            target_key = f"poi_{poi.x}_{poi.y}"
+                target = (poi.x, poi.y)
+                target_key = f"poi_{poi.x}_{poi.y}"
+
             self.claim_target(target_key, {"coords": target, "name": target_key, "type": "poi"})
             self.current_target_key = target_key
-            self.publish_telemetry("SURVEY_POI", f"POI_{poi.x}_{poi.y}")
+            self.current_target = {"coords": target, "name": target_key, "type": "poi"}
+            self.save_mission("poi_survey", self.current_target)
+            self.publish_telemetry("SURVEY_POI", f"POI_{target[0]}_{target[1]}")
             print(f"[{self.name}] Surveying known unscanned POI at {target} ({self.distance_between(current_pos, target):.1f} m leg).")
-            if not self.drive_to(poi.x, poi.y):
+            if not self.drive_to(target[0], target[1]):
                 print(f"[{self.name}] Could not safely reach POI at {target}; ending survey pass.")
                 self.release_target_claim(target_key)
                 break
@@ -291,9 +308,13 @@ class VehicleSurveyMixin:
         print(f"Survey Controller ({self.name}) online. Starting battery-safe survey.")
         while True:
             try:
-                _, _, level = self.get_battery()
-                if level < 0.95:
-                    self.recharge_at_station(target_level=1.0)
+                # Only top off before departing on a fresh expedition (i.e. when
+                # actually at base). A reload mid-trip must not detour all the
+                # way home just to satisfy this check before resuming.
+                if self.distance_to_home() <= 3.0:
+                    _, _, level = self.get_battery()
+                    if level < 0.95:
+                        self.recharge_at_station(target_level=1.0)
 
                 poi_completed = self.survey_known_pois(max_points=max_points)
                 if poi_completed > 0 or self.unscanned_pois():

@@ -17,6 +17,7 @@ SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
 LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
+MISSION_KEY_PREFIX = "vehicle.mission:"
 
 
 class VehicleClaimsMixin:
@@ -26,6 +27,48 @@ class VehicleClaimsMixin:
     release_target_claim() interplay with self.current_target(_key).
     """
     CLAIM_STALE_TICKS = 36000
+
+    def mission_key(self):
+        return f"{MISSION_KEY_PREFIX}{self.name}"
+
+    def save_mission(self, kind, target):
+        """
+        Persists the in-progress target (and its kind, e.g. "poi_survey" or
+        "mine") so a script reload mid-trip resumes toward the same
+        destination instead of restarting the mission search from base.
+        """
+        if not self.current_target_key:
+            return
+        archive.set(self.mission_key(), {
+            "target_key": self.current_target_key,
+            "target": target,
+            "kind": kind,
+            "tick": self.get_current_tick(),
+        })
+
+    def clear_mission(self):
+        archive.delete(self.mission_key())
+
+    def load_mission(self):
+        """
+        Restores an in-progress target after a script reload, provided this
+        vehicle still owns that target's claim (it wasn't reassigned or
+        expired while the script was down). Returns the mission record, or
+        None if there was nothing to resume.
+        """
+        record = archive.get(self.mission_key(), None)
+        if not isinstance(record, dict) or not record.get("target_key"):
+            return None
+
+        target_key = record["target_key"]
+        claim = self.get_claims().get(target_key)
+        if not claim or (claim.get("vehicle") != self.name and claim.get("rover") != self.name):
+            self.clear_mission()
+            return None
+
+        self.current_target_key = target_key
+        self.current_target = record.get("target")
+        return record
 
     def claim_target(self, target_key, target_info):
         """
@@ -122,6 +165,7 @@ class VehicleClaimsMixin:
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
+            self.clear_mission()
 
     def get_claims(self):
         """Returns the unified map of active mission/target claims across the fleet."""

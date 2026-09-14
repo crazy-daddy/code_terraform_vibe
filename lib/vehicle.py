@@ -55,6 +55,12 @@ class VehicleController(
         self.current_target_key = None
         self.assigned_slot_coords = self.get_home_slot_coords()
 
+        # Resume an in-progress mission left over from before a script reload,
+        # if we still own that target's claim (see vehicle_claims.py).
+        resumed = self.load_mission()
+        if resumed:
+            print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""
         digits = ""

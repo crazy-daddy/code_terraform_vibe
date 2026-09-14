@@ -24,6 +24,18 @@ class RoverController(VehicleController):
         in Data Archive so other rovers do not compete for it.
         Re-evaluates previously unsupported targets if upgraded technology or research is detected.
         """
+        # A target restored from a saved mission (see vehicle_claims.py) after a
+        # script reload takes priority over discovery, so the rover continues
+        # toward the same destination instead of restarting the search.
+        if self.current_target_key and self.current_target and self.current_target.get("coords"):
+            print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
+            budget = self.calculate_trip_energy(
+                self.current_target["coords"],
+                planned_drill_units=10 if self.current_target.get("type") == "mine" else 0,
+                planned_scans=1 if self.current_target.get("type") == "poi" else 0,
+            )
+            return self.current_target, budget
+
         nocturna = get_component("nocturna")
         journal = get_component("journal")
 
@@ -104,6 +116,7 @@ class RoverController(VehicleController):
                 if claimed:
                     self.current_target = cand
                     self.current_target_key = cand["key"]
+                    self.save_mission(cand["type"], cand)
                     return cand, budget
 
         self.last_target_diagnostics = {
@@ -116,11 +129,14 @@ class RoverController(VehicleController):
 
     def run_expedition_cycle(self):
         """Executes one complete autonomous expedition cycle."""
-        # Step 1: Ensure fully charged before leaving base
-        curr_wh, cap_wh, lvl = self.get_battery()
-        if lvl < 0.95:
-            print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
-            self.recharge_at_station(target_level=1.0)
+        # Step 1: Ensure fully charged before leaving base. Only applies when
+        # actually at base -- a reload mid-trip must not detour all the way
+        # home just to satisfy this check before resuming its claimed target.
+        if self.distance_to_home() <= 3.0:
+            curr_wh, cap_wh, lvl = self.get_battery()
+            if lvl < 0.95:
+                print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
+                self.recharge_at_station(target_level=1.0)
 
         # Step 2: Ensure cargo is empty before launch
         if self.vehicle.cargo.count() > 0:
