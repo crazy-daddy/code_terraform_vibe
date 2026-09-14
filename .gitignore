@@ -8,7 +8,8 @@
 /pyrightconfig.codeterraform.json
 /pyrightconfig.json
 /typeshed-LICENSE.txt
-/__pycache__
+__pycache__/
 /.github
 inspirations/.lastaccesslist
 docs/Code-Terraform-DOCS-Manual.md
+*.tmp
