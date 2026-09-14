@@ -144,10 +144,16 @@ class VehicleEnergyMixin:
         return self.energy_needed_to_reach(self.assigned_slot_coords)
 
     def energy_needed_to_return_now(self):
-        """Calculates minimum energy strictly required to drive to the nearest charging station right now."""
+        """
+        Calculates minimum energy strictly required to drive to the nearest charging
+        station right now. This is the true floor (uses minimum_wh_per_meter(), the
+        speedmode throttle-floor rate) -- conserve mode can always crawl home at
+        MIN_SPEEDMODE_THROTTLE to stretch a tight budget, so a panic/abort-safety
+        check must not assume the typical calibrated self.wh_per_meter cost.
+        """
         nearest_cs, _ = self.get_nearest_charging_station()
         dist_cs = self.distance_between(self.get_position(), nearest_cs)
-        drive_wh = dist_cs * self.wh_per_meter
+        drive_wh = dist_cs * self.minimum_wh_per_meter()
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
     def calibrate_wh_per_meter(self, delta_dist, delta_wh):

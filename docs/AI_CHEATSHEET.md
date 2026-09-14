@@ -20,7 +20,8 @@ that way there is exactly one place to keep current.
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting / charging-station discovery | `vehicle_energy.py` |
 | &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist | `vehicle_claims.py` |
 | &nbsp;&nbsp;↳ cargo offload into Base Inventory | `vehicle_cargo.py` |
-| &nbsp;&nbsp;↳ sonar/drill survey loop | `vehicle_survey.py` |
+| &nbsp;&nbsp;↳ sonar survey loop (POI discovery) | `vehicle_survey.py` |
+| &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `mining.py` — shared by Rover and Pioneer; see §2b |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; do **not** put shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
 | Smelting | `smelter.py` |
@@ -94,7 +95,16 @@ copies of tier lists, thresholds, or budgeting formulas.
   (100 * 0.10)`). Any check that claims a target/job is *permanently* unreachable (not just "not
   right now") must budget against this, not the calibrated `self.wh_per_meter` — see the
   `wh_per_meter` override param on `calculate_trip_energy()` and its use in
-  `pioneer.py`'s `run_construction_loop()` hard-infeasibility checks.
+  `pioneer.py`'s `run_construction_loop()` hard-infeasibility checks. `energy_needed_to_return_now()`
+  (the mid-trip panic/abort-safety check in `drive_to()`) also uses this floor rate, not the typical
+  one — conserve mode can always crawl home at the floor throttle to stretch a tight budget, so the
+  abort threshold must reflect that, not a "comfortable normal-speed" cost.
+- `drive_to()` computes `is_driving_to_station` once before its polling loop and skips the
+  return-reserve abort check entirely when the destination itself is the charging station/base
+  slot (or already within 3m of it) — arriving there *is* the recovery, so that check must never
+  abort the very trip meant to reach safety. Do not reintroduce a duplicate unconditional copy of
+  this check inside the loop; there was exactly this bug (fixed) where an unconditional check ran
+  before the guarded one and could self-abort a return-to-station trip.
 - Construction (Pioneer only): `calculate_trip_energy()`'s `planned_construction_progress` param adds
   `progress * self.wh_per_progress` to the trip budget, mirroring `planned_scans`/`planned_drill_units`.
   `wh_per_progress` is calibrated per-vehicle from real `constructor.execute()` calls
@@ -122,6 +132,38 @@ copies of tier lists, thresholds, or budgeting formulas.
 - Navigation safety (`lib/vehicle_navigation.py`): stall detection re-issues the drive command
   after repeated stuck cycles; base staging slots are staggered per vehicle index to avoid
   parking/charging-pad collisions.
+- `is_at_base(threshold=3.0)` (`lib/vehicle_navigation.py`): `self.distance_to_home() <= threshold`.
+  Loops use this to gate one-time-per-visit actions (top-off charging before departing, restocking)
+  so they only fire when actually parked at base, not mid-trip in the field after a reload. Used by
+  `run_expedition_cycle()` (`rover.py`), `run_construction_loop()`/`run_mining_loop()` (`pioneer.py`),
+  and `run_survey_loop()` (`vehicle_survey.py`).
+
+### 2b. Mining (`lib/mining.py` `MiningMixin`)
+
+Mineral-site discovery and drill execution live in one place, shared by both Rover and Pioneer
+(mixed into `VehicleController`) so capability-aware job routing doesn't need to be duplicated.
+
+- Capability is always read live via `self.vehicle.drill.hardness_limit()` — never assumed from
+  vehicle type. In practice a Rover's fixed Drill slot only ever carries the basic drill
+  (`hardness_limit = 1`, iron_ore/silicon); Industrial (`hardness_limit = 3`) and Heavy
+  (`hardness_limit = 4`) Drills are Pioneer-universal-slot items for higher-hardness sites
+  (titanium/cobalt/rare_earth/neutronium-tier) a Rover can never reach.
+- `build_mineral_site_candidates(deprioritize_hardness_at_or_below=None)`: candidate sites
+  matching `get_raw_material_demands()` and the vehicle's own hardness limit. Passing
+  `ROVER_PREFERRED_MAX_HARDNESS = 1.0` (Pioneer's mining role does this) sets `priority=3` instead
+  of `2` on hardness ≤ 1 sites — a **soft** preference, not exclusion: a capable Pioneer still
+  claims an easy site if nothing harder is currently pending, rather than idling.
+- `select_best_mining_target(candidates)`: sorts by `(priority, distance)` — lower priority number
+  wins ties on distance — then runs the existing `calculate_trip_energy()` achievability check and
+  atomic `claim_target()`. Also used for Rover's combined POI+mineral candidate list (POIs are
+  `priority=1`, mineral sites `priority=2`/`3`).
+- `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (read live, not
+  hardcoded `10`) — Pioneer's cargo capacity varies with storage modules.
+  `mine_until_full_or_exhausted(target_coords)` wraps it with the recharge-and-resume-in-place loop
+  (mirrors `execute_construction()`'s pattern in `pioneer.py`).
+- Pioneer's mining role (`run_mining_loop()`, entrypoint `pioneer_3.py`) requires the operator to
+  have already mounted a drill (`mount_hardware()` / Control Panel) — it only checks
+  `hasattr(self.vehicle, "drill")` and idles with an advisory if absent; it never auto-mounts one.
 
 ---
 

@@ -30,6 +30,14 @@ class VehicleNavigationMixin:
     def distance_to_home(self):
         return self.distance_to(self.assigned_slot_coords[0], self.assigned_slot_coords[1])
 
+    def is_at_base(self, threshold=3.0):
+        """
+        True when parked at/near the assigned base staging slot. Loops use this
+        to gate one-time-per-visit actions (top-off charging, restocking) so
+        they only fire when actually at base, not mid-trip in the field.
+        """
+        return self.distance_to_home() <= threshold
+
     def drive_timeout_ticks(self, distance, throttle, safety_multiplier=2.0, min_ticks=3000):
         """
         Real-time navigation timeout budget for a leg of this distance at this
@@ -78,6 +86,16 @@ class VehicleNavigationMixin:
             timeout_ticks = self.drive_timeout_ticks(self.distance_between(start_pos, (target_x, target_y)), throttle)
         print(f"[{self.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle ({self.get_speed_mode()} mode).")
 
+        # Destination itself is a charging station/base slot: the return-reserve
+        # abort check below must never apply here, or the vehicle could abort its
+        # own rescue trip for "not enough energy to reach a charging station"
+        # while already driving straight to one.
+        nearest_cs, _ = self.get_nearest_charging_station()
+        is_driving_to_station = (
+            self.distance_between((target_x, target_y), nearest_cs) <= 3.0
+            or self.distance_between((target_x, target_y), self.assigned_slot_coords) <= 3.0
+        )
+
         # Set target and engage throttle
         res = self.vehicle.nav.set_target(target_x, target_y)
         if res.status != "ok":
@@ -114,18 +132,10 @@ class VehicleNavigationMixin:
                 self.calibrate_wh_per_meter(total_dist, wh_used)
                 return True
 
-            energy_needed = self.energy_needed_to_return_now()
-            if curr_wh <= energy_needed:
-                print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to return). Aborting trip!")
-                self.vehicle.nav.brake()
-                return False
-            nearest_cs, _ = self.get_nearest_charging_station()
-            is_driving_to_station = (
-                self.distance_between((target_x, target_y), nearest_cs) <= 3.0
-                or self.distance_between((target_x, target_y), self.assigned_slot_coords) <= 3.0
-            )
-            dist_to_cs = self.distance_between(curr_pos, nearest_cs)
-            if not is_driving_to_station and dist_to_cs > 3.0:
+            # Skipped when the destination itself is the charging station/base slot
+            # (or we're already essentially there) -- arriving there is the recovery,
+            # so this must never abort the very trip meant to reach safety.
+            if not is_driving_to_station and self.distance_between(curr_pos, nearest_cs) > 3.0:
                 energy_needed = self.energy_needed_to_return_now()
                 if curr_wh <= energy_needed:
                     print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest station at {nearest_cs}). Aborting trip!")

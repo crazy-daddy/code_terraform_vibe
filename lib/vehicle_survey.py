@@ -1,7 +1,7 @@
-# Vehicle mixin: sonar scanning/surveying, drilling, POI discovery, and the
-# autonomous survey loop (known POIs first, optional outward spiral
-# fallback). Shared by Rover and Pioneer via VehicleController
-# (lib/vehicle.py).
+# Vehicle mixin: sonar scanning/surveying, POI discovery, and the autonomous
+# survey loop (known POIs first, optional outward spiral fallback). Shared by
+# Rover and Pioneer via VehicleController (lib/vehicle.py). Drilling lives in
+# lib/mining.py's MiningMixin.
 
 from archive import archive
 
@@ -11,7 +11,7 @@ LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
 
 class VehicleSurveyMixin:
     """
-    Sonar/drill field operations and the autonomous survey loop, mixed into
+    Sonar field operations and the autonomous survey loop, mixed into
     VehicleController. Depends on VehicleClaimsMixin for target reservation
     and VehicleEnergyMixin/VehicleNavigationMixin for trip budgeting & driving.
     """
@@ -62,48 +62,6 @@ class VehicleSurveyMixin:
             sleep(0.5)
 
         return surveyed_sites
-
-    def mine_current_site(self, max_units=10):
-        """Extracts minerals using the mounted Drill Module while enforcing battery & cargo limits."""
-        if not hasattr(self.vehicle, "drill"):
-            print(f"[{self.name}] Error: No DrillModule mounted!")
-            return 0
-
-        self.publish_telemetry("MINING")
-        mined_count = 0
-        self.mining_interrupted_battery = False
-
-        while mined_count < max_units:
-            if self.vehicle.cargo.full():
-                print(f"[{self.name}] Cargo hold full (10/10). Finishing mining operation.")
-                break
-
-            curr_wh, _, _ = self.get_battery()
-            needed_to_return = self.energy_needed_to_return_now()
-            if curr_wh <= (needed_to_return + self.MINE_WH_PER_UNIT * 1.5):
-                print(f"[{self.name}] Reached return energy threshold ({curr_wh:.1f} Wh left). Ceasing extraction for recharge.")
-                self.mining_interrupted_battery = True
-                break
-
-            m_res = self.vehicle.drill.mine()
-            if m_res.status == "ok":
-                mined_count += 1
-                if self.current_target_key:
-                    self.clear_unsupported_target(self.current_target_key)
-                print(f"[{self.name}] Mined unit {mined_count}/{max_units}. Cargo: {self.vehicle.cargo.count()}/10.")
-            elif m_res.status == "busy":
-                sleep(0.5)
-            else:
-                print(f"[{self.name}] Drill finished or stopped: {m_res.status} - {m_res.message}")
-                if m_res.status in ["tier_too_low", "too_hard", "research_required", "depleted", "not_found", "empty"]:
-                    if self.current_target_key:
-                        self.blacklist_target(self.current_target_key, m_res.status, m_res.message)
-                break
-
-            if self.current_target_key:
-                self.refresh_claim(self.current_target_key)
-
-        return mined_count
 
     def sonar_signature(self):
         """Returns the mounted sonar capability used for retry decisions."""
@@ -311,7 +269,7 @@ class VehicleSurveyMixin:
                 # Only top off before departing on a fresh expedition (i.e. when
                 # actually at base). A reload mid-trip must not detour all the
                 # way home just to satisfy this check before resuming.
-                if self.distance_to_home() <= 3.0:
+                if self.is_at_base():
                     _, _, level = self.get_battery()
                     if level < 0.95:
                         self.recharge_at_station(target_level=1.0)

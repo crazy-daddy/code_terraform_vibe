@@ -54,8 +54,9 @@ This document tracks our strategic progress from initial boot to full terraforma
     - Deadlock / terrain stall detection and yielding logic.
     - **Capability-Aware Target Blacklisting & Dynamic Re-evaluation**:
       - Records scanner type, tier (`basic`/`wide`/`deep`), hardness limit (`1.0`/`3.0`/`4.0`), and research counts on failure (`wrong_scanner`, `too_hard`, `tier_too_low`, `research_required`).
-      - Prevents infinite retry loops while automatically allowing upgraded rovers (Wide/Deep Sonar, Industrial/Heavy Drills, Bio Scanners, or new tech) to re-evaluate and explore those contacts.
+      - Prevents infinite retry loops while automatically allowing upgraded rovers (Wide/Deep Sonar, Bio Scanners, or new tech) to re-evaluate and explore those contacts. Industrial/Heavy Drills are Pioneer-universal-slot items, not a Rover upgrade path — see the Pioneer mining role below.
       - Automatically clears entries from the archive once successfully scanned or mined.
+  - [x] **Shared Mining Library & Pioneer Mining Role** ([`lib/mining.py`](lib/mining.py) `MiningMixin`, mixed into `VehicleController`): mineral-site discovery and drill execution live in one place instead of duplicated between `rover.py` and `pioneer.py`. Capability read live via `hardness_limit()`, never assumed from vehicle type. `pioneer_3.py` runs a Pioneer's mining role (requires an operator-mounted Industrial/Heavy Drill — never auto-mounted) for hardness > 1 sites a Rover's basic drill can't reach; Rovers are softly preferred for hardness ≤ 1 (iron/silicon) sites via priority-sort, not hard exclusion — see [`docs/AI_CHEATSHEET.md`](docs/AI_CHEATSHEET.md#2b-mining-libminingpy-miningmixin).
 - [x] Deploy **Harvesting & Grid Survey System**:
   - [x] Scanner Automation ([`scanner_1.py`](scanner_1.py)): Systematically sweeps all 192 local grid sectors (A1..H24) to discover surface items and persist map knowledge.
   - [x] Shared Library [`lib/harvesting.py`](lib/harvesting.py):
@@ -129,6 +130,7 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [ ] Add service-station charging, rescue, exposure, and `cargo.space_for()` checks to route scripts.
 - [ ] Make production explicitly multi-outpost-safe:
   - [x] Add a Pioneer Transport role with persisted source/destination/item/count routes (`lib/pioneer.py`, `pioneer_2.py`).
+  - [x] Add a Pioneer Mining role (`lib/pioneer.py` `run_mining_loop()`, `pioneer_3.py`) for hardness > 1 mineral sites via `lib/mining.py`.
   - [ ] Keep the home base as the production hub and use local Warehouses/Bins at remote outposts.
   - [ ] Extend Rover unloading so missions can target the nearest local store instead of always home Inventory.
   - [ ] Publish transport requests when the hub is short of remote materials.

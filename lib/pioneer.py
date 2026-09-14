@@ -6,6 +6,7 @@
 
 from archive import archive
 from vehicle import VehicleController
+from mining import ROVER_PREFERRED_MAX_HARDNESS
 
 class PioneerController(VehicleController):
     """
@@ -321,7 +322,7 @@ class PioneerController(VehicleController):
         while True:
             try:
                 # 1. Base Battery & Staging: If parked at home, ensure charged before departing
-                if self.distance_to_home() <= 3.0:
+                if self.is_at_base():
                     _, _, lvl = self.get_battery()
                     if lvl < 0.90:
                         self.recharge_at_station(target_level=1.0)
@@ -557,6 +558,101 @@ class PioneerController(VehicleController):
                 print(f"[{self.name}] Pioneer loop exception: {e}")
                 try:
                     self.vehicle.nav.brake()
+                except Exception:
+                    pass
+                sleep(5.0)
+
+    def run_mining_loop(self):
+        """
+        Continuous autonomous mining loop for a Pioneer equipped with an
+        Industrial/Heavy Drill Module. Mounting the drill is an explicit
+        operator action (mount_hardware() or the Control Panel) -- this loop
+        only checks for one, it never mounts one itself. Handles the hardness
+        tiers a Rover's basic drill can't reach, deprioritizing hardness <=
+        ROVER_PREFERRED_MAX_HARDNESS sites (mining.py) so Rovers get first
+        pick of easy ore while this Pioneer still falls back to it if nothing
+        harder is currently pending.
+        """
+        print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
+        while True:
+            try:
+                if not hasattr(self.vehicle, "drill"):
+                    print(f"[{self.name}] No Drill Module mounted; mining role idle. Mount an Industrial/Heavy Drill to begin.")
+                    self.publish_telemetry("IDLE_NO_DRILL")
+                    sleep(30.0)
+                    continue
+
+                # Step 1: Ensure fully charged before leaving base. Only
+                # applies when actually at base -- a reload mid-trip must not
+                # detour all the way home just to satisfy this check before
+                # resuming its claimed target.
+                if self.is_at_base():
+                    _, _, lvl = self.get_battery()
+                    if lvl < 0.95:
+                        print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
+                        self.recharge_at_station(target_level=1.0)
+
+                # Step 2: Ensure cargo is empty before launch
+                if self.vehicle.cargo.count() > 0:
+                    if self.unload_cargo() < 0:
+                        self.publish_telemetry("WAITING_INVENTORY_SPACE")
+                        sleep(10.0)
+                        continue
+
+                # Step 3: Select safe target with exclusive claim, preferring
+                # sites only this Pioneer's drill can reach. A target restored
+                # from a saved mission after a script reload takes priority
+                # over discovery (see vehicle_claims.py).
+                if self.current_target_key and self.current_target and self.current_target.get("coords"):
+                    print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
+                    target = self.current_target
+                    budget = self.calculate_trip_energy(target["coords"], planned_drill_units=10)
+                else:
+                    candidates = self.build_mineral_site_candidates(deprioritize_hardness_at_or_below=ROVER_PREFERRED_MAX_HARDNESS)
+                    target, budget, _ = self.select_best_mining_target(candidates)
+
+                if not target or not budget:
+                    print(f"[{self.name}] No mining target: no reachable mineral site currently matches demand. Standing by at base slot.")
+                    self.publish_telemetry("IDLE_AT_BASE")
+                    sleep(15.0)
+                    continue
+
+                coords = target["coords"]
+                print(
+                    f"[{self.name}] Reserved {target['name']} to harvest "
+                    f"{target['harvest_item']} for {target['reason']} at {coords} "
+                    f"(Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
+                )
+                self.publish_telemetry("OUTBOUND", target["name"])
+
+                # Step 4: Drive to target (using intermediate recharge stops if needed)
+                if not self.drive_with_recharge(coords[0], coords[1]):
+                    print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
+                    self.return_to_base()
+                    continue
+
+                # Step 5: Mine (recharges and resumes in place as needed)
+                self.mine_until_full_or_exhausted(coords)
+
+                # Step 6: Return to base (releases target claim upon return)
+                self.return_to_base()
+
+                # Step 7: Offload and recharge
+                if self.unload_cargo() < 0:
+                    self.publish_telemetry("WAITING_INVENTORY_SPACE")
+                    sleep(10.0)
+                    continue
+                self.recharge_at_station(target_level=1.0)
+                self.publish_telemetry("READY_AT_BASE")
+                print(f"[{self.name}] Mining expedition complete and Pioneer secured at base.")
+            except Exception as e:
+                print(f"[{self.name}] Mining loop exception: {e}. Executing emergency failsafe brake.")
+                try:
+                    self.vehicle.nav.brake()
+                except Exception:
+                    pass
+                try:
+                    self.release_target_claim()
                 except Exception:
                     pass
                 sleep(5.0)

@@ -3,8 +3,7 @@
 # autonomous planetary exploration, sonar site discovery, precision mining,
 # and continuous expedition cycles.
 
-from archive import archive
-from production import get_raw_material_demands, get_raw_material_reason
+from production import get_raw_material_demands
 from vehicle import VehicleController
 
 class RoverController(VehicleController):
@@ -21,7 +20,9 @@ class RoverController(VehicleController):
         """
         Finds the closest reachable unscanned POI or high-value surveyed mining site.
         Evaluates round-trip energy requirements and atomically reserves the target
-        in Data Archive so other rovers do not compete for it.
+        in Data Archive so other rovers do not compete for it. Mineral-site discovery
+        and priority-sorted claiming come from MiningMixin (lib/mining.py), shared
+        with Pioneer's mining role rather than duplicated here.
         Re-evaluates previously unsupported targets if upgraded technology or research is detected.
         """
         # A target restored from a saved mission (see vehicle_claims.py) after a
@@ -36,20 +37,10 @@ class RoverController(VehicleController):
             )
             return self.current_target, budget
 
-        nocturna = get_component("nocturna")
-        journal = get_component("journal")
-
         self.cleanup_stale_claims()
-        candidates = []
-        raw_demands = get_raw_material_demands(get_component("smelter_1"))
-
-        # Read active claims to skip sites claimed by peers
-        existing_claims = self.get_claims()
-        # Read blacklisted/unsupported targets to check hardware capability
-        unsupported_targets = self.get_unsupported_targets()
-        curr_tick = self.get_current_tick()
 
         # Candidate pool 1: Unscanned POIs
+        candidates = []
         for poi in self.unscanned_pois():
             key = f"poi_{poi.x}_{poi.y}"
             candidates.append({
@@ -60,70 +51,19 @@ class RoverController(VehicleController):
                 "priority": 1
             })
 
-        # Candidate pool 2: Surveyed mineral deposits from Journal
-        max_drill_hardness = 1.0
-        if hasattr(self.vehicle, "drill") and hasattr(self.vehicle.drill, "hardness_limit"):
-            try:
-                max_drill_hardness = self.vehicle.drill.hardness_limit()
-            except Exception:
-                max_drill_hardness = 1.0
+        # Candidate pool 2: Surveyed mineral deposits matching demand and this
+        # Rover's actual mounted drill capability. No deprioritization -- a
+        # Rover always treats a reachable mineral site as priority 2.
+        candidates.extend(self.build_mineral_site_candidates())
 
-        if journal and hasattr(journal, "surveyed_sites"):
-            try:
-                for site in journal.surveyed_sites("nocturna"):
-                    site_item = getattr(site, "item_id", None)
-                    if site.kind() == "mineral" and raw_demands.get(site_item, 0) > 0 and getattr(site, "hardness", 99) <= max_drill_hardness:
-                        key = f"site_{site.id}"
-                        # Check if previously unsupported, and verify if current equipment can attempt it
-                        if key in unsupported_targets:
-                            can_attempt, _ = self.can_attempt_target(key, unsupported_targets[key])
-                            if not can_attempt:
-                                continue
-
-                        claim = existing_claims.get(key)
-                        if claim and claim.get("rover") != self.name:
-                            claim_age = curr_tick - claim.get("tick", 0)
-                            if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                                continue # Claimed by a peer; skip!
-
-                        candidates.append({
-                            "key": key,
-                            "type": "mine",
-                            "coords": (site.x, site.y),
-                            "name": f"Site_{site.id}_{getattr(site, 'item_id', 'ore')}",
-                            "harvest_item": site_item,
-                            "reason": get_raw_material_reason(site_item, get_component("smelter_1")),
-                            "priority": 2
-                        })
-            except Exception:
-                pass
-
-        # Sort candidates by distance from current position
-        pos = self.get_position()
-        candidates.sort(key=lambda c: self.distance_between(pos, c["coords"]))
-
-        # Filter for reachable candidates within battery budget and atomically claim the best
-        budget_candidates = 0
-        for cand in candidates:
-            planned_mine = 10 if cand["type"] == "mine" else 0
-            planned_scan = 1 if cand["type"] == "poi" else 0
-            budget = self.calculate_trip_energy(cand["coords"], planned_drill_units=planned_mine, planned_scans=planned_scan)
-
-            if budget["is_achievable"]:
-                budget_candidates += 1
-                # Try atomic claim
-                claimed = self.claim_target(cand["key"], cand)
-                if claimed:
-                    self.current_target = cand
-                    self.current_target_key = cand["key"]
-                    self.save_mission(cand["type"], cand)
-                    return cand, budget
+        target, budget, diagnostics = self.select_best_mining_target(candidates)
+        if target:
+            return target, budget
 
         self.last_target_diagnostics = {
-            "raw_demands": raw_demands,
-            "candidate_count": len(candidates),
-            "budget_candidates": budget_candidates,
-            "claim_count": len(existing_claims),
+            "raw_demands": get_raw_material_demands(get_component("smelter_1")),
+            "claim_count": len(self.get_claims()),
+            **diagnostics,
         }
         return None, None
 
@@ -132,7 +72,7 @@ class RoverController(VehicleController):
         # Step 1: Ensure fully charged before leaving base. Only applies when
         # actually at base -- a reload mid-trip must not detour all the way
         # home just to satisfy this check before resuming its claimed target.
-        if self.distance_to_home() <= 3.0:
+        if self.is_at_base():
             curr_wh, cap_wh, lvl = self.get_battery()
             if lvl < 0.95:
                 print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
@@ -184,34 +124,7 @@ class RoverController(VehicleController):
         if target["type"] == "poi":
             self.scan_and_survey()
         elif target["type"] == "mine":
-            self.mine_current_site(max_units=10)
-
-            # If mining was interrupted for battery and cargo is not full, recharge and resume!
-            while getattr(self, "mining_interrupted_battery", False) and not self.vehicle.cargo.full():
-                print(f"[{self.name}] Mining job at {coords} interrupted by low battery. Diverting to recharge and resume.")
-                if self.current_target_key:
-                    self.refresh_claim(self.current_target_key)
-
-                nearest_cs, _ = self.get_nearest_charging_station()
-                reached_cs = self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
-                if not reached_cs:
-                    print(f"[{self.name}] Failed to reach charging station during mining interruption.")
-                    break
-
-                self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
-
-                print(f"[{self.name}] Recharged to 100%. Returning to resume mining at {coords}...")
-                self.publish_telemetry("OUTBOUND", target["name"])
-                reached_site = self.drive_with_recharge(coords[0], coords[1], precision=1.5)
-                if not reached_site:
-                    print(f"[{self.name}] Could not reach mining site after recharge.")
-                    break
-
-                remaining_space = 10 - self.vehicle.cargo.count()
-                if remaining_space > 0:
-                    self.mine_current_site(max_units=remaining_space)
-                else:
-                    break
+            self.mine_until_full_or_exhausted(coords)
 
         # Step 6: Return to base (releases target claim upon return)
         self.return_to_base()

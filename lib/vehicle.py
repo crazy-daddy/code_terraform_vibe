@@ -9,7 +9,10 @@
 #   - vehicle_energy.py: battery accounting, trip budgeting, charging-station discovery
 #   - vehicle_claims.py: fleet-wide target claims and hardware-capability blacklist
 #   - vehicle_cargo.py: cargo offload into Base Inventory
-#   - vehicle_survey.py: sonar/drill field work and the autonomous survey loop
+#   - vehicle_survey.py: sonar field work and the autonomous survey loop
+#   - mining.py: mineral-site discovery and drill execution, capability-aware
+#     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
+#     rather than duplicated between rover.py and pioneer.py
 
 from archive import archive
 from vehicle_navigation import VehicleNavigationMixin
@@ -17,6 +20,7 @@ from vehicle_energy import VehicleEnergyMixin
 from vehicle_claims import VehicleClaimsMixin
 from vehicle_cargo import VehicleCargoMixin
 from vehicle_survey import VehicleSurveyMixin
+from mining import MiningMixin
 
 
 class VehicleController(
@@ -25,6 +29,7 @@ class VehicleController(
     VehicleClaimsMixin,
     VehicleCargoMixin,
     VehicleSurveyMixin,
+    MiningMixin,
 ):
     """
     Unified base controller for autonomous surface vehicles (Rover, Pioneer).
