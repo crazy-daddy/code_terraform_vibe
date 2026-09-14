@@ -12,7 +12,7 @@ High-density reference of physics, formulas, component specs, bus channels, and 
 | **Oxygen Generation** | `oxygen_generator` | `intake = atmosphere.get_co2() / 10.0` | Power: -8 W. Dump waste when `50 <= waste < 60` (clean dump, 0 penalty). Stalls at 100 waste. |
 | **Heat Calibration** | `heat_generator` | `power = 1..10 W` (sweep / cache by weather) | Power: -10 W max. Re-evaluate optimal power when day/weather changes. |
 | **Pressure Sync** | `pressure_generator` | Sync pulse with resonance window peak | Power: -10 W max. 100% efficiency on exact resonance window hit. |
-| **Power Grid & Brownout** | `power_control`, `battery` | Battery = 500 Wh (300 cr). Safe floor: 15-20% | Configurable shedding tiers (`power.shedding_tiers`). Tier 1 (Bio, Smelter, Fabricator, Charging); Tier 2 (Terraforming). |
+| **Power Grid & Brownout** | `power_control`, `battery` | Battery = 500 Wh (300 cr). Safe floor: 15-20% | Configurable shedding tiers (`power.shedding_tiers`). Tier 1 = passive terraforming (Heater, Pressure, O2Gen, Bio), shed first; Tier 2 = production/logistics (Smelter, Fabricator, Charging), shed only under severe deficit. |
 
 ---
 

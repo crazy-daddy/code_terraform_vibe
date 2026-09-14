@@ -18,13 +18,13 @@ This document tracks our strategic progress from initial boot to full terraforma
 - [x] Boot system, activate power grid & sensors (`boot.py`, `planet_power.py`, `planet_sensors.py`).
 - [x] Calibrate Oxygen Sensor & stabilize Pressure Sensor (`oxygen_sensor.py`, `pressure_sensor.py`).
 - [x] Deploy and script Solar Generator with elevation tracking (`solar_1.py`).
-- [x] Deploy automated **Power Grid Manager & Brownout Protection** (`lib/terraforming.py` `SolarController`):
+- [x] Deploy automated **Power Grid Manager & Brownout Protection** (`lib/power.py` `PowerGridManager`, driven by `lib/solar.py` `SolarController`):
   - Continuous solar elevation tracking.
   - Dynamic night duration calibration and multi-battery endurance calculation.
-  - **Tiered Load Shedding**:
-    - **Tier 1 (Non-critical)**: `bio_collector_1`, `bio_lab_1`, `bio_exchange_1`, `smelter_1` (shed first on deficit or battery <20%).
-    - **Tier 2 (Terraforming)**: `heater_*`, `pressure_*`, `o2gen_*` (shed under severe deficit or critical reserve <15%).
-  - **Prioritized Recovery**: Terraforming equipment is restored first at dawn / solar surplus, followed by non-critical biology loads.
+  - **Tiered Load Shedding** (`DEFAULT_SHEDDING_TIERS`, overridable via `archive` key `power.shedding_tiers`):
+    - **Tier 1 (passive background terraforming)**: `heater_*`, `pressure_*`, `o2gen_*`, `bio_collector_*`, `bio_lab_*`, `bio_exchange_*` (shed first on deficit or battery <20%).
+    - **Tier 2 (critical active production & logistics)**: `smelter_*`, `fabricator_*`, `vehicle_charging_station*` (shed only under severe deficit or critical reserve <15%).
+  - **Prioritized Recovery**: Production/logistics equipment (Tier 2) is restored first at dawn / solar surplus, followed by terraforming equipment (Tier 1) once a larger surplus margin is available.
   - Real-time night deficit detection recommending battery purchases (calculating exact shortfall & recommended units at 300 cr / 500 Wh each) alongside sunset capacity advisories.
 - [x] Deploy and script Oxygen Generator with dynamic CO2 sweet-spot intake & clean waste dump (`o2gen_1.py`).
 - [x] Complete Earth contracts for starting credits:
@@ -44,11 +44,12 @@ This document tracks our strategic progress from initial boot to full terraforma
   - `heater_*.py`: Weather tracking & daily dynamic power calibration for 100% thermal efficiency (dynamic machine id).
   - `pressure_*.py`: Resonance sweep gauge tracking & precision sync window hits for 100% compression efficiency (dynamic machine id).
 - [x] Shared Library unlocked (`lib/`):
-  - `lib/terraforming.py`: Implemented `HeatController`, `PressureController`, `OxygenController`, and `SolarController`.
-  - `SolarController`: Auto-elects single Master (`solar_1` or lowest running ID) for grid monitoring & load shedding; all other panels run lightweight sun tracking with automatic failover.
+  - `lib/terraforming.py`: Implemented `HeatController`, `PressureController`, and `OxygenController`.
+  - `lib/power.py` / `lib/solar.py`: `PowerGridManager` (generic, grid-type-agnostic shedding/recovery) and `SolarController` (sun tracking + Master/Follower election on top of it).
+  - `SolarController`: Auto-elects single Master (`solar_1` or lowest running ID) per independent power grid for grid monitoring & load shedding; all other panels run lightweight sun tracking with automatic failover.
   - Variant 1 on `heater_1.py`, `pressure_1.py`, `o2gen_1.py`, and `solar_1.py` converted to shared library imports.
 - [x] Unlock **Mining & Rover Operations** (Thresholds: Pressure 0.10–0.20 kPa):
-  - [x] Shared Library [`lib/rover.py`](lib/rover.py) with 'there-and-back' energy budgeting (35% cushion, 8 Wh floor, dynamic Wh/m calibration).
+  - [x] Shared Library [`lib/vehicle_energy.py`](lib/vehicle_energy.py) (mixed into `VehicleController` via [`lib/vehicle.py`](lib/vehicle.py), specialized by [`lib/rover.py`](lib/rover.py)) with 'there-and-back' energy budgeting (35% safety margin, 8 Wh floor, dynamic per-vehicle Wh/m calibration).
   - [x] Multi-Rover Fleet Coordination:
     - Atomic site reservation (`archive.transaction("rover.claims", ...)`) to prevent duplicate missions.
     - Automatic stale claim expiration (1 simulation hr / 36k ticks) and claim heartbeat renewal.
