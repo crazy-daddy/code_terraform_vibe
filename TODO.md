@@ -21,11 +21,8 @@ This document tracks our strategic progress from initial boot to full terraforma
 - [x] Deploy automated **Power Grid Manager & Brownout Protection** (`lib/power.py` `PowerGridManager`, driven by `lib/solar.py` `SolarController`):
   - Continuous solar elevation tracking.
   - Dynamic night duration calibration and multi-battery endurance calculation.
-  - **Tiered Load Shedding** (`DEFAULT_SHEDDING_TIERS`, overridable via `archive` key `power.shedding_tiers`):
-    - **Tier 1 (passive background terraforming)**: `heater_*`, `pressure_*`, `o2gen_*`, `bio_collector_*`, `bio_lab_*`, `bio_exchange_*` (shed first on deficit or battery <20%).
-    - **Tier 2 (critical active production & logistics)**: `smelter_*`, `fabricator_*`, `vehicle_charging_station*` (shed only under severe deficit or critical reserve <15%).
-  - **Prioritized Recovery**: Production/logistics equipment (Tier 2) is restored first at dawn / solar surplus, followed by terraforming equipment (Tier 1) once a larger surplus margin is available.
-  - Real-time night deficit detection recommending battery purchases (calculating exact shortfall & recommended units at 300 cr / 500 Wh each) alongside sunset capacity advisories.
+  - **Tiered Load Shedding** with prioritized dawn/night recovery — current tier assignment and thresholds are tunable and documented in [`docs/AI_CHEATSHEET.md`](docs/AI_CHEATSHEET.md#1a-brownout-load-shedding-detail-libpowerpy-powergridmanager), not restated here.
+  - Real-time night deficit detection recommending battery purchases (exact shortfall & recommended units at each battery's price/capacity) alongside sunset capacity advisories.
 - [x] Deploy and script Oxygen Generator with dynamic CO2 sweet-spot intake & clean waste dump (`o2gen_1.py`).
 - [x] Complete Earth contracts for starting credits:
   - `relay_hack.py` (Completed)
@@ -49,10 +46,10 @@ This document tracks our strategic progress from initial boot to full terraforma
   - `SolarController`: Auto-elects single Master (`solar_1` or lowest running ID) per independent power grid for grid monitoring & load shedding; all other panels run lightweight sun tracking with automatic failover.
   - Variant 1 on `heater_1.py`, `pressure_1.py`, `o2gen_1.py`, and `solar_1.py` converted to shared library imports.
 - [x] Unlock **Mining & Rover Operations** (Thresholds: Pressure 0.10–0.20 kPa):
-  - [x] Shared Library [`lib/vehicle_energy.py`](lib/vehicle_energy.py) (mixed into `VehicleController` via [`lib/vehicle.py`](lib/vehicle.py), specialized by [`lib/rover.py`](lib/rover.py)) with 'there-and-back' energy budgeting (35% safety margin, 8 Wh floor, dynamic per-vehicle Wh/m calibration).
+  - [x] Shared Library [`lib/vehicle_energy.py`](lib/vehicle_energy.py) (mixed into `VehicleController` via [`lib/vehicle.py`](lib/vehicle.py), specialized by [`lib/rover.py`](lib/rover.py)) with 'there-and-back' energy budgeting — current safety margin, reserve floor, and Wh/m calibration are tunable and documented in [`docs/AI_CHEATSHEET.md`](docs/AI_CHEATSHEET.md#2a-vehicle-energy-budgeting-detail-libvehicle_energypy-vehicleenergymixin).
   - [x] Multi-Rover Fleet Coordination:
     - Atomic site reservation (`archive.transaction("rover.claims", ...)`) to prevent duplicate missions.
-    - Automatic stale claim expiration (1 simulation hr / 36k ticks) and claim heartbeat renewal.
+    - Automatic stale claim expiration (see `CLAIM_STALE_TICKS` in `docs/AI_CHEATSHEET.md`) and claim heartbeat renewal.
     - Staggered base staging slots (`(0,0)`, `(2.5,0)`, `(-2.5,0)`, etc.) preventing parking and charging pad collisions.
     - Deadlock / terrain stall detection and yielding logic.
     - **Capability-Aware Target Blacklisting & Dynamic Re-evaluation**:
@@ -63,7 +60,7 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [x] Scanner Automation ([`scanner_1.py`](scanner_1.py)): Systematically sweeps all 192 local grid sectors (A1..H24) to discover surface items and persist map knowledge.
   - [x] Shared Library [`lib/harvesting.py`](lib/harvesting.py):
     - 8x24 grid BFS shortest-path routing (`find_path`).
-    - Active heat protection (pauses travel and cools down when $>75^\circ\text{C}$ to avoid the 100 heat limit).
+    - Active heat protection (pauses travel and cools down above `HEAT_SAFE_CEILING`, resumes at `HEAT_RESUME_LEVEL` — see `docs/AI_CHEATSHEET.md`, to avoid the 100 heat limit).
     - Automated surface item collection and immediate offload into Base Inventory.
     - Mature crop harvesting and idle base depot parking.
   - [x] Harvester Automation Script ([`harvester_1.py`](harvester_1.py)).
