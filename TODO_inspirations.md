@@ -225,6 +225,7 @@ The attached panel designs suggest a useful second layer beyond read-only monito
   - [ ] Choose Pioneer mission policy: `auto`, `scout`, `constructor`, `nearest_outpost`, or `hold`.
   - [ ] Toggle directional exploration, water scouting, explorer fit, and rescue-dependent range policy.
   - [ ] Add commands for `resume`, `recall`, `clear survey retries`, and `refresh outpost sites`.
+  - [ ] Add a `vehicle.speedmode` toggle (`conserve`/`highspeed`) driving the throttle formulas in `lib/vehicle_energy.py`.
   - [ ] Display every ground vehicle's current mission, battery, rescue state, and reason for its target.
   - [ ] Route commands through a queue with acknowledgements; panels must not call vehicle actions directly.
 #### Production Operations Control

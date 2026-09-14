@@ -157,8 +157,6 @@ class RoverController(VehicleController):
             print(f"[{self.name}] Reserved target '{target['name']}' at {coords} (Est. trip cost: {budget['total_required_wh']:.1f} Wh).")
         self.publish_telemetry("OUTBOUND", target["name"])
 
-        # Step 4: Drive to target
-        reached = self.drive_to(coords[0], coords[1])
         # Step 4: Drive to target (using intermediate recharge stops if needed)
         reached = self.drive_with_recharge(coords[0], coords[1])
         if not reached:

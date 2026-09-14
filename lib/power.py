@@ -1,8 +1,7 @@
 # Shared Library for Central Power Grid Management & Automated Load Shedding
 # Generic master controller that can oversee any power grid (solar, oil, reactor, turbine).
-import re
 from archive import archive
-from solar import SolarController
+from patterns import is_wildcard_pattern, filter_wildcard_matches
 
 # Default shedding tiers (configurable via archive key 'power.shedding_tiers')
 # Tier 1: Passive background terraforming machinery (shed first)
@@ -96,37 +95,33 @@ class PowerGridManager:
         Matches against machines connected to this power grid via regex.
         Falls back to outpost buildings or registered components if grid_machines is not populated.
         """
-        if "*" in pattern or "?" in pattern:
-            matched = []
-            candidates = set(grid_machines) if grid_machines is not None else set()
-            if not candidates:
-                outpost = getattr(self.machine, "outpost", None)
-                if outpost and hasattr(outpost, "buildings"):
-                    try:
-                        prefix = pattern.split("*")[0].rstrip("_")
-                        buildings = outpost.buildings(prefix) if prefix else outpost.buildings()
-                        for b in buildings:
-                            b_id = getattr(b, "id", "")
-                            if b_id:
-                                candidates.add(b_id)
-                    except Exception:
-                        pass
-            if not candidates:
-                prefix = pattern.split("*")[0]
-                for i in range(1, 9):
-                    cand = f"{prefix}{i}"
-                    try:
-                        if get_component(cand) is not None:
-                            candidates.add(cand)
-                    except Exception:
-                        pass
+        if not is_wildcard_pattern(pattern):
+            return [pattern]
 
-            regex_pat = "^" + re.escape(pattern).replace(r"\*", ".*").replace(r"\?", ".") + "$"
-            for m_id in sorted(candidates):
-                if re.match(regex_pat, m_id):
-                    matched.append(m_id)
-            return matched
-        return [pattern]
+        candidates = set(grid_machines) if grid_machines is not None else set()
+        if not candidates:
+            outpost = getattr(self.machine, "outpost", None)
+            if outpost and hasattr(outpost, "buildings"):
+                try:
+                    prefix = pattern.split("*")[0].rstrip("_")
+                    buildings = outpost.buildings(prefix) if prefix else outpost.buildings()
+                    for b in buildings:
+                        b_id = getattr(b, "id", "")
+                        if b_id:
+                            candidates.add(b_id)
+                except Exception:
+                    pass
+        if not candidates:
+            prefix = pattern.split("*")[0]
+            for i in range(1, 9):
+                cand = f"{prefix}{i}"
+                try:
+                    if get_component(cand) is not None:
+                        candidates.add(cand)
+                except Exception:
+                    pass
+
+        return filter_wildcard_matches(pattern, candidates)
 
     def update_archive_shedded(self):
         """Publishes currently shedded machines to the Data Archive for inter-process coordination."""
