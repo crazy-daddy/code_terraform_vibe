@@ -13,8 +13,35 @@ class PioneerController(VehicleController):
     Extends VehicleController with field construction, module slot management,
     infrastructure deployment (pipes, power lines, outposts), and deep expeditions.
     """
+    # Minimum construction progress a trip should budget for so a job finishes
+    # in roughly 4 round trips rather than dozens of drive-there-do-almost-
+    # nothing-drive-back cycles. Capped at whatever progress remains.
+    TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25
+
     def __init__(self, vehicle, home_coords=(0, 0), cruise_throttle=0.5):
         super().__init__(vehicle, home_coords=home_coords, cruise_throttle=cruise_throttle)
+
+    def get_construction_progress(self, blueprint_id):
+        """Current 0-1 progress for a blueprint id, checking pending/active/paused lists."""
+        bp = get_component("construction_blueprint")
+        if not bp:
+            return 0.0
+        for getter_name in ("pending_constructions", "active_constructions", "paused_constructions"):
+            getter = getattr(bp, getter_name, None)
+            if not getter:
+                continue
+            try:
+                for c in getter():
+                    if getattr(c, "id", None) == blueprint_id:
+                        return getattr(c, "progress", 0.0) or 0.0
+            except Exception:
+                pass
+        return 0.0
+
+    def planned_progress_for_job(self, job):
+        """Remaining progress capped at TARGET_CONSTRUCTION_PROGRESS_PER_TRIP, for trip budgeting."""
+        remaining = max(0.0, 1.0 - (getattr(job, "progress", 0.0) or 0.0))
+        return min(remaining, self.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP)
 
     def inspect_slots(self):
         """Inspects all 8 chassis mount slots and returns detailed status."""
@@ -43,9 +70,18 @@ class PioneerController(VehicleController):
 
     def execute_construction(self, blueprint_id, coords=None):
         """
-        Drives within interaction range of a construction blueprint and executes it.
-        Blueprints can build outposts, pumps, well caps, power lines, and pipe networks.
+        Drives within interaction range of a construction blueprint and executes it,
+        recharging on-site and resuming for as long as real progress keeps being made.
+        The energy budget check before departing only commits to
+        TARGET_CONSTRUCTION_PROGRESS_PER_TRIP of the job, so running low on battery
+        mid-build here is normal and expected, not a failure -- returning early
+        would waste the trip and abandon a perfectly workable job. Blueprints can
+        build outposts, pumps, well caps, power lines, and pipe networks.
         Caller must ensure required cargo is loaded first; see load_construction_materials().
+
+        Returns False only for a genuine rejection (blocked, insufficient materials,
+        etc.) or an inability to physically reach the site/station -- never merely
+        because the job is still incomplete and needs another recharge round later.
         """
         if not hasattr(self.vehicle, "constructor"):
             print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")
@@ -53,8 +89,7 @@ class PioneerController(VehicleController):
 
         if coords:
             print(f"[{self.name}] Driving to construction site at {coords}...")
-            reached = self.drive_with_recharge(coords[0], coords[1], precision=2.0)
-            if not reached:
+            if not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
                 print(f"[{self.name}] Could not reach construction site at {coords} safely.")
                 return False
 
@@ -64,29 +99,39 @@ class PioneerController(VehicleController):
             except Exception:
                 pass
 
-        print(f"[{self.name}] Executing blueprint '{blueprint_id}'...")
-        self.publish_telemetry("CONSTRUCTING", blueprint_id)
-        res = self.vehicle.constructor.execute(blueprint_id)
-        print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
+        while True:
+            print(f"[{self.name}] Executing blueprint '{blueprint_id}'...")
+            self.publish_telemetry("CONSTRUCTING", blueprint_id)
+            progress_before = self.get_construction_progress(blueprint_id)
+            wh_before, _, _ = self.get_battery()
+            res = self.vehicle.constructor.execute(blueprint_id)
+            progress_after = self.get_construction_progress(blueprint_id)
+            self.calibrate_wh_per_progress(progress_after - progress_before, wh_before - self.get_battery()[0])
+            print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
 
-        # If construction was paused or ran out of power, recharge at nearest station and retry!
-        if res.status in ["paused_no_power", "paused"]:
-            print(f"[{self.name}] Construction paused ({res.status}). Diverting to nearest station to recharge.")
+            if res.status == "ok":
+                return True
+            if res.status not in ("paused_no_power", "paused"):
+                return False  # genuine rejection, not a power issue -- don't keep retrying
+
+            if progress_after <= progress_before:
+                print(f"[{self.name}] No progress made this cycle ({res.status}); leaving paused for a later attempt.")
+                return True
+
+            print(f"[{self.name}] Construction paused ({res.status}) at {progress_after*100:.0f}% progress. Recharging nearby and resuming.")
             nearest_cs, _ = self.get_nearest_charging_station()
-            if self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
-                self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
-                if coords:
-                    print(f"[{self.name}] Resuming construction at {coords} after recharge...")
-                    if self.drive_with_recharge(coords[0], coords[1], precision=2.0):
-                        if hasattr(self.vehicle, "nav"):
-                            try:
-                                self.vehicle.nav.brake()
-                            except Exception:
-                                pass
-                        res = self.vehicle.constructor.execute(blueprint_id)
-                        print(f"[{self.name}] Constructor retry result: {res.status} - {res.message}")
-
-        return res.status == "ok"
+            if not self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
+                print(f"[{self.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")
+                return True
+            self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
+            if coords and not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
+                print(f"[{self.name}] Could not return to construction site after recharge; leaving paused for a later attempt.")
+                return True
+            if hasattr(self.vehicle, "nav"):
+                try:
+                    self.vehicle.nav.brake()
+                except Exception:
+                    pass
 
     def cargo_count(self, item_id):
         """Units of item_id currently sitting in the Pioneer's cargo, across all stacks."""
@@ -323,7 +368,10 @@ class PioneerController(VehicleController):
                     coords = self.extract_coords(getattr(job, "position", None))
                     if not coords:
                         continue
-                    budget = self.calculate_trip_energy(coords, planned_drill_units=0, planned_scans=0)
+                    budget = self.calculate_trip_energy(
+                        coords, planned_drill_units=0, planned_scans=0,
+                        planned_construction_progress=self.planned_progress_for_job(job),
+                    )
                     if budget["is_achievable"]:
                         active_job = job
                         break
@@ -360,12 +408,20 @@ class PioneerController(VehicleController):
                 if matching_jobs:
                     # Sort matching jobs by proximity to current vehicle coordinates
                     matching_jobs.sort(key=lambda j: self.distance_between(current_pos, self.extract_coords(getattr(j, "position", None)) or (9999, 9999)))
+                    # Gate on the speedmode throttle floor, not the typical calibrated rate:
+                    # drive_with_recharge()/select_cruise_throttle() will pick whatever throttle
+                    # the leg actually needs, so a job only reachable by conserving hard should
+                    # still be attempted rather than rejected against a faster-than-necessary estimate.
                     candidate = None
                     for job in matching_jobs:
                         coords = self.extract_coords(getattr(job, "position", None))
                         if not coords:
                             continue
-                        budget = self.calculate_trip_energy(coords, planned_drill_units=0, planned_scans=0)
+                        budget = self.calculate_trip_energy(
+                            coords, planned_drill_units=0, planned_scans=0,
+                            planned_construction_progress=self.planned_progress_for_job(job),
+                            wh_per_meter=self.minimum_wh_per_meter(),
+                        )
                         if budget["is_achievable"]:
                             candidate = job
                             break
@@ -393,18 +449,24 @@ class PioneerController(VehicleController):
                                 self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
                                 continue
                             else:
-                                # Even at full charge, none of the matching jobs can be reached within battery capacity!
+                                # candidate selection above already gated on minimum_wh_per_meter()
+                                # (the speedmode throttle floor), so reaching here means none of
+                                # these jobs are reachable even at the slowest possible throttle.
                                 req_details = []
                                 for job in matching_jobs:
                                     j_id = getattr(job, "id", getattr(job, "blueprint_id", "unknown"))
                                     j_coords = self.extract_coords(getattr(job, "position", None))
                                     if j_coords:
-                                        j_budget = self.calculate_trip_energy(j_coords, planned_drill_units=0, planned_scans=0)
+                                        j_budget = self.calculate_trip_energy(
+                                            j_coords, planned_drill_units=0, planned_scans=0,
+                                            planned_construction_progress=self.planned_progress_for_job(job),
+                                            wh_per_meter=self.minimum_wh_per_meter(),
+                                        )
                                         req_details.append(f"{j_id} ({j_budget['total_required_wh']:.1f} Wh)")
                                     else:
                                         req_details.append(f"{j_id}")
                                     failed_jobs.add(j_id)
-                                print(f"[{self.name}] Advisory: Matching construction job(s) exceed maximum battery range ({cap_wh:.1f} Wh): {', '.join(req_details)}.")
+                                print(f"[{self.name}] Advisory: Matching construction job(s) exceed maximum battery range even at minimum throttle ({cap_wh:.1f} Wh): {', '.join(req_details)}.")
                                 sleep(5.0)
                                 continue
 
@@ -418,13 +480,19 @@ class PioneerController(VehicleController):
                         continue
                     j_coords = self.extract_coords(getattr(j, "position", None))
                     if j_coords:
-                        # Check whether job can be serviced from the closest charging station in the network
+                        # Check whether job can be serviced from the closest charging station in the
+                        # network, at the speedmode throttle floor (cheapest possible Wh/m) -- that's
+                        # the true bound for a "permanently" unreachable verdict, since conserve mode
+                        # can always throttle down that far to stretch a tight round trip. Also budget
+                        # for the minimum useful on-site progress (TARGET_CONSTRUCTION_PROGRESS_PER_TRIP),
+                        # since a trip that can't build anything meaningful isn't worth taking either.
                         st_near, _ = self.get_nearest_charging_station(from_coords=j_coords)
                         dist_station_leg = self.distance_between(st_near, j_coords) * 2.0
-                        required_wh = (dist_station_leg * self.wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+                        construction_wh = self.planned_progress_for_job(j) * self.wh_per_progress
+                        required_wh = ((dist_station_leg * self.minimum_wh_per_meter()) + construction_wh) * self.SAFETY_MARGIN_MULTIPLIER + self.MIN_EMERGENCY_RESERVE_WH
                         if required_wh > cap_wh:
                             if j_id not in failed_jobs:
-                                print(f"[{self.name}] Construction job '{j_id}' at {j_coords} permanently exceeds battery capacity from nearest station ({required_wh:.1f} Wh required, {cap_wh:.1f} Wh max capacity). Marking failed.")
+                                print(f"[{self.name}] Construction job '{j_id}' at {j_coords} permanently exceeds battery capacity from nearest station even at minimum throttle ({required_wh:.1f} Wh required, {cap_wh:.1f} Wh max capacity). Marking failed.")
                                 failed_jobs.add(j_id)
                             continue
                     achievable_targets.append(j)

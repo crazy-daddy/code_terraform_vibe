@@ -30,7 +30,32 @@ class VehicleNavigationMixin:
     def distance_to_home(self):
         return self.distance_to(self.assigned_slot_coords[0], self.assigned_slot_coords[1])
 
-    def drive_to(self, target_x, target_y, precision=1.5, timeout_ticks=3000):
+    def drive_timeout_ticks(self, distance, throttle, safety_multiplier=2.0, min_ticks=3000):
+        """
+        Real-time navigation timeout budget for a leg of this distance at this
+        throttle. sleep() (and this loop's tick counter) run in *real* seconds,
+        scaled by the world-clock's day-length pacing (Clock.real_seconds_per_hour(),
+        ~25 real sec/world-hour by default) -- not world-clock hours directly. A
+        flat timeout was tuned for the old fixed ~50% cruise throttle; conserve
+        mode can now drop to MIN_SPEEDMODE_THROTTLE (5x slower), so the budget
+        must scale with the actual expected travel time, not a constant.
+        """
+        speed_m_per_hour = self._drive_speed_m_per_hour(max(throttle, self.MIN_SPEEDMODE_THROTTLE))
+        if speed_m_per_hour <= 0 or distance <= 0:
+            return min_ticks
+
+        real_seconds_per_hour = 25.0  # default 10-min/day pacing fallback
+        clock = get_component("clock")
+        if clock and hasattr(clock, "real_seconds_per_hour"):
+            try:
+                real_seconds_per_hour = clock.real_seconds_per_hour()
+            except Exception:
+                pass
+
+        expected_real_seconds = (distance / speed_m_per_hour) * real_seconds_per_hour * safety_multiplier
+        return max(min_ticks, int(expected_real_seconds * 10))
+
+    def drive_to(self, target_x, target_y, precision=1.5, timeout_ticks=None):
         """
         Drives vehicle toward target coordinates while enforcing:
         1. Continuous round-trip battery floor check.
@@ -49,6 +74,8 @@ class VehicleNavigationMixin:
 
         # Pick this leg's throttle from vehicle.speedmode (conserve/highspeed)
         throttle = self.select_cruise_throttle(target_x, target_y)
+        if timeout_ticks is None:
+            timeout_ticks = self.drive_timeout_ticks(self.distance_between(start_pos, (target_x, target_y)), throttle)
         print(f"[{self.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle ({self.get_speed_mode()} mode).")
 
         # Set target and engage throttle

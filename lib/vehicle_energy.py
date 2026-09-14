@@ -22,6 +22,11 @@ class VehicleEnergyMixin:
     SAFETY_MARGIN_MULTIPLIER = 1.35
     MIN_EMERGENCY_RESERVE_WH = 8.0
 
+    # Wh to take a Constructor Module job from 0% to 100% progress. Uncalibrated
+    # starting assumption (like WH_PER_METER_DEFAULT) -- calibrate_wh_per_progress()
+    # refines it per-vehicle from observed execute() calls once real samples exist.
+    CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0
+
     # Speed/power model behind the vehicle.speedmode throttle selection below:
     #   speed (m per game-hour) = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle
     #   power (watts)           = DRIVE_POWER_W_PER_THROTTLE_SQUARED * throttle^2
@@ -41,6 +46,24 @@ class VehicleEnergyMixin:
             value = archive.get("rover.wh_per_meter", None)
         return value if value is not None else self.WH_PER_METER_DEFAULT
 
+    def construction_calibration_key(self):
+        return f"vehicle.wh_per_progress:{self.name}"
+
+    def load_wh_per_progress(self):
+        value = archive.get(self.construction_calibration_key(), None)
+        if value is None:
+            value = archive.get("fleet.wh_per_progress", None)
+        return value if value is not None else self.CONSTRUCTION_WH_PER_PROGRESS_DEFAULT
+
+    def calibrate_wh_per_progress(self, delta_progress, delta_wh):
+        """Dynamically calibrates actual Wh per 100% construction progress from observed execute() calls."""
+        if delta_progress > 0.01 and delta_wh > 0.1:
+            observed_wh_per_progress = delta_wh / delta_progress
+            if 1.0 <= observed_wh_per_progress <= 500.0:
+                base_val = self.wh_per_progress if self.wh_per_progress is not None else self.CONSTRUCTION_WH_PER_PROGRESS_DEFAULT
+                self.wh_per_progress = (base_val * 0.70) + (observed_wh_per_progress * 0.30)
+                archive.set(self.construction_calibration_key(), self.wh_per_progress)
+
     def get_battery(self):
         """Returns (current_wh, capacity_wh, fraction 0-1)."""
         try:
@@ -51,26 +74,45 @@ class VehicleEnergyMixin:
         except Exception:
             return 0.0, 100.0, 0.0
 
-    def calculate_trip_energy(self, target_coords, planned_drill_units=0, planned_scans=1):
+    def minimum_wh_per_meter(self):
+        """
+        Best-case Wh/meter at the speedmode throttle floor (MIN_SPEEDMODE_THROTTLE),
+        derived from the same speed/power model as select_cruise_throttle(). This is
+        the true lower bound for a "permanently unreachable" verdict: conserve mode
+        can always throttle down this far to stretch a tight budget, so a hard
+        infeasibility check must rate distances against this, not the calibrated
+        self.wh_per_meter (which reflects a *typical* cruise throttle, not the floor).
+        """
+        return self._drive_power_watts(self.MIN_SPEEDMODE_THROTTLE) / self._drive_speed_m_per_hour(self.MIN_SPEEDMODE_THROTTLE)
+
+    def calculate_trip_energy(self, target_coords, planned_drill_units=0, planned_scans=1, planned_construction_progress=0.0, wh_per_meter=None):
         """
         Accurately calculates total energy required for a round-trip expedition:
         1. Energy to drive to target: dist_to_target * wh_per_meter
         2. Energy to scan & survey: planned_scans * SONAR_WH_BUDGET
         3. Energy to mine: planned_drill_units * MINE_WH_PER_UNIT
-        4. Energy to drive to nearest charging station from target: dist_target_to_nearest_cs * wh_per_meter
-        5. Safety buffer (35% margin) + hard emergency floor (8 Wh)
+        4. Energy to build: planned_construction_progress * wh_per_progress
+        5. Energy to drive to nearest charging station from target: dist_target_to_nearest_cs * wh_per_meter
+        6. Safety buffer (35% margin) + hard emergency floor (8 Wh)
+
+        wh_per_meter overrides the calibrated per-vehicle rate for the drive legs --
+        pass self.minimum_wh_per_meter() to test best-case feasibility at the
+        speedmode throttle floor rather than typical cruising cost. Defaults to
+        the calibrated self.wh_per_meter.
         """
+        rate = wh_per_meter if wh_per_meter is not None else self.wh_per_meter
         current_pos = self.get_position()
         dist_outbound = self.distance_between(current_pos, target_coords)
         nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
         dist_inbound = self.distance_between(target_coords, nearest_cs_from_target)
 
-        drive_out_wh = dist_outbound * self.wh_per_meter
-        drive_home_wh = dist_inbound * self.wh_per_meter
+        drive_out_wh = dist_outbound * rate
+        drive_home_wh = dist_inbound * rate
         sonar_wh = planned_scans * self.SONAR_WH_BUDGET
         mining_wh = planned_drill_units * self.MINE_WH_PER_UNIT
+        construction_wh = planned_construction_progress * self.wh_per_progress
 
-        net_expedition_wh = drive_out_wh + drive_home_wh + sonar_wh + mining_wh
+        net_expedition_wh = drive_out_wh + drive_home_wh + sonar_wh + mining_wh + construction_wh
         buffered_expedition_wh = net_expedition_wh * self.SAFETY_MARGIN_MULTIPLIER
         total_required_wh = buffered_expedition_wh + self.MIN_EMERGENCY_RESERVE_WH
 
@@ -84,6 +126,7 @@ class VehicleEnergyMixin:
             "drive_home_wh": drive_home_wh,
             "sonar_wh": sonar_wh,
             "mining_wh": mining_wh,
+            "construction_wh": construction_wh,
             "net_expedition_wh": net_expedition_wh,
             "total_required_wh": total_required_wh,
             "current_wh": curr_wh,

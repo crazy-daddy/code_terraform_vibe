@@ -75,7 +75,7 @@ copies of tier lists, thresholds, or budgeting formulas.
 | Vehicle | Speed / Throttle | Energy Cost / Budgeting | Operational Rules |
 | :--- | :--- | :--- | :--- |
 | **Rover** | `vehicle.speedmode` archive flag ("conserve" default / "highspeed") picks throttle per leg | `WH_PER_METER_DEFAULT = 0.08` Wh/m base (per-vehicle calibrated); safety margin `SAFETY_MARGIN_MULTIPLIER = 1.35` (35%) — see §2a | Sonar scan: `SONAR_WH_BUDGET = 2.0` Wh. Mining drill: `MINE_WH_PER_UNIT = 2.5` Wh/unit. Return to nearest charging station (not necessarily home) when Wh falls below the trip budget. |
-| **Pioneer** | Configurable slots / tools | Slot chassis: `inspect_slots()`, `execute_construction()` | Heavy construction, blueprint placement, pipe/power line deployment. |
+| **Pioneer** | Configurable slots / tools | Slot chassis: `inspect_slots()`, `execute_construction()`; construction energy: `WH_PER_PROGRESS` (per-vehicle calibrated, default `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh for 0%→100%) — see §2a | Heavy construction, blueprint placement, pipe/power line deployment. Budgets each trip for `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` progress (~4 round trips to finish a job), not just round-trip driving. |
 | **Harvester** | BFS on 8x24 grid (`NUM_ROWS=8`, `NUM_COLS=24`, A1..H24) | Travel time: 0.5 h/sector. Empty move: `+7 heat`; Item move: `+1 heat` | Max heat: 100°C. Pause & cool down when heat exceeds `HEAT_SAFE_CEILING = 75.0`, resume once back down to `HEAT_RESUME_LEVEL = 40.0` (`lib/harvesting.py`). |
 
 ### 2a. Vehicle Energy Budgeting Detail (`lib/vehicle_energy.py` `VehicleEnergyMixin`)
@@ -90,9 +90,35 @@ copies of tier lists, thresholds, or budgeting formulas.
   of throttle. Throttle is clamped to `[MIN_SPEEDMODE_THROTTLE=0.10, MAX_SPEEDMODE_THROTTLE=1.0]`
   and picked per-leg by `select_cruise_throttle()` / `max_safe_throttle_for_leg()`, which always
   keeps enough reserve to still reach a charging station afterward.
+- `minimum_wh_per_meter()` gives the best-case Wh/m at the throttle floor (`0.02` = `20 * 0.10² /
+  (100 * 0.10)`). Any check that claims a target/job is *permanently* unreachable (not just "not
+  right now") must budget against this, not the calibrated `self.wh_per_meter` — see the
+  `wh_per_meter` override param on `calculate_trip_energy()` and its use in
+  `pioneer.py`'s `run_construction_loop()` hard-infeasibility checks.
+- Construction (Pioneer only): `calculate_trip_energy()`'s `planned_construction_progress` param adds
+  `progress * self.wh_per_progress` to the trip budget, mirroring `planned_scans`/`planned_drill_units`.
+  `wh_per_progress` is calibrated per-vehicle from real `constructor.execute()` calls
+  (`calibrate_wh_per_progress()` in `vehicle_energy.py`, called from `pioneer.py`'s
+  `execute_construction()`), falling back to `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh
+  (0%→100%) until enough samples exist. `pioneer.py`'s `planned_progress_for_job()` caps the
+  planned progress at `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` (or less if the job is
+  already further along), so a trip is only taken if it can also make *meaningful* on-site
+  progress — not just barely arrive and immediately pause for lack of power. This is a floor
+  on whether to depart, not a cap on-site: `execute_construction()` keeps recharging nearby
+  and resuming for as long as real progress keeps being made each cycle, and only reports
+  failure for a genuine rejection (e.g. `"blocked"`) or a no-progress stall — never merely
+  because the job needs more than one recharge round to finish.
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims
   (mirrored to `rover.claims` / `survey.claims` for legacy compatibility), heartbeat-renewed via
   `refresh_claim()`, expiring after `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour).
+- Navigation timeout (`lib/vehicle_navigation.py` `drive_timeout_ticks()`): `drive_to()`'s
+  `timeout_ticks` defaults to `None` and is computed per-leg from expected travel time
+  (`distance / speed-at-chosen-throttle`), converted from world-clock hours to the tick-scale
+  budget via `Clock.real_seconds_per_hour()` — **not** a flat constant. `sleep()` and the tick
+  counter both run in real/simulation seconds (the same base), which the compressed day/night
+  cycle stretches relative to world-clock hours, so a fixed tick budget silently under-times
+  slow conserve-mode legs. Uses a `safety_multiplier = 2.0` margin and a `min_ticks = 3000`
+  floor (the old fixed default, still used for short/typical legs).
 - Navigation safety (`lib/vehicle_navigation.py`): stall detection re-issues the drive command
   after repeated stuck cycles; base staging slots are staggered per vehicle index to avoid
   parking/charging-pad collisions.

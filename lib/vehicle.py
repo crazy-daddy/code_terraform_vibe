@@ -46,6 +46,7 @@ class VehicleController(
         # Each vehicle and module loadout gets its own calibration. Legacy
         # shared values are read only as a migration fallback.
         self.wh_per_meter = self.load_wh_per_meter()
+        self.wh_per_progress = self.load_wh_per_progress()
         self.total_distance_driven = 0.0
         self.total_wh_spent_moving = 0.0
 
