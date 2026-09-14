@@ -270,7 +270,7 @@ class PowerGridManager:
                                         except Exception:
                                             pass
                                     else:
-                                        reason = "Emergency reserve guard (<20%)" if emergency_low else f"Insufficient storage ({stored_wh:.0f} Wh < {wh_needed:.0f} Wh needed)"
+                                        reason = "Emergency reserve guard (<20%)" if emergency_low else f"Insufficient storage ({stored_wh:.1f} Wh < {wh_needed:.1f} Wh needed)"
                                         print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
                                         try:
                                             notify(f"[Power Guard] Shed load ({m_id}) on {grid_id_str}: {reason}", level="warn", duration_seconds=6.0)

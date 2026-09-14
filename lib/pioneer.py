@@ -551,8 +551,13 @@ class PioneerController(VehicleController):
                     if self.cargo_count(required_item) < required_count:
                         print(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
                         if not self.load_construction_materials(target_job, target_count=batch_needed):
-                            print(f"[{self.name}] Could not load materials for job {job_id}; retrying in 10s.")
-                            sleep(10.0)
+                            # required_item genuinely isn't obtainable right now (e.g. Inventory
+                            # empty and nothing produces it yet) -- defer this job rather than
+                            # retrying it forever and starving every other pending job behind it
+                            # in the list (failed_jobs clears once no other option remains).
+                            print(f"[{self.name}] Could not load materials for job {job_id}; deferring to try other pending jobs.")
+                            failed_jobs.add(job_id)
+                            sleep(2.0)
                             continue
                     else:
                         # Already have materials loaded; avoid rapid cycling
