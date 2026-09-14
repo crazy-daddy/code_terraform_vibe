@@ -10,15 +10,22 @@ You are an expert automation engineer and Python developer specializing in the g
 1. **Portable & Save-Agnostic Design**:
    - Favor dynamic runtime discovery (capability probing, building auto-discovery via `outpost_network`, runtime location queries) over hardcoded save-specific IDs or coordinates. The codebase should be plug-and-play for new save games.
 2. **Shared Library Hierarchy (`lib/`)**:
-   - Modularize reusable logic into `lib/` modules (`terraforming.py`, `rover.py`, `bio.py`, `harvesting.py`, `smelter.py`, `production.py`, `supply_dock.py`, etc.).
+   - Modularize reusable logic into `lib/` modules (`terraforming.py`, `bio.py`, `harvesting.py`, `smelter.py`, `production.py`, `supply_dock.py`, `power.py`, `solar.py`, `charging.py`, etc.).
+   - Vehicle logic is split by concern into `vehicle.py` (base `VehicleController`, composes the mixins below) plus focused mixins: `vehicle_navigation.py` (driving/stall recovery), `vehicle_energy.py` (battery accounting/trip budgeting/charging-station discovery), `vehicle_claims.py` (fleet-wide target claims & hardware blacklist), `vehicle_cargo.py` (cargo offload), `vehicle_survey.py` (sonar/drill survey loop). `rover.py` and `pioneer.py` are thin `VehicleController` specializations, not the home of shared vehicle logic anymore.
+   - Power grid supervision lives in `power.py` (`PowerGridManager`, generic — works for solar, oil, reactor, turbine grids), with `solar.py`'s `SolarController` handling only sun tracking and grid-aware Master/Follower election, then delegating shedding/recovery to `PowerGridManager.supervise_grid()`.
    - Root executable scripts (e.g., `solar_1.py`, `rover_1.py`, `panel_1.py`) should remain thin entrypoints utilizing shared controllers from `lib/`.
 3. **Power Grid & Brownout Protection**:
-   - Respect tiered load shedding (`SolarController`): Tier 1 (Non-critical) shed on deficit/battery <20%, Tier 2 (Terraforming) shed on critical reserve <15%.
-   - Restore terraforming loads prior to non-critical loads upon dawn/surplus.
+   - Respect tiered load shedding (`PowerGridManager` in `lib/power.py`, driven by `SolarController`/other grid masters). Tiers are configurable via `archive` (`power.shedding_tiers`, with optional per-grid override `power.shedding_tiers:<grid_anchor>`), defaulting to `DEFAULT_SHEDDING_TIERS`:
+     - **Tier 1 (passive background terraforming)**: `heater_*`, `pressure_*`, `o2gen_*`, `bio_collector_*`, `bio_lab_*`, `bio_exchange_*` — shed **first**, on deficit or battery <20%.
+     - **Tier 2 (critical active production & logistics)**: `smelter_*`, `fabricator_*`, `vehicle_charging_station*`/`charging_station_*` — shed only under severe deficit or critical reserve <15%.
+   - This is intentionally inverted from a naive "protect terraforming" instinct: terraforming machinery is background/passive and sheds first; production and vehicle-charging infrastructure is treated as more critical and is protected longer.
+   - Recovery is the mirror image: Tier 2 (production/logistics) is restored first as soon as a smaller surplus/reserve threshold is met, Tier 1 (terraforming) is restored last, requiring a larger surplus margin and stored-energy threshold — both at night (battery stabilizing) and at dawn (solar surplus).
 4. **Vehicle Safety & Fleet Coordination**:
-   - Always enforce "there-and-back" energy budgeting (minimum 15% Wh cushion, 8 Wh floor, Wh/m calibration).
-   - Use atomic site reservations in `archive` with heartbeat renewal and timeout expiration to prevent duplicate assignments or collisions.
-   - Enforce deadlock/terrain stall detection and staggered base staging slots.
+   - Always enforce "there-and-back" energy budgeting via `VehicleEnergyMixin` (`lib/vehicle_energy.py`): minimum **35%** safety margin (`SAFETY_MARGIN_MULTIPLIER = 1.35`) on top of net trip energy, plus an 8 Wh hard emergency-reserve floor, using per-vehicle calibrated Wh/meter (`self.calibration_key()`, falling back to fleet/legacy rover averages).
+   - Trip budgeting accounts for outbound drive, sonar/scan budget, mining/drill budget, and the return leg to the *nearest* charging station from the target (not necessarily home) — see `calculate_trip_energy()`.
+   - Cruise speed is throttle-based and dynamic: `vehicle.speedmode` (`archive` flag, "conserve" default or "highspeed") picks each leg's throttle via `select_cruise_throttle()`/`max_safe_throttle_for_leg()`, which always keeps enough reserve to safely reach a charging station afterward.
+   - Use atomic site reservations in `archive` (`lib/vehicle_claims.py`) with heartbeat renewal (`refresh_claim()`) and timeout/stale expiration (`CLAIM_STALE_TICKS`) to prevent duplicate assignments or collisions across the fleet.
+   - Enforce deadlock/terrain stall detection and staggered base staging slots (`lib/vehicle_navigation.py`).
 5. **Outpost Construction Safety Rule**:
    - **NEVER** automatically found or construct an Outpost! Outpost foundation increases future outpost costs permanently and cannot be undone. All construction must be explicitly gated by human operator approval (e.g. via Control Panel or explicit command).
 6. **Decoupled Inter-Component Communication**:
