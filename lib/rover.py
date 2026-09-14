@@ -15,6 +15,7 @@ class RoverController(VehicleController):
     """
     def __init__(self, vehicle, home_coords=(0, 0), cruise_throttle=0.5):
         super().__init__(vehicle, home_coords=home_coords, cruise_throttle=cruise_throttle)
+        self.last_target_diagnostics = {}
 
     def find_best_mission_target(self):
         """
@@ -26,45 +27,26 @@ class RoverController(VehicleController):
         nocturna = get_component("nocturna")
         journal = get_component("journal")
 
+        self.cleanup_stale_claims()
         candidates = []
         raw_demands = get_raw_material_demands(get_component("smelter_1"))
 
         # Read active claims to skip sites claimed by peers
-        raw_claims = archive.get("rover.claims", {})
-        existing_claims = raw_claims if (raw_claims is not None and isinstance(raw_claims, dict)) else {}
+        existing_claims = self.get_claims()
         # Read blacklisted/unsupported targets to check hardware capability
-        raw_unsupported = archive.get("rover.unsupported_targets", {})
-        unsupported_targets = raw_unsupported if (raw_unsupported is not None and isinstance(raw_unsupported, dict)) else {}
+        unsupported_targets = self.get_unsupported_targets()
         curr_tick = self.get_current_tick()
 
         # Candidate pool 1: Unscanned POIs
-        if nocturna and hasattr(nocturna, "points_of_interest"):
-            try:
-                for poi in nocturna.points_of_interest():
-                    if not poi.scanned:
-                        key = f"poi_{poi.x}_{poi.y}"
-                        # Check if previously unsupported, and verify if current equipment can attempt it
-                        if key in unsupported_targets:
-                            can_attempt, _ = self.can_attempt_target(key, unsupported_targets[key])
-                            if not can_attempt:
-                                continue
-
-                        # Check if claimed by another active rover
-                        claim = existing_claims.get(key)
-                        if claim and claim.get("rover") != self.name:
-                            claim_age = curr_tick - claim.get("tick", 0)
-                            if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                                continue # Claimed by a peer; skip!
-
-                        candidates.append({
-                            "key": key,
-                            "type": "poi",
-                            "coords": (poi.x, poi.y),
-                            "name": f"POI_{poi.x}_{poi.y}",
-                            "priority": 1
-                        })
-            except Exception:
-                pass
+        for poi in self.unscanned_pois():
+            key = f"poi_{poi.x}_{poi.y}"
+            candidates.append({
+                "key": key,
+                "type": "poi",
+                "coords": (poi.x, poi.y),
+                "name": f"POI_{poi.x}_{poi.y}",
+                "priority": 1
+            })
 
         # Candidate pool 2: Surveyed mineral deposits from Journal
         max_drill_hardness = 1.0
@@ -109,12 +91,14 @@ class RoverController(VehicleController):
         candidates.sort(key=lambda c: self.distance_between(pos, c["coords"]))
 
         # Filter for reachable candidates within battery budget and atomically claim the best
+        budget_candidates = 0
         for cand in candidates:
             planned_mine = 10 if cand["type"] == "mine" else 0
             planned_scan = 1 if cand["type"] == "poi" else 0
             budget = self.calculate_trip_energy(cand["coords"], planned_drill_units=planned_mine, planned_scans=planned_scan)
 
             if budget["is_achievable"]:
+                budget_candidates += 1
                 # Try atomic claim
                 claimed = self.claim_target(cand["key"], cand)
                 if claimed:
@@ -122,6 +106,12 @@ class RoverController(VehicleController):
                     self.current_target_key = cand["key"]
                     return cand, budget
 
+        self.last_target_diagnostics = {
+            "raw_demands": raw_demands,
+            "candidate_count": len(candidates),
+            "budget_candidates": budget_candidates,
+            "claim_count": len(existing_claims),
+        }
         return None, None
 
     def run_expedition_cycle(self):
@@ -142,7 +132,16 @@ class RoverController(VehicleController):
         # Step 3: Select safe target with exclusive claim
         target, budget = self.find_best_mission_target()
         if not target or not budget:
-            print(f"[{self.name}] No available/unclaimed targets within round-trip battery budget. Standing by at base slot.")
+            diagnostics = self.last_target_diagnostics
+            if not diagnostics.get("raw_demands"):
+                reason = "no downstream raw-material demand (Inventory may be full or production is waiting)"
+            elif diagnostics.get("candidate_count", 0) == 0:
+                reason = "no surveyed mineral or unscanned POI matches current demand"
+            elif diagnostics.get("budget_candidates", 0) == 0:
+                reason = "matching targets exist but none fit the round-trip battery budget"
+            else:
+                reason = f"targets blocked by active claims ({diagnostics.get('claim_count', 0)} claims)"
+            print(f"[{self.name}] No mission target: {reason}. Standing by at base slot.")
             self.publish_telemetry("IDLE_AT_BASE")
             sleep(10.0)
             return

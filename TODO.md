@@ -10,6 +10,7 @@ This document tracks our strategic progress from initial boot to full terraforma
 - **Milestones Reached**: First Contact, Contracts unlocked, Auto Feeders research unlocked.
 - **Current Focus**: Phase 1 — Tri-pillar atmospheric foundation & full Biology automation.
 - **Operational Focus**: Demand-driven production, inventory capacity protection, and recipe-aware Rover missions.
+- **Selected Work from Inspirations (other ppls code)**: Capability discovery, stale-aware coordination, vehicle recovery, production planning, survey persistence, and dashboard telemetry are selected for implementation from `TODO_inspirations.md`.
 
 ---
 
@@ -79,6 +80,21 @@ This document tracks our strategic progress from initial boot to full terraforma
   - Priority assignment for recipe/tech-unlocking Contractor Campaign Orders (Helios, Spire, Vestibule) and Weekly Earth Orders.
   - Automated inventory loading and continuous dispatch at 25+ units/h.
 
+- [ ] Implement selected inspiration-derived coordination and observability improvements:
+  - [ ] Add runtime capability probing and graceful optional-component fallbacks.
+  - [ ] Add stale-aware Signal Bus heartbeats with direct-read fallbacks.
+  - [ ] Add unified vehicle status including battery, position, target, docked state, return, rescue, and stale state.
+  - [x] Expand the demand dependency graph across Rover, Smelter, Supply Dock, and Fabricator planning.
+  - [ ] Publish Earth demand, add production reservations, recipe/source explanations, and local storage routing.
+  - [x] Persist per-vehicle Wh/meter calibration with conservative defaults and shared legacy fallback.
+  - [ ] Add mission lifecycle records and reservation reasons covering material, consumer, order/recipe, shortfall, distance, and energy cost.
+  - [ ] Expose power mode, budget, shedding, recovery, and subnet diagnostics through shared telemetry.
+  - [ ] Add read-only Control Room telemetry for status, terraforming, production, fleet, and Earth order views.
+    - [x] Implement initial read-only Status, Fleet, and Production cards (`panel_1.py`, `panel_2.py`, `panel_3.py`).
+    - [ ] Add Terraform and Earth order cards.
+    - [ ] Add shared readout helpers and stale-data presentation across all cards.
+  - [ ] Add compact Data Archive summaries for operator dashboards and scripts that cannot draw panels.
+
 ---
 
 ## 🏭 Phase 2: Logistics, Infrastructure & Outpost Networks
@@ -88,8 +104,10 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [ ] Smelter blueprints (Glass, Titanium Ingots, Cobalt Ingots).
   - [ ] Drones, Drone Depots, and Service Stations.
 - [ ] Build a complete recipe-aware manufacturing loop:
-  - [ ] Add or verify a Fabricator controller that selects only unlocked recipes with an active downstream need.
-  - [ ] Track Fabricator stockpile, output buffer, fluids, and byproduct buffer before loading another batch.
+  - [x] Add a Fabricator controller that selects only unlocked recipes with an active downstream need (`lib/fabricator.py`, `fabricator_1.py`).
+  - [x] Maintain minimum Gas Pipe and Power Line Segment stock while prioritizing active Supply Dock orders.
+  - [x] Track Fabricator stockpile and output buffer before loading another batch.
+  - [ ] Track Fabricator fluids and byproduct buffers for recipes that require them.
   - [ ] Add production reservations so multiple machines do not claim the same Inventory stock.
   - [ ] Verify each new recipe unlock in `list_recipes()` before enabling its inputs or mining demand.
 - [ ] Harden home storage and transfer behavior:
@@ -111,10 +129,28 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [ ] Fabricate and deploy a Drone Depot into an outpost.
   - [ ] Commission electric drones, then mount thruster, battery, Cargo Pod, and logistics modules through service controls.
   - [ ] Add service-station charging, rescue, exposure, and `cargo.space_for()` checks to route scripts.
+- [ ] Make production explicitly multi-outpost-safe:
+  - [x] Add a Pioneer Transport role with persisted source/destination/item/count routes (`lib/pioneer.py`, `pioneer_2.py`).
+  - [ ] Keep the home base as the production hub and use local Warehouses/Bins at remote outposts.
+  - [ ] Extend Rover unloading so missions can target the nearest local store instead of always home Inventory.
+  - [ ] Publish transport requests when the hub is short of remote materials.
+  - [ ] Add route feasibility checks for battery, charging stations, cargo capacity, local storage, and service-area parking.
+  - [ ] Add transport priority so order-critical materials outrank building-stock replenishment.
 - [ ] Verify power subnet topology after every remote build:
   - [ ] Confirm every line/bridge is complete and physically touches the intended service footprints.
   - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.
   - [ ] Test recovery after a split route and after a remote outpost brownout.
+
+- [ ] Implement selected Pioneer and survey improvements:
+  - [ ] Separate Scout Pioneer behavior from human-approved construction intent; never auto-found an Outpost without approval.
+  - [ ] Persist spiral survey progress, shortlist candidates, unresolved contacts, and archived survey points.
+  - [ ] Deduplicate and rank survey candidates by resource/utility value, distance, and current demand.
+  - [ ] Publish survey shortlists to the Data Archive and Signal Bus for operator review.
+  - [ ] Probe outpost placement legality through the construction API and retract temporary planning ghosts.
+  - [ ] Persist map markers for shortlisted, unresolved, claimed, and founded locations.
+  - [ ] Clamp survey waypoints to planet bounds and resume from completed spiral points.
+  - [ ] Add construction departure gates, cargo-bin compatibility checks, retry classification, blocked-job warnings, and save/load/rescue recovery.
+  - [ ] Decide whether to adopt a generic construction queue worker for approved non-Outpost jobs; Outpost construction remains explicitly human-approved.
 
 ---
 

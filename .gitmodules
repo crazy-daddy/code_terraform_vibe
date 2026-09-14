@@ -1,0 +1,3 @@
+[submodule "inspirations/graviadaemon"]
+	path = inspirations/graviadaemon
+	url = https://github.com/graviaDaemon/terraform-code.git

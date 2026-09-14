@@ -70,7 +70,12 @@ class ChargingStationController:
             ((vehicle_ref.x - x) ** 2 + (vehicle_ref.y - y) ** 2) ** 0.5
             for x, y in stations
         )
-        wh_per_meter = archive.get("fleet.wh_per_meter", self.RETURN_WH_PER_METER)
+        vehicle_key = f"vehicle.wh_per_meter:{vehicle_ref.id}"
+        wh_per_meter = archive.get(vehicle_key, None)
+        if wh_per_meter is None:
+            wh_per_meter = archive.get("fleet.wh_per_meter", None)
+        if wh_per_meter is None:
+            wh_per_meter = self.RETURN_WH_PER_METER
         return_wh = (
             distance * wh_per_meter * self.RETURN_SAFETY_MARGIN
             + self.RETURN_EMERGENCY_RESERVE_WH

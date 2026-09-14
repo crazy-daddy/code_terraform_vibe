@@ -45,6 +45,7 @@ class PioneerController(VehicleController):
         """
         Drives within interaction range of a construction blueprint and executes it.
         Blueprints can build outposts, pumps, well caps, power lines, and pipe networks.
+        Caller must ensure required cargo is loaded first; see load_construction_materials().
         """
         if not hasattr(self.vehicle, "constructor"):
             print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")
@@ -57,187 +58,368 @@ class PioneerController(VehicleController):
                 print(f"[{self.name}] Could not reach construction site at {coords} safely.")
                 return False
 
+        if hasattr(self.vehicle, "nav"):
+            try:
+                self.vehicle.nav.brake()
+            except Exception:
+                pass
+
         print(f"[{self.name}] Executing blueprint '{blueprint_id}'...")
         self.publish_telemetry("CONSTRUCTING", blueprint_id)
         res = self.vehicle.constructor.execute(blueprint_id)
         print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
         return res.status == "ok"
 
-    def survey_spiral_points(self, step=None, start_index=0, max_points=160):
-        """Yields indexed outward square-spiral waypoints spaced for the mounted sonar."""
-        sonar = getattr(self.vehicle, "sonar", None)
-        if not sonar:
-            return
+    def cargo_count(self, item_id):
+        """Units of item_id currently sitting in the Pioneer's cargo, across all stacks."""
+        try:
+            return sum(getattr(s, "count", 0) for s in self.vehicle.cargo.stacks() if getattr(s, "id", None) == item_id)
+        except Exception:
+            return 0
 
-        if step is None:
+    def batch_required_count(self, pending, item_id, max_limit=None):
+        """Sums required_count across pending jobs that need item_id,
+        up to optional max_limit, so a route split into many segment jobs
+        can be stocked in one Inventory trip instead of one per job."""
+        total = 0
+        for job in pending:
+            job_item = getattr(job, "required_item", None)
+            if job_item == item_id:
+                total += max(0, getattr(job, "required_count", 0))
+                if max_limit is not None and total >= max_limit:
+                    return max_limit
+        return total
+
+    def load_construction_materials(self, job, target_count=None):
+        """Loads required_item from home Inventory into cargo, aiming for
+        target_count (e.g. a whole chain of upcoming same-material jobs) but
+        succeeding once this job's own required_count is met, since Inventory
+        may not have the full batch on hand. Clamps the load request to available
+        cargo capacity to prevent 'target_full' transfer rejections."""
+        required_item = getattr(job, "required_item", None)
+        required_count = getattr(job, "required_count", 0)
+        if not required_item or required_count <= 0:
+            return True  # deconstruction jobs and already-started jobs need nothing
+
+        have = self.cargo_count(required_item)
+        goal = max(required_count, target_count or 0)
+
+        # Clamp goal to fit within available cargo space
+        if hasattr(self.vehicle, "cargo"):
             try:
-                step = max(20.0, sonar.range() * 0.75)
+                cap = self.vehicle.cargo.capacity()
+                cnt = self.vehicle.cargo.count()
+                free_space = max(0, cap - cnt)
+                goal = min(goal, have + free_space)
             except Exception:
-                step = 35.0
+                pass
 
-        x, y = self.assigned_slot_coords
-        directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
-        direction_index = 0
-        leg_length = 1
-        point_index = 0
-        yielded = 0
+        if have >= goal and have >= required_count:
+            return True
 
-        while yielded < max_points:
-            for _ in range(2):
-                dx, dy = directions[direction_index % len(directions)]
-                for _ in range(leg_length):
-                    x += dx * step
-                    y += dy * step
-                    if point_index >= start_index:
-                        yield (point_index, x, y)
-                        yielded += 1
-                        if yielded >= max_points:
-                            return
-                    point_index += 1
-                direction_index += 1
-            leg_length += 1
+        if not hasattr(self.vehicle, "input"):
+            print(f"[{self.name}] Cannot load {required_item}: no input port / Auto Feeders.")
+            return False
 
-    def save_survey_waypoint(self, point_index, coords, sites):
-        """Publishes completed spiral progress to the shared Data Archive notebook."""
-        site_summaries = []
-        for site in sites:
+        missing = max(0, goal - have)
+        if missing <= 0:
+            return have >= required_count
+
+        connect_result = self.vehicle.input.connect("inventory")
+        if connect_result.status != "ok":
+            print(f"[{self.name}] Could not connect to Inventory to load {required_item}: {connect_result.status} - {connect_result.message}")
+            return False
+        take_result = self.vehicle.input.take(required_item, missing)
+        if take_result.status not in ["ok", "partial"]:
+            print(f"[{self.name}] Could not load {required_item} from Inventory: {take_result.status} - {take_result.message}")
+            return False
+        if take_result.moved > 0:
+            print(f"[{self.name}] Loaded {take_result.moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
+        return self.cargo_count(required_item) >= required_count
+
+
+
+    def find_local_store(self, outpost_id):
+        """Find Inventory at home or a local warehouse/bin at an outpost."""
+        if outpost_id in [None, "home", "inventory"]:
+            return "inventory"
+        network = get_component("outpost_network")
+        if not network or not hasattr(network, "outposts"):
+            return None
+        try:
+            for outpost in network.outposts():
+                if getattr(outpost, "id", None) != outpost_id:
+                    continue
+                for type_id in ["large_warehouse", "warehouse", "storage_bin"]:
+                    for building in outpost.buildings(type_id):
+                        return building.id
+        except Exception:
+            pass
+        return None
+
+    def find_outpost_coords(self, outpost_id):
+        """Returns an outpost anchor coordinate for transport routing."""
+        if outpost_id in [None, "home", "inventory"]:
+            return self.assigned_slot_coords
+        network = get_component("outpost_network")
+        if network and hasattr(network, "outposts"):
             try:
-                kind = site.kind() if hasattr(site, "kind") else "unknown"
+                for outpost in network.outposts():
+                    if getattr(outpost, "id", None) == outpost_id:
+                        return (outpost.x, outpost.y)
             except Exception:
-                kind = "unknown"
-            site_summaries.append({
-                "id": getattr(site, "id", None),
-                "kind": kind,
-                "item_id": getattr(site, "item_id", None),
-            })
+                pass
+        return None
 
-        def update_progress(current):
-            progress = dict(current or {})
-            waypoints = list(progress.get("waypoints", []))
-            entry = {
-                "index": point_index,
-                "x": round(coords[0], 2),
-                "y": round(coords[1], 2),
-                "sites": site_summaries,
-            }
-            if not any(item.get("index") == point_index for item in waypoints):
-                waypoints.append(entry)
-            progress["waypoints"] = waypoints
-            progress["next_index"] = max(point_index + 1, progress.get("next_index", 0))
-            progress["last_completed"] = entry
-            progress["updated_by"] = self.name
-            return progress
+    def transport_once(self, route):
+        """Move one configured material load between two local stores."""
+        item_id = route.get("item_id")
+        requested = route.get("count", 0)
+        source_outpost = route.get("source_outpost", "home")
+        destination_outpost = route.get("destination_outpost", "home")
+        if not item_id or requested <= 0:
+            print(f"[{self.name}] Transport route needs item_id and positive count.")
+            return False
 
-        archive.transaction("pioneer.survey_spiral", {}, update_progress)
+        source_store = self.find_local_store(source_outpost)
+        destination_store = self.find_local_store(destination_outpost)
+        source_coords = self.find_outpost_coords(source_outpost)
+        destination_coords = self.find_outpost_coords(destination_outpost)
+        if not source_store or not destination_store or not source_coords or not destination_coords:
+            print(f"[{self.name}] Transport route unavailable: check outposts and local storage.")
+            return False
 
-    def run_survey_loop(self, max_points=160):
-        """Surveys an outward spiral while preserving a guaranteed return reserve."""
-        if not hasattr(self.vehicle, "sonar"):
-            print(f"[{self.name}] Survey loop requires a mounted Sonar Module.")
-            return
-        if not hasattr(self.vehicle, "nav"):
-            print(f"[{self.name}] Survey loop requires a mounted Nav Module.")
-            return
+        if self.vehicle.cargo.count() > 0:
+            self.unload_cargo()
+            if self.vehicle.cargo.count() > 0:
+                print(f"[{self.name}] Transport blocked: cargo hold is not empty.")
+                return False
 
-        print(f"Pioneer Survey Controller ({self.name}) online. Starting battery-safe spiral.")
+        if not self.drive_to(source_coords[0], source_coords[1]):
+            return False
+        self.vehicle.nav.brake()
+        if not hasattr(self.vehicle, "input"):
+            print(f"[{self.name}] Transport requires a Pioneer input port and Auto Feeders.")
+            return False
+        connect_result = self.vehicle.input.connect(source_store)
+        if connect_result.status != "ok":
+            print(f"[{self.name}] Could not connect transport source: {connect_result.status} - {connect_result.message}")
+            return False
+        take_result = self.vehicle.input.take(item_id, requested)
+        if take_result.status not in ["ok", "partial"] or take_result.moved <= 0:
+            print(f"[{self.name}] Could not load {item_id}: {take_result.status} - {take_result.message}")
+            return False
+        print(f"[{self.name}] Loaded {take_result.moved}x {item_id} from {source_outpost}.")
+
+        if not self.drive_to(destination_coords[0], destination_coords[1]):
+            return False
+        self.vehicle.nav.brake()
+        if not hasattr(self.vehicle, "output"):
+            print(f"[{self.name}] Transport requires a Pioneer output port and Auto Feeders.")
+            return False
+        connect_result = self.vehicle.output.connect(destination_store)
+        if connect_result.status != "ok":
+            print(f"[{self.name}] Could not connect transport destination: {connect_result.status} - {connect_result.message}")
+            return False
+        moved_total = 0
+        for stack in self.vehicle.cargo.stacks():
+            send_result = self.vehicle.output.send(stack.id, stack.count)
+            if send_result.status in ["ok", "partial"]:
+                moved_total += send_result.moved
+        print(f"[{self.name}] Delivered {moved_total}x {item_id} to {destination_outpost}.")
+        return moved_total > 0
+
+    def run_transport_loop(self, poll_interval=10.0):
+        """Run the human-configured transport route from the Data Archive."""
+        print(f"Pioneer Transport Controller ({self.name}) online. Awaiting route configuration.")
         while True:
             try:
-                _, _, level = self.get_battery()
-                if level < 0.95:
-                    self.recharge_at_station(target_level=1.0)
-
-                progress = archive.get("pioneer.survey_spiral", {}) or {}
-                start_index = progress.get("next_index", 0)
-                completed = 0
-                for point_index, target_x, target_y in self.survey_spiral_points(
-                    start_index=start_index,
-                    max_points=max_points,
-                ):
-                    if self.vehicle.is_being_rescued() if hasattr(self.vehicle, "is_being_rescued") else False:
-                        print(f"[{self.name}] Rescue in progress; pausing survey loop.")
-                        break
-
-                    budget = self.calculate_trip_energy(
-                        (target_x, target_y),
-                        # A scan may survey several contacts; budget conservatively
-                        # for the sweep plus follow-up survey work.
-                        planned_scans=4,
-                    )
-                    if not budget["is_achievable"]:
-                        print(f"[{self.name}] Spiral boundary reached at ({target_x:.1f}, {target_y:.1f}); returning home.")
-                        break
-
-                    self.publish_telemetry("SURVEY_OUTBOUND", f"{target_x:.1f},{target_y:.1f}")
-                    if not self.drive_to(target_x, target_y):
-                        print(f"[{self.name}] Could not safely reach spiral waypoint; returning home.")
-                        break
-
-                    # Never start a field action with only the driving reserve.
-                    # Sonar scan/survey time can consume several Wh before the
-                    # call returns control to this script.
-                    scan_reserve = self.SONAR_WH_BUDGET * 4 * self.SAFETY_MARGIN_MULTIPLIER
-                    if self.get_battery()[0] <= self.energy_needed_to_return_now() + scan_reserve:
-                        print(f"[{self.name}] Insufficient energy for safe scan at ({target_x:.1f}, {target_y:.1f}); returning home.")
-                        break
-
-                    sites = self.scan_and_survey()
-                    if self.vehicle.is_being_rescued() if hasattr(self.vehicle, "is_being_rescued") else False:
-                        print(f"[{self.name}] Rescue started during scan; abandoning survey pass.")
-                        break
-                    self.save_survey_waypoint(point_index, (target_x, target_y), sites)
-                    completed += 1
-
-                    if self.get_battery()[0] < self.energy_needed_to_return_now():
-                        print(f"[{self.name}] Return reserve reached after survey; returning home.")
-                        break
-
-                self.return_to_base()
-                next_index = archive.get("pioneer.survey_spiral", {}).get("next_index", start_index)
-                self.publish_telemetry("SURVEY_COMPLETE", f"{completed} waypoints; next {next_index}")
-                print(f"[{self.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}. Recharging before continuing.")
-                self.recharge_at_station(target_level=1.0)
-                sleep(5.0)
-            except Exception as e:
-                print(f"[{self.name}] Survey loop exception: {e}. Returning home.")
+                route = archive.get("pioneer.transport.route", {}) or {}
+                if route:
+                    self.publish_telemetry("TRANSPORT", f"{route.get('item_id', 'unknown')} route")
+                    self.transport_once(route)
+                else:
+                    self.publish_telemetry("IDLE_AT_BASE", "no transport route")
+                sleep(poll_interval)
+            except Exception as error:
+                print(f"[{self.name}] Transport exception: {error}")
                 try:
                     self.vehicle.nav.brake()
                 except Exception:
                     pass
-                self.return_to_base()
-                sleep(5.0)
+                sleep(poll_interval)
 
     def run_construction_loop(self):
-        """Continuously polls pending construction blueprints and executes available builds."""
+        """Continuously polls pending and paused construction blueprints and executes available builds."""
         print(f"Pioneer Controller ({self.name}) online. Monitoring construction blueprints.")
         bp_component = get_component("construction_blueprint")
+        failed_jobs = set()
 
         while True:
             try:
-                # Ensure vehicle is charged before setting off
+                # 1. Base Battery & Staging: If parked at home, ensure charged before departing
+                if self.distance_to_home() <= 3.0:
+                    _, _, lvl = self.get_battery()
+                    if lvl < 0.90:
+                        self.recharge_at_station(target_level=1.0)
+
+                # 2. Field Battery Floor: If energy drops near return reserve, return to base
+                curr_wh, _, _ = self.get_battery()
+                if curr_wh <= self.energy_needed_to_return_now():
+                    print(f"[{self.name}] Return reserve reached in field; returning to base to recharge.")
+                    self.return_to_base()
+                    self.recharge_at_station(target_level=1.0)
+                    continue
+
+                # Query paused and pending constructions
+                paused = []
+                pending = []
+                if bp_component:
+                    if hasattr(bp_component, "paused_constructions"):
+                        try:
+                            paused = bp_component.paused_constructions() or []
+                        except Exception:
+                            paused = []
+                    if hasattr(bp_component, "pending_constructions"):
+                        try:
+                            pending = bp_component.pending_constructions() or []
+                        except Exception:
+                            pending = []
+
+                if not paused and not pending:
+                    if failed_jobs:
+                        failed_jobs.clear()
+                    if self.distance_to_home() > 3.0:
+                        self.return_to_base()
+                    self.publish_telemetry("IDLE_AT_BASE")
+                    sleep(10.0)
+                    continue
+
+                # 3. Check Paused Constructions first (resuming already-paid work)
+                active_job = None
+                for job in paused:
+                    job_id = getattr(job, "id", None)
+                    if not job_id or job_id in failed_jobs:
+                        continue
+                    job_pos = getattr(job, "position", None)
+                    coords = (job_pos.x, job_pos.y) if job_pos else None
+                    if not coords:
+                        continue
+                    budget = self.calculate_trip_energy(coords, planned_drill_units=0, planned_scans=0)
+                    if budget["is_achievable"]:
+                        active_job = job
+                        break
+                    elif self.distance_to_home() > 3.0:
+                        # Cannot reach safely from current field position; return home to recharge
+                        print(f"[{self.name}] Insufficient energy to reach paused job safely; returning home.")
+                        self.return_to_base()
+                        self.recharge_at_station(target_level=1.0)
+                        break
+
+                if active_job:
+                    job_id = getattr(active_job, "id", None)
+                    job_pos = getattr(active_job, "position", None)
+                    coords = (job_pos.x, job_pos.y) if job_pos else None
+                    print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
+                    if not self.execute_construction(job_id, coords):
+                        failed_jobs.add(job_id)
+                        sleep(2.0)
+                    continue
+
+                # 4. Check Pending Constructions matching current cargo
+                current_pos = self.get_position()
+                matching_jobs = []
+                for job in pending:
+                    job_id = getattr(job, "id", getattr(job, "blueprint_id", None))
+                    if not job_id or job_id in failed_jobs:
+                        continue
+                    req_item = getattr(job, "required_item", None)
+                    req_count = getattr(job, "required_count", 0)
+                    # Deconstruction (req_count <= 0 or req_item None) or items already in cargo
+                    if not req_item or req_count <= 0 or self.cargo_count(req_item) >= req_count:
+                        matching_jobs.append(job)
+
+                if matching_jobs:
+                    # Sort matching jobs by proximity to current vehicle coordinates
+                    matching_jobs.sort(key=lambda j: self.distance_between(current_pos, (j.position.x, j.position.y)) if getattr(j, "position", None) else 999999)
+                    candidate = None
+                    for job in matching_jobs:
+                        job_pos = getattr(job, "position", None)
+                        coords = (job_pos.x, job_pos.y) if job_pos else None
+                        if not coords:
+                            continue
+                        budget = self.calculate_trip_energy(coords, planned_drill_units=0, planned_scans=0)
+                        if budget["is_achievable"]:
+                            candidate = job
+                            break
+
+                    if candidate:
+                        job_id = getattr(candidate, "id", getattr(candidate, "blueprint_id", None))
+                        job_pos = getattr(candidate, "position", None)
+                        coords = (job_pos.x, job_pos.y) if job_pos else None
+                        print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
+                        if not self.execute_construction(job_id, coords):
+                            failed_jobs.add(job_id)
+                            sleep(2.0)
+                        continue
+                    elif self.distance_to_home() > 3.0:
+                        # Battery too low to reach the next matching job and return; go home to recharge
+                        print(f"[{self.name}] Insufficient energy to reach next construction site; returning to base.")
+                        self.return_to_base()
+                        self.recharge_at_station(target_level=1.0)
+                        continue
+
+                # 5. No matching jobs with current cargo: return to base, offload, and restock
+                target_jobs = [j for j in pending if getattr(j, "id", getattr(j, "blueprint_id", None)) not in failed_jobs]
+                if not target_jobs:
+                    # All pending jobs currently marked failed; clear failure set and wait
+                    failed_jobs.clear()
+                    if self.distance_to_home() > 3.0:
+                        self.return_to_base()
+                    self.publish_telemetry("IDLE_AT_BASE")
+                    sleep(10.0)
+                    continue
+
+                target_job = target_jobs[0]
+                job_id = getattr(target_job, "id", getattr(target_job, "blueprint_id", None))
+                required_item = getattr(target_job, "required_item", None)
+                required_count = getattr(target_job, "required_count", 0)
+
+                # Return to base for restocking
+                if self.distance_to_home() > 3.0:
+                    self.return_to_base()
+
+                # Ensure vehicle is charged before embarking on a new batch
                 _, _, lvl = self.get_battery()
                 if lvl < 0.90:
                     self.recharge_at_station(target_level=1.0)
 
-                pending = []
-                if bp_component and hasattr(bp_component, "pending_constructions"):
-                    try:
-                        pending = bp_component.pending_constructions()
-                    except Exception:
-                        pass
+                if required_item and required_count > 0:
+                    # If cargo is occupied by other materials, offload first to clear storage bins
+                    if hasattr(self.vehicle, "cargo") and self.vehicle.cargo.count() > 0:
+                        if self.cargo_count(required_item) == 0:
+                            self.unload_cargo()
 
-                if pending:
-                    job = pending[0]
-                    job_id = getattr(job, "id", getattr(job, "blueprint_id", None))
-                    job_pos = getattr(job, "position", None)
-                    coords = (job_pos.x, job_pos.y) if job_pos else None
+                    # Calculate batch needed across upcoming same-material jobs, capped by vehicle cargo capacity
+                    free_space = 50
+                    if hasattr(self.vehicle, "cargo"):
+                        try:
+                            free_space = max(0, self.vehicle.cargo.capacity() - self.vehicle.cargo.count())
+                        except Exception:
+                            free_space = 50
 
-                    print(f"[{self.name}] Found pending construction job: {job_id} at {coords}.")
-                    success = self.execute_construction(job_id, coords)
-                    if not success:
-                        sleep(5.0)
+                    batch_needed = self.batch_required_count(target_jobs, required_item, max_limit=free_space)
+                    batch_needed = max(required_count, batch_needed)
+
+                    print(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
+                    if not self.load_construction_materials(target_job, target_count=batch_needed):
+                        print(f"[{self.name}] Could not load materials for job {job_id}; retrying in 10s.")
+                        sleep(10.0)
+                        continue
                 else:
-                    self.publish_telemetry("IDLE_AT_BASE")
-                    sleep(10.0)
+                    # Deconstruction job - ensure cargo has space for reclaimed materials
+                    if hasattr(self.vehicle, "cargo") and self.vehicle.cargo.full():
+                        self.unload_cargo()
 
             except Exception as e:
                 print(f"[{self.name}] Pioneer loop exception: {e}")

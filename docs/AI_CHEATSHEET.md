@@ -26,7 +26,19 @@ High-density reference of physics, formulas, component specs, bus channels, and 
 
 ---
 
-## 📡 3. Inter-Process Communication & Data Architecture
+## 🗺️ 3. Planet Map Biome Colors (player-observed, verify with `nocturna.biome_at(x, y)`)
+
+| Map Color | Biome |
+| :--- | :--- |
+| Blue (incl. the base's slightly-green patch) | `frozen` |
+| Green | `coastal` |
+| Dark brown / red | `volcanic` |
+| Light brown | `geothermal` |
+| Purple | `deep` |
+
+---
+
+## 📡 4. Inter-Process Communication & Data Architecture
 
 ### Signal Bus (`get_component("comms")`)
 - **Channel `bio_orders`**: Exchange broadcasts open orders -> Collector adjusts harvest target.
@@ -42,7 +54,7 @@ High-density reference of physics, formulas, component specs, bus channels, and 
 
 ---
 
-## 🏭 4. Hardware Catalog & Production Specs
+## 🏭 5. Hardware Catalog & Production Specs
 
 | Machine | Price | Power Profile | Storage / Capacity | Primary Function |
 | :--- | :--- | :--- | :--- | :--- |
@@ -51,7 +63,7 @@ High-density reference of physics, formulas, component specs, bus channels, and 
 | `heat_generator` | 800 cr | -10 W max | N/A | Surface warming. |
 | `oxygen_generator` | 1,000 cr | -8 W | 4 units input | Atmospheric CO2 -> O2 conversion. |
 | `pressure_generator` | 1,000 cr | -10 W | N/A | Atmospheric pressure builder. |
-| `smelter` | 1,500 cr | -25 W | In/Out slots | Ore -> ingots (Iron, Glass, Titanium). Auto-shutoff when idle. |
+| `smelter` | 1,500 cr | -20 to -45 W (per active recipe; 0 W when idle/not running) | In/Out slots | Ore -> ingots (Iron, Glass, Titanium). No breaker cycling needed. |
 | `bio_collector` | 2,500 cr | -5 W | 30 units | Autonomous biological specimen harvesting. |
 | `bio_lab` | 5,000 cr | -5 W | 30 in / 30 stock | Specimen analysis and sample extraction. |
 | `bio_exchange` | 2,000 cr | -5 W | Orders queue | Earth biology order fulfillment & credit rewards. |
@@ -60,7 +72,7 @@ High-density reference of physics, formulas, component specs, bus channels, and 
 
 ---
 
-## 🧩 5. Standard Component Invocation Patterns
+## 🧩 6. Standard Component Invocation Patterns
 
 ```python
 # 1. Connect to standard components

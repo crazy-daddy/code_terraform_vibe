@@ -1,7 +1,7 @@
 # Shared Library for Smelter Automation
 # Manages automated ore intake, recipe execution, finished metal extraction,
 # and intelligent power-down when idle to conserve grid energy.
-from production import get_material_demands
+from production import get_material_demands, get_raw_material_reason
 
 class SmelterController:
     """
@@ -86,7 +86,9 @@ class SmelterController:
                 clear_res = self.smelter.clear_recipe()
                 if clear_res.status == "ok":
                     print(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
-                self.power_down_if_idle()
+                # Breaker cycling disabled: power_draw only applies while a
+                # recipe is running (see docs), so idle draw is already 0 W.
+                # self.power_down_if_idle()
             return
 
         recipe, ore_to_process = self.select_needed_ore(unlocked_recipes)
@@ -96,8 +98,12 @@ class SmelterController:
             if current_recipe and not self.smelter.is_running() and self.smelter.get_input_count() == 0:
                 clear_res = self.smelter.clear_recipe()
                 if clear_res.status == "ok":
-                    print(f"[{self.name}] No ore demand. Recipe cleared to idle (0 W draw).")
-            self.power_down_if_idle()
+                    # power_draw only applies while a recipe is actively running,
+                    # so clearing it here is state hygiene, not a power saving.
+                    print(f"[{self.name}] Recipe cleared (no demand): every refined output is already at its stock target or order requirement.")
+            # Breaker cycling disabled: power_draw only applies while a
+            # recipe is running (see docs), so idle draw is already 0 W.
+            # self.power_down_if_idle()
             return
 
         recipe_id = getattr(recipe, "id", "")
@@ -114,7 +120,9 @@ class SmelterController:
                         return
                 set_res = self.smelter.set_recipe(recipe_id)
                 if set_res.status == "ok":
-                    print(f"[{self.name}] Set recipe '{recipe_id}'.")
+                    reason = get_raw_material_reason(ore_to_process, self.smelter)
+                    output_item = getattr(recipe, "output_item", "?")
+                    print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore_to_process} -> {output_item} for {reason}.")
             return
 
         # Step 3: If input buffer has room and inventory has ore, pull it
@@ -126,7 +134,8 @@ class SmelterController:
                 res = self.smelter.input.take(ore_to_process, take_count)
                 if res.status in ["ok", "partial"]:
                     moved = getattr(res, "moved", 0)
-                    print(f"[{self.name}] Loaded {moved}x {ore_to_process} from Inventory.")
+                    reason = get_raw_material_reason(ore_to_process, self.smelter)
+                    print(f"[{self.name}] Loaded {moved}x {ore_to_process} from Inventory (for {reason}).")
                     in_buf = self.smelter.get_input_count()
 
         # Step 4: Check idle condition & power management
@@ -149,20 +158,24 @@ class SmelterController:
                         break
 
             if not has_pending_ore:
-                # Completely idle! Clear recipe to eliminate active draw
+                # Completely idle! power_draw only applies while a recipe is
+                # running, so clearing it is cleanup, not what cuts the draw.
                 if self.smelter.get_recipe() != "":
                     self.smelter.clear_recipe()
-                    print(f"[{self.name}] No ore to smelt. Recipe cleared to idle (0 W draw).")
+                    print(f"[{self.name}] No ore to smelt. Recipe cleared.")
 
-                # Power off breaker when idle to save grid power
-                if self.power and hasattr(self.power, "set_powered"):
-                    try:
-                        if self.power.can_power_off(self.name) and self.power.is_powered(self.name):
-                            print(f"[{self.name}] Powering OFF smelter breaker while idle. Rover/grid will wake on ore delivery.")
-                            self.power.set_powered(self.name, False)
-                            return
-                    except Exception:
-                        pass
+                # Breaker cycling disabled: idle draw is already 0 W per docs
+                # (Recipe.power_draw applies only while running), so switching
+                # the breaker off saves nothing and only adds a dependency on
+                # an external wake call (e.g. Fabricator.wake_smelter()).
+                # if self.power and hasattr(self.power, "set_powered"):
+                #     try:
+                #         if self.power.can_power_off(self.name) and self.power.is_powered(self.name):
+                #             print(f"[{self.name}] Powering OFF smelter breaker while idle. Rover/grid will wake on ore delivery.")
+                #             self.power.set_powered(self.name, False)
+                #             return
+                #     except Exception:
+                #         pass
 
     def recover_input(self):
         """Return staged material to Inventory before clearing a stale recipe."""
@@ -175,7 +188,9 @@ class SmelterController:
         return self.smelter.get_input_count() == 0
 
     def power_down_if_idle(self):
-        """Power off an idle Smelter after demand has been cleared."""
+        """Power off an idle Smelter after demand has been cleared. Currently
+        unused/disabled: per docs, power_draw only applies while a recipe is
+        actively running, so idle draw is already 0 W without this."""
         if self.smelter.is_running() or self.smelter.get_input_count() > 0 or self.smelter.get_output_count() > 0:
             return
         if self.power and hasattr(self.power, "set_powered"):
@@ -222,7 +237,7 @@ class SmelterController:
         return None, None
 
     def run(self, poll_interval=2.0):
-        print(f"Smelter Controller ({self.name}) online. Auto-shutoff when idle enabled.")
+        print(f"Smelter Controller ({self.name}) online.")
         while True:
             try:
                 self.step()

@@ -4,6 +4,21 @@
 
 from archive import archive
 
+SCAN_RESEARCH_IDS = [
+    "research_geological_survey",
+    "research_hydrology_survey",
+    "research_petroleum_survey",
+    "research_exotic_husbandry",
+    "research_deep_exotics",
+]
+
+SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
+LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
+SURVEY_CLAIMS_KEY = "survey.claims"
+LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
+SURVEY_SPIRAL_KEY = "survey.spiral"
+LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
+
 class VehicleController:
     """
     Unified base controller for autonomous surface vehicles (Rover, Pioneer).
@@ -25,8 +40,9 @@ class VehicleController:
         self.home_coords = home_coords
         self.cruise_throttle = cruise_throttle
 
-        # Dynamic calibration tracking stored in Data Archive
-        self.wh_per_meter = archive.get("fleet.wh_per_meter", archive.get("rover.wh_per_meter", self.WH_PER_METER_DEFAULT))
+        # Each vehicle and module loadout gets its own calibration. Legacy
+        # shared values are read only as a migration fallback.
+        self.wh_per_meter = self.load_wh_per_meter()
         self.total_distance_driven = 0.0
         self.total_wh_spent_moving = 0.0
 
@@ -35,6 +51,17 @@ class VehicleController:
         self.current_target = None
         self.current_target_key = None
         self.assigned_slot_coords = self.get_home_slot_coords()
+
+    def calibration_key(self):
+        return f"vehicle.wh_per_meter:{self.name}"
+
+    def load_wh_per_meter(self):
+        value = archive.get(self.calibration_key(), None)
+        if value is None:
+            value = archive.get("fleet.wh_per_meter", None)
+        if value is None and str(self.name).startswith("rover"):
+            value = archive.get("rover.wh_per_meter", None)
+        return value if value is not None else self.WH_PER_METER_DEFAULT
 
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""
@@ -143,6 +170,8 @@ class VehicleController:
             return claims
 
         archive.transaction("rover.claims", {}, updater)
+        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
+        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
         return claimed[0]
 
     def refresh_claim(self, target_key):
@@ -156,6 +185,30 @@ class VehicleController:
             return claims
 
         archive.transaction("rover.claims", {}, updater)
+        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
+        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
+
+    def cleanup_stale_claims(self):
+        """Removes expired fleet claims before selecting a new mission."""
+        curr_tick = self.get_current_tick()
+        if curr_tick <= 0:
+            return
+
+        def updater(claims):
+            if not isinstance(claims, dict):
+                return {}
+            active = {}
+            for key, claim in claims.items():
+                if not isinstance(claim, dict):
+                    continue
+                claim_tick = claim.get("tick", 0)
+                if curr_tick - claim_tick < self.CLAIM_STALE_TICKS:
+                    active[key] = claim
+            return active
+
+        archive.transaction("rover.claims", {}, updater)
+        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
+        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
 
     def release_target_claim(self, target_key=None):
         """Releases claim on target_key or releases all claims owned by this vehicle."""
@@ -172,9 +225,22 @@ class VehicleController:
             return claims
 
         archive.transaction("rover.claims", {}, updater)
+        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
+        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
+
+    def get_claims(self):
+        """Returns the unified map of active mission/target claims across the fleet."""
+        shared = archive.get(SURVEY_CLAIMS_KEY, {})
+        legacy = archive.get(LEGACY_ROVER_CLAIMS_KEY, {})
+        claims = {}
+        if isinstance(legacy, dict):
+            claims.update(legacy)
+        if isinstance(shared, dict):
+            claims.update(shared)
+        return claims
 
     def blacklist_target(self, target_key, reason, message="", scanner_type=None, scanner_tier=None, hardness_limit=None):
         """
@@ -182,6 +248,8 @@ class VehicleController:
         (e.g. wrong_scanner, tier_too_low, too_hard, research_required, depleted).
         Stores the scanner/drill type, tier, and hardness limit so that when a vehicle is upgraded
         or equipped with appropriate technology, the target can be automatically revisited.
+        Stores scanner tier, range, hardness limit, and unlocked scan researches so that
+        when a vehicle is upgraded or scanning research is unlocked, it can be automatically revisited.
         """
         if scanner_type is None:
             if reason in ["wrong_scanner", "not_allowed", "out_of_range"]:
@@ -193,6 +261,7 @@ class VehicleController:
             else:
                 scanner_type = "sonar"
 
+        scanner_range = 50.0
         if scanner_tier is None:
             if scanner_type == "sonar" and hasattr(self.vehicle, "sonar"):
                 try:
@@ -207,6 +276,12 @@ class VehicleController:
                     scanner_tier = "basic"
             else:
                 scanner_tier = "basic"
+
+        if scanner_type == "sonar" and hasattr(self.vehicle, "sonar"):
+            try:
+                scanner_range = self.vehicle.sonar.range()
+            except Exception:
+                scanner_range = 50.0
 
         if hardness_limit is None:
             if scanner_type == "sonar" and hasattr(self.vehicle, "sonar"):
@@ -223,12 +298,20 @@ class VehicleController:
                 hardness_limit = 1.0
 
         unlocked_research_count = 0
+        unlocked_scan_researches = []
         research = get_component("research")
         if research and hasattr(research, "unlocked"):
             try:
                 unlocked_research_count = len(research.unlocked())
             except Exception:
                 pass
+        if research:
+            for r_id in SCAN_RESEARCH_IDS:
+                try:
+                    if hasattr(research, "is_unlocked") and research.is_unlocked(r_id):
+                        unlocked_scan_researches.append(r_id)
+                except Exception:
+                    pass
 
         def updater(targets):
             if not isinstance(targets, dict):
@@ -238,8 +321,10 @@ class VehicleController:
                 "message": message,
                 "scanner_type": scanner_type,
                 "scanner_tier": scanner_tier,
+                "range": scanner_range,
                 "hardness_limit": hardness_limit,
                 "unlocked_research_count": unlocked_research_count,
+                "unlocked_scan_researches": unlocked_scan_researches,
                 "rover": self.name,
                 "vehicle": self.name,
                 "tick": self.get_current_tick()
@@ -247,6 +332,8 @@ class VehicleController:
             return targets
 
         archive.transaction("rover.unsupported_targets", {}, updater)
+        archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
+        archive.transaction(LEGACY_ROVER_UNSUPPORTED_KEY, {}, updater)
         self.release_target_claim(target_key)
         print(f"[{self.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
         try:
@@ -261,6 +348,38 @@ class VehicleController:
                 del targets[target_key]
             return targets
         archive.transaction("rover.unsupported_targets", {}, updater)
+        archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
+        archive.transaction(LEGACY_ROVER_UNSUPPORTED_KEY, {}, updater)
+        def p_updater(records):
+            if isinstance(records, dict):
+                if target_key in records:
+                    del records[target_key]
+                if target_key.startswith("poi_"):
+                    parts = target_key.split("_")
+                    if len(parts) >= 3:
+                        leg_key = f"{parts[1]}:{parts[2]}"
+                        if leg_key in records:
+                            del records[leg_key]
+            return records
+        archive.transaction("pioneer.sonar_retries", {}, p_updater)
+
+    def get_unsupported_targets(self):
+        """Returns the unified map of unsupported/blacklisted targets across the fleet."""
+        shared = archive.get(SURVEY_UNSUPPORTED_KEY, {})
+        legacy_rover = archive.get(LEGACY_ROVER_UNSUPPORTED_KEY, {})
+        legacy_pioneer = archive.get("pioneer.sonar_retries", {})
+        targets = {}
+        if isinstance(legacy_rover, dict):
+            targets.update(legacy_rover)
+        if isinstance(legacy_pioneer, dict):
+            for k, v in legacy_pioneer.items():
+                if ":" in k and not k.startswith("poi_"):
+                    parts = k.split(":")
+                    targets[f"poi_{parts[0]}_{parts[1]}"] = v
+                targets[k] = v
+        if isinstance(shared, dict):
+            targets.update(shared)
+        return targets
 
     def can_attempt_target(self, target_key, unsupported_entry):
         """
@@ -271,10 +390,11 @@ class VehicleController:
         if not unsupported_entry or not isinstance(unsupported_entry, dict):
             return True, "not_blacklisted"
 
-        reason = unsupported_entry.get("reason", "")
+        reason = unsupported_entry.get("reason", unsupported_entry.get("status", ""))
         recorded_type = unsupported_entry.get("scanner_type", "sonar")
         recorded_tier = unsupported_entry.get("scanner_tier", "basic")
         recorded_h_limit = unsupported_entry.get("hardness_limit", 1.0)
+        recorded_range = unsupported_entry.get("range", 50.0)
 
         # Permanent blockers
         if reason in ["depleted", "empty"]:
@@ -286,7 +406,7 @@ class VehicleController:
                 return True, "has_bio_scanner"
             return False, "requires_bio_scanner"
 
-        # Hardness limitation (sonar or drill)
+        # Hardness limitation / tier limitation (sonar or drill)
         if reason in ["too_hard", "tier_too_low"]:
             if recorded_type == "sonar":
                 if hasattr(self.vehicle, "sonar"):
@@ -302,11 +422,20 @@ class VehicleController:
                             curr_tier = self.vehicle.sonar.tier()
                         except Exception:
                             curr_tier = "basic"
+                    curr_range = 50.0
+                    if hasattr(self.vehicle.sonar, "range"):
+                        try:
+                            curr_range = self.vehicle.sonar.range()
+                        except Exception:
+                            curr_range = 50.0
 
-                    tier_order = {"basic": 1, "wide": 2, "deep": 3}
+                    tier_order = {"none": 0, "basic": 1, "wide": 2, "deep": 3}
                     curr_tier_rank = tier_order.get(curr_tier, 1)
                     rec_tier_rank = tier_order.get(recorded_tier, 1)
-                    if curr_h > recorded_h_limit or curr_tier_rank > rec_tier_rank:
+                    if (curr_h > recorded_h_limit or 
+                        curr_tier_rank > rec_tier_rank or 
+                        curr_range > recorded_range or 
+                        recorded_tier in ["none", None, "unknown"]):
                         return True, f"upgraded_sonar_{curr_tier}"
                 return False, f"sonar_tier_too_low (has {recorded_tier} limit {recorded_h_limit})"
 
@@ -322,17 +451,19 @@ class VehicleController:
                         return True, f"upgraded_drill (limit {curr_h} > {recorded_h_limit})"
                 return False, f"drill_hardness_too_low (limit {recorded_h_limit})"
 
-        # Research requirement
+        # Research requirement: ONLY rescan when scanning-relevant research is unlocked
         if reason == "research_required":
             research = get_component("research")
-            if research and hasattr(research, "unlocked"):
-                try:
-                    curr_count = len(research.unlocked())
-                    if curr_count > unsupported_entry.get("unlocked_research_count", 0):
-                        return True, "new_research_unlocked"
-                except Exception:
-                    pass
-            return False, "research_still_locked"
+            if research:
+                recorded_scan_researches = set(unsupported_entry.get("unlocked_scan_researches", []))
+                for res_id in SCAN_RESEARCH_IDS:
+                    if res_id not in recorded_scan_researches:
+                        try:
+                            if hasattr(research, "is_unlocked") and research.is_unlocked(res_id):
+                                return True, f"new_scan_research_{res_id}"
+                        except Exception:
+                            pass
+            return False, "scan_research_still_locked"
 
         return False, f"unsupported_{reason}"
 
@@ -416,9 +547,7 @@ class VehicleController:
             if 0.02 <= observed_wh_per_m <= 0.30:
                 base_val = self.wh_per_meter if self.wh_per_meter is not None else self.WH_PER_METER_DEFAULT
                 self.wh_per_meter = (base_val * 0.70) + (observed_wh_per_m * 0.30)
-                archive.set("fleet.wh_per_meter", self.wh_per_meter)
-                if str(self.name).startswith("rover"):
-                    archive.set("rover.wh_per_meter", self.wh_per_meter)
+                archive.set(self.calibration_key(), self.wh_per_meter)
 
     def drive_to(self, target_x, target_y, precision=1.5, timeout_ticks=3000):
         """
@@ -727,6 +856,7 @@ class VehicleController:
 
     def scan_and_survey(self):
         """Scans the local area and surveys discovered sites."""
+        self.last_scan_status = "unavailable"
         if not hasattr(self.vehicle, "sonar"):
             print(f"[{self.name}] Error: No SonarModule mounted!")
             return []
@@ -734,6 +864,7 @@ class VehicleController:
         print(f"[{self.name}] Activating Sonar sweep...")
         self.publish_telemetry("SCANNING")
         res = self.vehicle.sonar.scan()
+        self.last_scan_status = res.status
         if res.status not in ["ok", "too_hard", "tier_too_low", "research_required"]:
             print(f"[{self.name}] Sonar scan status: {res.status} - {res.message}")
             if res.status in ["wrong_scanner", "not_allowed", "out_of_range"]:
@@ -808,3 +939,263 @@ class VehicleController:
                 self.refresh_claim(self.current_target_key)
 
         return mined_count
+
+    def sonar_signature(self):
+        """Returns the mounted sonar capability used for retry decisions."""
+        sonar = getattr(self.vehicle, "sonar", None)
+        if not sonar:
+            return "none"
+        try:
+            return f"{sonar.tier()}:{sonar.range()}:{sonar.hardness_limit()}"
+        except Exception:
+            return "unknown"
+
+    def remember_sonar_retry(self, coords):
+        """Remember a limited contact until sonar capability changes."""
+        target_key = f"poi_{int(round(coords[0]))}_{int(round(coords[1]))}"
+        status = getattr(self, "last_scan_status", "unknown")
+        self.blacklist_target(target_key, status, f"Scan limited: {status}")
+
+    def unscanned_pois(self):
+        """Returns known map contacts that still need a vehicle sonar scan."""
+        planet = get_component("nocturna")
+        if not planet or not hasattr(planet, "points_of_interest"):
+            return []
+        try:
+            unsupported_targets = self.get_unsupported_targets()
+            existing_claims = self.get_claims()
+            curr_tick = self.get_current_tick()
+            points = []
+            for point in planet.points_of_interest():
+                if getattr(point, "scanned", False):
+                    continue
+                key = f"poi_{point.x}_{point.y}"
+                legacy_key = f"{point.x}:{point.y}"
+
+                # Check unsupported / blacklisted targets across fleet
+                target_entry = unsupported_targets.get(key) or unsupported_targets.get(legacy_key)
+                if target_entry:
+                    can_attempt, _ = self.can_attempt_target(key, target_entry)
+                    if not can_attempt:
+                        continue
+
+                # Check if claimed by another active vehicle (Rover, Pioneer, or peer)
+                claim = existing_claims.get(key)
+                if claim and (claim.get("vehicle") != self.name and claim.get("rover") != self.name):
+                    claim_age = curr_tick - claim.get("tick", 0)
+                    if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
+                        continue
+
+                points.append(point)
+            home = self.assigned_slot_coords
+            points.sort(key=lambda p: self.distance_between(home, (p.x, p.y)))
+            return points
+        except Exception:
+            return []
+
+    def survey_spiral_points(self, step=None, start_index=0, max_points=160):
+        """Yields indexed outward square-spiral waypoints spaced for the mounted sonar."""
+        sonar = getattr(self.vehicle, "sonar", None)
+        if not sonar:
+            return
+
+        if step is None:
+            try:
+                step = max(20.0, sonar.range() * 0.75)
+            except Exception:
+                step = 35.0
+
+        x, y = self.assigned_slot_coords
+        directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+        direction_index = 0
+        leg_length = 1
+        point_index = 0
+        yielded = 0
+
+        while yielded < max_points:
+            for _ in range(2):
+                dx, dy = directions[direction_index % len(directions)]
+                for _ in range(leg_length):
+                    x += dx * step
+                    y += dy * step
+                    if point_index >= start_index:
+                        yield (point_index, x, y)
+                        yielded += 1
+                        if yielded >= max_points:
+                            return
+                    point_index += 1
+                direction_index += 1
+            leg_length += 1
+
+    def save_survey_waypoint(self, point_index, coords, sites):
+        """Publishes completed spiral progress to the shared Data Archive notebook."""
+        site_summaries = []
+        for site in sites or []:
+            try:
+                kind = site.kind() if hasattr(site, "kind") else getattr(site, "kind", "unknown")
+            except Exception:
+                kind = "unknown"
+            site_summaries.append({
+                "id": getattr(site, "id", None),
+                "kind": kind,
+                "x": getattr(site, "x", None),
+                "y": getattr(site, "y", None),
+                "surveyed": getattr(site, "surveyed", False),
+                "item_id": getattr(site, "item_id", None),
+            })
+
+        def update_progress(current):
+            progress = dict(current or {})
+            waypoints = list(progress.get("waypoints", []))
+            entry = {
+                "index": point_index,
+                "coords": [coords[0], coords[1]],
+                "sites": site_summaries,
+            }
+            if not any(item.get("index") == point_index for item in waypoints):
+                waypoints.append(entry)
+            progress["waypoints"] = waypoints
+            progress["next_index"] = max(point_index + 1, progress.get("next_index", 0))
+            progress["last_completed"] = entry
+            progress["updated_by"] = self.name
+            return progress
+
+        archive.transaction(SURVEY_SPIRAL_KEY, {}, update_progress)
+
+    def survey_known_pois(self, max_points=20):
+        """Scans multiple known contacts in one battery-safe outward route."""
+        completed = 0
+        visited = set()
+        while completed < max_points:
+            points = self.unscanned_pois()
+            current_pos = self.get_position()
+            candidates = [
+                p for p in points
+                if (getattr(p, "x", None), getattr(p, "y", None)) not in visited
+            ]
+            candidates.sort(key=lambda p: self.distance_between(current_pos, (p.x, p.y)))
+
+            poi = None
+            for candidate in candidates:
+                key = (candidate.x, candidate.y)
+                budget = self.calculate_trip_energy((candidate.x, candidate.y), planned_scans=4)
+                if budget["is_achievable"]:
+                    poi = candidate
+                    visited.add(key)
+                    break
+            if poi is None:
+                if candidates:
+                    print(f"[{self.name}] Remaining known POIs exceed the current route budget; returning home.")
+                break
+
+            target = (poi.x, poi.y)
+            target_key = f"poi_{poi.x}_{poi.y}"
+            self.claim_target(target_key, {"coords": target, "name": target_key, "type": "poi"})
+            self.current_target_key = target_key
+            self.publish_telemetry("SURVEY_POI", f"POI_{poi.x}_{poi.y}")
+            print(f"[{self.name}] Surveying known unscanned POI at {target} ({self.distance_between(current_pos, target):.1f} m leg).")
+            if not self.drive_to(poi.x, poi.y):
+                print(f"[{self.name}] Could not safely reach POI at {target}; ending survey pass.")
+                self.release_target_claim(target_key)
+                break
+            self.vehicle.nav.brake()
+            scan_reserve = self.SONAR_WH_BUDGET * 4 * self.SAFETY_MARGIN_MULTIPLIER
+            if self.get_battery()[0] <= self.energy_needed_to_return_now() + scan_reserve:
+                print(f"[{self.name}] Insufficient energy to scan POI at {target}; returning home.")
+                self.release_target_claim(target_key)
+                break
+            sites = self.scan_and_survey()
+            self.release_target_claim(target_key)
+            self.save_survey_waypoint(completed, target, sites)
+            completed += 1
+            if self.get_battery()[0] < self.energy_needed_to_return_now():
+                break
+        if completed:
+            print(f"[{self.name}] Completed {completed} POI scans on one outward route; returning home.")
+        return completed
+
+    def run_survey_loop(self, max_points=160, spiral_fallback=False):
+        """Autonomous survey loop: scans known POIs first, optionally falls back to spiral."""
+        if not hasattr(self.vehicle, "sonar"):
+            print(f"[{self.name}] Survey loop requires a mounted Sonar Module.")
+            return
+        if not hasattr(self.vehicle, "nav"):
+            print(f"[{self.name}] Survey loop requires a mounted Nav Module.")
+            return
+
+        print(f"Survey Controller ({self.name}) online. Starting battery-safe survey.")
+        while True:
+            try:
+                _, _, level = self.get_battery()
+                if level < 0.95:
+                    self.recharge_at_station(target_level=1.0)
+
+                poi_completed = self.survey_known_pois(max_points=max_points)
+                if poi_completed > 0 or self.unscanned_pois():
+                    self.return_to_base()
+                    self.publish_telemetry("SURVEY_COMPLETE", f"{poi_completed} known POIs")
+                    self.recharge_at_station(target_level=1.0)
+                    sleep(5.0)
+                    continue
+
+                if not spiral_fallback:
+                    print(f"[{self.name}] All known POIs are scanned; no random spiral fallback requested.")
+                    self.publish_telemetry("SURVEY_COMPLETE", "all known POIs scanned")
+                    sleep(30.0)
+                    continue
+
+                progress = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
+                start_index = progress.get("next_index", 0)
+                completed = 0
+                for point_index, target_x, target_y in self.survey_spiral_points(
+                    start_index=start_index,
+                    max_points=max_points,
+                ):
+                    if hasattr(self.vehicle, "is_being_rescued") and self.vehicle.is_being_rescued():
+                        print(f"[{self.name}] Rescue in progress; pausing survey loop.")
+                        break
+
+                    budget = self.calculate_trip_energy(
+                        (target_x, target_y),
+                        planned_scans=4,
+                    )
+                    if not budget["is_achievable"]:
+                        print(f"[{self.name}] Spiral boundary reached at ({target_x:.1f}, {target_y:.1f}); returning home.")
+                        break
+
+                    self.publish_telemetry("SURVEY_OUTBOUND", f"{target_x:.1f},{target_y:.1f}")
+                    if not self.drive_to(target_x, target_y):
+                        print(f"[{self.name}] Could not safely reach spiral waypoint; returning home.")
+                        break
+
+                    scan_reserve = self.SONAR_WH_BUDGET * 4 * self.SAFETY_MARGIN_MULTIPLIER
+                    if self.get_battery()[0] <= self.energy_needed_to_return_now() + scan_reserve:
+                        print(f"[{self.name}] Insufficient energy for safe scan at ({target_x:.1f}, {target_y:.1f}); returning home.")
+                        break
+
+                    sites = self.scan_and_survey()
+                    if hasattr(self.vehicle, "is_being_rescued") and self.vehicle.is_being_rescued():
+                        print(f"[{self.name}] Rescue started during scan; abandoning survey pass.")
+                        break
+                    self.save_survey_waypoint(point_index, (target_x, target_y), sites)
+                    completed += 1
+
+                    if self.get_battery()[0] < self.energy_needed_to_return_now():
+                        print(f"[{self.name}] Return reserve reached after survey; returning home.")
+                        break
+
+                self.return_to_base()
+                spiral_data = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
+                next_index = spiral_data.get("next_index", start_index)
+                self.publish_telemetry("SURVEY_COMPLETE", f"{completed} waypoints; next {next_index}")
+                print(f"[{self.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}. Recharging before continuing.")
+                self.recharge_at_station(target_level=1.0)
+                sleep(5.0)
+            except Exception as e:
+                print(f"[{self.name}] Survey loop exception: {e}. Returning home.")
+                try:
+                    self.vehicle.nav.brake()
+                except Exception:
+                    pass
+                self.return_to_base()
+                sleep(5.0)
