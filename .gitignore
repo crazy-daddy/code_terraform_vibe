@@ -1,9 +1,7 @@
 /.vscode
-/builtins.pyi
 /CODE-TERRAFORM-IDE.txt
 /codeterraform-scripts.json
 /codeterraform-workspace.json
-/*.pyi
 /logs
 /pyrightconfig.codeterraform.json
 /pyrightconfig.json
@@ -13,3 +11,7 @@ __pycache__/
 inspirations/.lastaccesslist
 docs/Code-Terraform-DOCS-Manual.md
 *.tmp
+*.pyi
+*.pyc
+*.pyo
+*.pyd

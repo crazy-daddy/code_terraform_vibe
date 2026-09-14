@@ -964,6 +964,11 @@ class VehicleController:
 
     def wake_smelter(self):
         """Cooperatively powers on and resumes smelter when fresh ore arrives."""
+        shedded = archive.get("power.shedded", [])
+        if any("smelter" in m for m in shedded):
+            print(f"[{self.name}] Smelter wake deferred: currently shedded by Power Guard for grid preservation.")
+            return
+
         pwr = get_component("power_control")
         if pwr and hasattr(pwr, "set_powered"):
             try:
@@ -986,7 +991,6 @@ class VehicleController:
     def recharge_at_station(self, target_level=1.0, station_coords=None, station_id=None):
         """
         Parks at Vehicle Charging Station / base staging slot and charges until target level.
-        Cooperates with the station controller (charging_station_1.py) which handles hardware
         Cooperates with the station controller (charging_station_*.py) which handles hardware
         charge() calls locally.
         """
@@ -995,7 +999,6 @@ class VehicleController:
             print(f"[{self.name}] Battery already charged ({lvl*100:.0f}%).")
             return True
 
-        cs = get_component("vehicle_charging_station")
         cs = None
         if station_coords is None:
             station_coords, st_info = self.get_nearest_charging_station()
@@ -1015,11 +1018,6 @@ class VehicleController:
                         break
 
         if not cs:
-            for i in range(1, 5):
-                cand = get_component(f"charging_station_{i}") or get_component(f"vehicle_charging_station_{i}")
-                if cand:
-                    cs = cand
-                    break
             if station_id:
                 cs = get_component(station_id)
             if not cs:
@@ -1030,7 +1028,6 @@ class VehicleController:
                         station_id = cand_id
                         break
 
-        cs_coords = self.get_charging_station_coords() or self.home_coords
         cs_coords = station_coords or self.get_charging_station_coords() or self.home_coords
 
         # Verify whether vehicle is actually inside the station's docked set
@@ -1045,7 +1042,6 @@ class VehicleController:
         if not is_docked:
             dist_to_cs = self.distance_to(cs_coords[0], cs_coords[1])
             if dist_to_cs > 1.2:
-                print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station. Driving to docking pad...")
                 print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
                 self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
             else:
@@ -1060,7 +1056,6 @@ class VehicleController:
 
         sleep(0.5)
         self.publish_telemetry("CHARGING")
-        print(f"[{self.name}] Docked at base slot. Waiting for charging station ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
         print(f"[{self.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
 
         wait_cycles = 0
@@ -1092,11 +1087,9 @@ class VehicleController:
                         active = get_active_fn() if get_active_fn else []
                         queued = get_queue_fn() if get_queue_fn else []
                         if self.name not in active and self.name not in queued:
-                            print(f"[{self.name}] Advisory: Vehicle is docked, but charging_station has not queued it yet. Ensure 'charging_station_1.py' is running!")
                             st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
                             print(f"[{self.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
                             try:
-                                notify(f"[{self.name}] Docked and waiting. Ensure 'charging_station_1.py' is running!", level="info", duration_seconds=8.0)
                                 notify(f"[{self.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
                             except Exception:
                                 pass

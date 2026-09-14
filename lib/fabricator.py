@@ -1,5 +1,6 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
 from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item
+from archive import archive
 
 
 class FabricatorController:
@@ -129,6 +130,10 @@ class FabricatorController:
 
     def wake_smelter(self):
         """Power on and resume the Smelter when refined inputs are missing."""
+        shedded = archive.get("power.shedded", [])
+        if any("smelter" in m for m in shedded):
+            return
+
         power = get_component("power_control")
         try:
             if power and hasattr(power, "set_powered"):
