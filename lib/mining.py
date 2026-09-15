@@ -23,6 +23,38 @@ ROVER_PREFERRED_MAX_HARDNESS = 1.0
 class MiningMixin:
     """Mineral-site discovery, priority-sorted claiming, and drill execution."""
 
+    def cargo_matches_target(self, target):
+        """
+        True when the vehicle's cargo is empty, or holds only the target's
+        own harvest_item. Cargo isn't material-locked (docs/models/storage_and_items.md's
+        Cargo.stacks() lists property-distinct stacks -- a Rover/Pioneer can
+        physically carry a mix of ore types at once), so nothing stops a
+        resumed mining job from mining a *different* ore straight into a hold
+        that already carries something else -- wasteful (capacity meant for
+        one clean load gets split across two materials) and confusing (an
+        "interrupted, resume this job" trip budget assumed a roughly-empty
+        hold, not one already partly full of an unrelated material). Callers
+        use this to decide whether resuming a claimed target should first
+        detour through an unload instead of mining straight into mismatched
+        cargo -- see run_expedition_cycle() (rover.py) / run_mining_loop()
+        (pioneer.py).
+        """
+        if not hasattr(self.vehicle, "cargo") or self.vehicle.cargo.count() == 0:
+            return True
+        harvest_item = target.get("harvest_item") if target else None
+        if not harvest_item:
+            return True  # non-mining target (e.g. a POI survey) has no ore to mismatch against
+        try:
+            stacks = self.vehicle.cargo.stacks()
+        except Exception:
+            return True  # can't verify; don't block resumption over an unreadable stacks() call
+        for stack in stacks:
+            item_id = getattr(stack, "id", None)
+            count = getattr(stack, "count", 0)
+            if item_id and count > 0 and item_id != harvest_item:
+                return False
+        return True
+
     def build_mineral_site_candidates(self, deprioritize_hardness_at_or_below=None):
         """
         Candidate mineral-extraction sites matching active raw-material demand
@@ -194,6 +226,17 @@ class MiningMixin:
                 return
 
             self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
+
+            # A battery-interruption recharge stop can land at the home base
+            # station itself (not just some remote field station) -- if so,
+            # and cargo is already carrying ore, unload it here rather than
+            # hauling a partly/mostly-full hold all the way back out to the
+            # site and back again next trip. Free capacity also means the
+            # resumed mine_current_site() call below can fill more before
+            # the next interruption, not just recover exactly what was lost.
+            if self.is_at_base() and self.vehicle.cargo.count() > 0:
+                print(f"[{self.name}] At base with cargo aboard; unloading before returning to the mining site.")
+                self.unload_cargo()
 
             print(f"[{self.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
             if self.current_target:

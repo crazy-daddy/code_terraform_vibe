@@ -78,13 +78,33 @@ class RoverController(VehicleController):
                 print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                 self.recharge_at_station(target_level=1.0)
 
+        # A target restored from a saved mission after a script reload (see
+        # vehicle_claims.py) means cargo aboard right now is expected
+        # mid-mission WIP, not stale leftovers -- Step 2 below must not force
+        # a return-to-base detour for it, or a reload mid-trip drives all the
+        # way home just to turn right back around. The mission's own Step
+        # 6/7 already returns and unloads once the trip actually completes.
+        has_resumable_target = bool(self.current_target_key and self.current_target and self.current_target.get("coords"))
+
+        # A mismatch between cargo already aboard and the resumed target's
+        # own ore means blindly continuing would mine a *different* material
+        # straight into the same hold -- cargo isn't material-locked (see
+        # cargo_matches_target() in mining.py), so nothing would reject it,
+        # it would just waste capacity and leave a confusing mixed load. Fall
+        # through to the normal Step 2 unload-first path instead; the
+        # resumed target itself is untouched (current_target_key stays set),
+        # so Step 3 still resumes it right after, just with clean cargo.
+        if has_resumable_target and not self.cargo_matches_target(self.current_target):
+            print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
+            has_resumable_target = False
+
         # Step 2: Ensure cargo is empty before launch. "inventory" is only a
         # valid freight endpoint while parked at the home outpost's service
         # area -- cargo can still be aboard here after a mid-trip
         # interruption (e.g. a rescue drone charges a stranded vehicle in
         # place, it does not drive it home), so drive home first rather than
         # attempting the transfer from wherever the vehicle currently stands.
-        if self.vehicle.cargo.count() > 0:
+        if not has_resumable_target and self.vehicle.cargo.count() > 0:
             if not self.is_at_base():
                 print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
                 if not self.return_to_base():

@@ -302,6 +302,29 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
   so they only fire when actually parked at base, not mid-trip in the field after a reload. Used by
   `run_expedition_cycle()` (`rover.py`), `run_construction_loop()`/`run_mining_loop()` (`pioneer.py`),
   and `run_survey_loop()` (`vehicle_survey.py`).
+- **Loop-top "cargo aboard but not at base" safety net vs. mission resume**: `run_expedition_cycle()`
+  (`rover.py`) and `run_mining_loop()` (`pioneer.py`) both compute `has_resumable_target =
+  bool(self.current_target_key and self.current_target and ...)` before their Step 2 cargo check, and
+  only force the return-to-base-and-unload detour when there is **no** resumable target. Without this
+  gate, a save reload mid-trip (cargo partially loaded, `current_target_key` restored from the saved
+  mission — see `load_mission()`) would see "cargo aboard, not at base" and force a full detour home
+  before ever resuming the drive back to the claimed site, undoing the very trip it just resumed —
+  even though the mission's own end-of-cycle Step 6/7 already returns and unloads once mining
+  actually finishes. Self-correcting either way: any path that abandons a resumed target (e.g.
+  `drive_with_recharge()` failing) calls `return_to_base()`, which unconditionally releases the
+  claim — and `release_target_claim()` clears `current_target_key`/`current_target` when the released
+  key matches, so `has_resumable_target` goes false next iteration and the safety net resumes normal
+  operation. No permanent unload-starvation risk.
+  - **Cargo/target material mismatch**: `cargo_matches_target(target)` (`lib/mining.py`
+    `MiningMixin`, shared by both) additionally downgrades `has_resumable_target` to `False` (for
+    that cycle only — `current_target_key` itself is untouched, so Step 3 still resumes the same
+    target right after) whenever cargo already holds a *different* material than the resumed
+    target's own `harvest_item`. Cargo isn't material-locked (`Cargo.stacks()` in
+    `docs/models/storage_and_items.md` lists property-distinct stacks — a vehicle can physically
+    carry a mix of ore types at once), so nothing would reject mining a different ore straight into
+    an already-occupied hold; it would just waste capacity and leave a confusing mixed load instead
+    of erroring. A target with no `harvest_item` (a Rover's POI survey target) always matches,
+    since there's no ore to mismatch against.
 
 ### 2a-0. Supply Dock cargo draining (`lib/supply_dock.py` `SupplyDockController`)
 
@@ -403,7 +426,13 @@ Mineral-site discovery and drill execution live in one place, shared by both Rov
 - `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (read live, not
   hardcoded `10`) — Pioneer's cargo capacity varies with storage modules.
   `mine_until_full_or_exhausted(target_coords)` wraps it with the recharge-and-resume-in-place loop
-  (mirrors `execute_construction()`'s pattern in `pioneer.py`).
+  (mirrors `execute_construction()`'s pattern in `pioneer.py`). The battery-interruption recharge
+  stop can land at the *home base* station itself (not just a remote field station) — when it does
+  (`is_at_base()`) and cargo is already carrying ore, it unloads there via `unload_cargo()` before
+  driving back out to resume, rather than hauling a partly-full hold back to the site and returning
+  again next trip. This also means the resumed `mine_current_site()` call gets the *full* cargo
+  capacity as `max_units` instead of just the small amount freed by the interruption, so the vehicle
+  can fill up further before the next interruption rather than immediately needing another trip.
 - Pioneer's mining role (`run_mining_loop()`, entrypoint `pioneer_3.py`) requires the operator to
   have already mounted a drill (`mount_hardware()` / Control Panel) — it only checks
   `hasattr(self.vehicle, "drill")` and idles with an advisory if absent; it never auto-mounts one.
