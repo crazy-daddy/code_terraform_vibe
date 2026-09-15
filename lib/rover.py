@@ -61,7 +61,7 @@ class RoverController(VehicleController):
             return target, budget
 
         self.last_target_diagnostics = {
-            "raw_demands": get_raw_material_demands(get_component("smelter_1")),
+            "raw_demands": get_raw_material_demands(),
             "claim_count": len(self.get_claims()),
             **diagnostics,
         }

@@ -67,7 +67,7 @@ class MiningMixin:
         if not journal or not hasattr(journal, "surveyed_sites"):
             return []
 
-        raw_demands = get_raw_material_demands(get_component("smelter_1"))
+        raw_demands = get_raw_material_demands()
         if not raw_demands:
             return []
 
@@ -114,7 +114,7 @@ class MiningMixin:
                     "coords": (site.x, site.y),
                     "name": f"Site_{site.id}_{getattr(site, 'item_id', 'ore')}",
                     "harvest_item": site_item,
-                    "reason": get_raw_material_reason(site_item, get_component("smelter_1")),
+                    "reason": get_raw_material_reason(site_item),
                     "priority": priority,
                 })
         except Exception:

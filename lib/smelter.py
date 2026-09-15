@@ -1,16 +1,37 @@
 # Shared Library for Smelter Automation
 # Manages automated ore intake, recipe execution, finished metal extraction,
 # and intelligent power-down when idle to conserve grid energy.
-from production import get_material_demands, get_raw_material_reason
+from archive import archive
+from production import get_material_demands, get_raw_material_reason, discover_smelter_ids
 from storage import take_item, total_stock, rebalance_inventory_to_warehouses
+
+# A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
+# this fresh -- if the owning smelter stalls/crashes without releasing it
+# (e.g. script exception, machine destroyed), a later smelter must still be
+# able to pick up that ore rather than waiting forever. Generous margin,
+# same reasoning as CONNECTION_GRACE_TICKS elsewhere: false-negative
+# (missing a real conflict) is cheap, false-positive (blocking a legitimate
+# claim) means an ore nobody's actually processing sits idle.
+SMELTER_RECIPE_CLAIM_STALE_TICKS = 600
+RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
+
 
 class SmelterController:
     """
     Controls an industrial Smelter.
     Refines raw ores (iron_ore, silicon, titanium, etc.) into ingots/materials.
     Automatically clears recipes and powers down when idle to eliminate power draw.
-    Also runs the "inventory manager" sweep each cycle (rebalance_inventory_to_warehouses())
-    since it's confirmed always-running at home base -- see lib/storage.py.
+
+    Multi-smelter aware: elects a single Leader per home outpost (mirrors
+    lib/solar.py's SolarController.check_master() -- same Archive+run_control
+    approach, no Signal Bus, sorted-by-numeric-id with liveness check via
+    run_control.is_running()) so the "inventory manager" sweep
+    (rebalance_inventory_to_warehouses()) only runs once per cycle instead of
+    once per smelter. Every smelter (Leader or Follower) still independently
+    runs its own ore-selection/craft loop against the same shared
+    get_material_demands() numbers, but claims the recipe it's about to work
+    (claim_recipe()) so two smelters don't both start the same recipe while a
+    second simultaneously-demanded ore sits untouched.
     """
     RECIPE_MAP = {
         "iron_ore": "smelt_iron_ingot",
@@ -28,9 +49,106 @@ class SmelterController:
         self.target_ore = target_ore
         self.inventory = get_component("inventory")
         self.power = get_component("power_control")
+        self.clock = get_component("clock")
+        self.run_ctrl = get_component("run_control")
 
         self.connected_in = False
         self.connected_out = False
+        self.is_leader = False
+
+    def get_current_tick(self):
+        if self.clock and hasattr(self.clock, "tick"):
+            try:
+                return self.clock.tick()
+            except Exception:
+                pass
+        return 0
+
+    def check_leader(self):
+        """
+        Elects a single Leader among every discovered Smelter: lowest numeric
+        id currently running() wins (mirrors SolarController.check_master()
+        exactly). Recomputed every step() -- no persisted lease, no
+        heartbeat/timeout; if the current Leader stops running, the next
+        poll simply produces a different (correct) answer.
+        """
+        ids = discover_smelter_ids()
+        if not ids:
+            ids = [self.name]
+
+        def sort_key(s_id):
+            try:
+                return int(s_id.split("_")[-1])
+            except Exception:
+                return 9999
+
+        ids = sorted(set(ids), key=sort_key)
+
+        if self.run_ctrl and hasattr(self.run_ctrl, "is_running"):
+            try:
+                for cand in ids:
+                    if self.run_ctrl.is_running(cand):
+                        return self.name == cand
+            except Exception:
+                pass
+        return self.name == ids[0]
+
+    def update_role(self):
+        was_leader = self.is_leader
+        self.is_leader = self.check_leader()
+        if self.is_leader and not was_leader:
+            print(f"[{self.name}] Promoted to Smelter Leader (runs the inventory-manager sweep).")
+        elif was_leader and not self.is_leader:
+            print(f"[{self.name}] Demoted to Follower.")
+        return self.is_leader
+
+    def claim_recipe(self, recipe_id):
+        """
+        Claims recipe_id for this smelter, or confirms/refreshes an existing
+        claim already held by this smelter. Returns False if another smelter
+        holds a still-fresh claim on it (see SMELTER_RECIPE_CLAIM_STALE_TICKS),
+        so select_needed_ore() can move on to a different demanded ore instead
+        of racing another smelter for the same one.
+        """
+        current_tick = self.get_current_tick()
+
+        def updater(claims):
+            claims = dict(claims or {})
+            existing = claims.get(recipe_id)
+            if isinstance(existing, dict) and existing.get("smelter") != self.name:
+                age = current_tick - existing.get("tick", 0)
+                # current_tick == 0 means the clock wasn't available to
+                # measure real age -- treat that as "still held" (blocking),
+                # not "unknown so allow override", same convention
+                # vehicle_claims.py uses for the same edge case.
+                if current_tick == 0 or age <= SMELTER_RECIPE_CLAIM_STALE_TICKS:
+                    return claims  # still held by someone else, fresh -- leave untouched
+            claims[recipe_id] = {"smelter": self.name, "tick": current_tick}
+            return claims
+
+        try:
+            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
+        except Exception:
+            return True  # can't verify; don't block production over an archive hiccup
+
+        claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
+        owner = (claims.get(recipe_id) or {}).get("smelter")
+        return owner == self.name
+
+    def release_recipe(self, recipe_id):
+        if not recipe_id:
+            return
+
+        def updater(claims):
+            claims = dict(claims or {})
+            if (claims.get(recipe_id) or {}).get("smelter") == self.name:
+                del claims[recipe_id]
+            return claims
+
+        try:
+            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
+        except Exception:
+            pass
 
     def ensure_connections(self):
         """Ensures input and output ports are connected to home inventory."""
@@ -66,10 +184,15 @@ class SmelterController:
 
     def step(self):
         self.ensure_connections()
+        self.update_role()
 
         # Inventory manager sweep: move bulk stock (ore, ingots) out to a
         # Warehouse once it piles up. See lib/storage.py for the full rule.
-        rebalance_inventory_to_warehouses()
+        # Leader-only -- with several smelters, every one of them running this
+        # every cycle would be N redundant identical sweeps for one shared
+        # Inventory/Warehouse set.
+        if self.is_leader:
+            rebalance_inventory_to_warehouses()
 
         # Step 1: Drain any completed products
         self.drain_output()
@@ -94,6 +217,7 @@ class SmelterController:
                 self.recover_input()
                 clear_res = self.smelter.clear_recipe()
                 if clear_res.status == "ok":
+                    self.release_recipe(current_recipe)
                     print(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
                 # Breaker cycling disabled: power_draw only applies while a
                 # recipe is running (see docs), so idle draw is already 0 W.
@@ -107,6 +231,7 @@ class SmelterController:
             if current_recipe and not self.smelter.is_running() and self.smelter.get_input_count() == 0:
                 clear_res = self.smelter.clear_recipe()
                 if clear_res.status == "ok":
+                    self.release_recipe(current_recipe)
                     # power_draw only applies while a recipe is actively running,
                     # so clearing it here is state hygiene, not a power saving.
                     print(f"[{self.name}] Recipe cleared (no demand): every refined output is already at its stock target or order requirement.")
@@ -210,7 +335,13 @@ class SmelterController:
                 pass
 
     def select_needed_ore(self, unlocked_recipes=None):
-        """Selects only ore whose unlocked recipe has an active downstream need."""
+        """
+        Selects only ore whose unlocked recipe has an active downstream need,
+        skipping a recipe another live smelter already holds a fresh claim
+        on (see claim_recipe()) -- so with several smelters and several
+        simultaneously-demanded ores, each settles on a different one instead
+        of racing to refine the same ore while another sits untouched.
+        """
         if not self.inventory or not hasattr(self.smelter, "list_recipes"):
             return None, None
 
@@ -241,6 +372,9 @@ class SmelterController:
             inputs = getattr(recipe, "inputs", {}) or {}
             for ore in inputs:
                 if ore in self.RECIPE_MAP and (ore in buffered_ore or total_stock(ore) > 0):
+                    recipe_id = getattr(recipe, "id", "")
+                    if not self.claim_recipe(recipe_id):
+                        continue  # another smelter already has this one -- try a different candidate
                     return recipe, ore
         return None, None
 

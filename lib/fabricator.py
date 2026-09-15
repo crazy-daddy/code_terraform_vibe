@@ -3,6 +3,15 @@ from production import get_fabricator_targets, get_fabricator_active_recipe, can
 from archive import archive
 from storage import take_item, total_stock
 
+# Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
+# exactly, same reasoning: with several Fabricators, choose_recipe() picking
+# strictly by biggest-shortfall would have every one of them converge on the
+# SAME top-shortfall recipe while other demanded outputs sit untouched. A
+# claim on the recipe id it's about to set lets a Fabricator move on to its
+# next-best sourceable candidate if another Fabricator already holds it.
+FABRICATOR_RECIPE_CLAIM_STALE_TICKS = 600
+RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
+
 
 class FabricatorController:
     """Selects unlocked pipe/power recipes and feeds them from Inventory or a Warehouse."""
@@ -13,6 +22,53 @@ class FabricatorController:
         self.connected_input = False
         self.connected_output = False
         self.smelter_wake_announced = False
+        self.clock = get_component("clock")
+
+    def get_current_tick(self):
+        if self.clock and hasattr(self.clock, "tick"):
+            try:
+                return self.clock.tick()
+            except Exception:
+                pass
+        return 0
+
+    def claim_recipe(self, recipe_id):
+        """Claims recipe_id for this Fabricator, or refreshes its own existing claim. See lib/smelter.py's claim_recipe() -- identical shape/reasoning, separate archive key."""
+        current_tick = self.get_current_tick()
+
+        def updater(claims):
+            claims = dict(claims or {})
+            existing = claims.get(recipe_id)
+            if isinstance(existing, dict) and existing.get("fabricator") != self.name:
+                age = current_tick - existing.get("tick", 0)
+                if current_tick == 0 or age <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS:
+                    return claims  # still held by someone else, fresh -- leave untouched
+            claims[recipe_id] = {"fabricator": self.name, "tick": current_tick}
+            return claims
+
+        try:
+            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
+        except Exception:
+            return True  # can't verify; don't block production over an archive hiccup
+
+        claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
+        owner = (claims.get(recipe_id) or {}).get("fabricator")
+        return owner == self.name
+
+    def release_recipe(self, recipe_id):
+        if not recipe_id:
+            return
+
+        def updater(claims):
+            claims = dict(claims or {})
+            if (claims.get(recipe_id) or {}).get("fabricator") == self.name:
+                del claims[recipe_id]
+            return claims
+
+        try:
+            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
+        except Exception:
+            pass
 
     def ensure_connection(self):
         if not self.connected_input and hasattr(self.machine, "input"):
@@ -80,13 +136,21 @@ class FabricatorController:
 
         # Prefer the biggest shortfall, but skip anything currently blocked on
         # an unavailable input (e.g. unsurveyed titanium) so the Fabricator
-        # keeps building whatever else it actually can.
+        # keeps building whatever else it actually can. Also skip a recipe
+        # another Fabricator already holds a fresh claim on (see
+        # claim_recipe()) -- otherwise, with several Fabricators, all of them
+        # would converge on the same single biggest-shortfall recipe while
+        # every other demanded output goes unbuilt.
         candidates.sort(key=lambda pair: pair[0], reverse=True)
         blocked = []
         for missing, recipe in candidates:
-            if self.recipe_is_sourceable(recipe):
-                return recipe
-            blocked.append(getattr(recipe, "output_item", recipe))
+            if not self.recipe_is_sourceable(recipe):
+                blocked.append(getattr(recipe, "output_item", recipe))
+                continue
+            recipe_id = getattr(recipe, "id", "")
+            if not self.claim_recipe(recipe_id):
+                continue  # another Fabricator already has this one -- try the next candidate
+            return recipe
         if blocked:
             print(f"[{self.name}] Skipping unreachable recipe(s) for now: {', '.join(blocked)}.")
         return None
@@ -165,20 +229,24 @@ class FabricatorController:
     def step(self):
         self.ensure_connection()
         self.drain_output()
+        prior_recipe_id = self.machine.get_recipe()
         recipe = self.choose_recipe()
         if recipe is None:
             # clear_recipe() preserves the stockpile (it's staged material,
             # not tied to the recipe), so a partial load must not block this.
-            if self.machine.get_recipe() and not self.machine.is_running():
+            if prior_recipe_id and not self.machine.is_running():
                 print(f"[{self.name}] Clearing recipe: every buildable stock target/order item is met or unreachable.")
                 self.machine.clear_recipe()
+                self.release_recipe(prior_recipe_id)
             return
 
         recipe_id = getattr(recipe, "id", "")
-        if self.machine.get_recipe() != recipe_id:
+        if prior_recipe_id != recipe_id:
             if not self.machine.is_running():
                 result = self.machine.set_recipe(recipe_id)
                 if result.status == "ok":
+                    if prior_recipe_id:
+                        self.release_recipe(prior_recipe_id)
                     output_item = getattr(recipe, "output_item", "?")
                     reason = self.target_reason(output_item)
                     print(f"[{self.name}] Set recipe '{recipe_id}' to build {output_item} for {reason}.")

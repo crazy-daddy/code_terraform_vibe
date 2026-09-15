@@ -499,6 +499,27 @@ into cargo (cargo isn't tracked here, only standing Inventory stock) — better 
 back briefly on stock that's no longer actually contested than to let it snack away material a build
 still needs.
 
+### 2a-0-2. Multi-Fabricator Support (`lib/production.py`, `lib/fabricator.py`)
+
+Same two problems as the Multi-Smelter section above, fixed the same way, for the Fabricator:
+`production.discover_fabricator_ids()`/`_default_fabricator()` replace every hardcoded
+`"fabricator_1"` fallback across `production.py`'s demand-cascade functions (recipe *availability* is
+tech-gated and identical across same-type buildings, so any one discovered Fabricator is a
+representative stand-in). No leader election was added on the Fabricator side — unlike Smelter,
+nothing in `FabricatorController` runs a shared per-cycle task that would need gating to a single
+instance (the Inventory→Warehouse rebalance sweep lives on the Smelter, not here), so there's nothing
+for a Leader to do yet. What *does* need coordination: `choose_recipe()` picks strictly by
+biggest-shortfall, so with several Fabricators every one of them would converge on the exact same
+top-shortfall recipe while other demanded outputs went unbuilt. Fixed with a `claim_recipe()`/
+`release_recipe()` pair in `lib/fabricator.py` — same shape and `STALE_TICKS=600` reasoning as
+`smelter.py`'s, separate archive key (`"fabricator.recipe_claims"`) so the two claim pools don't
+collide. `choose_recipe()`'s candidate loop now claims each sourceable candidate in turn (biggest
+shortfall first) and moves to the next if the claim fails (another Fabricator already holds it);
+`step()` releases the prior recipe's claim whenever it clears or switches away from it. Verified via
+a stub test: two Fabricators facing two equal-shortfall candidates correctly split onto different
+recipes, and a Fabricator re-picking its own already-claimed recipe refreshes rather than triggers a
+switch.
+
 ### 2a-1. Fabricator demand tracking (`lib/production.py` `get_fabricator_targets()`)
 
 `get_fabricator_targets()` is the single source of truth for what the Fabricator should be
@@ -587,8 +608,27 @@ Nocturna Base.
   Warehouse if that falls short — ports hold one source at a time (same single-destination
   constraint as `FluidPort`, see `lib/thermal_cap.py`), so this reconnects on demand rather than
   fanning out simultaneously.
+- **Multi-Smelter Leader Election** (`SmelterController` in `lib/smelter.py`) — with several
+  Smelters at home, `production.discover_smelter_ids()` replaces every place that used to hardcode
+  the literal id `"smelter_1"` (a correctness bug, not just inefficiency: demand/recipe lookups would
+  silently only ever consult one specific smelter's recipe set). Leader election
+  (`check_leader()`/`update_role()`) mirrors `lib/solar.py`'s `SolarController.check_master()`
+  *exactly* — same Archive+`run_control.is_running()` approach, **not** the Signal Bus, despite that
+  being available; sorted by numeric id suffix, lowest currently-`is_running()` id wins, recomputed
+  fresh every `step()` (no lease/heartbeat — if the Leader stops running, the next poll naturally
+  produces a different, correct answer). Only the Leader runs the "inventory manager" sweep (see
+  below) — Followers skip it, removing N-1 redundant identical sweeps of the same shared
+  Inventory/Warehouse set. Every smelter (Leader or Follower) still independently runs its own
+  `select_needed_ore()`/craft loop against the same shared `get_material_demands()` numbers, but each
+  candidate recipe is `claim_recipe()`d (`archive.transaction("smelter.recipe_claims", ...)`,
+  `SMELTER_RECIPE_CLAIM_STALE_TICKS = 600`, mirroring `vehicle_claims.py`'s claim/release shape) before
+  being returned, so two smelters don't both start the same recipe while a second simultaneously-
+  demanded ore sits untouched — a smelter whose claim attempt fails (another smelter holds a fresh
+  claim on that recipe) tries the next demanded/available candidate instead. Released via
+  `release_recipe()` whenever a smelter clears its own recipe (locked-recipe cleanup or no-demand
+  cleanup in `step()`).
 - **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per cycle from
-  `SmelterController.step()` (confirmed always-running at home base): any **propertyless**
+  the Leader's `SmelterController.step()` (confirmed always-running at home base): any **propertyless**
   (`slot.properties is None` — non-stackable/unique items like worn equipment are left alone)
   Inventory item spanning more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots gets moved to a
   Warehouse **entirely**, not partially — there's no real "quick access" cost to reading from a

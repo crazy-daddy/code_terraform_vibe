@@ -57,6 +57,32 @@ def _default_smelter():
     return _component("smelter_1")  # last-resort fallback if discovery finds nothing (e.g. outpost_network unavailable)
 
 
+FABRICATOR_TYPE_ID = "fabricator"
+
+
+def discover_fabricator_ids(outpost=None):
+    """All Fabricator building ids at outpost (default: home). Same shape/reasoning as discover_smelter_ids()."""
+    ids = []
+    outpost = outpost or _home_outpost()
+    if outpost and hasattr(outpost, "buildings"):
+        try:
+            for building in outpost.buildings(FABRICATOR_TYPE_ID):
+                b_id = getattr(building, "id", None)
+                if b_id:
+                    ids.append(b_id)
+        except Exception:
+            pass
+    return ids
+
+
+def _default_fabricator():
+    """First discovered Fabricator component (dynamic stand-in for the old hardcoded 'fabricator_1')."""
+    ids = discover_fabricator_ids()
+    if ids:
+        return _component(ids[0])
+    return _component("fabricator_1")  # last-resort fallback if discovery finds nothing
+
+
 # A Fabricator recipe's water/steam/oil requirement (recipe.fluid_inputs,
 # e.g. {"water_in": 1.0}) is a *separate* field from its solid .inputs
 # (docs/components/fabricator.md) -- delivered by connecting the matching
@@ -156,7 +182,7 @@ def _cascade_blueprint_demand():
     def recipe_inputs_for(item_id):
         """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
         Smelter builds item_id, or None if neither does."""
-        for component in (_component("fabricator_1"), _default_smelter()):
+        for component in (_default_fabricator(), _default_smelter()):
             if not component or not hasattr(component, "list_recipes"):
                 continue
             try:
@@ -240,7 +266,7 @@ def get_fabricator_targets():
     targets = get_fabricator_stock_targets()
 
     fabricator_outputs = set()
-    fabricator = _component("fabricator_1")
+    fabricator = _default_fabricator()
     if fabricator and hasattr(fabricator, "list_recipes"):
         try:
             for recipe in fabricator.list_recipes():
@@ -292,7 +318,7 @@ def get_fabricator_active_recipe(fabricator=None):
     where crafts_remaining covers the full remaining shortfall against its
     output target/order (not just one craft's worth)."""
     if fabricator is None:
-        fabricator = _component("fabricator_1")
+        fabricator = _default_fabricator()
     if not fabricator or not hasattr(fabricator, "get_recipe") or not hasattr(fabricator, "list_recipes"):
         return None, 0
     try:
@@ -328,7 +354,7 @@ def get_material_demands():
     # by every remaining craft still needed to reach the target, not just one
     # craft's worth, or demand collapses to 0 as soon as a single unit of an
     # input is on hand even though hundreds more crafts remain.
-    fabricator = _component("fabricator_1")
+    fabricator = _default_fabricator()
     recipe, crafts_remaining = get_fabricator_active_recipe(fabricator)
     if recipe and crafts_remaining > 0:
         try:
@@ -373,7 +399,7 @@ def get_raw_material_demands(smelter=None):
 
     # Expand Fabricator output demand into refined-material demand before
     # asking the Smelter to expand refined materials into raw ore.
-    fabricator = _component("fabricator_1")
+    fabricator = _default_fabricator()
     if fabricator and hasattr(fabricator, "list_recipes"):
         try:
             for recipe in fabricator.list_recipes():
@@ -436,8 +462,7 @@ def can_source_item(item_id, seen=None):
     if _has_surveyed_mineral(item_id):
         return True
 
-    for component_id in ["smelter_1", "fabricator_1"]:
-        component = _component(component_id)
+    for component in [_default_smelter(), _default_fabricator()]:
         if not component or not hasattr(component, "list_recipes"):
             continue
         try:
@@ -469,7 +494,7 @@ def can_fulfill_order(order):
 
 def get_raw_material_reason(raw_item, smelter=None):
     """Describes the active downstream consumer driving a raw-material demand."""
-    fabricator = _component("fabricator_1")
+    fabricator = _default_fabricator()
     dock = _component("supply_dock_1")
 
     if dock and hasattr(dock, "current_order"):
@@ -481,7 +506,7 @@ def get_raw_material_reason(raw_item, smelter=None):
             pass
 
     if smelter is None:
-        smelter = _component("smelter_1")
+        smelter = _default_smelter()
     if smelter and hasattr(smelter, "list_recipes"):
         try:
             for recipe in smelter.list_recipes():
