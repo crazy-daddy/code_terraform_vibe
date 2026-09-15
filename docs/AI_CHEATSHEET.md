@@ -661,6 +661,23 @@ for 100 needed units split across 2 workers on the same recipe comes out to 50 e
 worker-counting correctly isolates Fabricators on a different recipe and floors at 1 when nobody
 matches at all.
 
+**Load chunking** (found from a screenshot: two Fabricators both needing Glass, one showed 44/1
+staged while the other sat at 0/2 — one had grabbed the ENTIRE available Glass stock in a single
+`take_item()` call before the other's own poll ever got a turn). `load_inputs()` used to request its
+whole remaining batch (`required_per_craft * crafts_remaining`, up to several dozen units) in one
+call; capped now to `FABRICATOR_LOAD_CHUNK_SIZE = 10` units per call, so a heavy batch spreads across
+several `step()` cycles instead of one Fabricator monopolizing a contested item in a single grab —
+a peer's own poll gets a chance to interleave and take its own chunk in between. `lib/smelter.py`'s
+ore top-up (Step 3 of `step()`) had the identical problem (up to a full 50-unit top-up in one call)
+and got the same fix, `SMELTER_LOAD_CHUNK_SIZE = 10`. Supply Dock's own material loading
+(`lib/supply_dock.py`) deliberately keeps loading its full remaining need in one call — it has no
+sibling competing for the same active order's materials, so there's nothing to share fairly with,
+and chunking it would only add pointless delay. Verified via stub tests: a single `load_inputs()`/ore
+top-up call never exceeds its chunk size even with far more needed and available; two Fabricators
+alternating turns against a shared, contested 44-unit Glass pool end up with a fair nonzero split on
+both sides instead of 44/0; repeated Smelter `step()` calls keep topping up in the same chunk size
+across cycles.
+
 ### 2a-0-3. Multi-Dock Support (`lib/production.py`, `lib/fabricator.py`)
 
 Same hardcoded-id bug class as Multi-Smelter/Multi-Fabricator above, just not caught for Supply Dock
