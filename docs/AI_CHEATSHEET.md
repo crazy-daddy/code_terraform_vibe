@@ -19,7 +19,7 @@ that way there is exactly one place to keep current.
 | &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting / charging-station discovery | `vehicle_energy.py` |
 | &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist | `vehicle_claims.py` |
-| &nbsp;&nbsp;↳ cargo offload into Base Inventory | `vehicle_cargo.py` |
+| &nbsp;&nbsp;↳ cargo offload into Inventory / Warehouse | `vehicle_cargo.py` |
 | &nbsp;&nbsp;↳ sonar survey loop (POI discovery) | `vehicle_survey.py` |
 | &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `mining.py` — shared by Rover and Pioneer; see §2b |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; do **not** put shared vehicle logic here |
@@ -32,6 +32,7 @@ that way there is exactly one place to keep current.
 | Fabrication | `fabricator.py` |
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
+| Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
 | Data Archive persistence layer | `archive.py` |
 | Wildcard pattern matching helpers | `patterns.py` |
 
@@ -88,25 +89,38 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
   a thermal vent out in the field, not necessarily inside a founded outpost, unlike Gas Tank/Steam
   Turbine which both have one), so candidates can't be scoped to "this building's outpost"; both
   controllers' `discover_network_building_ids(type_id)` instead walk every outpost
-  (`outpost_network.outposts()` → `outpost.buildings(type_id)`) to gather candidate ids network-wide,
-  and let `connect()`'s own result decide which are actually physically pipe-reachable (falling
-  through to the next candidate on any non-`"ok"`/`"busy"` status).
+  (`outpost_network.outposts()` → `outpost.buildings(type_id)`) to gather candidate ids network-wide.
+  - **`connect()`'s `"ok"` status does NOT mean the target is physically reachable** — per
+    `docs/guide/infrastructure_and_pipes.md`, a remote pairing needs a *completed* Gas Pipe route,
+    which `connect()` never checks; `"ok"` only means the pairing was logically accepted. The one
+    live signal of an actually-broken route is `is_stalled()` (steam/throttle ready, nothing
+    transferred) — both controllers blacklist a target that reports this and pick a different
+    candidate, rather than sitting stalled on the same unreachable target forever. Each also clears
+    its blacklist periodically (`RESCAN_INTERVAL_TICKS`: 300 Cap-ticks / 150 Turbine-ticks, ≈5
+    real minutes at default poll intervals either way) so a target that was unreachable becomes
+    retryable again once the player builds a new pipe to it — a currently-*working* connection is
+    never torn down just to check this, only the candidate pool is widened for the next switch.
   - **Cap → Gas Tank(s)** (`ensure_output_connection()`): `steam_out` only ever holds one destination
     at a time, so with several reachable tanks it can't fan out simultaneously — instead it
     rebalances: stays on the current tank while its `fill_pct()` is below
-    `GAS_TANK_REBALANCE_FILL_FRACTION=0.85`, otherwise switches to whichever other known tank is
-    currently least full (trying candidates in ascending fill order so an unreachable one doesn't
-    block the search), keeping multiple tanks topped up roughly evenly instead of one saturating
-    while others sit empty.
+    `GAS_TANK_REBALANCE_FILL_FRACTION=0.85` **and** it isn't stalled, otherwise switches to whichever
+    other known (non-blacklisted) tank is currently least full, keeping multiple tanks topped up
+    roughly evenly instead of one saturating while others sit empty. A single stalled tick is enough
+    to blacklist — `is_stalled()` on a Cap already requires chamber steam to be available and ready
+    to send, so dormancy (which stops *capture*, not release) can't be the cause.
   - **Turbine → source** (`ensure_input_connection()`): tries every known Gas Tank first (the
-    larger, shared buffer), then every known Thermal Cap directly. Connecting straight to a Cap is
-    a deliberate, fully-supported fallback, not a hack — per
+    larger, shared buffer), then every known (non-blacklisted) Thermal Cap directly. Connecting
+    straight to a Cap is a deliberate, fully-supported fallback, not a hack — per
     `docs/guide/infrastructure_and_pipes.md`'s Thermal Vents section, "additional consumers may
     connect their own `steam_in` ports to this Cap," independent of whatever the Cap's own
     `steam_out` currently points at. This is also why the Cap's own script never tries to connect to
-    a Turbine itself: the Turbine already handles that side on its own.
-  - Both are cheap once connected (`connected_to()` / fill-threshold checks short-circuit further
-    work), called once per `step()`.
+    a Turbine itself: the Turbine already handles that side on its own. Unlike the Cap, a Turbine's
+    `is_stalled()` ("throttle up, no steam arriving") is ambiguous on its own — it's equally true,
+    harmlessly, whenever the feeding vent is just dormant — so blacklisting requires
+    `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled ticks (dormancy is temporary; a
+    genuinely missing pipe route stalls forever) rather than a single tick.
+  - Both are cheap once settled (`connected_to()` / fill-threshold / stall-streak checks
+    short-circuit further work most cycles), called once per `step()`.
 - **Thermal Cap** — the only job is keeping `pressure()` off the `1.0` overpressure ceiling (hitting
   it blows the *entire* chamber to atmosphere, not just the surplus — see `.is_overpressured()`).
   Proportional release-valve (`steam_out`, via `set_throttle()`) bands on `pressure()`:
@@ -393,6 +407,54 @@ Mineral-site discovery and drill execution live in one place, shared by both Rov
 - Pioneer's mining role (`run_mining_loop()`, entrypoint `pioneer_3.py`) requires the operator to
   have already mounted a drill (`mount_hardware()` / Control Panel) — it only checks
   `hasattr(self.vehicle, "drill")` and idles with an advisory if absent; it never auto-mounts one.
+
+### 2c. Storage Management (`lib/storage.py`)
+
+Makes the whole production chain (vehicle unloading, Smelter/Fabricator/Supply Dock/Pioneer
+construction input sourcing, and `production.py`'s demand tracking) aware of Warehouse/Large
+Warehouse buildings, not just the central home `"inventory"` freight endpoint. Scope: Warehouse +
+Large Warehouse only for now (`STORAGE_TYPE_IDS`) — Storage Bin uses a different, single-material
+API shape (`docs/components/storage_bin.md`) and isn't included, though
+`discover_storage_buildings()`'s `type_ids` param leaves room to add it later without changing any
+caller. Everything defaults to the home outpost, matching how Inventory itself only participates at
+Nocturna Base.
+
+- `total_stock(item_id)` = `inventory.count(item_id)` + every discovered Warehouse's `count(item_id)`.
+  This is what `production.py`'s `_cascade_blueprint_demand()`, `get_construction_material_reservations()`,
+  `get_material_demands()`, `get_raw_material_demands()`, and `can_source_item()` all net against now
+  (previously Inventory-only) — so demand/mining priority correctly accounts for stock sitting in a
+  Warehouse instead of ignoring it.
+- `best_unload_target(item_id, min_amount=1)`: least-full Warehouse with `space_for(item_id) >=
+  min_amount`, else `"inventory"`. `vehicle_cargo.py`'s `unload_cargo()` picks a destination
+  **per stack** (cargo can hold more than one item id) rather than connecting once to `"inventory"`
+  up front.
+- `take_item(port, item_id, amount)`: the one function behind every
+  `machine.input.take(item_id, amount)` call site (Smelter ore loading, Fabricator input loading,
+  Supply Dock material loading, Pioneer's `load_construction_materials()`). Tries whatever `port` is
+  *currently* connected to first (usually Inventory, the existing default), and only reconnects to a
+  Warehouse if that falls short — ports hold one source at a time (same single-destination
+  constraint as `FluidPort`, see `lib/thermal_cap.py`), so this reconnects on demand rather than
+  fanning out simultaneously.
+- **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per cycle from
+  `SmelterController.step()` (confirmed always-running at home base): any **propertyless**
+  (`slot.properties is None` — non-stackable/unique items like worn equipment are left alone)
+  Inventory item spanning more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots gets moved to a
+  Warehouse **entirely**, not partially — there's no real "quick access" cost to reading from a
+  Warehouse instead of Inventory, so nothing is deliberately left behind.
+  - **Direct move**: if any Warehouse has `space_for(item_id) > 0`, move as much as fits there
+    (`inventory.transfer_to(warehouse_id, item_id, amount)` — Inventory exposes `transfer_to()`
+    directly, no port/connection needed), splitting across more than one Warehouse if needed.
+  - **Swap fallback**: if *no* Warehouse has any room at all (every one of its 5 material-locked
+    slots already holds a different material), evicts whichever Warehouse occupant is cheapest to
+    bring back to Inventory (smallest quantity) — but **only** when `slots_freed > slots_reclaimed`
+    (`slots_reclaimed = ceil(evicted_qty / inventory_stack_size())`), a genuine net reduction in
+    Inventory slots used, never a wash or a net loss. Verified by stub test against the exact
+    scenario that prompted this: Warehouse full except a 5-unit Titanium Ingot slot, 60 Iron Ingot
+    spanning 6 Inventory slots in Inventory — evicts the 5 titanium (costs 1 slot back), frees 6, a
+    clear net win.
+- `inventory_stack_size()`: `10`, or `20` once `research.is_unlocked("research_high_density_storage")`
+  ("Bigger Stacks") — reuses the existing `research.is_unlocked(tech_id)` pattern already used in
+  `lib/vehicle_claims.py`, not inferred from current slot contents.
 
 ---
 

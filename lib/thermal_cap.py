@@ -30,6 +30,13 @@ PRESSURE_RELIEF_THRESHOLD = 0.95
 # tanks fill roughly evenly instead of one saturating while others sit empty.
 GAS_TANK_REBALANCE_FILL_FRACTION = 0.85
 
+# A target blacklisted as unreachable might become reachable later (the
+# player builds a new Gas Pipe route to it) -- clear the blacklist this often
+# so it gets a fresh chance without waiting for every other candidate to also
+# go bad first. Counts step() calls, not real time -- with the default
+# poll_interval=1.0s that's roughly 5 minutes.
+RESCAN_INTERVAL_TICKS = 300
+
 
 def discover_network_building_ids(type_id):
     """
@@ -77,6 +84,15 @@ class ThermalCapController:
         self.cap = cap
         self.name = getattr(cap, "id", "thermal_cap")
         self.last_phase = None
+        # connect()'s "ok" status only means the pairing was logically
+        # accepted -- docs/guide/infrastructure_and_pipes.md is explicit that
+        # a remote target needs a *completed* Gas Pipe route, which connect()
+        # never checks. is_stalled() is the only live signal that a target
+        # isn't actually reachable, so unreachable targets get blacklisted --
+        # but only until the next periodic rescan (see RESCAN_INTERVAL_TICKS),
+        # since a newly built pipe can make a blacklisted target reachable.
+        self.unreachable_targets = set()
+        self.ticks_since_rescan = 0
 
     def ensure_output_connection(self):
         """
@@ -101,13 +117,48 @@ class ThermalCapController:
         if not port or not hasattr(port, "connect"):
             return
 
+        # Periodic rescan: give blacklisted targets a fresh chance in case a
+        # new Gas Pipe route was built since they were marked unreachable.
+        # This never disconnects a currently working target -- it only
+        # widens the candidate pool for the next time a switch is warranted.
+        self.ticks_since_rescan += 1
+        if self.ticks_since_rescan >= RESCAN_INTERVAL_TICKS:
+            self.ticks_since_rescan = 0
+            if self.unreachable_targets:
+                print(f"[{self.name}] Periodic rescan: clearing {len(self.unreachable_targets)} blacklisted target(s) to retry.")
+                self.unreachable_targets.clear()
+
         current_id = None
         try:
             current_id = port.connected_to() if hasattr(port, "connected_to") else None
         except Exception:
             pass
 
-        tank_ids = discover_network_building_ids("gas_tank")
+        # A stalled cap with an open throttle and steam available means the
+        # currently connected target can't actually be reached by pipe --
+        # connect() never verified that, it only accepted the pairing.
+        # Blacklist it and force a reselect below rather than sitting stalled
+        # on the same bad target forever.
+        is_stalled = False
+        if hasattr(self.cap, "is_stalled"):
+            try:
+                is_stalled = self.cap.is_stalled()
+            except Exception:
+                is_stalled = False
+        if is_stalled and current_id and current_id not in self.unreachable_targets:
+            self.unreachable_targets.add(current_id)
+            print(f"[{self.name}] '{current_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
+            current_id = None
+
+        tank_ids = [t for t in discover_network_building_ids("gas_tank") if t not in self.unreachable_targets]
+        if not tank_ids:
+            # Every known tank is blacklisted (or none exist) -- give
+            # blacklisted ones a fresh chance rather than sitting dead
+            # forever if e.g. a pipe route gets completed later.
+            tank_ids = discover_network_building_ids("gas_tank")
+            if tank_ids and self.unreachable_targets:
+                print(f"[{self.name}] Every known Gas Tank was blacklisted; clearing the list to retry.")
+                self.unreachable_targets.clear()
         if not tank_ids:
             if not current_id:
                 print(f"[{self.name}] No Gas Tank found network-wide yet; steam_out has no destination.")

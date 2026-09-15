@@ -7,6 +7,7 @@
 from archive import archive
 from vehicle import VehicleController
 from mining import ROVER_PREFERRED_MAX_HARDNESS
+from storage import take_item
 
 class PioneerController(VehicleController):
     """
@@ -155,11 +156,12 @@ class PioneerController(VehicleController):
         return total
 
     def load_construction_materials(self, job, target_count=None):
-        """Loads required_item from home Inventory into cargo, aiming for
-        target_count (e.g. a whole chain of upcoming same-material jobs) but
-        succeeding once this job's own required_count is met, since Inventory
-        may not have the full batch on hand. Clamps the load request to available
-        cargo capacity to prevent 'target_full' transfer rejections."""
+        """Loads required_item from home Inventory or a Warehouse into cargo,
+        aiming for target_count (e.g. a whole chain of upcoming same-material
+        jobs) but succeeding once this job's own required_count is met, since
+        storage may not have the full batch on hand. Clamps the load request
+        to available cargo capacity to prevent 'target_full' transfer
+        rejections."""
         required_item = getattr(job, "required_item", None)
         required_count = getattr(job, "required_count", 0)
         if not required_item or required_count <= 0:
@@ -189,16 +191,11 @@ class PioneerController(VehicleController):
         if missing <= 0:
             return have >= required_count
 
-        connect_result = self.vehicle.input.connect("inventory")
-        if connect_result.status != "ok":
-            print(f"[{self.name}] Could not connect to Inventory to load {required_item}: {connect_result.status} - {connect_result.message}")
-            return False
-        take_result = self.vehicle.input.take(required_item, missing)
-        if take_result.status not in ["ok", "partial"]:
-            print(f"[{self.name}] Could not load {required_item} from Inventory: {take_result.status} - {take_result.message}")
-            return False
-        if take_result.moved > 0:
-            print(f"[{self.name}] Loaded {take_result.moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
+        moved = take_item(self.vehicle.input, required_item, missing)
+        if moved > 0:
+            print(f"[{self.name}] Loaded {moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
+        elif self.cargo_count(required_item) < required_count:
+            print(f"[{self.name}] Could not load {required_item}: not found in Inventory or any Warehouse.")
         return self.cargo_count(required_item) >= required_count
 
 

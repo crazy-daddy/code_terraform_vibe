@@ -1,15 +1,17 @@
-# Vehicle mixin: cargo offloading into Base Inventory and cooperative
-# smelter wake-up. Shared by Rover and Pioneer via VehicleController
-# (lib/vehicle.py).
+# Vehicle mixin: cargo offloading into Base Inventory (or a Warehouse for
+# bulk items) and cooperative smelter wake-up. Shared by Rover and Pioneer
+# via VehicleController (lib/vehicle.py).
 
 from archive import archive
+from storage import best_unload_target
 
 
 class VehicleCargoMixin:
     """Cargo offload behavior mixed into VehicleController."""
 
     def unload_cargo(self):
-        """Transfers mined/gathered minerals and items into Base Inventory."""
+        """Transfers mined/gathered minerals and items into Base Inventory,
+        preferring a Warehouse when one has room -- see storage.best_unload_target()."""
         if not hasattr(self.vehicle, "cargo"):
             return 0
 
@@ -17,7 +19,7 @@ class VehicleCargoMixin:
         if cargo_count == 0:
             return 0
 
-        print(f"[{self.name}] Offloading {cargo_count} items into Base Inventory...")
+        print(f"[{self.name}] Offloading {cargo_count} items...")
         self.publish_telemetry("UNLOADING")
 
         out_port = getattr(self.vehicle, "output", None)
@@ -30,12 +32,6 @@ class VehicleCargoMixin:
         if not out_port:
             print(f"[{self.name}] Error: No output port found on vehicle!")
             return 0
-
-        if hasattr(out_port, "connected_to"):
-            if out_port.connected_to() != "inventory":
-                c_res = out_port.connect("inventory")
-                if c_res.status != "ok":
-                    print(f"[{self.name}] Connect to inventory notice: {c_res.status} - {c_res.message}")
 
         unloaded = 0
         inventory_full = False
@@ -52,62 +48,66 @@ class VehicleCargoMixin:
             except Exception:
                 stacks = []
 
-        # If stacks are listed, transfer each stack
+        def unload_one(item_id, count):
+            """Sends count units of item_id, preferring a Warehouse with room
+            (see storage.best_unload_target()) and falling back to Inventory.
+            Returns (moved, went_full) for the caller's bookkeeping."""
+            target = best_unload_target(item_id, count)
+            if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
+                c_res = out_port.connect(target)
+                if c_res.status != "ok":
+                    print(f"[{self.name}] Connect to '{target}' notice: {c_res.status} - {c_res.message}")
+
+            retries = 0
+            while retries < 10:
+                res = out_port.send(item_id, count)
+                if res.status == "ok":
+                    moved = getattr(res, "moved", count)
+                    print(f"[{self.name}] Transferred {moved}x {item_id} to '{target}'.")
+                    if item_id in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
+                        self.wake_smelter()
+                    return moved, False
+                elif res.status == "busy":
+                    sleep(0.5)
+                    retries += 1
+                elif res.status in ["target_full", "slots_full", "inventory_full"]:
+                    print(f"[{self.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
+                    try:
+                        notify(f"[{self.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
+                    except Exception:
+                        pass
+                    return 0, True
+                else:
+                    print(f"[{self.name}] Offload notice: {res.status} - {res.message}")
+                    return 0, False
+                sleep(0.3)
+            return 0, False
+
+        # If stacks are listed, transfer each stack (may span more than one
+        # item id, so the destination is chosen per stack, not once overall)
         if stacks:
             for stack in stacks:
                 item_id = getattr(stack, "id", None)
                 count = getattr(stack, "count", 0)
                 if not item_id or count <= 0:
                     continue
-
-                retries = 0
-                while retries < 10:
-                    res = out_port.send(item_id, count)
-                    if res.status == "ok":
-                        moved = getattr(res, "moved", count)
-                        unloaded += moved
-                        print(f"[{self.name}] Transferred {moved}x {item_id} to Inventory.")
-
-                        # If ore was delivered, cooperatively wake up Smelter
-                        if item_id in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "lead_ore"]:
-                            self.wake_smelter()
-                        break
-                    elif res.status == "busy":
-                        sleep(0.5)
-                        retries += 1
-                    elif res.status in ["target_full", "slots_full", "inventory_full"]:
-                        inventory_full = True
-                        print(f"[{self.name}] WARNING: Base inventory is full. Cargo remains aboard until space is available.")
-                        try:
-                            notify(f"[{self.name}] Base Inventory Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
-                        except Exception:
-                            pass
-                        break
-                    else:
-                        print(f"[{self.name}] Offload notice: {res.status} - {res.message}")
-                        break
-                    sleep(0.3)
+                moved, went_full = unload_one(item_id, count)
+                unloaded += moved
+                if went_full:
+                    inventory_full = True
+                    break
         else:
             # Fallback for common mined minerals if stacks() returned empty but hold has cargo
-            for cand in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "lead_ore"]:
+            for cand in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
                 if self.vehicle.cargo.count() == 0:
                     break
-                res = out_port.send(cand, self.vehicle.cargo.count())
-                if res.status == "ok":
-                    moved = getattr(res, "moved", 1)
-                    unloaded += moved
-                    print(f"[{self.name}] Transferred {moved}x {cand} to Inventory.")
-                    self.wake_smelter()
-                    break
-                if res.status in ["target_full", "slots_full", "inventory_full"]:
+                moved, went_full = unload_one(cand, self.vehicle.cargo.count())
+                unloaded += moved
+                if went_full:
                     inventory_full = True
-                    print(f"[{self.name}] WARNING: Base inventory is full. Cargo remains aboard until space is available.")
-                    try:
-                        notify(f"[{self.name}] Base Inventory Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
-                    except Exception:
-                        pass
                     break
-                sleep(0.3)
+                if moved > 0:
+                    break
 
         return -1 if inventory_full else unloaded
 

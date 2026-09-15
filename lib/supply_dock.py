@@ -2,6 +2,7 @@
 # Automatically matches and assigns Earth Contractor Campaign Orders & Weekly Orders,
 # feeds required materials from Base Inventory, and enables continuous dispatch.
 from production import can_fulfill_order, get_construction_material_reservations
+from storage import take_item, total_stock
 
 class SupplyDockController:
     """
@@ -85,9 +86,8 @@ class SupplyDockController:
                         for item_id, req_count in o.requires.items():
                             still_needed = max(0, req_count - shipped.get(item_id, 0))
                             total_needed += still_needed
-                            in_inv = self.inventory.count(item_id) if hasattr(self.inventory, "count") else 0
-                            in_inv = max(0, in_inv - reserved.get(item_id, 0))
-                            items_ready += min(in_inv, still_needed)
+                            in_stock = max(0, total_stock(item_id) - reserved.get(item_id, 0))
+                            items_ready += min(in_stock, still_needed)
 
                     if total_needed > 0:
                         ready_pct = items_ready / total_needed
@@ -116,9 +116,8 @@ class SupplyDockController:
                         for item_id, req_count in o.requires.items():
                             still_needed = max(0, req_count - shipped.get(item_id, 0))
                             total_needed += still_needed
-                            in_inv = self.inventory.count(item_id) if hasattr(self.inventory, "count") else 0
-                            in_inv = max(0, in_inv - reserved.get(item_id, 0))
-                            items_ready += min(in_inv, still_needed)
+                            in_stock = max(0, total_stock(item_id) - reserved.get(item_id, 0))
+                            items_ready += min(in_stock, still_needed)
 
                     if total_needed > 0:
                         ready_pct = items_ready / total_needed
@@ -187,11 +186,11 @@ class SupplyDockController:
                 return
             curr_order = best
 
-        # Step 2: Load required materials from Inventory, but never take stock
-        # an active Construction Blueprint is waiting on -- otherwise the Dock
-        # can "snack away" materials (e.g. titanium ingots) out from under a
-        # Pioneer build the moment they land in Inventory, well before the
-        # build gets a chance to collect them.
+        # Step 2: Load required materials from Inventory or a Warehouse, but
+        # never take stock an active Construction Blueprint is waiting on --
+        # otherwise the Dock can "snack away" materials (e.g. titanium
+        # ingots) out from under a Pioneer build the moment they land in
+        # storage, well before the build gets a chance to collect them.
         if curr_order and hasattr(curr_order, "requires"):
             reserved = get_construction_material_reservations()
             shipped = getattr(curr_order, "shipped", {}) or {}
@@ -199,18 +198,18 @@ class SupplyDockController:
                 already_shipped = shipped.get(item_id, 0)
                 in_dock = self.dock.count(item_id)
                 needed = max(0, req_total - already_shipped - in_dock)
+                if needed <= 0:
+                    continue
 
-                if needed > 0 and self.inventory and hasattr(self.inventory, "count"):
-                    avail = self.inventory.count(item_id)
-                    available_after_reservation = max(0, avail - reserved.get(item_id, 0))
-                    to_take = min(available_after_reservation, needed)
-                    if to_take > 0:
-                        t_res = self.dock.input.take(item_id, to_take)
-                        if t_res.status in ["ok", "partial"]:
-                            moved = getattr(t_res, "moved", 0)
-                            print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
-                    elif avail > 0 and item_id in reserved:
-                        print(f"[{self.name}] Holding back {item_id}: all {avail} unit(s) in Inventory reserved by active Construction Blueprint(s).")
+                avail = total_stock(item_id)
+                available_after_reservation = max(0, avail - reserved.get(item_id, 0))
+                to_take = min(available_after_reservation, needed)
+                if to_take > 0:
+                    moved = take_item(self.dock.input, item_id, to_take)
+                    if moved > 0:
+                        print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
+                elif avail > 0 and item_id in reserved:
+                    print(f"[{self.name}] Holding back {item_id}: all {avail} unit(s) in storage reserved by active Construction Blueprint(s).")
 
         # Step 3: Enable continuous dispatch
         if not self.dock.is_enabled() and self.dock.total() > 0:

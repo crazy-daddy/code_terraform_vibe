@@ -1,15 +1,15 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
 from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item
 from archive import archive
+from storage import take_item, total_stock
 
 
 class FabricatorController:
-    """Selects unlocked pipe/power recipes and feeds them from Inventory."""
+    """Selects unlocked pipe/power recipes and feeds them from Inventory or a Warehouse."""
 
     def __init__(self, machine):
         self.machine = machine
         self.name = getattr(machine, "id", "fabricator_1")
-        self.inventory = get_component("inventory")
         self.connected_input = False
         self.connected_output = False
         self.smelter_wake_announced = False
@@ -47,7 +47,6 @@ class FabricatorController:
 
     def choose_recipe(self):
         targets = get_fabricator_targets()
-        inventory = self.inventory
         try:
             recipes = self.machine.list_recipes()
         except Exception:
@@ -58,7 +57,12 @@ class FabricatorController:
             target = targets.get(getattr(recipe, "output_item", None), 0)
             if target <= 0:
                 continue
-            current = inventory.count(recipe.output_item) if inventory and hasattr(inventory, "count") else 0
+            # total_stock() (not just Inventory) since the rebalance sweep
+            # (storage.rebalance_inventory_to_warehouses()) can move a
+            # finished fabricated item out to a Warehouse too once it piles
+            # up -- an Inventory-only count would look artificially low and
+            # over-produce past the real target.
+            current = total_stock(recipe.output_item)
             output_buffer = self.machine.get_output_count()
             missing = max(0, target - current - output_buffer)
             if missing > 0:
@@ -116,17 +120,15 @@ class FabricatorController:
             missing = max(0, (required * crafts_remaining) - staged)
             if missing <= 0:
                 continue
-            available = self.inventory.count(item_id) if self.inventory else 0
-            if available <= 0:
+            amount = min(missing, remaining_capacity)
+            # take_item() checks Inventory first, then rotates through any
+            # Warehouse holding this item -- see lib/storage.py.
+            moved = take_item(self.machine.input, item_id, amount)
+            if moved <= 0:
                 self.wake_smelter()
                 continue
-            amount = min(missing, available, remaining_capacity)
-            result = self.machine.input.take(item_id, amount)
-            if result.status in ["ok", "partial"]:
-                moved = getattr(result, "moved", 0)
-                if moved > 0:
-                    print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
-                    remaining_capacity -= moved
+            print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
+            remaining_capacity -= moved
 
     def wake_smelter(self):
         """Power on and resume the Smelter when refined inputs are missing."""

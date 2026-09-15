@@ -1,5 +1,6 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
+from storage import total_stock
 
 
 def _component(component_id):
@@ -45,26 +46,23 @@ def _cascade_blueprint_demand():
     inputs -- e.g. a Thermal Cap build's thermal_cap_kit demand cascades into
     titanium_ingot demand, which cascades into titanium_ore demand.
 
-    At each tier, only that tier's *shortfall* (demand beyond current
-    Inventory stock of that exact item) propagates further down -- so a
-    build that's mostly already satisfied by existing stock at some tier
-    doesn't overstate demand for the tiers beneath it. Returns
-    {item_id: total_demand}, the gross demand accumulated for every item
-    reached at any tier (not yet netted against its own stock -- see
-    get_construction_material_reservations() for that).
+    At each tier, only that tier's *shortfall* (demand beyond current total
+    stock of that exact item, across Inventory and every Warehouse -- see
+    storage.total_stock()) propagates further down -- so a build that's
+    mostly already satisfied by existing stock at some tier doesn't overstate
+    demand for the tiers beneath it. Returns {item_id: total_demand}, the
+    gross demand accumulated for every item reached at any tier (not yet
+    netted against its own stock -- see get_construction_material_reservations()
+    for that).
 
     Known limitation: an item reachable via more than one distinct path
     (e.g. two different blueprint items both consuming iron_ingot) nets its
-    shortfall against the same Inventory snapshot independently at each
+    shortfall against the same stock snapshot independently at each
     occurrence, which can slightly overstate demand for a shared
     intermediate under a diamond-shaped recipe dependency. Not worth a full
     MRP-style low-level-code solve for this game's shallow (2-3 tier)
     recipe chains.
     """
-    inventory = _component("inventory")
-
-    def inv_count(item_id):
-        return inventory.count(item_id) if inventory and hasattr(inventory, "count") else 0
 
     def recipe_inputs_for(item_id):
         """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
@@ -114,7 +112,7 @@ def _cascade_blueprint_demand():
         next_frontier = {}
         for item_id, want in frontier.items():
             total_needed[item_id] = total_needed.get(item_id, 0) + want
-            shortfall = max(0, want - inv_count(item_id))
+            shortfall = max(0, want - total_stock(item_id))
             if shortfall <= 0:
                 continue
             inputs = recipe_inputs_for(item_id)
@@ -129,21 +127,20 @@ def _cascade_blueprint_demand():
 
 def get_construction_material_reservations():
     """
-    Returns {item_id: units} to protect in Inventory for active Construction
-    Blueprints, cascading down through Fabricator/Smelter recipes to
-    intermediate materials and raw ore (see _cascade_blueprint_demand()) --
-    not just each blueprint's own required_item. Capped at min(current stock,
-    total demand) per item: never reserves more than what's both actually on
-    hand and actually still needed.
+    Returns {item_id: units} to protect (Inventory + every Warehouse -- see
+    storage.total_stock()) for active Construction Blueprints, cascading down
+    through Fabricator/Smelter recipes to intermediate materials and raw ore
+    (see _cascade_blueprint_demand()) -- not just each blueprint's own
+    required_item. Capped at min(current stock, total demand) per item: never
+    reserves more than what's both actually on hand and actually still needed.
 
-    Used to stop the Supply Dock from shipping away Inventory stock an active
-    build (or the production chain feeding it) is waiting on -- see
-    supply_dock.py step()/pick_best_order().
+    Used to stop the Supply Dock from shipping away stock an active build (or
+    the production chain feeding it) is waiting on -- see supply_dock.py
+    step()/pick_best_order().
     """
-    inventory = _component("inventory")
     reservations = {}
     for item_id, want in _cascade_blueprint_demand().items():
-        stock = inventory.count(item_id) if inventory and hasattr(inventory, "count") else 0
+        stock = total_stock(item_id)
         reserve = min(stock, want)
         if reserve > 0:
             reservations[item_id] = reserve
@@ -219,8 +216,7 @@ def get_fabricator_active_recipe(fabricator=None):
             return None, 0
         output_item = getattr(recipe, "output_item", None)
         output_count = max(1, getattr(recipe, "output_count", 1))
-        inventory = _component("inventory")
-        current = inventory.count(output_item) if inventory and hasattr(inventory, "count") else 0
+        current = total_stock(output_item)
         output_buffer = fabricator.get_output_count() if hasattr(fabricator, "get_output_count") else 0
         target = get_fabricator_targets().get(output_item, 0)
         still_needed = max(0, target - current - output_buffer)
@@ -233,12 +229,11 @@ def get_fabricator_active_recipe(fabricator=None):
 def get_material_demands():
     """Returns material quantities currently requested by production and shipping."""
     demands = {}
-    inventory = _component("inventory")
 
     # Finished fabricated goods have a standing building-stock target and
     # may also be required by the active Supply Dock order.
     for item_id, target in get_fabricator_targets().items():
-        current = inventory.count(item_id) if inventory and hasattr(inventory, "count") else 0
+        current = total_stock(item_id)
         _add_demand(demands, item_id, max(0, target - current))
 
     # A selected Fabricator recipe is an explicit production intention; scale
@@ -252,8 +247,7 @@ def get_material_demands():
             stockpile = fabricator.get_stockpile() or {}
             for item_id, required in (getattr(recipe, "inputs", {}) or {}).items():
                 missing = (required * crafts_remaining) - stockpile.get(item_id, 0)
-                if inventory and hasattr(inventory, "count"):
-                    missing -= inventory.count(item_id)
+                missing -= total_stock(item_id)
                 _add_demand(demands, item_id, max(0, missing))
         except Exception:
             pass
@@ -269,8 +263,7 @@ def get_material_demands():
                     missing = required - shipped.get(item_id, 0)
                     if hasattr(dock, "count"):
                         missing -= dock.count(item_id)
-                    if inventory and hasattr(inventory, "count"):
-                        missing -= inventory.count(item_id)
+                    missing -= total_stock(item_id)
                     _add_demand(demands, item_id, max(0, missing))
         except Exception:
             pass
@@ -282,13 +275,12 @@ def get_raw_material_demands(smelter=None):
     """Converts refined-material demand into raw ore demand for mining."""
     demands = get_material_demands()
     refined_demands = dict(demands)
-    inventory = _component("inventory")
     raw_demands = {}
 
     # Raw items requested directly by an order are mined as-is.
     for item_id, quantity in demands.items():
         if item_id.endswith("_ore") or item_id in ["silicon", "rare_earth"]:
-            current = inventory.count(item_id) if inventory and hasattr(inventory, "count") else 0
+            current = total_stock(item_id)
             _add_demand(raw_demands, item_id, max(0, quantity - current))
 
     # Expand Fabricator output demand into refined-material demand before
@@ -303,7 +295,7 @@ def get_raw_material_demands(smelter=None):
                     continue
                 output_count = max(1, getattr(recipe, "output_count", 1))
                 for input_id, units_per_run in (getattr(recipe, "inputs", {}) or {}).items():
-                    current = inventory.count(input_id) if inventory and hasattr(inventory, "count") else 0
+                    current = total_stock(input_id)
                     needed = (output_need * units_per_run + output_count - 1) // output_count
                     _add_demand(refined_demands, input_id, max(0, needed - current))
         except Exception:
@@ -321,7 +313,7 @@ def get_raw_material_demands(smelter=None):
                 if output_need <= 0:
                     continue
                 for raw_item, units_per_run in (getattr(recipe, "inputs", {}) or {}).items():
-                    current = inventory.count(raw_item) if inventory and hasattr(inventory, "count") else 0
+                    current = total_stock(raw_item)
                     _add_demand(raw_demands, raw_item, max(0, output_need * units_per_run - current))
         except Exception:
             pass
@@ -344,9 +336,8 @@ def _has_surveyed_mineral(item_id):
 
 
 def can_source_item(item_id, seen=None):
-    """Whether an item has Inventory, surveyed-source, or unlocked recipe supply."""
-    inventory = _component("inventory")
-    if inventory and hasattr(inventory, "count") and inventory.count(item_id) > 0:
+    """Whether an item has storage (Inventory/Warehouse), surveyed-source, or unlocked recipe supply."""
+    if total_stock(item_id) > 0:
         return True
 
     seen = set() if seen is None else seen
@@ -389,7 +380,6 @@ def can_fulfill_order(order):
 
 def get_raw_material_reason(raw_item, smelter=None):
     """Describes the active downstream consumer driving a raw-material demand."""
-    inventory = _component("inventory")
     fabricator = _component("fabricator_1")
     dock = _component("supply_dock_1")
 
@@ -428,6 +418,6 @@ def get_raw_material_reason(raw_item, smelter=None):
         except Exception:
             pass
 
-    if inventory and hasattr(inventory, "count") and inventory.count(raw_item) > 0:
-        return "existing Inventory demand"
+    if total_stock(raw_item) > 0:
+        return "existing storage demand"
     return "active production demand"

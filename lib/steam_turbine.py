@@ -21,6 +21,20 @@ THROTTLE_MARGINAL_BUFFER = 0.5         # moderate draw while buffer is rebuildin
 BATTERY_FULL_FRACTION = 0.98
 THROTTLE_DEMAND_MET = 0.3
 
+# is_stalled() alone isn't reliable proof the connected source is physically
+# unreachable -- it's equally true, harmlessly, whenever the feeding vent is
+# just in its dormant phase. Require this many *consecutive* stalled ticks
+# (dormancy is temporary; a genuinely missing pipe route stalls forever)
+# before treating the current source as unreachable and blacklisting it.
+STALL_STREAK_BLACKLIST_THRESHOLD = 5
+
+# A source blacklisted as unreachable might become reachable later (the
+# player builds a new Gas Pipe route to it) -- clear the blacklist this often
+# so it gets a fresh chance without waiting for the current connection to
+# also go bad first. Counts step() calls, not real time -- with the default
+# poll_interval=2.0s that's roughly 5 minutes.
+RESCAN_INTERVAL_TICKS = 150
+
 
 def discover_network_building_ids(type_id):
     """
@@ -55,10 +69,21 @@ class SteamTurbineController:
         self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.connected_input = False
+        # connect()'s "ok" status only means the pairing was logically
+        # accepted -- it never verifies a completed Gas Pipe route actually
+        # exists (docs/guide/infrastructure_and_pipes.md). is_stalled() is
+        # the only live signal a source isn't reachable, but it's ambiguous
+        # on its own (also true, harmlessly, whenever the feeding vent is
+        # just dormant) -- see stall_streak below.
+        self.unreachable_sources = set()
+        self.stall_streak = 0
+        self.ticks_since_rescan = 0
 
     def ensure_input_connection(self):
         """
-        Declares steam_in's source if not already connected. A Gas Tank has no
+        Declares steam_in's source, discovering candidates network-wide and
+        rechecking reachability via is_stalled() rather than trusting
+        connect()'s "ok" status alone (see __init__). A Gas Tank has no
         script of its own (purely passive -- see docs/components/gas_tank.md),
         so nothing ever calls connect() on its side of the pipe; this Turbine's
         own script must declare the link instead, same as it declares its own
@@ -68,34 +93,63 @@ class SteamTurbineController:
         Cap's own steam_out currently points at -- so this tries every known
         Gas Tank first (the larger, shared buffer), then falls through to
         every known Thermal Cap directly if no tank connection succeeds.
-        Candidates are gathered network-wide (see discover_network_building_ids()),
-        since a reachable source isn't guaranteed to share this Turbine's own
-        outpost, and physical Gas Pipe topology decides which one actually works.
         """
-        if self.connected_input:
-            return
         port = getattr(self.turbine, "steam_in", None)
         if not port or not hasattr(port, "connect"):
             return
-        try:
-            if hasattr(port, "connected_to") and port.connected_to():
-                self.connected_input = True
-                return
-        except Exception:
-            pass
 
-        for type_id in ("gas_tank", "thermal_cap"):
-            for source_id in discover_network_building_ids(type_id):
-                try:
-                    res = port.connect(source_id)
-                except Exception:
-                    continue
-                if res.status == "ok":
-                    self.connected_input = True
-                    print(f"[{self.name}] Connected steam_in -> '{source_id}'.")
-                    return
-                elif res.status != "busy":
-                    print(f"[{self.name}] steam_in connect notice for '{source_id}': {res.status} - {res.message}")
+        # Periodic rescan: give blacklisted sources a fresh chance in case a
+        # new Gas Pipe route was built since they were marked unreachable.
+        # This never disconnects a currently working source -- it only
+        # widens the candidate pool for the next time a switch is warranted.
+        self.ticks_since_rescan += 1
+        if self.ticks_since_rescan >= RESCAN_INTERVAL_TICKS:
+            self.ticks_since_rescan = 0
+            if self.unreachable_sources:
+                print(f"[{self.name}] Periodic rescan: clearing {len(self.unreachable_sources)} blacklisted source(s) to retry.")
+                self.unreachable_sources.clear()
+
+        is_stalled = False
+        if hasattr(self.turbine, "is_stalled"):
+            try:
+                is_stalled = self.turbine.is_stalled()
+            except Exception:
+                is_stalled = False
+        self.stall_streak = self.stall_streak + 1 if is_stalled else 0
+
+        if self.connected_input:
+            if self.stall_streak < STALL_STREAK_BLACKLIST_THRESHOLD:
+                return
+            current_id = None
+            try:
+                current_id = port.connected_id() if hasattr(port, "connected_id") else None
+            except Exception:
+                pass
+            if current_id:
+                self.unreachable_sources.add(current_id)
+                print(f"[{self.name}] '{current_id}' stalled for {self.stall_streak} consecutive ticks -- likely no completed Gas Pipe route (not just vent dormancy). Blacklisting and picking a different source.")
+            self.connected_input = False
+            self.stall_streak = 0
+
+        candidates = [s for t in ("gas_tank", "thermal_cap") for s in discover_network_building_ids(t)]
+        candidates = [s for s in candidates if s not in self.unreachable_sources]
+        if not candidates:
+            candidates = [s for t in ("gas_tank", "thermal_cap") for s in discover_network_building_ids(t)]
+            if candidates and self.unreachable_sources:
+                print(f"[{self.name}] Every known source was blacklisted; clearing the list to retry.")
+                self.unreachable_sources.clear()
+
+        for source_id in candidates:
+            try:
+                res = port.connect(source_id)
+            except Exception:
+                continue
+            if res.status == "ok":
+                self.connected_input = True
+                print(f"[{self.name}] Connected steam_in -> '{source_id}'.")
+                return
+            elif res.status != "busy":
+                print(f"[{self.name}] steam_in connect notice for '{source_id}': {res.status} - {res.message}")
 
     def buffer_fraction(self):
         """Fraction (0-1) of steam_in's own buffer currently filled."""

@@ -2,18 +2,23 @@
 # Manages automated ore intake, recipe execution, finished metal extraction,
 # and intelligent power-down when idle to conserve grid energy.
 from production import get_material_demands, get_raw_material_reason
+from storage import take_item, total_stock, rebalance_inventory_to_warehouses
 
 class SmelterController:
     """
     Controls an industrial Smelter.
     Refines raw ores (iron_ore, silicon, titanium, etc.) into ingots/materials.
     Automatically clears recipes and powers down when idle to eliminate power draw.
+    Also runs the "inventory manager" sweep each cycle (rebalance_inventory_to_warehouses())
+    since it's confirmed always-running at home base -- see lib/storage.py.
     """
     RECIPE_MAP = {
         "iron_ore": "smelt_iron_ingot",
         "silicon": "smelt_glass",
         "titanium": "smelt_titanium_ingot",
         "cobalt": "smelt_cobalt_ingot",
+        "rare_earth": "smelt_rare_earth_core",
+        "neutronium": "smelt_neutronium_bar",
         "lead_ore": "smelt_lead_ingot",
     }
 
@@ -61,6 +66,10 @@ class SmelterController:
 
     def step(self):
         self.ensure_connections()
+
+        # Inventory manager sweep: move bulk stock (ore, ingots) out to a
+        # Warehouse once it piles up. See lib/storage.py for the full rule.
+        rebalance_inventory_to_warehouses()
 
         # Step 1: Drain any completed products
         self.drain_output()
@@ -125,17 +134,17 @@ class SmelterController:
                     print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore_to_process} -> {output_item} for {reason}.")
             return
 
-        # Step 3: If input buffer has room and inventory has ore, pull it
+        # Step 3: If input buffer has room and ore is available (Inventory or
+        # a Warehouse), pull it -- take_item() tries whatever's currently
+        # connected first, then rotates through Warehouses if that's short.
         if ore_to_process and in_buf < 40:
-            avail = self.inventory.count(ore_to_process)
-            take_count = min(avail, 50 - in_buf)
+            take_count = 50 - in_buf
             if take_count > 0:
                 self.ensure_connections()
-                res = self.smelter.input.take(ore_to_process, take_count)
-                if res.status in ["ok", "partial"]:
-                    moved = getattr(res, "moved", 0)
+                moved = take_item(self.smelter.input, ore_to_process, take_count)
+                if moved > 0:
                     reason = get_raw_material_reason(ore_to_process, self.smelter)
-                    print(f"[{self.name}] Loaded {moved}x {ore_to_process} from Inventory (for {reason}).")
+                    print(f"[{self.name}] Loaded {moved}x {ore_to_process} (for {reason}).")
                     in_buf = self.smelter.get_input_count()
 
         # Step 4: Check idle condition & power management
@@ -144,18 +153,17 @@ class SmelterController:
         is_active = self.smelter.is_running() or in_buf > 0 or out_buf > 0
 
         if not is_active:
-            # Check if any ore is pending in inventory
+            # Check if any ore is pending (Inventory or a Warehouse)
             has_pending_ore = False
             demands = get_material_demands()
-            if self.inventory and hasattr(self.inventory, "count"):
-                for ore, recipe_id in self.RECIPE_MAP.items():
-                    if self.inventory.count(ore) > 0:
-                        for recipe in self.smelter.list_recipes():
-                            if getattr(recipe, "id", None) == recipe_id and demands.get(getattr(recipe, "output_item", None), 0) > 0:
-                                has_pending_ore = True
-                                break
-                    if has_pending_ore:
-                        break
+            for ore, recipe_id in self.RECIPE_MAP.items():
+                if total_stock(ore) > 0:
+                    for recipe in self.smelter.list_recipes():
+                        if getattr(recipe, "id", None) == recipe_id and demands.get(getattr(recipe, "output_item", None), 0) > 0:
+                            has_pending_ore = True
+                            break
+                if has_pending_ore:
+                    break
 
             if not has_pending_ore:
                 # Completely idle! power_draw only applies while a recipe is
@@ -232,7 +240,7 @@ class SmelterController:
                 continue
             inputs = getattr(recipe, "inputs", {}) or {}
             for ore in inputs:
-                if ore in self.RECIPE_MAP and (ore in buffered_ore or self.inventory.count(ore) > 0):
+                if ore in self.RECIPE_MAP and (ore in buffered_ore or total_stock(ore) > 0):
                     return recipe, ore
         return None, None
 
