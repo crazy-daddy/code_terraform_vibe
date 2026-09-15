@@ -252,13 +252,57 @@ def _cheapest_warehouse_occupant(exclude_item_id, outpost=None):
     return best
 
 
+def _warehouse_item_ids(outpost=None):
+    """
+    Set of item ids currently held (count > 0) anywhere in ANY discovered
+    Warehouse -- used by rebalance_inventory_to_warehouses() to also
+    consolidate an item that's already split between Inventory and a
+    Warehouse, even when the Inventory-side slot count alone is too small to
+    cross INVENTORY_REBALANCE_SLOT_THRESHOLD on its own (e.g. a single
+    10-unit stack, exactly 1 slot).
+    """
+    held = set()
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        if not component or not hasattr(component, "slots"):
+            continue
+        try:
+            slots = component.slots()
+        except Exception:
+            continue
+        for slot in slots:
+            item_id = getattr(slot, "item", None) or getattr(slot, "item_id", None)
+            count = getattr(slot, "count", 0)
+            if item_id and count > 0:
+                held.add(item_id)
+    return held
+
+
 def rebalance_inventory_to_warehouses(outpost=None):
     """
-    "Inventory manager" sweep: moves any stackable (propertyless) item
-    spanning more than INVENTORY_REBALANCE_SLOT_THRESHOLD Inventory slots out
-    to a Warehouse entirely (not just the excess -- a Warehouse is exactly as
-    fast to read from as Inventory, so there's no benefit to keeping a
-    partial stack behind). Worst offenders (most slots) are processed first.
+    "Inventory manager" sweep: moves a stackable (propertyless) item out to a
+    Warehouse entirely (not just the excess -- a Warehouse is exactly as fast
+    to read from as Inventory, so there's no benefit to keeping a partial
+    stack behind) in either of two cases:
+      1. It spans more than INVENTORY_REBALANCE_SLOT_THRESHOLD Inventory slots
+         on its own -- the original bulk-item rule.
+      2. It's ALREADY split: some units sit in Inventory while a Warehouse
+         also already holds some of the same item, regardless of Inventory
+         slot count. Once an item has a home in a Warehouse, leaving a
+         further remainder behind in Inventory serves no "quick access"
+         purpose (every consumer already reads combined stock via
+         total_stock(), not by physical location) and just fragments the
+         same material across two places -- found from a real case where a
+         Fabricator's own stock-target tracking (which nets against
+         total_stock(), so this SHOULD have been impossible) still ended up
+         with an equal split, e.g. 10 in Inventory + 10 already in a
+         Warehouse for a target of only 10, most likely a staged-batch
+         completing after the target was already met elsewhere. Whatever the
+         production-side cause, the "inventory manager" sweep is the correct
+         place to clean up an existing split regardless, rather than
+         requiring the specific producer to know about every possible
+         storage location in advance.
+    Worst offenders (most Inventory slots occupied) are processed first.
 
     If no Warehouse has room for an item at all (every material-locked slot
     already holds something else), falls back to a swap: evicts whichever
@@ -272,10 +316,14 @@ def rebalance_inventory_to_warehouses(outpost=None):
         return
 
     per_item = _occupied_stackable_slots_by_item()
+    if not per_item:
+        return
+
+    warehouse_item_ids = _warehouse_item_ids(outpost)
     bulky_items = [
         (item_id, len(counts), sum(counts))
         for item_id, counts in per_item.items()
-        if len(counts) > INVENTORY_REBALANCE_SLOT_THRESHOLD
+        if len(counts) > INVENTORY_REBALANCE_SLOT_THRESHOLD or item_id in warehouse_item_ids
     ]
     if not bulky_items:
         return

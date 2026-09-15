@@ -21,9 +21,18 @@ from archive import archive
 
 CHARGING_STATION_TYPE_ID = "vehicle_charging_station"
 
-SPEEDMODE_KEY = "vehicle.speedmode"
-SPEEDMODE_CONSERVE = "conserve"
-SPEEDMODE_HIGHSPEED = "highspeed"
+# Fleet-wide default cruise_throttle, settable via the Data Archive Notebook
+# (e.g. bump to 1.0 once battery capacity supports full-throttle driving)
+# without touching any vehicle's own thin entrypoint script. Replaces the old
+# binary vehicle.speedmode ("conserve"/"highspeed") flag: a single numeric
+# default is strictly more expressive (any value in between, not just two
+# presets), and select_cruise_throttle() already safely scales any
+# self.cruise_throttle down per-leg (via max_safe_throttle_for_leg()) when the
+# full value wouldn't leave a safe return reserve -- so there's no separate
+# "highspeed" logic path needed at all, just one throttle number. See
+# VehicleEnergyMixin.default_cruise_throttle()/select_cruise_throttle().
+DEFAULT_CRUISE_THROTTLE_KEY = "vehicle.default_cruise_throttle"
+DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5
 
 ACTIVE_MODULE_ID_PREFIXES = ("nav_module", "drill_module", "sonar_module", "constructor_module")
 
@@ -38,6 +47,30 @@ MODULE_TRAVEL_POWER_W = 8.0
 CARGO_UNIT_TRAVEL_POWER_W = 0.04
 MIN_SPEEDMODE_THROTTLE = 0.10
 MAX_SPEEDMODE_THROTTLE = 1.0
+
+# Exact mining Wh/unit inputs, both developer-confirmed/documented (unlike
+# construction, see CONSTRUCTION_WH_PER_PROGRESS_DEFAULT below): per-ore dig
+# time (docs/database/items_minerals.md) and drill power draw by hardness
+# tier (docs/components/drill_module.md: basic=10W/industrial=20W/heavy=30W,
+# keyed here by drill.hardness_limit() since that's what's live-queryable --
+# there's no .power_draw() method). DrillModule.mine()'s own documented time
+# formula is `mineral_base_minutes * drill.speed_multiplier() / site_purity`
+# (drill_module.md line 29); PURITY_DIVISOR mirrors the same "standard"=1x/
+# "rich"=2x/"pure"=3x yield multiplier from docs/types/world_and_sites.md's
+# `.purity` field, which IS that site_purity divisor. See mine_wh_per_unit_for().
+ORE_DIG_MINUTES = {
+    "iron_ore": 15.0,
+    "silicon": 15.0,
+    "titanium": 20.0,
+    "cobalt": 20.0,
+    "lead_ore": 18.0,
+    "rare_earth": 25.0,
+    "neutronium": 30.0,
+}
+DRILL_POWER_W_BY_HARDNESS_LIMIT = {1: 10.0, 3: 20.0, 4: 30.0}
+PURITY_DIVISOR = {"standard": 1.0, "rich": 2.0, "pure": 3.0}
+DEFAULT_ORE_DIG_MINUTES = 15.0  # fallback for an unknown/undocumented item_id -- matches the cheapest (H1) ore
+DEFAULT_DRILL_POWER_W = 10.0  # fallback matching the basic drill
 
 
 def active_modules_count_for(vehicle):
@@ -96,6 +129,38 @@ def travel_wh_per_meter_for(vehicle, throttle, cargo_units=None):
     return power / speed
 
 
+def mine_wh_per_unit_for(vehicle, item_id, purity=None):
+    """
+    Standalone exact mining Wh/unit for a live vehicle object: 1 unit of
+    item_id, at the vehicle's actually-mounted drill's real speed_multiplier()/
+    hardness_limit() and the site's purity, from the documented formula (see
+    the module-level ORE_DIG_MINUTES/DRILL_POWER_W_BY_HARDNESS_LIMIT/
+    PURITY_DIVISOR comment above) -- not a flat per-unit average across every
+    ore/drill/purity combination. Falls back to the basic-drill/standard-purity
+    rate for an unmounted drill, an unrecognized item_id, or unsurveyed purity
+    (None), rather than guessing.
+    """
+    base_minutes = ORE_DIG_MINUTES.get(item_id, DEFAULT_ORE_DIG_MINUTES)
+    speed_mult = 1.0
+    hardness_limit = 1
+    drill = getattr(vehicle, "drill", None)
+    if drill is not None:
+        if hasattr(drill, "speed_multiplier"):
+            try:
+                speed_mult = float(drill.speed_multiplier())
+            except Exception:
+                pass
+        if hasattr(drill, "hardness_limit"):
+            try:
+                hardness_limit = int(drill.hardness_limit())
+            except Exception:
+                pass
+    power_w = DRILL_POWER_W_BY_HARDNESS_LIMIT.get(hardness_limit, DEFAULT_DRILL_POWER_W)
+    purity_divisor = PURITY_DIVISOR.get(purity, 1.0)
+    time_hours = (base_minutes / 60.0) * speed_mult / purity_divisor
+    return time_hours * power_w
+
+
 def rescue_wh_per_meter_for(vehicle):
     """
     Standalone worst-case-safe travel Wh/meter for rescue-return budgeting, at
@@ -118,6 +183,12 @@ class VehicleEnergyMixin:
     outpost-aware charging-station discovery, mixed into VehicleController.
     """
     SONAR_WH_BUDGET = 2.0
+    # Flat fallback only, used when calculate_trip_energy() isn't given a
+    # mine_item_id (e.g. a non-mining candidate) -- see mine_wh_per_unit()/
+    # mine_wh_per_unit_for() above for the exact per-ore/per-drill/per-purity
+    # formula every real mining call site now passes instead. This value
+    # happens to equal the exact rate for the cheapest case (basic drill,
+    # iron ore, standard purity): (15 min/60) * 1.0 * 10 W = 2.5 Wh.
     MINE_WH_PER_UNIT = 2.5
     SAFETY_MARGIN_MULTIPLIER = 1.05
     MIN_EMERGENCY_RESERVE_WH = 8.0
@@ -156,6 +227,10 @@ class VehicleEnergyMixin:
         """Top-speed multiplier from mounted Sport Nav modules: 1.0 basic, 1+Sport Nav count (docs/components/nav_module.md .speed_multiplier())."""
         return nav_speed_multiplier_for(self.vehicle)
 
+    def mine_wh_per_unit(self, item_id, purity=None):
+        """Exact mining Wh/unit for this vehicle's actually-mounted drill (see mine_wh_per_unit_for())."""
+        return mine_wh_per_unit_for(self.vehicle, item_id, purity)
+
     def nav_power_multiplier(self):
         """
         Movement power multiplier matching nav_speed_multiplier(). Docs confirm
@@ -164,6 +239,27 @@ class VehicleEnergyMixin:
         extrapolates the same +1.6x power per +1.0x speed above the 1.0 baseline.
         """
         return nav_power_multiplier_for(self.vehicle)
+
+    def default_cruise_throttle(self):
+        """
+        Fleet-wide default cruise_throttle from the archive
+        (DEFAULT_CRUISE_THROTTLE_KEY), falling back to
+        DEFAULT_CRUISE_THROTTLE_FALLBACK=0.5 if never set or unreadable.
+        VehicleController.__init__ calls this exactly once at construction
+        when the thin entrypoint script passes cruise_throttle=None, so
+        raising the archive value (e.g. to 1.0) speeds up every such vehicle
+        without editing each one's script -- a vehicle constructed with an
+        explicit cruise_throttle instead keeps that override regardless of
+        this archive value.
+        """
+        value = archive.get(DEFAULT_CRUISE_THROTTLE_KEY, None)
+        if value is None:
+            return DEFAULT_CRUISE_THROTTLE_FALLBACK
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return DEFAULT_CRUISE_THROTTLE_FALLBACK
+        return max(self.MIN_SPEEDMODE_THROTTLE, min(self.MAX_SPEEDMODE_THROTTLE, value))
 
     def construction_calibration_key(self):
         return f"vehicle.wh_per_progress:{self.name}"
@@ -209,12 +305,19 @@ class VehicleEnergyMixin:
         """
         return self.wh_per_meter_at_throttle(self.MIN_SPEEDMODE_THROTTLE, cargo_units=cargo_units)
 
-    def calculate_trip_energy(self, target_coords, planned_drill_units=0, planned_scans=1, planned_construction_progress=0.0, wh_per_meter=None):
+    def calculate_trip_energy(self, target_coords, planned_drill_units=0, planned_scans=1, planned_construction_progress=0.0, wh_per_meter=None, mine_item_id=None, mine_purity=None):
         """
         Accurately calculates total energy required for a round-trip expedition:
         1. Energy to drive to target: dist_to_target * outbound Wh/m (current cargo load)
         2. Energy to scan & survey: planned_scans * SONAR_WH_BUDGET
-        3. Energy to mine: planned_drill_units * MINE_WH_PER_UNIT
+        3. Energy to mine: planned_drill_units * exact Wh/unit for mine_item_id at this
+           vehicle's mounted drill and mine_purity (mine_wh_per_unit() -- see its docstring
+           and the module-level ORE_DIG_MINUTES/DRILL_POWER_W_BY_HARDNESS_LIMIT/PURITY_DIVISOR
+           comment). Falls back to the flat MINE_WH_PER_UNIT average when mine_item_id isn't
+           given at all (e.g. a non-mining candidate) -- callers that DO know the target ore
+           (mining.py/pioneer.py/rover.py's mining candidates always carry harvest_item/purity)
+           should always pass it, since the exact rate can run up to ~3.6x the flat average
+           for a heavy drill on neutronium vs. a basic drill on iron ore.
         4. Energy to build: planned_construction_progress * wh_per_progress
         5. Energy to drive to nearest charging station from target: dist_target_to_nearest_cs *
            return Wh/m (current cargo + planned_drill_units -- mined ore weighs down the return leg)
@@ -240,7 +343,8 @@ class VehicleEnergyMixin:
         drive_out_wh = dist_outbound * outbound_rate
         drive_home_wh = dist_inbound * inbound_rate
         sonar_wh = planned_scans * self.SONAR_WH_BUDGET
-        mining_wh = planned_drill_units * self.MINE_WH_PER_UNIT
+        mine_rate = self.mine_wh_per_unit(mine_item_id, mine_purity) if mine_item_id else self.MINE_WH_PER_UNIT
+        mining_wh = planned_drill_units * mine_rate
         construction_wh = planned_construction_progress * self.wh_per_progress
 
         net_expedition_wh = drive_out_wh + drive_home_wh + sonar_wh + mining_wh + construction_wh
@@ -312,11 +416,6 @@ class VehicleEnergyMixin:
         drive_wh = dist_cs * self.wh_per_meter_at_throttle(self.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
-    def get_speed_mode(self):
-        """Reads the fleet-wide vehicle.speedmode archive flag ("conserve" or "highspeed")."""
-        mode = archive.get(SPEEDMODE_KEY, SPEEDMODE_CONSERVE)
-        return mode if mode in (SPEEDMODE_CONSERVE, SPEEDMODE_HIGHSPEED) else SPEEDMODE_CONSERVE
-
     def _drive_speed_m_per_hour(self, throttle):
         """speed (m/h) = 100.0 * throttle * Sport Nav speed multiplier."""
         return self.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle * self.nav_speed_multiplier()
@@ -380,20 +479,23 @@ class VehicleEnergyMixin:
 
     def select_cruise_throttle(self, target_x, target_y):
         """
-        Picks this leg's driving throttle from the vehicle.speedmode archive flag:
-        - "conserve" (default): self.cruise_throttle (50% by default) unless that
-          would not leave a safe reserve to reach a charging station from the
-          destination, in which case throttle down to whatever is safe (10% floor).
-        - "highspeed": the highest throttle (up to 100%) that still leaves a safe
-          reserve, so the task finishes as fast as the battery allows.
+        Picks this leg's driving throttle: self.cruise_throttle (set at
+        construction, or the archive-backed default_cruise_throttle() when
+        the entrypoint script passed None -- see VehicleController.__init__),
+        capped down only as far as needed to still leave a safe reserve to
+        reach a charging station from the destination
+        (max_safe_throttle_for_leg()). Never higher than requested, never
+        lower than MIN_SPEEDMODE_THROTTLE.
+
+        Set self.cruise_throttle to MAX_SPEEDMODE_THROTTLE (1.0) -- directly,
+        or by raising DEFAULT_CRUISE_THROTTLE_KEY in the archive -- for the
+        old "highspeed" behavior (fastest throttle the battery safely
+        allows): this single formula already produces exactly that, since
+        capping only ever throttles DOWN from whatever baseline was
+        requested, never up past it.
         """
-        mode = self.get_speed_mode()
-        max_safe = self.max_safe_throttle_for_leg((target_x, target_y))
-
-        if mode == SPEEDMODE_HIGHSPEED:
-            return max(self.MIN_SPEEDMODE_THROTTLE, min(self.MAX_SPEEDMODE_THROTTLE, max_safe))
-
         baseline = min(self.cruise_throttle, self.MAX_SPEEDMODE_THROTTLE)
+        max_safe = self.max_safe_throttle_for_leg((target_x, target_y))
         if max_safe >= baseline:
             return baseline
         return max(self.MIN_SPEEDMODE_THROTTLE, min(baseline, max_safe))

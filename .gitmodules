@@ -1,3 +1,9 @@
 [submodule "inspirations/graviadaemon"]
 	path = inspirations/graviadaemon
 	url = https://github.com/graviaDaemon/terraform-code.git
+[submodule "inspirations/vakermit"]
+	path = inspirations/vakermit
+	url = https://github.com/vakermit/code-terraform-scripts
+[submodule "inspirations/cyber-f0x"]
+	path = inspirations/cyber-f0x
+	url = https://github.com/Cyber-F0x/Code-Terraform-Game

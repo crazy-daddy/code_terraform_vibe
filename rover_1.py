@@ -3,7 +3,9 @@
 
 from rover import RoverController
 
-# Create controller for this rover instance
-rover = RoverController(self, cruise_throttle=0.5)
+# Create controller for this rover instance -- no cruise_throttle passed, so
+# it follows the fleet-wide archive default (see vehicle_energy.py's
+# DEFAULT_CRUISE_THROTTLE_KEY), settable via the Data Archive Notebook.
+rover = RoverController(self)
 rover.run()
 

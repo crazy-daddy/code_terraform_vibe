@@ -15,6 +15,16 @@ from storage import take_item, total_stock, rebalance_inventory_to_warehouses
 SMELTER_RECIPE_CLAIM_STALE_TICKS = 600
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 
+# Ore loading used to request up to a full 50-unit top-up in one take_item()
+# call -- with several smelters contested for the same ore, whichever polled
+# first could take the entire available stock in a single grab, leaving a
+# peer smelter at 0 even though demand called for splitting it (same real
+# case that motivated lib/fabricator.py's FABRICATOR_LOAD_CHUNK_SIZE, just
+# for ore instead of Fabricator ingredients). Capping each call to this many
+# units spreads a big top-up across several step() cycles instead of one,
+# giving a peer smelter's own poll a chance to interleave in between.
+SMELTER_LOAD_CHUNK_SIZE = 10
+
 
 class SmelterController:
     """
@@ -263,7 +273,11 @@ class SmelterController:
         # a Warehouse), pull it -- take_item() tries whatever's currently
         # connected first, then rotates through Warehouses if that's short.
         if ore_to_process and in_buf < 40:
-            take_count = 50 - in_buf
+            # Capped to SMELTER_LOAD_CHUNK_SIZE per call -- see its comment
+            # above -- so a big top-up is spread across several step()
+            # cycles instead of one smelter monopolizing a contested ore in
+            # a single grab.
+            take_count = min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE)
             if take_count > 0:
                 self.ensure_connections()
                 moved = take_item(self.smelter.input, ore_to_process, take_count)
@@ -337,10 +351,22 @@ class SmelterController:
     def select_needed_ore(self, unlocked_recipes=None):
         """
         Selects only ore whose unlocked recipe has an active downstream need,
-        skipping a recipe another live smelter already holds a fresh claim
+        preferring a recipe no other live smelter already holds a fresh claim
         on (see claim_recipe()) -- so with several smelters and several
         simultaneously-demanded ores, each settles on a different one instead
         of racing to refine the same ore while another sits untouched.
+
+        If every demanded, sourceable ore is already claimed by a different
+        smelter (e.g. only ONE ore is currently demanded at all -- a single
+        large order), joins the first one anyway rather than sitting
+        completely idle: unlike Fabricator's crafts_remaining, this doesn't
+        need an explicit even split -- get_material_demands() already nets
+        against total_stock() (which includes what every other smelter has
+        already produced), so several smelters pulling the same ore in
+        parallel each cycle self-throttles down to 0 together once the
+        target is met, rather than each independently re-committing to the
+        FULL remaining shortfall the way a Fabricator's pre-loaded stockpile
+        batch would.
         """
         if not self.inventory or not hasattr(self.smelter, "list_recipes"):
             return None, None
@@ -365,6 +391,7 @@ class SmelterController:
         except Exception:
             return None, None
 
+        sourceable = []
         for recipe in recipes.values():
             output_item = getattr(recipe, "output_item", None)
             if demands.get(output_item, 0) <= 0:
@@ -372,10 +399,20 @@ class SmelterController:
             inputs = getattr(recipe, "inputs", {}) or {}
             for ore in inputs:
                 if ore in self.RECIPE_MAP and (ore in buffered_ore or total_stock(ore) > 0):
-                    recipe_id = getattr(recipe, "id", "")
-                    if not self.claim_recipe(recipe_id):
-                        continue  # another smelter already has this one -- try a different candidate
-                    return recipe, ore
+                    sourceable.append((recipe, ore))
+                    break  # one matching ore is enough to consider this recipe a candidate
+
+        for recipe, ore in sourceable:
+            recipe_id = getattr(recipe, "id", "")
+            if self.claim_recipe(recipe_id):
+                return recipe, ore
+            # another smelter already has a fresh claim on this one -- try
+            # the next candidate first; joining is the fallback below.
+
+        if sourceable:
+            recipe, ore = sourceable[0]
+            print(f"[{self.name}] Joining '{getattr(recipe, 'id', '?')}' alongside another Smelter (no other demanded ore to refine instead).")
+            return recipe, ore
         return None, None
 
     def run(self, poll_interval=2.0):

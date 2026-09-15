@@ -240,7 +240,13 @@ class MiningMixin:
         for cand in candidates:
             planned_mine = 10 if cand["type"] == "mine" else 0
             planned_scan = 1 if cand["type"] == "poi" else 0
-            budget = self.calculate_trip_energy(cand["coords"], planned_drill_units=planned_mine, planned_scans=planned_scan)
+            budget = self.calculate_trip_energy(
+                cand["coords"],
+                planned_drill_units=planned_mine,
+                planned_scans=planned_scan,
+                mine_item_id=cand.get("harvest_item"),
+                mine_purity=cand.get("purity"),
+            )
 
             if budget["is_achievable"]:
                 budget_candidates += 1
@@ -401,7 +407,12 @@ class MiningMixin:
         if has_resumable_target:
             print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
             target = self.current_target
-            budget = self.calculate_trip_energy(target["coords"], planned_drill_units=10)
+            budget = self.calculate_trip_energy(
+                target["coords"],
+                planned_drill_units=10,
+                mine_item_id=target.get("harvest_item"),
+                mine_purity=target.get("purity"),
+            )
         else:
             candidates = self.build_local_stockpile_candidates(outpost_id)
             target, budget, _ = self.select_best_mining_target(candidates)

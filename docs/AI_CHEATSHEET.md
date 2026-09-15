@@ -32,11 +32,12 @@ that way there is exactly one place to keep current.
 | Fabrication | `fabricator.py` |
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
+| Water Pump (route water to network Liquid Tanks) | `water_pump.py` — see §1d, simpler cousin of `thermal_cap.py` (no overpressure/relief concept) |
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
 | Data Archive persistence layer | `archive.py` |
 | Wildcard pattern matching helpers | `patterns.py` |
-| Per-script tick-cost profiling | `profiling.py` — see §1c |
+| Per-script tick-cost profiling | `profiling.py` — see §1d |
 
 Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_1.py`, etc.) should stay thin
 entrypoints that import and run a controller from `lib/` — they should not contain their own
@@ -172,7 +173,7 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
     `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled ticks (dormancy is temporary; a
     genuinely missing pipe route stalls forever) rather than a single tick.
   - **Discovery cost**: `discover_network_building_ids()` walks every outpost's `buildings(type_id)`
-    — real work, and (per profiling — see §1c) the actual cost driver of both controllers' `step()`.
+    — real work, and (per profiling — see §1d) the actual cost driver of both controllers' `step()`.
     Both are cheap once settled specifically because the network walk itself is skipped, not just
     deferred, while a connection is healthy:
     - **Cap**: the "keep current tank" decision needs only one `fill_pct()` read on the id already
@@ -186,7 +187,7 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
       `_discover_candidates_cached()`) rather than re-walking on every one of several reselection
       attempts in a short window. This is a ceiling, not the primary mechanism — see the fast paths
       above for why the walk is rare in practice.
-  - **The real per-step cost was elsewhere, and profiling (§1c) is what found it**: with the walk
+  - **The real per-step cost was elsewhere, and profiling (§1d) is what found it**: with the walk
     itself gone, Thermal Cap's `step()` still cost 2-3 sim ticks every single call (Steam Turbine's
     cost ~0, matching its zero-external-lookup fast path) — no periodic spike at 20 or 300 steps,
     ruling discovery back out entirely. The actual culprit: the Cap's fast path still resolved its
@@ -241,7 +242,41 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but runs no
   shedding or master-election itself — that stays the grid's existing solar Master's job.
 
-### 1c. Per-Script Tick-Cost Profiling (`lib/profiling.py`)
+### 1c. Water Pump: Liquid Tank Routing (`lib/water_pump.py` `WaterPumpController`)
+
+Mirrors §1b's Thermal Cap → Gas Tank connection/load-balancing/blacklist machinery almost exactly
+(same `discover_network_buildings()`/`_fill_pct_of_building()`/per-entry `unreachable_targets`
+blacklist/`CONNECTION_GRACE_TICKS`/`RESCAN_INTERVAL_TICKS`/`DISCOVERY_CACHE_INTERVAL_STEPS`
+constants and reasoning), but deliberately simpler — a Water Pump has **no internal buffer to
+overpressure at all** (`docs/components/water_pump.md` defines no `pressure()`/`is_overpressured()`/
+`relief()`/`set_relief()` — the Pump is pure pass-through, storing nothing), so there is no
+proportional release-valve/relief-valve reactive control to do, unlike Thermal Cap's whole
+`release_throttle_for_pressure()` band logic. `step()` just calls `ensure_output_connection()` and
+unconditionally requests `set_throttle(1.0)` every cycle — actual delivery already self-limits to
+whatever a connected tank can accept (`pump_rate()` reads 0 with no reachable destination, per the
+docs), so there's no cost to always requesting full output and nothing to react to.
+
+- **Two target building types, not one**: `LIQUID_TANK_TYPE_IDS = ("liquid_tank",
+  "large_liquid_tank")` — a Water Pump can fill either, so `discover_network_buildings()` here takes
+  an iterable of type_ids (or a single string) and walks each outpost's `buildings(type_id)` for
+  every type, deduping by id — thermal_cap.py's version only ever needed one type_id (`"gas_tank"`),
+  so this is a small generalization, not a behavior change for the single-type case.
+- `water_out` (a `FluidPort`, identical shape to Thermal Cap's `steam_out`) only ever holds one
+  destination at a time, so serving several tanks means periodically re-pointing it, same as Thermal
+  Cap. Any other scripted consumer connecting its own `water_in` to this Pump is independent of
+  whatever `water_out` currently points at — no coordination needed here, mirroring the
+  Cap/Turbine relationship in §1b.
+- `is_stalled()` has the identical semantics to Thermal Cap's own (`"throttle open + water available
+  + nothing transferred"` = likely no completed Liquid Pipe route), so the same
+  blacklist-and-reselect reaction applies unchanged.
+- Verified via a stub test: `discover_network_buildings()` finds and resolves both tank types (not
+  just one) from raw `BuildingRef` snapshots to full components; connects to the least-full known
+  tank first; the fast path makes no further `connect()` calls while the current tank is healthy;
+  a stalled connection gets blacklisted and the Pump reconnects to the other known tank; per-entry
+  blacklist expiry (still blacklisted just before `RESCAN_INTERVAL_TICKS`, retryable just after);
+  `step()` always requests full throttle.
+
+### 1d. Per-Script Tick-Cost Profiling (`lib/profiling.py`)
 
 The game exposes no per-script CPU/ms execution budget API. `docs/components/clock.md` documents
 the sanctioned stand-in: `clock.tick()` (deterministic simulation tick since save start, 10
@@ -315,7 +350,7 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
 
 | Vehicle | Speed / Throttle | Energy Cost / Budgeting | Operational Rules |
 | :--- | :--- | :--- | :--- |
-| **Rover** | `vehicle.speedmode` archive flag ("conserve" default / "highspeed") picks throttle per leg | Developer-confirmed travel power formula (no calibration): `(3 W + 8 W × active modules + 0.04 W × cargo units) × throttle^1.5`; safety margin `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%) — see §2a | Sonar scan: `SONAR_WH_BUDGET = 2.0` Wh. Mining drill: `MINE_WH_PER_UNIT = 2.5` Wh/unit. Return to nearest charging station (not necessarily home) when Wh falls below the trip budget. |
+| **Rover** | `self.cruise_throttle` (explicit at construction, else the fleet-wide `vehicle.default_cruise_throttle` archive value, default 0.5) capped down per-leg by `max_safe_throttle_for_leg()` | Developer-confirmed travel power formula (no calibration): `(3 W + 8 W × active modules + 0.04 W × cargo units) × throttle^1.5`; safety margin `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%) — see §2a | Sonar scan: `SONAR_WH_BUDGET = 2.0` Wh. Mining drill: exact per-ore/per-drill/per-purity `mine_wh_per_unit(item_id, purity)`, `MINE_WH_PER_UNIT = 2.5` Wh/unit only as the no-item-id fallback — see §2a. Return to nearest charging station (not necessarily home) when Wh falls below the trip budget. |
 | **Pioneer** | Configurable slots / tools | Slot chassis: `inspect_slots()`, `execute_construction()`; construction energy: `WH_PER_PROGRESS` (per-vehicle calibrated, default `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh for 0%→100%) — see §2a | Heavy construction, blueprint placement, pipe/power line deployment. Budgets each trip for `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` progress (~4 round trips to finish a job), not just round-trip driving. |
 | **Harvester** | BFS on 8x24 grid (`NUM_ROWS=8`, `NUM_COLS=24`, A1..H24) | Travel time: 0.5 h/sector. Empty move: `+7 heat`; Item move: `+1 heat` | Max heat: 100°C. Pause & cool down when heat exceeds `HEAT_SAFE_CEILING = 75.0`, resume once back down to `HEAT_RESUME_LEVEL = 40.0` (`lib/harvesting.py`). |
 
@@ -389,6 +424,31 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   target to the *nearest* charging station, all multiplied by `SAFETY_MARGIN_MULTIPLIER = 1.05`
   (5% — reduced from the old empirical 35% now that the model above is exact, not calibrated),
   plus a hard `MIN_EMERGENCY_RESERVE_WH = 8.0` floor on top. See `calculate_trip_energy()`.
+- **Mining/drill budget is also a developer-confirmed exact model now, not a flat average.**
+  `mine_wh_per_unit(item_id, purity)` (and its standalone `mine_wh_per_unit_for(vehicle, item_id,
+  purity)` twin, same `_for` pattern as travel energy above) computes:
+  ```
+  time (h) = (ORE_DIG_MINUTES[item_id] / 60) × drill.speed_multiplier() / PURITY_DIVISOR[purity]
+  Wh       = time (h) × DRILL_POWER_W_BY_HARDNESS_LIMIT[drill.hardness_limit()]
+  ```
+  from `docs/components/drill_module.md`'s documented `.mine()` time formula
+  (`mineral_base_minutes × drill.speed_multiplier() / site_purity`) and per-tier Watts
+  (basic=10W/industrial=20W/heavy=30W, keyed by `drill.hardness_limit()` since there's no
+  `.power_draw()` method to query it live), `docs/database/items_minerals.md`'s per-ore dig
+  minutes (iron_ore/silicon=15, lead_ore=18, titanium/cobalt=20, rare_earth=25, neutronium=30),
+  and `docs/types/world_and_sites.md`'s `.purity` yield multiplier (`standard`=1×/`rich`=2×/`pure`=3×
+  — the same divisor the game's own time formula uses). `calculate_trip_energy()`'s
+  `mine_item_id`/`mine_purity` params feed this in; every real mining call site (`mining.py`'s
+  `select_best_mining_target()`/stationed-mining resume, `rover.py`/`pioneer.py`'s resumed-target
+  budgeting) passes the candidate's own `harvest_item`/`purity`, since both are already carried on
+  every mining candidate dict. `MINE_WH_PER_UNIT = 2.5` (the old flat constant) is now only a
+  fallback for a candidate with no `mine_item_id` at all (a non-mining candidate) — it happens to
+  equal the exact rate for the cheapest real case (basic drill, iron ore, standard purity), but was
+  under-reserving by up to **~3.6x** for a Heavy drill on Neutronium before this fix (`(30/60) × 0.6
+  × 30 W = 9.0` Wh vs. the flat `2.5` Wh) — a real latent risk independent of drive throttle, found
+  while validating whether Pioneers would stay safe running at higher speed. Verified via a stub
+  test covering the cheapest case (matches the flat constant exactly), the worst case (Heavy/
+  Neutronium ≈ 3.6x), purity dividing extraction time, and the no-drill/unknown-ore fallback.
 - Throttle is clamped to `[MIN_SPEEDMODE_THROTTLE=0.10, MAX_SPEEDMODE_THROTTLE=1.0]` and picked
   per-leg by `select_cruise_throttle()` / `max_safe_throttle_for_leg()`, which always keeps enough
   reserve to still reach a charging station afterward. Because power scales with `throttle^1.5`
@@ -396,6 +456,26 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   in throttle — so `max_safe_throttle_for_leg()` solves for the throttle bound via
   `t <= (available_Wh / (distance * coeff * SAFETY_MARGIN_MULTIPLIER)) ** 2`, not a linear ratio.
   Verified against a brute-force numerical search.
+- **Cruise throttle is one numeric default, not a binary conserve/highspeed flag.**
+  `select_cruise_throttle()` picks `min(self.cruise_throttle, MAX_SPEEDMODE_THROTTLE)` as the
+  baseline for a leg, then caps it DOWN (never up) to whatever `max_safe_throttle_for_leg()` says is
+  safe. There used to be a separate `vehicle.speedmode` archive flag (`"conserve"`/`"highspeed"`)
+  with its own branch calling `max_safe_throttle_for_leg()` directly for `"highspeed"` — removed as
+  redundant once cruise_throttle became the single lever: setting `cruise_throttle = 1.0` makes the
+  one remaining formula produce *exactly* the old highspeed branch's result (baseline=1.0 capped
+  down only when unsafe), so keeping both was two code paths for one behavior.
+  `self.cruise_throttle` itself now resolves the same way as `wh_per_progress`
+  (`VehicleController.__init__`): a thin entrypoint script either passes an explicit value (the
+  demand-driven transporter role always passes `cruise_throttle=1.0`, since it recharges fully at
+  both ends of every leg — see §2f) or passes nothing/`None`, in which case it reads
+  `default_cruise_throttle()` — a single fleet-wide `vehicle.default_cruise_throttle` archive value
+  (clamped to `[MIN_SPEEDMODE_THROTTLE, MAX_SPEEDMODE_THROTTLE]`, falling back to
+  `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5` if never set) — settable via the Data Archive Notebook, or
+  live from `panel_2.py`'s FLEET card (a `panel.slider()`, same pure-intent-publish pattern as the
+  per-vehicle recall switch on the same card — the card only writes the archive value, each
+  vehicle's own script is what reads and acts on it), to speed up (or slow down) every such vehicle
+  at once, without editing each one's script. All of `rover_1-3.py`/`pioneer_1-4.py` now pass no
+  `cruise_throttle` at all for exactly this reason.
 - `minimum_wh_per_meter()` gives the best-case Wh/m at the throttle floor, via the general
   `wh_per_meter_at_throttle(throttle, cargo_units=None)`. Any check that claims a target/job is
   *permanently* unreachable (not just "not right now") must budget against this, not the typical
@@ -562,6 +642,45 @@ a stub test: two Fabricators facing two equal-shortfall candidates correctly spl
 recipes, and a Fabricator re-picking its own already-claimed recipe refreshes rather than triggers a
 switch.
 
+**Pile-on fallback + even split** (found from real play: "fabricator_1 sits idle while fabricator_2
+slaves away producing 100 circuit boards" — with only ONE recipe ever demanded, the claim's
+"spread across distinct recipes" logic left every Fabricator past the first idle forever, since
+there was never a second demanded recipe to fall back to). Same shape as the Smelter fix above:
+`choose_recipe()` collects every sourceable candidate in shortfall order, tries to claim each, and
+if NONE can be exclusively claimed, joins the biggest-shortfall one anyway rather than returning
+`None`. Unlike Smelter, this one DOES need an explicit even split: `load_inputs()` pre-loads a whole
+`required_per_craft * crafts_remaining` stockpile batch up front (not a small per-cycle pull the way
+Smelter's ore intake is), so several Fabricators each independently loading the FULL remaining
+shortfall would overshoot the target well before `total_stock()` catches up on the next poll.
+`_fabricator_worker_count(recipe_id)` — a live headcount (not archive-tracked, so it counts joiners
+too) of every discovered Fabricator whose `get_recipe()` currently matches — divides
+`get_fabricator_active_recipe()`'s `crafts_remaining` by that count (ceil division, floored at 1
+worker so a lone Fabricator's math is unchanged). Verified via stub tests: a sole demanded recipe is
+claimed exclusively by the first Fabricator and joined (not idled on) by the second/third; `crafts_remaining`
+for 100 needed units split across 2 workers on the same recipe comes out to 50 each, not 100 each;
+worker-counting correctly isolates Fabricators on a different recipe and floors at 1 when nobody
+matches at all.
+
+### 2a-0-3. Multi-Dock Support (`lib/production.py`, `lib/fabricator.py`)
+
+Same hardcoded-id bug class as Multi-Smelter/Multi-Fabricator above, just not caught for Supply Dock
+at the time — found while making `panel_3.py` (PRODUCTION card) dock-aware. `get_fabricator_targets()`,
+`get_material_demands()`, and `get_raw_material_reason()` all used to read a single
+`_component("supply_dock_1")` directly, so a second Supply Dock's own active order was invisible to
+every demand-cascade function: its required items would never register as Fabricator targets, raw
+material demand, or mining priority — a second dock could sit there indefinitely with no ore/ingots
+ever routed toward its order. Fixed with `discover_supply_dock_ids()` (same shape as the other two
+discovery functions) and `_all_dock_orders()` (`[(dock, order), ...]` for every dock currently holding
+one), which every demand-cascade function now loops instead of reading one hardcoded dock. No claim
+coordination was needed here (unlike Fabricator recipes) — order fulfillment is inherently per-dock,
+so there's no "two docks converge on the same order" race to guard against. `find_dock_order_requiring(item_id)`
+consolidates "which dock's order wants this item" into one function, shared by
+`get_raw_material_reason()` and `lib/fabricator.py`'s `target_reason()` (previously its own separate
+`_component("supply_dock_1")` read). Verified via a stub test: two docks with two different
+single-item orders both correctly register demand (the actual bug — previously only the first
+dock's order counted at all), and `find_dock_order_requiring()`/`get_raw_material_reason()` correctly
+attribute an item to whichever dock's order actually wants it.
+
 ### 2a-1. Fabricator demand tracking (`lib/production.py` `get_fabricator_targets()`)
 
 `get_fabricator_targets()` is the single source of truth for what the Fabricator should be
@@ -587,6 +706,74 @@ Three demand sources are folded together into one `{item_id: quantity}` dict:
    `load_construction_materials()` would just keep failing the job forever (deferred to
    `failed_jobs`, retried, deferred again). This is the concrete case of CLAUDE.md's "Plan ahead for
    future production needs based on... placed blueprints" rule.
+
+### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
+
+`set_recipe()`/`clear_recipe()` both explicitly preserve the input stockpile untouched
+(`docs/components/fabricator.md`) — the only built-in way to clear it is `InputSlot.flush()`, which
+**permanently discards** the material rather than returning it. Without an active counter-measure,
+staged material for a recipe that's no longer active (switched away from, or cleared entirely) sits
+stranded inside the Fabricator — up to its combined 200-unit stockpile cap — invisible and unusable
+to every other consumer on the network (another Fabricator, the Smelter, a Supply Dock order) that
+could otherwise use it. This was visible in-game as a Fabricator idling at e.g. 145/200 stockpile
+used, most of it materials the active recipe needed only a fraction of.
+
+`eject_excess_inputs()` runs every `step()`, before recipe selection, and recovers stranded/excess
+staged material via `InputSlot.eject(destination, item_id, count)` (routes to the least-full
+Warehouse with room, via `storage.best_unload_target()`, or falls back to Inventory — never
+`flush()`) in two cases, both computed off the recipe currently set on the machine (via
+`production.get_fabricator_active_recipe()`, same call `load_inputs()` already uses):
+
+1. **Staged material the active recipe doesn't need at all** (leftover from a prior recipe, or no
+   recipe set right now) — ejects all of it.
+2. **Staged material the active recipe DOES need, beyond `required_per_craft * crafts_remaining`**
+   — the identical cap `load_inputs()` itself loads up to — e.g. `crafts_remaining` dropped since
+   this batch was staged (the stock target was lowered, or another Fabricator/the Supply Dock
+   already covered part of the shortfall) — ejects just the excess, keeping enough staged for the
+   batch still in flight.
+
+`eject()` is documented as transactional and safely rejects (no-ops, moves nothing) on any portion
+still reserved for an in-progress craft, so calling this unconditionally every step — even mid-craft
+— is harmless; a rejected attempt just retries next cycle once the reservation clears. Verified via
+a stub test covering all four cases: a fully-orphaned leftover item ejected in full, excess above
+`required * crafts_remaining` ejected while the needed amount is kept, every staged item ejected when
+no recipe is set at all, and an exactly-at-target staged amount left untouched (no eject call at all).
+
+### 2a-3. Fabricator fluid-input connections (`lib/fabricator.py` `ensure_fluid_connections()`)
+
+A recipe's `fluid_inputs` (e.g. `{"water_in": 1.0}`) is delivered via a `FluidPort` connection, not
+an Inventory/Warehouse take — `can_source_fluid()`/`recipe_is_sourceable()` (§2a-1) only ever
+confirmed a matching source building *exists somewhere on the network* before selecting such a
+recipe; nothing actually connected `.water_in`/`.steam_in`/`.oil_in` to one. A Liquid/Gas Tank or
+Water Pump has no script of its own (purely passive), so nothing on the other side of the pipe ever
+calls `connect()` either — this was a real gap, not just a monitoring one: a fluid-needing recipe
+could get set and then sit stalled forever with an unconnected port.
+
+`ensure_fluid_connections(recipe)` runs every `step()` and mirrors `lib/steam_turbine.py`'s
+`ensure_input_connection()` almost exactly — both declare an INPUT port's own upstream source,
+discovered network-wide and blacklisted on stall, same shape as `lib/thermal_cap.py`'s
+output-side connection logic (§1b/§1c) just facing the other direction:
+
+- For each `fluid_key` the active recipe declares, `production.FLUID_SOURCE_TYPE_IDS[fluid_key]`
+  names every building type that can feed it (e.g. `water_in` accepts `water_pump`,
+  `steam_condenser`, `liquid_tank`, or `large_liquid_tank`) — the same mapping `can_source_fluid()`
+  already uses, so "which buildings satisfy this fluid" has one source of truth.
+- **No `is_stalled()` exists on the Fabricator itself** (unlike Steam Turbine/Thermal Cap/Water
+  Pump), so reachability is inferred instead from the port's own `flow_rate()` staying `0` for
+  `FLUID_STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* ticks while it still has room to receive
+  (`level() < capacity()`) — a legitimately full port also reads `flow_rate()==0`, and that must NOT
+  be mistaken for a stall (verified explicitly by a stub test). Same per-entry (not shared-clock)
+  blacklist expiry as every other discover/connect/blacklist controller in this project
+  (`FLUID_RESCAN_INTERVAL_TICKS=150`, matching Steam Turbine's value).
+- State (`_fluid_connected`/`_fluid_stall_streak`/`_fluid_unreachable`/discovery cache) is keyed per
+  `fluid_key`, not a single shared value — a recipe can need more than one fluid at once (an
+  oil-refining recipe needs both `oil_in` and `water_in`), and each port's own source is entirely
+  independent of the others.
+- Verified via a stub test: a recipe with no `fluid_inputs` is a no-op; first connection discovers
+  and connects to the only known source; healthy flow makes no further `connect()` calls; a full
+  port reading zero flow is correctly NOT treated as starved even for many consecutive ticks;
+  genuine starvation (room to receive, zero flow, sustained past the streak threshold) blacklists
+  the source and reconnects to a different one; per-entry blacklist expiry.
 
 ### 2b. Mining (`lib/mining.py` `MiningMixin`)
 
@@ -681,12 +868,35 @@ Nocturna Base.
   claim on that recipe) tries the next demanded/available candidate instead. Released via
   `release_recipe()` whenever a smelter clears its own recipe (locked-recipe cleanup or no-demand
   cleanup in `step()`).
+  - **Pile-on fallback**: the claim's whole point is spreading *distinct* demanded ores across
+    *distinct* smelters — but when only ONE ore is demanded at all (a single large order), every
+    smelter past the first used to just find it already claimed and idle forever, with no second
+    demanded ore to fall back to. `select_needed_ore()` now collects every sourceable/demanded
+    candidate first, tries to claim each in turn same as before, but if NONE can be exclusively
+    claimed (every one is already fresh-claimed by a different smelter), joins the first one anyway
+    instead of returning idle — splitting one large order's workload across every smelter instead of
+    running it through a single one serially. No explicit even split was needed here (unlike the
+    matching Fabricator fix below): `get_material_demands()` already nets against `total_stock()`
+    (which includes what every joined smelter has already produced), so several smelters pulling the
+    same ore in parallel each cycle self-throttle down to 0 together as the target is met, rather
+    than each independently re-committing to the full remaining shortfall.
 - **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per cycle from
   the Leader's `SmelterController.step()` (confirmed always-running at home base): any **propertyless**
   (`slot.properties is None` — non-stackable/unique items like worn equipment are left alone)
-  Inventory item spanning more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots gets moved to a
-  Warehouse **entirely**, not partially — there's no real "quick access" cost to reading from a
-  Warehouse instead of Inventory, so nothing is deliberately left behind.
+  Inventory item gets moved to a Warehouse **entirely**, not partially — there's no real "quick
+  access" cost to reading from a Warehouse instead of Inventory, so nothing is deliberately left
+  behind — when either:
+  1. It spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots on its own (the original rule), or
+  2. **It's already split**: some units sit in Inventory while a Warehouse already holds some of the
+     same item too, regardless of Inventory slot count (`_warehouse_item_ids()`) — added after a real
+     case: `gas_pipe_segment` (stock target `10`) ended up 10 in Inventory + 10 already in a
+     Warehouse, double the intended target, split across both locations. Once an item already has a
+     home in a Warehouse, a further remainder in Inventory serves no purpose (every consumer already
+     reads combined stock via `total_stock()`, not by physical location) — it just fragments the same
+     material. Verified via a stub test: the original bulk-threshold rule still fires unchanged; a
+     single-slot item with no Warehouse presence is still left alone; a single-slot item ALREADY
+     split with a Warehouse gets fully consolidated into it; a property-bearing item is never
+     touched either way.
   - **Direct move**: if any Warehouse has `space_for(item_id) > 0`, move as much as fits there
     (`inventory.transfer_to(warehouse_id, item_id, amount)` — Inventory exposes `transfer_to()`
     directly, no port/connection needed), splitting across more than one Warehouse if needed.
@@ -747,7 +957,7 @@ Warehouse, independent of home's live demand.
   at construction**, cached as `self.home_outpost` (`get_outpost_ref(home_base)`) and
   `self.home_charging_station` (`find_charging_station(self.home_outpost)`), rather than re-walking
   `outpost_network.outposts()` by id on every subsequent lookup — the same redundant-network-walk
-  class of cost the Thermal Cap/Turbine profiling work (§1b/§1c) already fixed once this session, now
+  class of cost the Thermal Cap/Turbine profiling work (§1b/§1d) already fixed once this session, now
   avoided here from the start. `get_home_slot_coords()` reads only these two cached fields: the
   charging station's position if one was found, else the outpost's own `.coords()`, else a literal
   `(0, 0)` only if `outpost_network` was unavailable at construction time. `self.home_base` itself is
@@ -785,43 +995,90 @@ Warehouse, independent of home's live demand.
 ### 2f. Demand-Driven Transporter Role (`lib/vehicle_cargo.py` `run_supply_run_loop()`)
 
 Phase D of the Multi-Outpost Production Network — the piece that actually moves ore Phase C's
-stationed miners stockpiled back to home. Replaces `lib/pioneer.py`'s old single-route,
-manually-configured `transport_once()`/`run_transport_loop()`/`find_outpost_coords()`/
-`find_local_store()` (deleted — no thin entrypoint script referenced them) with a fully automatic,
-demand-driven loop shared by Rover and Pioneer (lives on `VehicleCargoMixin`, not `mining.py` — a
-dedicated hauler needs neither a drill nor construction slots).
+stationed miners stockpiled back to **the production outpost** (Nocturna Base). Replaces
+`lib/pioneer.py`'s old single-route, manually-configured `transport_once()`/`run_transport_loop()`/
+`find_outpost_coords()`/`find_local_store()` (deleted — no thin entrypoint script referenced them)
+with a fully automatic, demand-driven loop shared by Rover and Pioneer (lives on `VehicleCargoMixin`,
+not `mining.py` — a dedicated hauler needs neither a drill nor construction slots).
+
+**Terminology note (read this before "home" trips you up elsewhere in this codebase)**: for every
+*other* vehicle, "home"/"base" always means the production outpost, since that's the only outpost a
+regular vehicle ever calls home. A transporter breaks that assumption on purpose — it's constructed
+with `home_base=<mining outpost id>` (§2e), so **its own `self.home_base`/`self.home_outpost` point at
+the *stationed mining outpost*, not the production outpost** — only its delivery leg ever touches the
+production outpost, and it does so via a separately-resolved reference
+(`self.get_outpost_ref(None)`, kept in a variable literally named `production_outpost` in the code,
+never called `home_outpost`) rather than via `self.home_base`. Below, "the production outpost" always
+means Nocturna Base specifically; "its stationed outpost" always means wherever this transporter's own
+`home_base` points.
 
 - **Construction**: `PioneerController(vehicle, home_base=<mining outpost id>)` — same mechanism as
-  Phase C's stationed miners, reusing all of its caching (§2e) with zero new code. The transporter's
-  `home_base`/`home_outpost` is the *mining* outpost (where it idles and recharges between runs via
-  the existing `is_at_base()`/`return_to_base()`), **not** home — its delivery leg drives to home
-  explicitly instead. **Pioneer, not Rover, for this role** — Rover's integrated hold is a fixed
-  `capacity() == 10` (`docs/components/rover.md`), far too small for bulk ore hauling; Pioneer's
-  cargo comes from Portable Bins across its Cargo Racks, scaling with loadout, and exposes the
-  identical `Cargo`/`VehicleInputSlot`/`OutputSlot` interface `run_supply_run_loop()` already uses
-  — no code changes needed to place this role on either vehicle type, it's purely a hardware/
-  entrypoint-script choice. See `pioneer_5.py` for a working example (`home_base="outpost_3"`, hauls
-  `"titanium"`).
-- **`run_supply_run_loop(item_id, poll_interval=10.0)`** — each cycle:
-  1. Reads home's live unmet demand for `item_id` via `get_raw_material_demands()` (already net of
-     home's own stock) — if `<= 0` **and** no cargo is already aboard, idles at the stationed outpost
-     (returns there first if elsewhere) and retries next cycle. No preemptive/opportunistic top-off —
-     confirmed with the user: demand-driven only, matching CLAUDE.md's existing rule.
-  2. If cargo is already aboard (resuming after a reload mid-delivery), skips straight to the
-     delivery leg instead of reloading.
-  3. Otherwise loads `min(unmet demand, cargo capacity, stock actually at this outpost)` via
-     `storage.take_item(self.vehicle.input, item_id, amount, outpost=self.home_outpost)` — capped by
-     cargo capacity, not the (usually much larger) home demand figure, so a single trip never
-     over-claims more than it can carry. Idles if the source currently has none.
-  4. Drives explicitly to `self.get_outpost_ref(None)` (home, resolved once at loop start) — **not**
-     `return_to_base()`, which would go to its own stationed outpost instead.
-  5. `unload_cargo(outpost=home_outpost)` — the explicit override from §2e, since this vehicle's own
-     `home_outpost` is the mining outpost, not home.
-  6. `return_to_base()` back to the stationed outpost and recharges there, ready for the next cycle.
-- Verified by stub test: idles with zero drive calls when the source outpost has no stock; performs
-  repeated hauling trips (each correctly capped by cargo capacity, not the larger demand figure) until
-  the source is fully drained; makes zero drive calls when home's demand is `0` even with plenty of
-  stock sitting at the source (confirms no preemptive top-off).
+  Phase C's stationed miners, reusing all of its caching (§2e) with zero new code. It idles and
+  recharges at its stationed outpost between runs (via the existing `is_at_base()`/`return_to_base()`),
+  driving to the production outpost explicitly only for the delivery leg. **Pioneer, not Rover, for
+  this role** — Rover's integrated hold is a fixed `capacity() == 10` (`docs/components/rover.md`),
+  far too small for bulk ore hauling; Pioneer's cargo comes from Portable Bins across its Cargo Racks,
+  scaling with loadout, and exposes the identical `Cargo`/`VehicleInputSlot`/`OutputSlot` interface
+  `run_supply_run_loop()` already uses — no code changes needed to place this role on either vehicle
+  type, it's purely a hardware/entrypoint-script choice. (A working example lives in a thin
+  entrypoint script in the project root — those get renumbered/edited often enough not to name one
+  here; search for `run_supply_run_loop` to find the current one.)
+- **`run_supply_run_loop(poll_interval=10.0)`** — takes no `item_id` at all: **the load can mix
+  several different assigned ores in one trip** (e.g. 50 titanium + 30 silicon), decided fresh every
+  cycle, not fixed at construction. An outpost can have several assigned ores at once (Phase B's
+  `assigned_ores_for()`), so limiting one transporter to a single item per run would leave the others
+  piling up unused, or waste capacity hauling a small amount of one ore while room to spare sits empty.
+  Each cycle:
+  1. `_current_supply_items()` — if cargo is already aboard (resuming after a reload mid-delivery),
+     reads every item straight off `self.vehicle.cargo.stacks()` instead of re-planning, so an
+     in-progress mixed delivery is never abandoned partway for a newly-more-urgent item.
+  2. Otherwise `_plan_supply_load(capacity)` — ranks this (stationed) outpost's
+     `outpost_mining.assigned_ores_for()` by the production outpost's unmet demand
+     (`get_raw_material_demands()`) descending, keeping only those that actually have stock sitting at
+     this stationed outpost right now (an ore with huge demand but nothing on hand yet loses its
+     ranking entirely, not just its priority), then greedily takes
+     `min(unmet demand, stock on hand, remaining capacity)` from each in that order until capacity
+     runs out or no more qualifying ore remains. Returns `[(item_id, amount), ...]`, possibly
+     spanning several ores; empty (idle at the stationed outpost, no preemptive/opportunistic
+     top-off — confirmed with the user, matching CLAUDE.md's Demand-Driven Production rule) if
+     nothing qualifies at all.
+  3. **`is_at_base()` check before loading**: `take_item()`'s Warehouse connection needs the vehicle
+     physically within the stationed outpost's service area, so if it isn't there yet — left parked at
+     the production outpost after its last delivery, or a fresh script start elsewhere — it drives
+     there via `return_to_base()` first. Without this the loop used to jump straight to loading
+     wherever the vehicle happened to be, fail every take (wrong/no local source), and just sit there
+     printing "Could not load any planned item" forever instead of ever returning to the stationed
+     outpost — caught from real in-game output showing exactly that.
+  4. Loads each `(item_id, amount)` in the plan via
+     `storage.take_item(self.vehicle.input, item_id, amount, outpost=self.home_outpost)` — note
+     `self.home_outpost` here correctly means the stationed outpost, where the ore actually is.
+  5. Drives explicitly to `self.get_outpost_ref(None)` (the production outpost, resolved once at loop
+     start into the `production_outpost` variable) — **not** `return_to_base()`, which would go to its
+     own stationed outpost instead.
+  6. `unload_cargo(outpost=production_outpost)` — the explicit override from §2e (this vehicle's own
+     `home_outpost` is the stationed outpost, not the production one); already sends each cargo stack
+     to its own destination independently, so a mixed load needed no changes on the delivery side at
+     all.
+  7. **Recharges fully at the production outpost** (`recharge_at_station(target_level=1.0)`) before
+     heading back — `get_nearest_charging_station()` (used internally when no station is given)
+     resolves by current *position*, not `self.home_base`, so this correctly finds the production
+     outpost's own station even though this vehicle's `home_base`/`home_outpost` point elsewhere.
+     Starting the return leg fully charged lets it run at full throttle (a transporter script can set
+     `cruise_throttle=1.0`) without `drive_with_recharge()` needing to plan an intermediate stop for
+     it — faster round trips than only recharging back at the stationed outpost.
+  8. `return_to_base()` back to its stationed outpost and recharges there too, ready for the next cycle.
+- Verified by stub test: load planning — a mixed plan correctly spans two qualifying ores in one trip
+  when capacity allows (50 titanium + 30 silicon), correctly excludes a much-higher-demand ore that
+  has zero stock on hand, and correctly fills the higher-ranked ore first then gives the remainder to
+  the next when capacity is tight; `_current_supply_items()` reflects every stack in a full mixed
+  cargo, not just the first. Full loop — idles with zero drive calls when the stationed outpost has no
+  stock; performs repeated hauling trips (each correctly capped by cargo capacity, not the larger
+  demand figure) until the stationed outpost's stock is fully drained; makes zero drive calls when the
+  production outpost's demand is `0` even with plenty of stock sitting at the stationed outpost
+  (confirms no preemptive top-off); recharges exactly
+  twice per completed trip (once at the production outpost before the return leg, once at the
+  stationed outpost after returning); drives back to the stationed outpost via `return_to_base()`
+  before loading when not already there, instead of failing to load and idling in place indefinitely.
 
 ---
 
@@ -921,15 +1178,61 @@ the card.
 
 **Sizing recommendations for these three cards** (each has a multi-column row layout that wants
 width, not height):
-- `panel_1.py` (STATUS) and `panel_3.py` (PRODUCTION): **`2 x 1`** (1000x200). Both lay out 3-4
-  side-by-side sections; 1 column leaves each section cramped.
-- `panel_2.py` (FLEET): **`2 x 1`** for small fleets (up to ~4 vehicles), **`2 x 2`** once you have
-  more — each vehicle is one row, and the card only shows as many rows as fit
-  (`max_rows = (height - top - 16) // row_height`), printing `+N more vehicles` beyond that.
+- `panel_1.py` (STATUS): **`2 x 1`** (1000x200) — lays out 3-4 side-by-side sections; 1 column
+  leaves each section cramped.
+- `panel_2.py` (FLEET) and `panel_3.py` (PRODUCTION) share the same one-row-per-item, scrollable-list
+  shape: **`2 x 1`** for a handful of rows, **`2 x 2`** once you have more — each row shows as many
+  as fit (`max_rows = (height - top - 16) // row_height`) at once. Beyond that, a `panel.slider()`
+  (there's no vertical slider/scroll widget in the panel API, so a horizontal one is repurposed: its
+  0-1 value maps to a row offset into the list, `round(value * (len(rows) - max_rows))`) lets the
+  player scroll through the rest, with a live `"X-Y of N"` indicator folded into its own label text.
+  The slider is only drawn (and its row's space only meaningfully used) once the list actually
+  exceeds `max_rows` — reserved unconditionally either way so the row grid below never jumps as the
+  count crosses that threshold from one tick to the next.
+  - `panel_2.py` (FLEET): one row per vehicle.
+  - `panel_3.py` (PRODUCTION): one row per Smelter + Fabricator + Supply Dock, in that order —
+    discovered live via `production.discover_smelter_ids()`/`discover_fabricator_ids()`/
+    `discover_supply_dock_ids()` rather than assuming a single `"smelter_1"`/`"fabricator_1"`/
+    `"supply_dock_1"` each (a second instance of any of the three used to be entirely invisible to
+    this card — the same hardcoded-id bug class Phase A fixed in `production.py` itself, just not
+    caught for Supply Dock at the time; see the Multi-Dock note below). Each row shows a role pill
+    (SMELTER/FABRICATOR/DOCK), the machine's current recipe (or the dock's order name + first
+    pending item, `"+N more"` if several), and a status pill (RUNNING/IDLE for a machine,
+    ACTIVE/READY/IDLE for a dock: pending items / fully shipped / no order at all). Inventory was
+    removed from this card entirely — a dedicated storage card with history graphs is a planned
+    follow-up, not rebuilt here.
 
-`panel_2.py` also degrades gracefully at 1-column widths (`wide = width >= 900` branches to a
-2-line-per-vehicle layout and hides the location column) so it won't overflow even if resized
-narrow — but the recommended sizes above give the intended one-line-per-vehicle layout.
+Both also degrade gracefully at 1-column widths (`wide = width >= 900` branches to a shorter row
+height and, for `panel_2.py` specifically, hides the location column) so neither overflows even if
+resized narrow — but the recommended sizes above give the intended one-line-per-row layout.
+
+**Two real overlap bugs found and fixed across all three cards** (screenshot-driven — text was
+visibly stacked on top of other text in-game):
+1. `card(x, y, w, h, title)` already renders its own title bar text (`docs/types/system_and_panels.md`:
+   "Bordered subsection with **optional title bar**"). All three cards additionally called
+   `panel.label(24, 34, TITLE, "caption")` right after — a second, independently-positioned render of
+   the exact same title text, landing almost on top of the card's own title bar. Removed the redundant
+   `label()` call in all three; `card()`'s title is the only title render now.
+2. `slider(key, x, y, w, default, label)` draws its own `label` text at a position this script doesn't
+   control — pairing it with a separately-positioned `panel.draw_text()` right after it (e.g. to show
+   the slider's live numeric value) visibly collided with the widget's own label text. Fixed by folding
+   the live value INTO the label string itself (`f"cruise throttle {value*100:.0f}%"`) instead of a
+   second draw call — one single text render, so there's nothing to collide with. The scroll slider
+   does the same, but the range text it wants to show (`"X-Y of N"`) can only be computed *after*
+   `slider()` returns a value for this tick, so it's built from the return of the *previous* tick's
+   call (a plain script-level variable initialized once before the `while True:` loop and updated each
+   iteration — the script is one continuous process, not re-invoked per tick, so this persists exactly
+   like `self.wh_per_progress` persists across a controller's own loop iterations) — a one-tick lag,
+   invisible since the panel repaints every tick regardless. **General rule: never place a second,
+   independently-coordinated text element directly beside a named widget that already draws its own
+   label** (`slider`, and likely `switch`/`button` too) — fold the value into that widget's own label
+   parameter instead, even if it costs a tick of staleness.
+3. `panel_2.py`'s narrow-mode (`wide == False`) per-vehicle row placed the location text
+   (`draw_text(40, y+38, ...)`) almost directly under the role pill (`pill(40, y+22, ...)`) — the pill
+   renders taller than the assumed 16px gap allows, so the two visibly overlapped. Fixed by moving the
+   location text down to `y+46` and widening narrow-mode `row_height` from `54` to `64` to keep
+   adequate clearance to the next row. **General rule: a `pill()` needs more vertical clearance below
+   it than a plain text line does** — leave at least ~24px, not ~16px, before placing anything under one.
 
 General layout rule for any new card: prefer anchoring right-side elements from the right edge
 (`width - <fixed px>`) over a width fraction (`width * 0.86`) when the element has a roughly

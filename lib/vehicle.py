@@ -39,10 +39,9 @@ class VehicleController(
     small set of cross-cutting helpers (identity, coordinate parsing,
     telemetry) that every mixin relies on.
     """
-    DEFAULT_CRUISE_THROTTLE = 0.5
     DEFAULT_SPEED_MPH = 25.0
 
-    def __init__(self, vehicle, home_base=None, cruise_throttle=0.5):
+    def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         self.vehicle = vehicle
         self.name = getattr(vehicle, "id", getattr(vehicle, "name", "vehicle"))
         # home_base is an outpost id (None = the production/home outpost) --
@@ -66,7 +65,14 @@ class VehicleController(
         self.home_base = home_base
         self.home_outpost = self.get_outpost_ref(home_base)
         self.home_charging_station = self.find_charging_station(self.home_outpost)
-        self.cruise_throttle = cruise_throttle
+        # None (the common case -- a thin entrypoint script passes nothing)
+        # means "follow the fleet-wide archive default" (see
+        # default_cruise_throttle()/DEFAULT_CRUISE_THROTTLE_KEY in
+        # vehicle_energy.py), so raising that one archive value speeds up
+        # every such vehicle at once. An explicit cruise_throttle here (e.g.
+        # the demand-driven transporter role's cruise_throttle=1.0) always
+        # overrides it regardless of the archive value.
+        self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
 
         # Travel energy uses the developer-confirmed exact power/speed model
         # (see lib/vehicle_energy.py), not an empirically-calibrated Wh/meter --

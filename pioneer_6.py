@@ -20,7 +20,7 @@
 
 from pioneer import PioneerController
 
-SOURCE_OUTPOST_ID = "outpost_2"
+SOURCE_OUTPOST_ID = "outpost_4"
 
 # home_base=SOURCE_OUTPOST_ID stations this Pioneer AT the mining outpost --
 # it idles/recharges there between runs (this makes self.home_base/

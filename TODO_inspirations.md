@@ -226,7 +226,7 @@ The attached panel designs suggest a useful second layer beyond read-only monito
   - [ ] Toggle directional exploration, water scouting, explorer fit, and rescue-dependent range policy.
   - [ ] Add commands for `resume`, `clear survey retries`, and `refresh outpost sites`.
   - [x] `recall`: per-vehicle `vehicle.recall:<name>` archive flag (`lib/vehicle_claims.py` `is_recalled()`/`handle_recall_if_active()`), toggled via `panel_2.py`'s Fleet card switch. On -> abandons the current target and returns to base now; off -> resumes normal operations. Wired into every vehicle run loop plus `drive_to()` itself (guarded so it never blocks the trip home it's asking for).
-  - [ ] Add a `vehicle.speedmode` toggle (`conserve`/`highspeed`) driving the throttle formulas in `lib/vehicle_energy.py`.
+  - [x] ~~Add a `vehicle.speedmode` toggle (`conserve`/`highspeed`)~~ Superseded by a single numeric fleet-wide default cruise_throttle (`vehicle.default_cruise_throttle` archive key, `default_cruise_throttle()` in `lib/vehicle_energy.py`) — strictly more expressive than a binary flag (any value, not just two presets), and needs no separate "highspeed" branch since `select_cruise_throttle()` already scales any requested throttle down per-leg for a safe return reserve. Now settable live from `panel_2.py`'s FLEET card (a `panel.slider()`, same pure-intent-publish pattern as the per-vehicle recall switch), not just the Data Archive Notebook.
   - [ ] Display every ground vehicle's current mission, battery, rescue state, and reason for its target.
   - [ ] Route commands through a queue with acknowledgements; panels must not call vehicle actions directly.
 #### Production Operations Control

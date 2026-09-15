@@ -5,6 +5,7 @@
 from archive import archive
 from production import get_raw_material_demands
 from storage import best_unload_target, take_item, total_stock
+import outpost_mining
 
 
 class VehicleCargoMixin:
@@ -129,79 +130,176 @@ class VehicleCargoMixin:
 
         return -1 if inventory_full else unloaded
 
-    def run_supply_run_loop(self, item_id, poll_interval=10.0):
+    def _current_supply_items(self):
+        """All item ids already loaded (e.g. resuming a mixed delivery after a reload), or [] if the hold is empty."""
+        if self.vehicle.cargo.count() == 0:
+            return []
+        try:
+            stacks = self.vehicle.cargo.stacks()
+        except Exception:
+            stacks = []
+        return [item_id for item_id in (getattr(s, "id", None) for s in stacks) if item_id]
+
+    def _plan_supply_load(self, capacity):
+        """
+        Plans a MIXED load across this outpost's assigned ores (lib/outpost_mining.py),
+        filling up to capacity units total rather than being limited to a
+        single item per trip (e.g. 50 titanium + 30 silicon in one run) --
+        a mining outpost can have several assigned ores at once (Phase B),
+        and hauling only one per trip would leave the others piling up
+        unused there. Ranks assigned ores by unmet home demand
+        (get_raw_material_demands()) descending, keeping only those that
+        actually have stock sitting at this outpost right now, then greedily
+        takes min(unmet demand, stock on hand, remaining capacity) from each
+        in that order until either capacity runs out or no more qualifying
+        ore remains. Returns [(item_id, amount), ...], possibly empty.
+        """
+        assigned = outpost_mining.assigned_ores_for(self.home_base)
+        if not assigned:
+            return []
+        demands = get_raw_material_demands()
+        ranked = []
+        for item_id in assigned:
+            unmet = demands.get(item_id, 0)
+            if unmet <= 0:
+                continue
+            available = total_stock(item_id, outpost=self.home_outpost)
+            if available <= 0:
+                continue
+            ranked.append((unmet, item_id, available))
+        ranked.sort(reverse=True)
+
+        plan = []
+        remaining = capacity
+        for unmet, item_id, available in ranked:
+            if remaining <= 0:
+                break
+            amount = min(unmet, available, remaining)
+            if amount <= 0:
+                continue
+            plan.append((item_id, amount))
+            remaining -= amount
+        return plan
+
+    def run_supply_run_loop(self, poll_interval=10.0):
         """
         Demand-driven transporter role (TODO.md Phase 3, Phase D). Construct
         this vehicle with home_base=<mining outpost id> (same as Phase C's
         stationed miners -- see VehicleController.__init__) so it idles and
-        recharges at that outpost between runs via the existing
+        recharges at that STATIONED outpost between runs via the existing
         is_at_base()/return_to_base(), and only drives explicitly to the
-        production/home outpost for the delivery leg itself.
+        production outpost (Nocturna Base -- get_outpost_ref(None), i.e.
+        outpost_network.home(), never self.home_base) for the delivery leg
+        itself. This vehicle's own self.home_outpost (cached from home_base,
+        see VehicleController.__init__) is therefore the STATIONED outpost,
+        not the production outpost -- the local `production_outpost`
+        variable below is a deliberately distinct name so the two are never
+        confused reading this function.
 
-        Each cycle: checks home's live unmet demand for item_id
-        (get_raw_material_demands(), already net of home's own stock) and
-        only drives out when there's an actual deficit -- no preemptive/
-        opportunistic top-off (confirmed with the user: demand-driven only).
-        Loads up to min(unmet demand, cargo capacity, stock actually at this
-        outpost), delivers, unloads at home explicitly (unload_cargo(outpost=...)
-        override -- this vehicle's OWN home_outpost is the mining outpost, not
-        home, so the default target would be wrong here), then returns to its
-        stationed outpost to wait for the next deficit.
+        The load can mix several different assigned ores in one trip (e.g.
+        50 titanium + 30 silicon), not just one item per run -- see
+        _plan_supply_load()'s docstring. Which items/amounts to haul is
+        decided fresh each cycle, not fixed at construction. Cargo already
+        aboard (resuming after a reload) is identified from the cargo itself
+        (_current_supply_items()) rather than re-deciding mid-delivery.
+
+        Each cycle: checks the production outpost's live unmet demand per
+        assigned ore (get_raw_material_demands(), already net of its own
+        stock) and only drives out when at least one has an actual deficit
+        -- no preemptive/opportunistic top-off (confirmed with the user:
+        demand-driven only). Loads up to cargo capacity total across however
+        many qualifying ores, delivers, unloads at the production outpost
+        explicitly (unload_cargo(outpost=...) override -- this vehicle's OWN
+        home_outpost is the stationed outpost, so the default target would be
+        wrong here; unload_cargo() already sends each cargo stack to its own
+        destination, so a mixed load needs no special handling there),
+        recharges fully at the production outpost before heading back (so the
+        return leg can run at full throttle rather than a conservative one),
+        then returns to its stationed outpost to wait for the next deficit.
         """
-        print(f"[{self.name}] Supply Run Controller online. Hauling {item_id} from '{self.home_base}' to home on demand.")
-        home_outpost = self.get_outpost_ref(None)
+        print(f"[{self.name}] Supply Run Controller online. Hauling from '{self.home_base}' to the production outpost on demand.")
+        production_outpost = self.get_outpost_ref(None)
         while True:
             try:
                 if self.handle_recall_if_active():
                     sleep(poll_interval)
                     continue
 
-                unmet = get_raw_material_demands().get(item_id, 0)
-                if unmet <= 0 and self.vehicle.cargo.count() == 0:
-                    if not self.is_at_base():
-                        self.return_to_base()
-                    self.publish_telemetry("IDLE_AT_OUTPOST", f"no demand for {item_id}")
-                    sleep(poll_interval)
-                    continue
-
-                if not home_outpost or not hasattr(home_outpost, "coords"):
-                    print(f"[{self.name}] Supply run: home outpost unavailable this cycle.")
+                if not production_outpost or not hasattr(production_outpost, "coords"):
+                    print(f"[{self.name}] Supply run: production outpost unavailable this cycle.")
                     sleep(poll_interval)
                     continue
 
                 # Cargo already aboard (e.g. resuming after a reload) skips
-                # straight to delivery instead of loading again.
-                if self.vehicle.cargo.count() == 0:
-                    available = total_stock(item_id, outpost=self.home_outpost)
-                    amount = min(unmet, self.vehicle.cargo.capacity(), available)
-                    if amount <= 0:
-                        self.publish_telemetry("IDLE_AT_OUTPOST", f"no {item_id} at '{self.home_base}' yet")
+                # straight to delivery instead of (re-)planning a load.
+                loaded_items = self._current_supply_items()
+                if not loaded_items:
+                    plan = self._plan_supply_load(self.vehicle.cargo.capacity())
+                    if not plan:
+                        if not self.is_at_base():
+                            self.return_to_base()
+                        self.publish_telemetry("IDLE_AT_OUTPOST", "no demand for assigned ores")
                         sleep(poll_interval)
                         continue
                     if not hasattr(self.vehicle, "input"):
                         print(f"[{self.name}] Supply run requires an input port and Auto Feeders.")
                         sleep(poll_interval)
                         continue
-                    moved = take_item(self.vehicle.input, item_id, amount, outpost=self.home_outpost)
-                    if moved <= 0:
-                        print(f"[{self.name}] Could not load {item_id} at '{self.home_base}'.")
+
+                    # take_item() below needs the vehicle physically within
+                    # the stationed outpost's service area to connect to its
+                    # Warehouse -- unlike the no-demand idle branch above,
+                    # this path used to skip straight to loading without
+                    # ever driving here first, so a transporter starting (or
+                    # left) anywhere else -- e.g. still at the production
+                    # outpost after its last delivery -- would just fail to
+                    # load forever, sitting wherever it was instead of
+                    # returning to its stationed outpost.
+                    if not self.is_at_base():
+                        self.publish_telemetry("RETURNING", f"returning to '{self.home_base}' to load")
+                        if not self.return_to_base():
+                            print(f"[{self.name}] Could not reach '{self.home_base}' to load; will retry.")
+                            sleep(poll_interval)
+                            continue
+
+                    loaded_summary = []
+                    for item_id, amount in plan:
+                        moved = take_item(self.vehicle.input, item_id, amount, outpost=self.home_outpost)
+                        if moved > 0:
+                            loaded_summary.append(f"{moved}x {item_id}")
+                    if not loaded_summary:
+                        print(f"[{self.name}] Could not load any planned item at '{self.home_base}'.")
                         sleep(poll_interval)
                         continue
-                    print(f"[{self.name}] Loaded {moved}x {item_id} at '{self.home_base}'.")
+                    print(f"[{self.name}] Loaded {', '.join(loaded_summary)} at '{self.home_base}'.")
 
-                home_coords = home_outpost.coords()
-                self.publish_telemetry("OUTBOUND", f"delivering {item_id} home")
-                if not self.drive_with_recharge(home_coords[0], home_coords[1]):
-                    print(f"[{self.name}] Could not reach home outpost this cycle; will retry.")
+                production_coords = production_outpost.coords()
+                self.publish_telemetry("OUTBOUND", "delivering mixed cargo to the production outpost")
+                if not self.drive_with_recharge(production_coords[0], production_coords[1]):
+                    print(f"[{self.name}] Could not reach the production outpost this cycle; will retry.")
                     sleep(poll_interval)
                     continue
 
                 delivered = self.vehicle.cargo.count()
-                if self.unload_cargo(outpost=home_outpost) < 0:
+                if self.unload_cargo(outpost=production_outpost) < 0:
                     self.publish_telemetry("WAITING_INVENTORY_SPACE")
                     sleep(poll_interval)
                     continue
-                print(f"[{self.name}] Delivered {delivered}x {item_id} to home.")
+                print(f"[{self.name}] Delivered {delivered} units to the production outpost.")
+
+                # Recharge fully at the production outpost before heading
+                # back -- get_nearest_charging_station() (used internally by
+                # recharge_at_station() when no station is given) resolves by
+                # current position, not self.home_base, so this correctly
+                # finds the production outpost's own station even though
+                # this vehicle's home_base/home_outpost (for navigation/
+                # is_at_base() purposes) is its stationed mining outpost.
+                # Starting the return leg fully charged lets it run at full
+                # throttle without drive_with_recharge() needing to plan an
+                # intermediate stop for it -- faster round trips than only
+                # recharging back at the stationed outpost.
+                self.publish_telemetry("CHARGING_AT_BASE")
+                self.recharge_at_station(target_level=1.0)
 
                 self.publish_telemetry("RETURNING", f"returning to '{self.home_base}'")
                 if self.return_to_base():

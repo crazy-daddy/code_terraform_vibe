@@ -20,7 +20,7 @@ class PioneerController(VehicleController):
     # nothing-drive-back cycles. Capped at whatever progress remains.
     TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25
 
-    def __init__(self, vehicle, home_base=None, cruise_throttle=0.5):
+    def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
 
     def get_construction_progress(self, blueprint_id):
@@ -538,7 +538,12 @@ class PioneerController(VehicleController):
                 if has_resumable_target:
                     print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
                     target = self.current_target
-                    budget = self.calculate_trip_energy(target["coords"], planned_drill_units=10)
+                    budget = self.calculate_trip_energy(
+                        target["coords"],
+                        planned_drill_units=10,
+                        mine_item_id=target.get("harvest_item"),
+                        mine_purity=target.get("purity"),
+                    )
                 else:
                     candidates = self.build_mineral_site_candidates(deprioritize_hardness_at_or_below=ROVER_PREFERRED_MAX_HARDNESS)
                     target, budget, _ = self.select_best_mining_target(candidates)

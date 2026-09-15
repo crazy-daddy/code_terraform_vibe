@@ -79,11 +79,13 @@ class VehicleNavigationMixin:
         stalled_cycles = 0
         stall_recoveries = 0
 
-        # Pick this leg's throttle from vehicle.speedmode (conserve/highspeed)
+        # Pick this leg's throttle from self.cruise_throttle (construction
+        # override, or the archive-backed default_cruise_throttle()), capped
+        # down only as far as needed for a safe return reserve.
         throttle = self.select_cruise_throttle(target_x, target_y)
         if timeout_ticks is None:
             timeout_ticks = self.drive_timeout_ticks(self.distance_between(start_pos, (target_x, target_y)), throttle)
-        print(f"[{self.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle ({self.get_speed_mode()} mode).")
+        print(f"[{self.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self.cruise_throttle*100:.0f}%).")
 
         # Destination itself is a charging station/base slot: the return-reserve
         # abort check below must never apply here, or the vehicle could abort its

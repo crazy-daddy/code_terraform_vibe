@@ -12,7 +12,7 @@ class RoverController(VehicleController):
     Specializes VehicleController with autonomous exploration cycles,
     unscanned POI targeting, and mineral site extraction.
     """
-    def __init__(self, vehicle, home_base=None, cruise_throttle=0.5):
+    def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
         self.last_target_diagnostics = {}
 
@@ -30,10 +30,13 @@ class RoverController(VehicleController):
         # toward the same destination instead of restarting the search.
         if self.current_target_key and self.current_target and self.current_target.get("coords"):
             print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
+            is_mine = self.current_target.get("type") == "mine"
             budget = self.calculate_trip_energy(
                 self.current_target["coords"],
-                planned_drill_units=10 if self.current_target.get("type") == "mine" else 0,
+                planned_drill_units=10 if is_mine else 0,
                 planned_scans=1 if self.current_target.get("type") == "poi" else 0,
+                mine_item_id=self.current_target.get("harvest_item") if is_mine else None,
+                mine_purity=self.current_target.get("purity") if is_mine else None,
             )
             return self.current_target, budget
 

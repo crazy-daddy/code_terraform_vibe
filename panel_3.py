@@ -1,53 +1,152 @@
-# Control Room production card: compact recipe, storage, and active-order view.
-# Recommended card size: 2 columns x 1 row -- see docs/AI_CHEATSHEET.md.
+# Control Room production card: live Smelter/Fabricator/Supply Dock roster.
+# Discovers every deployed instance of each (production.discover_smelter_ids()/
+# discover_fabricator_ids()/discover_supply_dock_ids()) rather than assuming a
+# single "smelter_1"/"fabricator_1"/"supply_dock_1" -- a second instance of any
+# of the three used to be entirely invisible to this card, mirroring the same
+# hardcoded-id bug production.py itself had until fixed alongside this card
+# (see docs/AI_CHEATSHEET.md's Multi-Smelter/Multi-Fabricator/Multi-Dock notes).
+# Inventory removed on purpose -- storage gets its own dedicated card later
+# (with history graphs), this one is just live machine roster + status.
+# Recommended card size: 2 columns x 1 row for a handful of machines, 2 x 2
+# once you have more -- same sizing guidance as panel_2.py (FLEET). Scrolls the
+# same way once the combined machine+dock list exceeds what fits (see
+# panel_2.py's own comment for why a horizontal slider is repurposed as a
+# scrollbar: there's no vertical slider/scroll widget in the panel API).
+
+from production import discover_smelter_ids, discover_fabricator_ids, discover_supply_dock_ids
+
+ROLE_COLORS = {
+    "SMELTER": "accent",
+    "FABRICATOR": "warning",
+    "DOCK": "success",
+}
+
+# Persists across loop iterations (this script is one continuous while-loop
+# process, not re-invoked per tick) -- see panel_2.py's matching comment for
+# why the scroll slider's own label can only be built from the PREVIOUS
+# tick's result (computed after slider() already returns a value for this
+# one), and why that one-tick lag is invisible in practice.
+scroll_label = "scroll"
+
+
+def machine_row(machine_id, role):
+    machine = get_component(machine_id)
+    if machine is None:
+        return None
+    recipe = machine.get_recipe() if hasattr(machine, "get_recipe") else ""
+    running = machine.is_running() if hasattr(machine, "is_running") else False
+    input_count = machine.get_input_count() if hasattr(machine, "get_input_count") else 0
+    output_count = machine.get_output_count() if hasattr(machine, "get_output_count") else 0
+    return {
+        "id": machine_id,
+        "role": role,
+        "status_pill": "RUNNING" if running else "IDLE",
+        "status_color": "success" if running else "text-muted",
+        "dot": "running" if running else "idle",
+        "detail": recipe or "no recipe",
+        "footer": f"in {input_count}  out {output_count}",
+    }
+
+
+def dock_row(dock_id):
+    dock = get_component(dock_id)
+    if dock is None:
+        return None
+    order = dock.current_order() if hasattr(dock, "current_order") else None
+    if order is None:
+        return {
+            "id": dock_id,
+            "role": "DOCK",
+            "status_pill": "IDLE",
+            "status_color": "text-muted",
+            "dot": "idle",
+            "detail": "no active order",
+            "footer": "",
+        }
+
+    shipped = getattr(order, "shipped", {}) or {}
+    requirements = getattr(order, "requires", {}) or {}
+    pending = []
+    for item_id, required in requirements.items():
+        in_dock = dock.count(item_id) if hasattr(dock, "count") else 0
+        remaining = max(0, required - shipped.get(item_id, 0) - in_dock)
+        if remaining > 0:
+            pending.append((item_id, remaining))
+
+    order_name = str(getattr(order, "name", getattr(order, "id", "order")))
+    if not pending:
+        footer = "all items shipped"
+    else:
+        first_item, first_remaining = pending[0]
+        footer = f"{first_item}: {first_remaining} needed"
+        if len(pending) > 1:
+            footer += f" (+{len(pending) - 1} more)"
+
+    return {
+        "id": dock_id,
+        "role": "DOCK",
+        "status_pill": "ACTIVE" if pending else "READY",
+        "status_color": "warning" if pending else "success",
+        "dot": "running" if pending else "idle",
+        "detail": order_name,
+        "footer": footer,
+    }
+
 
 while True:
     panel.clear()
     width = panel.width()
     height = panel.height()
-    panel.card(8, 8, width - 16, height - 16, "PRODUCTION")
-    panel.label(24, 34, "PRODUCTION", "caption")
+    panel.card(8, 8, width - 16, height - 16, "PRODUCTION")  # card() already renders its own title bar text
 
-    inventory = get_component("inventory")
-    used = inventory.get_used() if inventory and hasattr(inventory, "get_used") else 0
-    slots = inventory.get_size() if inventory and hasattr(inventory, "get_size") else 0
+    rows = []
+    for machine_id in discover_smelter_ids():
+        row = machine_row(machine_id, "SMELTER")
+        if row:
+            rows.append(row)
+    for machine_id in discover_fabricator_ids():
+        row = machine_row(machine_id, "FABRICATOR")
+        if row:
+            rows.append(row)
+    for dock_id in discover_supply_dock_ids():
+        row = dock_row(dock_id)
+        if row:
+            rows.append(row)
 
-    left = 24
-    right = width * 0.54
-    panel.label(left, 58, "INVENTORY", "caption")
-    panel.progress_bar(left, 80, width * 0.22, 12, used / slots if slots else 0.0, "error" if slots and used >= slots else "accent")
-    panel.label(left, 102, f"{used} / {slots} slots", "muted")
+    wide = width >= 900
 
-    dock = get_component("supply_dock_1")
-    order = dock.current_order() if dock and hasattr(dock, "current_order") else None
-    panel.label(left, 132, "ACTIVE ORDER", "caption")
-    if order is None:
-        panel.label(left, 156, "No active order", "muted")
+    if not rows:
+        panel.label(24, 64, "No Smelter, Fabricator, or Supply Dock owned", "muted")
     else:
-        panel.draw_text(left, 156, str(getattr(order, "name", getattr(order, "id", "order"))), 11, "text-bright", width * 0.40)
-        shipped = getattr(order, "shipped", {}) or {}
-        requirements = getattr(order, "requires", {}) or {}
-        shown = 0
-        for item_id, required in requirements.items():
-            if shown >= 2:
-                break
-            in_dock = dock.count(item_id) if hasattr(dock, "count") else 0
-            remaining = max(0, required - shipped.get(item_id, 0) - in_dock)
-            panel.draw_text(left, 176 + shown * 18, f"{item_id}: {remaining} needed", 10, "text-secondary")
-            shown += 1
+        # Reserve the scroll-row's vertical space unconditionally (even on a
+        # tick where the roster currently fits without it) so the row grid
+        # below never jumps as the count crosses the scrollable threshold
+        # from one tick to the next -- see panel_2.py's matching comment.
+        top = 82
+        row_height = 46 if wide else 60
+        max_rows = max(1, (height - top - 16) // row_height)
 
-    panel.label(right, 58, "MACHINES", "caption")
-    machine_y = 82
-    for machine_id, label in [("smelter_1", "SMELTER"), ("fabricator_1", "FABRICATOR")]:
-        machine = get_component(machine_id)
-        if machine is None:
-            continue
-        recipe = machine.get_recipe() if hasattr(machine, "get_recipe") else ""
-        active = machine.is_running() if hasattr(machine, "is_running") else False
-        panel.draw_text(right, machine_y, label, 10, "text-secondary")
-        panel.pill(right + 76, machine_y - 8, "RUNNING" if active else "IDLE", "success" if active else "text-muted")
-        panel.draw_text(right, machine_y + 20, recipe or "no recipe", 11, "text-value", width * 0.40)
-        input_count = machine.get_input_count() if hasattr(machine, "get_input_count") else 0
-        output_count = machine.get_output_count() if hasattr(machine, "get_output_count") else 0
-        panel.draw_text(right, machine_y + 40, f"in {input_count}  out {output_count}", 10, "text-muted")
-        machine_y += 70
+        max_start = max(0, len(rows) - max_rows)
+        start_index = 0
+        if max_start > 0:
+            scroll_w = min(140, max(60, width - 300))
+            scroll_value = panel.slider("production_scroll", 24, 54, scroll_w, 0.0, scroll_label)
+            start_index = max(0, min(max_start, round(scroll_value * max_start)))
+            shown_last = min(start_index + max_rows, len(rows))
+            scroll_label = f"scroll {start_index + 1}-{shown_last}/{len(rows)}"
+
+        visible_rows = rows[start_index:start_index + max_rows]
+        for index, row in enumerate(visible_rows):
+            y = top + index * row_height
+
+            panel.status_dot(24, y + 11, 5, row["dot"])
+            panel.draw_text(40, y + 15, row["id"][:16], 12, "text-bright")
+            panel.pill(40, y + 22, row["role"], ROLE_COLORS.get(row["role"], "text-muted"))
+
+            detail_x = 190
+            panel.draw_text(detail_x, y + 15, row["detail"][:28], 11, "text-value", width * 0.30)
+            if row["footer"]:
+                panel.draw_text(detail_x, y + 34, row["footer"][:36], 10, "text-secondary", width * 0.34)
+
+            status_x = width - 110
+            panel.pill(status_x, y + 4, row["status_pill"], row["status_color"])

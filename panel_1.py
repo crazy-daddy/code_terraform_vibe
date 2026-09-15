@@ -5,8 +5,7 @@ while True:
     panel.clear()
     width = panel.width()
     height = panel.height()
-    panel.card(8, 8, width - 16, height - 16, "STATUS")
-    panel.label(24, 34, "STATUS", "caption")
+    panel.card(8, 8, width - 16, height - 16, "STATUS")  # card() already renders its own title bar text
 
     clock = get_component("clock")
     day = clock.get_day() if clock else "-"

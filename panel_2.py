@@ -1,15 +1,20 @@
 # Control Room fleet card: live vehicle state, battery, mission, and rescue status.
 # Also publishes a per-vehicle "recall" toggle: on -> that vehicle abandons
 # its current job and returns to base now; off -> resumes normal operations.
-# This is a pure intent publish (archive.set), same pattern as vehicle.speedmode --
-# the vehicle's own script (rover_1.py, pioneer_*.py) is what actually acts on it.
+# This is a pure intent publish (archive.set), same pattern as
+# vehicle.default_cruise_throttle (lib/vehicle_energy.py) -- the vehicle's own
+# script (rover_1.py, pioneer_*.py) is what actually acts on it.
 #
 # Recommended card size: 2 columns x 1 row for small fleets, 2 x 2 once you have
 # more than ~6 vehicles. See docs/AI_CHEATSHEET.md -- 1 column
 # (500px) is too narrow for this card's row layout and clips the recall switch.
+# A fleet too large to fit even a 2x2 card scrolls via a horizontal slider
+# (there's no vertical slider/scroll widget in the panel API) repurposed as a
+# scrollbar -- see the "vehicle_scroll" slider below.
 
 from archive import archive
 from vehicle_claims import vehicle_recall_key
+from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
 
 
 def vehicle_role(name):
@@ -21,12 +26,41 @@ def vehicle_role(name):
     return "VEHICLE", "text-muted"
 
 
+# Persists across loop iterations (this script is one continuous while-loop
+# process, not re-invoked per tick) so the scroll slider's label can show the
+# range it produced -- computed AFTER the slider() call returns a value, so
+# it necessarily lags one tick behind the live drag. Invisible in practice
+# since the panel repaints every tick anyway (see the cruise-throttle slider
+# above for why a value can't just be appended as a separate draw_text()
+# instead: slider() owns its own label position, and a second independently-
+# positioned text element next to it visibly collided).
+scroll_label = "scroll"
+
 while True:
     panel.clear()
     width = panel.width()
     height = panel.height()
-    panel.card(8, 8, width - 16, height - 16, "FLEET")
-    panel.label(24, 34, "FLEET", "caption")
+    panel.card(8, 8, width - 16, height - 16, "FLEET")  # card() already renders its own title bar text
+
+    # Fleet-wide default cruise_throttle (lib/vehicle_energy.py's
+    # default_cruise_throttle()) -- a pure intent publish, same pattern as
+    # the per-vehicle recall switch below: this card only writes the archive
+    # value, each vehicle's own script reads it (only when constructed with
+    # cruise_throttle=None -- an explicit per-vehicle override, e.g. the
+    # demand-driven transporter role's cruise_throttle=1.0, is unaffected).
+    # slider() works in a flat 0-1 range, matching MIN/MAX_SPEEDMODE_THROTTLE's
+    # [0.10, 1.0] band closely enough that no remapping is needed -- a value
+    # below 0.10 just clamps up to the safe floor when default_cruise_throttle()
+    # reads it back. The live value is folded INTO the label text itself
+    # (rather than a separate panel.draw_text() alongside it) since slider()
+    # draws its own label at a position this script doesn't control -- a
+    # second independently-positioned text element next to it collided with
+    # the widget's own label text.
+    current_default_throttle = archive.get(DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK)
+    slider_w = min(220, width - 140)
+    slider_value = panel.slider("default_cruise_throttle", 24, 54, slider_w, current_default_throttle, f"cruise throttle {current_default_throttle * 100:.0f}%")
+    if slider_value != current_default_throttle:
+        archive.set(DEFAULT_CRUISE_THROTTLE_KEY, slider_value)
 
     fleet = get_component("fleet")
     vehicles = fleet.vehicles() if fleet and hasattr(fleet, "vehicles") else []
@@ -34,13 +68,33 @@ while True:
     recall_x = width - 115  # fixed right-margin anchor: never overflows the card, at any width
 
     if not vehicles:
-        panel.label(24, 64, "No ground vehicles owned", "muted")
+        panel.label(24, 98, "No ground vehicles owned", "muted")
     else:
-        top = 58
-        row_height = 40 if wide else 54
+        # Reserve the scroll-row's vertical space unconditionally (even on a
+        # tick where the fleet currently fits without it) so the row grid
+        # below never jumps as the fleet count crosses the scrollable
+        # threshold from one tick to the next.
+        top = 116
+        row_height = 40 if wide else 64
         max_rows = max(1, (height - top - 16) // row_height)
 
-        for index, vehicle in enumerate(vehicles[:max_rows]):
+        # No vertical slider exists in the widget set (panel.slider() is
+        # horizontal-only -- x, y, w, no height/orientation param -- see
+        # docs/guide/editor_and_tools.md's widget list), so a horizontal
+        # slider is repurposed as a scrollbar instead: its 0-1 value maps to
+        # a row offset into the vehicle list, rather than to a throttle or
+        # threshold like slider() is normally used for.
+        max_start = max(0, len(vehicles) - max_rows)
+        start_index = 0
+        if max_start > 0:
+            scroll_w = min(140, max(60, width - 300))
+            scroll_value = panel.slider("vehicle_scroll", 24, 78, scroll_w, 0.0, scroll_label)
+            start_index = max(0, min(max_start, round(scroll_value * max_start)))
+            shown_last = min(start_index + max_rows, len(vehicles))
+            scroll_label = f"scroll {start_index + 1}-{shown_last}/{len(vehicles)}"
+
+        visible_vehicles = vehicles[start_index:start_index + max_rows]
+        for index, vehicle in enumerate(visible_vehicles):
             y = top + index * row_height
             name = str(getattr(vehicle, "name", getattr(vehicle, "id", "vehicle")))
             role_label, role_color = vehicle_role(name)
@@ -83,7 +137,10 @@ while True:
                 if loc_x + 90 < recall_x:
                     panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
             else:
-                panel.draw_text(40, y + 38, location, 10, "text-secondary")
+                # Below the role pill, not overlapping it -- pill(40, y+22, ...)
+                # renders taller than a 16px gap allows, so this needs real
+                # clearance (see row_height's matching bump below).
+                panel.draw_text(40, y + 46, location, 10, "text-secondary")
 
             switch_on = panel.switch(f"recall_{name}", recall_x, y + 6, recalled, "recall")
             if switch_on != recalled:
@@ -95,6 +152,3 @@ while True:
                 panel.pill(status_x, badge_y, rescue, "warning")
             elif switch_on:
                 panel.pill(status_x, badge_y, "recalled", "warning")
-
-        if len(vehicles) > max_rows:
-            panel.label(24, min(height - 20, top + max_rows * row_height), f"+ {len(vehicles) - max_rows} more vehicles", "muted")
