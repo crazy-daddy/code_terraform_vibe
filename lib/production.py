@@ -37,6 +37,119 @@ def get_fabricator_stock_targets():
     }
 
 
+def _cascade_blueprint_demand():
+    """
+    Breadth-first demand cascade seeded from pending/paused Construction
+    Blueprint required_item/required_count (summed across jobs, deduped by
+    job id), then propagated down through Fabricator and Smelter recipe
+    inputs -- e.g. a Thermal Cap build's thermal_cap_kit demand cascades into
+    titanium_ingot demand, which cascades into titanium_ore demand.
+
+    At each tier, only that tier's *shortfall* (demand beyond current
+    Inventory stock of that exact item) propagates further down -- so a
+    build that's mostly already satisfied by existing stock at some tier
+    doesn't overstate demand for the tiers beneath it. Returns
+    {item_id: total_demand}, the gross demand accumulated for every item
+    reached at any tier (not yet netted against its own stock -- see
+    get_construction_material_reservations() for that).
+
+    Known limitation: an item reachable via more than one distinct path
+    (e.g. two different blueprint items both consuming iron_ingot) nets its
+    shortfall against the same Inventory snapshot independently at each
+    occurrence, which can slightly overstate demand for a shared
+    intermediate under a diamond-shaped recipe dependency. Not worth a full
+    MRP-style low-level-code solve for this game's shallow (2-3 tier)
+    recipe chains.
+    """
+    inventory = _component("inventory")
+
+    def inv_count(item_id):
+        return inventory.count(item_id) if inventory and hasattr(inventory, "count") else 0
+
+    def recipe_inputs_for(item_id):
+        """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
+        Smelter builds item_id, or None if neither does."""
+        for component_id in ("fabricator_1", "smelter_1"):
+            component = _component(component_id)
+            if not component or not hasattr(component, "list_recipes"):
+                continue
+            try:
+                for recipe in component.list_recipes():
+                    if getattr(recipe, "output_item", None) != item_id:
+                        continue
+                    output_count = max(1, getattr(recipe, "output_count", 1))
+                    inputs = getattr(recipe, "inputs", {}) or {}
+                    return {in_id: qty / output_count for in_id, qty in inputs.items()}
+            except Exception:
+                continue
+        return None
+
+    frontier = {}
+    bp = _component("construction_blueprint")
+    if bp:
+        seen_jobs = set()
+        for getter_name in ("pending_constructions", "paused_constructions"):
+            getter = getattr(bp, getter_name, None)
+            if not getter:
+                continue
+            try:
+                for job in getter():
+                    job_id = getattr(job, "id", None)
+                    if job_id and job_id in seen_jobs:
+                        continue
+                    item_id = getattr(job, "required_item", None)
+                    count = getattr(job, "required_count", 0)
+                    if not item_id or count <= 0:
+                        continue
+                    if job_id:
+                        seen_jobs.add(job_id)
+                    frontier[item_id] = frontier.get(item_id, 0) + count
+            except Exception:
+                pass
+
+    total_needed = {}
+    depth = 0
+    while frontier and depth < 6:  # generous bound against an accidental recipe cycle
+        depth += 1
+        next_frontier = {}
+        for item_id, want in frontier.items():
+            total_needed[item_id] = total_needed.get(item_id, 0) + want
+            shortfall = max(0, want - inv_count(item_id))
+            if shortfall <= 0:
+                continue
+            inputs = recipe_inputs_for(item_id)
+            if not inputs:
+                continue
+            for input_id, ratio in inputs.items():
+                next_frontier[input_id] = next_frontier.get(input_id, 0) + (shortfall * ratio)
+        frontier = next_frontier
+
+    return total_needed
+
+
+def get_construction_material_reservations():
+    """
+    Returns {item_id: units} to protect in Inventory for active Construction
+    Blueprints, cascading down through Fabricator/Smelter recipes to
+    intermediate materials and raw ore (see _cascade_blueprint_demand()) --
+    not just each blueprint's own required_item. Capped at min(current stock,
+    total demand) per item: never reserves more than what's both actually on
+    hand and actually still needed.
+
+    Used to stop the Supply Dock from shipping away Inventory stock an active
+    build (or the production chain feeding it) is waiting on -- see
+    supply_dock.py step()/pick_best_order().
+    """
+    inventory = _component("inventory")
+    reservations = {}
+    for item_id, want in _cascade_blueprint_demand().items():
+        stock = inventory.count(item_id) if inventory and hasattr(inventory, "count") else 0
+        reserve = min(stock, want)
+        if reserve > 0:
+            reservations[item_id] = reserve
+    return reservations
+
+
 def get_fabricator_targets():
     """Returns desired finished-goods quantities for Fabricator planning."""
     targets = get_fabricator_stock_targets()
@@ -69,6 +182,23 @@ def get_fabricator_targets():
                     targets[item_id] = max(targets.get(item_id, 0), remaining)
         except Exception:
             pass
+
+    # Fold in Construction Blueprint demand for items the Fabricator can
+    # actually build (e.g. thermal_cap_kit) -- a queued build could otherwise
+    # sit forever with nothing ever telling the Fabricator to craft it. Uses
+    # the raw demand cascade, not get_construction_material_reservations()'s
+    # netted (capped-at-current-stock) numbers -- a target must reflect how
+    # much still needs to exist, not how much can currently be reserved.
+    # max()'d against the existing target, same as the Supply Dock order
+    # handling above -- targets are a steady-state "keep at least N in
+    # Inventory" floor, not additive per demand source: the standing stock
+    # buffer IS what a blueprint (or order) draws from, and choose_recipe()
+    # already nets target-vs-current to rebuild it after that draw, so
+    # adding would just over-target and waste materials/time.
+    for item_id, count in _cascade_blueprint_demand().items():
+        if item_id in fabricator_outputs:
+            targets[item_id] = max(targets.get(item_id, 0), count)
+
     return targets
 
 

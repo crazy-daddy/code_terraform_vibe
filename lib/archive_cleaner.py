@@ -47,7 +47,7 @@ class ArchiveCleaner:
             "unsupported_migrated": 0,
             "waypoints_cleaned": 0,
             "telemetry_removed": 0,
-            "calibration_repaired": 0,
+            "calibration_purged": 0,
             "corrupted_keys_deleted": 0,
             "errors": 0
         }
@@ -435,24 +435,25 @@ class ArchiveCleaner:
 
     def clean_calibration(self):
         """
-        Validates energy calibration parameters (wh_per_meter).
-        Ensures numeric values within reasonable vehicle bounds (0.02 - 0.35 Wh/m).
+        Purges obsolete wh_per_meter calibration entries. Travel energy now uses
+        the developer-confirmed exact power/speed model (lib/vehicle_energy.py),
+        not an empirically-calibrated Wh/meter, so these archive keys are no
+        longer read or written by any vehicle script -- just leftover clutter
+        from before that change.
         """
-        self.log("\n--- Checking Wh/m Calibration Parameters ---")
+        self.log("\n--- Purging Obsolete Wh/m Calibration Entries ---")
         all_keys = self.archive.keys()
         calib_keys = [k for k in all_keys if k.endswith(".wh_per_meter") or k == "wh_per_meter"]
-        calib_repaired = 0
+        calib_purged = 0
 
         for k in calib_keys:
-            val = self.archive.get(k)
-            if val is None or not isinstance(val, (int, float)) or val < 0.02 or val > 0.35:
-                self.log(f"  [REPAIR CALIBRATION] Key '{k}': Invalid Wh/m value ({val}). Resetting to default 0.08.")
-                calib_repaired += 1
-                if not self.dry_run:
-                    self.archive.set(k, 0.08)
+            self.log(f"  [DELETE CALIBRATION] Key '{k}': Obsolete Wh/m calibration entry (no longer used).")
+            calib_purged += 1
+            if not self.dry_run:
+                self.archive.delete(k)
 
-        self.stats["calibration_repaired"] += calib_repaired
-        self.log(f"  Result: {calib_repaired} calibration entries repaired.")
+        self.stats["calibration_purged"] += calib_purged
+        self.log(f"  Result: {calib_purged} obsolete calibration entries purged.")
 
     def clean_power_and_heat(self):
         """

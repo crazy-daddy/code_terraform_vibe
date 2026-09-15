@@ -6,6 +6,12 @@ from patterns import is_wildcard_pattern, filter_wildcard_matches
 # Default shedding tiers (configurable via archive key 'power.shedding_tiers')
 # Tier 1: Passive background terraforming machinery (shed first)
 # Tier 2: Critical active production & logistics (shed only under severe deficit)
+#
+# Vehicle Charging Stations are deliberately never included here: they're also
+# what dispatches the fleet rescue drone (lib/charging.py manage_fleet_rescues()).
+# Shedding them "only under severe deficit" means losing rescue capability at
+# exactly the moment a vehicle is most likely to be stranded and need it --
+# dispatch_rescue() returns "station_offline" and the drone never launches.
 DEFAULT_SHEDDING_TIERS = [
     [
         "heater_*",
@@ -18,8 +24,6 @@ DEFAULT_SHEDDING_TIERS = [
     [
         "smelter_*",
         "fabricator_*",
-        "vehicle_charging_station*",
-        "charging_station_*",
     ],
 ]
 

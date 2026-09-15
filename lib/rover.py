@@ -78,8 +78,19 @@ class RoverController(VehicleController):
                 print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                 self.recharge_at_station(target_level=1.0)
 
-        # Step 2: Ensure cargo is empty before launch
+        # Step 2: Ensure cargo is empty before launch. "inventory" is only a
+        # valid freight endpoint while parked at the home outpost's service
+        # area -- cargo can still be aboard here after a mid-trip
+        # interruption (e.g. a rescue drone charges a stranded vehicle in
+        # place, it does not drive it home), so drive home first rather than
+        # attempting the transfer from wherever the vehicle currently stands.
         if self.vehicle.cargo.count() > 0:
+            if not self.is_at_base():
+                print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
+                if not self.return_to_base():
+                    print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                    sleep(5.0)
+                    return
             if self.unload_cargo() < 0:
                 self.publish_telemetry("WAITING_INVENTORY_SPACE")
                 sleep(10.0)
@@ -126,8 +137,15 @@ class RoverController(VehicleController):
         elif target["type"] == "mine":
             self.mine_until_full_or_exhausted(coords)
 
-        # Step 6: Return to base (releases target claim upon return)
-        self.return_to_base()
+        # Step 6: Return to base (releases target claim upon return). A failed
+        # return (e.g. a rescue interrupts drive_to() mid-trip) must not fall
+        # through to Step 7 -- unload_cargo() requires actually being at the
+        # home outpost's service area, and will just fail with "not_at_target"
+        # otherwise.
+        if not self.return_to_base():
+            print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+            sleep(5.0)
+            return
 
         # Step 7: Offload and recharge
         if self.unload_cargo() < 0:

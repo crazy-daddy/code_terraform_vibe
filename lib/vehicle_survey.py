@@ -240,7 +240,8 @@ class VehicleSurveyMixin:
                 break
             self.vehicle.nav.brake()
             scan_reserve = self.SONAR_WH_BUDGET * 4 * self.SAFETY_MARGIN_MULTIPLIER
-            if self.get_battery()[0] <= self.energy_needed_to_return_now() + scan_reserve:
+            # Comfortable reserve, not the bare floor -- keeps the return leg fast.
+            if self.get_battery()[0] <= self.energy_needed_to_return_comfortably() + scan_reserve:
                 print(f"[{self.name}] Insufficient energy to scan POI at {target}; returning home.")
                 self.release_target_claim(target_key)
                 break
@@ -248,7 +249,7 @@ class VehicleSurveyMixin:
             self.release_target_claim(target_key)
             self.save_survey_waypoint(completed, target, sites)
             completed += 1
-            if self.get_battery()[0] < self.energy_needed_to_return_now():
+            if self.get_battery()[0] < self.energy_needed_to_return_comfortably():
                 break
         if completed:
             print(f"[{self.name}] Completed {completed} POI scans on one outward route; returning home.")
@@ -319,8 +320,9 @@ class VehicleSurveyMixin:
                         print(f"[{self.name}] Could not safely reach spiral waypoint; returning home.")
                         break
 
+                    # Comfortable reserve, not the bare floor -- keeps the return leg fast.
                     scan_reserve = self.SONAR_WH_BUDGET * 4 * self.SAFETY_MARGIN_MULTIPLIER
-                    if self.get_battery()[0] <= self.energy_needed_to_return_now() + scan_reserve:
+                    if self.get_battery()[0] <= self.energy_needed_to_return_comfortably() + scan_reserve:
                         print(f"[{self.name}] Insufficient energy for safe scan at ({target_x:.1f}, {target_y:.1f}); returning home.")
                         break
 
@@ -331,7 +333,7 @@ class VehicleSurveyMixin:
                     self.save_survey_waypoint(point_index, (target_x, target_y), sites)
                     completed += 1
 
-                    if self.get_battery()[0] < self.energy_needed_to_return_now():
+                    if self.get_battery()[0] < self.energy_needed_to_return_comfortably():
                         print(f"[{self.name}] Return reserve reached after survey; returning home.")
                         break
 

@@ -68,17 +68,16 @@ class VehicleNavigationMixin:
         Drives vehicle toward target coordinates while enforcing:
         1. Continuous round-trip battery floor check.
         2. Heartbeat claim renewal.
-        3. Dynamic wh_per_meter calibration.
-        4. Stall / obstacle detection.
+        3. Stall / obstacle detection.
         """
         if not hasattr(self.vehicle, "nav"):
             print(f"[{self.name}] Error: No NavModule mounted!")
             return False
 
-        start_wh, _, _ = self.get_battery()
         start_pos = self.get_position()
         last_pos = start_pos
         stalled_cycles = 0
+        stall_recoveries = 0
 
         # Pick this leg's throttle from vehicle.speedmode (conserve/highspeed)
         throttle = self.select_cruise_throttle(target_x, target_y)
@@ -135,9 +134,6 @@ class VehicleNavigationMixin:
 
             if dist_remaining <= precision:
                 self.vehicle.nav.brake()
-                total_dist = self.distance_between(start_pos, curr_pos)
-                wh_used = start_wh - curr_wh
-                self.calibrate_wh_per_meter(total_dist, wh_used)
                 return True
 
             # Skipped when the destination itself is the charging station/base slot
@@ -150,12 +146,26 @@ class VehicleNavigationMixin:
                     self.vehicle.nav.brake()
                     return False
 
-            # Stall detection: if vehicle hasn't moved >0.3m in 8 seconds
+            # Stall detection: if vehicle hasn't moved >0.3m in 8 seconds. This
+            # applies regardless of is_driving_to_station -- being stuck means
+            # zero progress either way, and the throttle stays engaged (drawing
+            # power the whole time per the speed/power model) even while stalled,
+            # so an unbounded retry loop can drain the battery to nothing for no
+            # progress, especially on a station-bound leg where the low-battery
+            # abort above is deliberately skipped.
             step_dist = self.distance_between(last_pos, curr_pos)
             if step_dist < 0.3:
                 stalled_cycles += 1
                 if stalled_cycles >= 8:
-                    print(f"[{self.name}] Vehicle appears stalled/stuck at {curr_pos}. Re-issuing drive command.")
+                    stall_recoveries += 1
+                    if stall_recoveries > 3:
+                        print(f"[{self.name}] Stall recovery failed {stall_recoveries - 1} times at {curr_pos}; giving up to avoid draining the battery further.")
+                        self.vehicle.nav.brake()
+                        return False
+                    # Drop to the floor throttle on retry to minimize further drain
+                    # while stuck (and sometimes a gentler approach clears the obstacle).
+                    throttle = self.MIN_SPEEDMODE_THROTTLE
+                    print(f"[{self.name}] Vehicle appears stalled/stuck at {curr_pos}. Re-issuing drive command at {throttle*100:.0f}% throttle (attempt {stall_recoveries}/3).")
                     self.vehicle.nav.brake()
                     sleep(0.5)
                     self.vehicle.nav.set_target(target_x, target_y)
@@ -163,6 +173,7 @@ class VehicleNavigationMixin:
                     stalled_cycles = 0
             else:
                 stalled_cycles = 0
+                stall_recoveries = 0
 
             last_pos = curr_pos
 
@@ -187,7 +198,7 @@ class VehicleNavigationMixin:
             curr_wh, cap_wh, _ = self.get_battery()
             energy_to_target = self.energy_needed_to_reach(target_coords)
             nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
-            energy_target_to_cs = (self.distance_between(target_coords, nearest_cs_from_target) * self.wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+            energy_target_to_cs = (self.distance_between(target_coords, nearest_cs_from_target) * self.wh_per_meter_at_throttle(self.cruise_throttle) * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
             total_required = energy_to_target + energy_target_to_cs
 
             if curr_wh >= total_required:
@@ -205,7 +216,7 @@ class VehicleNavigationMixin:
                 if dist_to_st < 2.0:
                     continue
 
-                energy_to_st = (dist_to_st * self.wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+                energy_to_st = (dist_to_st * self.wh_per_meter_at_throttle(self.cruise_throttle) * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
                 if curr_wh < energy_to_st:
                     continue
 

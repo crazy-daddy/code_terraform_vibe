@@ -141,7 +141,10 @@ class MiningMixin:
                 break
 
             curr_wh, _, _ = self.get_battery()
-            needed_to_return = self.energy_needed_to_return_now()
+            # Comfortable (not bare-minimum) reserve: stopping here still leaves
+            # enough charge for a normal-speed return, instead of grinding down
+            # to the true floor and being forced to crawl home at minimum throttle.
+            needed_to_return = self.energy_needed_to_return_comfortably()
             if curr_wh <= (needed_to_return + self.MINE_WH_PER_UNIT * 1.5):
                 print(f"[{self.name}] Reached return energy threshold ({curr_wh:.1f} Wh left). Ceasing extraction for recharge.")
                 self.mining_interrupted_battery = True

@@ -48,9 +48,10 @@ class VehicleController(
         self.home_coords = home_coords
         self.cruise_throttle = cruise_throttle
 
-        # Each vehicle and module loadout gets its own calibration. Legacy
-        # shared values are read only as a migration fallback.
-        self.wh_per_meter = self.load_wh_per_meter()
+        # Travel energy uses the developer-confirmed exact power/speed model
+        # (see lib/vehicle_energy.py), not an empirically-calibrated Wh/meter --
+        # only construction progress energy still needs per-vehicle calibration
+        # (no developer-confirmed formula for that one).
         self.wh_per_progress = self.load_wh_per_progress()
         self.total_distance_driven = 0.0
         self.total_wh_spent_moving = 0.0

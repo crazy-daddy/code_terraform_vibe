@@ -1,6 +1,21 @@
 # Vehicle mixin: battery accounting, round-trip energy budgeting, and
 # charging-station discovery/docking. Shared by Rover and Pioneer via
 # VehicleController (lib/vehicle.py).
+#
+# Travel energy uses the developer-confirmed exact power/speed model (not an
+# empirically-calibrated Wh/meter -- that whole archive-backed calibration
+# system was intentionally dropped in favor of this validated theoretical
+# model):
+#   power (W)   = (BASE_TRAVEL_POWER_W + MODULE_TRAVEL_POWER_W * active_modules
+#                  + CARGO_UNIT_TRAVEL_POWER_W * cargo_units)
+#                 * throttle^1.5 * nav_power_multiplier
+#   speed (m/h) = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle * nav_speed_multiplier
+# active_modules = mounted functional modules (Nav/Drill/Sonar/Constructor family,
+# including upgraded variants -- they share the same id prefix); passive
+# containers (Battery Holder, Cargo Rack) don't count. cargo_units = live cargo
+# count, so a full return trip after mining costs more than the empty outbound
+# leg. nav_power_multiplier/nav_speed_multiplier come from mounted Sport Nav
+# modules (docs/components/nav_module.md: 1 Sport Nav = 2x speed / 2.6x power).
 
 from archive import archive
 
@@ -10,41 +25,145 @@ SPEEDMODE_KEY = "vehicle.speedmode"
 SPEEDMODE_CONSERVE = "conserve"
 SPEEDMODE_HIGHSPEED = "highspeed"
 
+ACTIVE_MODULE_ID_PREFIXES = ("nav_module", "drill_module", "sonar_module", "constructor_module")
+
+# Developer-confirmed travel power/speed model (see module docstring above).
+# Module-level (not just class attributes) so non-VehicleController callers
+# without a live instance -- e.g. lib/charging.py estimating a stranded
+# vehicle's rescue-return cost -- can import these and travel_wh_per_meter_for()
+# directly, rather than duplicating the formula. Single source of truth either way.
+DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE = 100.0
+BASE_TRAVEL_POWER_W = 3.0
+MODULE_TRAVEL_POWER_W = 8.0
+CARGO_UNIT_TRAVEL_POWER_W = 0.04
+MIN_SPEEDMODE_THROTTLE = 0.10
+MAX_SPEEDMODE_THROTTLE = 1.0
+
+
+def active_modules_count_for(vehicle):
+    """Standalone: count of mounted functional (power-drawing) modules for a live vehicle object."""
+    if hasattr(vehicle, "modules"):
+        try:
+            return sum(
+                1 for slot in vehicle.modules()
+                if getattr(slot, "module_id", None) and str(slot.module_id).startswith(ACTIVE_MODULE_ID_PREFIXES)
+            )
+        except Exception:
+            pass
+    return sum(1 for attr in ("nav", "drill", "sonar", "constructor") if hasattr(vehicle, attr))
+
+
+def cargo_units_count_for(vehicle):
+    """Standalone: live cargo unit count for a live vehicle object."""
+    if hasattr(vehicle, "cargo") and hasattr(vehicle.cargo, "count"):
+        try:
+            return vehicle.cargo.count()
+        except Exception:
+            pass
+    return 0
+
+
+def nav_speed_multiplier_for(vehicle):
+    """Standalone: Sport Nav top-speed multiplier for a live vehicle object."""
+    if hasattr(vehicle, "nav") and hasattr(vehicle.nav, "speed_multiplier"):
+        try:
+            return float(vehicle.nav.speed_multiplier())
+        except Exception:
+            pass
+    return 1.0
+
+
+def nav_power_multiplier_for(vehicle):
+    """Standalone: Sport Nav movement-power multiplier matching nav_speed_multiplier_for()."""
+    speed_mult = nav_speed_multiplier_for(vehicle)
+    return 1.0 + 1.6 * (speed_mult - 1.0)
+
+
+def travel_wh_per_meter_for(vehicle, throttle, cargo_units=None):
+    """
+    Standalone travel Wh/meter for a live vehicle object, for callers without a
+    VehicleController instance. Same developer-confirmed formula as
+    VehicleEnergyMixin.wh_per_meter_at_throttle() -- kept in sync by construction
+    since both read from the same module-level constants above.
+    """
+    if throttle <= 0:
+        return 0.0
+    if cargo_units is None:
+        cargo_units = cargo_units_count_for(vehicle)
+    base_w = BASE_TRAVEL_POWER_W + (MODULE_TRAVEL_POWER_W * active_modules_count_for(vehicle)) + (CARGO_UNIT_TRAVEL_POWER_W * cargo_units)
+    power = base_w * (throttle ** 1.5) * nav_power_multiplier_for(vehicle)
+    speed = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle * nav_speed_multiplier_for(vehicle)
+    return power / speed
+
+
+def rescue_wh_per_meter_for(vehicle):
+    """
+    Standalone worst-case-safe travel Wh/meter for rescue-return budgeting, at
+    the speedmode throttle floor (cheapest possible Wh/m). One-call entry
+    point for callers like lib/charging.py that only have a raw get_component()
+    object (or None, if the vehicle couldn't be reached) and shouldn't need to
+    import every formula constant just to size a rescue trip.
+    """
+    if vehicle is not None:
+        rate = travel_wh_per_meter_for(vehicle, MIN_SPEEDMODE_THROTTLE)
+        if rate:
+            return rate
+    # Bare-module fallback (no live vehicle object to read modules/cargo/nav from).
+    return (BASE_TRAVEL_POWER_W + MODULE_TRAVEL_POWER_W) * (MIN_SPEEDMODE_THROTTLE ** 1.5) / (DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * MIN_SPEEDMODE_THROTTLE)
+
 
 class VehicleEnergyMixin:
     """
-    Battery telemetry, empirically-calibrated Wh/meter energy costs, and
+    Battery telemetry, developer-confirmed travel power/speed model, and
     outpost-aware charging-station discovery, mixed into VehicleController.
     """
-    WH_PER_METER_DEFAULT = 0.08
     SONAR_WH_BUDGET = 2.0
     MINE_WH_PER_UNIT = 2.5
-    SAFETY_MARGIN_MULTIPLIER = 1.35
+    SAFETY_MARGIN_MULTIPLIER = 1.05
     MIN_EMERGENCY_RESERVE_WH = 8.0
 
     # Wh to take a Constructor Module job from 0% to 100% progress. Uncalibrated
-    # starting assumption (like WH_PER_METER_DEFAULT) -- calibrate_wh_per_progress()
-    # refines it per-vehicle from observed execute() calls once real samples exist.
+    # starting assumption -- calibrate_wh_per_progress() refines it per-vehicle
+    # from observed execute() calls once real samples exist. (Construction
+    # progress energy has no developer-confirmed formula, unlike travel energy
+    # below, so this one still uses empirical calibration.)
     CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0
 
-    # Speed/power model behind the vehicle.speedmode throttle selection below:
-    #   speed (m per game-hour) = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle
-    #   power (watts)           = DRIVE_POWER_W_PER_THROTTLE_SQUARED * throttle^2
-    DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE = 100.0
-    DRIVE_POWER_W_PER_THROTTLE_SQUARED = 20.0
-    MIN_SPEEDMODE_THROTTLE = 0.10
-    MAX_SPEEDMODE_THROTTLE = 1.0
+    # Class-attribute aliases of the module-level constants above, so existing
+    # self.CONST call sites keep working unchanged.
+    DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE
+    BASE_TRAVEL_POWER_W = BASE_TRAVEL_POWER_W
+    MODULE_TRAVEL_POWER_W = MODULE_TRAVEL_POWER_W
+    CARGO_UNIT_TRAVEL_POWER_W = CARGO_UNIT_TRAVEL_POWER_W
+    MIN_SPEEDMODE_THROTTLE = MIN_SPEEDMODE_THROTTLE
+    MAX_SPEEDMODE_THROTTLE = MAX_SPEEDMODE_THROTTLE
 
-    def calibration_key(self):
-        return f"vehicle.wh_per_meter:{self.name}"
+    def active_modules_count(self):
+        """
+        Count of mounted functional modules that draw power while driving --
+        Nav/Drill/Sonar/Constructor family, including upgraded variants (they
+        share the same id prefix, e.g. "drill_module_heavy" starts with
+        "drill_module"). Passive containers (Battery Holder, Cargo Rack) don't
+        count. See docs/database/equipment_modules.md.
+        """
+        return active_modules_count_for(self.vehicle)
 
-    def load_wh_per_meter(self):
-        value = archive.get(self.calibration_key(), None)
-        if value is None:
-            value = archive.get("fleet.wh_per_meter", None)
-        if value is None and str(self.name).startswith("rover"):
-            value = archive.get("rover.wh_per_meter", None)
-        return value if value is not None else self.WH_PER_METER_DEFAULT
+    def cargo_units_count(self):
+        """Live cargo unit count, for the travel power formula's cargo-weight term."""
+        return cargo_units_count_for(self.vehicle)
+
+    def nav_speed_multiplier(self):
+        """Top-speed multiplier from mounted Sport Nav modules: 1.0 basic, 1+Sport Nav count (docs/components/nav_module.md .speed_multiplier())."""
+        return nav_speed_multiplier_for(self.vehicle)
+
+    def nav_power_multiplier(self):
+        """
+        Movement power multiplier matching nav_speed_multiplier(). Docs confirm
+        1 Sport Nav = 2x speed / 2.6x power exactly; scaling for additional Sport
+        Navs isn't precisely documented ("raises draw faster"), so this linearly
+        extrapolates the same +1.6x power per +1.0x speed above the 1.0 baseline.
+        """
+        return nav_power_multiplier_for(self.vehicle)
 
     def construction_calibration_key(self):
         return f"vehicle.wh_per_progress:{self.name}"
@@ -74,40 +193,52 @@ class VehicleEnergyMixin:
         except Exception:
             return 0.0, 100.0, 0.0
 
-    def minimum_wh_per_meter(self):
+    def wh_per_meter_at_throttle(self, throttle, cargo_units=None):
+        """Wh/meter at a specific throttle and cargo load, from the travel power/speed model."""
+        if throttle <= 0:
+            return 0.0
+        return self._drive_power_watts(throttle, cargo_units=cargo_units) / self._drive_speed_m_per_hour(throttle)
+
+    def minimum_wh_per_meter(self, cargo_units=None):
         """
-        Best-case Wh/meter at the speedmode throttle floor (MIN_SPEEDMODE_THROTTLE),
-        derived from the same speed/power model as select_cruise_throttle(). This is
-        the true lower bound for a "permanently unreachable" verdict: conserve mode
-        can always throttle down this far to stretch a tight budget, so a hard
-        infeasibility check must rate distances against this, not the calibrated
-        self.wh_per_meter (which reflects a *typical* cruise throttle, not the floor).
+        Best-case Wh/meter at the speedmode throttle floor (MIN_SPEEDMODE_THROTTLE).
+        This is the true lower bound for a "permanently unreachable" verdict: conserve
+        mode can always throttle down this far to stretch a tight budget, so a hard
+        infeasibility check must rate distances against this, not the typical
+        cruise-throttle rate.
         """
-        return self._drive_power_watts(self.MIN_SPEEDMODE_THROTTLE) / self._drive_speed_m_per_hour(self.MIN_SPEEDMODE_THROTTLE)
+        return self.wh_per_meter_at_throttle(self.MIN_SPEEDMODE_THROTTLE, cargo_units=cargo_units)
 
     def calculate_trip_energy(self, target_coords, planned_drill_units=0, planned_scans=1, planned_construction_progress=0.0, wh_per_meter=None):
         """
         Accurately calculates total energy required for a round-trip expedition:
-        1. Energy to drive to target: dist_to_target * wh_per_meter
+        1. Energy to drive to target: dist_to_target * outbound Wh/m (current cargo load)
         2. Energy to scan & survey: planned_scans * SONAR_WH_BUDGET
         3. Energy to mine: planned_drill_units * MINE_WH_PER_UNIT
         4. Energy to build: planned_construction_progress * wh_per_progress
-        5. Energy to drive to nearest charging station from target: dist_target_to_nearest_cs * wh_per_meter
-        6. Safety buffer (35% margin) + hard emergency floor (8 Wh)
+        5. Energy to drive to nearest charging station from target: dist_target_to_nearest_cs *
+           return Wh/m (current cargo + planned_drill_units -- mined ore weighs down the return leg)
+        6. Safety buffer (SAFETY_MARGIN_MULTIPLIER) + hard emergency floor (8 Wh)
 
-        wh_per_meter overrides the calibrated per-vehicle rate for the drive legs --
-        pass self.minimum_wh_per_meter() to test best-case feasibility at the
-        speedmode throttle floor rather than typical cruising cost. Defaults to
-        the calibrated self.wh_per_meter.
+        wh_per_meter overrides the rate for BOTH legs (e.g. pass self.minimum_wh_per_meter()
+        to test best-case feasibility at the speedmode throttle floor). Defaults to the
+        cruise-throttle rate, computed separately per leg since cargo differs between them.
         """
-        rate = wh_per_meter if wh_per_meter is not None else self.wh_per_meter
         current_pos = self.get_position()
         dist_outbound = self.distance_between(current_pos, target_coords)
         nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
         dist_inbound = self.distance_between(target_coords, nearest_cs_from_target)
 
-        drive_out_wh = dist_outbound * rate
-        drive_home_wh = dist_inbound * rate
+        if wh_per_meter is not None:
+            outbound_rate = wh_per_meter
+            inbound_rate = wh_per_meter
+        else:
+            curr_cargo = self.cargo_units_count()
+            outbound_rate = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo)
+            inbound_rate = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo + planned_drill_units)
+
+        drive_out_wh = dist_outbound * outbound_rate
+        drive_home_wh = dist_inbound * inbound_rate
         sonar_wh = planned_scans * self.SONAR_WH_BUDGET
         mining_wh = planned_drill_units * self.MINE_WH_PER_UNIT
         construction_wh = planned_construction_progress * self.wh_per_progress
@@ -136,7 +267,7 @@ class VehicleEnergyMixin:
     def energy_needed_to_reach(self, target_coords):
         """Calculates minimum energy required to reach target coordinates with safety buffer."""
         dist = self.distance_between(self.get_position(), target_coords)
-        drive_wh = dist * self.wh_per_meter
+        drive_wh = dist * self.wh_per_meter_at_throttle(self.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
     def energy_needed_to_reach_base(self):
@@ -149,21 +280,37 @@ class VehicleEnergyMixin:
         station right now. This is the true floor (uses minimum_wh_per_meter(), the
         speedmode throttle-floor rate) -- conserve mode can always crawl home at
         MIN_SPEEDMODE_THROTTLE to stretch a tight budget, so a panic/abort-safety
-        check must not assume the typical calibrated self.wh_per_meter cost.
+        check must not assume the typical cruise-throttle cost.
         """
         nearest_cs, _ = self.get_nearest_charging_station()
         dist_cs = self.distance_between(self.get_position(), nearest_cs)
         drive_wh = dist_cs * self.minimum_wh_per_meter()
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
-    def calibrate_wh_per_meter(self, delta_dist, delta_wh):
-        """Dynamically calibrates actual Wh/meter based on empirical driving performance."""
-        if delta_dist > 5.0 and delta_wh > 0.1:
-            observed_wh_per_m = delta_wh / delta_dist
-            if 0.02 <= observed_wh_per_m <= 0.30:
-                base_val = self.wh_per_meter if self.wh_per_meter is not None else self.WH_PER_METER_DEFAULT
-                self.wh_per_meter = (base_val * 0.70) + (observed_wh_per_m * 0.30)
-                archive.set(self.calibration_key(), self.wh_per_meter)
+    def energy_needed_to_return_comfortably(self):
+        """
+        Energy required to reach the nearest charging station right now at the
+        normal cruise throttle (self.cruise_throttle), not the speedmode floor.
+
+        Field-work loops (mining, construction, survey) should use this -- not
+        energy_needed_to_return_now() -- as the *proactive* "time to head back"
+        trigger. Grinding right up to the bare survival floor means the return
+        leg itself can then only afford the slowest possible throttle (conserve
+        mode has nothing left to spend), turning a routine return trip into a
+        multi-hour crawl. Stopping a little earlier, with enough reserve for a
+        normal-speed return, sacrifices a small amount of extra work for a much
+        shorter trip home -- a simple heuristic rather than an exact optimum
+        (computing the true time/output tradeoff would need to weigh real-world
+        wait time against ore/progress value, which has no clean in-game unit).
+
+        The hard mid-drive abort net inside drive_to() intentionally keeps using
+        the true floor (energy_needed_to_return_now()) -- that one is a last-resort
+        safety check, not a scheduling decision, and must never be softened.
+        """
+        nearest_cs, _ = self.get_nearest_charging_station()
+        dist_cs = self.distance_between(self.get_position(), nearest_cs)
+        drive_wh = dist_cs * self.wh_per_meter_at_throttle(self.cruise_throttle)
+        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
     def get_speed_mode(self):
         """Reads the fleet-wide vehicle.speedmode archive flag ("conserve" or "highspeed")."""
@@ -171,26 +318,45 @@ class VehicleEnergyMixin:
         return mode if mode in (SPEEDMODE_CONSERVE, SPEEDMODE_HIGHSPEED) else SPEEDMODE_CONSERVE
 
     def _drive_speed_m_per_hour(self, throttle):
-        """speed = 100 x throttle meters per game-hour."""
-        return self.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle
+        """speed (m/h) = 100.0 * throttle * Sport Nav speed multiplier."""
+        return self.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * throttle * self.nav_speed_multiplier()
 
-    def _drive_power_watts(self, throttle):
-        """power draw = 20 x throttle^2 watts."""
-        return self.DRIVE_POWER_W_PER_THROTTLE_SQUARED * (throttle ** 2)
+    def _drive_power_watts(self, throttle, cargo_units=None):
+        """
+        Developer-confirmed travel power formula:
+        power (W) = (BASE_TRAVEL_POWER_W + MODULE_TRAVEL_POWER_W * active_modules
+                     + CARGO_UNIT_TRAVEL_POWER_W * cargo_units) * throttle^1.5 * nav_power_multiplier
+        """
+        if cargo_units is None:
+            cargo_units = self.cargo_units_count()
+        base_w = self.BASE_TRAVEL_POWER_W + (self.MODULE_TRAVEL_POWER_W * self.active_modules_count()) + (self.CARGO_UNIT_TRAVEL_POWER_W * cargo_units)
+        return base_w * (throttle ** 1.5) * self.nav_power_multiplier()
 
-    def energy_wh_for_leg(self, distance_m, throttle):
-        """Energy to cover distance_m at a constant throttle, from the speed/power model."""
+    def energy_wh_for_leg(self, distance_m, throttle, cargo_units=None):
+        """Energy to cover distance_m at a constant throttle and cargo load, from the travel power/speed model."""
         if distance_m <= 0 or throttle <= 0:
             return 0.0
         hours = distance_m / self._drive_speed_m_per_hour(throttle)
-        return self._drive_power_watts(throttle) * hours
+        return self._drive_power_watts(throttle, cargo_units=cargo_units) * hours
 
     def max_safe_throttle_for_leg(self, target_coords):
         """
         Highest throttle for which driving to target_coords still leaves enough
-        charge (per the calibrated Wh/meter safety model) to reach the nearest
-        charging station from there afterward. Returns 0.0 if even the slowest
-        throttle would not leave a safe reserve.
+        charge (at the speedmode throttle floor -- the safe assumption for
+        whatever's left over) to reach the nearest charging station from there
+        afterward. Returns 0.0 if even the slowest throttle would not leave a
+        safe reserve.
+
+        Solved analytically: under the travel power model, Wh/m for a leg scales
+        with sqrt(throttle) (power ~ throttle^1.5, speed ~ throttle), not throttle
+        itself, so the bound is solved via that relationship rather than a linear
+        one:
+            leg_wh(t) = distance * coeff * sqrt(t), where
+            coeff = (BASE_TRAVEL_POWER_W + MODULE_TRAVEL_POWER_W*active_modules
+                     + CARGO_UNIT_TRAVEL_POWER_W*cargo_units) * nav_power_multiplier
+                    / (DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * nav_speed_multiplier)
+            leg_wh(t) * SAFETY_MARGIN_MULTIPLIER <= available_for_leg
+            => t <= (available_for_leg / (distance * coeff * SAFETY_MARGIN_MULTIPLIER)) ** 2
         """
         distance = self.distance_to(target_coords[0], target_coords[1])
         if distance <= 0:
@@ -198,16 +364,19 @@ class VehicleEnergyMixin:
 
         curr_wh, _, _ = self.get_battery()
         nearest_cs, _ = self.get_nearest_charging_station(from_coords=target_coords)
-        reserve_needed = (self.distance_between(target_coords, nearest_cs) * self.wh_per_meter * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        reserve_needed = (self.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
             return 0.0
 
-        # energy_wh_for_leg(distance, t) reduces to (power_coeff / speed_coeff) * t * distance
-        wh_per_throttle_unit = (self.DRIVE_POWER_W_PER_THROTTLE_SQUARED / self.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE) * distance
-        if wh_per_throttle_unit <= 0:
+        base_w = self.BASE_TRAVEL_POWER_W + (self.MODULE_TRAVEL_POWER_W * self.active_modules_count()) + (self.CARGO_UNIT_TRAVEL_POWER_W * self.cargo_units_count())
+        coeff = (base_w * self.nav_power_multiplier()) / (self.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * self.nav_speed_multiplier())
+        denom = distance * coeff * self.SAFETY_MARGIN_MULTIPLIER
+        if denom <= 0:
             return self.MAX_SPEEDMODE_THROTTLE
-        return max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, available_for_leg / wh_per_throttle_unit))
+
+        sqrt_t_max = available_for_leg / denom
+        return max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, sqrt_t_max ** 2))
 
     def select_cruise_throttle(self, target_x, target_y):
         """
@@ -363,13 +532,15 @@ class VehicleEnergyMixin:
                 pass
 
         if not is_docked:
+            # drive_to() already short-circuits instantly when already within
+            # precision, so there's no need to special-case "close but not yet
+            # registered docked" with a heavier self.return_to_base() detour
+            # (which also drives to assigned_slot_coords, not necessarily
+            # cs_coords, and releases the current target claim) -- just always
+            # re-issue the drive command toward the actual station coords.
             dist_to_cs = self.distance_to(cs_coords[0], cs_coords[1])
-            if dist_to_cs > 1.2:
-                print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
-                self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
-            else:
-                self.return_to_base()
-                self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
+            print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
+            self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
 
         if hasattr(self.vehicle, "nav"):
             try:

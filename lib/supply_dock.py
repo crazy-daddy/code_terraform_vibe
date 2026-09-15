@@ -1,7 +1,7 @@
 # Shared Library for Supply Dock Logistics
 # Automatically matches and assigns Earth Contractor Campaign Orders & Weekly Orders,
 # feeds required materials from Base Inventory, and enables continuous dispatch.
-from production import can_fulfill_order
+from production import can_fulfill_order, get_construction_material_reservations
 
 class SupplyDockController:
     """
@@ -25,6 +25,30 @@ class SupplyDockController:
             except Exception:
                 pass
 
+    def drain_dock_cargo(self):
+        """
+        Ejects any cargo still physically loaded in the dock's slots back to
+        Inventory. clear_order() explicitly does not drain cargo -- it just
+        releases the assignment and leaves loaded materials in place -- so
+        set_order() for a *new* order keeps rejecting with "cargo_present"
+        until something actively empties the dock first.
+        """
+        if not hasattr(self.dock, "slots") or not hasattr(self.dock, "input"):
+            return
+        try:
+            for slot in self.dock.slots():
+                item_id = getattr(slot, "item_id", None)
+                count = getattr(slot, "count", 0)
+                if not item_id or count <= 0:
+                    continue
+                res = self.dock.input.eject("inventory", item_id, count)
+                if res.status == "ok":
+                    print(f"[{self.name}] Ejected {count}x {item_id} from dock back to Inventory.")
+                elif res.status not in ["busy", "no_op"]:
+                    print(f"[{self.name}] Eject notice for {item_id}: {res.status} - {res.message}")
+        except Exception:
+            pass
+
     def pick_best_order(self):
         """
         Selects the best available Earth Order:
@@ -37,6 +61,11 @@ class SupplyDockController:
             return None
 
         candidates = []
+        # Materials an active Construction Blueprint is waiting on don't count
+        # toward an order's "readiness" score either -- otherwise an order
+        # can get prioritized as nearly-ready using stock that's actually
+        # earmarked for a build and won't be takeable (see step()).
+        reserved = get_construction_material_reservations()
 
         # 1. Inspect Contractor Campaign Orders (Helios, Spire, Vestibule)
         try:
@@ -57,6 +86,7 @@ class SupplyDockController:
                             still_needed = max(0, req_count - shipped.get(item_id, 0))
                             total_needed += still_needed
                             in_inv = self.inventory.count(item_id) if hasattr(self.inventory, "count") else 0
+                            in_inv = max(0, in_inv - reserved.get(item_id, 0))
                             items_ready += min(in_inv, still_needed)
 
                     if total_needed > 0:
@@ -87,6 +117,7 @@ class SupplyDockController:
                             still_needed = max(0, req_count - shipped.get(item_id, 0))
                             total_needed += still_needed
                             in_inv = self.inventory.count(item_id) if hasattr(self.inventory, "count") else 0
+                            in_inv = max(0, in_inv - reserved.get(item_id, 0))
                             items_ready += min(in_inv, still_needed)
 
                     if total_needed > 0:
@@ -126,6 +157,15 @@ class SupplyDockController:
                     curr_order = None
 
         if not curr_order:
+            # set_order() rejects with "cargo_present" while any cargo is
+            # still physically loaded -- including leftovers from a
+            # previously cleared/completed/expired order, since clear_order()
+            # never drains the dock itself. Drain first and retry next cycle
+            # rather than repeatedly failing set_order() forever.
+            if hasattr(self.dock, "total") and self.dock.total() > 0:
+                self.drain_dock_cargo()
+                return
+
             best = self.pick_best_order()
             if not best:
                 print(f"[{self.name}] No active Earth Orders available. Standing by.")
@@ -137,13 +177,23 @@ class SupplyDockController:
 
             print(f"[{self.name}] Assigning Earth Order '{best.name}' (ID: {best.id}, Reward: {reward_desc})...")
             res = self.dock.set_order(best.id)
+            if res.status == "cargo_present":
+                # Defensive fallback in case cargo appeared between the total()
+                # check above and this call -- drain and let the next cycle retry.
+                self.drain_dock_cargo()
+                return
             if res.status != "ok":
                 print(f"[{self.name}] Could not assign order: {res.status} - {res.message}")
                 return
             curr_order = best
 
-        # Step 2: Load required materials from Inventory
+        # Step 2: Load required materials from Inventory, but never take stock
+        # an active Construction Blueprint is waiting on -- otherwise the Dock
+        # can "snack away" materials (e.g. titanium ingots) out from under a
+        # Pioneer build the moment they land in Inventory, well before the
+        # build gets a chance to collect them.
         if curr_order and hasattr(curr_order, "requires"):
+            reserved = get_construction_material_reservations()
             shipped = getattr(curr_order, "shipped", {}) or {}
             for item_id, req_total in curr_order.requires.items():
                 already_shipped = shipped.get(item_id, 0)
@@ -152,12 +202,15 @@ class SupplyDockController:
 
                 if needed > 0 and self.inventory and hasattr(self.inventory, "count"):
                     avail = self.inventory.count(item_id)
-                    to_take = min(avail, needed)
+                    available_after_reservation = max(0, avail - reserved.get(item_id, 0))
+                    to_take = min(available_after_reservation, needed)
                     if to_take > 0:
                         t_res = self.dock.input.take(item_id, to_take)
                         if t_res.status in ["ok", "partial"]:
                             moved = getattr(t_res, "moved", 0)
                             print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
+                    elif avail > 0 and item_id in reserved:
+                        print(f"[{self.name}] Holding back {item_id}: all {avail} unit(s) in Inventory reserved by active Construction Blueprint(s).")
 
         # Step 3: Enable continuous dispatch
         if not self.dock.is_enabled() and self.dock.total() > 0:

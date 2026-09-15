@@ -335,9 +335,11 @@ class PioneerController(VehicleController):
                     if lvl < 0.90:
                         self.recharge_at_station(target_level=1.0)
 
-                # 2. Field Battery Floor: If energy drops near return reserve, return to nearest station
+                # 2. Field Battery Floor: proactively head back with enough reserve for a
+                # normal-speed return, not just the bare survival floor (which would leave
+                # conserve mode nothing to spend but the slowest possible crawl home).
                 curr_wh, _, _ = self.get_battery()
-                if curr_wh <= self.energy_needed_to_return_now():
+                if curr_wh <= self.energy_needed_to_return_comfortably():
                     print(f"[{self.name}] Return reserve reached in field; returning to nearest station to recharge.")
                     nearest_st, _ = self.get_nearest_charging_station()
                     self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
@@ -609,8 +611,20 @@ class PioneerController(VehicleController):
                         print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                         self.recharge_at_station(target_level=1.0)
 
-                # Step 2: Ensure cargo is empty before launch
+                # Step 2: Ensure cargo is empty before launch. "inventory" is
+                # only a valid freight endpoint while parked at the home
+                # outpost's service area -- cargo can still be aboard here
+                # after a mid-trip interruption (e.g. a rescue drone charges
+                # a stranded vehicle in place, it does not drive it home), so
+                # drive home first rather than attempting the transfer from
+                # wherever the vehicle currently stands.
                 if self.vehicle.cargo.count() > 0:
+                    if not self.is_at_base():
+                        print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
+                        if not self.return_to_base():
+                            print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                            sleep(5.0)
+                            continue
                     if self.unload_cargo() < 0:
                         self.publish_telemetry("WAITING_INVENTORY_SPACE")
                         sleep(10.0)
@@ -651,8 +665,15 @@ class PioneerController(VehicleController):
                 # Step 5: Mine (recharges and resumes in place as needed)
                 self.mine_until_full_or_exhausted(coords)
 
-                # Step 6: Return to base (releases target claim upon return)
-                self.return_to_base()
+                # Step 6: Return to base (releases target claim upon return).
+                # A failed return (e.g. a rescue interrupts drive_to() mid-trip)
+                # must not fall through to Step 7 -- unload_cargo() requires
+                # actually being at the home outpost's service area, and will
+                # just fail with "not_at_target" otherwise.
+                if not self.return_to_base():
+                    print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                    sleep(5.0)
+                    continue
 
                 # Step 7: Offload and recharge
                 if self.unload_cargo() < 0:

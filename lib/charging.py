@@ -1,7 +1,7 @@
 # Shared Library for Vehicle Charging Station & Fleet Rescue Management
 # Manages docked vehicle fast-charging, queue optimization, and automated rescue
 # drone dispatch for stranded or critically low-battery vehicles in the field.
-from archive import archive
+from vehicle_energy import rescue_wh_per_meter_for
 
 class ChargingStationController:
     """
@@ -11,8 +11,7 @@ class ChargingStationController:
     - Detects stranded vehicles or low-battery vehicles in the field and auto-dispatches the rescue drone.
     - Broadcasts fleet charge status and rescue events via popup toasts (notify).
     """
-    RETURN_WH_PER_METER = 0.08
-    RETURN_SAFETY_MARGIN = 1.35
+    RETURN_SAFETY_MARGIN = 1.05
     RETURN_EMERGENCY_RESERVE_WH = 8.0
     RESCUE_EXTRA_RESERVE_WH = 8.0
 
@@ -26,49 +25,101 @@ class ChargingStationController:
         self.last_rescued_vehicle = None
         self.return_commands = set()
 
-    def charging_station_coords(self):
-        """Returns known charging-station coordinates, nearest first when available."""
-        coords = []
-
-        def parse_pos(pos):
-            if pos is None:
-                return None
-            if isinstance(pos, (tuple, list)) and len(pos) >= 2:
-                return (float(pos[0]), float(pos[1]))
-            x = getattr(pos, "x", None)
-            y = getattr(pos, "y", None)
-            if x is not None and y is not None:
-                return (float(x), float(y))
-            return None
+    def all_station_refs(self):
+        """
+        Returns [{"id": str, "coords": (x, y)}, ...] for every deployed charging
+        station. BuildingRef.position is a plain (x, y) tuple, but OutpostRef.position
+        is a *method* (returns a Position snapshot) -- OutpostRef.x/.y are the plain
+        floats there. Mixing those up previously fed a bound method into (pos.x,
+        pos.y), throwing "'native_fn' object has no attribute 'x'" every cycle.
+        """
+        refs = []
 
         network = get_component("outpost_network")
         if network and hasattr(network, "outposts"):
             try:
                 for outpost in network.outposts():
                     for building in outpost.buildings("charging_station"):
-                        position = getattr(building, "position", None)
-                        if position:
-                            coords.append((position.x, position.y))
-                        pos_tuple = parse_pos(getattr(building, "position", None))
-                        if pos_tuple and pos_tuple not in coords:
-                            coords.append(pos_tuple)
+                        pos = getattr(building, "position", None)
+                        b_id = getattr(building, "id", None)
+                        if b_id and pos and len(pos) >= 2:
+                            coord = (float(pos[0]), float(pos[1]))
+                            if not any(r["id"] == b_id for r in refs):
+                                refs.append({"id": b_id, "coords": coord})
             except Exception:
                 pass
 
-        station_outpost = getattr(self.station, "outpost", None)
-        position = getattr(station_outpost, "position", None)
-        if position:
-            fallback = (position.x, position.y)
-            if fallback not in coords:
-                coords.append(fallback)
-        pos_tuple = parse_pos(getattr(station_outpost, "position", None))
-        if pos_tuple and pos_tuple not in coords:
-            coords.append(pos_tuple)
-        if station_outpost:
-            pos_tuple = parse_pos(getattr(station_outpost, "position", None))
-            if pos_tuple and pos_tuple not in coords:
-                coords.append(pos_tuple)
-        return coords
+        if not any(r["id"] == self.name for r in refs):
+            station_outpost = getattr(self.station, "outpost", None)
+            if station_outpost is not None:
+                x = getattr(station_outpost, "x", None)
+                y = getattr(station_outpost, "y", None)
+                if x is not None and y is not None:
+                    refs.append({"id": self.name, "coords": (float(x), float(y))})
+        return refs
+
+    def charging_station_coords(self):
+        """Returns known charging-station coordinates, nearest first when available."""
+        return [r["coords"] for r in self.all_station_refs()]
+
+    def my_coords(self):
+        """This station's own coordinates, from the shared station-ref list."""
+        for r in self.all_station_refs():
+            if r["id"] == self.name:
+                return r["coords"]
+        return None
+
+    def is_nearest_station_to(self, vehicle_ref):
+        """
+        True when this station is the closest known charging station to
+        vehicle_ref. Every deployed station runs its own independent copy of
+        this script and polls the same fleet snapshot, so without this check
+        every station within range would dispatch its own rescue drone to the
+        same stranded vehicle. Ties (e.g. a solo station, or coordinates that
+        can't be resolved) default to True rather than deadlocking silent.
+        """
+        my_pos = self.my_coords()
+        if my_pos is None:
+            return True
+        my_dist = ((vehicle_ref.x - my_pos[0]) ** 2 + (vehicle_ref.y - my_pos[1]) ** 2) ** 0.5
+        for ref in self.all_station_refs():
+            if ref["id"] == self.name:
+                continue
+            other_dist = ((vehicle_ref.x - ref["coords"][0]) ** 2 + (vehicle_ref.y - ref["coords"][1]) ** 2) ** 0.5
+            if other_dist < my_dist:
+                return False
+        return True
+
+    def return_floor_wh(self, vehicle_ref):
+        """
+        Wh a vehicle needs on board right now to safely self-navigate to the
+        nearest known charging station -- the same floor drive_to()'s own hard
+        abort (energy_needed_to_return_now()) enforces from the vehicle's own
+        side. Falling below this means the vehicle can no longer reach a
+        station under its own power and genuinely needs a rescue, regardless
+        of what fraction of its (not necessarily known here) capacity that
+        represents -- a fixed battery-level percentage doesn't track a
+        per-vehicle, per-distance floor like this does.
+        """
+        vehicle = None
+        try:
+            vehicle = get_component(vehicle_ref.id)
+        except Exception:
+            vehicle = None
+
+        stations = self.charging_station_coords()
+        if not stations:
+            return 0.0
+
+        distance = min(
+            ((vehicle_ref.x - x) ** 2 + (vehicle_ref.y - y) ** 2) ** 0.5
+            for x, y in stations
+        )
+        # Rescue is a last-resort case, so rate the leg at the speedmode throttle
+        # floor (cheapest possible Wh/m) -- rescue_wh_per_meter_for() already
+        # handles the "vehicle unreachable" fallback internally.
+        wh_per_meter = rescue_wh_per_meter_for(vehicle)
+        return (distance * wh_per_meter * self.RETURN_SAFETY_MARGIN) + self.RETURN_EMERGENCY_RESERVE_WH
 
     def rescue_target_level(self, vehicle_ref):
         """Calculates charge needed to reach the nearest station with safety reserve."""
@@ -84,25 +135,7 @@ class ChargingStationController:
         if not capacity or capacity <= 0:
             return 1.0
 
-        stations = self.charging_station_coords()
-        if not stations:
-            return 1.0
-
-        distance = min(
-            ((vehicle_ref.x - x) ** 2 + (vehicle_ref.y - y) ** 2) ** 0.5
-            for x, y in stations
-        )
-        vehicle_key = f"vehicle.wh_per_meter:{vehicle_ref.id}"
-        wh_per_meter = archive.get(vehicle_key, None)
-        if wh_per_meter is None:
-            wh_per_meter = archive.get("fleet.wh_per_meter", None)
-        if wh_per_meter is None:
-            wh_per_meter = self.RETURN_WH_PER_METER
-        return_wh = (
-            distance * wh_per_meter * self.RETURN_SAFETY_MARGIN
-            + self.RETURN_EMERGENCY_RESERVE_WH
-            + self.RESCUE_EXTRA_RESERVE_WH
-        )
+        return_wh = self.return_floor_wh(vehicle_ref) + self.RESCUE_EXTRA_RESERVE_WH
         target_wh = max(current_wh, return_wh)
         return min(1.0, target_wh / capacity)
 
@@ -212,19 +245,30 @@ class ChargingStationController:
                 continue
 
             # First redirect a vehicle below its safe return target. Rescue is
-            # reserved for a stranded vehicle or one with almost no usable power.
+            # reserved for a stranded vehicle or one that can no longer reach a
+            # station under its own power (see return_floor_wh() -- a vehicle's
+            # own drive_to() never willingly drains below this same floor, so it
+            # can sit there forever without ever registering as engine-"stranded";
+            # this is the backstop for that limbo state).
             is_stranded = v_status in ["stranded", "stalled_no_battery"]
             target_level = self.rescue_target_level(v_ref)
-            is_barely_operational = v_lvl <= 0.05
+            is_below_floor = v_wh <= self.return_floor_wh(v_ref)
 
-            if v_lvl < target_level and not is_stranded and not is_barely_operational:
+            if v_lvl < target_level and not is_stranded and not is_below_floor:
                 if self.order_return_to_station(v_ref):
                     continue
 
-            is_critical = is_barely_operational
+            is_critical = is_below_floor
 
             if is_stranded or is_critical:
-                reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh)"
+                # Every deployed station runs this same script independently
+                # against the same fleet snapshot -- only the nearest one acts,
+                # or every station in range would dispatch its own drone to the
+                # same vehicle.
+                if not self.is_nearest_station_to(v_ref):
+                    continue
+
+                reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh, below {self.return_floor_wh(v_ref):.1f} Wh return floor)"
                 print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
 
                 try:
