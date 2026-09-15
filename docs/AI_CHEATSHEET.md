@@ -33,6 +33,7 @@ that way there is exactly one place to keep current.
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
+| Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
 | Data Archive persistence layer | `archive.py` |
 | Wildcard pattern matching helpers | `patterns.py` |
 | Per-script tick-cost profiling | `profiling.py` — see §1c |
@@ -647,6 +648,83 @@ Nocturna Base.
 - `inventory_stack_size()`: `10`, or `20` once `research.is_unlocked("research_high_density_storage")`
   ("Bigger Stacks") — reuses the existing `research.is_unlocked(tech_id)` pattern already used in
   `lib/vehicle_claims.py`, not inferred from current slot contents.
+
+### 2d. Outpost Ore-Assignment & Stock-Target Scaffolding (`lib/outpost_mining.py`)
+
+Phase B of the Multi-Outpost Production Network (`TODO.md` Phase 3). Answers "which ores should a
+vehicle stationed at outpost X mine?" and "how much should it stockpile before stopping?" — consumed
+by Phase C's stationed-mining role (§2e).
+
+- **`assigned_ores_for(outpost_id)` → `[item_id, ...]`** — the read path, called every cycle by the
+  stationed-mining candidate builder. Same "seed once, then editable" convention as
+  `production.py`'s `FABRICATOR_STOCK_TARGETS_KEY`: auto-computes via `_compute_ore_assignment()`
+  **only** the first time this outpost id has no stored `archive` entry at all
+  (`OUTPOST_ORE_ASSIGNMENTS_KEY = "outposts.ore_assignments"`); every call after that — including
+  after new POIs are surveyed nearby — returns the stored list completely untouched, so a player's
+  manual edit is never silently clobbered by a background loop. Verified by stub test: appending
+  new surveyed sites between two calls does not change the second call's result.
+- **`_compute_ore_assignment(outpost_id)`** (internal, shared by both entry points below so seeding
+  and manual rebuilds can't drift apart in ranking logic) — groups every `journal.surveyed_sites()`
+  mineral site by nearest outpost via `nearest_outpost_id(x, y)` (thin wrapper around
+  `outpost_network.nearest(x, y)`), ranks this outpost's candidate ores by site count descending,
+  and caps the list to `_warehouse_slot_count(outpost_id)` —
+  `sum(w.capacity() for w in storage.discover_storage_buildings(outpost)) // WAREHOUSE_SLOT_CAPACITY`
+  (`2000`, one Warehouse slot, fixed regardless of research per `docs/components/warehouse.md`). An
+  outpost with no Warehouse yet seeds an **empty** list (nothing assigned until storage exists) —
+  building one later doesn't auto-widen it; that's what the next function is for.
+- **`reseed_ore_assignment(outpost_id)`** — explicit, **never auto-called** rebuild: recomputes and
+  overwrites the stored entry regardless of whether one exists. Exists so a not-yet-designed Control
+  Panel button can let the player intentionally refresh an outpost's ore list (new POIs surveyed, a
+  second Warehouse added) without any background loop risking a clobber on its own schedule.
+- **`stock_target_for(outpost_id, item_id)` → units** — same seed-once-then-editable shape, default
+  `WAREHOUSE_SLOT_CAPACITY = 2000` (one Warehouse slot) the first time a given `(outpost_id, item_id)`
+  pair is looked up.
+- **`nearest_outpost_id(x, y)`** / **`outpost_by_id(outpost_id)`** — thin wrappers around
+  `outpost_network.nearest()` / iterating `outpost_network.outposts()`, reused by both the seeding
+  logic above and Phase C's per-site candidate filtering (§2e).
+
+### 2e. Stationed Mining Role (`lib/vehicle.py`, `lib/vehicle_energy.py`, `lib/mining.py`)
+
+Phase C of the Multi-Outpost Production Network. Lets a Rover/Pioneer instance treat **any** outpost
+— not just home — as its base, so it can mine that outpost's assigned ores (§2d) into its own local
+Warehouse, independent of home's live demand.
+
+- **`VehicleController.__init__`'s `home_base` param** (replaces the old fixed-tuple `home_coords`)
+  — an outpost id, or `None` for the production/home outpost. Resolved to **live objects exactly once
+  at construction**, cached as `self.home_outpost` (`get_outpost_ref(home_base)`) and
+  `self.home_charging_station` (`find_charging_station(self.home_outpost)`), rather than re-walking
+  `outpost_network.outposts()` by id on every subsequent lookup — the same redundant-network-walk
+  class of cost the Thermal Cap/Turbine profiling work (§1b/§1c) already fixed once this session, now
+  avoided here from the start. `get_home_slot_coords()` reads only these two cached fields: the
+  charging station's position if one was found, else the outpost's own `.coords()`, else a literal
+  `(0, 0)` only if `outpost_network` was unavailable at construction time. `self.home_base` itself is
+  kept only for identity checks (e.g. `vehicle_cargo.py`'s "am I home-based at all?" gate); anything
+  needing the outpost/station object reads the cached fields, not `home_base` re-resolved. Trade-off:
+  a charging station built at this outpost *after* construction isn't picked up until the next script
+  reload — acceptable since actual recharge routing (`get_nearest_charging_station()`) still does its
+  own fresh network-wide walk every call regardless (that one's supposed to stay live, it's finding
+  *any* station fleet-wide, not resolving this vehicle's own fixed home). Verified by stub test:
+  default resolves to home's charging station; a stationed outpost with no charging station yet falls
+  back to the outpost's own coords; adding a charging station later is picked up by a fresh instance
+  (next reload); 10 repeated `get_home_slot_coords()` calls make zero additional `outposts()` walks.
+- **`unload_cargo()`** (`lib/vehicle_cargo.py`) now passes `outpost=self.home_outpost` (cached, no
+  lookup) into `storage.best_unload_target()`, so a stationed vehicle unloads into **its own**
+  outpost's Warehouse, not home's. `wake_smelter()` is only triggered when `self.home_base is None` (a
+  home-based vehicle) — ore that just landed at a remote outpost's Warehouse isn't reachable by the
+  Smelter until a transporter hauls it home (Phase D), so waking it early would do nothing useful.
+- **`MiningMixin.build_local_stockpile_candidates(outpost_id)`** (`lib/mining.py`) — for each ore in
+  `outpost_mining.assigned_ores_for(outpost_id)` still under its `stock_target_for()`, builds mineral
+  site candidates the same way `build_mineral_site_candidates()` does (same hardness/claim/blacklist
+  filtering) but additionally requires `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`
+  — a site nearer some other outpost is that outpost's job, not this vehicle's, even if reachable.
+  Independent of home's live demand entirely (no `get_raw_material_demands()` call), since the point
+  is stockpiling ahead of it. Verified by stub test: a site near home is excluded from an outpost_3
+  candidate list; candidates disappear once that ore's stock target is met.
+- **`MiningMixin.run_stationed_mining_loop(outpost_id)`** — same overall shape as
+  `run_expedition_cycle()`/`run_mining_loop()` (reload-resume safety net, cargo/target mismatch
+  detour, claim + drive + mine + return + unload + recharge), with target selection swapped for
+  `build_local_stockpile_candidates()` and "return to base" already meaning "return to this outpost"
+  via the `home_base` resolution above — no separate return-path logic needed.
 
 ---
 

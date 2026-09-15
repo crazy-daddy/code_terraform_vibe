@@ -20,8 +20,8 @@ class PioneerController(VehicleController):
     # nothing-drive-back cycles. Capped at whatever progress remains.
     TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25
 
-    def __init__(self, vehicle, home_coords=(0, 0), cruise_throttle=0.5):
-        super().__init__(vehicle, home_coords=home_coords, cruise_throttle=cruise_throttle)
+    def __init__(self, vehicle, home_base=None, cruise_throttle=0.5):
+        super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
 
     def get_construction_progress(self, blueprint_id):
         """Current 0-1 progress for a blueprint id, checking pending/active/paused lists."""

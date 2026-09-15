@@ -4,6 +4,6 @@
 from rover import RoverController
 
 # Create controller for this rover instance
-rover = RoverController(self, home_coords=(0, 0), cruise_throttle=0.5)
+rover = RoverController(self, cruise_throttle=0.5)
 rover.run()
 

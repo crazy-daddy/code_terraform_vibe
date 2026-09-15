@@ -42,10 +42,30 @@ class VehicleController(
     DEFAULT_CRUISE_THROTTLE = 0.5
     DEFAULT_SPEED_MPH = 25.0
 
-    def __init__(self, vehicle, home_coords=(0, 0), cruise_throttle=0.5):
+    def __init__(self, vehicle, home_base=None, cruise_throttle=0.5):
         self.vehicle = vehicle
         self.name = getattr(vehicle, "id", getattr(vehicle, "name", "vehicle"))
-        self.home_coords = home_coords
+        # home_base is an outpost id (None = the production/home outpost) --
+        # this vehicle's "home" for is_at_base()/return_to_base()/charging
+        # purposes can be any outpost, not just the production base (see
+        # TODO.md Phase 3's stationed-mining role). Resolved to live objects
+        # exactly ONCE here rather than re-walking outpost_network.outposts()
+        # by id on every subsequent lookup (get_home_slot_coords(),
+        # unload_cargo()'s destination outpost, etc. all read these cached
+        # fields instead). self.home_base itself is kept only for identity
+        # checks (e.g. vehicle_cargo.py's "am I home-based at all?" gate) --
+        # anything that needs the outpost/station itself should use
+        # self.home_outpost/self.home_charging_station.
+        #
+        # Trade-off: since this resolution only happens once, a charging
+        # station built at this outpost *after* construction won't be picked
+        # up until the next script reload/restart -- acceptable since actual
+        # recharge routing (get_nearest_charging_station()) always does its
+        # own fresh network-wide walk regardless; only the cached staging
+        # position (assigned_slot_coords) could lag by that much.
+        self.home_base = home_base
+        self.home_outpost = self.get_outpost_ref(home_base)
+        self.home_charging_station = self.find_charging_station(self.home_outpost)
         self.cruise_throttle = cruise_throttle
 
         # Travel energy uses the developer-confirmed exact power/speed model
@@ -61,6 +81,7 @@ class VehicleController(
         self.current_target = None
         self.current_target_key = None
         self.assigned_slot_coords = self.get_home_slot_coords()
+        self.home_coords = self.assigned_slot_coords
 
         # Resume an in-progress mission left over from before a script reload,
         # if we still own that target's claim (see vehicle_claims.py).

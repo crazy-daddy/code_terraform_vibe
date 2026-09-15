@@ -446,8 +446,7 @@ class VehicleEnergyMixin:
         ref_coords = from_coords if from_coords is not None else self.get_position()
         stations = self.get_all_charging_stations()
         if not stations:
-            fallback = self.get_charging_station_coords() or self.home_coords
-            return fallback, {"id": "home_slot", "coords": fallback, "component": None}
+            return self.home_coords, {"id": "home_slot", "coords": self.home_coords, "component": self.home_charging_station}
 
         best_station = min(
             stations,
@@ -455,30 +454,72 @@ class VehicleEnergyMixin:
         )
         return best_station["coords"], best_station
 
-    def get_charging_station_coords(self):
-        """Locates the primary base charging station's exact position if available."""
-        outpost_net = get_component("outpost_network")
-        if outpost_net and hasattr(outpost_net, "home"):
+    def get_outpost_ref(self, outpost_id=None):
+        """
+        Resolves outpost_id to its live OutpostRef, or the home outpost if
+        outpost_id is None. A one-off lookup-by-id utility -- VehicleController
+        calls this exactly once at construction to populate self.home_outpost
+        (see __init__), so prefer reading that cached field over calling this
+        again for the vehicle's own home outpost. Still useful standalone for
+        resolving some *other* outpost id (e.g. a future transporter's source
+        outpost, distinct from this vehicle's own home_base).
+        """
+        network = get_component("outpost_network")
+        if not network:
+            return None
+        if outpost_id is None:
+            return network.home() if hasattr(network, "home") else None
+        if hasattr(network, "outposts"):
             try:
-                home = outpost_net.home()
-                if home and hasattr(home, "buildings"):
-                    for b in home.buildings(CHARGING_STATION_TYPE_ID):
-                        pos = self.extract_coords(getattr(b, "position", None))
-                        if pos:
-                            return pos
+                for outpost in network.outposts():
+                    if getattr(outpost, "id", None) == outpost_id:
+                        return outpost
             except Exception:
                 pass
         return None
 
+    def find_charging_station(self, outpost):
+        """
+        First Vehicle Charging Station building object at outpost (an
+        already-resolved outpost object, not an id -- see get_outpost_ref()).
+        Called once at construction to populate self.home_charging_station;
+        prefer that cached field over calling this again for the vehicle's
+        own home outpost.
+        """
+        if not outpost or not hasattr(outpost, "buildings"):
+            return None
+        try:
+            for b in outpost.buildings(CHARGING_STATION_TYPE_ID):
+                if self.extract_coords(getattr(b, "position", None)):
+                    return b
+        except Exception:
+            pass
+        return None
+
     def get_home_slot_coords(self):
         """
-        Calculates the base / charging station staging coordinates for this vehicle.
-        All vehicles dock within the ~2m common service area of base & charging station.
+        Calculates the base / charging station staging coordinates for this
+        vehicle, at whichever outpost self.home_base names (None = the
+        production/home outpost). All vehicles dock within the ~2m common
+        service area of base & charging station. Reads self.home_outpost/
+        self.home_charging_station -- resolved once at construction (see
+        VehicleController.__init__), not re-walked here. Falls back to the
+        outpost's own coords() if it has no charging station yet, and only to
+        a literal (0, 0) if outpost_network itself was unavailable at
+        construction time.
         """
-        cs_pos = self.get_charging_station_coords()
-        if cs_pos:
-            return cs_pos
-        return self.home_coords
+        if self.home_charging_station is not None:
+            pos = self.extract_coords(getattr(self.home_charging_station, "position", None))
+            if pos:
+                return pos
+        if self.home_outpost is not None and hasattr(self.home_outpost, "coords"):
+            try:
+                coords = self.home_outpost.coords()
+                if coords:
+                    return (float(coords[0]), float(coords[1]))
+            except Exception:
+                pass
+        return (0.0, 0.0)
 
     def recharge_at_station(self, target_level=1.0, station_coords=None, station_id=None):
         """
@@ -520,7 +561,7 @@ class VehicleEnergyMixin:
                     if not station_id:
                         station_id = fallback.get("id")
 
-        cs_coords = station_coords or self.get_charging_station_coords() or self.home_coords
+        cs_coords = station_coords or self.home_coords
 
         # Verify whether vehicle is actually inside the station's docked set
         is_docked = False

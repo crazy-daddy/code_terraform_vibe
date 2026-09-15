@@ -50,9 +50,10 @@ class VehicleCargoMixin:
 
         def unload_one(item_id, count):
             """Sends count units of item_id, preferring a Warehouse with room
-            (see storage.best_unload_target()) and falling back to Inventory.
-            Returns (moved, went_full) for the caller's bookkeeping."""
-            target = best_unload_target(item_id, count)
+            at this vehicle's own outpost (see storage.best_unload_target())
+            and falling back to Inventory. Returns (moved, went_full) for the
+            caller's bookkeeping."""
+            target = best_unload_target(item_id, count, outpost=self.home_outpost)
             if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
                 c_res = out_port.connect(target)
                 if c_res.status != "ok":
@@ -64,7 +65,13 @@ class VehicleCargoMixin:
                 if res.status == "ok":
                     moved = getattr(res, "moved", count)
                     print(f"[{self.name}] Transferred {moved}x {item_id} to '{target}'.")
-                    if item_id in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
+                    # Waking the Smelter only makes sense when this vehicle
+                    # unloaded at the production/home outpost -- ore that
+                    # just arrived at a remote outpost's own Warehouse (a
+                    # stationed miner, see run_stationed_mining_loop()) isn't
+                    # reachable by the Smelter until a transporter hauls it
+                    # home (TODO.md Phase 3, Phase D).
+                    if self.home_base is None and item_id in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
                         self.wake_smelter()
                     return moved, False
                 elif res.status == "busy":
