@@ -25,10 +25,24 @@ THROTTLE_TRICKLE = 0.1          # below PRESSURE_BAND_MODERATE: gentle trickle,
 # chamber, not just the surplus).
 PRESSURE_RELIEF_THRESHOLD = 0.95
 
-# Once the currently-targeted Gas Tank crosses this fill fraction, switch
-# steam_out to whichever other known tank is currently least full, so several
-# tanks fill roughly evenly instead of one saturating while others sit empty.
-GAS_TANK_REBALANCE_FILL_FRACTION = 0.85
+# Only abandon the currently-targeted Gas Tank once it's essentially full
+# (not merely "over 85%") -- this is re-evaluated every single step(), so a
+# softer threshold can ping-pong between two tanks that are both hovering
+# above it (each reads as "less full" than the other depending on the tick),
+# reconnecting steam_out every cycle and never giving flow a chance to
+# actually establish on either one. Pressure then climbs unchecked with
+# nowhere actually receiving it -- a real overpressure blowoff, worse than
+# imperfect load-balancing across tanks. Only ever leaving a target once it's
+# truly saturated guarantees no oscillation.
+GAS_TANK_REBALANCE_FILL_FRACTION = 0.98
+
+# Skip trusting is_stalled() as "target unreachable" evidence for this many
+# ticks right after (re)connecting -- flow can take a tick to actually
+# register after a fresh connection, and treating that brief lag as proof of
+# an unreachable target would blacklist a perfectly good tank and force
+# another switch immediately, compounding the same churn this threshold
+# change is meant to avoid.
+CONNECTION_GRACE_TICKS = 2
 
 # A target blacklisted as unreachable might become reachable later (the
 # player builds a new Gas Pipe route to it) -- clear the blacklist this often
@@ -93,6 +107,7 @@ class ThermalCapController:
         # since a newly built pipe can make a blacklisted target reachable.
         self.unreachable_targets = set()
         self.ticks_since_rescan = 0
+        self.ticks_since_connect = 0
 
     def ensure_output_connection(self):
         """
@@ -134,18 +149,23 @@ class ThermalCapController:
         except Exception:
             pass
 
+        self.ticks_since_connect += 1
+
         # A stalled cap with an open throttle and steam available means the
         # currently connected target can't actually be reached by pipe --
         # connect() never verified that, it only accepted the pairing.
         # Blacklist it and force a reselect below rather than sitting stalled
-        # on the same bad target forever.
+        # on the same bad target forever. Skipped for the first
+        # CONNECTION_GRACE_TICKS after connecting -- flow can take a tick to
+        # register, and treating that lag as proof of unreachability would
+        # blacklist a perfectly good tank.
         is_stalled = False
         if hasattr(self.cap, "is_stalled"):
             try:
                 is_stalled = self.cap.is_stalled()
             except Exception:
                 is_stalled = False
-        if is_stalled and current_id and current_id not in self.unreachable_targets:
+        if is_stalled and current_id and current_id not in self.unreachable_targets and self.ticks_since_connect >= CONNECTION_GRACE_TICKS:
             self.unreachable_targets.add(current_id)
             print(f"[{self.name}] '{current_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
             current_id = None
@@ -178,6 +198,7 @@ class ThermalCapController:
             except Exception:
                 continue
             if res.status == "ok":
+                self.ticks_since_connect = 0
                 print(f"[{self.name}] Connected steam_out -> '{tank_id}' ({_fill_pct_of(tank_id)*100:.0f}% full).")
                 return
             elif res.status != "busy":

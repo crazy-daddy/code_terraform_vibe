@@ -103,11 +103,20 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
   - **Cap → Gas Tank(s)** (`ensure_output_connection()`): `steam_out` only ever holds one destination
     at a time, so with several reachable tanks it can't fan out simultaneously — instead it
     rebalances: stays on the current tank while its `fill_pct()` is below
-    `GAS_TANK_REBALANCE_FILL_FRACTION=0.85` **and** it isn't stalled, otherwise switches to whichever
-    other known (non-blacklisted) tank is currently least full, keeping multiple tanks topped up
-    roughly evenly instead of one saturating while others sit empty. A single stalled tick is enough
-    to blacklist — `is_stalled()` on a Cap already requires chamber steam to be available and ready
-    to send, so dormancy (which stops *capture*, not release) can't be the cause.
+    `GAS_TANK_REBALANCE_FILL_FRACTION=0.98` **and** it isn't stalled, otherwise switches to whichever
+    other known (non-blacklisted) tank is currently least full. Deliberately raised from an earlier
+    `0.85` — that threshold re-evaluated every `step()`, so with two-or-more tanks both hovering
+    above it, whichever read as "less full" that particular tick would flip every cycle, reconnecting
+    `steam_out` constantly and never giving flow a chance to actually establish on either one —
+    pressure climbed unchecked with nowhere actually receiving it, causing real overpressure
+    blowoffs. `0.98` (essentially "truly full, not just past a soft threshold") only ever abandons a
+    target once it genuinely can't take more, which guarantees no oscillation — "imperfect load
+    balancing" loses to "never interrupts flow." A single stalled tick is enough to blacklist —
+    `is_stalled()` on a Cap already requires chamber steam to be available and ready to send, so
+    dormancy (which stops *capture*, not release) can't be the cause — **except** for the first
+    `CONNECTION_GRACE_TICKS=2` ticks right after a (re)connect, since flow can take a tick to
+    register and treating that brief lag as proof of unreachability would blacklist a perfectly good
+    tank and immediately force another switch, compounding the exact same churn.
   - **Turbine → source** (`ensure_input_connection()`): tries every known Gas Tank first (the
     larger, shared buffer), then every known (non-blacklisted) Thermal Cap directly. Connecting
     straight to a Cap is a deliberate, fully-supported fallback, not a hack — per
