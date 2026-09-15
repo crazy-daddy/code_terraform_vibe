@@ -45,10 +45,20 @@ GAS_TANK_REBALANCE_FILL_FRACTION = 0.98
 CONNECTION_GRACE_TICKS = 2
 
 # A target blacklisted as unreachable might become reachable later (the
-# player builds a new Gas Pipe route to it) -- clear the blacklist this often
-# so it gets a fresh chance without waiting for every other candidate to also
-# go bad first. Counts step() calls, not real time -- with the default
-# poll_interval=1.0s that's roughly 5 minutes.
+# player builds a new Gas Pipe route to it) -- an entry expires and becomes
+# retryable again once it's been blacklisted for this many *simulation*
+# ticks (not step() calls -- see get_current_tick()/clock.tick()), tracked
+# per-entry (unreachable_targets maps tank_id -> the tick it was blacklisted
+# at), not as one shared "clear everything at once" timer. That distinction
+# matters: with 2+ simultaneously-bad candidates ranked ahead of the one
+# genuinely-reachable tank (by fill_pct/discovery-order ties), eliminating
+# all of them can take longer than this window -- a single shared clock that
+# wipes the *whole* blacklist at once would undo that progress and restart
+# the elimination from scratch before ever reaching the reachable tank,
+# producing exactly the infinite ping-pong between the bad candidates this
+# was meant to prevent. Per-entry expiry means each bad candidate's own
+# timer runs independently, so forward progress toward the untried
+# reachable one is never erased by an unrelated entry's clock.
 RESCAN_INTERVAL_TICKS = 300
 
 # discover_network_building_ids() walks outpost_network.outposts() and every
@@ -78,12 +88,22 @@ def discover_network_buildings(type_id):
     outpost membership) ultimately decides which candidates actually succeed
     via connect() -- this only gathers objects to try.
 
-    Returning the live objects (not re-deriving them from ids later via a
-    fresh get_component(id) call) matters: outpost.buildings(type_id) already
-    handed back a usable reference, so a caller that keeps it avoids paying a
-    second component-resolution round trip for the exact same building --
-    see ThermalCapController's per-id lookup cache, which is what this exists
-    to feed.
+    Resolves each BuildingRef to its full component via get_component(ref.id)
+    before returning -- docs/components/outpost.md is explicit that
+    outpost.buildings(type_id) hands back BuildingRef *snapshots*, which only
+    carry .id/.name/.type_id/.outpost/.powered/.position, NOT the type-specific
+    live methods (fill_pct(), is_stalled(), etc.) that only exist on the full
+    resolved component. An earlier version of this function returned the raw
+    BuildingRef directly -- _fill_pct_of_building() would then always hit its
+    "unreadable, treat as 1.0" fallback for *every* tank (BuildingRef has no
+    fill_pct at all), degenerating sort-by-fill into a no-op tie broken by
+    discovery order, and defeating the fast path too (a "healthy" current
+    tank would also read as 1.0 >= GAS_TANK_REBALANCE_FILL_FRACTION, forcing
+    a rescan every single step) -- the real cause of an observed ping-pong
+    between the same two candidates that never advanced to try others.
+    Resolving here once (not per-caller) matters for the same reason the
+    rest of this file caches things: ThermalCapController's per-id lookup
+    cache (_tank_lookup) is fed by this function's return value directly.
     """
     buildings = []
     network = get_component("outpost_network")
@@ -91,8 +111,14 @@ def discover_network_buildings(type_id):
         try:
             for outpost in network.outposts():
                 for building in outpost.buildings(type_id):
-                    if getattr(building, "id", None):
-                        buildings.append(building)
+                    b_id = getattr(building, "id", None)
+                    if not b_id:
+                        continue
+                    try:
+                        resolved = get_component(b_id) or building
+                    except Exception:
+                        resolved = building
+                    buildings.append(resolved)
         except Exception:
             pass
     return buildings
@@ -120,15 +146,18 @@ class ThermalCapController:
         self.cap = cap
         self.name = getattr(cap, "id", "thermal_cap")
         self.last_phase = None
+        self.clock = get_component("clock")
         # connect()'s "ok" status only means the pairing was logically
         # accepted -- docs/guide/infrastructure_and_pipes.md is explicit that
         # a remote target needs a *completed* Gas Pipe route, which connect()
         # never checks. is_stalled() is the only live signal that a target
         # isn't actually reachable, so unreachable targets get blacklisted --
-        # but only until the next periodic rescan (see RESCAN_INTERVAL_TICKS),
-        # since a newly built pipe can make a blacklisted target reachable.
-        self.unreachable_targets = set()
-        self.ticks_since_rescan = 0
+        # but only until their own individual entry expires (see
+        # RESCAN_INTERVAL_TICKS), since a newly built pipe can make a
+        # blacklisted target reachable. tank_id -> the simulation tick it was
+        # blacklisted at, NOT a plain set -- see RESCAN_INTERVAL_TICKS for why
+        # per-entry timestamps matter here.
+        self.unreachable_targets = {}
         self.ticks_since_connect = 0
         self._cached_tanks = None
         self._ticks_since_discovery = 0
@@ -159,6 +188,28 @@ class ThermalCapController:
         # (no other script, no passive Gas Tank) ever repoints steam_out.
         self._connected_tank_id = None
         self._tank_id_synced = False
+
+    def get_current_tick(self):
+        if self.clock and hasattr(self.clock, "tick"):
+            try:
+                return self.clock.tick()
+            except Exception:
+                pass
+        return 0
+
+    def is_blacklisted(self, tank_id, curr_tick):
+        """
+        Whether tank_id is still within its own blacklist window -- per-entry,
+        not a shared clock (see RESCAN_INTERVAL_TICKS). curr_tick == 0 (clock
+        unavailable) is treated as "still blacklisted" rather than "unknown so
+        allow retry", same convention vehicle_claims.py/smelter.py use for the
+        same edge case.
+        """
+        blacklisted_at = self.unreachable_targets.get(tank_id)
+        if blacklisted_at is None:
+            return False
+        age = curr_tick - blacklisted_at
+        return curr_tick == 0 or age < RESCAN_INTERVAL_TICKS
 
     def _discover_tanks_cached(self):
         """
@@ -218,16 +269,7 @@ class ThermalCapController:
         if not port or not hasattr(port, "connect"):
             return
 
-        # Periodic rescan: give blacklisted targets a fresh chance in case a
-        # new Gas Pipe route was built since they were marked unreachable.
-        # This never disconnects a currently working target -- it only
-        # widens the candidate pool for the next time a switch is warranted.
-        self.ticks_since_rescan += 1
-        if self.ticks_since_rescan >= RESCAN_INTERVAL_TICKS:
-            self.ticks_since_rescan = 0
-            if self.unreachable_targets:
-                print(f"[{self.name}] Periodic rescan: clearing {len(self.unreachable_targets)} blacklisted target(s) to retry.")
-                self.unreachable_targets.clear()
+        curr_tick = self.get_current_tick()
 
         # Query the port itself only once, ever, to recover state after a
         # reload -- every call after that trusts the locally tracked id (see
@@ -257,8 +299,8 @@ class ThermalCapController:
                 is_stalled = self.cap.is_stalled()
             except Exception:
                 is_stalled = False
-        if is_stalled and current_id and current_id not in self.unreachable_targets and self.ticks_since_connect >= CONNECTION_GRACE_TICKS:
-            self.unreachable_targets.add(current_id)
+        if is_stalled and current_id and not self.is_blacklisted(current_id, curr_tick) and self.ticks_since_connect >= CONNECTION_GRACE_TICKS:
+            self.unreachable_targets[current_id] = curr_tick
             print(f"[{self.name}] '{current_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
             current_id = None
             self._connected_tank_id = None
@@ -270,20 +312,22 @@ class ThermalCapController:
         # method's cost in steady state, since discovery (below) only runs
         # when a target genuinely needs to be (re)picked -- see
         # DISCOVERY_CACHE_INTERVAL_STEPS and docs/AI_CHEATSHEET.md §1b/§1c.
-        if current_id and current_id not in self.unreachable_targets and _fill_pct_of_building(self._resolve_tank(current_id)) < GAS_TANK_REBALANCE_FILL_FRACTION:
+        if current_id and not self.is_blacklisted(current_id, curr_tick) and _fill_pct_of_building(self._resolve_tank(current_id)) < GAS_TANK_REBALANCE_FILL_FRACTION:
             return
 
-        tanks = [t for t in self._discover_tanks_cached() if t.id not in self.unreachable_targets]
+        all_known_tanks = self._discover_tanks_cached()
+        tanks = [t for t in all_known_tanks if not self.is_blacklisted(t.id, curr_tick)]
         if not tanks:
-            # Every known tank is blacklisted (or none exist) -- give
-            # blacklisted ones a fresh chance rather than sitting dead
-            # forever if e.g. a pipe route gets completed later.
-            tanks = self._discover_tanks_cached()
-            if tanks and self.unreachable_targets:
-                print(f"[{self.name}] Every known Gas Tank was blacklisted; clearing the list to retry.")
-                self.unreachable_targets.clear()
-        if not tanks:
-            if not current_id:
+            # Every known tank is still within its own blacklist window (or
+            # none exist at all) -- deliberately do NOT wipe the blacklist
+            # here: each entry expires on its own schedule (is_blacklisted()),
+            # and force-clearing everything at once would reintroduce the
+            # exact bug this per-entry design fixes (see RESCAN_INTERVAL_TICKS).
+            # The relief valve (step()) is the safety net for this window, not
+            # a forced reconnect attempt here.
+            if all_known_tanks:
+                print(f"[{self.name}] Every known Gas Tank is still within its blacklist window; waiting for one to expire.")
+            else:
                 print(f"[{self.name}] No Gas Tank found network-wide yet; steam_out has no destination.")
             return
 

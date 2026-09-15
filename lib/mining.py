@@ -21,6 +21,19 @@ import outpost_mining
 # while still falling back to easy ore if nothing harder is pending.
 ROVER_PREFERRED_MAX_HARDNESS = 1.0
 
+# A surveyed MiningSite's .purity ("standard"/"rich"/"pure" -- see
+# docs/types/world_and_sites.md) is a 1x/2x/3x extraction-rate multiplier: a
+# "rich" site yields roughly twice the ore for the same drilling time/energy
+# as a "standard" one. select_best_mining_target() uses this rank as a sort
+# tiebreak WITHIN the same priority tier -- richer sites win over merely-
+# closer ones, same lexicographic-tiering style priority itself already
+# uses (a priority=2 candidate always beats priority=3 regardless of
+# distance; richness now works the same way one level down). A soft
+# preference, not a hard filter -- an unreachable-on-budget rich site still
+# loses to a reachable standard one, since the achievability check runs
+# after sorting either way.
+PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}
+
 
 class MiningMixin:
     """Mineral-site discovery, priority-sorted claiming, and drill execution."""
@@ -118,6 +131,7 @@ class MiningMixin:
                     "harvest_item": site_item,
                     "reason": get_raw_material_reason(site_item),
                     "priority": priority,
+                    "purity": getattr(site, "purity", None),
                 })
         except Exception:
             pass
@@ -195,6 +209,7 @@ class MiningMixin:
                     "harvest_item": site_item,
                     "reason": f"stockpiling for outpost '{outpost_id}'",
                     "priority": 2,
+                    "purity": getattr(site, "purity", None),
                 })
         except Exception:
             pass
@@ -203,13 +218,23 @@ class MiningMixin:
 
     def select_best_mining_target(self, candidates):
         """
-        Sorts candidates by (priority, distance) -- lower priority number
-        wins, ties broken by distance -- then claims the first one that fits
-        the round-trip energy budget. Returns (target, budget, diagnostics);
-        target is None when nothing is currently achievable.
+        Sorts candidates by (priority, -purity_rank, distance) -- lower
+        priority number wins first, then richer veins (see PURITY_RANK) win
+        over merely-closer ones within the same priority tier, distance only
+        breaking ties between equally-rich candidates -- then claims the
+        first one that fits the round-trip energy budget. Returns (target,
+        budget, diagnostics); target is None when nothing is currently
+        achievable.
         """
         pos = self.get_position()
-        candidates = sorted(candidates, key=lambda c: (c.get("priority", 2), self.distance_between(pos, c["coords"])))
+        candidates = sorted(
+            candidates,
+            key=lambda c: (
+                c.get("priority", 2),
+                -PURITY_RANK.get(c.get("purity"), 0),
+                self.distance_between(pos, c["coords"]),
+            ),
+        )
 
         budget_candidates = 0
         for cand in candidates:

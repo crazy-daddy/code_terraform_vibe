@@ -15,3 +15,4 @@ docs/Code-Terraform-DOCS-Manual.md
 *.pyc
 *.pyo
 *.pyd
+.codeterraform/

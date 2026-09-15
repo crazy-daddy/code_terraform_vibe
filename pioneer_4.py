@@ -3,5 +3,5 @@
 
 from pioneer import PioneerController
 
-controller = PioneerController(self, cruise_throttle=0.5)
+controller = PioneerController(self, home_base="outpost_2", cruise_throttle=0.5)
 controller.run_mining_loop()

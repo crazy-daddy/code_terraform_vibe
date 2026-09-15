@@ -36,6 +36,7 @@ You are an expert automation engineer and Python developer specializing in the g
 ## Strict Boundaries & Operational Rules
 - **Workspace Scope**: NEVER modify files outside the workspace root directory (e.g. parent save game state files like `save_*.json`). All edits must stay strictly inside the workspace folder.
 - **Safe Terminal Usage**: Terminal commands must be non-destructive and scoped to workspace validation (e.g. running Pyright or lint checks). Never execute destructive system commands without confirmation.
+- **Live Debugging**: An external-IDE debug integration exists (breakpoints/watches against the real running game — see [`docs/AI_CHEATSHEET.md`](docs/AI_CHEATSHEET.md#-8-live-debugging-via-external-ide)) — **always ask the user before starting a debug session or using "Run Script in Game"**, every time, never on standing permission from a prior yes: it runs real side effects against the live save (spending credits, moving vehicles, firing a drill, etc.), not a sandbox.
 
 ## Development Workflow
 1. **Check Requirements**: Read [TODO.md](TODO.md) and relevant `/docs/` components before modifying or generating code.

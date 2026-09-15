@@ -97,11 +97,52 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
     which `connect()` never checks; `"ok"` only means the pairing was logically accepted. The one
     live signal of an actually-broken route is `is_stalled()` (steam/throttle ready, nothing
     transferred) — both controllers blacklist a target that reports this and pick a different
-    candidate, rather than sitting stalled on the same unreachable target forever. Each also clears
-    its blacklist periodically (`RESCAN_INTERVAL_TICKS`: 300 Cap-ticks / 150 Turbine-ticks, ≈5
-    real minutes at default poll intervals either way) so a target that was unreachable becomes
-    retryable again once the player builds a new pipe to it — a currently-*working* connection is
-    never torn down just to check this, only the candidate pool is widened for the next switch.
+    candidate, rather than sitting stalled on the same unreachable target forever. Each blacklist
+    entry expires **individually** — `unreachable_targets`/`unreachable_sources` map
+    `id -> the simulation tick it was blacklisted at` (`is_blacklisted(id, curr_tick)`, real
+    `clock.tick()`, not step() calls), not a plain set with one shared "clear everything at once"
+    timer — `RESCAN_INTERVAL_TICKS` (300 Cap-ticks / 150 Turbine-ticks) is each entry's own expiry
+    window, so a target that was unreachable becomes retryable again once the player builds a new
+    pipe to it, without disturbing a currently-*working* connection or any *other* entry's own timer.
+    **This distinction is load-bearing, not stylistic**: an earlier version used one shared counter
+    that wiped the *entire* blacklist at once on a fixed timer. With 2+ simultaneously-unreachable
+    candidates ranked ahead of the one genuinely-reachable target (by fill_pct/discovery-order ties —
+    e.g. two Gas Tanks at a far outpost sorting before the one actually pipe-connected to this Cap's
+    own outpost), eliminating all of them can take longer than that window; the shared timer would
+    then erase already-made elimination progress and restart the cycle from the first bad candidate
+    before ever reaching the real one — an infinite ping-pong between the same 1-2 unreachable
+    targets, observed in practice (a Thermal Cap repeatedly targeting two unreachable Gas Tanks at a
+    different outpost, never once trying the one actually reachable from its own). Fixed by tracking
+    each entry's own blacklist tick and expiring independently; verified by stub test asserting an
+    older entry expires while a newer one (blacklisted after it) stays blacklisted, and by a full
+    elimination-order test (two unreachable tanks → correctly settles on and stays on the third,
+    reachable one).
+    - **This fix alone did NOT resolve the reported ping-pong** — a second, more fundamental bug was
+      still there underneath it, found by the player debugging in-game and confirmed by inspecting
+      `_fill_pct_of_building()`: `discover_network_buildings()` used to append the raw `BuildingRef`
+      from `outpost.buildings(type_id)` directly. Per `docs/components/outpost.md`, that's a
+      lightweight *snapshot* carrying only `.id`/`.name`/`.type_id`/`.outpost`/`.powered`/`.position` —
+      **not** the type-specific live methods (`fill_pct()`, etc.) that only exist on the full resolved
+      component (`get_component(ref.id)`). So `_fill_pct_of_building()`'s
+      `hasattr(building, "fill_pct")` check failed for *every* tank, always hitting the "unreadable,
+      treat as 1.0" fallback — degenerating `sorted(tanks, key=_fill_pct_of_building)` into a no-op
+      tie broken purely by discovery order, **and** defeating the fast path too (a healthy current
+      tank also reads as `1.0 >= GAS_TANK_REBALANCE_FILL_FRACTION`, so it never short-circuits,
+      forcing a full rescan every single step). The net effect: selection became "skip current, take
+      the next one in a fixed discovery-order list" every call — a stable alternation between
+      whichever two candidates happen to sit adjacent to each other in that order, never advancing to
+      a third. This is exactly the failure mode the per-entry blacklist fix above couldn't reach,
+      since it operates one layer up (which candidates are *eligible*), not on why selection *among*
+      eligible candidates was broken. Fixed by resolving each `BuildingRef` via
+      `get_component(ref.id) or building` inside `discover_network_buildings()` itself — same
+      `get_component(id) or ref` pattern already used correctly in `storage.py`'s
+      `discover_storage_buildings()` and `vehicle_energy.py`'s `get_all_charging_stations()`; this was
+      the one discovery helper in the codebase that hadn't followed it. Verified by stub test using a
+      `BuildingRef`-shaped fake (deliberately no `fill_pct()`) distinct from its full component,
+      asserting the returned objects have `fill_pct` and that fill-based sorting reflects real values
+      instead of a universal `1.0` tie. **Lesson for any future `outpost.buildings()`/
+      `outpost_network`-based discovery helper**: always resolve to the full component before relying
+      on anything beyond the five BuildingRef-native fields, or silently degrade in exactly this way.
   - **Cap → Gas Tank(s)** (`ensure_output_connection()`): `steam_out` only ever holds one destination
     at a time, so with several reachable tanks it can't fan out simultaneously — instead it
     rebalances: stays on the current tank while its `fill_pct()` is below
@@ -562,10 +603,22 @@ Mineral-site discovery and drill execution live in one place, shared by both Rov
   `ROVER_PREFERRED_MAX_HARDNESS = 1.0` (Pioneer's mining role does this) sets `priority=3` instead
   of `2` on hardness ≤ 1 sites — a **soft** preference, not exclusion: a capable Pioneer still
   claims an easy site if nothing harder is currently pending, rather than idling.
-- `select_best_mining_target(candidates)`: sorts by `(priority, distance)` — lower priority number
-  wins ties on distance — then runs the existing `calculate_trip_energy()` achievability check and
-  atomic `claim_target()`. Also used for Rover's combined POI+mineral candidate list (POIs are
-  `priority=1`, mineral sites `priority=2`/`3`).
+- `select_best_mining_target(candidates)`: sorts by `(priority, -PURITY_RANK, distance)` — lower
+  priority number wins first; within the same priority tier, a richer vein wins over a merely-closer
+  one (`PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}`, from `MiningSite.purity` — a 1x/2x/3x
+  extraction-rate multiplier per `docs/types/world_and_sites.md`); distance only breaks ties between
+  equally-rich candidates. Same lexicographic-tiering style priority itself already used (a
+  priority=2 candidate always beat priority=3 regardless of distance; richness now works the same way
+  one level down) — a soft preference, not a hard filter, since the `calculate_trip_energy()`
+  achievability check and atomic `claim_target()` still run after sorting either way, so an
+  unreachable-on-budget rich site still loses to a reachable standard one. Both candidate builders
+  (`build_mineral_site_candidates()`, `build_local_stockpile_candidates()`) attach each site's
+  `"purity"` from `getattr(site, "purity", None)`; POI candidates (no purity) rank as `"standard"`'s
+  `0` by default, a no-op since they only ever compete against other POIs at `priority=1`. Verified by
+  stub test: a `"rich"` site 1.5x farther than a `"standard"` one in the same tier still wins; priority
+  tier still outranks purity across tiers; equal-purity candidates fall back to plain distance. Also
+  used for Rover's combined POI+mineral candidate list (POIs are `priority=1`, mineral sites
+  `priority=2`/`3`).
 - `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (read live, not
   hardcoded `10`) — Pioneer's cargo capacity varies with storage modules.
   `mine_until_full_or_exhausted(target_coords)` wraps it with the recharge-and-resume-in-place loop
@@ -707,11 +760,14 @@ Warehouse, independent of home's live demand.
   default resolves to home's charging station; a stationed outpost with no charging station yet falls
   back to the outpost's own coords; adding a charging station later is picked up by a fresh instance
   (next reload); 10 repeated `get_home_slot_coords()` calls make zero additional `outposts()` walks.
-- **`unload_cargo()`** (`lib/vehicle_cargo.py`) now passes `outpost=self.home_outpost` (cached, no
-  lookup) into `storage.best_unload_target()`, so a stationed vehicle unloads into **its own**
-  outpost's Warehouse, not home's. `wake_smelter()` is only triggered when `self.home_base is None` (a
-  home-based vehicle) — ore that just landed at a remote outpost's Warehouse isn't reachable by the
-  Smelter until a transporter hauls it home (Phase D), so waking it early would do nothing useful.
+- **`unload_cargo(outpost=None)`** (`lib/vehicle_cargo.py`) — `outpost` defaults to `self.home_outpost`
+  (cached, no lookup), so a stationed vehicle unloads into **its own** outpost's Warehouse by default,
+  not home's; the explicit override exists for Phase D's transporter (§2f), whose own `home_outpost`
+  is its stationed mining outpost even though its delivery leg specifically targets home.
+  `wake_smelter()` is only triggered when the *resolved delivery target* has `.is_home == True` (not
+  `self.home_base is None`, since a transporter's `home_base` is its mining outpost even while
+  delivering to home) — ore that lands at a remote outpost's Warehouse isn't reachable by the Smelter
+  until a transporter hauls it home, so waking it early would do nothing useful.
 - **`MiningMixin.build_local_stockpile_candidates(outpost_id)`** (`lib/mining.py`) — for each ore in
   `outpost_mining.assigned_ores_for(outpost_id)` still under its `stock_target_for()`, builds mineral
   site candidates the same way `build_mineral_site_candidates()` does (same hardness/claim/blacklist
@@ -725,6 +781,47 @@ Warehouse, independent of home's live demand.
   detour, claim + drive + mine + return + unload + recharge), with target selection swapped for
   `build_local_stockpile_candidates()` and "return to base" already meaning "return to this outpost"
   via the `home_base` resolution above — no separate return-path logic needed.
+
+### 2f. Demand-Driven Transporter Role (`lib/vehicle_cargo.py` `run_supply_run_loop()`)
+
+Phase D of the Multi-Outpost Production Network — the piece that actually moves ore Phase C's
+stationed miners stockpiled back to home. Replaces `lib/pioneer.py`'s old single-route,
+manually-configured `transport_once()`/`run_transport_loop()`/`find_outpost_coords()`/
+`find_local_store()` (deleted — no thin entrypoint script referenced them) with a fully automatic,
+demand-driven loop shared by Rover and Pioneer (lives on `VehicleCargoMixin`, not `mining.py` — a
+dedicated hauler needs neither a drill nor construction slots).
+
+- **Construction**: `PioneerController(vehicle, home_base=<mining outpost id>)` — same mechanism as
+  Phase C's stationed miners, reusing all of its caching (§2e) with zero new code. The transporter's
+  `home_base`/`home_outpost` is the *mining* outpost (where it idles and recharges between runs via
+  the existing `is_at_base()`/`return_to_base()`), **not** home — its delivery leg drives to home
+  explicitly instead. **Pioneer, not Rover, for this role** — Rover's integrated hold is a fixed
+  `capacity() == 10` (`docs/components/rover.md`), far too small for bulk ore hauling; Pioneer's
+  cargo comes from Portable Bins across its Cargo Racks, scaling with loadout, and exposes the
+  identical `Cargo`/`VehicleInputSlot`/`OutputSlot` interface `run_supply_run_loop()` already uses
+  — no code changes needed to place this role on either vehicle type, it's purely a hardware/
+  entrypoint-script choice. See `pioneer_5.py` for a working example (`home_base="outpost_3"`, hauls
+  `"titanium"`).
+- **`run_supply_run_loop(item_id, poll_interval=10.0)`** — each cycle:
+  1. Reads home's live unmet demand for `item_id` via `get_raw_material_demands()` (already net of
+     home's own stock) — if `<= 0` **and** no cargo is already aboard, idles at the stationed outpost
+     (returns there first if elsewhere) and retries next cycle. No preemptive/opportunistic top-off —
+     confirmed with the user: demand-driven only, matching CLAUDE.md's existing rule.
+  2. If cargo is already aboard (resuming after a reload mid-delivery), skips straight to the
+     delivery leg instead of reloading.
+  3. Otherwise loads `min(unmet demand, cargo capacity, stock actually at this outpost)` via
+     `storage.take_item(self.vehicle.input, item_id, amount, outpost=self.home_outpost)` — capped by
+     cargo capacity, not the (usually much larger) home demand figure, so a single trip never
+     over-claims more than it can carry. Idles if the source currently has none.
+  4. Drives explicitly to `self.get_outpost_ref(None)` (home, resolved once at loop start) — **not**
+     `return_to_base()`, which would go to its own stationed outpost instead.
+  5. `unload_cargo(outpost=home_outpost)` — the explicit override from §2e, since this vehicle's own
+     `home_outpost` is the mining outpost, not home.
+  6. `return_to_base()` back to the stationed outpost and recharges there, ready for the next cycle.
+- Verified by stub test: idles with zero drive calls when the source outpost has no stock; performs
+  repeated hauling trips (each correctly capped by cargo capacity, not the larger demand figure) until
+  the source is fully drained; makes zero drive calls when home's demand is `0` even with plenty of
+  stock sitting at the source (confirms no preemptive top-off).
 
 ---
 
@@ -839,3 +936,62 @@ General layout rule for any new card: prefer anchoring right-side elements from 
 fixed pixel footprint (a `switch`, a `button`, a short `pill`) — fractions of a 500px vs 1000px
 canvas land in very different places, but a fixed-from-the-right offset stays a constant, safe
 distance from the border at either size.
+
+---
+
+## 🐞 8. Live Debugging via External IDE
+
+The game exposes a real Debug Adapter Protocol (DAP) integration — breakpoints, conditions,
+logpoints, call stacks, locals, watches, hover inspection, Step Over/Into/Out — against the actual
+running game interpreter, not a simulation. Setup and full details:
+`C:\Users\Adrian\AppData\Roaming\io.codeterraform.game\external-ide\README.txt`.
+
+- **VS Code** (the supported path, extension already installed this save): open a script, set a
+  breakpoint, press **F5**. An idle script starts running; an already-running script attaches
+  without restarting. **Shift+F5** or closing the debug session disconnects but leaves the script
+  running in the game — use **Stop Script in Game** to actually stop it. Watches/Debug Console are
+  **read-only** (can't execute world actions or assign variables). Edited main-script code needs
+  **Run Script in Game** before re-attaching; edited Libraries need re-applying in the game.
+- **Any other DAP-capable editor**: launch
+  `node "C:\Users\Adrian\AppData\Roaming\io.codeterraform.game\external-ide\server\debug-adapter.cjs"`
+  (Node.js 20+, stdio transport) — `launch` to attach-and-run an idle script, `attach` to inspect one
+  already running. Set `workspace` to this save's scripts directory, `script` to the target file.
+- **Non-debug editor tooling** (LSP-only, no execution): `external-ide\server\server.cjs --stdio` —
+  already documented per-editor (neovim/Helix/Sublime) in the README; PyCharm needs a generic LSP
+  plugin, since its own Python checker doesn't know the game's owner globals/runtime rules.
+- Console output mirrors to `external-ide\logs\all.log` (plus one file per script) — useful to tail
+  even without attaching a debugger at all.
+- **`tools/dap_client.py`** — a minimal DAP client for driving a debug session directly from a
+  script instead of VS Code (Node.js 20+ required; this save's copy lives at
+  `C:\Program Files\nodejs\node.exe`, not on the default shell `PATH` — invoke by full path, or
+  `export PATH="/c/Program Files/nodejs:$PATH"` for the current shell session only, since shell
+  state doesn't persist between tool calls here). `DapClient` is the low-level stdio transport
+  (Content-Length framing, background reader thread); `run_session(workspace, script, breakpoints,
+  mode, on_stopped, wait_timeout)` wraps the full initialize → attach/launch → setBreakpoints →
+  configurationDone → wait-for-`stopped` → callback → continue → disconnect sequence in one call.
+  Also runnable directly: `python tools/dap_client.py --workspace <dir> --script <path> --break
+  <file.py>:<line> [--mode attach|launch]` — prints the stack trace and top-frame locals at the
+  first hit, then resumes and disconnects. Verified live against `rover_1.py`/`lib/vehicle.py`: a
+  breakpoint inside `publish_telemetry()` correctly paused execution, reported the true call stack
+  (`publish_telemetry` ← `run_expedition_cycle` ← `run` ← the script's module scope) and real
+  locals (`state='IDLE_AT_BASE'`, the live `RoverController` instance), then resumed cleanly leaving
+  the script running.
+  - **`attach` does not restart an already-running script** — it just starts observing it, so a
+    breakpoint on a line that already executed (e.g. inside `__init__`, which only runs once at
+    construction) will never fire again; pick a line the ongoing loop actually still reaches (e.g.
+    inside `publish_telemetry()`, hit every cycle) instead of assuming a fresh run. A plain `launch`
+    on an already-running script behaves the same way — it attaches rather than restarting, matching
+    the external-ide README's own wording. A guessed `launch` argument (`"restart": True`) had no
+    effect — `initialize`'s advertised capabilities don't list any restart support, so there's no
+    confirmed way to force a genuine restart of a running script through this raw DAP surface; VS
+    Code's own **Run Script in Game** command may do this via extension-specific plumbing outside
+    `debug-adapter.cjs`'s plain interface, not reproduced here. Don't keep guessing undocumented
+    fields against a live session — pick an always-reached line instead, as done here.
+
+**Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**: ask the
+user first, every time — never assume standing permission from a prior yes.** A debug session runs
+against the live save with real effects (a script that spends credits, moves a vehicle, fires a
+drill, etc. does so for real, not in a sandbox) — pausing at a breakpoint can also leave a machine
+mid-action in a state the player didn't intend. Treat this the same as any other action with
+real-world (real-save) side effects per this project's risk-awareness rules, not as a routine
+read-only inspection step.

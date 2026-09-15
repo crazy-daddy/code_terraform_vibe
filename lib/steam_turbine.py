@@ -29,10 +29,16 @@ THROTTLE_DEMAND_MET = 0.3
 STALL_STREAK_BLACKLIST_THRESHOLD = 5
 
 # A source blacklisted as unreachable might become reachable later (the
-# player builds a new Gas Pipe route to it) -- clear the blacklist this often
-# so it gets a fresh chance without waiting for the current connection to
-# also go bad first. Counts step() calls, not real time -- with the default
-# poll_interval=2.0s that's roughly 5 minutes.
+# player builds a new Gas Pipe route to it) -- an entry expires and becomes
+# retryable again once it's been blacklisted for this many *simulation*
+# ticks, tracked per-entry (unreachable_sources maps source_id -> the tick
+# it was blacklisted at), NOT as one shared "clear everything at once"
+# timer. See lib/thermal_cap.py's identical constant for why per-entry
+# timestamps matter: with 2+ simultaneously-bad candidates ranked ahead of
+# the one genuinely-reachable source, a single shared clock that wipes the
+# whole blacklist at once can undo elimination progress before ever reaching
+# the reachable one, producing an infinite ping-pong between the bad
+# candidates -- exactly the bug per-entry expiry fixes.
 RESCAN_INTERVAL_TICKS = 150
 
 # discover_network_building_ids() walks every outpost's buildings for both
@@ -83,11 +89,26 @@ class SteamTurbineController:
         # the only live signal a source isn't reachable, but it's ambiguous
         # on its own (also true, harmlessly, whenever the feeding vent is
         # just dormant) -- see stall_streak below.
-        self.unreachable_sources = set()
+        self.unreachable_sources = {}
         self.stall_streak = 0
-        self.ticks_since_rescan = 0
         self._cached_candidate_ids = None
         self._ticks_since_discovery = 0
+
+    def get_current_tick(self):
+        if self.clock and hasattr(self.clock, "tick"):
+            try:
+                return self.clock.tick()
+            except Exception:
+                pass
+        return 0
+
+    def is_blacklisted(self, source_id, curr_tick):
+        """Per-entry blacklist expiry -- see RESCAN_INTERVAL_TICKS and lib/thermal_cap.py's identical helper."""
+        blacklisted_at = self.unreachable_sources.get(source_id)
+        if blacklisted_at is None:
+            return False
+        age = curr_tick - blacklisted_at
+        return curr_tick == 0 or age < RESCAN_INTERVAL_TICKS
 
     def _discover_candidates_cached(self):
         """
@@ -121,16 +142,7 @@ class SteamTurbineController:
         if not port or not hasattr(port, "connect"):
             return
 
-        # Periodic rescan: give blacklisted sources a fresh chance in case a
-        # new Gas Pipe route was built since they were marked unreachable.
-        # This never disconnects a currently working source -- it only
-        # widens the candidate pool for the next time a switch is warranted.
-        self.ticks_since_rescan += 1
-        if self.ticks_since_rescan >= RESCAN_INTERVAL_TICKS:
-            self.ticks_since_rescan = 0
-            if self.unreachable_sources:
-                print(f"[{self.name}] Periodic rescan: clearing {len(self.unreachable_sources)} blacklisted source(s) to retry.")
-                self.unreachable_sources.clear()
+        curr_tick = self.get_current_tick()
 
         is_stalled = False
         if hasattr(self.turbine, "is_stalled"):
@@ -149,17 +161,22 @@ class SteamTurbineController:
             except Exception:
                 pass
             if current_id:
-                self.unreachable_sources.add(current_id)
+                self.unreachable_sources[current_id] = curr_tick
                 print(f"[{self.name}] '{current_id}' stalled for {self.stall_streak} consecutive ticks -- likely no completed Gas Pipe route (not just vent dormancy). Blacklisting and picking a different source.")
             self.connected_input = False
             self.stall_streak = 0
 
-        candidates = [s for s in self._discover_candidates_cached() if s not in self.unreachable_sources]
+        all_known_candidates = self._discover_candidates_cached()
+        candidates = [s for s in all_known_candidates if not self.is_blacklisted(s, curr_tick)]
         if not candidates:
-            candidates = self._discover_candidates_cached()
-            if candidates and self.unreachable_sources:
-                print(f"[{self.name}] Every known source was blacklisted; clearing the list to retry.")
-                self.unreachable_sources.clear()
+            # Every known source is still within its own blacklist window (or
+            # none exist at all) -- deliberately do NOT wipe the blacklist
+            # here; each entry expires on its own schedule (is_blacklisted()).
+            # Force-clearing everything at once would reintroduce the exact
+            # ping-pong bug per-entry expiry fixes (see RESCAN_INTERVAL_TICKS).
+            if all_known_candidates:
+                print(f"[{self.name}] Every known source is still within its blacklist window; waiting for one to expire.")
+            return
 
         for source_id in candidates:
             try:
