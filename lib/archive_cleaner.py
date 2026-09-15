@@ -8,6 +8,17 @@ from archive import archive
 # Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
 CLAIM_STALE_TICKS = 36000
 
+# lib/profiling.py is opt-in, ad hoc instrumentation (added/removed per
+# debugging session -- see docs/AI_CHEATSHEET.md §1c), not permanent
+# telemetry, so an entry whose "last_tick" hasn't advanced in this long
+# means whatever script wrote it no longer calls profiling.begin()/end() --
+# safe clutter to purge rather than something actively tracking state.
+# 10 simulation minutes at 10 ticks/sec: comfortably longer than any
+# poll_interval in the codebase, short enough not to leave dead entries
+# sitting in the archive's shared 512-entry cap for long after a script
+# stops profiling itself.
+PROFILING_STALE_TICKS = 6000
+
 # Canonical & Legacy Archive Keys
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
@@ -48,6 +59,8 @@ class ArchiveCleaner:
             "waypoints_cleaned": 0,
             "telemetry_removed": 0,
             "calibration_purged": 0,
+            "profiling_checked": 0,
+            "profiling_removed": 0,
             "corrupted_keys_deleted": 0,
             "errors": 0
         }
@@ -455,6 +468,47 @@ class ArchiveCleaner:
         self.stats["calibration_purged"] += calib_purged
         self.log(f"  Result: {calib_purged} obsolete calibration entries purged.")
 
+    def clean_profiling(self, current_tick):
+        """
+        Purges lib/profiling.py entries ("profiling.<name>") nobody is
+        actively writing to any more. Unlike claims/telemetry, there's no
+        live game state (fleet, outpost buildings) to cross-check a script
+        name against -- profiling is opt-in instrumentation a script can
+        stop calling at any time while still existing -- so staleness is the
+        only signal available: each entry carries "last_tick" (see
+        lib/profiling.py's _record()), and one that hasn't moved in
+        PROFILING_STALE_TICKS means that script no longer calls
+        profiling.begin()/end(). A legacy entry from before the {"history",
+        "last_tick"} shape (a bare list) has no way to check staleness at
+        all, so it's always purged -- one-time migration cleanup.
+        """
+        self.log("\n--- Checking Profiling Entries ---")
+        profiling_keys = self.archive.keys("profiling.") if hasattr(self.archive, "keys") else []
+        removed = 0
+
+        for k in profiling_keys:
+            self.stats["profiling_checked"] += 1
+            entry = self.archive.get(k)
+
+            if not isinstance(entry, dict) or "history" not in entry or "last_tick" not in entry:
+                self.log(f"  [DELETE PROFILING] Key '{k}': legacy/malformed format (no last_tick to check staleness).")
+                removed += 1
+                if not self.dry_run:
+                    self.archive.delete(k)
+                continue
+
+            last_tick = entry.get("last_tick")
+            if current_tick > 0 and isinstance(last_tick, (int, float)):
+                age = current_tick - last_tick
+                if age > PROFILING_STALE_TICKS:
+                    self.log(f"  [DELETE PROFILING] Key '{k}': no update in {age} ticks (> {PROFILING_STALE_TICKS}) -- script no longer profiling itself.")
+                    removed += 1
+                    if not self.dry_run:
+                        self.archive.delete(k)
+
+        self.stats["profiling_removed"] += removed
+        self.log(f"  Result: {len(profiling_keys) - removed} active profiling entries retained, {removed} stale/legacy entries purged.")
+
     def clean_power_and_heat(self):
         """
         Validates terraforming parameters:
@@ -580,6 +634,7 @@ class ArchiveCleaner:
         self.clean_survey_spiral()
         self.clean_telemetry(active_vehicles)
         self.clean_calibration()
+        self.clean_profiling(current_tick)
         self.clean_power_and_heat()
         self.clean_logistics_and_bio()
         self.clean_corrupted_or_empty_keys()

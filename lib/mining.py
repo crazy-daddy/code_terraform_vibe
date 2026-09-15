@@ -225,18 +225,21 @@ class MiningMixin:
                 print(f"[{self.name}] Failed to reach charging station during mining interruption.")
                 return
 
-            self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
-
             # A battery-interruption recharge stop can land at the home base
             # station itself (not just some remote field station) -- if so,
-            # and cargo is already carrying ore, unload it here rather than
-            # hauling a partly/mostly-full hold all the way back out to the
-            # site and back again next trip. Free capacity also means the
-            # resumed mine_current_site() call below can fill more before
-            # the next interruption, not just recover exactly what was lost.
+            # and cargo is already carrying ore, unload it *before* recharging,
+            # not after: recharge_at_station() can take several real minutes
+            # (0% -> 100%), and ore sitting in cargo the whole time is ore the
+            # Smelter can't touch -- unloading first gets it into circulation
+            # immediately instead of leaving it stranded for the entire
+            # charge. Free capacity also means the resumed mine_current_site()
+            # call below can fill more before the next interruption, not just
+            # recover exactly what was lost.
             if self.is_at_base() and self.vehicle.cargo.count() > 0:
-                print(f"[{self.name}] At base with cargo aboard; unloading before returning to the mining site.")
+                print(f"[{self.name}] At base with cargo aboard; unloading before recharging.")
                 self.unload_cargo()
+
+            self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
 
             print(f"[{self.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
             if self.current_target:

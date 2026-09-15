@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item
+from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid
 from archive import archive
 from storage import take_item, total_stock
 
@@ -27,9 +27,19 @@ class FabricatorController:
                 print(f"[{self.name}] Output connection notice: {result.status} - {result.message}")
 
     def recipe_is_sourceable(self, recipe):
-        """Whether every input of this recipe has a currently known supply."""
+        """Whether every input of this recipe -- solid and fluid alike -- has a currently known supply."""
         for item_id in (getattr(recipe, "inputs", {}) or {}):
             if not can_source_item(item_id):
+                return False
+        # fluid_inputs (e.g. {"water_in": 1.0}) is a separate field from
+        # .inputs -- delivered via a FluidPort connection, not an
+        # Inventory/Warehouse take (docs/components/fabricator.md). Without
+        # this check a recipe needing Water/Steam/Oil with no such building
+        # anywhere on the network would still look "sourceable" off its solid
+        # ingredients alone, get set as the active recipe, and stall forever
+        # since there's nothing to connect .water_in/.steam_in/.oil_in to.
+        for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
+            if not can_source_fluid(fluid_key):
                 return False
         return True
 

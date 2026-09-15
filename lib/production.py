@@ -10,6 +10,95 @@ def _component(component_id):
         return None
 
 
+SMELTER_TYPE_ID = "smelter"
+
+
+def discover_smelter_ids(outpost=None):
+    """
+    All Smelter building ids at outpost (default: home). Mirrors
+    storage.discover_storage_buildings()'s shape. Every demand-cascade
+    function below used to hard-fallback to the literal id "smelter_1" --
+    a correctness bug, not just an inefficiency, the moment a second Smelter
+    exists: raw-material demand and recipe-lookup would silently only ever
+    consult smelter_1's recipe set, so a second smelter's distinct recipes
+    (if any) would never drive mining at all. Recipe *availability* is
+    tech-gated and identical across same-type buildings, so any one
+    discovered smelter's list_recipes() is a representative stand-in
+    everywhere below that just needs "a" smelter, not "smelter_1"
+    specifically -- lib/smelter.py's own leader election (see
+    docs/AI_CHEATSHEET.md) is the place that actually cares which physical
+    smelter does what.
+    """
+    ids = []
+    outpost = outpost or _home_outpost()
+    if outpost and hasattr(outpost, "buildings"):
+        try:
+            for building in outpost.buildings(SMELTER_TYPE_ID):
+                b_id = getattr(building, "id", None)
+                if b_id:
+                    ids.append(b_id)
+        except Exception:
+            pass
+    return ids
+
+
+def _home_outpost():
+    network = _component("outpost_network")
+    if network and hasattr(network, "home"):
+        return network.home()
+    return None
+
+
+def _default_smelter():
+    """First discovered Smelter component (dynamic stand-in for the old hardcoded 'smelter_1')."""
+    ids = discover_smelter_ids()
+    if ids:
+        return _component(ids[0])
+    return _component("smelter_1")  # last-resort fallback if discovery finds nothing (e.g. outpost_network unavailable)
+
+
+# A Fabricator recipe's water/steam/oil requirement (recipe.fluid_inputs,
+# e.g. {"water_in": 1.0}) is a *separate* field from its solid .inputs
+# (docs/components/fabricator.md) -- delivered by connecting the matching
+# FluidPort (self.water_in / .steam_in / .oil_in) to one of these building
+# types, not by taking an Inventory/Warehouse item. can_source_item() used to
+# only ever look at .inputs, so a recipe needing Water was waved through as
+# "sourceable" purely on its solid ingredients (Iron Ingot, Glass) even with
+# no Water Pump anywhere on the network -- the Fabricator would then set that
+# recipe and stall forever, and Supply Dock would commit to an Earth Order
+# that could never actually complete.
+FLUID_SOURCE_TYPE_IDS = {
+    "water_in": ("water_pump", "steam_condenser", "liquid_tank", "large_liquid_tank"),
+    "oil_in": ("oil_pump", "liquid_tank", "large_liquid_tank"),
+    "steam_in": ("thermal_cap", "gas_tank"),
+}
+
+
+def can_source_fluid(fluid_key):
+    """
+    Whether any building type that could feed this FluidPort exists anywhere
+    on the outpost network. Deliberately checks existence only, not an
+    actual completed pipe route or fluid level -- matching can_source_item()'s
+    own "known source" bar (a surveyed site doesn't guarantee a working claim
+    either) -- so this only rules out the "not built at all yet" case, not
+    "built but not yet piped/full".
+    """
+    type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key)
+    if not type_ids:
+        return True  # unrecognized fluid key -- don't block on something we don't model
+    network = _component("outpost_network")
+    if not network or not hasattr(network, "outposts"):
+        return False
+    try:
+        for outpost in network.outposts():
+            for type_id in type_ids:
+                if outpost.buildings(type_id):
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def _add_demand(demands, item_id, quantity):
     if item_id and quantity > 0:
         demands[item_id] = demands.get(item_id, 0) + quantity
@@ -67,8 +156,7 @@ def _cascade_blueprint_demand():
     def recipe_inputs_for(item_id):
         """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
         Smelter builds item_id, or None if neither does."""
-        for component_id in ("fabricator_1", "smelter_1"):
-            component = _component(component_id)
+        for component in (_component("fabricator_1"), _default_smelter()):
             if not component or not hasattr(component, "list_recipes"):
                 continue
             try:
@@ -304,7 +392,7 @@ def get_raw_material_demands(smelter=None):
     # Only unlocked smelter recipes can create demand. Locked silicon recipes
     # therefore cannot cause either refining or rover mining.
     if smelter is None:
-        smelter = _component("smelter_1")
+        smelter = _default_smelter()
     if smelter and hasattr(smelter, "list_recipes"):
         try:
             for recipe in smelter.list_recipes():
@@ -360,7 +448,8 @@ def can_source_item(item_id, seen=None):
             if getattr(recipe, "output_item", None) != item_id:
                 continue
             inputs = getattr(recipe, "inputs", {}) or {}
-            if all(can_source_item(input_id, seen.copy()) for input_id in inputs):
+            fluid_inputs = getattr(recipe, "fluid_inputs", {}) or {}
+            if all(can_source_fluid(fk) for fk in fluid_inputs) and all(can_source_item(input_id, seen.copy()) for input_id in inputs):
                 return True
 
     return False

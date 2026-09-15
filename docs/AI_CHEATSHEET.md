@@ -35,6 +35,7 @@ that way there is exactly one place to keep current.
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
 | Data Archive persistence layer | `archive.py` |
 | Wildcard pattern matching helpers | `patterns.py` |
+| Per-script tick-cost profiling | `profiling.py` — see §1c |
 
 Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_1.py`, etc.) should stay thin
 entrypoints that import and run a controller from `lib/` — they should not contain their own
@@ -128,8 +129,51 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
     harmlessly, whenever the feeding vent is just dormant — so blacklisting requires
     `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled ticks (dormancy is temporary; a
     genuinely missing pipe route stalls forever) rather than a single tick.
-  - Both are cheap once settled (`connected_to()` / fill-threshold / stall-streak checks
-    short-circuit further work most cycles), called once per `step()`.
+  - **Discovery cost**: `discover_network_building_ids()` walks every outpost's `buildings(type_id)`
+    — real work, and (per profiling — see §1c) the actual cost driver of both controllers' `step()`.
+    Both are cheap once settled specifically because the network walk itself is skipped, not just
+    deferred, while a connection is healthy:
+    - **Cap**: the "keep current tank" decision needs only one `fill_pct()` read on the id already
+      connected — `ensure_output_connection()` checks that *before* touching discovery at all, so
+      the walk never runs in the steady-state case.
+    - **Turbine**: `ensure_input_connection()` returns immediately whenever `connected_input` is
+      True and `stall_streak < STALL_STREAK_BLACKLIST_THRESHOLD`, for the same reason.
+    - Both still need discovery sometimes (bootstrap, current target blacklisted/full, every
+      candidate blacklisted at once) — for those cases each controller caches the discovered
+      building list for `DISCOVERY_CACHE_INTERVAL_STEPS=20` `step()` calls (`_discover_tanks_cached()` /
+      `_discover_candidates_cached()`) rather than re-walking on every one of several reselection
+      attempts in a short window. This is a ceiling, not the primary mechanism — see the fast paths
+      above for why the walk is rare in practice.
+  - **The real per-step cost was elsewhere, and profiling (§1c) is what found it**: with the walk
+    itself gone, Thermal Cap's `step()` still cost 2-3 sim ticks every single call (Steam Turbine's
+    cost ~0, matching its zero-external-lookup fast path) — no periodic spike at 20 or 300 steps,
+    ruling discovery back out entirely. The actual culprit: the Cap's fast path still resolved its
+    *currently connected* tank via a fresh `get_component(current_id)` round trip every step just to
+    read `fill_pct()`, since `port.connected_to()` only returns an id string, not the object
+    `outpost.buildings()` had already handed discovery. `discover_network_buildings()` (added
+    alongside the existing id-only `discover_network_building_ids()`) now returns the live building
+    objects themselves, and `ThermalCapController._tank_lookup` (an id → object dict, populated from
+    every discovery batch and never wholesale-cleared — a building's identity is stable, only the
+    candidate *list* goes stale) makes `_resolve_tank(id)` a plain dict read on every call after the
+    first time a given id is seen. Verified via a stub test asserting zero `get_component()` calls
+    across 20 consecutive healthy steps (previously: one per step). This is the general pattern for
+    any future "read a possibly-external object by remembered id every step" cost: keep the object
+    reference from whatever discovery/connect call first produced it, rather than re-resolving by id.
+  - **Third pass — still 2 sim ticks/step after the above.** Comparing structure against Turbine's
+    equivalent (which reads ~0) found the remaining asymmetry: `ensure_output_connection()` still
+    called `port.connected_to()` **unconditionally on every single call**, whereas Turbine's healthy
+    fast path calls no port method at all — it trusts its own `self.connected_input` boolean and only
+    ever queries the port (`connected_id()`) on the rare blacklist branch. Fixed the same way: the Cap
+    now tracks `self._connected_tank_id` locally, updated only by this controller's own `connect()`
+    calls and blacklist decisions (nothing else ever repoints `steam_out` — Gas Tank is passive, no
+    other script touches this port), so `port.connected_to()` is called exactly **once, ever** — a
+    one-time sync on first `ensure_output_connection()` call so a script reload recovers an
+    already-working connection instead of assuming a fresh start — never again after that. Verified
+    via a stub test asserting `connected_to()` is called exactly once total across bootstrap +
+    reselect + 20 healthy steps (previously: once per step). If the archived tick-delta for
+    `thermal_cap_*` still doesn't read ~0 after this, the next place to look is whichever `self.cap.*`
+    method call in `step()` itself isn't mirrored by an equivalent Turbine call, since everything
+    `ensure_output_connection()` itself does is now either a boolean/dict read or fully gated.
 - **Thermal Cap** — the only job is keeping `pressure()` off the `1.0` overpressure ceiling (hitting
   it blows the *entire* chamber to atmosphere, not just the surplus — see `.is_overpressured()`).
   Proportional release-valve (`steam_out`, via `set_throttle()`) bands on `pressure()`:
@@ -154,6 +198,74 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
   Reads grid state the same way `lib/power.py`'s `PowerGridManager` does
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but runs no
   shedding or master-election itself — that stays the grid's existing solar Master's job.
+
+### 1c. Per-Script Tick-Cost Profiling (`lib/profiling.py`)
+
+The game exposes no per-script CPU/ms execution budget API. `docs/components/clock.md` documents
+the sanctioned stand-in: `clock.tick()` (deterministic simulation tick since save start, 10
+ticks/sec at normal speed) — *"Use tick deltas for profiling script timing instead of wall-clock
+milliseconds."* `lib/profiling.py` wraps that pattern so any controller's `run()` loop can measure
+its own `step()` with two calls, no local bookkeeping needed:
+
+```python
+start = profiling.begin()
+self.step()
+profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THRESHOLD=1
+```
+
+- Samples roll into `archive` as one fixed-size history list per script name
+  (`ARCHIVE_KEY_PREFIX="profiling."`, `HISTORY_LEN=50`) — **one archive entry per profiled script
+  name, not per sample**, since the Data Archive has a hard 512-entry cap shared by every script in
+  the save (`docs/guide/data_archive_guide.md`).
+- `profiling.report(names=None)` prints avg/max ticks-per-`step()` for every profiled name (or a
+  given subset) — call it ad hoc (e.g. from a one-off diagnostic script), not from a hot loop.
+- **Granularity limit — read this before trusting a `0`**: `clock.tick()` advances on a fixed
+  10/sec schedule *independent of how much work any script does* — per
+  `docs/guide/programming_language_reference.md`, "the interpreter automatically gives time back to
+  the game while loops run," i.e. scripts are cooperatively scheduled and interleaved within each
+  tick's processing window. A `step()` with no internal loop/`sleep()` runs to completion inside
+  whichever tick it started in regardless of whether its body did 5 operations or 5,000, so it can
+  only show a nonzero delta by landing on a tick-boundary by measurement luck. **A `0` does not mean
+  "cheap"; it means "didn't happen to span a tick boundary," which single-pass `step()` calls almost
+  never do no matter their real cost.** `SLOW_STEP_TICK_THRESHOLD=1` (lowered from an initial `3`
+  once this was understood) reflects that: on a non-looping `step()`, *any* nonzero delta is already
+  the interesting case, not just ones above some larger margin. This makes the profiler good at
+  catching genuinely heavy per-call work (a loop over many buildings/slots, e.g. `production.py`'s
+  demand cascade or `storage.py`'s rebalance sweep are more plausible candidates than a handful of
+  `if` checks) — full stop; there's no documented finer-grained (sub-tick/wall-clock) instrument for
+  scripts to fall back on, so below this floor, use code-level reasoning (algorithmic complexity,
+  what runs every cycle vs. gated) instead.
+- **Case study, Thermal Cap** (§1b): two profiling passes each found a real, *sustained* per-step
+  cost with no periodic spike at the discovery-cache/rescan intervals, which correctly pointed at
+  (1) a fresh `get_component(id)` round trip the fast path was still doing every single call, then
+  after fixing that, (2) an unconditional `port.connected_to()` call every step where Turbine's
+  equivalent touched no port method at all when healthy. Both were genuine, verified fixes (stub
+  tests confirmed the call counts dropped to zero/near-zero). A third pass still showed Thermal Cap
+  reading ~2-3 against Turbine's ~0 with nothing left in either script's own code to explain the
+  gap — at that point the signal had reached the noise floor described above (ambient cooperative-
+  scheduling jitter, or a fixed engine-side cost of that specific component's own methods, neither
+  fixable from script code) and further chasing it stopped being productive. That's the profiler's
+  actual working mode and its limit: it can't measure a single call's cost directly, and a
+  *sustained per-step* delta with no periodicity matching a known cache/interval constant is a
+  reliable signal worth grep-ing for exactly once or twice — not an oracle to keep re-running
+  against the same script once every explanation in its own code has been exhausted.
+- **Not currently wired into any script.** Instrumentation was added to `lib/thermal_cap.py` and
+  `lib/steam_turbine.py` for the investigation above, then deliberately removed again from both once
+  it stopped yielding actionable findings (see the case study) — `lib/profiling.py` itself, and
+  `lib/archive_cleaner.py`'s cleanup of it (next bullet), are kept since a future script suspected of
+  doing real bulk per-call work (see `SLOW_STEP_TICK_THRESHOLD` guidance above) is still a reasonable
+  candidate to wire this into temporarily. Not standardized across every controller — see the Phase 6
+  TODO item on an interrupt/event-driven pattern for where this is headed longer-term (`TODO.md`).
+- **Storage shape & cleanup**: each archive entry is `{"history": [...], "last_tick": N}`, not a bare
+  list — `last_tick` (the sim tick of the most recent `profiling.end()` call for that name) is what
+  lets `lib/archive_cleaner.py`'s `clean_profiling()` tell "still being actively profiled" apart from
+  "instrumentation was removed from this script and the entry is now dead clutter" — since profiling
+  is opt-in and can be added/removed from a script at any time, there's no live game-state signal
+  (unlike e.g. `clean_telemetry()`'s fleet-membership check) to cross-reference against, only
+  staleness. An entry whose `last_tick` hasn't advanced in `PROFILING_STALE_TICKS=6000` (10 sim
+  minutes) is purged as no-longer-written; a legacy bare-list entry (from before this shape existed)
+  has no `last_tick` to check at all and is always purged as a one-time migration. Runs as part of
+  `ArchiveCleaner.run()`'s normal sweep, no separate invocation needed.
 
 ---
 
@@ -437,11 +549,13 @@ Mineral-site discovery and drill execution live in one place, shared by both Rov
   `mine_until_full_or_exhausted(target_coords)` wraps it with the recharge-and-resume-in-place loop
   (mirrors `execute_construction()`'s pattern in `pioneer.py`). The battery-interruption recharge
   stop can land at the *home base* station itself (not just a remote field station) — when it does
-  (`is_at_base()`) and cargo is already carrying ore, it unloads there via `unload_cargo()` before
-  driving back out to resume, rather than hauling a partly-full hold back to the site and returning
-  again next trip. This also means the resumed `mine_current_site()` call gets the *full* cargo
-  capacity as `max_units` instead of just the small amount freed by the interruption, so the vehicle
-  can fill up further before the next interruption rather than immediately needing another trip.
+  (`is_at_base()`) and cargo is already carrying ore, it unloads there via `unload_cargo()` **before**
+  calling `recharge_at_station()`, not after: a full recharge from a low state can take several real
+  minutes, and ore sitting in cargo that whole time is ore the Smelter can't touch — unloading first
+  gets it into circulation immediately instead of stranding it for the entire charge. Also means the
+  resumed `mine_current_site()` call gets the *full* cargo capacity as `max_units` instead of just the
+  small amount freed by the interruption, so the vehicle can fill up further before the next
+  interruption rather than immediately needing another trip.
 - Pioneer's mining role (`run_mining_loop()`, entrypoint `pioneer_3.py`) requires the operator to
   have already mounted a drill (`mount_hardware()` / Control Panel) — it only checks
   `hasattr(self.vehicle, "drill")` and idles with an advisory if absent; it never auto-mounts one.

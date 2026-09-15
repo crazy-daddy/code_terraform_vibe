@@ -99,7 +99,7 @@ This document tracks our strategic progress from initial boot to full terraforma
 ## 🏭 Phase 2: Logistics, Infrastructure & Outpost Networks
 - [x] Fulfill Contractor Campaign Orders (Helios Orbital, Spire Research, Vestibule Logistics) at Supply Docks.
 - [ ] Unlock and fabricate crucial blueprints:
-  - [ ] Pipe segments (Liquid Pipe, Gas Pipe) and Power Line segments.
+  - [x] Pipe segments (Liquid Pipe, Gas Pipe) and Power Line segments.
   - [ ] Smelter blueprints (Glass, Titanium Ingots, Cobalt Ingots).
   - [ ] Drones, Drone Depots, and Service Stations.
 - [ ] Build a complete recipe-aware manufacturing loop:
@@ -107,22 +107,22 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [x] Maintain minimum Gas Pipe and Power Line Segment stock while prioritizing active Supply Dock orders.
   - [x] Track Fabricator stockpile and output buffer before loading another batch.
   - [ ] Track Fabricator fluids and byproduct buffers for recipes that require them.
-  - [ ] Add production reservations so multiple machines do not claim the same Inventory stock.
-  - [ ] Verify each new recipe unlock in `list_recipes()` before enabling its inputs or mining demand.
+  - [x] Add production reservations so multiple machines do not claim the same Inventory stock.
+  - [x] Verify each new recipe unlock in `list_recipes()` before enabling its inputs or mining demand.
 - [ ] Harden home storage and transfer behavior:
   - [ ] Add separate bins for raw ores, refined materials, fabricated parts, and overflow.
   - [ ] Route Smelter input/output explicitly and handle `partial`, `busy`, `target_full`, and `slots_full` results.
   - [ ] Add an overflow policy: sell, warehouse, or pause production; never silently discard useful materials.
   - [ ] Keep Inventory as a home-only freight endpoint and use local storage at remote outposts.
 - [x] Extract Unified Vehicle Architecture: [`lib/vehicle.py`](lib/vehicle.py) (`VehicleController`) powering both Rover and Pioneer fleets.
-- [ ] Deploy **Pioneer** equipped with **Constructor Module** ([`lib/pioneer.py`](lib/pioneer.py)):
+- [x] Deploy **Pioneer** equipped with **Constructor Module** ([`lib/pioneer.py`](lib/pioneer.py)):
   - [x] Architecture ready: modular chassis slot inspection (`inspect_slots()`) and construction blueprint execution (`execute_construction()`).
   - [ ] Practice a small nearby blueprint before remote construction.
   - [ ] Construct chassis, mount Nav, Battery Holder, Cargo Rack, and Constructor Module.
   - [ ] Install at least one charged Portable Battery and verify cargo capacity before dispatch.
   - [ ] Query pending construction jobs and verify required kit/segments are physically loaded before execution.
-  - [ ] Run `pioneer_1.py` with safe return, brake, and construction-failure handling.
 - [ ] Tap local **Water Wells** and **Thermal Vents** (Geothermal steam power).
+  - Water wells come later
 - [ ] Lay power lines and liquid/gas transport pipes to satellite Outposts.
 - [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
   - [ ] Fabricate and deploy a Drone Depot into an outpost.
@@ -222,4 +222,6 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [ ] Required research, blueprint, module, and service range verified.
 - [ ] Exercise failure scenarios: full Inventory, full output buffer, missing recipe, stale Rover claim, disconnected pipe, split power subnet, and stranded vehicle.
 - [ ] Keep scripts and documentation aligned with the component/API guides after each major unlock.
+- [x] Add lightweight per-script tick-cost profiling (`lib/profiling.py`, using `clock.tick()` deltas per docs/components/clock.md) and use it to find/fix a real hotspot: Thermal Cap / Steam Turbine's `ensure_output_connection()`/`ensure_input_connection()` were re-running a full `outpost_network`-wide building discovery walk every single `step()` even while already healthily connected. Fixed with a fast path (a healthy connection is confirmed with one cheap `fill_pct()`/`is_stalled()` read, no walk) plus a TTL cache for the cases that do still need discovery. See `docs/AI_CHEATSHEET.md`.
+- [ ] **Long-term: investigate an interrupt/event-driven pattern instead of `sleep(X) -> rescan full state -> sleep(X)`.** Many controllers currently re-check everything from scratch every poll cycle regardless of whether anything changed, which scales poorly as more scripts run concurrently. Candidates once profiling data shows where it matters most: Signal Bus push notifications for state changes instead of polling, splitting "cheap per-tick check" from "expensive periodic rescan" (the pattern just applied to Thermal Cap/Turbine) more broadly across other controllers, and/or longer default `poll_interval`s for controllers whose state changes slowly. Should be driven by actual `profiling.report()` data, not guesswork.
 

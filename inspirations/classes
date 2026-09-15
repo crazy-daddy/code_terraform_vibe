@@ -1,0 +1,121 @@
+#Bio exchange example:
+#Base abstract class. not final version but good enough 
+class BaseMachine:
+
+    TickEnabled = True
+        
+    def __init__(self, machine:"Component"):
+        super().__init__()
+        get_component("console").clear()
+        self.machine:"Component" = machine
+        self.postInit()
+        self.loop()
+        
+        
+    def postInit(self): pass
+    def tick(self): pass
+    def InputCommandLoop(self): pass
+    def Ignore(self): pass
+    def get_id(self): 
+        return self.machine.id
+    def loop(self):
+        while True:
+            self.InputCommandLoop()
+            try:
+                if self.TickEnabled:
+                    self.tick()
+            # except UserException as e:
+            #     pass
+            except Exception as e:
+                print(str(e))
+
+
+#comms is another wrapped class. 
+
+#Bio exchange order is a dataclass
+@dataclass()
+class BioExchangeOrder(comms_message):
+    requested_by:str
+    order_id:str
+    required:str
+    count:int
+    in_work:str = ""
+
+
+#and there is decorator
+
+def CommandStatusWrapper(callbacks:Dict[str, Callable] = {}):
+    def wrapper(fn:Callable):
+        def exec(machine:object ,*args, **kwargs):
+            res:ActionResult = fn(machine, *args, **kwargs)
+            if res.status == "ok":
+                return True
+            if res.status in callbacks:
+                return callbacks[res.status](machine, *args, **kwargs)
+            notify(f"{machine.get_id()} was failed called {fn}. result {res.status} with message {res.message}")
+            return False
+        return exec
+    return wrapper
+a#nd finnaly exchange class
+class BioExchangeMachine(BaseMachine):
+    machine:BioExchange
+    comms = comms("bio.orders", BioExchangeOrder)
+    inv = get_component("inventory")
+    
+    def __init__(self, machine:BioExchange):
+        super().__init__(machine)
+
+    @staticmethod
+    def CollectRequiresForOrder(order:BioOrder) -> Dict[str, int]:
+        requires = {}
+        for k,v in order.requires.items():
+            requires[k] = v
+        for k,v in order.delivered.items():
+            requires[k] -= v
+        for k,v in order.in_transit.items():
+            requires[k] -= v
+        return requires
+        
+    def CheckRequested(self, order:BioOrder):
+        queried:List[BioExchangeOrder] = [msg for msg in self.comms.search(lambda msg: msg.requested_by == self.machine.id and msg.order_id == order.id)]
+        
+        requires = BioExchangeMachine.CollectRequiresForOrder(order)
+        for k, v in requires.items(): 
+            if not any(k == q_one.required for q_one in queried):
+                self.comms.send(BioExchangeOrder(
+                    requested_by = self.machine.id,
+                    order_id = order.id,
+                    required = k,
+                    count = v
+                ))
+               
+    def postInit(self):
+        self.machine.input.connect("inventory")
+        if order := self.machine.active_order():
+            self.CheckRequested(order)
+
+    def OrderWasCompletedCallback(self):
+        notify("Bio exchange complete order")
+        return True
+        #TODO: select order
+        
+    @CommandStatusWrapper({"complete":OrderWasCompletedCallback})
+    def Deliver(self):
+        return self.machine.deliver()
+
+    @CommandStatusWrapper({"complete":OrderWasCompletedCallback})
+    def test(self, st):
+        return {"status":st}
+        
+    def tick(self):
+        if order := self.machine.active_order():
+            req = self.CollectRequiresForOrder(order)
+            for k, v in req.items():
+                if self.inv.count(k) > 0:
+                    self.machine.input.take(k, 1)
+                    self.machine.deliver()
+                    return
+            sleep(1)
+        else:
+            #TODO: select order
+            self.machine.orders()

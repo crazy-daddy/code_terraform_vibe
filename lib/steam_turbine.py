@@ -35,6 +35,14 @@ STALL_STREAK_BLACKLIST_THRESHOLD = 5
 # poll_interval=2.0s that's roughly 5 minutes.
 RESCAN_INTERVAL_TICKS = 150
 
+# discover_network_building_ids() walks every outpost's buildings for both
+# "gas_tank" and "thermal_cap" -- the real cost of ensure_input_connection().
+# It's already skipped entirely while connected_input is True and the stall
+# streak is below threshold (see the early return below), so this cache only
+# matters for the remaining cases: bootstrap, or every candidate blacklisted
+# at once. Counts step() calls, same units as RESCAN_INTERVAL_TICKS above.
+DISCOVERY_CACHE_INTERVAL_STEPS = 20
+
 
 def discover_network_building_ids(type_id):
     """
@@ -78,6 +86,21 @@ class SteamTurbineController:
         self.unreachable_sources = set()
         self.stall_streak = 0
         self.ticks_since_rescan = 0
+        self._cached_candidate_ids = None
+        self._ticks_since_discovery = 0
+
+    def _discover_candidates_cached(self):
+        """
+        Gas Tank + Thermal Cap ids network-wide, refreshed at most every
+        DISCOVERY_CACHE_INTERVAL_STEPS calls. Only reached from
+        ensure_input_connection()'s slow path (see comment there).
+        """
+        if self._cached_candidate_ids is None or self._ticks_since_discovery >= DISCOVERY_CACHE_INTERVAL_STEPS:
+            self._cached_candidate_ids = [s for t in ("gas_tank", "thermal_cap") for s in discover_network_building_ids(t)]
+            self._ticks_since_discovery = 0
+        else:
+            self._ticks_since_discovery += 1
+        return self._cached_candidate_ids
 
     def ensure_input_connection(self):
         """
@@ -131,10 +154,9 @@ class SteamTurbineController:
             self.connected_input = False
             self.stall_streak = 0
 
-        candidates = [s for t in ("gas_tank", "thermal_cap") for s in discover_network_building_ids(t)]
-        candidates = [s for s in candidates if s not in self.unreachable_sources]
+        candidates = [s for s in self._discover_candidates_cached() if s not in self.unreachable_sources]
         if not candidates:
-            candidates = [s for t in ("gas_tank", "thermal_cap") for s in discover_network_building_ids(t)]
+            candidates = self._discover_candidates_cached()
             if candidates and self.unreachable_sources:
                 print(f"[{self.name}] Every known source was blacklisted; clearing the list to retry.")
                 self.unreachable_sources.clear()
