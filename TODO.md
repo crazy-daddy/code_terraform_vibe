@@ -6,10 +6,10 @@ This document tracks our strategic progress from initial boot to full terraforma
 
 ## 📌 Status Summary
 - **Sensors Online**: Pressure Sensor (Repaired), Oxygen Sensor (Calibrated), Thermometer (Active).
-- **Core Generators**: Solar Tracker (`solar_1.py`), Battery buffer, Oxygen Generator (`o2gen_1.py`).
+- **Core Generators**: Solar Tracker (`solar_1.py`), Battery buffer, Oxygen Generator (`o2gen_1.py`), Thermal Cap / Steam Turbine geothermal power (`lib/thermal_cap.py`, `lib/steam_turbine.py`).
 - **Milestones Reached**: First Contact, Contracts unlocked, Auto Feeders research unlocked.
-- **Current Focus**: Phase 1 — Tri-pillar atmospheric foundation & full Biology automation.
-- **Operational Focus**: Demand-driven production, inventory capacity protection, and recipe-aware Rover missions.
+- **Current Focus**: Phase 1 — Tri-pillar atmospheric foundation & full Biology automation; Phase 3 — Multi-Outpost Coordination now underway.
+- **Operational Focus**: Demand-driven production (multi-smelter/multi-fabricator aware), inventory capacity protection, recipe-aware Rover/Pioneer missions, and the emerging multi-outpost mining network.
 - **Selected Work from Inspirations (other ppls code)**: Capability discovery, stale-aware coordination, vehicle recovery, production planning, survey persistence, and dashboard telemetry are selected for implementation from `TODO_inspirations.md`.
 
 ---
@@ -69,6 +69,7 @@ This document tracks our strategic progress from initial boot to full terraforma
   - Ore refinement into metal ingots (`smelt_iron_ingot`, `smelt_glass`, `smelt_titanium_ingot`, etc.).
   - Automatic recipe clearing and idle power shutoff via `power.set_powered("smelter_1", False)`.
   - Cooperative wake-up: `rover_1` automatically powers on the smelter whenever fresh ore is deposited into Base Inventory.
+  - Multi-Smelter aware: see Phase 3's Multi-Outpost Production Network entry — leader election + per-recipe claims now support 2+ physical Smelters.
 - [x] Add demand-driven production planning ([`lib/production.py`](lib/production.py)):
   - Read active Fabricator recipe inputs and stockpile deficits.
   - Read active Supply Dock order deficits and subtract Inventory/Dock stock.
@@ -80,11 +81,12 @@ This document tracks our strategic progress from initial boot to full terraforma
   - Automated inventory loading and continuous dispatch at 25+ units/h.
 
 - [ ] Implement selected inspiration-derived coordination and observability improvements:
-  - [ ] Add runtime capability probing and graceful optional-component fallbacks.
+  - [x] Add runtime capability probing and graceful optional-component fallbacks — pervasive throughout every controller written this project (`hasattr()`/`try`/`except` guards on every optional component read, e.g. `mining.py`, `vehicle.py`, `thermal_cap.py`, `steam_turbine.py`, `storage.py`, `production.py`), not a single isolated task remaining.
   - [ ] Add stale-aware Signal Bus heartbeats with direct-read fallbacks.
   - [ ] Add unified vehicle status including battery, position, target, docked state, return, rescue, and stale state.
   - [x] Expand the demand dependency graph across Rover, Smelter, Supply Dock, and Fabricator planning.
   - [ ] Publish Earth demand, add production reservations, recipe/source explanations, and local storage routing.
+    - [x] Production reservations (`get_construction_material_reservations()`), recipe/source explanations (`get_raw_material_reason()`, `target_reason()`), and local storage routing (`lib/storage.py`) are done — only "publish Earth demand" (to Signal Bus) remains.
   - [x] Persist per-vehicle Wh/meter calibration with conservative defaults and shared legacy fallback.
   - [ ] Add mission lifecycle records and reservation reasons covering material, consumer, order/recipe, shortfall, distance, and energy cost.
   - [ ] Expose power mode, budget, shedding, recovery, and subnet diagnostics through shared telemetry.
@@ -96,24 +98,23 @@ This document tracks our strategic progress from initial boot to full terraforma
 
 ---
 
-## 🏭 Phase 2: Logistics, Infrastructure & Outpost Networks
+## 🏭 Phase 2: Logistics & Manufacturing Infrastructure
 - [x] Fulfill Contractor Campaign Orders (Helios Orbital, Spire Research, Vestibule Logistics) at Supply Docks.
 - [ ] Unlock and fabricate crucial blueprints:
   - [x] Pipe segments (Liquid Pipe, Gas Pipe) and Power Line segments.
-  - [ ] Smelter blueprints (Glass, Titanium Ingots, Cobalt Ingots).
+  - [ ] Smelter blueprints (Glass, Titanium Ingots, Cobalt Ingots). *(Recipe code for these already exists in `lib/smelter.py`'s `RECIPE_MAP`/`docs/database/recipes_smelter.md` — this item tracks in-game blueprint unlock status, not code, so left unconfirmed here.)*
   - [ ] Drones, Drone Depots, and Service Stations.
 - [ ] Build a complete recipe-aware manufacturing loop:
   - [x] Add a Fabricator controller that selects only unlocked recipes with an active downstream need (`lib/fabricator.py`, `fabricator_1.py`).
   - [x] Maintain minimum Gas Pipe and Power Line Segment stock while prioritizing active Supply Dock orders.
   - [x] Track Fabricator stockpile and output buffer before loading another batch.
-  - [ ] Track Fabricator fluids and byproduct buffers for recipes that require them.
+  - [ ] Track Fabricator fluids and byproduct buffers for recipes that require them. *(Partial: `can_source_fluid()`/`recipe_is_sourceable()` in `lib/production.py`/`lib/fabricator.py` now confirm a fluid source exists before selecting such a recipe at all — see Phase 3's water-blocked-Circuit-Panel fix — but the Fabricator still doesn't actively manage/monitor `.water_in`/`.steam_in`/`.oil_in` buffer levels once running.)*
   - [x] Add production reservations so multiple machines do not claim the same Inventory stock.
   - [x] Verify each new recipe unlock in `list_recipes()` before enabling its inputs or mining demand.
 - [ ] Harden home storage and transfer behavior:
   - [ ] Add separate bins for raw ores, refined materials, fabricated parts, and overflow.
   - [ ] Route Smelter input/output explicitly and handle `partial`, `busy`, `target_full`, and `slots_full` results.
-  - [ ] Add an overflow policy: sell, warehouse, or pause production; never silently discard useful materials.
-  - [ ] Keep Inventory as a home-only freight endpoint and use local storage at remote outposts.
+  - [x] Add an overflow policy: sell, warehouse, or pause production; never silently discard useful materials — Warehouse routing (`lib/storage.py`'s `rebalance_inventory_to_warehouses()`/`best_unload_target()`) is the implemented policy.
 - [x] Extract Unified Vehicle Architecture: [`lib/vehicle.py`](lib/vehicle.py) (`VehicleController`) powering both Rover and Pioneer fleets.
 - [x] Deploy **Pioneer** equipped with **Constructor Module** ([`lib/pioneer.py`](lib/pioneer.py)):
   - [x] Architecture ready: modular chassis slot inspection (`inspect_slots()`) and construction blueprint execution (`execute_construction()`).
@@ -121,25 +122,8 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [ ] Construct chassis, mount Nav, Battery Holder, Cargo Rack, and Constructor Module.
   - [ ] Install at least one charged Portable Battery and verify cargo capacity before dispatch.
   - [ ] Query pending construction jobs and verify required kit/segments are physically loaded before execution.
-- [ ] Tap local **Water Wells** and **Thermal Vents** (Geothermal steam power).
-  - Water wells come later
-- [ ] Lay power lines and liquid/gas transport pipes to satellite Outposts.
-- [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
-  - [ ] Fabricate and deploy a Drone Depot into an outpost.
-  - [ ] Commission electric drones, then mount thruster, battery, Cargo Pod, and logistics modules through service controls.
-  - [ ] Add service-station charging, rescue, exposure, and `cargo.space_for()` checks to route scripts.
-- [ ] Make production explicitly multi-outpost-safe:
-  - [x] Add a Pioneer Transport role with persisted source/destination/item/count routes (`lib/pioneer.py`, `pioneer_2.py`).
-  - [x] Add a Pioneer Mining role (`lib/pioneer.py` `run_mining_loop()`, `pioneer_3.py`) for hardness > 1 mineral sites via `lib/mining.py`.
-  - [ ] Keep the home base as the production hub and use local Warehouses/Bins at remote outposts.
-  - [ ] Extend Rover unloading so missions can target the nearest local store instead of always home Inventory.
-  - [ ] Publish transport requests when the hub is short of remote materials.
-  - [ ] Add route feasibility checks for battery, charging stations, cargo capacity, local storage, and service-area parking.
-  - [ ] Add transport priority so order-critical materials outrank building-stock replenishment.
-- [ ] Verify power subnet topology after every remote build:
-  - [ ] Confirm every line/bridge is complete and physically touches the intended service footprints.
-  - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.
-  - [ ] Test recovery after a split route and after a remote outpost brownout.
+- [x] Tap local **Thermal Vents** (Geothermal steam power) — `lib/thermal_cap.py` + `lib/steam_turbine.py`, including network-wide Gas Tank discovery/load-balancing and stall-driven blacklisting for unreachable pipe routes.
+  - [ ] Tap local **Water Wells** — deferred; confirmed no Water source built yet in this save (blocks any recipe/blueprint needing Water, e.g. Circuit Panel — see `can_source_fluid()` in `lib/production.py`).
 
 - [ ] Implement selected Pioneer and survey improvements:
   - [ ] Separate Scout Pioneer behavior from human-approved construction intent; never auto-found an Outpost without approval.
@@ -154,7 +138,41 @@ This document tracks our strategic progress from initial boot to full terraforma
 
 ---
 
-## 🌿 Phase 3: Biosphere Tier 1 — Planetary Biomass (Unlocks at 210k Index)
+## 🌐 Phase 3: Multi-Outpost Coordination & Production Network
+
+The save has grown past a single production base: multiple outposts are founded, several sit near ore deposits home doesn't have easy access to, and home itself is about to run more than one Smelter/Fabricator. This phase covers everything needed to coordinate production/logistics across that — split out of what used to be Phase 2's "Outpost Networks" scope because it has grown large enough to deserve its own phase. Full design for the mining-network half in `C:\Users\Adrian\.claude\plans\agile-frolicking-flurry.md` (Multi-Outpost Mining Network + Multi-Smelter Leader Election section).
+
+### Outpost Infrastructure & Freight
+- [ ] Lay power lines and liquid/gas transport pipes to satellite Outposts.
+- [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
+  - [ ] Fabricate and deploy a Drone Depot into an outpost.
+  - [ ] Commission electric drones, then mount thruster, battery, Cargo Pod, and logistics modules through service controls.
+  - [ ] Add service-station charging, rescue, exposure, and `cargo.space_for()` checks to route scripts.
+- [ ] Verify power subnet topology after every remote build:
+  - [ ] Confirm every line/bridge is complete and physically touches the intended service footprints.
+  - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.
+  - [ ] Test recovery after a split route and after a remote outpost brownout.
+
+### Multi-Outpost Production Network
+Two correctness/scaling problems tackled together: every production-demand function used to hardcode the literal id `"smelter_1"`/`"fabricator_1"` (breaks the moment a second Smelter/Fabricator exists), and every mining vehicle funnels ore back to the single home base regardless of outposts founded near other ore deposits.
+
+- [x] **Phase A — Multi-Smelter Leader Election + Multi-Fabricator Claim Coordination.** `production.discover_smelter_ids()`/`discover_fabricator_ids()` replace every hardcoded `"smelter_1"`/`"fabricator_1"` fallback across `production.py`'s demand-cascade functions; `mining.py`/`rover.py` drop their explicit `smelter_1` args. `SmelterController` (`lib/smelter.py`) gets leader election mirroring `solar.py`'s `check_master()` (Archive+`run_control`, not Signal Bus) — only the Leader runs the Inventory→Warehouse rebalance sweep. Both `SmelterController` and `FabricatorController` gained a `claim_recipe()`/`release_recipe()` pair (separate archive keys, same shape, mirrors `vehicle_claims.py`) so multiple instances of either machine split simultaneously-demanded recipes instead of racing for the same one — Fabricator didn't need leader election on top since it has no shared per-cycle task to gate (the rebalance sweep is Smelter-only). Verified via stub tests (leader election, claim split across two simultaneously-demanded ores/recipes for both machines, claim refresh). See `docs/AI_CHEATSHEET.md`'s Multi-Smelter Support note and §2a-0-2.
+- [ ] **Phase B — Outpost Ore-Assignment & Stock-Target Scaffolding.** New `lib/outpost_mining.py`: `assigned_ores_for(outpost_id)` auto-seeds (nearest-surveyed-site-to-outpost via `outpost_network.nearest()`, capped to that outpost's Warehouse slot count) once per outpost and never overwrites afterward — the player can hand-edit the archived list (e.g. after adding a second Warehouse). `reseed_ore_assignment(outpost_id)` is a separate, never-auto-called rebuild for a future Control Panel button to pick up newly-surveyed POIs without clobbering manual edits. `stock_target_for(outpost_id, item_id)` same seed-once-editable shape, default 1 Warehouse slot (2000 units).
+- [ ] **Phase C — Stationed Mining Role.** `VehicleController.__init__`'s `home_coords=(0, 0)` param replaced by `home_base=None` (an outpost id, resolved to that outpost's charging station/coords) so a vehicle's "home" can be any outpost. `MiningMixin.build_local_stockpile_candidates(outpost_id)` + `run_stationed_mining_loop(outpost_id)`: mine this outpost's assigned ores up to their stock targets, independent of home's live demand (stockpiling ahead of it), unloading into the local Warehouse. *(Resolves the old "keep home base as hub, use local Warehouses at remote outposts" and "extend Rover unloading to nearest local store" goals below.)*
+- [ ] **Phase D — Demand-Driven Transporter Role.** Consolidate `pioneer.py`'s ad hoc `find_outpost_coords()`/`find_local_store()` into `storage.py`'s existing outpost-parameterized helpers. Replace the single manually-configured `pioneer.transport.route` archive key with `run_supply_run_loop(source_outpost_id, item_id)`: checks home's live unmet demand (`get_raw_material_demands()` net of `storage.total_stock()`) each cycle, only drives out when there's an actual deficit (confirmed with the user: demand-driven only, no preemptive top-off). One transporter instance per mining outpost, configured at the thin-entrypoint-script level. *(Directly replaces the old "publish transport requests" goal below — a direct demand check instead of a publish/subscribe round trip.)*
+
+Older multi-outpost-production goals this phase's lettered plan above directly targets or will subsume as it's implemented:
+- [x] Add a Pioneer Transport role with persisted source/destination/item/count routes (`lib/pioneer.py`, `pioneer_2.py`) — the original single-route mechanism; superseded by Phase D's demand-driven `run_supply_run_loop()` once implemented.
+- [x] Add a Pioneer Mining role (`lib/pioneer.py` `run_mining_loop()`, `pioneer_3.py`) for hardness > 1 mineral sites via `lib/mining.py`.
+- [ ] Keep the home base as the production hub and use local Warehouses/Bins at remote outposts. *(→ Phase B/C)*
+- [ ] Extend Rover unloading so missions can target the nearest local store instead of always home Inventory. *(→ Phase C)*
+- [ ] Publish transport requests when the hub is short of remote materials. *(→ Phase D)*
+- [ ] Add route feasibility checks for battery, charging stations, cargo capacity, local storage, and service-area parking. *(→ Phase C/D implementation detail)*
+- [ ] Add transport priority so order-critical materials outrank building-stock replenishment. *(→ Phase D)*
+
+---
+
+## 🌿 Phase 4: Biosphere Tier 1 — Planetary Biomass (Unlocks at 210k Index)
 - [ ] Deploy **Drone Biosurvey** fleet:
   - [ ] Equip drones with **Bio Scanners** to classify all 35 permanent biosites (7 per biome).
   - [ ] Equip drones with **Bio Extractors** to harvest native fauna specimens.
@@ -170,7 +188,7 @@ This document tracks our strategic progress from initial boot to full terraforma
 
 ---
 
-## 🌾 Phase 4: Biosphere Tier 2 — Agriculture & Plant Terraformers
+## 🌾 Phase 5: Biosphere Tier 2 — Agriculture & Plant Terraformers
 - [ ] Deploy **Seed Maker** and blend 3-specimen combinations to discover all 15 species seeds.
   - [ ] Record successful combinations in the Flora Journal and avoid repeating failed blends unnecessarily.
 - [ ] Design and construct orthogonal farm layout:
@@ -189,7 +207,7 @@ This document tracks our strategic progress from initial boot to full terraforma
 
 ---
 
-## 🐾 Phase 5: Biosphere Tier 3 — Wildlife Husbandry & Endgame
+## 🐾 Phase 6: Biosphere Tier 3 — Wildlife Husbandry & Endgame
 - [ ] Catalog all 5 DNA fragments per target creature in Bio Lab to unlock their feed recipes.
   - [ ] Use Bio Orders to drive specimen collection and keep completed samples out of Inventory through Exchange delivery.
 - [ ] Deploy **Habitats** and assign target species (`set_revival_target(creature_id)`).
@@ -207,7 +225,7 @@ This document tracks our strategic progress from initial boot to full terraforma
 
 ---
 
-## 🧪 Phase 6: Reliability, Diagnostics & Operations
+## 🧪 Phase 7: Reliability, Diagnostics & Operations
 - [ ] Standardize every long-running script:
   - [ ] Wrap the main loop with exception reporting and a bounded retry/backoff path.
   - [ ] Branch on result `.status`; never use localized `.message` text for control flow.
@@ -223,16 +241,4 @@ This document tracks our strategic progress from initial boot to full terraforma
 - [ ] Exercise failure scenarios: full Inventory, full output buffer, missing recipe, stale Rover claim, disconnected pipe, split power subnet, and stranded vehicle.
 - [ ] Keep scripts and documentation aligned with the component/API guides after each major unlock.
 - [x] Add lightweight per-script tick-cost profiling (`lib/profiling.py`, using `clock.tick()` deltas per docs/components/clock.md) and use it to find/fix a real hotspot: Thermal Cap / Steam Turbine's `ensure_output_connection()`/`ensure_input_connection()` were re-running a full `outpost_network`-wide building discovery walk every single `step()` even while already healthily connected. Fixed with a fast path (a healthy connection is confirmed with one cheap `fill_pct()`/`is_stalled()` read, no walk) plus a TTL cache for the cases that do still need discovery. See `docs/AI_CHEATSHEET.md`.
-- [ ] **Long-term: investigate an interrupt/event-driven pattern instead of `sleep(X) -> rescan full state -> sleep(X)`.** Evaluated: the game exposes no real interrupt/callback primitive for scripts, so "interrupt-driven" in practice means a leader computing an expensive shared fact once and followers reading a cached broadcast instead of redundantly recomputing it — exactly `lib/solar.py`'s Master/Follower pattern, generalized. Best candidate identified: `production.py`'s demand cascade, independently recomputed by every Rover/Pioneer/Smelter/Fabricator/Supply Dock every cycle. First application of this pattern is now in progress — see the Multi-Outpost Production Network phase below (Smelter leader election gates the "inventory manager" sweep so N smelters don't redundantly sweep the same Inventory/Warehouse set). Widening this further should still be driven by actual `profiling.report()` data, not guesswork.
-
----
-
-## 🏗️ Phase 7: Multi-Outpost Production Network & Multi-Smelter Coordination
-
-Full design in `C:\Users\Adrian\.claude\plans\agile-frolicking-flurry.md` (Multi-Outpost Mining Network + Multi-Smelter Leader Election section). Two correctness/scaling problems tackled together: every production-demand function used to hardcode the literal id `"smelter_1"` (breaks the moment a second Smelter exists), and every mining vehicle funnels ore back to the single home base regardless of outposts founded near other ore deposits.
-
-- [x] **Phase A — Multi-Smelter Leader Election + Multi-Fabricator Claim Coordination.** `production.discover_smelter_ids()`/`discover_fabricator_ids()` replace every hardcoded `"smelter_1"`/`"fabricator_1"` fallback across `production.py`'s demand-cascade functions; `mining.py`/`rover.py` drop their explicit `smelter_1` args. `SmelterController` (`lib/smelter.py`) gets leader election mirroring `solar.py`'s `check_master()` (Archive+`run_control`, not Signal Bus) — only the Leader runs the Inventory→Warehouse rebalance sweep. Both `SmelterController` and `FabricatorController` gained a `claim_recipe()`/`release_recipe()` pair (separate archive keys, same shape, mirrors `vehicle_claims.py`) so multiple instances of either machine split simultaneously-demanded recipes instead of racing for the same one — Fabricator didn't need leader election on top since it has no shared per-cycle task to gate (the rebalance sweep is Smelter-only). Verified via stub tests (leader election, claim split across two simultaneously-demanded ores/recipes for both machines, claim refresh). See `docs/AI_CHEATSHEET.md`'s Multi-Smelter Support note and §2a-0-2.
-- [ ] **Phase B — Outpost Ore-Assignment & Stock-Target Scaffolding.** New `lib/outpost_mining.py`: `assigned_ores_for(outpost_id)` auto-seeds (nearest-surveyed-site-to-outpost via `outpost_network.nearest()`, capped to that outpost's Warehouse slot count) once per outpost and never overwrites afterward — the player can hand-edit the archived list (e.g. after adding a second Warehouse). `reseed_ore_assignment(outpost_id)` is a separate, never-auto-called rebuild for a future Control Panel button to pick up newly-surveyed POIs without clobbering manual edits. `stock_target_for(outpost_id, item_id)` same seed-once-editable shape, default 1 Warehouse slot (2000 units).
-- [ ] **Phase C — Stationed Mining Role.** `VehicleController.__init__`'s `home_coords=(0, 0)` param replaced by `home_base=None` (an outpost id, resolved to that outpost's charging station/coords) so a vehicle's "home" can be any outpost. `MiningMixin.build_local_stockpile_candidates(outpost_id)` + `run_stationed_mining_loop(outpost_id)`: mine this outpost's assigned ores up to their stock targets, independent of home's live demand (stockpiling ahead of it), unloading into the local Warehouse.
-- [ ] **Phase D — Demand-Driven Transporter Role.** Consolidate `pioneer.py`'s ad hoc `find_outpost_coords()`/`find_local_store()` into `storage.py`'s existing outpost-parameterized helpers. Replace the single manually-configured `pioneer.transport.route` archive key with `run_supply_run_loop(source_outpost_id, item_id)`: checks home's live unmet demand (`get_raw_material_demands()` net of `storage.total_stock()`) each cycle, only drives out when there's an actual deficit (confirmed with the user: demand-driven only, no preemptive top-off). One transporter instance per mining outpost, configured at the thin-entrypoint-script level.
-
+- [ ] **Long-term: investigate an interrupt/event-driven pattern instead of `sleep(X) -> rescan full state -> sleep(X)`.** Evaluated: the game exposes no real interrupt/callback primitive for scripts, so "interrupt-driven" in practice means a leader computing an expensive shared fact once and followers reading a cached broadcast instead of redundantly recomputing it — exactly `lib/solar.py`'s Master/Follower pattern, generalized. Best candidate identified: `production.py`'s demand cascade, independently recomputed by every Rover/Pioneer/Smelter/Fabricator/Supply Dock every cycle. First application of this pattern is now in progress — see Phase 3's Multi-Outpost Production Network (Smelter leader election gates the "inventory manager" sweep so N smelters don't redundantly sweep the same Inventory/Warehouse set). Widening this further should still be driven by actual `profiling.report()` data, not guesswork.

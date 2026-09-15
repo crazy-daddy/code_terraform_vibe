@@ -254,7 +254,7 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   it stopped yielding actionable findings (see the case study) — `lib/profiling.py` itself, and
   `lib/archive_cleaner.py`'s cleanup of it (next bullet), are kept since a future script suspected of
   doing real bulk per-call work (see `SLOW_STEP_TICK_THRESHOLD` guidance above) is still a reasonable
-  candidate to wire this into temporarily. Not standardized across every controller — see the Phase 6
+  candidate to wire this into temporarily. Not standardized across every controller — see the Phase 7
   TODO item on an interrupt/event-driven pattern for where this is headed longer-term (`TODO.md`).
 - **Storage shape & cleanup**: each archive entry is `{"history": [...], "last_tick": N}`, not a bare
   list — `last_tick` (the sim tick of the most recent `profiling.end()` call for that name) is what
