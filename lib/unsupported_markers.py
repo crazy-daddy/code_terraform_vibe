@@ -1,16 +1,20 @@
 # Map Markers from Unsupported Targets
 # Reads survey.unsupported_targets from the Data Archive and creates
 # colored visual map markers on the Planet Map for all blacklisted contacts.
+# Promoted out of playground/mark_unsupported_targets.py (playground/ isn't
+# synced into the live game, so this never actually ran there) -- now callable
+# from the root mark_unsupported_targets.py entrypoint and from panel_1.py's
+# AUTOMATION section "Sync Unsupported" button.
 
 from archive import archive
 
-# Prefix used for all markers created by this script
+# Prefix used for all markers created by this module
 MARKER_PREFIX = "unsupported."
 
 
-def safe_get_component(name):
+def _component(component_id):
     try:
-        return get_component(name)
+        return get_component(component_id)
     except Exception:
         return None
 
@@ -106,7 +110,7 @@ def update_unsupported_markers(clear_previous=True):
     """
     Places map markers for all unsupported targets stored in the archive.
     """
-    markers = safe_get_component("markers")
+    markers = _component("markers")
     if not markers:
         print("[ERROR] Map Markers component ('markers') is unavailable. Unlocked by Cartography research.")
         return 0
@@ -128,7 +132,7 @@ def update_unsupported_markers(clear_previous=True):
         return 0
 
     # Load journal sites for site coordinate lookups
-    journal = safe_get_component("journal")
+    journal = _component("journal")
     journal_sites = []
     if journal and hasattr(journal, "discovered_sites"):
         try:
@@ -185,8 +189,3 @@ def update_unsupported_markers(clear_previous=True):
         print(f"  - {r}: {count} markers")
 
     return placed_count
-
-
-# Execute when run directly as a script
-update_unsupported_markers(clear_previous=True)
-

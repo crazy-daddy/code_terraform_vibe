@@ -25,7 +25,7 @@ def _outpost_haul_demand(dest_outpost_id):
     outpost id means that outpost's own Bio Lab reagent shortfall (only a
     remote outpost's Lab needs reagents hauled out to it).
     """
-    if dest_outpost_id is None:
+    if dest_outpost_id is None or dest_outpost_id == "outpost_home":
         return get_raw_material_demands()
     return outpost_reagents.get_outpost_reagent_demand(dest_outpost_id)
 
@@ -85,6 +85,9 @@ class VehicleCargoMixin:
             back to Inventory. Returns (moved, went_full) for the caller's
             bookkeeping."""
             target = best_unload_target(item_id, count, outpost=target_outpost)
+            if target is None:
+                print(f"[{self.name}] WARNING: no local storage at destination has room for {item_id}. Cargo remains aboard.")
+                return 0, True
             if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
                 c_res = out_port.connect(target)
                 if c_res.status != "ok":
@@ -172,7 +175,7 @@ class VehicleCargoMixin:
         demands = _outpost_haul_demand(dest_outpost_id)
         if not demands:
             return []
-        source_is_home = getattr(self.home_outpost, "is_home", lambda: True)()
+        source_is_home = getattr(self.home_outpost, "is_home", True)
         ranked = []
         for item_id, unmet in demands.items():
             if unmet <= 0:
@@ -217,7 +220,7 @@ class VehicleCargoMixin:
         about one slot regardless of the total planned amount. Returns a
         ["Nx item_id", ...] summary of what actually got loaded.
         """
-        source_is_home = getattr(self.home_outpost, "is_home", lambda: True)()
+        source_is_home = getattr(self.home_outpost, "is_home", True)
         shop = get_component("shop") if source_is_home else None
         stack_size = inventory_stack_size()
 

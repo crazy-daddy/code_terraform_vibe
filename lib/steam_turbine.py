@@ -1,3 +1,5 @@
+import fluid_routing
+
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid
 # is_stalled()), and keep running through the night since steam is the only
@@ -31,47 +33,25 @@ STALL_STREAK_BLACKLIST_THRESHOLD = 5
 # A source blacklisted as unreachable might become reachable later (the
 # player builds a new Gas Pipe route to it) -- an entry expires and becomes
 # retryable again once it's been blacklisted for this many *simulation*
-# ticks, tracked per-entry (unreachable_sources maps source_id -> the tick
-# it was blacklisted at), NOT as one shared "clear everything at once"
-# timer. See lib/thermal_cap.py's identical constant for why per-entry
-# timestamps matter: with 2+ simultaneously-bad candidates ranked ahead of
-# the one genuinely-reachable source, a single shared clock that wipes the
-# whole blacklist at once can undo elimination progress before ever reaching
-# the reachable one, producing an infinite ping-pong between the bad
-# candidates -- exactly the bug per-entry expiry fixes.
+# ticks, tracked per-entry (self.blacklist maps source_id -> the tick it was
+# blacklisted at, see lib/fluid_routing.py's PerEntryBlacklist), NOT as one
+# shared "clear everything at once" timer. See PerEntryBlacklist's docstring
+# for why per-entry timestamps matter: with 2+ simultaneously-bad candidates
+# ranked ahead of the one genuinely-reachable source, a single shared clock
+# that wipes the whole blacklist at once can undo elimination progress
+# before ever reaching the reachable one, producing an infinite ping-pong
+# between the bad candidates -- exactly the bug per-entry expiry fixes.
 RESCAN_INTERVAL_TICKS = 150
 
-# discover_network_building_ids() walks every outpost's buildings for both
-# "gas_tank" and "thermal_cap" -- the real cost of ensure_input_connection().
+# fluid_routing.discover_network_buildings() walks every outpost's buildings
+# for both "gas_tank" and "thermal_cap", pairing each with its outpost id so
+# _discover_candidates_cached() can try this Turbine's own outpost first --
+# the real cost of ensure_input_connection().
 # It's already skipped entirely while connected_input is True and the stall
 # streak is below threshold (see the early return below), so this cache only
 # matters for the remaining cases: bootstrap, or every candidate blacklisted
 # at once. Counts step() calls, same units as RESCAN_INTERVAL_TICKS above.
 DISCOVERY_CACHE_INTERVAL_STEPS = 20
-
-
-def discover_network_building_ids(type_id):
-    """
-    All building ids of type_id across every known outpost. Same pattern as
-    lib/thermal_cap.py's helper of the same name -- a reachable Gas Tank or
-    Thermal Cap isn't guaranteed to share this Turbine's own outpost (a
-    Thermal Cap in particular may have no outpost at all, built directly on
-    a vent out in the field), so candidates are gathered network-wide;
-    physical Gas Pipe topology, not outpost membership, decides which
-    actually succeed via connect().
-    """
-    ids = []
-    network = get_component("outpost_network")
-    if network and hasattr(network, "outposts"):
-        try:
-            for outpost in network.outposts():
-                for building in outpost.buildings(type_id):
-                    b_id = getattr(building, "id", None)
-                    if b_id:
-                        ids.append(b_id)
-        except Exception:
-            pass
-    return ids
 
 
 class SteamTurbineController:
@@ -88,8 +68,10 @@ class SteamTurbineController:
         # exists (docs/guide/infrastructure_and_pipes.md). is_stalled() is
         # the only live signal a source isn't reachable, but it's ambiguous
         # on its own (also true, harmlessly, whenever the feeding vent is
-        # just dormant) -- see stall_streak below.
-        self.unreachable_sources = {}
+        # just dormant) -- see stall_streak below. Per-entry blacklist expiry
+        # -- see lib/fluid_routing.py's PerEntryBlacklist for the full
+        # rationale (shared with Thermal Cap/Water Pump).
+        self.blacklist = fluid_routing.PerEntryBlacklist(RESCAN_INTERVAL_TICKS)
         self.stall_streak = 0
         self._cached_candidate_ids = None
         self._ticks_since_discovery = 0
@@ -102,22 +84,30 @@ class SteamTurbineController:
                 pass
         return 0
 
-    def is_blacklisted(self, source_id, curr_tick):
-        """Per-entry blacklist expiry -- see RESCAN_INTERVAL_TICKS and lib/thermal_cap.py's identical helper."""
-        blacklisted_at = self.unreachable_sources.get(source_id)
-        if blacklisted_at is None:
-            return False
-        age = curr_tick - blacklisted_at
-        return curr_tick == 0 or age < RESCAN_INTERVAL_TICKS
-
     def _discover_candidates_cached(self):
         """
         Gas Tank + Thermal Cap ids network-wide, refreshed at most every
-        DISCOVERY_CACHE_INTERVAL_STEPS calls. Only reached from
-        ensure_input_connection()'s slow path (see comment there).
+        DISCOVERY_CACHE_INTERVAL_STEPS calls. Ranked so this Turbine's own
+        outpost's candidates come first within each type (gas_tank ids, then
+        thermal_cap ids) -- a same-outpost Gas Tank/Thermal Cap is far more
+        likely to already have a completed Gas Pipe route than one built at
+        a different outpost, and trying it first avoids burning a whole
+        STALL_STREAK_BLACKLIST_THRESHOLD-tick stall window connected to an
+        unreachable cross-outpost tank when a reachable local one exists
+        (found from a real case: turbine_5/turbine_6 connecting to
+        cross-outpost gas_tank_2, which had no completed pipe route to
+        either, instead of trying their own outpost's tank first). Only
+        reached from ensure_input_connection()'s slow path (see comment
+        there).
         """
         if self._cached_candidate_ids is None or self._ticks_since_discovery >= DISCOVERY_CACHE_INTERVAL_STEPS:
-            self._cached_candidate_ids = [s for t in ("gas_tank", "thermal_cap") for s in discover_network_building_ids(t)]
+            own_outpost_id = getattr(getattr(self.turbine, "outpost", None), "id", None)
+            ranked = []
+            for type_id in ("gas_tank", "thermal_cap"):
+                pairs = fluid_routing.discover_network_buildings(type_id, resolve=False)
+                pairs.sort(key=lambda p: p[1] != own_outpost_id)
+                ranked.extend(b_id for b_id, _ in pairs)
+            self._cached_candidate_ids = ranked
             self._ticks_since_discovery = 0
         else:
             self._ticks_since_discovery += 1
@@ -144,12 +134,7 @@ class SteamTurbineController:
 
         curr_tick = self.get_current_tick()
 
-        is_stalled = False
-        if hasattr(self.turbine, "is_stalled"):
-            try:
-                is_stalled = self.turbine.is_stalled()
-            except Exception:
-                is_stalled = False
+        is_stalled = fluid_routing.safe_is_stalled(self.turbine)
         self.stall_streak = self.stall_streak + 1 if is_stalled else 0
 
         if self.connected_input:
@@ -161,19 +146,20 @@ class SteamTurbineController:
             except Exception:
                 pass
             if current_id:
-                self.unreachable_sources[current_id] = curr_tick
+                self.blacklist.blacklist(current_id, curr_tick)
                 print(f"[{self.name}] '{current_id}' stalled for {self.stall_streak} consecutive ticks -- likely no completed Gas Pipe route (not just vent dormancy). Blacklisting and picking a different source.")
             self.connected_input = False
             self.stall_streak = 0
 
         all_known_candidates = self._discover_candidates_cached()
-        candidates = [s for s in all_known_candidates if not self.is_blacklisted(s, curr_tick)]
+        candidates = self.blacklist.filter_reachable(all_known_candidates, curr_tick)
         if not candidates:
             # Every known source is still within its own blacklist window (or
             # none exist at all) -- deliberately do NOT wipe the blacklist
-            # here; each entry expires on its own schedule (is_blacklisted()).
-            # Force-clearing everything at once would reintroduce the exact
-            # ping-pong bug per-entry expiry fixes (see RESCAN_INTERVAL_TICKS).
+            # here; each entry expires on its own schedule
+            # (self.blacklist.is_blacklisted()). Force-clearing everything at
+            # once would reintroduce the exact ping-pong bug per-entry expiry
+            # fixes (see RESCAN_INTERVAL_TICKS).
             if all_known_candidates:
                 print(f"[{self.name}] Every known source is still within its blacklist window; waiting for one to expire.")
             return

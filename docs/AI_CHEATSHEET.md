@@ -14,7 +14,7 @@ that way there is exactly one place to keep current.
 | Concern | Module(s) |
 | :--- | :--- |
 | Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`) |
-| Power grid & brownout | `power.py` (`PowerGridManager` — generic, works for solar/oil/reactor/turbine grids); `solar.py` (`SolarController` — sun tracking + grid-aware Master/Follower election, delegates shedding/recovery to `PowerGridManager`) |
+| Power grid & brownout | `power.py` (`PowerGridManager` — generic, works for solar/oil/reactor/turbine grids, owned centrally by `panel_1.py`, one instance per grid, no election — see §1a-1); `solar.py` (`SolarController` — pure sun tracking, no grid supervision of its own any more) |
 | Vehicles (Rover/Pioneer base) | `vehicle.py` (`VehicleController`, composes the mixins below) |
 | &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting / charging-station discovery | `vehicle_energy.py` |
@@ -34,6 +34,7 @@ that way there is exactly one place to keep current.
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
 | Water Pump (route water to network Liquid Tanks) | `water_pump.py` — see §1d, simpler cousin of `thermal_cap.py` (no overpressure/relief concept) |
+| Shared network-wide fluid-target discovery/blacklist/reconnect mechanism | `fluid_routing.py` — used by `thermal_cap.py`/`water_pump.py`/`steam_turbine.py`; see §1b |
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
 | Data Archive persistence layer | `archive.py` |
@@ -91,8 +92,7 @@ constraint to actively budget against.
   powered off.** A Smelter/Fabricator only draws its recipe's `power_draw` while a craft is
   actively running — idle draw is already 0 W (`lib/smelter.py`'s `SmelterController` docstring)
   — so cutting its breaker saves nothing beyond what simply not starting new work already saves,
-  while also losing Leader-election status (the "inventory manager" sweep) and needing external
-  intervention to power it back on and restart its script. Soft-shed instead: Power Guard still
+  while also needing external intervention to power it back on and restart its script. Soft-shed instead: Power Guard still
   adds/removes the machine from `power.shedded` (so the signal exists and recovery timing is
   unchanged), but never calls `set_powered()` on it. `SmelterController.is_shedded()` /
   `FabricatorController.is_shedded()` check that same list each `step()` and, if shedded, return
@@ -121,9 +121,62 @@ constraint to actively budget against.
   still calibrated live — only the *duration* was ever exactly knowable in advance.
 - `ArchiveCleaner.clean_power_grid_state()` (`lib/archive_cleaner.py`) retires `power.night_duration`
   and the dead legacy key `power.last_night_wh` outright, and purges `power.shedded:<anchor>` /
-  `power.night_wh:<anchor>` entries whose grid anchor no longer exists (e.g. two grids joined via a
-  new power line and elected one Master, orphaning the old per-grid keys) — skipped entirely if grid
-  discovery itself comes back empty, same caution as `clean_telemetry()`'s active-vehicle check.
+  `power.night_wh:<anchor>` entries whose grid anchor no longer exists (e.g. two grids merged via a
+  new power line, orphaning one of the two old per-grid keys) — skipped entirely if grid
+  discovery itself comes back empty, same caution as `clean_telemetry()`'s active-vehicle check. This
+  is a manual-button-triggered sweep (see §7); `PowerGridManager.release_all()` (§1a-1) is the
+  automatic, immediate version of the same "a grid anchor just disappeared" cleanup for whatever it
+  still had shed, so a grid merge doesn't leave something stuck shed for however long until the
+  player next presses the button.
+
+### 1a-1. Centralized Grid Ownership (`panel_1.py`, no Master/Follower election)
+
+`PowerGridManager` used to be instantiated once **per solar generator** (`lib/solar.py`'s
+`SolarController`), with every instance independently re-electing the same single Master every tick
+(`check_master()`: sort every solar id on this generator's grid by numeric suffix, lowest one
+currently `run_control.is_running()` wins) purely so they could all agree on which ONE of them should
+actually call `supervise_grid()`. That election is gone — `panel_1.py`'s AUTOMATION section (§7) is a
+single always-running process, so it just owns grid supervision directly, one `PowerGridManager`
+instance per grid, with no election needed at all.
+
+- **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param any more
+  (it only ever existed so a specific generator could identify itself to `get_grid()`, which is also
+  gone — `panel_1.py` already has each grid from iterating `power_control.grids()` directly, once per
+  tick). `grid` (the initial snapshot) is required and binds `self.grid_anchor` immediately at
+  construction, rather than leaving it `None` until the first `supervise_grid()` call sets it as a
+  side effect — identity is fixed for this manager's lifetime, only the per-call snapshot (stored/
+  capacity/consumed) genuinely needs to be fresh every call.
+- **`resolve_pattern_machines()`'s outpost-buildings fallback removed** (it read
+  `self.machine.outpost`, impossible without a bound machine) — the fallback chain narrows to the
+  grid snapshot's own `.machine_ids`/`.members` (primary, always populated for a real grid) → the
+  numbered-guess `get_component(f"{prefix}{i}")` last resort. Deliberate narrowing, not an oversight.
+- **`release_all()`** (new) — called when a grid's `anchor_id` stops being reported by
+  `power_control.grids()` at all (two grids merged into one via a new power line). Since `panel_1.py`
+  keeps one manager alive per anchor across ticks (to preserve its day/night/shed state), a vanished
+  anchor's manager — and anything still in its `shedded_machines` — would otherwise just be dropped
+  and forgotten, permanently stranding a shed Smelter/Fabricator/Tier-1 machine, since the *merged*
+  grid's own manager starts fresh with an empty `shedded_machines` and has no way to know about it.
+  Restores anything still tracked (guarded exactly like `manage_day_recovery()` already does) and
+  clears the per-anchor `power.shedded:<anchor>` mirror.
+- **Battery-less grids are skipped, not mismanaged.** `supervise_grid()` now runs against *every* grid
+  `power_control.grids()` reports, not just ones a solar generator happened to be on — a strict
+  improvement for battery-backed grids, but it means a grid powered entirely by Steam Turbine with no
+  Battery built now reaches this code for the first time, and `battery_pct = stored_wh / capacity_wh`
+  would divide by a real zero there (this genuinely never came up before: a grid only got supervised
+  if a `SolarController` existed on it, and solar always implies a battery for night storage). Guard:
+  `if capacity_wh <= 0: return` near the top of `supervise_grid()`, before any day/night or shedding
+  logic runs. A generation-vs-consumption supervision strategy for battery-less grids is a real gap,
+  just out of scope for this pass — flagged as a follow-up, not silently guessed at.
+- **`lib/solar.py`'s `SolarController` is now pure sun-tracking** — `track_sun()`/`step()`/`run()`
+  only, no `PowerGridManager`, no `is_master`, no `check_master()`/`update_role()`, no `power`/
+  `run_ctrl` constructor params. **Hard dependency**: Solar Grid brownout supervision only happens
+  while `panel_1.py` is running — see `legacy/README.md` for the pre-Control-Room fallback snapshot
+  (a save that hasn't unlocked `research_custom_panels` yet has no panel scripts at all, so this
+  centralization doesn't help it; that's what the legacy zip is for).
+- **`lib/smelter.py`'s `SmelterController` lost the mirror-image Leader election** the same way —
+  `check_leader()`/`update_role()`/`is_leader`/`run_ctrl` all removed. The "inventory manager" sweep
+  (`storage.rebalance_inventory_to_warehouses()`) that used to run Leader-only now runs once, directly,
+  from `panel_1.py`'s AUTOMATION section instead — same hard dependency as Solar Grid supervision.
 
 ### 1b. Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine
 
@@ -136,19 +189,23 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
   side of a FluidPort — each neighbor must declare its own side instead. **A Thermal Cap has no
   `.outpost` property at all** (`docs/components/thermal_cap.md` lists none — it's built directly on
   a thermal vent out in the field, not necessarily inside a founded outpost, unlike Gas Tank/Steam
-  Turbine which both have one), so candidates can't be scoped to "this building's outpost"; both
-  controllers' `discover_network_building_ids(type_id)` instead walk every outpost
-  (`outpost_network.outposts()` → `outpost.buildings(type_id)`) to gather candidate ids network-wide.
+  Turbine which both have one), so candidates can't be scoped to "this building's outpost"; all
+  three controllers instead call the shared `lib/fluid_routing.py` `discover_network_buildings(type_ids,
+  resolve=True)` (Cap/Pump use the default, resolved objects; Turbine passes `resolve=False` for
+  plain ids), which walks every outpost (`outpost_network.outposts()` → `outpost.buildings(type_id)`)
+  to gather candidates network-wide.
   - **`connect()`'s `"ok"` status does NOT mean the target is physically reachable** — per
     `docs/guide/infrastructure_and_pipes.md`, a remote pairing needs a *completed* Gas Pipe route,
     which `connect()` never checks; `"ok"` only means the pairing was logically accepted. The one
     live signal of an actually-broken route is `is_stalled()` (steam/throttle ready, nothing
-    transferred) — both controllers blacklist a target that reports this and pick a different
+    transferred) — all three controllers blacklist a target that reports this and pick a different
     candidate, rather than sitting stalled on the same unreachable target forever. Each blacklist
-    entry expires **individually** — `unreachable_targets`/`unreachable_sources` map
-    `id -> the simulation tick it was blacklisted at` (`is_blacklisted(id, curr_tick)`, real
+    entry expires **individually** — shared machinery, `lib/fluid_routing.py`'s `PerEntryBlacklist`
+    (Cap/Pump reach it via `self._router.blacklist`, Turbine via `self.blacklist`), maps
+    `id -> the simulation tick it was blacklisted at` (`.is_blacklisted(id, curr_tick)`, real
     `clock.tick()`, not step() calls), not a plain set with one shared "clear everything at once"
-    timer — `RESCAN_INTERVAL_TICKS` (300 Cap-ticks / 150 Turbine-ticks) is each entry's own expiry
+    timer — `RESCAN_INTERVAL_TICKS` (300 Cap-ticks / 150 Turbine-ticks, passed in per-controller as
+    a constructor/constructor-forwarded argument) is each entry's own expiry
     window, so a target that was unreachable becomes retryable again once the player builds a new
     pipe to it, without disturbing a currently-*working* connection or any *other* entry's own timer.
     **This distinction is load-bearing, not stylistic**: an earlier version used one shared counter
@@ -166,22 +223,24 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
     reachable one).
     - **This fix alone did NOT resolve the reported ping-pong** — a second, more fundamental bug was
       still there underneath it, found by the player debugging in-game and confirmed by inspecting
-      `_fill_pct_of_building()`: `discover_network_buildings()` used to append the raw `BuildingRef`
-      from `outpost.buildings(type_id)` directly. Per `docs/components/outpost.md`, that's a
+      `_fill_pct_of_building()` (since folded into `lib/fluid_routing.py`'s `fill_pct_of()`):
+      `discover_network_buildings()` used to append the raw `BuildingRef` from
+      `outpost.buildings(type_id)` directly. Per `docs/components/outpost.md`, that's a
       lightweight *snapshot* carrying only `.id`/`.name`/`.type_id`/`.outpost`/`.powered`/`.position` —
       **not** the type-specific live methods (`fill_pct()`, etc.) that only exist on the full resolved
-      component (`get_component(ref.id)`). So `_fill_pct_of_building()`'s
-      `hasattr(building, "fill_pct")` check failed for *every* tank, always hitting the "unreadable,
-      treat as 1.0" fallback — degenerating `sorted(tanks, key=_fill_pct_of_building)` into a no-op
-      tie broken purely by discovery order, **and** defeating the fast path too (a healthy current
-      tank also reads as `1.0 >= GAS_TANK_REBALANCE_FILL_FRACTION`, so it never short-circuits,
-      forcing a full rescan every single step). The net effect: selection became "skip current, take
-      the next one in a fixed discovery-order list" every call — a stable alternation between
-      whichever two candidates happen to sit adjacent to each other in that order, never advancing to
-      a third. This is exactly the failure mode the per-entry blacklist fix above couldn't reach,
-      since it operates one layer up (which candidates are *eligible*), not on why selection *among*
-      eligible candidates was broken. Fixed by resolving each `BuildingRef` via
-      `get_component(ref.id) or building` inside `discover_network_buildings()` itself — same
+      component (`get_component(ref.id)`). So `fill_pct_of()`'s `hasattr(building, "fill_pct")` check
+      failed for *every* tank, always hitting the "unreadable, treat as 1.0" fallback — degenerating
+      `sorted(tanks, key=fill_pct_of)` into a no-op tie broken purely by discovery order, **and**
+      defeating the fast path too (a healthy current tank also reads as `1.0 >=
+      GAS_TANK_REBALANCE_FILL_FRACTION`, so it never short-circuits, forcing a full rescan every
+      single step). The net effect: selection became "skip current, take the next one in a fixed
+      discovery-order list" every call — a stable alternation between whichever two candidates happen
+      to sit adjacent to each other in that order, never advancing to a third. This is exactly the
+      failure mode the per-entry blacklist fix above couldn't reach, since it operates one layer up
+      (which candidates are *eligible*), not on why selection *among* eligible candidates was broken.
+      Fixed by resolving each `BuildingRef` via `get_component(ref.id) or building` inside
+      `discover_network_buildings()` itself (now `lib/fluid_routing.py`'s shared
+      `discover_network_buildings(type_ids, resolve=True)`, used by all three controllers) — same
       `get_component(id) or ref` pattern already used correctly in `storage.py`'s
       `discover_storage_buildings()` and `vehicle_energy.py`'s `get_all_charging_stations()`; this was
       the one discovery helper in the codebase that hadn't followed it. Verified by stub test using a
@@ -218,51 +277,68 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
     harmlessly, whenever the feeding vent is just dormant — so blacklisting requires
     `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled ticks (dormancy is temporary; a
     genuinely missing pipe route stalls forever) rather than a single tick.
-  - **Discovery cost**: `discover_network_building_ids()` walks every outpost's `buildings(type_id)`
-    — real work, and (per profiling — see §1d) the actual cost driver of both controllers' `step()`.
-    Both are cheap once settled specifically because the network walk itself is skipped, not just
-    deferred, while a connection is healthy:
-    - **Cap**: the "keep current tank" decision needs only one `fill_pct()` read on the id already
-      connected — `ensure_output_connection()` checks that *before* touching discovery at all, so
-      the walk never runs in the steady-state case.
+    - **Candidate ranking is same-outpost-first, not discovery order** —
+      `fluid_routing.discover_network_buildings(type_id, resolve=False)` returns `(id, outpost_id)`
+      pairs (not bare ids), and `_discover_candidates_cached()` sorts each of the two groups
+      (gas_tank ids, then thermal_cap ids) so any candidate sharing this Turbine's own `outpost.id`
+      comes before every other-outpost one. Found from a real case: turbine_5/
+      turbine_6 initially connecting to `gas_tank_2` at a *different* outpost with no completed pipe
+      route to either, instead of trying their own outpost's tank first — `connect()`'s `"ok"` status
+      doesn't catch this (see above), so the wrong pick still burns a full
+      `STALL_STREAK_BLACKLIST_THRESHOLD`-tick stall window (and, once blacklisted, an
+      `RESCAN_INTERVAL_TICKS` window before it's even retryable) before falling through to a reachable
+      candidate that was available the whole time. This is a ranking preference, not a same-outpost
+      *restriction* — a genuinely reachable cross-outpost tank (real completed Gas Pipe route) is
+      still tried and still succeeds, just after same-outpost candidates are exhausted.
+  - **Discovery cost**: `fluid_routing.discover_network_buildings()` walks every outpost's
+    `buildings(type_id)` — real work, and (per profiling — see §1d) the actual cost driver of every
+    controller's `step()`. All three are cheap once settled specifically because the network walk
+    itself is skipped, not just deferred, while a connection is healthy:
+    - **Cap/Pump**: the "keep current tank" decision needs only one `fill_pct()` read on the id
+      already connected — `FluidOutputRouter.ensure_connection()` checks that *before* touching
+      discovery at all, so the walk never runs in the steady-state case.
     - **Turbine**: `ensure_input_connection()` returns immediately whenever `connected_input` is
       True and `stall_streak < STALL_STREAK_BLACKLIST_THRESHOLD`, for the same reason.
-    - Both still need discovery sometimes (bootstrap, current target blacklisted/full, every
-      candidate blacklisted at once) — for those cases each controller caches the discovered
-      building list for `DISCOVERY_CACHE_INTERVAL_STEPS=20` `step()` calls (`_discover_tanks_cached()` /
-      `_discover_candidates_cached()`) rather than re-walking on every one of several reselection
-      attempts in a short window. This is a ceiling, not the primary mechanism — see the fast paths
-      above for why the walk is rare in practice.
+    - All three still need discovery sometimes (bootstrap, current target blacklisted/full, every
+      candidate blacklisted at once) — for those cases each controller (via `FluidOutputRouter` for
+      Cap/Pump, directly for Turbine) caches the discovered building list for
+      `DISCOVERY_CACHE_INTERVAL_STEPS=20` `step()` calls rather than re-walking on every one of
+      several reselection attempts in a short window. This is a ceiling, not the primary mechanism —
+      see the fast paths above for why the walk is rare in practice.
   - **The real per-step cost was elsewhere, and profiling (§1d) is what found it**: with the walk
     itself gone, Thermal Cap's `step()` still cost 2-3 sim ticks every single call (Steam Turbine's
     cost ~0, matching its zero-external-lookup fast path) — no periodic spike at 20 or 300 steps,
     ruling discovery back out entirely. The actual culprit: the Cap's fast path still resolved its
     *currently connected* tank via a fresh `get_component(current_id)` round trip every step just to
-    read `fill_pct()`, since `port.connected_to()` only returns an id string, not the object
-    `outpost.buildings()` had already handed discovery. `discover_network_buildings()` (added
-    alongside the existing id-only `discover_network_building_ids()`) now returns the live building
-    objects themselves, and `ThermalCapController._tank_lookup` (an id → object dict, populated from
+    read `fill_pct()`, since the id alone (from the port) isn't the object `outpost.buildings()` had
+    already handed discovery. `discover_network_buildings(resolve=True)` now returns the live building
+    objects themselves, and `FluidOutputRouter._target_lookup` (an id → object dict, populated from
     every discovery batch and never wholesale-cleared — a building's identity is stable, only the
-    candidate *list* goes stale) makes `_resolve_tank(id)` a plain dict read on every call after the
+    candidate *list* goes stale) makes `_resolve_target(id)` a plain dict read on every call after the
     first time a given id is seen. Verified via a stub test asserting zero `get_component()` calls
     across 20 consecutive healthy steps (previously: one per step). This is the general pattern for
     any future "read a possibly-external object by remembered id every step" cost: keep the object
     reference from whatever discovery/connect call first produced it, rather than re-resolving by id.
   - **Third pass — still 2 sim ticks/step after the above.** Comparing structure against Turbine's
     equivalent (which reads ~0) found the remaining asymmetry: `ensure_output_connection()` still
-    called `port.connected_to()` **unconditionally on every single call**, whereas Turbine's healthy
-    fast path calls no port method at all — it trusts its own `self.connected_input` boolean and only
-    ever queries the port (`connected_id()`) on the rare blacklist branch. Fixed the same way: the Cap
-    now tracks `self._connected_tank_id` locally, updated only by this controller's own `connect()`
-    calls and blacklist decisions (nothing else ever repoints `steam_out` — Gas Tank is passive, no
-    other script touches this port), so `port.connected_to()` is called exactly **once, ever** — a
-    one-time sync on first `ensure_output_connection()` call so a script reload recovers an
-    already-working connection instead of assuming a fresh start — never again after that. Verified
-    via a stub test asserting `connected_to()` is called exactly once total across bootstrap +
-    reselect + 20 healthy steps (previously: once per step). If the archived tick-delta for
-    `thermal_cap_*` still doesn't read ~0 after this, the next place to look is whichever `self.cap.*`
-    method call in `step()` itself isn't mirrored by an equivalent Turbine call, since everything
-    `ensure_output_connection()` itself does is now either a boolean/dict read or fully gated.
+    called a port method **unconditionally on every single call**, whereas Turbine's healthy fast
+    path calls no port method at all — it trusts its own `self.connected_input` boolean and only ever
+    queries the port (`connected_id()`) on the rare blacklist branch. Fixed the same way:
+    `FluidOutputRouter` now tracks `self._connected_id` locally, updated only by its own `connect()`
+    calls and blacklist decisions (nothing else ever repoints `steam_out`/`water_out` — a Gas/Liquid
+    Tank is passive, no other script touches this port), so the port is queried exactly **once,
+    ever** — a one-time sync on first `ensure_connection()` call so a script reload recovers an
+    already-working connection instead of assuming a fresh start — never again after that. **That
+    one-time sync originally called `port.connected_to()` (the renameable display name) while every
+    other lookup keys on the stable id via `connected_id()`/`.id` — a latent bug (a renamed Gas/Liquid
+    Tank would desync the cache right after a reload) fixed alongside the Cap/Pump/Turbine unification
+    into `lib/fluid_routing.py`; the one-time sync now calls `connected_id()` like everything else.**
+    Verified via a stub test asserting the port's id method is called exactly once total across
+    bootstrap + reselect + 20 healthy steps (previously: once per step). If the archived tick-delta
+    for `thermal_cap_*`/`water_pump_*` still doesn't read ~0 after this, the next place to look is
+    whichever `self.cap.*`/`self.pump.*` method call in `step()` itself isn't mirrored by an
+    equivalent Turbine call, since everything `ensure_connection()` itself does is now either a
+    boolean/dict read or fully gated.
 - **Thermal Cap** — the only job is keeping `pressure()` off the `1.0` overpressure ceiling (hitting
   it blows the *entire* chamber to atmosphere, not just the surplus — see `.is_overpressured()`).
   Proportional release-valve (`steam_out`, via `set_throttle()`) bands on `pressure()`:
@@ -286,14 +362,16 @@ own throttle, no shared coordination needed. A Gas Tank sitting between them is 
   5. Otherwise → `1.0` (healthy buffer, daytime, still useful to generate).
   Reads grid state the same way `lib/power.py`'s `PowerGridManager` does
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but runs no
-  shedding or master-election itself — that stays the grid's existing solar Master's job.
+  shedding itself — that's `panel_1.py`'s AUTOMATION section's job now, centrally, for every grid
+  (§1a-1), not any individual generator's.
 
 ### 1c. Water Pump: Liquid Tank Routing (`lib/water_pump.py` `WaterPumpController`)
 
-Mirrors §1b's Thermal Cap → Gas Tank connection/load-balancing/blacklist machinery almost exactly
-(same `discover_network_buildings()`/`_fill_pct_of_building()`/per-entry `unreachable_targets`
-blacklist/`CONNECTION_GRACE_TICKS`/`RESCAN_INTERVAL_TICKS`/`DISCOVERY_CACHE_INTERVAL_STEPS`
-constants and reasoning), but deliberately simpler — a Water Pump has **no internal buffer to
+Shares §1b's Thermal Cap → Gas Tank connection/load-balancing/blacklist machinery exactly — both
+build a `lib/fluid_routing.py` `FluidOutputRouter` (Pump's own `LIQUID_TANK_TYPE_IDS`,
+`LIQUID_TANK_REBALANCE_FILL_FRACTION`, `CONNECTION_GRACE_TICKS`, `RESCAN_INTERVAL_TICKS`,
+`DISCOVERY_CACHE_INTERVAL_STEPS` constants feed the same shared class Cap uses), not just similar
+code — but deliberately simpler in `step()` — a Water Pump has **no internal buffer to
 overpressure at all** (`docs/components/water_pump.md` defines no `pressure()`/`is_overpressured()`/
 `relief()`/`set_relief()` — the Pump is pure pass-through, storing nothing), so there is no
 proportional release-valve/relief-valve reactive control to do, unlike Thermal Cap's whole
@@ -405,6 +483,207 @@ search (≤27 `set_lamps()`/`glow()` round-trips) finds the exact integer match 
 trusting the rounded solve blindly or brute-forcing the full 41³ space against the live game. A
 fragment with no active coastal order requiring it is passed through unchanged via `self.discard()`
 instead of being tinted.
+
+**`active_order()` is shared, mutable, single-slot state — never use it to look up "which order needs
+this fragment."** Found live: multiple differently-glowing Luminous `sd_wing_membrane` stacks piling
+up unused in Warehouses. Root cause: `BioExchangeController.sweep_and_deliver()` reassigns
+`active_order` constantly, to whatever order it's currently delivering ANY matching sample to
+(coastal or not) as part of its own aggressive multi-order sweep — it's delivery-routing state, not a
+stable "current coastal target" signal. The Luminizer used to read `exchange.active_order()` directly
+for `target_glow`, so every time the Exchange's sweep briefly switched to deliver some unrelated
+order, the Luminizer tinted toward *that* order's target instead. Fixed with `_find_coastal_order(exchange,
+fragment_id=None)`: scans `exchange.orders()` directly for an incomplete, local, `target_glow`-bearing
+order (matching `fragment_id` if given), completely independent of `active_order()`.
+
+(A live diagnostic run initially seemed to confirm this theory, but the actual mistinted-looking stock
+turned out to be something else entirely — see the next two notes.)
+
+**`set_order()`/`clear_order()`/`deliver()` are `*(self only)*` hardware calls — a script can never
+drive a sibling machine, only read its state.** Confirmed live: calling `exchange.set_order(order.id)`
+from the Luminizer's own script raised `PermissionError: Cannot call set_order() on bio_exchange_4
+remotely`. This means `matches_order()` is unusable from any script other than the Exchange's own —
+there's no way to force which order it checks against, since setting that order is exactly the
+self-only call that fails. Any *other* controller that needs "does this stack match a specific
+order's requirement" has to compare the raw property directly instead: for coastal orders, that's
+`list(stack.properties.get("glow", [])) == list(order.target_glow)` — no hardware call needed at all,
+since `target_glow` and a stack's `properties` are both plain reads. `_glow_matching_count(item_id,
+outpost, target_glow)` in `lib/bio.py` is this direct comparison, used by both the Luminizer (below)
+and the Collector's raw-backlog throttle (below). `BioExchangeController.sweep_and_deliver()`'s own use
+of `self.machine.matches_order()`/`set_order()` is fine and unchanged — it's calling them on `self`,
+the machine its own script is attached to, which is exactly what's allowed.
+
+**Don't tint more than the order still needs.** `_load_next_sample()` checks `needed - delivered -
+in_transit` against `_glow_matching_count()` (units already sitting in local storage with the exact
+target glow) before loading another raw sample — previously it loaded+tinted one every cycle the
+chamber was empty, with no cap.
+
+**The mistinted-looking Warehouse stock was actually just raw, never-tinted specimens — not a
+Luminizer bug at all.** `bio_luminizer_1.log` showed every real infuse exactly matching a live order
+target (`[202,192,182]` = `bio_order_50`, `[168,158,138]` = `bio_order_48`, 8 total). The stray
+`sd_wing_membrane` stacks (glow values 9-29, nowhere near any coastal order's 62-202 range across the
+entire save) were raw specimens still waiting for the Luminizer — every raw sample carries its own
+naturally-varying starting glow (same `ChamberSample.glow` concept as a tinted one), so `matches_order()`
+correctly said `False` for all of them. The real problem was a Collector/Lab extraction rate outpacing
+the Luminizer's throughput (~10-70s per infuse), and since raw specimens don't stack any better than
+mistinted ones do, the backlog exhausted Warehouse material slots and deadlocked the whole pipeline
+(nothing could drain anywhere, so the Lab couldn't extract, so the Collector couldn't hand off, etc).
+See §1f for the throttle that keeps this from recurring.
+
+**Even after that, `_find_coastal_order()` could still deadlock the machine outright — not just
+inefficiently.** Found live: with two coastal orders both incomplete, it always returned whichever
+sorted first in `exchange.orders()`, regardless of whether any material for it actually existed yet.
+If the *other* order's fragment happened to already be staged in `self.machine.input` (latched to
+that one item id until `load()`/`flush()` clears it, per `docs/components/bio_luminizer.md`), the
+Luminizer would fixate on the wrong order forever: it can't `load()` the staged item because the
+selected order doesn't need it, and it can't `take_item()` the order's own fragment because the
+input is already latched to something else. Fixed two ways: (1) `_find_coastal_order(fragment_id=None)`
+now prefers a candidate order with `local_stock(fragment_id) > 0` for one of its requirements over
+one needing fresh collection; (2) `_load_next_sample()` checks `self.machine.input.stacks()` FIRST,
+before consulting order priority at all — if something's already staged, it looks up an order for
+*that specific fragment* and loads it (or, if no current order needs it any more, ejects it back to
+storage via `best_unload_target()` rather than leaving the input stuck on dead material forever).
+
+**A staged sample can itself already be finished, not just raw.** Debugging live turned up the input
+holding two property-distinct `sd_wing_membrane` stacks simultaneously — one at `[202,192,182]`
+(`bio_order_50`'s exact target) and nine at `[168,158,138]` (`bio_order_48`'s exact target): both
+already correctly tinted by an earlier successful `infuse()`, just never drained out before something
+else got staged alongside them. Calling `self.machine.load(fragment_id)` with no `properties` was
+ambiguous across the two variants and failed `"not_in_input"`; worse, even loading one on purpose
+would be pointless (and, per live report, leaves the Luminizer unable to do anything useful with it —
+it's already at target, there's nothing left to solve for) since it doesn't need tinting at all, only
+delivering. `_glow_matching_count()` never catches this either, since it only scans Warehouses/
+Inventory (`_local_sources()`), never a machine's own ports — so this stock was invisible to every
+demand/overproduction calculation while stuck there. Fixed by checking every staged stack
+individually: `_order_matching_glow(exchange, fragment_id, glow)` finds a live order whose
+`target_glow` exactly equals the stack's own glow; if one exists, the stack is already finished and
+gets **ejected** (with its exact `properties`, not reloaded) so the Exchange can find and deliver it.
+Only a stack that matches no current order's target is treated as raw and actually loaded (also with
+exact `properties`, avoiding the same ambiguity). The "pull fresh raw material" path
+(`_find_raw_stack()`) applies the identical exact-glow-exclusion when picking a storage stack to pull
+in, replacing the property-blind `storage.take_item()` there — otherwise it could grab an
+already-tinted unit waiting for delivery instead of genuinely raw stock, the same failure mode from
+the other direction. **The Luminizer should never pick up an already-tinted sample at all**, in either
+the "what's already staged" or "what to pull from storage" path — both now enforce this.
+
+### 1f. Raw-Specimen Backlog Throttle (`lib/bio.py` `BioCollectorController`, `RAW_BACKLOG_CAP_PER_FRAGMENT`)
+
+Caps how far `BioCollectorController` may collect a glow-requiring (coastal) fragment ahead of what
+the Luminizer has actually tinted, so raw specimens don't pile up and exhaust Warehouse material
+slots the way described in §1e. `_glow_throttled(exchange, fragment_id, outpost, my_biome)` — called
+from both of the Collector's demand-check branches (Signal Bus broadcast and the direct-exchange
+fallback) — finds every incomplete, local order requiring `fragment_id`; if none of them carry a
+`target_glow` (a plain fragment), throttling never applies at all, since a plain sample stacks
+normally and has no Luminizer bottleneck. Otherwise `_raw_backlog_count()` computes `local_stock() -
+sum(_glow_matching_count() per distinct target_glow)` — total stock minus whatever's already
+correctly tinted for one of those orders — and the Collector stops harvesting once that raw count
+reaches `RAW_BACKLOG_CAP_PER_FRAGMENT` (4 — raised from an initial 2, see below). Entirely read-only (`orders()`, `target_glow`,
+`stacks()`) — no `*(self only)*` hardware calls, so it's safe to call from the Collector's own script
+about a sibling Exchange.
+
+Note this only prevents the backlog from *recurring* — it doesn't retroactively free Warehouse slots
+already exhausted by a pre-existing pile of raw specimens. Clearing an existing deadlock still needs
+a one-time manual sell/eject in-game; there's no automated way to safely discard player inventory.
+
+**Per-fragment capping alone wasn't tight enough — the real fix is one-order-at-a-time focus.** Found
+live via the glow diagnostic: with ~8 simultaneously-incomplete coastal orders, each needing 2-4
+different fragments, `RAW_BACKLOG_CAP_PER_FRAGMENT` capped each individual TYPE to 2 but did nothing
+to limit how many DISTINCT types were in flight at once — the Collector was opportunistically
+gathering for every incomplete coastal order in parallel (`gm_folded_wing`, `vc_mandible_claw`,
+`hs_wing_membrane`, `ma_cuticle_molt`, `hc_shell_whorl`, `gw_caudal_fin`, `sd_wing_membrane`, all
+raw, all non-stacking, all at once), so the totals still blew past available Warehouse slots even
+with every individual type "capped." Fixed with `_focus_coastal_order(exchange, outpost, my_biome,
+fragment_id=None)`: the ONE order to concentrate on right now (same "prefer stock we already have"
+preference as before), shared by both `BioCollectorController` (`_glow_throttled()` now throttles a
+fragment completely — not just at the raw cap — if it doesn't belong to the current focus order) and
+`BioLuminizerController` (`_find_coastal_order()` is now a thin wrapper delegating here). Both
+controllers concentrating on the same order at the same time means the Collector no longer gathers
+raw material for an order the Luminizer isn't even working on yet — collection breadth is now bounded
+by one order's requirement list instead of every open coastal order's combined list. As focus
+naturally rotates to the next order (preferring ones with existing stock, i.e. exactly the leftover
+backlog from before this fix), previously-scattered raw specimens for other orders get worked off
+over time rather than needing a manual clear — but this is still not instant, and a warehouse already
+maxed out from before this fix still needs the same one-time manual sell/eject to actually unstick.
+
+**A single-order focus was too narrow and could starve the Collector entirely.** Found live: after a
+full manual Warehouse clear, every bio script went silent (zero log activity) with `cargo` confirmed
+empty on the Collector — not a deadlock, just nothing left it was allowed to harvest. If the one focus
+order's specific 2-4 fragments aren't cataloged/discoverable anywhere nearby yet, `_glow_throttled()`
+blocked every OTHER coastal order's fragments too, even ones sitting right there ready to harvest.
+Fixed with `FOCUS_ORDER_COUNT = 3` and `_focus_coastal_orders()` (plural): the Collector now
+concentrates on up to 3 coastal orders at once (same "existing stock first" ranking), giving it real
+alternatives while still keeping total distinct raw fragment types far below "every incomplete
+coastal order at once". `BioLuminizerController` still uses the singular `_focus_coastal_order()` for
+its own one-at-a-time tinting — only the Collector's gathering breadth needed loosening.
+
+**`comms.latest(channel)` returns the raw broadcast value directly, `-> Any` — never a status-wrapped
+object.** A genuinely pre-existing bug, not introduced by any of the above: `BioCollectorController`
+checked `b_res.status == "ok" and b_res.broadcast`, but `.latest()` (unlike `.receive()`, which
+correctly returns a `ReceiveResult` with `.status`/`.packet`) just hands back whatever was passed to
+`broadcast()` — a plain dict here — or `None` if nothing's been broadcast yet. `b_res.status` on a
+dict raised `AttributeError` every single call, silently swallowed by the surrounding `except
+Exception: pass`, so `demands` always stayed `None` and the Collector permanently fell back to its
+`elif exchange:` branch — deriving demand from a SINGLE `exchange.active_order()` instead of the
+properly-aggregated multi-order broadcast `broadcast_demands()` already computes. Since
+`active_order()` is the same volatile, sweep-reassigned pointer discussed throughout this section,
+that fallback's demand set could be for an order outside `_focus_coastal_orders()`'s top-3 entirely,
+throttling every fragment in it at once and looking identical to a fresh deadlock. Fixed: check
+`isinstance(broadcast, dict)` and read `.get("local_demands", {})` directly. With this fixed, the
+broadcast path should be the one actually running now, making the `elif exchange:` fallback rare.
+
+**`RAW_BACKLOG_CAP_PER_FRAGMENT = 2` over-corrected into full lockstep.** With the Collector's own
+one-slot cargo and the Lab's one-specimen chamber already forcing some serialization (both hardware,
+unrelated to this constant), a cap of 2 left almost no room for the Collector to work ahead of the
+Luminizer — reported live as "harvest one, wait for Lab+Luminizer+Exchange to fully finish it, only
+then harvest the next." Raised to 4: real pipelining slack, still far below the original
+unbounded-backlog problem this constant exists to prevent (see above).
+
+**Raising the cap "didn't do anything" — the real bottleneck was `exchange.orders()` being re-fetched
+per fragment, not the cap value.** Measured live: evaluating `BioCollectorController.step()`'s
+`demands.items()` loop (~20-30 glow fragments across all incomplete coastal orders) took **~20
+seconds**. Every fragment called `_glow_throttled()`, which called `exchange.orders()` itself AND
+called `_focus_coastal_orders()`, which called `exchange.orders()` again — two ~80-order fetches per
+fragment, 40-60+ redundant fetches per single `step()` cycle, dwarfing any effect of the backlog cap.
+Fixed by threading an already-fetched `orders` list through every order-scanning helper instead of
+each one fetching its own copy: `_focus_coastal_order()`, `_focus_coastal_orders()`, and
+`_glow_throttled()` now all take `orders` as a parameter; `BioCollectorController.step()` and
+`BioLuminizerController.step()` each fetch `exchange.orders()` exactly **once** per cycle and pass it
+down through every helper that needs it (`_find_coastal_order()`, `_order_matching_glow()`,
+`_find_raw_stack()`, `_load_next_sample()`, `_active_target_for()` all take `orders` now instead of
+`exchange`). The Luminizer had the identical anti-pattern (`_order_matching_glow()` re-fetching
+`orders()` once per staged/storage stack examined) even though it hadn't been reported yet — fixed
+the same way for consistency, since it would have hit the same wall as soon as more than a couple of
+stacks needed checking in one cycle.
+
+**Still ~8 seconds after caching `orders()` — the second bottleneck was re-walking local storage.**
+Caching `orders()` cut the cycle from ~20s to ~8s, not further, because every fragment/order check
+was still independently re-walking every Warehouse + home Inventory (`_local_sources(outpost)` →
+`.stacks()` per building) to compute stock counts and glow-matching counts — `local_stock()` and the
+old `_glow_matching_count()` each did this from scratch, once per fragment. Fixed the same way as the
+`orders()` fetch: one full storage walk per `step()` cycle via `_local_stock_snapshot(outpost)`,
+returning `(totals, by_glow)` dicts (`{item_id: count}` and `{(item_id, glow_tuple): count}`), read
+via `_snapshot_stock(snapshot, item_id)` / `_snapshot_glow_count(snapshot, item_id, target_glow)`.
+`_raw_backlog_count()`, `_focus_coastal_order()`, `_focus_coastal_orders()`, `_glow_throttled()`,
+`_fragment_remaining()` all take `snapshot` now instead of re-deriving stock from `outpost` per call;
+`BioCollectorController.step()` and `BioLuminizerController.step()` each build the snapshot exactly
+**once** per cycle, same pattern as the `orders` list. `_find_raw_stack()` is the one exception — it
+legitimately needs live `ItemStack` objects (not just counts) to actually load a specific stack, so it
+still does its own single storage walk, but only once per Luminizer `step()`, not per-fragment.
+
+**`best_unload_target()`'s fallback tried to connect a remote machine's output to a non-local
+destination.** When no local Warehouse had room, it unconditionally returned the literal id
+`"inventory"` — but `"inventory"` only exists/connects at the home outpost (per `lib/storage.py`'s own
+header comment). For a remote machine (the coastal Bio Luminizer, once its local Warehouses filled
+up) this meant `drain_port_to_storage()`/`BioLabController.drain_output()` would call
+`port.connect("inventory")` from a Warehouse-only outpost — a non-local target. Fixed: `outpost.is_home`
+(note: a plain `bool` attribute on `OutpostRef`, not a method — a genuine trap, since `Outpost`, the
+type returned by `get_component(outpost_id)`, has `is_home()` as a *method* with the same name; the
+type actually carried by `machine.outpost`/`_home_outpost()` throughout `lib/storage.py` is always
+`OutpostRef`) now gates the `"inventory"` fallback — only used when the resolved outpost actually is
+home, else `best_unload_target()` returns `None` and callers skip the stack (leave it staged, retry
+next cycle) instead of attempting a connection that can't work. `drain_port_to_storage()`,
+`BioLabController.drain_output()`, and `vehicle_cargo.py`'s `unload_one()` were the three call sites
+that weren't already wrapped in a blanket `try/except` around the `.connect()` call, so those three
+got an explicit `if target is None:` early-return/skip added.
 
 ---
 
@@ -948,10 +1227,35 @@ Nocturna Base.
   `get_material_demands()`, `get_raw_material_demands()`, and `can_source_item()` all net against now
   (previously Inventory-only) — so demand/mining priority correctly accounts for stock sitting in a
   Warehouse instead of ignoring it.
-- `best_unload_target(item_id, min_amount=1)`: least-full Warehouse with `space_for(item_id) >=
-  min_amount`, else `"inventory"`. `vehicle_cargo.py`'s `unload_cargo()` picks a destination
-  **per stack** (cargo can hold more than one item id) rather than connecting once to `"inventory"`
-  up front.
+- `best_unload_target(item_id, min_amount=1)`: among every discovered Warehouse at `outpost` with
+  `space_for(item_id) >= min_amount`, prefers one that **already holds `item_id`** (`count(item_id) >
+  0`) -- consolidating onto an existing stack -- and only falls back to ranking by least-full
+  (`fill_percent()`) when none already stocks it; `"inventory"` if no Warehouse qualifies at all.
+  Ranking purely by least-full (the old behavior, before this preference was added) ignores which
+  Warehouse already has the item, so alternating "least full" picks across separate deliveries could
+  spread the same item across every Warehouse at the outpost one partial stack at a time -- found
+  from a real case where a 100-unit reagent target ended up 50 in one Warehouse + 50 in another,
+  each its own single-slot partial stack, even though one Warehouse had room for the full 100 the
+  whole time. `vehicle_cargo.py`'s `unload_cargo()` picks a destination **per stack** (cargo can hold
+  more than one item id) rather than connecting once to `"inventory"` up front.
+- `consolidate_cross_warehouse_stock(outpost=None)`: calls `.compact()` on every discovered
+  Warehouse/Large Warehouse at `outpost` to pull a same-item stock split across more than one of
+  them back together. `.compact()` reads at a glance like a purely intra-building operation
+  ("fewest Warehouse slots"), but it isn't: its outcome table shares `transfer_to()`'s exact
+  vocabulary (`source_under_construction`/`source_changed`/`slots_full`/`target_full`), which only
+  makes sense if it pulls from *other* storage endpoints (a "source") into the one it's called on.
+  That also matches why the game would expose it at all -- with Auto Feeders, a single Warehouse
+  already adds to / draws from its lowest-numbered occupied slot for a given item on its own, so a
+  purely intra-building `.compact()` would have nothing to ever actually do; confirmed by observing
+  it consolidate stock split across separate Warehouse buildings in-game, and by `.compact()`
+  locking its Warehouse as a material endpoint for the whole cycle -- exactly the "busy while a
+  transfer between buildings is in flight" cost a same-building-only operation would have no reason
+  to pay. Complements `best_unload_target()`'s now-consolidation-aware routing for stock that was
+  already split before that fix landed (or split for any other reason, e.g. a manual move). Runs
+  once per `AUTOMATION_TICK_INTERVAL` cycle from `panel_1.py`'s AUTOMATION section for **every**
+  outpost (`network.outposts()`), not just home -- unlike `rebalance_inventory_to_warehouses()`
+  (Inventory-only, so home-scoped), this fragmentation happens across Warehouses themselves and
+  affects remote outposts (e.g. the reagent-hauler's destination) too.
 - `take_item(port, item_id, amount)`: the one function behind every
   `machine.input.take(item_id, amount)` call site (Smelter ore loading, Fabricator input loading,
   Supply Dock material loading, Pioneer's `load_construction_materials()`). Tries whatever `port` is
@@ -959,17 +1263,17 @@ Nocturna Base.
   Warehouse if that falls short — ports hold one source at a time (same single-destination
   constraint as `FluidPort`, see `lib/thermal_cap.py`), so this reconnects on demand rather than
   fanning out simultaneously.
-- **Multi-Smelter Leader Election** (`SmelterController` in `lib/smelter.py`) — with several
+- **Multi-Smelter Coordination** (`SmelterController` in `lib/smelter.py`) — with several
   Smelters at home, `production.discover_smelter_ids()` replaces every place that used to hardcode
   the literal id `"smelter_1"` (a correctness bug, not just inefficiency: demand/recipe lookups would
-  silently only ever consult one specific smelter's recipe set). Leader election
-  (`check_leader()`/`update_role()`) mirrors `lib/solar.py`'s `SolarController.check_master()`
-  *exactly* — same Archive+`run_control.is_running()` approach, **not** the Signal Bus, despite that
-  being available; sorted by numeric id suffix, lowest currently-`is_running()` id wins, recomputed
-  fresh every `step()` (no lease/heartbeat — if the Leader stops running, the next poll naturally
-  produces a different, correct answer). Only the Leader runs the "inventory manager" sweep (see
-  below) — Followers skip it, removing N-1 redundant identical sweeps of the same shared
-  Inventory/Warehouse set. Every smelter (Leader or Follower) still independently runs its own
+  silently only ever consult one specific smelter's recipe set). **No Leader/Follower election any
+  more** — the "inventory manager" sweep (see below) that used to need exactly one smelter to run it
+  is now run centrally, once, by `panel_1.py`'s AUTOMATION section (`storage.rebalance_inventory_to_warehouses()`,
+  no args = home outpost) instead of by whichever `SmelterController` instance won an election every
+  `step()`. `SmelterController` no longer has `check_leader()`/`update_role()`/`is_leader` at all — see
+  §1a-1 for why moving this to the one always-running Control Room process removed the election
+  entirely instead of just relocating it, and for the hard dependency this creates on `panel_1.py`
+  running. Every smelter still independently runs its own
   `select_needed_ore()`/craft loop against the same shared `get_material_demands()` numbers, but each
   candidate recipe is `claim_recipe()`d (`archive.transaction("smelter.recipe_claims", ...)`,
   `SMELTER_RECIPE_CLAIM_STALE_TICKS = 600`, mirroring `vehicle_claims.py`'s claim/release shape) before
@@ -991,7 +1295,7 @@ Nocturna Base.
     same ore in parallel each cycle self-throttle down to 0 together as the target is met, rather
     than each independently re-committing to the full remaining shortfall.
 - **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per cycle from
-  the Leader's `SmelterController.step()` (confirmed always-running at home base): any **propertyless**
+  `panel_1.py`'s AUTOMATION section (§1a-1; confirmed always-running at home base): any **propertyless**
   (`slot.properties is None` — non-stackable/unique items like worn equipment are left alone)
   Inventory item gets moved to a Warehouse **entirely**, not partially — there's no real "quick
   access" cost to reading from a Warehouse instead of Inventory, so nothing is deliberately left
@@ -1103,9 +1407,13 @@ Warehouse, independent of home's live demand.
   Independent of home's live demand entirely (no `get_raw_material_demands()` call), since the point
   is stockpiling ahead of it. Verified by stub test: a site near home is excluded from an outpost_3
   candidate list; candidates disappear once that ore's stock target is met.
-- **`MiningMixin.run_stationed_mining_loop(outpost_id)`** — same overall shape as
-  `run_expedition_cycle()`/`run_mining_loop()` (reload-resume safety net, cargo/target mismatch
-  detour, claim + drive + mine + return + unload + recharge), with target selection swapped for
+- **`MiningMixin.run_stationed_mining_loop(outpost_id)`** — thin `while True` + recall-check +
+  exception-guard wrapper (same shape as `run_mining_loop()`/`run_haul_loop()`) around
+  `_stationed_mining_cycle(outpost_id)`, which does the actual work: same overall shape as
+  `run_expedition_cycle()`/`run_mining_loop()`'s cycle body (reload-resume safety net, cargo/target
+  mismatch detour, claim + drive + mine + return + unload + recharge — releasing the claim right
+  after a successful return, regardless of outcome, so the next cycle always re-evaluates fresh
+  instead of blindly resuming the same site), with target selection swapped for
   `build_local_stockpile_candidates()` and "return to base" already meaning "return to this outpost"
   via the `home_base` resolution above — no separate return-path logic needed.
 
@@ -1232,7 +1540,9 @@ Bio Lab = reagent-hauler). The two params that used to be passed in at construct
 `_plan_haul_load(capacity, dest_outpost_id)` and the loading step are the only pieces that otherwise
 changed shape from §2f:
 
-- **`_plan_haul_load()`**: when the source is home (`self.home_outpost.is_home()`), a candidate's
+- **`_plan_haul_load()`**: when the source is home (`self.home_outpost.is_home`, a plain bool
+  property on the `OutpostRef` `get_outpost_ref()`/`network.home()` return -- **not** a method call,
+  unlike the same-named method on the full `Outpost` component returned by `get_component()`), a candidate's
   "available" amount is treated as its full deficit regardless of stock currently on hand, since a
   home shortfall can always be bought at the Shop — everywhere else (never home for the ore role),
   real stock on hand is still the hard ceiling, exactly as before.
@@ -1266,8 +1576,20 @@ the `outpost` argument, which is harmless for ore (raw ore doesn't pile up in ho
 actively wrong for reagents, which routinely sit in home Inventory (that's where the Shop delivers
 them): using `total_stock()` for "how much does the coastal Warehouse have" would over-report by
 whatever's sitting untouched at home, masking a real deficit. `lib/bio.py`'s `local_stock(item_id,
-outpost)` picks between the two based on `outpost.is_home()` for the same reason, used throughout the
-relocated Bio Lab/Collector/Exchange instead of the old hardcoded `get_component("inventory")`.
+outpost)` picks between the two based on `is_home_outpost(outpost)` (reads the `OutpostRef.is_home`
+bool property, **not** a method call — see the `_plan_haul_load()` note above for the same
+method-vs-property distinction) for the same reason, used throughout the relocated Bio Lab/Collector/
+Exchange instead of the old hardcoded `get_component("inventory")`.
+
+`lib/bio.py`'s `local_sibling(outpost, type_id)` replaces hardcoded same-pipeline instance ids
+(`get_component("bio_collector_1")`, `"bio_exchange_1"`, `"bio_lab_1")`) with a live
+`outpost.buildings(type_id)` lookup (first match, `get_component()`'d) -- needed because a Bio Lab's
+`take_from()` requires its Collector to be at the *same* outpost, and a hardcoded home-outpost id
+would silently reach across outposts (or reach nothing) once a second Bio pipeline exists at a remote
+outpost. `BioLabController` uses it for its Collector; `BioCollectorController` for its Exchange and
+Lab; `BioLuminizerController` for its Exchange. No caching -- resolved fresh per call, matching
+`storage.discover_storage_buildings()`'s convention, since a sibling building isn't guaranteed to
+exist yet at controller-construction time.
 
 ---
 
@@ -1304,6 +1626,9 @@ relocated Bio Lab/Collector/Exchange instead of the old hardcoded `get_component
 - `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`.
 - `heat.optimal_setpoints`: Caching `{thermal_state: best_power}`
 - `pressure.optimal_resonance`: Caching `{resonance_state: best_window}`
+- `outposts.known_ids`: List of outpost ids `panel_1.py`'s AUTOMATION section has already seen —
+  diffed each throttled tick against `outpost_network.outposts()` to detect a newly-founded outpost
+  and auto-trigger `outpost_mining.reevaluate_unassigned_near_outpost()` for it. See §7.
 
 ---
 
@@ -1373,8 +1698,10 @@ the card.
 
 **Sizing recommendations for these three cards** (each has a multi-column row layout that wants
 width, not height):
-- `panel_1.py` (STATUS): **`2 x 1`** (1000x200) — lays out 3-4 side-by-side sections; 1 column
-  leaves each section cramped.
+- `panel_1.py` (STATUS + AUTOMATION): **`2 x 2`** (1000x400) — STATUS alone only ever needed `2 x 1`,
+  but the AUTOMATION card added below it (see below) needs its own vertical room; the script splits
+  `panel.height()` ~55/45 between the two rather than assuming a fixed pixel split, so it still
+  degrades reasonably at `2 x 1` (just cramped) rather than clipping outright.
 - `panel_2.py` (FLEET) and `panel_3.py` (PRODUCTION) share the same one-row-per-item, scrollable-list
   shape: **`2 x 1`** for a handful of rows, **`2 x 2`** once you have more — each row shows as many
   as fit (`max_rows = (height - top - 16) // row_height`) at once. Beyond that, a `panel.slider()`
@@ -1400,6 +1727,24 @@ width, not height):
 Both also degrade gracefully at 1-column widths (`wide = width >= 900` branches to a shorter row
 height and, for `panel_2.py` specifically, hides the location column) so neither overflows even if
 resized narrow — but the recommended sizes above give the intended one-line-per-row layout.
+
+**`panel_1.py`'s AUTOMATION card** — everything from §1a-1's centralized Power Grid supervision +
+Smelter rebalance sweep, plus:
+- **Outpost-founding → resource marker auto-reassignment**: diffs `outpost_network.outposts()`'
+  current id set against the stored `outposts.known_ids` (archive, list — the only archive key this
+  card adds) each throttled tick; any **new** id gets
+  `outpost_mining.reevaluate_unassigned_near_outpost(new_id)` (§2d) called on it automatically.
+  `sync_resource_markers.py` remains for manual backfill/batch catch-up.
+- Throttled to `AUTOMATION_TICK_INTERVAL = 10` ticks (~1s at 10 ticks/sec — the panel loop itself has
+  no `sleep()` and redraws every render tick, so the automation work is gated separately via
+  `clock.tick()` rather than running at redraw frequency).
+- **`panel.button("run_archive_cleaner", ...)`** — `ArchiveCleaner(dry_run=False, verbose=True).run()`
+  (§4), live-commit, human-triggered only (never runs automatically on the throttled tick).
+- **`panel.button("run_unsupported_markers", ...)`** — `lib/unsupported_markers.py`'s
+  `update_unsupported_markers(clear_previous=True)` (promoted from `playground/mark_unsupported_targets.py`,
+  which never actually ran in the live game since `playground/` isn't synced — also available as the
+  thin root entrypoint `mark_unsupported_targets.py` for a manual standalone run). Also
+  human-triggered only.
 
 **Two real overlap bugs found and fixed across all three cards** (screenshot-driven — text was
 visibly stacked on top of other text in-game):

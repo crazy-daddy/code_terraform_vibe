@@ -225,7 +225,7 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
         return 0
 
     for marker in candidates:
-        if getattr(marker, "note", ""):
+        if not getattr(marker, "note", ""):
             continue
         if _distance(marker.x, marker.y, ox, oy) > effective_range:
             continue
@@ -237,6 +237,15 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
         if getattr(res, "status", "") == "ok":
             assigned += 1
     return assigned
+
+
+def site_assigned_outpost(x, y):
+    """Outpost id this specific site's resource marker names (its .note), or None if unassigned/no marker yet."""
+    markers = _markers()
+    if not markers:
+        return None
+    marker = markers.get(resource_marker_id(x, y))
+    return getattr(marker, "note", "") or None if marker else None
 
 
 def assigned_ores_for(outpost_id):

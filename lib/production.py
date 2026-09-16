@@ -219,6 +219,67 @@ def get_fabricator_stock_targets():
     }
 
 
+def _recipe_inputs_for(item_id):
+    """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
+    Smelter builds item_id, or None if neither does. Shared by
+    _cascade_blueprint_demand() and _cascade_fabricator_output_demand()."""
+    for component in (_default_fabricator(), _default_smelter()):
+        if not component or not hasattr(component, "list_recipes"):
+            continue
+        try:
+            for recipe in component.list_recipes():
+                if getattr(recipe, "output_item", None) != item_id:
+                    continue
+                output_count = max(1, getattr(recipe, "output_count", 1))
+                inputs = getattr(recipe, "inputs", {}) or {}
+                return {in_id: qty / output_count for in_id, qty in inputs.items()}
+        except Exception:
+            continue
+    return None
+
+
+def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs):
+    """
+    Breadth-first demand cascade seeded from seed_targets (Fabricator stock
+    targets/Supply Dock orders, restricted to items the Fabricator itself
+    builds), propagated down through Fabricator recipe inputs that are
+    THEMSELVES a Fabricator output -- e.g. Control Unit needs Circuit Panel,
+    which is its own Fabricator recipe. Without this, a target set only on
+    Control Unit (the order's own required item) never tells any Fabricator
+    to build Circuit Panel, so Control Unit -- and every other Fabricator
+    recipe needing it -- stalls forever on an input nothing ever produces.
+    Same shortfall-only propagation and depth bound as
+    _cascade_blueprint_demand(); intermediate raw/refined materials (e.g.
+    iron_ingot) are deliberately left to get_raw_material_demands()'s own
+    expansion off the resulting target, not duplicated here.
+
+    Returns {item_id: target_quantity} for every reached item still short of
+    stock, restricted to fabricator_outputs (Smelter-built intermediates
+    aren't Fabricator targets -- get_raw_material_demands() handles those).
+    """
+    targets = {}
+    frontier = dict(seed_targets)
+    depth = 0
+    while frontier and depth < 6:  # same generous bound as _cascade_blueprint_demand()
+        depth += 1
+        next_frontier = {}
+        for item_id, want in frontier.items():
+            if item_id in fabricator_outputs:
+                targets[item_id] = max(targets.get(item_id, 0), want)
+            shortfall = max(0, want - total_stock(item_id))
+            if shortfall <= 0:
+                continue
+            inputs = _recipe_inputs_for(item_id)
+            if not inputs:
+                continue
+            for input_id, ratio in inputs.items():
+                if input_id not in fabricator_outputs:
+                    continue  # only cascade through other Fabricator-built intermediates
+                next_frontier[input_id] = next_frontier.get(input_id, 0) + (shortfall * ratio)
+        frontier = next_frontier
+    return targets
+
+
 def _cascade_blueprint_demand():
     """
     Breadth-first demand cascade seeded from pending/paused Construction
@@ -244,24 +305,6 @@ def _cascade_blueprint_demand():
     MRP-style low-level-code solve for this game's shallow (2-3 tier)
     recipe chains.
     """
-
-    def recipe_inputs_for(item_id):
-        """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
-        Smelter builds item_id, or None if neither does."""
-        for component in (_default_fabricator(), _default_smelter()):
-            if not component or not hasattr(component, "list_recipes"):
-                continue
-            try:
-                for recipe in component.list_recipes():
-                    if getattr(recipe, "output_item", None) != item_id:
-                        continue
-                    output_count = max(1, getattr(recipe, "output_count", 1))
-                    inputs = getattr(recipe, "inputs", {}) or {}
-                    return {in_id: qty / output_count for in_id, qty in inputs.items()}
-            except Exception:
-                continue
-        return None
-
     frontier = {}
     bp = _component("construction_blueprint")
     if bp:
@@ -295,7 +338,7 @@ def _cascade_blueprint_demand():
             shortfall = max(0, want - total_stock(item_id))
             if shortfall <= 0:
                 continue
-            inputs = recipe_inputs_for(item_id)
+            inputs = _recipe_inputs_for(item_id)
             if not inputs:
                 continue
             for input_id, ratio in inputs.items():
@@ -374,6 +417,17 @@ def get_fabricator_targets():
     for item_id, count in _cascade_blueprint_demand().items():
         if item_id in fabricator_outputs:
             targets[item_id] = max(targets.get(item_id, 0), count)
+
+    # Cascade demand for a targeted Fabricator output down through its own
+    # recipe inputs when those inputs are themselves Fabricator-built (e.g.
+    # Control Unit needs Circuit Panel) -- see
+    # _cascade_fabricator_output_demand(). Without this, an order/blueprint
+    # target set only on the top-level item (Control Unit) never becomes a
+    # target for the intermediate (Circuit Panel), so no Fabricator ever
+    # builds it and the top-level item stalls forever waiting on stock that
+    # nothing produces.
+    for item_id, count in _cascade_fabricator_output_demand(targets, fabricator_outputs).items():
+        targets[item_id] = max(targets.get(item_id, 0), count)
 
     return targets
 

@@ -1,3 +1,5 @@
+import fluid_routing
+
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing
 # everything banked -- see docs/components/thermal_cap.md .is_overpressured()).
@@ -48,8 +50,9 @@ CONNECTION_GRACE_TICKS = 2
 # player builds a new Gas Pipe route to it) -- an entry expires and becomes
 # retryable again once it's been blacklisted for this many *simulation*
 # ticks (not step() calls -- see get_current_tick()/clock.tick()), tracked
-# per-entry (unreachable_targets maps tank_id -> the tick it was blacklisted
-# at), not as one shared "clear everything at once" timer. That distinction
+# per-entry (self._router.blacklist maps tank_id -> the tick it was
+# blacklisted at, see lib/fluid_routing.py's PerEntryBlacklist), not as one
+# shared "clear everything at once" timer. That distinction
 # matters: with 2+ simultaneously-bad candidates ranked ahead of the one
 # genuinely-reachable tank (by fill_pct/discovery-order ties), eliminating
 # all of them can take longer than this window -- a single shared clock that
@@ -61,8 +64,8 @@ CONNECTION_GRACE_TICKS = 2
 # reachable one is never erased by an unrelated entry's clock.
 RESCAN_INTERVAL_TICKS = 300
 
-# discover_network_building_ids() walks outpost_network.outposts() and every
-# outpost's buildings(type_id) -- real work, and (see profiling.py /
+# fluid_routing.discover_network_buildings() walks outpost_network.outposts()
+# and every outpost's buildings(type_id) -- real work, and (see profiling.py /
 # docs/AI_CHEATSHEET.md) the actual cost driver of this controller's step().
 # ensure_output_connection() only *needs* that walk when it's genuinely
 # picking a new target (no current connection, current is blacklisted, or
@@ -76,69 +79,6 @@ RESCAN_INTERVAL_TICKS = 300
 DISCOVERY_CACHE_INTERVAL_STEPS = 20
 
 
-def discover_network_buildings(type_id):
-    """
-    All building *objects* of type_id across every known outpost (not just
-    ids -- see discover_network_building_ids() for that). A Thermal Cap has
-    no .outpost of its own (built directly on a thermal vent out in the
-    field, not necessarily inside a founded outpost -- unlike Gas Tank/Steam
-    Turbine, docs/components/thermal_cap.md lists no .outpost property at
-    all), so candidate Gas Tanks must be discovered network-wide rather than
-    scoped to "this building's outpost". Physical Gas Pipe topology (not
-    outpost membership) ultimately decides which candidates actually succeed
-    via connect() -- this only gathers objects to try.
-
-    Resolves each BuildingRef to its full component via get_component(ref.id)
-    before returning -- docs/components/outpost.md is explicit that
-    outpost.buildings(type_id) hands back BuildingRef *snapshots*, which only
-    carry .id/.name/.type_id/.outpost/.powered/.position, NOT the type-specific
-    live methods (fill_pct(), is_stalled(), etc.) that only exist on the full
-    resolved component. An earlier version of this function returned the raw
-    BuildingRef directly -- _fill_pct_of_building() would then always hit its
-    "unreadable, treat as 1.0" fallback for *every* tank (BuildingRef has no
-    fill_pct at all), degenerating sort-by-fill into a no-op tie broken by
-    discovery order, and defeating the fast path too (a "healthy" current
-    tank would also read as 1.0 >= GAS_TANK_REBALANCE_FILL_FRACTION, forcing
-    a rescan every single step) -- the real cause of an observed ping-pong
-    between the same two candidates that never advanced to try others.
-    Resolving here once (not per-caller) matters for the same reason the
-    rest of this file caches things: ThermalCapController's per-id lookup
-    cache (_tank_lookup) is fed by this function's return value directly.
-    """
-    buildings = []
-    network = get_component("outpost_network")
-    if network and hasattr(network, "outposts"):
-        try:
-            for outpost in network.outposts():
-                for building in outpost.buildings(type_id):
-                    b_id = getattr(building, "id", None)
-                    if not b_id:
-                        continue
-                    try:
-                        resolved = get_component(b_id) or building
-                    except Exception:
-                        resolved = building
-                    buildings.append(resolved)
-        except Exception:
-            pass
-    return buildings
-
-
-def discover_network_building_ids(type_id):
-    """Ids only, for callers (e.g. port.connect(id)) that need a plain id rather than the object -- see discover_network_buildings()."""
-    return [b.id for b in discover_network_buildings(type_id)]
-
-
-def _fill_pct_of_building(building):
-    """fill_pct() of an already-resolved Gas Tank object, or 1.0 (treated as "full, deprioritize") if unreadable."""
-    if not building or not hasattr(building, "fill_pct"):
-        return 1.0
-    try:
-        return building.fill_pct()
-    except Exception:
-        return 1.0
-
-
 class ThermalCapController:
     """Keeps a Thermal Cap's chamber pressure off the overpressure ceiling."""
 
@@ -147,47 +87,18 @@ class ThermalCapController:
         self.name = getattr(cap, "id", "thermal_cap")
         self.last_phase = None
         self.clock = get_component("clock")
-        # connect()'s "ok" status only means the pairing was logically
-        # accepted -- docs/guide/infrastructure_and_pipes.md is explicit that
-        # a remote target needs a *completed* Gas Pipe route, which connect()
-        # never checks. is_stalled() is the only live signal that a target
-        # isn't actually reachable, so unreachable targets get blacklisted --
-        # but only until their own individual entry expires (see
-        # RESCAN_INTERVAL_TICKS), since a newly built pipe can make a
-        # blacklisted target reachable. tank_id -> the simulation tick it was
-        # blacklisted at, NOT a plain set -- see RESCAN_INTERVAL_TICKS for why
-        # per-entry timestamps matter here.
-        self.unreachable_targets = {}
-        self.ticks_since_connect = 0
-        self._cached_tanks = None
-        self._ticks_since_discovery = 0
-        # id -> resolved building object. Populated from discovery (which
-        # already holds live references -- see discover_network_buildings()),
-        # so the steady-state fast path below never needs to re-resolve the
-        # current tank id via a fresh get_component() call. Profiling showed
-        # this get_component() round trip -- not the network walk itself --
-        # was this controller's actual per-step cost (docs/AI_CHEATSHEET.md
-        # §1c): Steam Turbine's equivalent fast path touches zero external
-        # id-keyed lookups when healthy, while this one used to do exactly
-        # one every single step. Entries persist across rediscovery (merged,
-        # never wholesale-cleared) since a building's identity doesn't change
-        # between scans -- only the candidate *list* goes stale, not a
-        # previously resolved object.
-        self._tank_lookup = {}
-        # Tracked locally instead of re-querying port.connected_to() every
-        # step -- mirrors SteamTurbineController's self.connected_input,
-        # which never calls a port method at all in its healthy fast path.
-        # Profiling still showed a *sustained* per-step cost here even after
-        # the get_component() fix above, with no periodicity matching any
-        # cache/rescan interval -- the remaining unconditional port call was
-        # connected_to() itself (docs/AI_CHEATSHEET.md §1b/§1c). Seeded once
-        # from the real port state (see _sync_connected_tank_id()) so a
-        # script reload recovers an already-working connection instead of
-        # assuming a fresh start; kept in sync thereafter purely by this
-        # controller's own connect()/blacklist calls, since nothing else
-        # (no other script, no passive Gas Tank) ever repoints steam_out.
-        self._connected_tank_id = None
-        self._tank_id_synced = False
+        # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
+        # the full rationale (per-entry blacklist expiry, BuildingRef
+        # resolution, id-lookup/connected-id-sync caching) -- this router
+        # owns all of it; ThermalCapController only supplies its own tuning
+        # constants and print wording.
+        self._router = fluid_routing.FluidOutputRouter(
+            type_ids="gas_tank",
+            rebalance_fill_fraction=GAS_TANK_REBALANCE_FILL_FRACTION,
+            connection_grace_ticks=CONNECTION_GRACE_TICKS,
+            rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
+            discovery_cache_interval_steps=DISCOVERY_CACHE_INTERVAL_STEPS,
+        )
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -197,59 +108,10 @@ class ThermalCapController:
                 pass
         return 0
 
-    def is_blacklisted(self, tank_id, curr_tick):
-        """
-        Whether tank_id is still within its own blacklist window -- per-entry,
-        not a shared clock (see RESCAN_INTERVAL_TICKS). curr_tick == 0 (clock
-        unavailable) is treated as "still blacklisted" rather than "unknown so
-        allow retry", same convention vehicle_claims.py/smelter.py use for the
-        same edge case.
-        """
-        blacklisted_at = self.unreachable_targets.get(tank_id)
-        if blacklisted_at is None:
-            return False
-        age = curr_tick - blacklisted_at
-        return curr_tick == 0 or age < RESCAN_INTERVAL_TICKS
-
-    def _discover_tanks_cached(self):
-        """
-        Gas Tank objects network-wide, refreshed at most every
-        DISCOVERY_CACHE_INTERVAL_STEPS calls. Only called from the slow path
-        of ensure_output_connection() (see comment there) -- the common case
-        of "keep the current healthy connection" never reaches this at all.
-        """
-        if self._cached_tanks is None or self._ticks_since_discovery >= DISCOVERY_CACHE_INTERVAL_STEPS:
-            self._cached_tanks = discover_network_buildings("gas_tank")
-            for building in self._cached_tanks:
-                self._tank_lookup[building.id] = building
-            self._ticks_since_discovery = 0
-        else:
-            self._ticks_since_discovery += 1
-        return self._cached_tanks
-
-    def _resolve_tank(self, tank_id):
-        """
-        Building object for tank_id, preferring the cache filled by discovery
-        over a fresh get_component() round trip. Only actually calls
-        get_component() the first time a given id is ever seen (e.g. right
-        after a fresh connect(), before that id's own discovery batch has run)
-        -- every subsequent lookup for the same id is a plain dict read.
-        """
-        building = self._tank_lookup.get(tank_id)
-        if building is not None:
-            return building
-        try:
-            building = get_component(tank_id)
-        except Exception:
-            building = None
-        if building:
-            self._tank_lookup[tank_id] = building
-        return building
-
     def ensure_output_connection(self):
         """
         Declares/rebalances steam_out's destination among known Gas Tanks
-        (discovered network-wide -- see discover_network_building_ids()).
+        (discovered network-wide -- see fluid_routing.discover_network_buildings()).
         A Gas Tank has no script of its own (purely passive -- see
         docs/components/gas_tank.md), so nothing ever calls connect() on its
         side of the pipe; this Cap's own script must declare the link, and
@@ -270,84 +132,23 @@ class ThermalCapController:
             return
 
         curr_tick = self.get_current_tick()
+        is_stalled = fluid_routing.safe_is_stalled(self.cap)
 
-        # Query the port itself only once, ever, to recover state after a
-        # reload -- every call after that trusts the locally tracked id (see
-        # __init__), since this controller is the only writer of steam_out's
-        # destination.
-        if not self._tank_id_synced:
-            try:
-                self._connected_tank_id = port.connected_to() if hasattr(port, "connected_to") else None
-            except Exception:
-                self._connected_tank_id = None
-            self._tank_id_synced = True
-        current_id = self._connected_tank_id
+        def on_blacklisted(target_id):
+            print(f"[{self.name}] '{target_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
 
-        self.ticks_since_connect += 1
+        def on_connect_notice(target_id, status, message):
+            print(f"[{self.name}] steam_out connect notice for '{target_id}': {status} - {message}")
 
-        # A stalled cap with an open throttle and steam available means the
-        # currently connected target can't actually be reached by pipe --
-        # connect() never verified that, it only accepted the pairing.
-        # Blacklist it and force a reselect below rather than sitting stalled
-        # on the same bad target forever. Skipped for the first
-        # CONNECTION_GRACE_TICKS after connecting -- flow can take a tick to
-        # register, and treating that lag as proof of unreachability would
-        # blacklist a perfectly good tank.
-        is_stalled = False
-        if hasattr(self.cap, "is_stalled"):
-            try:
-                is_stalled = self.cap.is_stalled()
-            except Exception:
-                is_stalled = False
-        if is_stalled and current_id and not self.is_blacklisted(current_id, curr_tick) and self.ticks_since_connect >= CONNECTION_GRACE_TICKS:
-            self.unreachable_targets[current_id] = curr_tick
-            print(f"[{self.name}] '{current_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
-            current_id = None
-            self._connected_tank_id = None
-
-        # Fast path: a connection already judged healthy needs no network
-        # scan, and no fresh component resolution either -- _resolve_tank()
-        # is a plain dict read once the id has been seen once (see
-        # __init__). This is what actually removes nearly all of this
-        # method's cost in steady state, since discovery (below) only runs
-        # when a target genuinely needs to be (re)picked -- see
-        # DISCOVERY_CACHE_INTERVAL_STEPS and docs/AI_CHEATSHEET.md §1b/§1c.
-        if current_id and not self.is_blacklisted(current_id, curr_tick) and _fill_pct_of_building(self._resolve_tank(current_id)) < GAS_TANK_REBALANCE_FILL_FRACTION:
-            return
-
-        all_known_tanks = self._discover_tanks_cached()
-        tanks = [t for t in all_known_tanks if not self.is_blacklisted(t.id, curr_tick)]
-        if not tanks:
-            # Every known tank is still within its own blacklist window (or
-            # none exist at all) -- deliberately do NOT wipe the blacklist
-            # here: each entry expires on its own schedule (is_blacklisted()),
-            # and force-clearing everything at once would reintroduce the
-            # exact bug this per-entry design fixes (see RESCAN_INTERVAL_TICKS).
-            # The relief valve (step()) is the safety net for this window, not
-            # a forced reconnect attempt here.
-            if all_known_tanks:
-                print(f"[{self.name}] Every known Gas Tank is still within its blacklist window; waiting for one to expire.")
-            else:
-                print(f"[{self.name}] No Gas Tank found network-wide yet; steam_out has no destination.")
-            return
-
-        # Try the least-full known tank first (load-balances across several),
-        # falling through to the next since not every tank is necessarily
-        # physically pipe-reachable from this Cap's field location.
-        for tank in sorted(tanks, key=_fill_pct_of_building):
-            if tank.id == current_id:
-                continue
-            try:
-                res = port.connect(tank.id)
-            except Exception:
-                continue
-            if res.status == "ok":
-                self.ticks_since_connect = 0
-                self._connected_tank_id = tank.id
-                print(f"[{self.name}] Connected steam_out -> '{tank.id}' ({_fill_pct_of_building(tank)*100:.0f}% full).")
-                return
-            elif res.status != "busy":
-                print(f"[{self.name}] steam_out connect notice for '{tank.id}': {res.status} - {res.message}")
+        event = self._router.ensure_connection(port, curr_tick, is_stalled, on_blacklisted, on_connect_notice)
+        if event.kind == "connected":
+            print(f"[{self.name}] Connected steam_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+        elif event.kind == "waiting":
+            # The relief valve (step()) is the safety net for this window,
+            # not a forced reconnect attempt here.
+            print(f"[{self.name}] Every known Gas Tank is still within its blacklist window; waiting for one to expire.")
+        elif event.kind == "not_found":
+            print(f"[{self.name}] No Gas Tank found network-wide yet; steam_out has no destination.")
 
     def release_throttle_for_pressure(self, pressure):
         """Proportional release-valve setting for the given chamber pressure."""

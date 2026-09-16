@@ -581,6 +581,12 @@ class PioneerController(VehicleController):
                     sleep(5.0)
                     continue
 
+                # Back at base -- release the claim regardless of how this trip
+                # ended so the next cycle always re-evaluates fresh demand
+                # instead of blindly resuming the same site forever (previously
+                # only an explicit recall ever cleared it).
+                self.release_target_claim()
+
                 # Step 7: Offload and recharge
                 if self.unload_cargo() < 0:
                     self.publish_telemetry("WAITING_INVENTORY_SPACE")

@@ -204,15 +204,20 @@ class RoverController(VehicleController):
         elif target["type"] == "mine":
             self.mine_until_full_or_exhausted(coords)
 
-        # Step 6: Return to base (releases target claim upon return). A failed
-        # return (e.g. a rescue interrupts drive_to() mid-trip) must not fall
-        # through to Step 7 -- unload_cargo() requires actually being at the
-        # home outpost's service area, and will just fail with "not_at_target"
-        # otherwise.
+        # Step 6: Return to base. A failed return (e.g. a rescue interrupts
+        # drive_to() mid-trip) must not fall through to Step 7 --
+        # unload_cargo() requires actually being at the home outpost's
+        # service area, and will just fail with "not_at_target" otherwise.
         if not self.return_to_base():
             print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
             sleep(5.0)
             return
+
+        # Release the claim regardless of how this trip ended so the next
+        # cycle always re-evaluates fresh demand instead of blindly resuming
+        # the same site forever (previously only an explicit recall or an
+        # unhandled exception ever cleared it).
+        self.release_target_claim()
 
         # Step 7: Offload and recharge
         if self.unload_cargo() < 0:

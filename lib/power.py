@@ -73,7 +73,9 @@ NIGHT_DURATION_HOURS = 24.0 - SUNSET_HOUR + SUNRISE_HOUR  # 10.08, exact and con
 
 class PowerGridManager:
     """
-    Supervises a single power grid:
+    Supervises a single power grid -- one instance per grid, owned centrally by
+    panel_1.py's AUTOMATION section (see docs/AI_CHEATSHEET.md) rather than by
+    any individual generator, so there's no Master/Follower election needed:
     - Monitors generation, consumption, and battery storage directly via PowerGrid snapshot.
     - Calibrates day/night cycles and historical overnight energy usage.
     - Issues predictive battery and generation advisories at sunset and during nighttime deficits.
@@ -81,13 +83,17 @@ class PowerGridManager:
     - Restores shedded machinery progressively when battery/surplus recovers.
     """
 
-    def __init__(self, machine, clock=None, power=None):
-        self.machine = machine
-        self.name = getattr(machine, "id", "generator")
+    def __init__(self, grid, clock=None, power=None):
         self.clock = clock or get_component("clock")
         self.power = power or get_component("power_control")
 
-        self.grid_anchor = None
+        # Identity is bound once, from the grid snapshot this manager was
+        # created for -- not left None until the first supervise_grid() call
+        # sets it as a side effect (this manager is 1:1 with one grid for its
+        # entire lifetime; the caller re-passes a fresh snapshot each call
+        # only because PowerGrid readings are point-in-time, not because the
+        # grid identity itself is expected to change).
+        self.grid_anchor = getattr(grid, "anchor_id", None)
         self.shedded_machines = set()
 
         # Day/Night cycle tracking
@@ -104,23 +110,24 @@ class PowerGridManager:
         self.night_wh_accumulated = 0.0
         self.last_energy_sample_hour = None
 
-    def get_grid(self):
-        """Fetches the PowerGrid snapshot containing this generator or anchor."""
-        if self.power and hasattr(self.power, "grid"):
+    def release_all(self):
+        """
+        Call when this manager's grid has stopped being reported by
+        power_control.grids() entirely (two grids merged into one via a new
+        power line, orphaning one of the two old anchor_ids). The caller is
+        about to drop this manager -- without this, anything still recorded
+        in shedded_machines would be stranded shed forever, since the merged
+        grid's own manager starts fresh with an empty shedded_machines and has
+        no way to know about it.
+        """
+        for m_id in list(self.shedded_machines):
             try:
-                grid = self.power.grid(self.name)
-                if grid:
-                    return grid
+                if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
+                    self.power.set_powered(m_id, True)
             except Exception:
                 pass
-        elif self.power and hasattr(self.power, "grids"):
-            try:
-                grids = self.power.grids()
-                if grids:
-                    return grids[0]
-            except Exception:
-                pass
-        return None
+            self.shedded_machines.discard(m_id)
+        self.update_archive_shedded()
 
     def get_shedding_tiers(self):
         """
@@ -140,24 +147,15 @@ class PowerGridManager:
         """
         Resolves a machine identifier or wildcard pattern (e.g. 'smelter_*') into machine IDs.
         Matches against machines connected to this power grid via regex.
-        Falls back to outpost buildings or registered components if grid_machines is not populated.
+        Falls back to a numbered-guess component lookup if grid_machines is not populated -- this manager
+        has no single "owning" machine/outpost of its own to fall back through first (it's centrally owned,
+        one instance per grid, not tied to any one generator), so grid_machines (the grid snapshot's own
+        machine_ids/members, always populated for a real grid) is the only real source; this is a last resort.
         """
         if not is_wildcard_pattern(pattern):
             return [pattern]
 
         candidates = set(grid_machines) if grid_machines is not None else set()
-        if not candidates:
-            outpost = getattr(self.machine, "outpost", None)
-            if outpost and hasattr(outpost, "buildings"):
-                try:
-                    prefix = pattern.split("*")[0].rstrip("_")
-                    buildings = outpost.buildings(prefix) if prefix else outpost.buildings()
-                    for b in buildings:
-                        b_id = getattr(b, "id", "")
-                        if b_id:
-                            candidates.add(b_id)
-                except Exception:
-                    pass
         if not candidates:
             prefix = pattern.split("*")[0]
             for i in range(1, 9):
@@ -415,11 +413,11 @@ class PowerGridManager:
             self.update_archive_shedded()
 
     def supervise_grid(self, grid, elevation):
-        """Core supervision cycle for a master generator on its grid."""
+        """Core supervision cycle for this grid."""
         if grid:
             self.grid_anchor = getattr(grid, "anchor_id", None)
 
-        grid_id_str = self.grid_anchor or self.name
+        grid_id_str = self.grid_anchor or "unknown_grid"
         current_hour = self.clock.elapsed_game_hours() if hasattr(self.clock, "elapsed_game_hours") else 0.0
         current_day = self.clock.get_day() if self.clock else 1
 
@@ -428,6 +426,18 @@ class PowerGridManager:
         capacity_wh = getattr(grid, "capacity", 500.0) if grid else 500.0
         consumed_w = getattr(grid, "consumed", 0.0) if grid else 0.0
         generated_w = getattr(grid, "generated", 0.0) if grid else 0.0
+
+        # A grid with no battery at all (e.g. Steam Turbine-only, no Battery
+        # built) has nothing this class's night-shedding math can reason
+        # about -- battery_pct = stored_wh / capacity_wh would divide by a
+        # real zero and read as a permanent 0% "severe deficit" every single
+        # night. This never came up before centralizing supervision (only
+        # solar-paired grids -- which always have a battery, since solar needs
+        # night storage -- ever got supervised); now that every grid is
+        # covered, skip battery-less ones outright rather than guess at a
+        # generation-vs-consumption strategy this class doesn't implement.
+        if capacity_wh <= 0:
+            return
 
         grid_machines = None
         if grid:

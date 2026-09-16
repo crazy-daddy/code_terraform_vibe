@@ -186,7 +186,7 @@ class MiningMixin:
                 hardness = getattr(site, "hardness", 99)
                 if hardness > max_drill_hardness:
                     continue
-                if outpost_mining.nearest_outpost_id(site.x, site.y) != outpost_id:
+                if outpost_mining.site_assigned_outpost(site.x, site.y) != outpost_id:
                     continue
 
                 key = f"site_{site.id}"
@@ -312,14 +312,17 @@ class MiningMixin:
 
         return mined_count
 
-    def mine_until_full_or_exhausted(self, target_coords):
+    def mine_until_full_or_exhausted(self, target_coords, max_units=None):
         """
-        Mines the current site to cargo capacity, recharging at the nearest
-        station and driving back to resume as many times as needed when
-        interrupted by low battery (mirrors the recharge-and-resume pattern
-        used for construction jobs in pioneer.py's execute_construction()).
+        Mines the current site to cargo capacity (or max_units, if given --
+        e.g. a stockpile target's remaining headroom, so a stationed miner
+        doesn't overshoot a Warehouse stock target and waste a material slot
+        on the overflow), recharging at the nearest station and driving back
+        to resume as many times as needed when interrupted by low battery
+        (mirrors the recharge-and-resume pattern used for construction jobs
+        in pioneer.py's execute_construction()).
         """
-        self.mine_current_site()
+        self.mine_current_site(max_units=max_units)
 
         while getattr(self, "mining_interrupted_battery", False) and not self.vehicle.cargo.full():
             if self.is_recalled():
@@ -360,6 +363,8 @@ class MiningMixin:
                 return
 
             remaining_space = self.vehicle.cargo.capacity() - self.vehicle.cargo.count()
+            if max_units is not None:
+                remaining_space = min(remaining_space, max(0, max_units - self.vehicle.cargo.count()))
             if remaining_space > 0:
                 self.mine_current_site(max_units=remaining_space)
             else:
@@ -367,11 +372,38 @@ class MiningMixin:
 
     def run_stationed_mining_loop(self, outpost_id):
         """
-        Continuous mining cycle for a vehicle stationed at outpost_id (not
-        home) -- see TODO.md Phase 3's Multi-Outpost Production Network.
-        Mines this outpost's assigned ores (lib/outpost_mining.py) up to
-        their stock targets, independent of home's live demand, and returns/
-        unloads at this outpost rather than home (both already follow from
+        Continuous loop wrapper around _stationed_mining_cycle() -- one full
+        cycle per iteration, recall-checked and exception-guarded, same shape
+        as run_mining_loop()/run_haul_loop(). This is what a thin entrypoint
+        script should call directly (a single line: no while/recall logic
+        belongs there -- see CLAUDE.md's thin-entrypoint rule).
+        """
+        print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}. Stationed at '{outpost_id}'.")
+        while True:
+            try:
+                if self.handle_recall_if_active():
+                    sleep(5.0)
+                    continue
+                self._stationed_mining_cycle(outpost_id)
+            except Exception as e:
+                print(f"[{self.name}] Stationed mining exception: {e}. Executing emergency failsafe brake.")
+                try:
+                    self.vehicle.nav.brake()
+                except Exception:
+                    pass
+                try:
+                    self.release_target_claim()
+                except Exception:
+                    pass
+                sleep(5.0)
+
+    def _stationed_mining_cycle(self, outpost_id):
+        """
+        One mining cycle for a vehicle stationed at outpost_id (not home) --
+        see TODO.md Phase 3's Multi-Outpost Production Network. Mines this
+        outpost's assigned ores (lib/outpost_mining.py) up to their stock
+        targets, independent of home's live demand, and returns/unloads at
+        this outpost rather than home (both already follow from
         self.home_base -- see VehicleController.__init__ and
         vehicle_cargo.py's unload_cargo()). Mirrors run_expedition_cycle()'s
         (rover.py) overall shape, swapping demand-driven target selection for
@@ -436,12 +468,32 @@ class MiningMixin:
             self.return_to_base()
             return
 
-        self.mine_until_full_or_exhausted(coords)
+        # Cap this trip to the stockpile target's remaining headroom, not just
+        # cargo capacity -- otherwise a full cargo load routinely overshoots
+        # stock_target_for() (default one Warehouse slot, 2000 units) by
+        # however much cargo capacity exceeds the remainder, forcing the
+        # overflow into a second material slot for no benefit (found from a
+        # real Warehouse: iron_ore split 2000+279 across two slots, wasting
+        # one of only 5 available for other assigned ores).
+        outpost_ref = outpost_mining.outpost_by_id(outpost_id)
+        remaining_target = outpost_mining.stock_target_for(outpost_id, target["harvest_item"]) - total_stock(target["harvest_item"], outpost=outpost_ref)
+        self.mine_until_full_or_exhausted(coords, max_units=max(1, remaining_target))
 
         if not self.return_to_base():
             print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
             sleep(5.0)
             return
+
+        # Back at the stationed outpost -- release the claim regardless of how
+        # this trip ended (cargo full, site depleted, etc.) so the next cycle
+        # always re-evaluates fresh (current markers/demand) instead of blindly
+        # resuming the same site forever. Previously the claim only ever
+        # cleared via an explicit recall, so a vehicle could keep grinding a
+        # site whose marker assignment or stock target had since changed --
+        # or, once truly depleted, keep re-attempting it fruitlessly, since
+        # resumption skips the unsupported-target check candidate selection
+        # would otherwise apply.
+        self.release_target_claim()
 
         if self.unload_cargo() < 0:
             self.publish_telemetry("WAITING_INVENTORY_SPACE")

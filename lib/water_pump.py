@@ -1,3 +1,5 @@
+import fluid_routing
+
 # Shared Water Pump automation: keep water_out pointed at a reachable Liquid
 # Tank / Large Liquid Tank, load-balancing across whichever ones have room.
 # Deliberately much simpler than lib/thermal_cap.py: a Water Pump has no
@@ -41,56 +43,6 @@ RESCAN_INTERVAL_TICKS = 300
 DISCOVERY_CACHE_INTERVAL_STEPS = 20
 
 
-def discover_network_buildings(type_ids):
-    """
-    All building *objects* of the given type_id(s) (a single string or an
-    iterable of them -- a Water Pump can fill either a Liquid Tank or a
-    Large Liquid Tank) across every known outpost. A Water Pump has no
-    .outpost of its own (built on a surveyed Water Well out in the field,
-    not necessarily inside a founded outpost), so candidates must be
-    discovered network-wide rather than scoped to "this building's outpost"
-    -- see lib/thermal_cap.py's identically-reasoned discover_network_buildings().
-
-    Resolves each BuildingRef to its full component via get_component(ref.id)
-    before returning, same as thermal_cap.py -- outpost.buildings(type_id)
-    hands back BuildingRef *snapshots* which lack fill_pct()/is_full()/etc.,
-    only the resolved component has those.
-    """
-    if isinstance(type_ids, str):
-        type_ids = (type_ids,)
-
-    buildings = []
-    seen_ids = set()
-    network = get_component("outpost_network")
-    if network and hasattr(network, "outposts"):
-        try:
-            for outpost in network.outposts():
-                for type_id in type_ids:
-                    for building in outpost.buildings(type_id):
-                        b_id = getattr(building, "id", None)
-                        if not b_id or b_id in seen_ids:
-                            continue
-                        try:
-                            resolved = get_component(b_id) or building
-                        except Exception:
-                            resolved = building
-                        seen_ids.add(b_id)
-                        buildings.append(resolved)
-        except Exception:
-            pass
-    return buildings
-
-
-def _fill_pct_of_building(building):
-    """fill_pct() of an already-resolved tank object, or 1.0 (treated as "full, deprioritize") if unreadable."""
-    if not building or not hasattr(building, "fill_pct"):
-        return 1.0
-    try:
-        return building.fill_pct()
-    except Exception:
-        return 1.0
-
-
 class WaterPumpController:
     """Keeps a Water Pump's water_out pointed at a reachable, non-full Liquid Tank / Large Liquid Tank."""
 
@@ -98,22 +50,18 @@ class WaterPumpController:
         self.pump = pump
         self.name = getattr(pump, "id", "water_pump")
         self.clock = get_component("clock")
-        # tank_id -> the simulation tick it was blacklisted at, NOT a plain
-        # set -- see RESCAN_INTERVAL_TICKS for why per-entry timestamps
-        # matter here. Same mechanism as thermal_cap.py's unreachable_targets.
-        self.unreachable_targets = {}
-        self.ticks_since_connect = 0
-        self._cached_tanks = None
-        self._ticks_since_discovery = 0
-        # id -> resolved building object, merged across rediscovery, never
-        # wholesale-cleared -- see thermal_cap.py's _tank_lookup.
-        self._tank_lookup = {}
-        # Tracked locally instead of re-querying port.connected_to() every
-        # step -- seeded once from the real port state so a script reload
-        # recovers an already-working connection. See thermal_cap.py's
-        # _connected_tank_id/_tank_id_synced.
-        self._connected_tank_id = None
-        self._tank_id_synced = False
+        # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
+        # the full rationale (per-entry blacklist expiry, BuildingRef
+        # resolution, id-lookup/connected-id-sync caching) -- this router
+        # owns all of it; WaterPumpController only supplies its own tuning
+        # constants and print wording.
+        self._router = fluid_routing.FluidOutputRouter(
+            type_ids=LIQUID_TANK_TYPE_IDS,
+            rebalance_fill_fraction=LIQUID_TANK_REBALANCE_FILL_FRACTION,
+            connection_grace_ticks=CONNECTION_GRACE_TICKS,
+            rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
+            discovery_cache_interval_steps=DISCOVERY_CACHE_INTERVAL_STEPS,
+        )
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -123,42 +71,11 @@ class WaterPumpController:
                 pass
         return 0
 
-    def is_blacklisted(self, tank_id, curr_tick):
-        """Whether tank_id is still within its own blacklist window -- per-entry, not a shared clock. See lib/thermal_cap.py's identical is_blacklisted()."""
-        blacklisted_at = self.unreachable_targets.get(tank_id)
-        if blacklisted_at is None:
-            return False
-        age = curr_tick - blacklisted_at
-        return curr_tick == 0 or age < RESCAN_INTERVAL_TICKS
-
-    def _discover_tanks_cached(self):
-        """Liquid Tank / Large Liquid Tank objects network-wide, refreshed at most every DISCOVERY_CACHE_INTERVAL_STEPS calls."""
-        if self._cached_tanks is None or self._ticks_since_discovery >= DISCOVERY_CACHE_INTERVAL_STEPS:
-            self._cached_tanks = discover_network_buildings(LIQUID_TANK_TYPE_IDS)
-            for building in self._cached_tanks:
-                self._tank_lookup[building.id] = building
-            self._ticks_since_discovery = 0
-        else:
-            self._ticks_since_discovery += 1
-        return self._cached_tanks
-
-    def _resolve_tank(self, tank_id):
-        """Building object for tank_id, preferring the cache filled by discovery over a fresh get_component() round trip."""
-        building = self._tank_lookup.get(tank_id)
-        if building is not None:
-            return building
-        try:
-            building = get_component(tank_id)
-        except Exception:
-            building = None
-        if building:
-            self._tank_lookup[tank_id] = building
-        return building
-
     def ensure_output_connection(self):
         """
         Declares/rebalances water_out's destination among known Liquid Tanks/
-        Large Liquid Tanks (discovered network-wide). A tank has no script of
+        Large Liquid Tanks (discovered network-wide -- see
+        fluid_routing.discover_network_buildings()). A tank has no script of
         its own (purely passive), so this Pump's own script must declare the
         link, and water_out only ever holds one destination at a time (per
         docs/components/water_pump.md), so serving several tanks means
@@ -175,69 +92,21 @@ class WaterPumpController:
             return
 
         curr_tick = self.get_current_tick()
+        is_stalled = fluid_routing.safe_is_stalled(self.pump)
 
-        if not self._tank_id_synced:
-            try:
-                self._connected_tank_id = port.connected_to() if hasattr(port, "connected_to") else None
-            except Exception:
-                self._connected_tank_id = None
-            self._tank_id_synced = True
-        current_id = self._connected_tank_id
+        def on_blacklisted(target_id):
+            print(f"[{self.name}] '{target_id}' reported stalled (well water available, valve open, nothing transferred) -- likely no completed Liquid Pipe route. Blacklisting and picking a different target.")
 
-        self.ticks_since_connect += 1
+        def on_connect_notice(target_id, status, message):
+            print(f"[{self.name}] water_out connect notice for '{target_id}': {status} - {message}")
 
-        # A stalled pump with an open throttle and well water available means
-        # the currently connected target can't actually be reached by pipe --
-        # connect() never verified that, it only accepted the pairing.
-        # Blacklist it and force a reselect below. Skipped for the first
-        # CONNECTION_GRACE_TICKS after connecting -- flow can take a tick to
-        # register.
-        is_stalled = False
-        if hasattr(self.pump, "is_stalled"):
-            try:
-                is_stalled = self.pump.is_stalled()
-            except Exception:
-                is_stalled = False
-        if is_stalled and current_id and not self.is_blacklisted(current_id, curr_tick) and self.ticks_since_connect >= CONNECTION_GRACE_TICKS:
-            self.unreachable_targets[current_id] = curr_tick
-            print(f"[{self.name}] '{current_id}' reported stalled (well water available, valve open, nothing transferred) -- likely no completed Liquid Pipe route. Blacklisting and picking a different target.")
-            current_id = None
-            self._connected_tank_id = None
-
-        # Fast path: a connection already judged healthy needs no network
-        # scan, and no fresh component resolution either.
-        if current_id and not self.is_blacklisted(current_id, curr_tick) and _fill_pct_of_building(self._resolve_tank(current_id)) < LIQUID_TANK_REBALANCE_FILL_FRACTION:
-            return
-
-        all_known_tanks = self._discover_tanks_cached()
-        tanks = [t for t in all_known_tanks if not self.is_blacklisted(t.id, curr_tick)]
-        if not tanks:
-            # Every known tank is still within its own blacklist window (or
-            # none exist at all) -- deliberately do NOT wipe the blacklist
-            # here; each entry expires on its own schedule (is_blacklisted()).
-            if all_known_tanks:
-                print(f"[{self.name}] Every known Liquid Tank is still within its blacklist window; waiting for one to expire.")
-            else:
-                print(f"[{self.name}] No Liquid Tank or Large Liquid Tank found network-wide yet; water_out has no destination.")
-            return
-
-        # Try the least-full known tank first (load-balances across several),
-        # falling through to the next since not every tank is necessarily
-        # physically pipe-reachable from this Pump's field location.
-        for tank in sorted(tanks, key=_fill_pct_of_building):
-            if tank.id == current_id:
-                continue
-            try:
-                res = port.connect(tank.id)
-            except Exception:
-                continue
-            if res.status == "ok":
-                self.ticks_since_connect = 0
-                self._connected_tank_id = tank.id
-                print(f"[{self.name}] Connected water_out -> '{tank.id}' ({_fill_pct_of_building(tank)*100:.0f}% full).")
-                return
-            elif res.status != "busy":
-                print(f"[{self.name}] water_out connect notice for '{tank.id}': {res.status} - {res.message}")
+        event = self._router.ensure_connection(port, curr_tick, is_stalled, on_blacklisted, on_connect_notice)
+        if event.kind == "connected":
+            print(f"[{self.name}] Connected water_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+        elif event.kind == "waiting":
+            print(f"[{self.name}] Every known Liquid Tank is still within its blacklist window; waiting for one to expire.")
+        elif event.kind == "not_found":
+            print(f"[{self.name}] No Liquid Tank or Large Liquid Tank found network-wide yet; water_out has no destination.")
 
     def step(self):
         self.ensure_output_connection()

@@ -124,11 +124,28 @@ def _fill_fraction(building):
 
 def best_unload_target(item_id, min_amount=1, outpost=None):
     """
-    Destination id string for offloading item_id: the least-full discovered
-    Warehouse with space_for(item_id) >= min_amount, else "inventory" as the
-    fallback (no Warehouse, or none with room).
+    Destination id string for offloading item_id, else None if there is nowhere
+    local to put it. Among every discovered Warehouse with space_for(item_id) >=
+    min_amount, prefers one that already holds item_id (count(item_id) > 0) --
+    consolidating onto an existing stack -- and only falls back to ranking every
+    candidate by least-full when none already stocks it. Ranking purely by
+    fill_percent (the old behavior) ignores which Warehouse already has the item, so
+    alternating "least full" picks across separate deliveries could spread
+    the same item across every Warehouse at the outpost one partial stack
+    at a time (e.g. a 100-unit reagent target ending up as 50 in one
+    Warehouse and 50 in another, each a needless partial stack) even though
+    a single Warehouse had room for the full amount the whole time.
+
+    Only falls back to the literal "inventory" id when `outpost` resolves to the
+    home outpost -- "inventory" only exists/connects there. Found live: a remote
+    machine (e.g. a coastal Bio Luminizer) whose local Warehouses were all full
+    would get handed "inventory" as the fallback and try to .connect() its own
+    output port to it -- a non-local target from a Warehouse-only outpost. Returns
+    None instead so callers can skip the stack (leave it staged) rather than
+    attempt a connection that can't work.
     """
-    candidates = []
+    holders = []
+    others = []
     for building in discover_storage_buildings(outpost):
         component = building["component"]
         if not component or not hasattr(component, "space_for"):
@@ -137,14 +154,22 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
             space = component.space_for(item_id)
         except Exception:
             continue
-        if space >= min_amount:
-            candidates.append(building)
+        if space < min_amount:
+            continue
+        try:
+            already_holds = component.count(item_id) > 0
+        except Exception:
+            already_holds = False
+        (holders if already_holds else others).append(building)
 
-    if not candidates:
-        return "inventory"
+    pool = holders if holders else others
+    if not pool:
+        resolved = outpost if outpost is not None else _home_outpost()
+        is_home = bool(resolved and getattr(resolved, "is_home", False))
+        return "inventory" if is_home else None
 
-    candidates.sort(key=_fill_fraction)
-    return candidates[0]["id"]
+    pool.sort(key=_fill_fraction)
+    return pool[0]["id"]
 
 
 def take_item(port, item_id, amount, outpost=None):
@@ -240,6 +265,8 @@ def drain_port_to_storage(port, outpost=None):
             continue
 
         target = best_unload_target(item_id, count, outpost=outpost)
+        if target is None:
+            continue  # no local storage has room -- leave it staged, try again next cycle
         if hasattr(port, "connected_id") and port.connected_id() != target:
             try:
                 port.connect(target)
@@ -252,6 +279,46 @@ def drain_port_to_storage(port, outpost=None):
             continue
         moved_total += getattr(res, "moved", 0) or 0
 
+    return moved_total
+
+
+def consolidate_cross_warehouse_stock(outpost=None):
+    """
+    Calls `.compact()` on every discovered Warehouse/Large Warehouse at
+    `outpost` to pull a same-item stock split across more than one of them
+    back together. `.compact()` is NOT purely an intra-building operation
+    despite reading that way at a glance ("fewest Warehouse slots") -- its
+    own outcome table shares `transfer_to()`'s exact vocabulary
+    (`source_under_construction`/`source_changed`/`slots_full`/`target_full`),
+    which only makes sense if it pulls from *other* storage endpoints (a
+    "source") into the one it's called on. That also lines up with there
+    being no other reason for the game to expose it at all: with Auto
+    Feeders, a single Warehouse already adds to / draws from its
+    lowest-numbered occupied slot for a given item on its own, so a purely
+    intra-building `.compact()` would have nothing to ever actually do.
+    Confirmed by observing it consolidate stock that was split across
+    separate Warehouse buildings in-game, and by `.compact()` locking its
+    Warehouse as a material endpoint for the whole cycle -- exactly the
+    "busy while a transfer between buildings is in flight" cost a same-
+    building-only operation would have no reason to pay. Complements
+    best_unload_target()'s now-consolidation-aware routing for stock that
+    was already split before that fix landed (or split for any other
+    reason, e.g. a manual move). Returns total units moved across every
+    building.
+    """
+    moved_total = 0
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        if not component or not hasattr(component, "compact"):
+            continue
+        try:
+            res = component.compact()
+        except Exception:
+            continue
+        moved = getattr(res, "moved", 0) or 0
+        if moved > 0:
+            moved_total += moved
+            print(f"[storage] Compacted {moved} unit(s) into Warehouse '{building['id']}'.")
     return moved_total
 
 

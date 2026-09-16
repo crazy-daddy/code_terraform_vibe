@@ -1,9 +1,16 @@
 # Shared Library for Smelter Automation
 # Manages automated ore intake, recipe execution, finished metal extraction,
-# and intelligent power-down when idle to conserve grid energy.
+# and intelligent power-down when idle to conserve grid energy. The
+# Inventory->Warehouse rebalance sweep (once per home outpost, not once per
+# Smelter) is owned centrally by panel_1.py's AUTOMATION section, not by any
+# individual Smelter instance -- see docs/AI_CHEATSHEET.md. There is no
+# Leader/Follower election here any more: with a single always-running
+# process (the Control Room panel) already doing the sweep once, having every
+# Smelter independently re-elect the same answer every tick was pure
+# duplication.
 from archive import archive
-from production import get_material_demands, get_raw_material_reason, discover_smelter_ids
-from storage import take_item, total_stock, rebalance_inventory_to_warehouses
+from production import get_material_demands, get_raw_material_reason
+from storage import take_item, total_stock
 
 # A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
 # this fresh -- if the owning smelter stalls/crashes without releasing it
@@ -35,16 +42,14 @@ class SmelterController:
     ever needing to power the breaker off; see is_shedded() for how Power Guard
     brownout shedding uses this same fact instead of cutting power.
 
-    Multi-smelter aware: elects a single Leader per home outpost (mirrors
-    lib/solar.py's SolarController.check_master() -- same Archive+run_control
-    approach, no Signal Bus, sorted-by-numeric-id with liveness check via
-    run_control.is_running()) so the "inventory manager" sweep
-    (rebalance_inventory_to_warehouses()) only runs once per cycle instead of
-    once per smelter. Every smelter (Leader or Follower) still independently
-    runs its own ore-selection/craft loop against the same shared
-    get_material_demands() numbers, but claims the recipe it's about to work
-    (claim_recipe()) so two smelters don't both start the same recipe while a
-    second simultaneously-demanded ore sits untouched.
+    Multi-smelter aware: every smelter independently runs its own ore-selection/
+    craft loop against the same shared get_material_demands() numbers, but
+    claims the recipe it's about to work (claim_recipe()) so two smelters don't
+    both start the same recipe while a second simultaneously-demanded ore sits
+    untouched. The "inventory manager" sweep used to need a Leader election to
+    run only once per cycle instead of once per smelter -- it's now run
+    centrally by panel_1.py instead (see module docstring), so no election is
+    needed here at all any more.
     """
     RECIPE_MAP = {
         "iron_ore": "smelt_iron_ingot",
@@ -63,11 +68,9 @@ class SmelterController:
         self.inventory = get_component("inventory")
         self.power = get_component("power_control")
         self.clock = get_component("clock")
-        self.run_ctrl = get_component("run_control")
 
         self.connected_in = False
         self.connected_out = False
-        self.is_leader = False
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -76,44 +79,6 @@ class SmelterController:
             except Exception:
                 pass
         return 0
-
-    def check_leader(self):
-        """
-        Elects a single Leader among every discovered Smelter: lowest numeric
-        id currently running() wins (mirrors SolarController.check_master()
-        exactly). Recomputed every step() -- no persisted lease, no
-        heartbeat/timeout; if the current Leader stops running, the next
-        poll simply produces a different (correct) answer.
-        """
-        ids = discover_smelter_ids()
-        if not ids:
-            ids = [self.name]
-
-        def sort_key(s_id):
-            try:
-                return int(s_id.split("_")[-1])
-            except Exception:
-                return 9999
-
-        ids = sorted(set(ids), key=sort_key)
-
-        if self.run_ctrl and hasattr(self.run_ctrl, "is_running"):
-            try:
-                for cand in ids:
-                    if self.run_ctrl.is_running(cand):
-                        return self.name == cand
-            except Exception:
-                pass
-        return self.name == ids[0]
-
-    def update_role(self):
-        was_leader = self.is_leader
-        self.is_leader = self.check_leader()
-        if self.is_leader and not was_leader:
-            print(f"[{self.name}] Promoted to Smelter Leader (runs the inventory-manager sweep).")
-        elif was_leader and not self.is_leader:
-            print(f"[{self.name}] Demoted to Follower.")
-        return self.is_leader
 
     def claim_recipe(self, recipe_id):
         """
@@ -189,9 +154,8 @@ class SmelterController:
         power_draw while actively running a craft, so idle draw is already
         0 W (see this class's docstring) -- simply not starting/topping-up
         production already achieves the same power saving a breaker cut
-        would, without losing Leader status (the inventory-manager sweep) or
-        needing any external call to undo it once the deficit clears --
-        clearing power.shedded is all recovery ever needed to do.
+        would, without needing any external call to undo it once the deficit
+        clears -- clearing power.shedded is all recovery ever needed to do.
         """
         shedded = archive.get("power.shedded", [])
         return isinstance(shedded, list) and self.name in shedded
@@ -214,15 +178,6 @@ class SmelterController:
 
     def step(self):
         self.ensure_connections()
-        self.update_role()
-
-        # Inventory manager sweep: move bulk stock (ore, ingots) out to a
-        # Warehouse once it piles up. See lib/storage.py for the full rule.
-        # Leader-only -- with several smelters, every one of them running this
-        # every cycle would be N redundant identical sweeps for one shared
-        # Inventory/Warehouse set.
-        if self.is_leader:
-            rebalance_inventory_to_warehouses()
 
         # Step 1: Drain any completed products
         self.drain_output()
