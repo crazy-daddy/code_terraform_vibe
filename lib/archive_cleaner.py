@@ -30,6 +30,11 @@ LEGACY_PIONEER_SONAR_KEY = "pioneer.sonar_retries"
 SURVEY_SPIRAL_KEY = "survey.spiral"
 LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
 
+# Old one-key-per-vehicle recall flag (lib/vehicle_claims.py's now-retired
+# vehicle_recall_key()), superseded by the single consolidated RECALL_KEY dict.
+LEGACY_RECALL_KEY_PREFIX = "vehicle.recall:"
+RECALL_KEY = "vehicle.recall"
+
 
 def safe_get_component(name):
     """Safely retrieves a game component without raising exceptions."""
@@ -61,6 +66,8 @@ class ArchiveCleaner:
             "calibration_purged": 0,
             "profiling_checked": 0,
             "profiling_removed": 0,
+            "recall_flags_migrated": 0,
+            "grid_state_purged": 0,
             "corrupted_keys_deleted": 0,
             "errors": 0
         }
@@ -134,6 +141,22 @@ class ArchiveCleaner:
             except Exception as e:
                 self.log(f"[WARN] Failed querying fleet.vehicles: {e}")
         return vehicles
+
+    def get_active_grid_anchors(self):
+        """Returns set of currently active power grid anchor ids (power_control.grids()),
+        used to tell a still-live per-grid power.shedded:<anchor>/power.night_wh:<anchor>
+        entry apart from one orphaned by two grids joining into one via a new power line."""
+        anchors = set()
+        power = safe_get_component("power_control")
+        if power and hasattr(power, "grids"):
+            try:
+                for g in power.grids() or []:
+                    anchor = getattr(g, "anchor_id", None)
+                    if anchor:
+                        anchors.add(anchor)
+            except Exception as e:
+                self.log(f"[WARN] Failed querying power_control.grids: {e}")
+        return anchors
 
     def clean_claims(self, current_tick, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords):
         """
@@ -220,9 +243,16 @@ class ArchiveCleaner:
 
         if not self.dry_run and (claims_removed > 0 or shared_claims != clean_claims_map or legacy_claims != clean_claims_map):
             self.archive.set(SURVEY_CLAIMS_KEY, clean_claims_map)
+            # LEGACY_ROVER_CLAIMS_KEY ("rover.claims") is an ongoing compat
+            # mirror, not a one-time migration -- vehicle_claims.py's
+            # claim_target()/refresh_claim()/release_target_claim()/
+            # cleanup_stale_claims() all dual-write it unconditionally on
+            # every single claim operation. A delete right after this set()
+            # would just get overwritten by the next claim anyway (has() is
+            # always true immediately after set()), so previously this branch
+            # deleted it every live run for no effect other than confusing
+            # anyone reading the code -- keep it synced, don't delete it.
             self.archive.set(LEGACY_ROVER_CLAIMS_KEY, clean_claims_map)
-            if self.archive.has(LEGACY_ROVER_CLAIMS_KEY):
-                self.archive.delete(LEGACY_ROVER_CLAIMS_KEY)
 
     def clean_unsupported_targets(self, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords):
         """
@@ -330,14 +360,23 @@ class ArchiveCleaner:
 
         if not self.dry_run:
             self.archive.set(SURVEY_UNSUPPORTED_KEY, clean_unsupported)
+            # LEGACY_ROVER_UNSUPPORTED_KEY ("rover.unsupported_targets") is an
+            # ongoing compat mirror, not a one-time migration --
+            # vehicle_claims.py's blacklist_target()/clear_unsupported_target()
+            # dual-write it unconditionally on every call, same reasoning as
+            # LEGACY_ROVER_CLAIMS_KEY in clean_claims() -- keep it synced,
+            # don't delete it (a delete here used to fire every live run for
+            # no lasting effect, since has() is always true right after set()).
             self.archive.set(LEGACY_ROVER_UNSUPPORTED_KEY, clean_unsupported)
-            # Clear legacy pioneer key if it had entries
+            # LEGACY_PIONEER_SONAR_KEY ("pioneer.sonar_retries") is different:
+            # nothing writes NEW entries to it any more (only
+            # clear_unsupported_target()'s delete-only updater still touches
+            # it, to retire entries as they resolve), so it only ever shrinks
+            # -- fully retire it once its entries have been folded into the
+            # canonical keys above.
             if legacy_pioneer and isinstance(legacy_pioneer, dict):
-                self.archive.set(LEGACY_PIONEER_SONAR_KEY, {})
-            if self.archive.has(LEGACY_ROVER_UNSUPPORTED_KEY):
-                self.archive.delete(LEGACY_ROVER_UNSUPPORTED_KEY)
-            if self.archive.has(LEGACY_PIONEER_SONAR_KEY):
-                self.archive.delete(LEGACY_PIONEER_SONAR_KEY)
+                if self.archive.has(LEGACY_PIONEER_SONAR_KEY):
+                    self.archive.delete(LEGACY_PIONEER_SONAR_KEY)
 
     def clean_survey_spiral(self):
         """
@@ -357,7 +396,8 @@ class ArchiveCleaner:
             self.log("  [REPAIR] Spiral data is malformed (not a dict). Resetting.")
             if not self.dry_run:
                 self.archive.set(SURVEY_SPIRAL_KEY, {"waypoints": [], "next_index": 0})
-                self.archive.set(LEGACY_PIONEER_SPIRAL_KEY, {"waypoints": [], "next_index": 0})
+                if self.archive.has(LEGACY_PIONEER_SPIRAL_KEY):
+                    self.archive.delete(LEGACY_PIONEER_SPIRAL_KEY)
             return
 
         waypoints = spiral_data.get("waypoints", [])
@@ -413,7 +453,13 @@ class ArchiveCleaner:
                 "updated_by": spiral_data.get("updated_by", "archive_cleaner")
             }
             self.archive.set(SURVEY_SPIRAL_KEY, cleaned_payload)
-            self.archive.set(LEGACY_PIONEER_SPIRAL_KEY, cleaned_payload)
+            # LEGACY_PIONEER_SPIRAL_KEY ("pioneer.survey_spiral") is fully dead
+            # -- lib/vehicle_survey.py only reads/writes SURVEY_SPIRAL_KEY any
+            # more, nothing else in the codebase references the legacy name --
+            # so there's no reason to keep writing a payload into it. Just
+            # retire it outright instead of the old set-then-immediately-
+            # delete (which only ever wrote a payload no one would read a
+            # moment before deleting it again).
             if self.archive.has(LEGACY_PIONEER_SPIRAL_KEY):
                 self.archive.delete(LEGACY_PIONEER_SPIRAL_KEY)
 
@@ -452,11 +498,17 @@ class ArchiveCleaner:
         the developer-confirmed exact power/speed model (lib/vehicle_energy.py),
         not an empirically-calibrated Wh/meter, so these archive keys are no
         longer read or written by any vehicle script -- just leftover clutter
-        from before that change.
+        from before that change. Two historical key shapes existed: a dot-suffix
+        one (e.g. "<vehicle>.wh_per_meter") and an older colon-prefixed one from
+        an earlier iteration ("vehicle.wh_per_meter:<vehicle_id>", one key per
+        vehicle) -- both purged here.
         """
         self.log("\n--- Purging Obsolete Wh/m Calibration Entries ---")
         all_keys = self.archive.keys()
-        calib_keys = [k for k in all_keys if k.endswith(".wh_per_meter") or k == "wh_per_meter"]
+        calib_keys = [
+            k for k in all_keys
+            if k.endswith(".wh_per_meter") or k == "wh_per_meter" or k.startswith("vehicle.wh_per_meter:")
+        ]
         calib_purged = 0
 
         for k in calib_keys:
@@ -467,6 +519,88 @@ class ArchiveCleaner:
 
         self.stats["calibration_purged"] += calib_purged
         self.log(f"  Result: {calib_purged} obsolete calibration entries purged.")
+
+    def clean_recall_flags(self):
+        """
+        Migrates the old one-key-per-vehicle "vehicle.recall:<name>" flags
+        (lib/vehicle_claims.py's now-retired vehicle_recall_key()) into the
+        single consolidated RECALL_KEY dict, then deletes the legacy keys. The
+        Data Archive has a fixed shared key-count cap, so a dedicated top-level
+        key per vehicle for one boolean flag doesn't scale with fleet size --
+        only actively-recalled vehicles are stored in the dict at all (a
+        vehicle absent from it just reads as not-recalled), so consolidating
+        costs nothing at rest either.
+        """
+        self.log("\n--- Migrating Legacy Per-Vehicle Recall Flags ---")
+        all_keys = self.archive.keys()
+        legacy_keys = [k for k in all_keys if k.startswith(LEGACY_RECALL_KEY_PREFIX)]
+        if not legacy_keys:
+            self.log("  No legacy per-vehicle recall keys found.")
+            return
+
+        consolidated = self.archive.get(RECALL_KEY, {})
+        consolidated = dict(consolidated) if isinstance(consolidated, dict) else {}
+        migrated = 0
+
+        for k in legacy_keys:
+            vehicle_name = k[len(LEGACY_RECALL_KEY_PREFIX):]
+            value = self.archive.get(k, False)
+            if value:
+                consolidated[vehicle_name] = True
+                migrated += 1
+            self.log(f"  [MIGRATE RECALL] Key '{k}' -> {RECALL_KEY}['{vehicle_name}'] = {bool(value)}")
+            if not self.dry_run:
+                self.archive.delete(k)
+
+        if not self.dry_run:
+            self.archive.set(RECALL_KEY, consolidated)
+
+        self.stats["recall_flags_migrated"] += len(legacy_keys)
+        self.log(f"  Result: {len(legacy_keys)} legacy recall key(s) migrated/removed ({migrated} were actively recalled).")
+
+    def clean_power_grid_state(self, active_grid_anchors):
+        """
+        Purges per-grid power.shedded:<anchor>/power.night_wh:<anchor> entries
+        whose grid anchor no longer exists -- e.g. two independent grids joined
+        via a new power line and elected a single Master, orphaning the old
+        per-grid keys forever otherwise. Skips entirely if grid discovery itself
+        failed (empty active_grid_anchors), same caution as clean_telemetry()'s
+        active_vehicles check -- never purge everything just because detection
+        came back empty. Also retires three now-obsolete keys outright:
+        power.night_duration (replaced by the fixed day-cycle schedule -- see
+        lib/power.py's NIGHT_DURATION_HOURS), power.last_night_wh (a dead key
+        from before the power.night_wh:<anchor> per-grid keying scheme), and
+        power.shedded_machines (an exact duplicate of power.shedded that nothing
+        ever actually read) -- none of these are written by current code any more.
+        """
+        self.log("\n--- Checking Per-Grid Power State ---")
+        purged = 0
+
+        if active_grid_anchors:
+            all_keys = self.archive.keys()
+            for prefix in ("power.shedded:", "power.night_wh:"):
+                for k in all_keys:
+                    if not k.startswith(prefix):
+                        continue
+                    anchor = k[len(prefix):]
+                    if anchor in active_grid_anchors:
+                        continue
+                    self.log(f"  [DELETE GRID STATE] Key '{k}': grid anchor '{anchor}' no longer active (grids likely joined).")
+                    purged += 1
+                    if not self.dry_run:
+                        self.archive.delete(k)
+        else:
+            self.log("  Skipped per-grid anchor check: could not determine active grids this run.")
+
+        for k in ("power.night_duration", "power.last_night_wh", "power.shedded_machines"):
+            if self.archive.has(k):
+                self.log(f"  [DELETE RETIRED] Key '{k}': retired mechanic, no longer read or written.")
+                purged += 1
+                if not self.dry_run:
+                    self.archive.delete(k)
+
+        self.stats["grid_state_purged"] += purged
+        self.log(f"  Result: {purged} obsolete per-grid/retired power entries purged.")
 
     def clean_profiling(self, current_tick):
         """
@@ -513,7 +647,9 @@ class ArchiveCleaner:
         """
         Validates terraforming parameters:
         - heat.optimal_setpoints
-        - power.night_duration, power.sunset_hour, power.night_wh, power.last_night_wh
+        - power.sunset_hour, power.night_wh
+        (power.night_duration and power.last_night_wh are retired outright by
+        clean_power_grid_state() instead of range-checked here.)
         """
         self.log("\n--- Checking Power & Heating Terraforming State ---")
         heat_key = "heat.optimal_setpoints"
@@ -527,9 +663,7 @@ class ArchiveCleaner:
 
         num_keys = {
             "power.sunset_hour": (0.0, 24.0),
-            "power.night_duration": (0.1, 24.0),
             "power.night_wh": (0.0, 1000000.0),
-            "power.last_night_wh": (0.0, 1000000.0),
         }
         for k, (min_v, max_v) in num_keys.items():
             if self.archive.has(k):
@@ -621,12 +755,14 @@ class ArchiveCleaner:
         scanned_poi_keys, scanned_poi_coords = self.get_scanned_pois()
         surveyed_site_ids, surveyed_site_coords = self.get_surveyed_sites()
         active_vehicles = self.get_active_vehicle_names()
+        active_grid_anchors = self.get_active_grid_anchors()
 
         self.log("Environment Context:")
         self.log(f"  - Current Tick: {current_tick}")
         self.log(f"  - Known Scanned POIs: {len(scanned_poi_coords)}")
         self.log(f"  - Known Surveyed Sites: {len(surveyed_site_ids)}")
         self.log(f"  - Active Fleet Vehicles: {list(active_vehicles) if active_vehicles else 'None detected'}")
+        self.log(f"  - Active Power Grids: {list(active_grid_anchors) if active_grid_anchors else 'None detected'}")
 
         # Run cleanup stages
         self.clean_claims(current_tick, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords)
@@ -634,8 +770,10 @@ class ArchiveCleaner:
         self.clean_survey_spiral()
         self.clean_telemetry(active_vehicles)
         self.clean_calibration()
+        self.clean_recall_flags()
         self.clean_profiling(current_tick)
         self.clean_power_and_heat()
+        self.clean_power_grid_state(active_grid_anchors)
         self.clean_logistics_and_bio()
         self.clean_corrupted_or_empty_keys()
 

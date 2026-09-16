@@ -4,6 +4,7 @@
 # lib/mining.py's MiningMixin.
 
 from archive import archive
+import outpost_mining
 
 SURVEY_SPIRAL_KEY = "survey.spiral"
 LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
@@ -51,6 +52,14 @@ class VehicleSurveyMixin:
                 if s_res.status == "ok":
                     self.clear_unsupported_target(f"site_{s.id}")
                     surveyed_sites.append(s_res.site)
+                    # New minable resource: drop/refresh its "resource."
+                    # marker and, if unassigned, hand it to the closest
+                    # outpost within range (see lib/outpost_mining.py).
+                    if getattr(s_res.site, "kind", lambda: None)() == "mineral":
+                        try:
+                            outpost_mining.auto_assign_new_site(s_res.site)
+                        except Exception:
+                            pass
                 elif s_res.status in ["too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
                     print(f"[{self.name}] Site {s.id} survey limitation: {s_res.status} - {s_res.message}")
                     self.blacklist_target(f"site_{s.id}", s_res.status, s_res.message)

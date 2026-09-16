@@ -30,7 +30,10 @@ class SmelterController:
     """
     Controls an industrial Smelter.
     Refines raw ores (iron_ore, silicon, titanium, etc.) into ingots/materials.
-    Automatically clears recipes and powers down when idle to eliminate power draw.
+    Automatically clears recipes when idle -- power_draw only applies while a
+    recipe is actively running (see docs), so idle draw is already 0 W without
+    ever needing to power the breaker off; see is_shedded() for how Power Guard
+    brownout shedding uses this same fact instead of cutting power.
 
     Multi-smelter aware: elects a single Leader per home outpost (mirrors
     lib/solar.py's SolarController.check_master() -- same Archive+run_control
@@ -176,6 +179,23 @@ class SmelterController:
             except Exception:
                 pass
 
+    def is_shedded(self):
+        """
+        True when the Power Guard (lib/power.py's PowerGridManager, via
+        SOFT_SHED_PATTERNS) has marked this Smelter for shedding. Smelter/
+        Fabricator are soft-shed -- Power Guard tracks them in power.shedded
+        but deliberately never calls set_powered() on them (see
+        SOFT_SHED_PATTERNS' comment): a Smelter only draws its recipe's
+        power_draw while actively running a craft, so idle draw is already
+        0 W (see this class's docstring) -- simply not starting/topping-up
+        production already achieves the same power saving a breaker cut
+        would, without losing Leader status (the inventory-manager sweep) or
+        needing any external call to undo it once the deficit clears --
+        clearing power.shedded is all recovery ever needed to do.
+        """
+        shedded = archive.get("power.shedded", [])
+        return isinstance(shedded, list) and self.name in shedded
+
     def drain_output(self):
         """Sends all finished ingots from output buffer to inventory."""
         if not hasattr(self.smelter, "output"):
@@ -206,6 +226,14 @@ class SmelterController:
 
         # Step 1: Drain any completed products
         self.drain_output()
+
+        if self.is_shedded():
+            # Power Guard has flagged this Smelter for shedding (soft-shed --
+            # see is_shedded()'s docstring): don't start or top up production.
+            # Whatever's already loaded keeps running to completion (never
+            # interrupted mid-craft), it just isn't fed more, so draw winds
+            # down to 0 W on its own instead of an abrupt breaker cut.
+            return
 
         # Step 2: Determine which recipe/ore to process
         in_buf = self.smelter.get_input_count()
@@ -313,8 +341,9 @@ class SmelterController:
 
                 # Breaker cycling disabled: idle draw is already 0 W per docs
                 # (Recipe.power_draw applies only while running), so switching
-                # the breaker off saves nothing and only adds a dependency on
-                # an external wake call (e.g. Fabricator.wake_smelter()).
+                # the breaker off saves nothing and would need an external
+                # wake call to undo -- deliberately not automated, see
+                # lib/vehicle_cargo.py's module docstring.
                 # if self.power and hasattr(self.power, "set_powered"):
                 #     try:
                 #         if self.power.can_power_off(self.name) and self.power.is_powered(self.name):

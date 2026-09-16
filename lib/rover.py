@@ -5,6 +5,7 @@
 
 from production import get_raw_material_demands
 from vehicle import VehicleController
+from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 
 class RoverController(VehicleController):
     """
@@ -15,6 +16,49 @@ class RoverController(VehicleController):
     def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
         self.last_target_diagnostics = {}
+
+    def wh_per_meter_at_throttle(self, throttle, cargo_units=None):
+        """
+        Rover's own developer-confirmed travel model (see lib/vehicle_energy.py
+        module docstring): Wh/meter = ROVER_WH_PER_METER_PER_THROTTLE * throttle,
+        flat -- independent of active modules, cargo load, or Sport Nav
+        multipliers (Pioneer's throttle^1.5 power/speed model in the base
+        VehicleEnergyMixin doesn't apply here). Overriding this single method
+        is enough: minimum_wh_per_meter(), calculate_trip_energy(),
+        energy_needed_to_return_now()/_comfortably(), and energy_wh_for_leg()
+        all call through it rather than duplicating the formula.
+        """
+        if throttle <= 0:
+            return 0.0
+        return ROVER_WH_PER_METER_PER_THROTTLE * throttle
+
+    def max_safe_throttle_for_leg(self, target_coords):
+        """
+        Rover equivalent of VehicleEnergyMixin.max_safe_throttle_for_leg(),
+        re-solved for Rover's own linear-in-throttle Wh/m model instead of
+        Pioneer's sqrt(throttle) one:
+            leg_wh(t) = distance * ROVER_WH_PER_METER_PER_THROTTLE * t
+            leg_wh(t) * SAFETY_MARGIN_MULTIPLIER <= available_for_leg
+            => t <= available_for_leg / (distance * ROVER_WH_PER_METER_PER_THROTTLE * SAFETY_MARGIN_MULTIPLIER)
+        (Pioneer's version instead solves via sqrt because its power term is
+        throttle^1.5 against a throttle^1 speed term -- see its docstring.)
+        """
+        distance = self.distance_to(target_coords[0], target_coords[1])
+        if distance <= 0:
+            return self.MAX_SPEEDMODE_THROTTLE
+
+        curr_wh, _, _ = self.get_battery()
+        nearest_cs, _ = self.get_nearest_charging_station(from_coords=target_coords)
+        reserve_needed = (self.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        available_for_leg = curr_wh - reserve_needed
+        if available_for_leg <= 0:
+            return 0.0
+
+        denom = distance * ROVER_WH_PER_METER_PER_THROTTLE * self.SAFETY_MARGIN_MULTIPLIER
+        if denom <= 0:
+            return self.MAX_SPEEDMODE_THROTTLE
+
+        return max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, available_for_leg / denom))
 
     def find_best_mission_target(self):
         """

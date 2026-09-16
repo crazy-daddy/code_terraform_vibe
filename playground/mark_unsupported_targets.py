@@ -70,19 +70,19 @@ def get_marker_style(reason, entry):
     msg = entry.get("message", "")
 
     if reason in ["too_hard", "tier_too_low"]:
-        icon = "warning"
-        color = "warning"
+        icon = "hammer"
+        color = "violet"
         label = f"Limit: >{scanner_tier} T{h_limit}"[:48]
         note = f"Hardness/Tier limit: Requires > {scanner_tier} (limit {h_limit}). Reported by {vehicle}. {msg}"[:240]
 
     elif reason == "research_required":
-        icon = "star"
+        icon = "fluid"
         color = "violet"
         label = "Tech Locked Contact"[:48]
         note = f"Survey research required to resolve this contact. Reported by {vehicle}."[:240]
 
     elif reason == "wrong_scanner":
-        icon = "fluid"
+        icon = "star"
         color = "accent"
         label = "Bio Contact (Bio Scanner)"[:48]
         note = f"Biological signature detected. Requires a Bio Scanner. Reported by {vehicle}."[:240]

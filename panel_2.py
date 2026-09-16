@@ -13,7 +13,7 @@
 # scrollbar -- see the "vehicle_scroll" slider below.
 
 from archive import archive
-from vehicle_claims import vehicle_recall_key
+from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
 
 
@@ -98,8 +98,7 @@ while True:
             y = top + index * row_height
             name = str(getattr(vehicle, "name", getattr(vehicle, "id", "vehicle")))
             role_label, role_color = vehicle_role(name)
-            recall_key = vehicle_recall_key(name)
-            recalled = bool(archive.get(recall_key, False))
+            recalled = is_vehicle_recalled(name)
             raw_status = str(getattr(vehicle, "status", "unknown"))
 
             if getattr(vehicle, "is_being_rescued", False):
@@ -144,7 +143,7 @@ while True:
 
             switch_on = panel.switch(f"recall_{name}", recall_x, y + 6, recalled, "recall")
             if switch_on != recalled:
-                archive.set(recall_key, switch_on)
+                set_vehicle_recalled(name, switch_on)
 
             rescue = getattr(vehicle, "rescue_status", "none")
             badge_y = y + 22 if wide else y + 38

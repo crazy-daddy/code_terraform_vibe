@@ -18,15 +18,38 @@ LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
 MISSION_KEY_PREFIX = "vehicle.mission:"
-RECALL_KEY_PREFIX = "vehicle.recall:"
+
+# One shared dict {vehicle_name: True} rather than one archive key per vehicle
+# (the old "vehicle.recall:<name>" scheme) -- the Data Archive has a fixed
+# shared key-count cap, so a dedicated top-level key per vehicle for a single
+# boolean flag doesn't scale with fleet size. A vehicle absent from the dict
+# reads as not-recalled, so only actively-recalled vehicles are ever stored.
+RECALL_KEY = "vehicle.recall"
 
 
-def vehicle_recall_key(vehicle_name):
+def is_vehicle_recalled(vehicle_name):
     """
     Module-level so non-vehicle scripts (e.g. panel_2.py's Fleet card) can
-    build the same archive key without instantiating a VehicleController.
+    read a vehicle's recall flag without instantiating a VehicleController.
     """
-    return f"{RECALL_KEY_PREFIX}{vehicle_name}"
+    recalls = archive.get(RECALL_KEY, {}) or {}
+    if not isinstance(recalls, dict):
+        return False
+    return bool(recalls.get(vehicle_name, False))
+
+
+def set_vehicle_recalled(vehicle_name, recalled):
+    """Sets or clears vehicle_name's recall flag in the shared RECALL_KEY dict."""
+    def updater(recalls):
+        if not isinstance(recalls, dict):
+            recalls = {}
+        if recalled:
+            recalls[vehicle_name] = True
+        else:
+            recalls.pop(vehicle_name, None)
+        return recalls
+
+    archive.transaction(RECALL_KEY, {}, updater)
 
 
 class VehicleClaimsMixin:
@@ -82,11 +105,12 @@ class VehicleClaimsMixin:
     def is_recalled(self):
         """
         True when the operator has set this vehicle's recall flag (the Fleet
-        card's toggle in panel_2.py, or a direct archive.set()). Checked every
-        loop cycle -- see handle_recall_if_active() -- so an active mission is
-        abandoned promptly rather than only at the next natural idle point.
+        card's toggle in panel_2.py, or a direct set_vehicle_recalled() call).
+        Checked every loop cycle -- see handle_recall_if_active() -- so an
+        active mission is abandoned promptly rather than only at the next
+        natural idle point.
         """
-        return bool(archive.get(vehicle_recall_key(self.name), False))
+        return is_vehicle_recalled(self.name)
 
     def handle_recall_if_active(self):
         """

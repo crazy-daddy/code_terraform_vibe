@@ -4,25 +4,53 @@
 # mine here?" (assigned_ores_for()) and "how much of each should I stockpile
 # before stopping?" (stock_target_for()).
 #
-# Both use the same "seed once, then editable" convention already established
-# by lib/production.py's FABRICATOR_STOCK_TARGETS_KEY: the first time an
-# outpost/item is ever looked up, a sensible default is computed and written
-# to archive; every read after that returns the stored value untouched, even
-# across new POI surveys, so a player's manual edit is never silently
-# clobbered by a background loop. Rebuilding a stale assignment (e.g. after
-# surveying new nearby sites, or adding a second Warehouse) is a deliberate,
-# separately-callable action (reseed_ore_assignment()), not automatic --
-# meant to be wired to a not-yet-designed Control Panel button.
+# "Which ores" is answered LIVE from the Planet Map, not an archive list: every
+# surveyed mineral site gets a "resource.poi_X_Y" marker (mirroring
+# mark_unsupported_targets.py's id/style conventions), labeled with its ore and
+# purity (e.g. "Iron Ore - Rich"), whose .note names the outpost responsible for
+# mining it -- assigned_ores_for(outpost_id) just scans markers.list("resource.")
+# for notes matching outpost_id and recovers each item id from its own label. A
+# site earns its outpost either automatically (auto_assign_new_site(), called
+# right after survey, hands it to the closest owned outpost within
+# assignment_range_m() -- configurable via archive, default 200m) or by the
+# player editing/dragging the marker by hand -- either way, the marker itself
+# stays the single source of truth, so there's no separate archive assignment
+# list that could drift out of sync with what the map actually shows.
+#
+# A site already assigned to an outpost is NEVER auto-reassigned, even to a
+# now-closer outpost founded later -- that could strand supply at an outpost
+# whose transport/miner is already relying on it. reevaluate_unassigned_near_outpost()
+# is the explicit, player-triggered sweep for "I just founded a new outpost,
+# hand it any still-unassigned sites nearby" (see sync_resource_markers.py).
+#
+# stock_target_for() keeps the same seed-once-then-editable convention already
+# established by lib/production.py's FABRICATOR_STOCK_TARGETS_KEY: the first
+# time an outpost/item is ever looked up, a sensible default is computed and
+# written to archive; every read after that returns the stored value untouched,
+# so a player's manual edit is never silently clobbered by a background loop.
 
-from storage import discover_storage_buildings
-
-OUTPOST_ORE_ASSIGNMENTS_KEY = "outposts.ore_assignments"
 OUTPOST_ORE_STOCK_TARGETS_KEY = "outposts.ore_stock_targets"
 
 # One Warehouse slot's worth (docs/components/warehouse.md: 5 slots x 2000
 # capacity = 10,000 total) -- fixed regardless of research, unlike
 # Inventory's stack size. Default stockpile target per assigned ore.
 WAREHOUSE_SLOT_CAPACITY = 2000
+
+# Marker family for surveyed mineral sites (see module docstring). Mirrors
+# mark_unsupported_targets.py's MARKER_PREFIX convention.
+RESOURCE_MARKER_PREFIX = "resource."
+
+# How close (meters) a freshly-surveyed site or a freshly-founded outpost needs
+# to be before auto-assignment considers them a match. Archive-configurable
+# (player-tunable without a code change) rather than a bare constant.
+RESOURCE_ASSIGNMENT_RANGE_KEY = "outposts.resource_assignment_range_m"
+DEFAULT_RESOURCE_ASSIGNMENT_RANGE_M = 200.0
+
+# item_id -> display name is just its title-cased form ("iron_ore" -> "Iron
+# Ore"), reversible exactly (see _item_id_from_label()) for every known
+# MiningSite.item_id (docs/types/world_and_sites.md): iron_ore, silicon,
+# titanium, cobalt, rare_earth, neutronium, lead_ore.
+RESOURCE_PURITY_LABELS = {"standard": "Standard", "rich": "Rich", "pure": "Pure"}
 
 
 def _component(component_id):
@@ -39,6 +67,10 @@ def _archive():
 
 def _outpost_network():
     return _component("outpost_network")
+
+
+def _markers():
+    return _component("markers")
 
 
 def outpost_by_id(outpost_id):
@@ -67,95 +99,178 @@ def nearest_outpost_id(x, y):
         return None
 
 
-def _warehouse_slot_count(outpost_id):
-    """How many distinct-material Warehouse slots this outpost currently has, network-wide at that outpost only."""
+def resource_assignment_range_m():
+    """Player-tunable auto-assignment radius (meters), archive-backed, default DEFAULT_RESOURCE_ASSIGNMENT_RANGE_M."""
+    return _archive().get(RESOURCE_ASSIGNMENT_RANGE_KEY, DEFAULT_RESOURCE_ASSIGNMENT_RANGE_M)
+
+
+def resource_marker_id(x, y):
+    """Stable marker id for the mineral site at (x, y), mirroring the poi_X_Y convention mark_unsupported_targets.py already uses."""
+    return f"{RESOURCE_MARKER_PREFIX}poi_{x:.0f}_{y:.0f}"[:64]
+
+
+def _item_display_name(item_id):
+    return item_id.replace("_", " ").title()
+
+
+def _item_id_from_label(label):
+    """Recovers item_id from a "Iron Ore - Rich"-style marker label -- the exact inverse of _item_display_name(), so no separate lookup table is needed."""
+    if not label:
+        return None
+    name_part = label.split(" - ")[0].strip()
+    return name_part.lower().replace(" ", "_") if name_part else None
+
+
+def _distance(ax, ay, bx, by):
+    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+
+
+def _closest_outpost_within_range(x, y, range_m):
+    """Id of the closest owned outpost to (x, y), or None when the nearest one is still farther than range_m (or outpost_network is unavailable)."""
+    network = _outpost_network()
+    if not network or not hasattr(network, "nearest"):
+        return None
+    try:
+        nearest = network.nearest(x, y)
+    except Exception:
+        return None
+    if not nearest:
+        return None
+    ox, oy = getattr(nearest, "x", None), getattr(nearest, "y", None)
+    if ox is None or oy is None or _distance(x, y, ox, oy) > range_m:
+        return None
+    return getattr(nearest, "id", None)
+
+
+def sync_resource_marker(site, outpost_id=None):
+    """
+    Places/updates the "resource." marker for a surveyed mineral site.
+    outpost_id=None (the default) preserves whatever outpost the marker
+    already names (read back via markers.get()) -- a plain style refresh,
+    e.g. after a purity re-survey. Pass an explicit outpost_id (including ""
+    to clear) to actually change the assignment. Returns the outpost id left
+    on the marker (possibly ""), or None if the Markers component or the
+    site's item_id is unavailable.
+    """
+    markers = _markers()
+    item_id = getattr(site, "item_id", None)
+    if not markers or not item_id:
+        return None
+
+    marker_id = resource_marker_id(site.x, site.y)
+    if outpost_id is None:
+        existing = markers.get(marker_id)
+        outpost_id = getattr(existing, "note", "") if existing else ""
+
+    purity_label = RESOURCE_PURITY_LABELS.get(getattr(site, "purity", None), "Standard")
+    label = f"{_item_display_name(item_id)} - {purity_label}"[:48]
+    res = markers.place(
+        id=marker_id, x=site.x, y=site.y,
+        label=label, icon="resource", color="neutral",
+        note=outpost_id or "",
+    )
+    if getattr(res, "status", "") != "ok":
+        return None
+    return outpost_id or ""
+
+
+def auto_assign_new_site(site, range_m=None):
+    """
+    Call once per freshly-surveyed mineral site (vehicle_survey.py's
+    scan_and_survey()). Places/refreshes its resource marker and, only when
+    it isn't already assigned to an outpost, hands it to the closest owned
+    outpost within range_m (resource_assignment_range_m() by default). Never
+    reassigns a site that already names a responsible outpost -- see module
+    docstring.
+    """
+    markers = _markers()
+    item_id = getattr(site, "item_id", None)
+    if not markers or not item_id:
+        return None
+
+    marker_id = resource_marker_id(site.x, site.y)
+    existing = markers.get(marker_id)
+    outpost_id = getattr(existing, "note", "") if existing else ""
+    if not outpost_id:
+        effective_range = range_m if range_m is not None else resource_assignment_range_m()
+        outpost_id = _closest_outpost_within_range(site.x, site.y, effective_range) or ""
+
+    return sync_resource_marker(site, outpost_id=outpost_id)
+
+
+def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
+    """
+    Explicit, never-auto-called sweep: call after founding a new outpost
+    (CLAUDE.md's Outpost Construction Safety Rule means there is no automatic
+    "an outpost just got founded" hook -- this function never founds anything
+    itself) to hand any still-UNASSIGNED "resource." marker within range_m to
+    outpost_id. Deliberately leaves markers that already name a different
+    outpost untouched, even one now farther away than this new outpost -- see
+    module docstring. Returns the count of markers newly assigned.
+    """
+    markers = _markers()
     outpost = outpost_by_id(outpost_id)
-    if not outpost:
+    if not markers or not outpost:
         return 0
+
+    ox, oy = getattr(outpost, "x", None), getattr(outpost, "y", None)
+    if ox is None or oy is None:
+        return 0
+    effective_range = range_m if range_m is not None else resource_assignment_range_m()
+
+    assigned = 0
     try:
-        total_capacity = sum(
-            b["component"].capacity()
-            for b in discover_storage_buildings(outpost)
-            if hasattr(b.get("component"), "capacity")
+        candidates = markers.list(RESOURCE_MARKER_PREFIX)
+    except Exception:
+        return 0
+
+    for marker in candidates:
+        if getattr(marker, "note", ""):
+            continue
+        if _distance(marker.x, marker.y, ox, oy) > effective_range:
+            continue
+        res = markers.place(
+            id=marker.id, x=marker.x, y=marker.y,
+            label=marker.label, icon=marker.icon, color=marker.color,
+            note=outpost_id,
         )
-    except Exception:
-        return 0
-    return total_capacity // WAREHOUSE_SLOT_CAPACITY
-
-
-def _compute_ore_assignment(outpost_id):
-    """
-    Ranks candidate ores for outpost_id by how many surveyed mineral sites of
-    that ore type are nearest to it (most sites first), capped to the
-    outpost's current Warehouse slot count. Shared by both
-    assigned_ores_for()'s auto-seed path and reseed_ore_assignment()'s
-    explicit rebuild -- kept as one function so the two entry points can
-    never silently drift apart in ranking logic.
-    """
-    journal = _component("journal")
-    if not journal or not hasattr(journal, "surveyed_sites"):
-        return []
-
-    site_counts = {}
-    try:
-        for site in journal.surveyed_sites("nocturna"):
-            if getattr(site, "kind", lambda: "")() != "mineral":
-                continue
-            item_id = getattr(site, "item_id", None)
-            if not item_id:
-                continue
-            if nearest_outpost_id(site.x, site.y) != outpost_id:
-                continue
-            site_counts[item_id] = site_counts.get(item_id, 0) + 1
-    except Exception:
-        return []
-
-    ranked = sorted(site_counts.keys(), key=lambda item_id: site_counts[item_id], reverse=True)
-    slot_cap = _warehouse_slot_count(outpost_id)
-    return ranked[:slot_cap]
+        if getattr(res, "status", "") == "ok":
+            assigned += 1
+    return assigned
 
 
 def assigned_ores_for(outpost_id):
     """
-    Ores this outpost should mine locally. Auto-seeds via
-    _compute_ore_assignment() only the first time this outpost id has no
-    stored entry at all; every subsequent call (including after new POIs are
-    surveyed nearby) returns the stored list untouched -- a player's manual
-    edit always wins. Use reseed_ore_assignment() to deliberately rebuild.
+    Ores this outpost's markers currently say it supplies -- reads the Planet
+    Map live (markers.list(RESOURCE_MARKER_PREFIX)) rather than an archive
+    list, so moving supply between outposts is a marker edit (see module
+    docstring), not an archive mutation. Each qualifying marker's item id is
+    recovered from its own label (_item_id_from_label()), so no journal/
+    archive cross-reference is needed at read time.
     """
-    archive = _archive()
-    assignments = archive.get(OUTPOST_ORE_ASSIGNMENTS_KEY, {}) or {}
-    if outpost_id in assignments:
-        return list(assignments[outpost_id])
+    markers = _markers()
+    if not markers:
+        return []
+    try:
+        candidates = markers.list(RESOURCE_MARKER_PREFIX)
+    except Exception:
+        return []
 
-    computed = _compute_ore_assignment(outpost_id)
-    assignments = dict(assignments)
-    assignments[outpost_id] = computed
-    archive.set(OUTPOST_ORE_ASSIGNMENTS_KEY, assignments)
-    return list(computed)
-
-
-def reseed_ore_assignment(outpost_id):
-    """
-    Explicit, never-auto-called rebuild of this outpost's ore assignment --
-    recomputes and overwrites regardless of whether an entry already exists.
-    Meant for a future Control Panel action once the player has surveyed new
-    POIs or added Warehouse capacity near this outpost, not for any
-    background loop to call on its own schedule.
-    """
-    computed = _compute_ore_assignment(outpost_id)
-    archive = _archive()
-    assignments = dict(archive.get(OUTPOST_ORE_ASSIGNMENTS_KEY, {}) or {})
-    assignments[outpost_id] = computed
-    archive.set(OUTPOST_ORE_ASSIGNMENTS_KEY, assignments)
-    return computed
+    items = set()
+    for marker in candidates:
+        if getattr(marker, "note", "") != outpost_id:
+            continue
+        item_id = _item_id_from_label(getattr(marker, "label", ""))
+        if item_id:
+            items.add(item_id)
+    return sorted(items)
 
 
 def stock_target_for(outpost_id, item_id):
     """
     Stockpile target (units) for item_id at outpost_id -- seed-once-then-
-    editable, same convention as assigned_ores_for(), default one Warehouse
-    slot's worth (WAREHOUSE_SLOT_CAPACITY).
+    editable, same convention as assigned_ores_for() used to follow, default
+    one Warehouse slot's worth (WAREHOUSE_SLOT_CAPACITY).
     """
     archive = _archive()
     targets = archive.get(OUTPOST_ORE_STOCK_TARGETS_KEY, {}) or {}

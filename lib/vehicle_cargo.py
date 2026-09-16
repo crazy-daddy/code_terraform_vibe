@@ -1,11 +1,33 @@
 # Vehicle mixin: cargo offloading into Base Inventory (or a Warehouse for
-# bulk items) and cooperative smelter wake-up. Shared by Rover and Pioneer
-# via VehicleController (lib/vehicle.py).
+# bulk items) and demand-driven hauler roles. Shared by Rover and Pioneer via
+# VehicleController (lib/vehicle.py).
+#
+# No cooperative Smelter wake-up here on purpose: the Smelter is soft-shed
+# (lib/power.py's SOFT_SHED_PATTERNS) so Power Guard never actually powers it
+# off, and if the operator manually stopped/powered it down themselves, a
+# fresh ore delivery arriving should not override that -- the Smelter's own
+# step() loop already polls for new ore on its normal cycle whenever it IS
+# running.
 
-from archive import archive
 from production import get_raw_material_demands
-from storage import best_unload_target, take_item, total_stock
-import outpost_mining
+from storage import best_unload_target, take_item, total_stock, inventory_stack_size
+import outpost_reagents
+
+
+def _outpost_haul_demand(dest_outpost_id):
+    """
+    {item_id: deficit} demand at dest_outpost_id, pulled fresh every haul
+    cycle rather than fixed at loop construction -- there's no reason to
+    decide in advance what a hauler will ever be asked to carry, only where
+    it's headed. dest_outpost_id alone disambiguates which of this codebase's
+    two demand sources applies: None/home means the production outpost's raw-
+    material shortfall (only home ever needs ore hauled in); any other
+    outpost id means that outpost's own Bio Lab reagent shortfall (only a
+    remote outpost's Lab needs reagents hauled out to it).
+    """
+    if dest_outpost_id is None:
+        return get_raw_material_demands()
+    return outpost_reagents.get_outpost_reagent_demand(dest_outpost_id)
 
 
 class VehicleCargoMixin:
@@ -15,9 +37,9 @@ class VehicleCargoMixin:
         """Transfers mined/gathered minerals and items into outpost's Inventory/
         Warehouse (default: this vehicle's own self.home_outpost -- see
         storage.best_unload_target()). The explicit outpost override is for
-        run_supply_run_loop() below: a transporter stationed at a mining
+        run_haul_loop() below: a transporter stationed at a mining
         outpost (its own home_outpost) still needs to unload at the
-        production outpost specifically for its delivery leg, not wherever
+        destination outpost specifically for its delivery leg, not wherever
         it happens to be stationed."""
         if not hasattr(self.vehicle, "cargo"):
             return 0
@@ -74,17 +96,6 @@ class VehicleCargoMixin:
                 if res.status == "ok":
                     moved = getattr(res, "moved", count)
                     print(f"[{self.name}] Transferred {moved}x {item_id} to '{target}'.")
-                    # Waking the Smelter only makes sense when this delivery
-                    # actually landed at the production/home outpost -- ore
-                    # that just arrived at a remote outpost's own Warehouse
-                    # (a stationed miner, see run_stationed_mining_loop())
-                    # isn't reachable by the Smelter until a transporter
-                    # hauls it home (TODO.md Phase 3, Phase D) -- checked via
-                    # target_outpost.is_home, NOT self.home_base, since a
-                    # transporter's own home_base is its stationed mining
-                    # outpost even while its delivery leg targets home.
-                    if getattr(target_outpost, "is_home", False) and item_id in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
-                        self.wake_smelter()
                     return moved, False
                 elif res.status == "busy":
                     sleep(0.5)
@@ -140,32 +151,43 @@ class VehicleCargoMixin:
             stacks = []
         return [item_id for item_id in (getattr(s, "id", None) for s in stacks) if item_id]
 
-    def _plan_supply_load(self, capacity):
+    def _plan_haul_load(self, capacity, dest_outpost_id):
         """
-        Plans a MIXED load across this outpost's assigned ores (lib/outpost_mining.py),
-        filling up to capacity units total rather than being limited to a
-        single item per trip (e.g. 50 titanium + 30 silicon in one run) --
-        a mining outpost can have several assigned ores at once (Phase B),
-        and hauling only one per trip would leave the others piling up
-        unused there. Ranks assigned ores by unmet home demand
-        (get_raw_material_demands()) descending, keeping only those that
-        actually have stock sitting at this outpost right now, then greedily
-        takes min(unmet demand, stock on hand, remaining capacity) from each
-        in that order until either capacity runs out or no more qualifying
-        ore remains. Returns [(item_id, amount), ...], possibly empty.
+        Plans a MIXED load across whatever _outpost_haul_demand(dest_outpost_id)
+        currently shows as a deficit, filling up to capacity units total rather
+        than being limited to a single item per trip (e.g. 50 titanium + 30
+        silicon in one run) -- a source can have several haulable items at once,
+        and hauling only one per trip would leave the others piling up unused
+        there. No separate "what can this source supply" candidate list is
+        needed: an item with no stock at a non-home source is filtered out
+        below anyway (available <= 0), so ranking a few items the source
+        happens not to carry costs nothing but a skipped iteration. Ranks by
+        deficit descending, keeping only items with stock sitting at the
+        source right now OR (when the source is home) buyable at the Shop,
+        then greedily takes min(deficit, available, remaining capacity) from
+        each in that order until either capacity runs out or no more
+        qualifying item remains. Returns [(item_id, amount), ...], possibly
+        empty.
         """
-        assigned = outpost_mining.assigned_ores_for(self.home_base)
-        if not assigned:
+        demands = _outpost_haul_demand(dest_outpost_id)
+        if not demands:
             return []
-        demands = get_raw_material_demands()
+        source_is_home = getattr(self.home_outpost, "is_home", lambda: True)()
         ranked = []
-        for item_id in assigned:
-            unmet = demands.get(item_id, 0)
+        for item_id, unmet in demands.items():
             if unmet <= 0:
                 continue
-            available = total_stock(item_id, outpost=self.home_outpost)
-            if available <= 0:
-                continue
+            if source_is_home:
+                # A shortfall at home can always be bought at the Shop (see
+                # _load_haul_plan()'s buy-before-load step), so treat the full
+                # deficit as available -- capacity is still the real ceiling below.
+                available = unmet
+            else:
+                # No Shop delivery anywhere but home: real stock on hand is the
+                # hard ceiling, same as before this role was generalized.
+                available = total_stock(item_id, outpost=self.home_outpost)
+                if available <= 0:
+                    continue
             ranked.append((unmet, item_id, available))
         ranked.sort(reverse=True)
 
@@ -181,52 +203,94 @@ class VehicleCargoMixin:
             remaining -= amount
         return plan
 
-    def run_supply_run_loop(self, poll_interval=10.0):
+    def _load_haul_plan(self, plan):
         """
-        Demand-driven transporter role (TODO.md Phase 3, Phase D). Construct
-        this vehicle with home_base=<mining outpost id> (same as Phase C's
-        stationed miners -- see VehicleController.__init__) so it idles and
-        recharges at that STATIONED outpost between runs via the existing
-        is_at_base()/return_to_base(), and only drives explicitly to the
-        production outpost (Nocturna Base -- get_outpost_ref(None), i.e.
-        outpost_network.home(), never self.home_base) for the delivery leg
-        itself. This vehicle's own self.home_outpost (cached from home_base,
-        see VehicleController.__init__) is therefore the STATIONED outpost,
-        not the production outpost -- the local `production_outpost`
-        variable below is a deliberately distinct name so the two are never
-        confused reading this function.
-
-        The load can mix several different assigned ores in one trip (e.g.
-        50 titanium + 30 silicon), not just one item per run -- see
-        _plan_supply_load()'s docstring. Which items/amounts to haul is
-        decided fresh each cycle, not fixed at construction. Cargo already
-        aboard (resuming after a reload) is identified from the cargo itself
-        (_current_supply_items()) rather than re-deciding mid-delivery.
-
-        Each cycle: checks the production outpost's live unmet demand per
-        assigned ore (get_raw_material_demands(), already net of its own
-        stock) and only drives out when at least one has an actual deficit
-        -- no preemptive/opportunistic top-off (confirmed with the user:
-        demand-driven only). Loads up to cargo capacity total across however
-        many qualifying ores, delivers, unloads at the production outpost
-        explicitly (unload_cargo(outpost=...) override -- this vehicle's OWN
-        home_outpost is the stationed outpost, so the default target would be
-        wrong here; unload_cargo() already sends each cargo stack to its own
-        destination, so a mixed load needs no special handling there),
-        recharges fully at the production outpost before heading back (so the
-        return leg can run at full throttle rather than a conservative one),
-        then returns to its stationed outpost to wait for the next deficit.
+        Loads each planned (item_id, amount) into vehicle.input, buying any shortfall
+        at the Shop first -- but only when this vehicle's source is home (nowhere else
+        has direct Shop delivery). Bought one Inventory-stack at a time, immediately
+        take_item()-ing each stack into cargo before buying the next, rather than one
+        shop.buy(item_id, full_shortfall) call: the total planned amount is already
+        capped by cargo capacity in _plan_haul_load(), but buying it all into Inventory
+        in a single call could still stall on a full Inventory before the vehicle gets
+        a chance to pull any of it back out, especially for a reagent Inventory has
+        never stocked before. Draining stack-by-stack keeps that transient footprint to
+        about one slot regardless of the total planned amount. Returns a
+        ["Nx item_id", ...] summary of what actually got loaded.
         """
-        print(f"[{self.name}] Supply Run Controller online. Hauling from '{self.home_base}' to the production outpost on demand.")
-        production_outpost = self.get_outpost_ref(None)
+        source_is_home = getattr(self.home_outpost, "is_home", lambda: True)()
+        shop = get_component("shop") if source_is_home else None
+        stack_size = inventory_stack_size()
+
+        loaded_summary = []
+        for item_id, amount in plan:
+            moved_for_item = 0
+            remaining = amount
+            while remaining > 0:
+                on_hand = total_stock(item_id, outpost=self.home_outpost)
+                if on_hand <= 0 and shop:
+                    buy_qty = min(remaining, stack_size)
+                    buy_res = shop.buy(item_id, buy_qty)
+                    if buy_res.status != "ok":
+                        break
+                elif on_hand <= 0:
+                    break
+
+                moved = take_item(self.vehicle.input, item_id, min(remaining, stack_size), outpost=self.home_outpost)
+                if moved <= 0:
+                    break
+                moved_for_item += moved
+                remaining -= moved
+
+            if moved_for_item > 0:
+                loaded_summary.append(f"{moved_for_item}x {item_id}")
+        return loaded_summary
+
+    def run_haul_loop(self, dest_outpost_id, poll_interval=10.0):
+        """
+        Generic demand-driven hauler shared by every transporter role (TODO.md Phase
+        3's ore-hauler and the reagent-hauler both reduce to this -- construct
+        directly with the right home_base/dest_outpost_id combo rather than
+        going through a role-specific wrapper method). The vehicle is always
+        stationed at its home_base (idles/recharges there between runs via
+        is_at_base()/return_to_base(), same as before) and drives out only to
+        dest_outpost_id, only when _outpost_haul_demand(dest_outpost_id) shows
+        a deficit for something actually available at the stationed outpost
+        (or buyable at the Shop, when stationed at home). Which end is "home"
+        differs per role -- an ore-hauler stations at the mining outpost and
+        delivers to dest_outpost_id=None (home); a reagent-hauler stations at
+        home (home_base=None) and delivers to an explicit remote outpost id --
+        but the shape is otherwise identical, right down to "when the source is
+        home, missing stock gets bought at the Shop before loading" falling out
+        for free instead of needing its own method. What to haul is never
+        decided at construction time -- only dest_outpost_id is fixed up front,
+        and every other detail (which items, how much) is re-derived fresh each
+        cycle from live demand (_outpost_haul_demand()), since there's no
+        reason to lock that in ahead of when it's actually needed.
+
+        dest_outpost = self.get_outpost_ref(dest_outpost_id), resolved once (this
+        vehicle's own self.home_outpost is the STATIONED/source outpost, never
+        confused with `dest_outpost` here).
+
+        Each cycle: plans a MIXED load (_plan_haul_load()) across however many
+        items currently have an actual deficit at the destination -- no
+        preemptive/opportunistic top-off. Cargo already aboard (resuming after a
+        reload) is identified from the cargo itself (_current_supply_items()) rather
+        than re-deciding mid-delivery. Delivers, unloads at the destination explicitly
+        (unload_cargo(outpost=...) override, since the default target would be this
+        vehicle's own stationed outpost), recharges fully at the destination before
+        heading back (so the return leg can run at full throttle), then returns to
+        the stationed outpost to wait for the next deficit.
+        """
+        print(f"[{self.name}] Haul Controller online. Hauling from '{self.home_base}' to '{dest_outpost_id}' on demand.")
+        dest_outpost = self.get_outpost_ref(dest_outpost_id)
         while True:
             try:
                 if self.handle_recall_if_active():
                     sleep(poll_interval)
                     continue
 
-                if not production_outpost or not hasattr(production_outpost, "coords"):
-                    print(f"[{self.name}] Supply run: production outpost unavailable this cycle.")
+                if not dest_outpost or not hasattr(dest_outpost, "coords"):
+                    print(f"[{self.name}] Haul: destination outpost unavailable this cycle.")
                     sleep(poll_interval)
                     continue
 
@@ -234,27 +298,27 @@ class VehicleCargoMixin:
                 # straight to delivery instead of (re-)planning a load.
                 loaded_items = self._current_supply_items()
                 if not loaded_items:
-                    plan = self._plan_supply_load(self.vehicle.cargo.capacity())
+                    plan = self._plan_haul_load(self.vehicle.cargo.capacity(), dest_outpost_id)
                     if not plan:
                         if not self.is_at_base():
                             self.return_to_base()
-                        self.publish_telemetry("IDLE_AT_OUTPOST", "no demand for assigned ores")
+                        self.publish_telemetry("IDLE_AT_OUTPOST", "no demand for candidate items")
                         sleep(poll_interval)
                         continue
                     if not hasattr(self.vehicle, "input"):
-                        print(f"[{self.name}] Supply run requires an input port and Auto Feeders.")
+                        print(f"[{self.name}] Haul requires an input port and Auto Feeders.")
                         sleep(poll_interval)
                         continue
 
-                    # take_item() below needs the vehicle physically within
-                    # the stationed outpost's service area to connect to its
-                    # Warehouse -- unlike the no-demand idle branch above,
-                    # this path used to skip straight to loading without
-                    # ever driving here first, so a transporter starting (or
-                    # left) anywhere else -- e.g. still at the production
-                    # outpost after its last delivery -- would just fail to
-                    # load forever, sitting wherever it was instead of
-                    # returning to its stationed outpost.
+                    # Loading below needs the vehicle physically within the
+                    # stationed outpost's service area to connect to its
+                    # Warehouse/Inventory -- unlike the no-demand idle branch
+                    # above, this path used to skip straight to loading
+                    # without ever driving here first, so a transporter
+                    # starting (or left) anywhere else -- e.g. still at the
+                    # destination after its last delivery -- would just fail
+                    # to load forever instead of returning to its stationed
+                    # outpost.
                     if not self.is_at_base():
                         self.publish_telemetry("RETURNING", f"returning to '{self.home_base}' to load")
                         if not self.return_to_base():
@@ -262,40 +326,36 @@ class VehicleCargoMixin:
                             sleep(poll_interval)
                             continue
 
-                    loaded_summary = []
-                    for item_id, amount in plan:
-                        moved = take_item(self.vehicle.input, item_id, amount, outpost=self.home_outpost)
-                        if moved > 0:
-                            loaded_summary.append(f"{moved}x {item_id}")
+                    loaded_summary = self._load_haul_plan(plan)
                     if not loaded_summary:
                         print(f"[{self.name}] Could not load any planned item at '{self.home_base}'.")
                         sleep(poll_interval)
                         continue
                     print(f"[{self.name}] Loaded {', '.join(loaded_summary)} at '{self.home_base}'.")
 
-                production_coords = production_outpost.coords()
-                self.publish_telemetry("OUTBOUND", "delivering mixed cargo to the production outpost")
-                if not self.drive_with_recharge(production_coords[0], production_coords[1]):
-                    print(f"[{self.name}] Could not reach the production outpost this cycle; will retry.")
+                dest_coords = dest_outpost.coords()
+                self.publish_telemetry("OUTBOUND", "delivering mixed cargo to the destination outpost")
+                if not self.drive_with_recharge(dest_coords[0], dest_coords[1]):
+                    print(f"[{self.name}] Could not reach the destination outpost this cycle; will retry.")
                     sleep(poll_interval)
                     continue
 
                 delivered = self.vehicle.cargo.count()
-                if self.unload_cargo(outpost=production_outpost) < 0:
+                if self.unload_cargo(outpost=dest_outpost) < 0:
                     self.publish_telemetry("WAITING_INVENTORY_SPACE")
                     sleep(poll_interval)
                     continue
-                print(f"[{self.name}] Delivered {delivered} units to the production outpost.")
+                print(f"[{self.name}] Delivered {delivered} units to the destination outpost.")
 
-                # Recharge fully at the production outpost before heading
-                # back -- get_nearest_charging_station() (used internally by
+                # Recharge fully at the destination before heading back --
+                # get_nearest_charging_station() (used internally by
                 # recharge_at_station() when no station is given) resolves by
                 # current position, not self.home_base, so this correctly
-                # finds the production outpost's own station even though
-                # this vehicle's home_base/home_outpost (for navigation/
-                # is_at_base() purposes) is its stationed mining outpost.
-                # Starting the return leg fully charged lets it run at full
-                # throttle without drive_with_recharge() needing to plan an
+                # finds the destination's own station even though this
+                # vehicle's home_base/home_outpost (for navigation/
+                # is_at_base() purposes) is its stationed outpost. Starting
+                # the return leg fully charged lets it run at full throttle
+                # without drive_with_recharge() needing to plan an
                 # intermediate stop for it -- faster round trips than only
                 # recharging back at the stationed outpost.
                 self.publish_telemetry("CHARGING_AT_BASE")
@@ -306,35 +366,10 @@ class VehicleCargoMixin:
                     self.recharge_at_station(target_level=1.0)
                 self.publish_telemetry("READY_AT_OUTPOST")
             except Exception as error:
-                print(f"[{self.name}] Supply run exception: {error}")
+                print(f"[{self.name}] Haul exception: {error}")
                 try:
                     self.vehicle.nav.brake()
                 except Exception:
                     pass
             sleep(poll_interval)
 
-    def wake_smelter(self):
-        """Cooperatively powers on and resumes smelter when fresh ore arrives."""
-        shedded = archive.get("power.shedded", [])
-        if any("smelter" in m for m in shedded):
-            print(f"[{self.name}] Smelter wake deferred: currently shedded by Power Guard for grid preservation.")
-            return
-
-        pwr = get_component("power_control")
-        if pwr and hasattr(pwr, "set_powered"):
-            try:
-                pwr.set_powered("smelter_1", True)
-            except Exception:
-                pass
-
-        run_ctrl = get_component("run_control")
-        if run_ctrl and hasattr(run_ctrl, "is_running") and hasattr(run_ctrl, "start"):
-            try:
-                if not run_ctrl.is_running("smelter_1"):
-                    if pwr and hasattr(pwr, "is_powered"):
-                        if pwr.is_powered("smelter_1"):
-                            run_ctrl.start("smelter_1")
-                    else:
-                        run_ctrl.start("smelter_1")
-            except Exception:
-                pass

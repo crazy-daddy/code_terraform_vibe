@@ -13,10 +13,10 @@
 # units (docs/components/rover.md) -- far too small for bulk ore hauling.
 # Pioneer's cargo comes from Portable Bins across its Cargo Racks, scaling
 # with loadout, and exposes the identical Cargo/VehicleInputSlot/OutputSlot
-# interface run_supply_run_loop() already uses, so no code changes were
-# needed to move this role off Rover. Requires: Nav Module (Universal slot),
-# at least one Cargo Rack + Portable Bin (Universal slots), Auto Feeders
-# research (already unlocked this save) for the input/output ports.
+# interface run_haul_loop() already uses, so no code changes were needed to
+# move this role off Rover. Requires: Nav Module (Universal slot), at least
+# one Cargo Rack + Portable Bin (Universal slots), Auto Feeders research
+# (already unlocked this save) for the input/output ports.
 
 from pioneer import PioneerController
 
@@ -26,8 +26,8 @@ SOURCE_OUTPOST_ID = "outpost_2"
 # it idles/recharges there between runs (this makes self.home_base/
 # self.home_outpost mean the STATIONED outpost, not the production one,
 # unlike every other vehicle) and only drives to the production outpost
-# explicitly for each delivery leg, recharging fully there too before
-# heading back so the return leg can run at full throttle (cruise_throttle
-# below) -- see VehicleCargoMixin.run_supply_run_loop().
+# (dest_outpost_id=None) explicitly for each delivery leg, recharging fully
+# there too before heading back so the return leg can run at full throttle
+# (cruise_throttle below) -- see VehicleCargoMixin.run_haul_loop().
 pioneer = PioneerController(self, home_base=SOURCE_OUTPOST_ID, cruise_throttle=1.0)
-pioneer.run_supply_run_loop()
+pioneer.run_haul_loop(dest_outpost_id=None)

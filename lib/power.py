@@ -20,12 +20,55 @@ DEFAULT_SHEDDING_TIERS = [
         "bio_collector_*",
         "bio_lab_*",
         "bio_exchange_*",
+        "bio_luminizer_*",
     ],
     [
         "smelter_*",
         "fabricator_*",
     ],
 ]
+
+# Patterns that are tracked as shedded (added to power.shedded / the archive's
+# per-grid mirror) but never actually powered off. A Smelter/Fabricator only
+# draws its recipe's power_draw while a craft is actively running -- idle draw
+# is already 0 W (see lib/smelter.py's SmelterController docstring) -- so
+# cutting its breaker saves nothing it wasn't already going to save by simply
+# not starting new work, while ALSO losing leader-election status (the
+# "inventory manager" sweep) and needing external intervention to power it
+# back on and restart its script -- deliberately NOT automated (see
+# lib/vehicle_cargo.py's module docstring): if the operator stopped it
+# themselves, nothing should override that just because a delivery arrived.
+# Soft-shed instead: still listed in power.shedded so
+# SmelterController/FabricatorController's own step() can see it and pause
+# starting/topping-up production, but set_powered() is never called on it.
+# Only smelter_*/fabricator_* are soft-shed -- a Tier 1 pattern
+# like heater_*/pressure_* draws power continuously regardless of whether it's
+# "producing" anything, so cutting its breaker is the only way to actually
+# reduce its draw.
+SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*"}
+
+# Exact day/night cycle timings from the decompiled simworker (its
+# `dayCycleDuration: 600` / `daylight: {...}` schedule, fractions of a full
+# day mapped onto elapsed_game_hours()'s 0-24 scale by multiplying by 24).
+# Replaces the old empirically-calibrated `power.night_duration` archive value
+# (measured sunset->sunrise gap, EMA-smoothed) with the fixed real schedule --
+# the sun always sets/rises at the same hour every day, so there was never
+# anything to calibrate; the old approach only ever drifted toward this same
+# constant while being wrong immediately after every script restart. See
+# docs/AI_CHEATSHEET.md.
+DAY_CYCLE_DURATION_SECONDS = 600
+DAYLIGHT_FRACTIONS = {
+    "dawn_start": 0.25,
+    "dawn_end": 0.30,
+    "morning_peak_start": 0.38,
+    "peak_end": 0.54,
+    "afternoon_end": 0.71,
+    "day_end": 0.75,
+    "dusk_end": 0.83,
+}
+SUNRISE_HOUR = DAYLIGHT_FRACTIONS["dawn_start"] * 24.0  # 6.0 -- sun elevation goes > 0
+SUNSET_HOUR = DAYLIGHT_FRACTIONS["dusk_end"] * 24.0  # 19.92 -- sun elevation returns to 0
+NIGHT_DURATION_HOURS = 24.0 - SUNSET_HOUR + SUNRISE_HOUR  # 10.08, exact and constant
 
 
 class PowerGridManager:
@@ -50,7 +93,7 @@ class PowerGridManager:
         # Day/Night cycle tracking
         self.last_elevation = self.clock.get_elevation() if self.clock else 0.0
         self.has_observed_day = (self.last_elevation > 0)
-        self.night_duration = archive.get("power.night_duration", 10.0)
+        self.night_duration = NIGHT_DURATION_HOURS
         self.sunset_hour = archive.get("power.sunset_hour", None)
         self.peak_day_battery_wh = 0.0
         self.last_advisory_day = self.clock.get_day() if self.clock else 1
@@ -128,10 +171,14 @@ class PowerGridManager:
         return filter_wildcard_matches(pattern, candidates)
 
     def update_archive_shedded(self):
-        """Publishes currently shedded machines to the Data Archive for inter-process coordination."""
+        """Publishes currently shedded machines to the Data Archive for inter-process
+        coordination -- e.g. a soft-shed SmelterController/FabricatorController
+        (SOFT_SHED_PATTERNS above) checking it each step() to pause starting new
+        production. ("power.shedded_machines" used to also be
+        written here as a duplicate of "power.shedded" -- nothing ever read it; retired,
+        see ArchiveCleaner.clean_power_grid_state())."""
         shed_list = sorted(list(self.shedded_machines))
         archive.set("power.shedded", shed_list)
-        archive.set("power.shedded_machines", shed_list)
         if self.grid_anchor:
             archive.set(f"power.shedded:{self.grid_anchor}", shed_list)
 
@@ -174,25 +221,21 @@ class PowerGridManager:
                     pass
 
     def handle_sunrise(self, current_hour, grid_id_str):
-        """Handles sunrise detection, night duration calculation, and historical energy averaging."""
-        if self.sunset_hour is not None:
-            measured_night = current_hour - self.sunset_hour
-            if 2.0 < measured_night < 20.0:
-                self.night_duration = measured_night
-                archive.set("power.night_duration", self.night_duration)
+        """Handles sunrise detection and historical overnight energy averaging.
+        Night duration itself is fixed (NIGHT_DURATION_HOURS) -- nothing to
+        calibrate here any more, just the actual Wh consumed overnight."""
+        if self.sunset_hour is not None and self.night_wh_accumulated > 10.0:
+            hist_key = f"power.night_wh:{self.grid_anchor}" if self.grid_anchor else "power.night_wh"
+            curr_hist = archive.get(hist_key, None)
+            if curr_hist is not None:
+                new_hist = (curr_hist * 0.70) + (self.night_wh_accumulated * 0.30)
+            else:
+                new_hist = self.night_wh_accumulated
+            self.historical_night_wh = new_hist
+            archive.set(hist_key, round(new_hist, 1))
 
-                if self.night_wh_accumulated > 10.0:
-                    hist_key = f"power.night_wh:{self.grid_anchor}" if self.grid_anchor else "power.night_wh"
-                    curr_hist = archive.get(hist_key, None)
-                    if curr_hist is not None:
-                        new_hist = (curr_hist * 0.70) + (self.night_wh_accumulated * 0.30)
-                    else:
-                        new_hist = self.night_wh_accumulated
-                    self.historical_night_wh = new_hist
-                    archive.set(hist_key, round(new_hist, 1))
-
-                hist_str = f", {self.night_wh_accumulated:.0f} Wh used overnight" if self.night_wh_accumulated > 0 else ""
-                print(f"[POWER] Sunrise detected on '{grid_id_str}'. Night lasted {self.night_duration:.1f} game hours{hist_str}.")
+        hist_str = f", {self.night_wh_accumulated:.0f} Wh used overnight" if self.night_wh_accumulated > 0 else ""
+        print(f"[POWER] Sunrise detected on '{grid_id_str}'. Night lasted {self.night_duration:.1f} game hours (fixed schedule){hist_str}.")
 
         self.peak_day_battery_wh = 0.0
         self.has_observed_day = True
@@ -256,10 +299,22 @@ class PowerGridManager:
                 patterns = tiers[t_idx]
                 is_critical_tier = (t_num == num_tiers and num_tiers > 1)
                 for pattern in patterns:
+                    soft = pattern in SOFT_SHED_PATTERNS
                     target_ids = self.resolve_pattern_machines(pattern, grid_machines)
                     for m_id in target_ids:
                         if grid_machines is not None and m_id not in grid_machines:
                             continue
+
+                        if soft:
+                            # Never touches the breaker -- just flags m_id as
+                            # shedded so its own controller pauses starting
+                            # new production (see SOFT_SHED_PATTERNS above).
+                            if m_id not in self.shedded_machines:
+                                self.shedded_machines.add(m_id)
+                                shed_changed = True
+                                print(f"[POWER GUARD] Marked {m_id} shedded (Tier {t_num}) on '{grid_id_str}' -- production paused, power stays on.")
+                            continue
+
                         try:
                             if self.power and self.power.can_power_off(m_id) and self.power.is_powered(m_id):
                                 res = self.power.set_powered(m_id, False)
@@ -297,10 +352,16 @@ class PowerGridManager:
                     continue
                 patterns = tiers[t_idx]
                 for pattern in patterns:
+                    soft = pattern in SOFT_SHED_PATTERNS
                     target_ids = self.resolve_pattern_machines(pattern, grid_machines)
                     for m_id in target_ids:
                         if m_id in self.shedded_machines:
                             if grid_machines is not None and m_id not in grid_machines:
+                                continue
+                            if soft:
+                                self.shedded_machines.discard(m_id)
+                                recovered_any = True
+                                print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh), resuming production.")
                                 continue
                             try:
                                 if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
@@ -330,10 +391,16 @@ class PowerGridManager:
                 continue
             patterns = tiers[t_idx]
             for pattern in patterns:
+                soft = pattern in SOFT_SHED_PATTERNS
                 target_ids = self.resolve_pattern_machines(pattern, grid_machines)
                 for m_id in target_ids:
                     if m_id in self.shedded_machines:
                         if grid_machines is not None and m_id not in grid_machines:
+                            continue
+                        if soft:
+                            self.shedded_machines.discard(m_id)
+                            recovered_any = True
+                            print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active, resuming production.")
                             continue
                         try:
                             if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):

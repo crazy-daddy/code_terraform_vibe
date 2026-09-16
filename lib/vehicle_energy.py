@@ -2,10 +2,13 @@
 # charging-station discovery/docking. Shared by Rover and Pioneer via
 # VehicleController (lib/vehicle.py).
 #
-# Travel energy uses the developer-confirmed exact power/speed model (not an
+# Travel energy uses developer-confirmed exact power/speed models (not an
 # empirically-calibrated Wh/meter -- that whole archive-backed calibration
-# system was intentionally dropped in favor of this validated theoretical
-# model):
+# system was intentionally dropped in favor of these validated theoretical
+# models) -- but Pioneer and Rover are two DIFFERENT models, not one formula
+# with the other vehicle's terms zeroed out:
+#
+# Pioneer (VehicleEnergyMixin base implementation, used as-is):
 #   power (W)   = (BASE_TRAVEL_POWER_W + MODULE_TRAVEL_POWER_W * active_modules
 #                  + CARGO_UNIT_TRAVEL_POWER_W * cargo_units)
 #                 * throttle^1.5 * nav_power_multiplier
@@ -16,6 +19,33 @@
 # count, so a full return trip after mining costs more than the empty outbound
 # leg. nav_power_multiplier/nav_speed_multiplier come from mounted Sport Nav
 # modules (docs/components/nav_module.md: 1 Sport Nav = 2x speed / 2.6x power).
+#
+# Rover (RoverController overrides wh_per_meter_at_throttle()/
+# max_safe_throttle_for_leg() in lib/rover.py -- see there):
+#   Wh/meter = ROVER_WH_PER_METER_PER_THROTTLE * throttle
+# Developer-confirmed (Spyros - CT Dev, in-game Discord #playtest-chat,
+# 2026-08-28): "the rover is very simple wh = distance x throttle x 0.2" --
+# deliberately independent of active_modules/cargo_units/nav multipliers,
+# unlike Pioneer. Note this is linear in throttle (implying power scales as
+# throttle^2 at Rover's fixed 100 m/h-per-throttle speed), not the throttle^1.5
+# curve above, so it is a genuinely different model, not a parameterization of
+# Pioneer's.
+
+def is_rover_chassis_for(vehicle):
+    """
+    Standalone chassis-type probe for a raw get_component() object (no live
+    VehicleController instance available) -- used by the module-level _for()
+    helpers below so callers like lib/charging.py's rescue-cost estimate pick
+    the right travel-energy model without needing one. Matches the existing
+    "rover"-prefixed id/name convention already used for telemetry keying in
+    VehicleController.publish_telemetry() (lib/vehicle.py); RoverController
+    itself never needs this probe since its own overrides apply directly via
+    normal polymorphism.
+    """
+    if vehicle is None:
+        return False
+    name = getattr(vehicle, "id", getattr(vehicle, "name", ""))
+    return str(name).startswith("rover")
 
 from archive import archive
 
@@ -47,6 +77,10 @@ MODULE_TRAVEL_POWER_W = 8.0
 CARGO_UNIT_TRAVEL_POWER_W = 0.04
 MIN_SPEEDMODE_THROTTLE = 0.10
 MAX_SPEEDMODE_THROTTLE = 1.0
+
+# Rover's own developer-confirmed travel model (see module docstring above) --
+# a flat Wh/meter-per-throttle rate, not a power/speed pair like Pioneer's.
+ROVER_WH_PER_METER_PER_THROTTLE = 0.2
 
 # Exact mining Wh/unit inputs, both developer-confirmed/documented (unlike
 # construction, see CONSTRUCTION_WH_PER_PROGRESS_DEFAULT below): per-ore dig
@@ -115,12 +149,16 @@ def nav_power_multiplier_for(vehicle):
 def travel_wh_per_meter_for(vehicle, throttle, cargo_units=None):
     """
     Standalone travel Wh/meter for a live vehicle object, for callers without a
-    VehicleController instance. Same developer-confirmed formula as
-    VehicleEnergyMixin.wh_per_meter_at_throttle() -- kept in sync by construction
-    since both read from the same module-level constants above.
+    VehicleController instance. Branches by chassis (is_rover_chassis_for()) --
+    Rover's flat linear model, kept in sync with RoverController's own
+    wh_per_meter_at_throttle() override by construction since both read
+    ROVER_WH_PER_METER_PER_THROTTLE; Pioneer's throttle^1.5 model otherwise,
+    kept in sync with VehicleEnergyMixin.wh_per_meter_at_throttle() the same way.
     """
     if throttle <= 0:
         return 0.0
+    if is_rover_chassis_for(vehicle):
+        return ROVER_WH_PER_METER_PER_THROTTLE * throttle
     if cargo_units is None:
         cargo_units = cargo_units_count_for(vehicle)
     base_w = BASE_TRAVEL_POWER_W + (MODULE_TRAVEL_POWER_W * active_modules_count_for(vehicle)) + (CARGO_UNIT_TRAVEL_POWER_W * cargo_units)
@@ -432,11 +470,17 @@ class VehicleEnergyMixin:
         return base_w * (throttle ** 1.5) * self.nav_power_multiplier()
 
     def energy_wh_for_leg(self, distance_m, throttle, cargo_units=None):
-        """Energy to cover distance_m at a constant throttle and cargo load, from the travel power/speed model."""
+        """
+        Energy to cover distance_m at a constant throttle and cargo load.
+        Routes through wh_per_meter_at_throttle() (mathematically identical to
+        the old power*time computation: power/speed*distance == wh_per_meter*
+        distance) so a chassis-specific override -- e.g. RoverController's
+        linear model in lib/rover.py -- is honored here too, not just by
+        direct wh_per_meter_at_throttle() callers.
+        """
         if distance_m <= 0 or throttle <= 0:
             return 0.0
-        hours = distance_m / self._drive_speed_m_per_hour(throttle)
-        return self._drive_power_watts(throttle, cargo_units=cargo_units) * hours
+        return distance_m * self.wh_per_meter_at_throttle(throttle, cargo_units=cargo_units)
 
     def max_safe_throttle_for_leg(self, target_coords):
         """

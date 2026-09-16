@@ -52,7 +52,6 @@ class FabricatorController:
         self.name = getattr(machine, "id", "fabricator_1")
         self.connected_input = False
         self.connected_output = False
-        self.smelter_wake_announced = False
         self.clock = get_component("clock")
 
         # Per-fluid-key (water_in/steam_in/oil_in) connection state -- see
@@ -111,6 +110,20 @@ class FabricatorController:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
         except Exception:
             pass
+
+    def is_shedded(self):
+        """
+        True when the Power Guard (lib/power.py's PowerGridManager, via
+        SOFT_SHED_PATTERNS) has marked this Fabricator for shedding.
+        Smelter/Fabricator are soft-shed -- tracked in power.shedded but
+        never actually powered off, since a Fabricator only draws power
+        while actively crafting; simply not starting/topping-up production
+        already achieves the same saving a breaker cut would, without an
+        external wake call needed to undo it. See lib/smelter.py's
+        SmelterController.is_shedded() -- identical shape, separate machine.
+        """
+        shedded = archive.get("power.shedded", [])
+        return isinstance(shedded, list) and self.name in shedded
 
     def ensure_connection(self):
         if not self.connected_input and hasattr(self.machine, "input"):
@@ -383,7 +396,6 @@ class FabricatorController:
             # Warehouse holding this item -- see lib/storage.py.
             moved = take_item(self.machine.input, item_id, amount)
             if moved <= 0:
-                self.wake_smelter()
                 continue
             print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
             remaining_capacity -= moved
@@ -437,32 +449,20 @@ class FabricatorController:
             if moved > 0:
                 print(f"[{self.name}] Ejected {moved}x {item_id} from the stockpile back to '{destination}' (no longer needed for the active batch).")
 
-    def wake_smelter(self):
-        """Power on and resume the Smelter when refined inputs are missing."""
-        shedded = archive.get("power.shedded", [])
-        if any("smelter" in m for m in shedded):
-            return
-
-        power = get_component("power_control")
-        try:
-            if power and hasattr(power, "set_powered"):
-                power.set_powered("smelter_1", True)
-
-            run_control = get_component("run_control")
-            if run_control and hasattr(run_control, "is_running") and hasattr(run_control, "start"):
-                if not run_control.is_running("smelter_1"):
-                    run_control.start("smelter_1")
-
-            if not self.smelter_wake_announced:
-                print(f"[{self.name}] Smelter awakened for missing Fabricator inputs.")
-                self.smelter_wake_announced = True
-        except Exception:
-            pass
-
     def step(self):
         self.ensure_connection()
         self.drain_output()
         self.eject_excess_inputs()
+
+        if self.is_shedded():
+            # Power Guard has flagged this Fabricator for shedding (soft-shed
+            # -- see is_shedded()'s docstring): don't start or top up
+            # production. Whatever's already staged/running keeps going to
+            # completion (never interrupted mid-craft), it just isn't fed
+            # more, so draw winds down to 0 W on its own instead of an
+            # abrupt breaker cut.
+            return
+
         active_recipe, _ = get_fabricator_active_recipe(self.machine)
         self.ensure_fluid_connections(active_recipe)
         prior_recipe_id = self.machine.get_recipe()

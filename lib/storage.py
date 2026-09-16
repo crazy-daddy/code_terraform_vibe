@@ -91,6 +91,29 @@ def total_stock(item_id, outpost=None):
     return total
 
 
+def warehouse_stock(item_id, outpost=None):
+    """
+    Sum of warehouse.count(item_id) across every discovered Warehouse at `outpost` --
+    unlike total_stock(), this never adds home Inventory, regardless of `outpost`.
+    total_stock()'s unconditional Inventory add is correct for its existing callers
+    (raw ore realistically never sits in home Inventory), but wrong for anything that
+    routinely DOES sit there -- e.g. Bio Lab reagents, bought straight into Inventory by
+    the Shop. Checking "how much of this item does outpost X actually have on hand"
+    with total_stock() would over-report by whatever's sitting untouched at home. Use
+    this whenever the answer needs to be scoped to a single remote outpost's own
+    storage, not "does this item exist anywhere at all".
+    """
+    total = 0
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        if component and hasattr(component, "count"):
+            try:
+                total += component.count(item_id)
+            except Exception:
+                pass
+    return total
+
+
 def _fill_fraction(building):
     component = building["component"]
     try:
@@ -187,6 +210,49 @@ def _take_from_current(port, item_id, remaining):
     except Exception:
         return 0
     return getattr(res, "moved", 0) or 0
+
+
+def drain_port_to_storage(port, outpost=None):
+    """
+    Sends every stack currently staged in `port` (a machine output/byproduct slot
+    exposing .stacks()/.connect(id)/.send(item_id, count)) to the best local
+    destination for that item (best_unload_target(), same routing take_item() and
+    unload_cargo() already use), reconnecting per-stack since a port holds one
+    destination at a time. Replaces the old pattern of a single static
+    .connect("inventory") at __init__ time, which only ever works at the home outpost
+    -- a remote machine (Bio Lab, Bio Exchange, Bio Luminizer, etc.) needs its output
+    routed to whichever local Warehouse actually has room for what it just produced.
+    Returns total units moved.
+    """
+    if not port or not hasattr(port, "stacks"):
+        return 0
+
+    moved_total = 0
+    try:
+        stacks = port.stacks()
+    except Exception:
+        return 0
+
+    for stack in stacks:
+        item_id = getattr(stack, "id", None)
+        count = getattr(stack, "count", 0)
+        if not item_id or count <= 0:
+            continue
+
+        target = best_unload_target(item_id, count, outpost=outpost)
+        if hasattr(port, "connected_id") and port.connected_id() != target:
+            try:
+                port.connect(target)
+            except Exception:
+                continue
+
+        try:
+            res = port.send(item_id, count)
+        except Exception:
+            continue
+        moved_total += getattr(res, "moved", 0) or 0
+
+    return moved_total
 
 
 def inventory_stack_size():

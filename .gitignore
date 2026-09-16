@@ -16,3 +16,4 @@ docs/Code-Terraform-DOCS-Manual.md
 *.pyo
 *.pyd
 .codeterraform/
+internals/
