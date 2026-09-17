@@ -79,6 +79,38 @@ def is_order_incomplete(ord_info):
     return True
 
 
+def _luminizer_is_idle(luminizer):
+    """
+    True if the local Bio Luminizer's chamber, input, and output are all
+    empty -- i.e. genuinely ready for a new sample, not still holding/working
+    the previous one. Used by BioLabController to gate pulling the next
+    specimen from the Collector and draining its own extracted output into
+    the Warehouse: since Collector/Lab/Luminizer are each single-slot
+    hardware, refusing both of those two actions until the Luminizer is
+    fully idle bounds the pipeline to at most one raw specimen in flight
+    ahead of it at a time -- no Warehouse pileup is structurally possible
+    regardless of how broadly the Collector searches for "needed" fragments,
+    which is what RAW_BACKLOG_CAP_PER_FRAGMENT/FOCUS_ORDER_COUNT used to
+    exist to prevent numerically (see docs/AI_CHEATSHEET.md Sec 1f).
+
+    True when there's no local Luminizer at all (a non-coastal biome
+    pipeline has none), so this gate never blocks a Lab that isn't feeding
+    one.
+    """
+    if not luminizer:
+        return True
+    try:
+        if luminizer.chamber is not None:
+            return False
+        if luminizer.input.count() > 0:
+            return False
+        if luminizer.output.count() > 0:
+            return False
+    except Exception:
+        return True
+    return True
+
+
 def _local_sources(outpost):
     """[(source_id, component), ...] for every storage location this outpost can pull
     from: "inventory" first if home, then every discovered Warehouse at `outpost`."""
@@ -163,6 +195,30 @@ def _snapshot_glow_count(snapshot, item_id, target_glow):
     return by_glow.get((item_id, tuple(target_glow)), 0)
 
 
+def _total_glow_artifacts(snapshot):
+    """Total units of any glow-tagged item sitting in local storage right
+    now (raw and already-tinted, across every fragment type) -- a coarse
+    aggregate reading straight off an already-built _local_stock_snapshot(),
+    no extra scanning. See MAX_LOCAL_GLOW_ARTIFACTS for what this backstops."""
+    _, by_glow = snapshot
+    return sum(by_glow.values())
+
+
+# Coarse safety-net cap on total glow-tagged artifacts (raw + tinted, any
+# fragment type) allowed to sit in local storage before BioCollectorController
+# pauses harvesting entirely. NOT the primary flow-control mechanism -- that's
+# BioLabController's Luminizer-idle gate (_luminizer_is_idle()), which bounds
+# in-flight specimens to the pipeline's own single-slot hardware (Collector
+# cargo, Lab specimen/output, Luminizer chamber/input/output) and should keep
+# this number at 0-2 in a healthy pipeline: the Lab holds at most 1 before the
+# Luminizer picks it up, and the Luminizer holds at most 1-2 before the
+# Exchange sweeps them up. This cap exists purely as insurance against that
+# structural bound somehow not holding (e.g. a sibling script not running) --
+# see docs/AI_CHEATSHEET.md Sec 1f for the numeric per-fragment throttle this
+# replaces.
+MAX_LOCAL_GLOW_ARTIFACTS = 4
+
+
 def _find_matching_stack(exchange_machine, item_id, outpost):
     """
     Scans every local storage source for a stack of item_id whose exact properties
@@ -191,85 +247,64 @@ def _find_matching_stack(exchange_machine, item_id, outpost):
     return None
 
 
-# How many un-tinted (raw) units of a glow-requiring fragment may sit in
-# local storage before BioCollectorController stops harvesting more of it.
-# Found live: raw wing_membrane specimens don't stack (each carries its own
-# naturally-varying starting glow, same as a mistinted one would), so
-# collecting the full remaining order demand as raw material before the
-# Luminizer -- which processes one at a time, ~10-70s each -- ever gets to
-# it exhausts a Warehouse's material slots and deadlocks the whole pipeline
-# (nothing can drain anywhere, so the Lab can't extract, so the Collector
-# can't hand off, etc). Keeping the raw queue small lets the Luminizer drain
-# it continuously instead of the Collector bursting the entire demand into
-# raw form up front.
-#
-# 2 turned out to over-correct: combined with the Collector's own one-slot
-# cargo and the Lab's one-specimen chamber (both hardware, not throttled by
-# this constant at all), the pipeline read as fully lockstep -- harvest one,
-# wait for Lab+Luminizer+Exchange to fully finish it, only then harvest the
-# next -- with barely any overlap between stages. Raised to 4 for real
-# pipelining slack (Collector can work ahead while the Luminizer is still
-# tinting the previous unit) while staying far below the original
-# unbounded-backlog problem this constant exists to prevent.
-RAW_BACKLOG_CAP_PER_FRAGMENT = 4
-
-
-def _raw_backlog_count(snapshot, fragment_id, orders_requiring):
+def _order_fragment_remaining(order, fragment_id, snapshot):
     """
-    Units of fragment_id in local storage that do NOT match any glow target
-    among orders_requiring -- i.e. genuinely raw, not yet tinted by the
-    Luminizer. Returns 0 for a plain (non-glow) fragment: nothing "raw"
-    about it, no Luminizer bottleneck to throttle against, ordinary stock
-    counting already handles it. Duplicate target_glow values across
-    orders_requiring are only counted once (matching stock can't be "used
-    up" by checking it against more than one order). Takes a
-    _local_stock_snapshot() rather than re-walking storage -- see its
-    docstring for why.
+    Units of fragment_id this order still genuinely needs, net of what's
+    already delivered, in transit, or sitting locally already correctly
+    tinted for it (see _snapshot_glow_count()). Module-level (not just
+    BioLuminizerController._fragment_remaining(), which delegates here) so
+    _focus_coastal_order() can use the same check when picking which order
+    to concentrate on.
+
+    Found live: without this, an order that merely lists fragment_id in
+    `.requires` -- even with its deficit for that specific fragment already
+    fully covered -- looked identical to one still genuinely wanting more of
+    it. `_focus_coastal_order()` could lock onto that already-satisfied
+    order while a DIFFERENT incomplete local order genuinely still needed
+    more of the same fragment; every subsequent per-fragment remaining-check
+    on the locked order came back 0, so the Luminizer found nothing to load
+    and just repeated the same no-op every tick, even with matching raw
+    stock sitting right there and real aggregate demand for it elsewhere.
     """
-    total = _snapshot_stock(snapshot, fragment_id)
-    matched = 0
-    counted_targets = set()
-    for order in orders_requiring:
-        target_glow = getattr(order, "target_glow", None)
-        if not target_glow:
-            return 0
-        key = tuple(target_glow)
-        if key in counted_targets:
-            continue
-        counted_targets.add(key)
-        matched += _snapshot_glow_count(snapshot, fragment_id, target_glow)
-    return max(0, total - matched)
+    needed = (order.requires or {}).get(fragment_id, 0)
+    if needed <= 0:
+        return 0
+    delivered = (order.delivered or {}).get(fragment_id, 0)
+    in_transit = (order.in_transit or {}).get(fragment_id, 0)
+    remaining = needed - delivered - in_transit
+    if remaining <= 0:
+        return 0
+    target_glow = getattr(order, "target_glow", None)
+    already_matching = _snapshot_glow_count(snapshot, fragment_id, target_glow)
+    return max(0, remaining - already_matching)
 
 
 def _focus_coastal_order(orders, snapshot, my_biome, fragment_id=None):
     """
     The ONE local, incomplete, glow-requiring order to concentrate on right
-    now -- optionally the first one that specifically requires fragment_id.
-    Deliberately NOT exchange.active_order() (see BioLuminizerController's
-    docstring for that whole story). When fragment_id is omitted, prefers a
-    candidate that already has local stock of one of its required fragments
-    over one needing fresh collection.
+    now -- optionally the one that specifically still needs more of
+    fragment_id (not just any order that lists it in `.requires` -- see
+    _order_fragment_remaining()'s docstring for the live bug that
+    distinction fixes). Deliberately NOT exchange.active_order() (see
+    BioLuminizerController's docstring for that whole story). When
+    fragment_id is omitted, prefers a candidate that already has local stock
+    of one of its genuinely-still-needed required fragments over one needing
+    fresh collection.
 
     Takes an already-fetched `orders` list (exchange.orders()) rather than
     `exchange` itself -- found live: exchange.orders() returns ~80 orders
-    and isn't free to call, and every one of these order-scanning functions
-    used to fetch its own fresh copy, so a single BioCollectorController.step()
-    checking ~20-30 demanded fragments (each calling _glow_throttled(), which
-    itself called both this function AND its own separate exchange.orders())
-    measured at ~20 SECONDS for one step() cycle -- dozens of redundant
-    80-order fetches per fragment. Callers now fetch orders() once per step()
-    and thread it through every helper that needs it.
+    and isn't free to call, so callers fetch it once per step() and thread
+    it through every helper that needs it instead of each fetching its own
+    copy (see docs/AI_CHEATSHEET.md Sec 1f for the ~20s/cycle this caused
+    before that fix).
 
-    Shared by BioCollectorController (via _glow_throttled() below) and
-    BioLuminizerController (_find_coastal_order() delegates here) so both
-    concentrate on the SAME order at the same time: collecting fragments for
-    an order the Luminizer isn't even working on yet just spreads the raw
-    backlog across more distinct non-stacking fragment types than necessary.
-    Found live: with ~8 simultaneously-incomplete coastal orders each
-    needing 2-4 different fragments, letting the Collector opportunistically
-    gather for ALL of them at once -- even with RAW_BACKLOG_CAP_PER_FRAGMENT
-    capping each individual fragment type -- still added up to far more
-    distinct raw variants in Warehouses than there were slots for.
+    Shared by BioCollectorController (used to prefer harvesting this order's
+    fragments over other incomplete orders') and BioLuminizerController
+    (_find_coastal_order() delegates here) so both agree on the SAME "order
+    we're concentrating on right now" -- e.g. the Luminizer's tint target and
+    the Collector's harvest preference stay in sync. Actual overproduction
+    prevention is now structural (see _luminizer_is_idle()), not enforced by
+    this selection.
     """
     candidates = []
     for order in orders:
@@ -279,80 +314,26 @@ def _focus_coastal_order(orders, snapshot, my_biome, fragment_id=None):
             continue
         if not getattr(order, "target_glow", None):
             continue
-        if fragment_id is not None:
-            if fragment_id not in (order.requires or {}):
-                continue
-            return order
+        if fragment_id is not None and fragment_id not in (order.requires or {}):
+            continue
         candidates.append(order)
 
-    if fragment_id is not None or not candidates:
+    if not candidates:
+        return None
+
+    if fragment_id is not None:
+        for order in candidates:
+            if _order_fragment_remaining(order, fragment_id, snapshot) > 0:
+                return order
         return None
 
     for order in candidates:
-        if any(_snapshot_stock(snapshot, frag_id) > 0 for frag_id in (order.requires or {}).keys()):
+        if any(
+            _order_fragment_remaining(order, frag_id, snapshot) > 0 and _snapshot_stock(snapshot, frag_id) > 0
+            for frag_id in (order.requires or {}).keys()
+        ):
             return order
     return candidates[0]
-
-
-# How many coastal orders' worth of fragments BioCollectorController may
-# actively gather for at once (see _focus_coastal_orders()). Restricting the
-# Collector to exactly one order (the original fix) turned out too narrow:
-# if that one order's specific 2-4 fragments happened not to be cataloged/
-# discoverable anywhere nearby yet, the Collector went completely silent --
-# throttled off every OTHER order's fragments too, even ones sitting right
-# there ready to harvest, with nothing useful left to do. A small handful
-# gives it real alternatives while still keeping the total distinct raw
-# fragment-type count far below "every incomplete coastal order at once".
-FOCUS_ORDER_COUNT = 3
-
-
-def _focus_coastal_orders(orders, snapshot, my_biome, limit=FOCUS_ORDER_COUNT):
-    """
-    Up to `limit` local incomplete glow-requiring orders to actively gather
-    for right now, ranked with orders that already have local stock for one
-    of their fragments first (so pre-existing backlog from before this
-    throttle existed gets worked off preferentially), then whatever else is
-    still open. See FOCUS_ORDER_COUNT's comment for why this is a short list
-    rather than a single order. Takes an already-fetched `orders` list and a
-    _local_stock_snapshot() -- see both docstrings for why.
-    """
-    candidates = [
-        o for o in orders
-        if is_order_incomplete(o) and is_local_order(o, my_biome) and getattr(o, "target_glow", None)
-    ]
-    if not candidates:
-        return []
-    with_stock = [o for o in candidates if any(_snapshot_stock(snapshot, f) > 0 for f in (o.requires or {}).keys())]
-    without_stock = [o for o in candidates if o not in with_stock]
-    return (with_stock + without_stock)[:limit]
-
-
-def _glow_throttled(orders, focus_orders, fragment_id, snapshot, my_biome):
-    """
-    True if fragment_id shouldn't be harvested right now: either it doesn't
-    belong to any of the (small handful of) coastal orders
-    BioCollectorController is currently concentrating on (`focus_orders`,
-    from _focus_coastal_orders()), or it does but already has
-    RAW_BACKLOG_CAP_PER_FRAGMENT or more un-tinted units sitting locally --
-    collecting another would only add one more non-stacking raw variant
-    before the Luminizer can catch up. Not throttled at all for a plain
-    (non-glow) fragment. Takes an already-fetched `orders` list, pre-computed
-    `focus_orders`, and a _local_stock_snapshot() -- see their docstrings for
-    why none of these may be re-fetched/re-walked per fragment (measured
-    ~20s/cycle from re-fetching orders() alone, then ~8s/cycle still from
-    re-walking storage on top of that).
-    """
-    candidates = [
-        o for o in orders
-        if is_order_incomplete(o) and is_local_order(o, my_biome) and fragment_id in (o.requires or {})
-    ]
-    if not candidates or not any(getattr(o, "target_glow", None) for o in candidates):
-        return False
-
-    if focus_orders and not any(fragment_id in (o.requires or {}) for o in focus_orders):
-        return True  # not part of any order we're concentrating on right now
-
-    return _raw_backlog_count(snapshot, fragment_id, candidates) >= RAW_BACKLOG_CAP_PER_FRAGMENT
 
 
 class BioExchangeController:
@@ -592,12 +573,42 @@ class BioLabController:
             self.inventory_full_notified = True
         sleep(2.0)
 
-    def step(self):
-        if not self.drain_output():
-            return
+    def _wait_for_luminizer(self):
+        """
+        Blocks until the local Luminizer's next heartbeat broadcast, instead
+        of busy-polling with sleep() while this Lab holds off pulling its
+        next specimen from the Collector or draining its own extracted
+        output -- see _luminizer_is_idle()'s docstring for why that gate
+        exists. The heartbeat fires once every Luminizer step() cycle
+        regardless of what that cycle did (see
+        BioLuminizerController._notify_heartbeat()'s docstring for why it's
+        not just "fired on a successful load" -- that version could leave a
+        Lab waiting forever if the Luminizer went idle with nothing left to
+        load), so this always wakes up again within one Luminizer cycle to
+        re-check _luminizer_is_idle() from scratch. Falls back to a short
+        sleep if comms is unavailable or the wait itself errors.
+        """
+        if self.comms:
+            try:
+                self.comms.wait_broadcast("luminizer_heartbeat")
+                return
+            except Exception:
+                pass
+        sleep(0.5)
 
+    def step(self):
         outpost = self.machine.outpost
         is_home = is_home_outpost(outpost)
+        luminizer = local_sibling(outpost, "bio_luminizer")
+        luminizer_idle = _luminizer_is_idle(luminizer)
+
+        if luminizer_idle:
+            if not self.drain_output():
+                return
+        # else: leave whatever's in Lab output staged -- the Luminizer isn't
+        # ready for it yet -- and fall through to analyze/extract below,
+        # which keep working on whatever's already in the chamber.
+
         specimen = self.machine.specimen
 
         if specimen is None:
@@ -609,6 +620,10 @@ class BioLabController:
                         self.machine.input.eject(destination, stack.id, stack.count)
                     except Exception:
                         pass
+
+            if not luminizer_idle:
+                self._wait_for_luminizer()
+                return
 
             # Pull specimen from collector cargo -- must be this Lab's own
             # outpost's Collector (take_from() requires same-outpost source).
@@ -706,6 +721,9 @@ class BioLabController:
                 if ext_res.status == "ok":
                     sample_id = specimen.fragment_id
                     print(f"[{self.name}] Extracted sample: {sample_id}!")
+                    if not luminizer_idle:
+                        self._wait_for_luminizer()
+                        return
                     if not self.drain_output():
                         return
 
@@ -754,14 +772,25 @@ class BioCollectorController:
         # fragment (~20-30 of them) measured at ~20s, then still ~8s/cycle
         # even after caching orders() alone, from the storage walk.
         orders = []
-        focus_orders = []
+        current_order = None
         snapshot = _local_stock_snapshot(outpost)
         if exchange:
             try:
                 orders = exchange.orders()
             except Exception:
                 orders = []
-            focus_orders = _focus_coastal_orders(orders, snapshot, my_biome)
+            current_order = _focus_coastal_order(orders, snapshot, my_biome)
+        preferred_fragments = set((current_order.requires or {}).keys()) if current_order else set()
+
+        # Coarse safety net, NOT the primary flow control (that's
+        # BioLabController's Luminizer-idle gate, see _luminizer_is_idle()):
+        # in a healthy pipeline this should basically never trip, since the
+        # Lab won't hand off/drain faster than the Luminizer can keep up.
+        # Kept cheap on purpose -- reads the already-built snapshot's glow
+        # totals rather than re-scanning anything.
+        if _total_glow_artifacts(snapshot) >= MAX_LOCAL_GLOW_ARTIFACTS:
+            sleep(1.0)
+            return
 
         # 1. Determine demand from Signal Bus broadcast or local query
         needed_fragments = set()
@@ -774,7 +803,7 @@ class BioCollectorController:
                 # that always raised AttributeError, silently swallowed below,
                 # so this branch never actually ran; the Collector was always
                 # falling back to the single active_order() branch instead,
-                # which is unstable -- see _glow_throttled()'s docstring).
+                # which is unstable).
                 broadcast = self.comms.latest("bio_orders")
                 if isinstance(broadcast, dict):
                     demands = broadcast.get("local_demands", {})
@@ -783,7 +812,7 @@ class BioCollectorController:
 
         if demands is not None:
             for frag_id, count_needed in demands.items():
-                if _snapshot_stock(snapshot, frag_id) < count_needed and not _glow_throttled(orders, focus_orders, frag_id, snapshot, my_biome):
+                if _snapshot_stock(snapshot, frag_id) < count_needed:
                     needed_fragments.add(frag_id)
         elif exchange:
             active = exchange.active_order()
@@ -792,8 +821,7 @@ class BioCollectorController:
                     deliv = active.delivered.get(frag_id, 0)
                     in_tr = active.in_transit.get(frag_id, 0)
                     stock = _snapshot_stock(snapshot, frag_id)
-                    throttled = _glow_throttled(orders, focus_orders, frag_id, snapshot, my_biome)
-                    if deliv + in_tr + stock < count_needed and not throttled:
+                    if deliv + in_tr + stock < count_needed:
                         needed_fragments.add(frag_id)
 
         # 2. Scan local biome
@@ -808,13 +836,22 @@ class BioCollectorController:
 
         target_coords = None
 
-        # Priority 1: Collect what is actively needed by local orders
+        # Priority 1: Collect what is actively needed by local orders --
+        # prefer the current/focus order's own fragments first, falling back
+        # to any other incomplete order's fragment if none of those are
+        # discoverable nearby right now.
         if needed_fragments:
             for loc in locations:
-                if loc.cataloged and loc.fragment_id in needed_fragments:
+                if loc.cataloged and loc.fragment_id in needed_fragments and loc.fragment_id in preferred_fragments:
                     target_coords = loc.coords
-                    print(f"[{self.name}] Harvesting needed specimen: {loc.fragment_id} at {loc.coords}")
+                    print(f"[{self.name}] Harvesting needed specimen (current order): {loc.fragment_id} at {loc.coords}")
                     break
+            if target_coords is None:
+                for loc in locations:
+                    if loc.cataloged and loc.fragment_id in needed_fragments:
+                        target_coords = loc.coords
+                        print(f"[{self.name}] Harvesting needed specimen (other order): {loc.fragment_id} at {loc.coords}")
+                        break
 
         # Priority 2: Uncataloged discovery (strictly throttled)
         if target_coords is None:
@@ -853,6 +890,7 @@ class BioLuminizerController:
     def __init__(self, machine):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_luminizer")
+        self.comms = get_component("comms")
         self._lamp_matrix = None  # (red_sig, green_sig, blue_sig) -- fixed hardware, read once
 
     def _lamp_matrix_cols(self):
@@ -884,13 +922,13 @@ class BioLuminizerController:
         module-level _focus_coastal_order()'s docstring).
 
         Delegates to the module-level _focus_coastal_order() -- shared with
-        BioCollectorController's own throttling (_glow_throttled()) so both
-        controllers concentrate on the SAME order at the same time, rather
-        than the Collector gathering for orders the Luminizer isn't even
-        working on yet. See _focus_coastal_order()'s docstring for the full
-        "prefer stock we already have" reasoning and the live deadlock this
-        also incidentally used to cause (an untouched fragment stuck staged
-        in the Luminizer's own latched input while a different order was
+        BioCollectorController's own harvest preference so both controllers
+        concentrate on the SAME order at the same time, rather than the
+        Collector gathering for orders the Luminizer isn't even working on
+        yet. See _focus_coastal_order()'s docstring for the full "prefer
+        stock we already have" reasoning and the live deadlock this also
+        incidentally used to cause (an untouched fragment stuck staged in
+        the Luminizer's own latched input while a different order was
         selected -- self.input holds one item id at a time until
         load()/flush() clears it).
         """
@@ -899,18 +937,10 @@ class BioLuminizerController:
 
     def _fragment_remaining(self, order, fragment_id, snapshot):
         """Units of fragment_id this order still needs, net of what's already
-        correctly tinted for it (see _snapshot_glow_count())."""
-        needed = (order.requires or {}).get(fragment_id, 0)
-        if needed <= 0:
-            return 0
-        delivered = (order.delivered or {}).get(fragment_id, 0)
-        in_transit = (order.in_transit or {}).get(fragment_id, 0)
-        remaining = needed - delivered - in_transit
-        if remaining <= 0:
-            return 0
-        target_glow = getattr(order, "target_glow", None)
-        already_matching = _snapshot_glow_count(snapshot, fragment_id, target_glow)
-        return max(0, remaining - already_matching)
+        correctly tinted for it. Delegates to the module-level
+        _order_fragment_remaining() -- shared with _focus_coastal_order()'s
+        own "does this order still genuinely need this fragment" check."""
+        return _order_fragment_remaining(order, fragment_id, snapshot)
 
     def _active_target_for(self, orders, snapshot, fragment_id):
         order = self._find_coastal_order(orders, snapshot, fragment_id)
@@ -969,6 +999,31 @@ class BioLuminizerController:
                     continue  # already correctly tinted -- leave it for delivery
                 return source_id, properties, count
         return None
+
+    def _notify_heartbeat(self):
+        """
+        Broadcasts once every step() cycle, regardless of what that cycle
+        did. BioLabController waits on this (via comms.wait_broadcast())
+        instead of busy-polling with sleep() while it holds off pulling its
+        next specimen from the Collector / draining its own output -- see
+        BioLabController._wait_for_luminizer()'s docstring.
+
+        Deliberately unconditional, not just "fired after a successful
+        load()": wait_broadcast() only satisfies on a broadcast published
+        AFTER the call, so a signal that only fired on a successful load
+        would never fire again once the Luminizer drained its last item with
+        nothing staged behind it to load next -- including right at startup,
+        before this Luminizer has ever loaded anything at all -- leaving a
+        waiting Lab stuck forever even though the Luminizer had, in fact,
+        gone idle. Firing every cycle instead means the Lab always wakes up
+        again within one Luminizer step(), whatever state it's actually in.
+        """
+        if not self.comms:
+            return
+        try:
+            self.comms.broadcast("luminizer_heartbeat", {"chamber_empty": self.machine.chamber is None})
+        except Exception:
+            pass
 
     def _load_next_sample(self, orders, snapshot):
         outpost = self.machine.outpost
@@ -1109,6 +1164,7 @@ class BioLuminizerController:
         print(f"[{self.name}] WARNING: no exact lamp match found near ({r},{g},{b}) for target {target}.")
 
     def step(self):
+        self._notify_heartbeat()
         drain_port_to_storage(self.machine.output, self.machine.outpost)
 
         outpost = self.machine.outpost

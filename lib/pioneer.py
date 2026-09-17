@@ -8,6 +8,7 @@ from archive import archive
 from vehicle import VehicleController
 from mining import ROVER_PREFERRED_MAX_HARDNESS
 from storage import take_item
+import mining_reservations
 
 class PioneerController(VehicleController):
     """
@@ -22,6 +23,27 @@ class PioneerController(VehicleController):
 
     def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
+
+    def construction_claim_key(self, job_id):
+        """
+        Shared claims dict key for a construction job -- distinct prefix from
+        mining's "site_"/POI's "poi_" so the three never collide in the same
+        archive dict. Unlike mining sites (several Pioneers can now dig the
+        same POI), a construction job is NOT shareable: two Constructor
+        Pioneers both loading/building the same blueprint would double-load
+        materials and waste a trip, so this reuses vehicle_claims.py's
+        existing EXCLUSIVE claim mechanism as-is (see is_construction_job_free())
+        rather than mining_reservations.py's non-exclusive yield-debit pattern.
+        """
+        return f"build_{job_id}"
+
+    def is_construction_job_free(self, job_id, existing_claims, curr_tick):
+        """True unless job_id is freshly claimed by a peer Constructor Pioneer."""
+        claim = existing_claims.get(self.construction_claim_key(job_id))
+        if not claim or claim.get("vehicle") == self.name or claim.get("rover") == self.name:
+            return True
+        claim_age = curr_tick - claim.get("tick", 0)
+        return not (curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS)
 
     def get_construction_progress(self, blueprint_id):
         """Current 0-1 progress for a blueprint id, checking pending/active/paused lists."""
@@ -102,6 +124,10 @@ class PioneerController(VehicleController):
                 pass
 
         while True:
+            # No-op if this Pioneer doesn't actually own the job's claim (the
+            # caller is expected to claim_target() before calling this), so
+            # safe to call unconditionally.
+            self.refresh_claim(self.construction_claim_key(blueprint_id))
             print(f"[{self.name}] Executing blueprint '{blueprint_id}'...")
             self.publish_telemetry("CONSTRUCTING", blueprint_id)
             progress_before = self.get_construction_progress(blueprint_id)
@@ -251,6 +277,18 @@ class PioneerController(VehicleController):
                     sleep(10.0)
                     continue
 
+                # Unlike mining POIs (several Pioneers can now dig the same
+                # site), a construction job is NOT shareable -- two
+                # Constructor Pioneers both loading/building the same
+                # blueprint would double-load materials and waste a trip.
+                # Skip anything a peer already owns before any job selection
+                # below (self-owned claims pass through, per
+                # is_construction_job_free()).
+                existing_claims = self.get_claims()
+                curr_tick = self.get_current_tick()
+                paused = [j for j in paused if self.is_construction_job_free(getattr(j, "id", None), existing_claims, curr_tick)]
+                pending = [j for j in pending if self.is_construction_job_free(getattr(j, "id", getattr(j, "blueprint_id", None)), existing_claims, curr_tick)]
+
                 # 3. Check Paused Constructions first (resuming already-paid work)
                 active_job = None
                 for job in paused:
@@ -278,11 +316,18 @@ class PioneerController(VehicleController):
                 if active_job:
                     job_id = getattr(active_job, "id", None)
                     coords = self.extract_coords(getattr(active_job, "position", None))
-                    print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
-                    if not self.execute_construction(job_id, coords):
-                        failed_jobs.add(job_id)
-                        sleep(2.0)
-                    continue
+                    if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
+                        print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
+                        success = self.execute_construction(job_id, coords)
+                        if not success:
+                            failed_jobs.add(job_id)
+                            self.release_target_claim(self.construction_claim_key(job_id))
+                            sleep(2.0)
+                        elif self.get_construction_progress(job_id) >= 1.0:
+                            self.release_target_claim(self.construction_claim_key(job_id))
+                        continue
+                    # Lost the race to a peer between filtering and claiming -- fall
+                    # through to step 4 this cycle instead of executing nothing.
 
                 # 4. Check Pending Constructions matching current cargo
                 current_pos = self.get_position()
@@ -321,11 +366,18 @@ class PioneerController(VehicleController):
                     if candidate:
                         job_id = getattr(candidate, "id", getattr(candidate, "blueprint_id", None))
                         coords = self.extract_coords(getattr(candidate, "position", None))
-                        print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
-                        if not self.execute_construction(job_id, coords):
-                            failed_jobs.add(job_id)
-                            sleep(2.0)
-                        continue
+                        if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
+                            print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
+                            success = self.execute_construction(job_id, coords)
+                            if not success:
+                                failed_jobs.add(job_id)
+                                self.release_target_claim(self.construction_claim_key(job_id))
+                                sleep(2.0)
+                            elif self.get_construction_progress(job_id) >= 1.0:
+                                self.release_target_claim(self.construction_claim_key(job_id))
+                            continue
+                        # Lost the race to a peer between filtering and claiming --
+                        # fall through to the restocking branch below this cycle.
                     else:
                         # We have cargo matching pending jobs, but cannot reach any right now
                         nearest_st, _ = self.get_nearest_charging_station()
@@ -399,7 +451,21 @@ class PioneerController(VehicleController):
                     sleep(10.0)
                     continue
 
-                target_job = target_jobs[0]
+                # Claim the first target_jobs entry this Pioneer can actually win --
+                # commits to it before the round trip home for materials, so a peer
+                # Constructor Pioneer doesn't also fetch and build the same job.
+                target_job = None
+                for candidate_job in target_jobs:
+                    candidate_id = getattr(candidate_job, "id", getattr(candidate_job, "blueprint_id", None))
+                    candidate_coords = self.extract_coords(getattr(candidate_job, "position", None))
+                    if self.claim_target(self.construction_claim_key(candidate_id), {"type": "build", "coords": candidate_coords, "name": candidate_id}):
+                        target_job = candidate_job
+                        break
+                if not target_job:
+                    # Every achievable job just got claimed out from under us; retry next cycle.
+                    sleep(2.0)
+                    continue
+
                 job_id = getattr(target_job, "id", getattr(target_job, "blueprint_id", None))
                 required_item = getattr(target_job, "required_item", None)
                 required_count = getattr(target_job, "required_count", 0)
@@ -440,6 +506,7 @@ class PioneerController(VehicleController):
                             # in the list (failed_jobs clears once no other option remains).
                             print(f"[{self.name}] Could not load materials for job {job_id}; deferring to try other pending jobs.")
                             failed_jobs.add(job_id)
+                            self.release_target_claim(self.construction_claim_key(job_id))
                             sleep(2.0)
                             continue
                     else:
@@ -454,6 +521,14 @@ class PioneerController(VehicleController):
                 print(f"[{self.name}] Pioneer loop exception: {e}")
                 try:
                     self.vehicle.nav.brake()
+                except Exception:
+                    pass
+                # Release any construction job claim on failure -- run_construction_loop()
+                # doesn't use self.current_target_key at all (unlike mining/survey), so
+                # this releases every claim this Pioneer holds; harmless since a
+                # Constructor Pioneer only ever runs this one loop.
+                try:
+                    self.release_target_claim()
                 except Exception:
                     pass
                 sleep(5.0)
@@ -546,7 +621,7 @@ class PioneerController(VehicleController):
                     )
                 else:
                     candidates = self.build_mineral_site_candidates(deprioritize_hardness_at_or_below=ROVER_PREFERRED_MAX_HARDNESS)
-                    target, budget, _ = self.select_best_mining_target(candidates)
+                    target, budget, _ = self.select_best_mining_target(candidates, reserve_demand=True)
 
                 if not target or not budget:
                     print(f"[{self.name}] No mining target: no reachable mineral site currently matches demand. Standing by at base slot.")
@@ -569,7 +644,7 @@ class PioneerController(VehicleController):
                     continue
 
                 # Step 5: Mine (recharges and resumes in place as needed)
-                self.mine_until_full_or_exhausted(coords)
+                self.mine_until_full_or_exhausted(coords, max_units=target.get("estimated_units"))
 
                 # Step 6: Return to base (releases target claim upon return).
                 # A failed return (e.g. a rescue interrupts drive_to() mid-trip)
@@ -586,6 +661,9 @@ class PioneerController(VehicleController):
                 # instead of blindly resuming the same site forever (previously
                 # only an explicit recall ever cleared it).
                 self.release_target_claim()
+                if self.current_target_reserved:
+                    mining_reservations.release_yield(self.name)
+                    self.current_target_reserved = False
 
                 # Step 7: Offload and recharge
                 if self.unload_cargo() < 0:
@@ -603,6 +681,9 @@ class PioneerController(VehicleController):
                     pass
                 try:
                     self.release_target_claim()
+                    if self.current_target_reserved:
+                        mining_reservations.release_yield(self.name)
+                        self.current_target_reserved = False
                 except Exception:
                     pass
                 sleep(5.0)

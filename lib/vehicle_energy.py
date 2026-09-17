@@ -406,6 +406,48 @@ class VehicleEnergyMixin:
             "is_achievable": curr_wh >= total_required_wh
         }
 
+    def max_mineable_units(self, target_coords, item_id, purity=None):
+        """
+        Max units of item_id affordable on the battery currently on board, for
+        a round trip to target_coords and back to the nearest charging station
+        from there -- an upfront energy-based trip size (mine exactly what's
+        affordable) rather than a cargo-capacity assumption. With mining
+        outposts stockpiling ahead of demand, mine-till-full-then-recharge-
+        and-resume trips (mine_until_full_or_exhausted()) are no longer the
+        common case, so this replaces cargo.capacity() as the default
+        estimate wherever one's needed -- mine_until_full_or_exhausted() still
+        exists as a safety net if the real trip runs richer/leaner than
+        estimated.
+
+        Solves calculate_trip_energy()'s own budget equation directly for
+        units instead of guessing-and-checking: every cost term below is
+        either fixed (outbound drive, base return drive) or exactly linear in
+        units (mined Wh via mine_wh_per_unit(), extra return-drive Wh from the
+        added cargo weight), so the max affordable count follows in one step.
+        """
+        current_pos = self.get_position()
+        dist_outbound = self.distance_between(current_pos, target_coords)
+        nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
+        dist_inbound = self.distance_between(target_coords, nearest_cs_from_target)
+
+        curr_cargo = self.cargo_units_count()
+        outbound_rate = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo)
+        inbound_rate_base = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo)
+        inbound_rate_plus_one = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo + 1)
+        marginal_inbound_rate_per_unit = inbound_rate_plus_one - inbound_rate_base
+
+        fixed_wh = (dist_outbound * outbound_rate) + (dist_inbound * inbound_rate_base)
+        marginal_wh_per_unit = (dist_inbound * marginal_inbound_rate_per_unit) + self.mine_wh_per_unit(item_id, purity)
+
+        curr_wh, _, _ = self.get_battery()
+        available_for_units = curr_wh - self.MIN_EMERGENCY_RESERVE_WH - (fixed_wh * self.SAFETY_MARGIN_MULTIPLIER)
+        if available_for_units <= 0 or marginal_wh_per_unit <= 0:
+            return 0
+
+        max_units = int(available_for_units // (marginal_wh_per_unit * self.SAFETY_MARGIN_MULTIPLIER))
+        cargo_capacity = self.vehicle.cargo.capacity() if hasattr(self.vehicle, "cargo") else max_units
+        return max(0, min(max_units, cargo_capacity))
+
     def energy_needed_to_reach(self, target_coords):
         """Calculates minimum energy required to reach target coordinates with safety buffer."""
         dist = self.distance_between(self.get_position(), target_coords)

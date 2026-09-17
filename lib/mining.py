@@ -14,7 +14,9 @@
 
 from production import get_raw_material_demands, get_raw_material_reason
 from storage import total_stock
+from archive import archive
 import outpost_mining
+import mining_reservations
 
 # Hardness a Rover's basic drill can handle. Pioneers pass this as
 # deprioritize_hardness_at_or_below so they prefer sites only they can reach,
@@ -93,10 +95,12 @@ class MiningMixin:
             except Exception:
                 max_drill_hardness = 1.0
 
-        existing_claims = self.get_claims()
         unsupported_targets = self.get_unsupported_targets()
-        curr_tick = self.get_current_tick()
 
+        # No peer-claim filter here: multiple Pioneers can now mine the same
+        # POI, so a peer already working a site is no longer disqualifying --
+        # see select_best_mining_target()'s yield reservation instead, which
+        # debits home-demand for ore already promised by an in-flight trip.
         candidates = []
         try:
             for site in journal.surveyed_sites("nocturna"):
@@ -112,12 +116,6 @@ class MiningMixin:
                     can_attempt, _ = self.can_attempt_target(key, unsupported_targets[key])
                     if not can_attempt:
                         continue
-
-                claim = existing_claims.get(key)
-                if claim and claim.get("vehicle") != self.name and claim.get("rover") != self.name:
-                    claim_age = curr_tick - claim.get("tick", 0)
-                    if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                        continue  # Claimed by a peer; skip!
 
                 priority = 2
                 if deprioritize_hardness_at_or_below is not None and hardness <= deprioritize_hardness_at_or_below:
@@ -173,10 +171,12 @@ class MiningMixin:
             except Exception:
                 max_drill_hardness = 1.0
 
-        existing_claims = self.get_claims()
         unsupported_targets = self.get_unsupported_targets()
-        curr_tick = self.get_current_tick()
 
+        # No peer-claim filter here either (see build_mineral_site_candidates()) --
+        # several stationed Pioneers can converge on the same under-target ore;
+        # it self-corrects next cycle once stock arrives (total_stock() is read
+        # live above), so no reservation bookkeeping is needed for this path.
         candidates = []
         try:
             for site in journal.surveyed_sites("nocturna"):
@@ -195,12 +195,6 @@ class MiningMixin:
                     if not can_attempt:
                         continue
 
-                claim = existing_claims.get(key)
-                if claim and claim.get("vehicle") != self.name and claim.get("rover") != self.name:
-                    claim_age = curr_tick - claim.get("tick", 0)
-                    if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                        continue  # Claimed by a peer; skip!
-
                 candidates.append({
                     "key": key,
                     "type": "mine",
@@ -216,7 +210,7 @@ class MiningMixin:
 
         return candidates
 
-    def select_best_mining_target(self, candidates):
+    def select_best_mining_target(self, candidates, reserve_demand=False):
         """
         Sorts candidates by (priority, -purity_rank, distance) -- lower
         priority number wins first, then richer veins (see PURITY_RANK) win
@@ -225,6 +219,20 @@ class MiningMixin:
         first one that fits the round-trip energy budget. Returns (target,
         budget, diagnostics); target is None when nothing is currently
         achievable.
+
+        reserve_demand=True (home-demand candidates only -- pass True from
+        build_mineral_site_candidates() callers, False for
+        build_local_stockpile_candidates() callers) additionally estimates
+        this trip's mineable yield from energy on board
+        (max_mineable_units()) and registers it via
+        mining_reservations.reserve_yield() so a peer's home-demand search
+        this cycle or later sees the deficit already promised and doesn't
+        also chase it (see lib/production.py's get_raw_material_demands()).
+        The stockpile path skips this -- it's already self-bounded by each
+        outpost's own stock target, re-read live every cycle. Either way, the
+        estimate is stashed on the candidate as "estimated_units" so callers
+        can size the actual mining call instead of defaulting to cargo
+        capacity.
         """
         pos = self.get_position()
         candidates = sorted(
@@ -252,12 +260,37 @@ class MiningMixin:
                 budget_candidates += 1
                 claimed = self.claim_target(cand["key"], cand)
                 if claimed:
+                    self.current_target_reserved = False
+                    if cand["type"] == "mine":
+                        estimated_units = self.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
+                        cand["estimated_units"] = estimated_units
+                        if reserve_demand and estimated_units > 0:
+                            mining_reservations.reserve_yield(self.name, cand["key"], cand["harvest_item"], estimated_units, self.get_current_tick())
+                            self.current_target_reserved = True
                     self.current_target = cand
                     self.current_target_key = cand["key"]
                     self.save_mission(cand["type"], cand)
                     return cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
 
         return None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+
+    def restore_yield_reservation_flag(self):
+        """
+        Called once after VehicleController.__init__'s load_mission() resumes
+        a mission post-reload: reservations live in the archive independently
+        of the in-memory current_target_reserved flag (see vehicle.py), so a
+        resumed mine-type mission needs this to re-arm refresh_yield()/
+        release_yield() instead of silently letting its reservation go stale.
+        """
+        self.current_target_reserved = False
+        if not self.current_target_key:
+            return
+        reservations = archive.get(mining_reservations.RESERVED_YIELD_KEY, {})
+        if not isinstance(reservations, dict):
+            return
+        entry = reservations.get(self.current_target_key)
+        if isinstance(entry, dict) and entry.get("vehicle") == self.name:
+            self.current_target_reserved = True
 
     def mine_current_site(self, max_units=None):
         """Extracts minerals using the mounted Drill Module while enforcing battery & cargo limits."""
@@ -309,6 +342,8 @@ class MiningMixin:
 
             if self.current_target_key:
                 self.refresh_claim(self.current_target_key)
+                if self.current_target_reserved:
+                    mining_reservations.refresh_yield(self.name, self.current_target_key, self.get_current_tick())
 
         return mined_count
 
@@ -331,6 +366,8 @@ class MiningMixin:
             print(f"[{self.name}] Mining job at {target_coords} interrupted by low battery. Diverting to recharge and resume.")
             if self.current_target_key:
                 self.refresh_claim(self.current_target_key)
+                if self.current_target_reserved:
+                    mining_reservations.refresh_yield(self.name, self.current_target_key, self.get_current_tick())
 
             nearest_cs, _ = self.get_nearest_charging_station()
             reached_cs = self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)

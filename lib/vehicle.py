@@ -86,6 +86,12 @@ class VehicleController(
         self.state = "INIT"
         self.current_target = None
         self.current_target_key = None
+        # True only while current_target_key holds a home-demand mine-type
+        # mission with a live mining_reservations entry (see
+        # MiningMixin.select_best_mining_target()) -- gates the refresh_yield()/
+        # release_yield() calls in lib/mining.py so they never fire for a
+        # stockpile-path or survey/POI mission, which never reserve yield.
+        self.current_target_reserved = False
         self.assigned_slot_coords = self.get_home_slot_coords()
         self.home_coords = self.assigned_slot_coords
 
@@ -94,6 +100,8 @@ class VehicleController(
         resumed = self.load_mission()
         if resumed:
             print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+            if resumed.get("kind") == "mine":
+                self.restore_yield_reservation_flag()
 
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""

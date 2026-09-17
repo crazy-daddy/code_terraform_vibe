@@ -22,6 +22,7 @@ that way there is exactly one place to keep current.
 | &nbsp;&nbsp;↳ cargo offload into Inventory / Warehouse | `vehicle_cargo.py` |
 | &nbsp;&nbsp;↳ sonar survey loop (POI discovery) | `vehicle_survey.py` |
 | &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `mining.py` — shared by Rover and Pioneer; see §2b |
+| &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; do **not** put shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
 | Smelting | `smelter.py` |
@@ -565,7 +566,14 @@ already-tinted unit waiting for delivery instead of genuinely raw stock, the sam
 the other direction. **The Luminizer should never pick up an already-tinted sample at all**, in either
 the "what's already staged" or "what to pull from storage" path — both now enforce this.
 
-### 1f. Raw-Specimen Backlog Throttle (`lib/bio.py` `BioCollectorController`, `RAW_BACKLOG_CAP_PER_FRAGMENT`)
+### 1f. Raw-Specimen Backlog Throttle → Structural Idle-Gate (`lib/bio.py`, `BioCollectorController`/`BioLabController`/`BioLuminizerController`)
+
+**Note:** the numeric throttle described first below (`RAW_BACKLOG_CAP_PER_FRAGMENT`,
+`FOCUS_ORDER_COUNT`, `_glow_throttled()`) was later replaced by a structural fix — see the "Still ~6
+seconds..." entry partway through this section for what actually ships today
+(`_luminizer_is_idle()` + `MAX_LOCAL_GLOW_ARTIFACTS`). The numeric-throttle history is kept below
+because it's real "why we tried X and it wasn't enough" context, not because any of that code still
+exists.
 
 Caps how far `BioCollectorController` may collect a glow-requiring (coastal) fragment ahead of what
 the Luminizer has actually tinted, so raw specimens don't pile up and exhaust Warehouse material
@@ -668,6 +676,84 @@ via `_snapshot_stock(snapshot, item_id)` / `_snapshot_glow_count(snapshot, item_
 **once** per cycle, same pattern as the `orders` list. `_find_raw_stack()` is the one exception — it
 legitimately needs live `ItemStack` objects (not just counts) to actually load a specific stack, so it
 still does its own single storage walk, but only once per Luminizer `step()`, not per-fragment.
+
+**Still ~6 seconds after caching the storage walk too — the numeric per-fragment throttle itself was
+the remaining cost, and it was solving a problem with a much simpler structural fix.** Every fragment
+in `demands.items()` (~20-30 of them) still ran its own `_glow_throttled()` check even after both
+caching fixes above. But `RAW_BACKLOG_CAP_PER_FRAGMENT`/`FOCUS_ORDER_COUNT`/`_glow_throttled()`/
+`_raw_backlog_count()`/`_focus_coastal_orders()` (plural) were only ever needed because the Collector
+and Lab kept harvesting/extracting raw specimens faster than the Luminizer could tint them one at a
+time. Every stage already has single-slot hardware (`Collector.cargo`, `Lab.specimen`/`.output`,
+`Luminizer.chamber`/`.input`/`.output`) — if the **Lab** simply refuses to pull its next specimen from
+the Collector, and refuses to drain its own extracted output into the Warehouse, until the
+**Luminizer is fully idle** (chamber empty, input empty, output empty, `_luminizer_is_idle()`), then
+at most one raw specimen is ever in flight ahead of the Luminizer at a time. No Warehouse pileup is
+structurally possible regardless of how broadly the Collector searches for "needed" fragments, so the
+numeric per-fragment caps and per-order focus list (all removed) become unnecessary. All of
+`RAW_BACKLOG_CAP_PER_FRAGMENT`, `_raw_backlog_count()`, `FOCUS_ORDER_COUNT`, `_focus_coastal_orders()`
+(plural), and `_glow_throttled()` were deleted; the singular `_focus_coastal_order()` (shared "current
+order" selector for both Collector preference and Luminizer targeting), `_local_stock_snapshot()`,
+`_snapshot_stock()`, and `_snapshot_glow_count()` stay — they're still useful for demand-netting and
+order preference, and were already O(1)-per-cycle, not part of the perf problem.
+
+`BioLabController._luminizer_is_idle(luminizer)`-gated `step()`: the initial output drain and the
+collector-pull (`specimen is None` branch) both skip entirely when the local Luminizer isn't idle;
+the post-extract drain does the same. Analyze/extract of whatever's already in the Lab's own chamber
+keep running unconditionally either way — they're already self-limiting via the game's own
+`"output_full"` rejection if the Lab's output is still occupied, so there was no need to gate those
+too. `BioCollectorController.step()` correspondingly dropped every `_glow_throttled()` call — it
+still nets demand against `_snapshot_stock()` (unaffected), and now additionally prefers the shared
+`_focus_coastal_order()`'s own fragments over other incomplete orders' when picking a cataloged
+location to harvest (falling back to any other needed fragment if the preferred order's aren't
+discoverable nearby), instead of hard-blocking non-focus fragments outright.
+
+**No busy-polling `sleep()` for the gate either — the Luminizer broadcasts a heartbeat every cycle.**
+`BioLuminizerController._notify_heartbeat()` fires `comms.broadcast("luminizer_heartbeat", ...)`
+unconditionally at the top of every `step()`, regardless of what that cycle did.
+`BioLabController._wait_for_luminizer()` calls `comms.wait_broadcast("luminizer_heartbeat")` instead
+of `sleep(0.5)` whenever it's blocked on `_luminizer_is_idle()` being `False` with nothing else useful
+to do (no specimen to pull with, or an extracted sample it can't drain yet) — the script pauses
+efficiently until the Luminizer's next tick, then re-checks `_luminizer_is_idle()` from scratch,
+rather than re-checking on a fixed timer.
+
+**First version only broadcast on a successful load — found (before it ever shipped) that this could
+hang the Lab forever.** `wait_broadcast()` only satisfies on a broadcast published *after* the call
+(existing broadcasts don't count), so a signal that only fired on `self.machine.load(...)` succeeding
+would never fire again once the Luminizer drained its last item with nothing staged behind it to load
+next — including right at startup, before this Luminizer has ever loaded anything in this session at
+all. A Lab that reached `_wait_for_luminizer()` in that state would wait indefinitely even though the
+Luminizer had, in fact, gone idle. Fixed by making the broadcast an unconditional per-cycle heartbeat
+instead of a load-success event — the Lab always wakes up again within one Luminizer `step()`,
+whatever state it's actually in. Falls back to `sleep(0.5)` if `comms` is unavailable or the wait
+itself errors.
+
+**A coarse total-artifact safety net remains, on purpose, as insurance — not as the primary
+mechanism.** `MAX_LOCAL_GLOW_ARTIFACTS = 4`: if the sum of every glow-tagged item (raw + tinted, any
+fragment type) sitting in local storage right now (`_total_glow_artifacts(snapshot)`, a plain sum
+over the snapshot's `by_glow` dict — no extra scanning) reaches this, `BioCollectorController.step()`
+pauses harvesting entirely for that cycle. In a healthy pipeline this should stay at 0-2 and never
+actually trip — the Lab holds at most 1 raw sample before the Luminizer picks it up, and the
+Luminizer holds at most 1-2 before the Exchange sweeps them up — this cap only matters if that
+structural bound somehow doesn't hold (e.g. a sibling script isn't running).
+
+**The cap tripped at 5 with the Luminizer stuck picking up nothing — root cause was
+`_focus_coastal_order()` locking onto an already-satisfied order.** Reported live: 5 `cuticle_molt`
+sitting in storage, the Luminizer repeatedly identifying an order that lists `cuticle_molt` in
+`.requires`, doing nothing, and repeating the exact same no-op every tick. The bug: neither branch of
+`_focus_coastal_order()` checked whether a candidate order's need for a fragment was actually still
+outstanding — the `fragment_id` branch returned the first local incomplete order requiring it at all,
+and the no-`fragment_id` branch preferred any candidate with *any* nonzero local stock for *any*
+required fragment, regardless of whether that order's own deficit for it was already 0 (fully
+delivered/in-transit/already-tinted). If order A's `cuticle_molt` requirement was already covered but
+order B (also incomplete, also local, also wanting `cuticle_molt`) wasn't, `_focus_coastal_order()`
+could still lock onto order A — and every subsequent `_fragment_remaining()` check on order A
+correctly came back 0, so `_load_next_sample()` found nothing to load and exited, forever, despite
+real stock and real demand for the same fragment existing on order B. Fixed with new module-level
+`_order_fragment_remaining(order, fragment_id, snapshot)` (the same needed-minus-delivered-minus-
+in_transit-minus-already-tinted math `_fragment_remaining()` used to do inline, now shared): both
+branches of `_focus_coastal_order()` now require genuine remaining deficit, not just presence in
+`.requires` or nonzero stock, before treating an order as actionable.
+`BioLuminizerController._fragment_remaining()` is now a thin delegate to the module-level version.
 
 **`best_unload_target()`'s fallback tried to connect a remote machine's output to a non-local
 destination.** When no local Warehouse had room, it unconditionally returned the literal id
@@ -879,9 +965,58 @@ got an explicit `if target is None:` early-return/skip added.
   and resuming for as long as real progress keeps being made each cycle, and only reports
   failure for a genuine rejection (e.g. `"blocked"`) or a no-progress stall — never merely
   because the job needs more than one recharge round to finish.
+- **Construction job claims (Pioneer only, `run_construction_loop()`, exclusive)**: unlike mining
+  sites, a construction job is NOT shareable — two Constructor Pioneers both loading/building the
+  same blueprint would double-load materials and waste a trip. Uses `vehicle_claims.py`'s existing
+  exclusive claim mechanism as-is (key `f"build_{job_id}"` via `PioneerController.construction_claim_key()`,
+  distinct prefix from mining's `"site_"`/survey's `"poi_"` so all three coexist in the same shared
+  claims dict). `is_construction_job_free()` filters a peer's fresh claim out of both the
+  paused-constructions and pending-constructions lists before any job selection each cycle;
+  `claim_target()` is called at each of the three commit points (resuming a paused job, executing a
+  cargo-matching pending job, and committing to a job before the round trip home to fetch its
+  materials) — a lost claim race (peer grabbed it first) falls through to the next selection step
+  instead of executing nothing. `execute_construction()` heartbeats via `refresh_claim()` every
+  attempt (no-op if this Pioneer doesn't own the claim, so safe to call unconditionally). Released
+  on genuine completion (`get_construction_progress() >= 1.0`) or failure (materials unobtainable,
+  genuine rejection) — kept held across an incomplete "still paused, retry later" outcome so a peer
+  doesn't grab it mid-build; also released wholesale on an unhandled loop exception.
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims
   (mirrored to `rover.claims` / `survey.claims` for legacy compatibility), heartbeat-renewed via
-  `refresh_claim()`, expiring after `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour).
+  `refresh_claim()`, expiring after `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral
+  mining sites are no longer exclusive** (the game now allows several Pioneers to mine the same
+  POI) — `lib/mining.py`'s candidate builders no longer filter out a peer-claimed site, and
+  `claim_target()`/`refresh_claim()`/`release_target_claim()` are still called for a mine-type
+  mission (bookkeeping: `current_target_key`, `save_mission()`/reload-resume) but never gate
+  candidate selection. Survey/POI targets (`vehicle_survey.py`) are still exclusive via the same
+  claim mechanism, unchanged. See `lib/mining_reservations.py` below for what replaced exclusivity
+  as the overmining guard.
+- **In-flight mining yield reservation** (`lib/mining_reservations.py`, `mining.reserved_yield`
+  archive key): non-exclusive, additive bookkeeping — several vehicles converging on one deficit no
+  longer collide via a claim, but would all still see the *same* undiminished demand without this.
+  When `MiningMixin.select_best_mining_target(candidates, reserve_demand=True)` claims a mine-type
+  candidate (home-demand path only — `build_mineral_site_candidates()`, called from `rover.py`'s
+  `run_expedition_cycle()` and `pioneer.py`'s `run_mining_loop()`), it estimates the trip's yield via
+  `VehicleEnergyMixin.max_mineable_units()` (energy-based — see below) and reserves it;
+  `get_raw_material_demands()` (`lib/production.py`) subtracts every non-stale reservation's units
+  from raw demand before returning, so a peer's search this cycle or later sees the deficit already
+  promised. Heartbeat-renewed (`refresh_yield()`, alongside `refresh_claim()` in
+  `mine_current_site()`/`mine_until_full_or_exhausted()`) and released (`release_yield()`) on trip
+  end/failure, same `CLAIM_STALE_TICKS`-equivalent expiry (`RESERVATION_STALE_TICKS = 36000`). The
+  **stockpile path** (`build_local_stockpile_candidates()`, outpost-stationed mining,
+  `reserve_demand=False`) deliberately skips this — it doesn't read `get_raw_material_demands()` at
+  all, and is already self-bounded by each outpost's own live `stock_target_for()` check, so a few
+  vehicles briefly converging on the same under-target ore just self-corrects once stock arrives.
+- **Energy-based mining trip sizing** (`VehicleEnergyMixin.max_mineable_units()`,
+  `lib/vehicle_energy.py`): replaces `cargo.capacity()` as the default yield estimate/`max_units` for
+  a mining trip. Solves the same budget `calculate_trip_energy()` checks, directly for units instead
+  of guess-and-check: outbound drive Wh + base return drive Wh are fixed, while mined-unit Wh
+  (`mine_wh_per_unit_for()`) and the marginal per-unit return-drive Wh (from the added cargo weight,
+  `CARGO_UNIT_TRAVEL_POWER_W`) are exactly linear in unit count, so the max affordable count follows
+  in one division after subtracting `MIN_EMERGENCY_RESERVE_WH` and applying
+  `SAFETY_MARGIN_MULTIPLIER`, then clamped to `cargo.capacity()`. Reflects that mining outposts now
+  stockpile ahead of demand, so a trip no longer needs to plan around repeated
+  mine-till-full/recharge/resume cycles (`mine_until_full_or_exhausted()` still exists as a safety
+  net for estimate drift, e.g. richer-than-expected purity).
 - Recall (`lib/vehicle_claims.py`): one shared `vehicle.recall` dict `{vehicle_name: True}` — **not**
   one archive key per vehicle (the old `vehicle.recall:<name>` scheme, migrated off by
   `ArchiveCleaner.clean_recall_flags()`) — since the Data Archive has a fixed shared key-count cap
@@ -1179,7 +1314,11 @@ Mineral-site discovery and drill execution live in one place, shared by both Rov
   `ROVER_PREFERRED_MAX_HARDNESS = 1.0` (Pioneer's mining role does this) sets `priority=3` instead
   of `2` on hardness ≤ 1 sites — a **soft** preference, not exclusion: a capable Pioneer still
   claims an easy site if nothing harder is currently pending, rather than idling.
-- `select_best_mining_target(candidates)`: sorts by `(priority, -PURITY_RANK, distance)` — lower
+- Neither candidate builder filters out a site already claimed by a peer (mineral sites are no
+  longer exclusive — several Pioneers can mine the same POI); see this file's fleet-coordination
+  and in-flight yield reservation entries above (`lib/mining_reservations.py`) for what guards
+  against overmining now instead.
+- `select_best_mining_target(candidates, reserve_demand=False)`: sorts by `(priority, -PURITY_RANK, distance)` — lower
   priority number wins first; within the same priority tier, a richer vein wins over a merely-closer
   one (`PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}`, from `MiningSite.purity` — a 1x/2x/3x
   extraction-rate multiplier per `docs/types/world_and_sites.md`); distance only breaks ties between
@@ -1196,7 +1335,12 @@ Mineral-site discovery and drill execution live in one place, shared by both Rov
   used for Rover's combined POI+mineral candidate list (POIs are `priority=1`, mineral sites
   `priority=2`/`3`).
 - `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (read live, not
-  hardcoded `10`) — Pioneer's cargo capacity varies with storage modules.
+  hardcoded `10`) when no `max_units` is given — Pioneer's cargo capacity varies with storage
+  modules. The home-demand mining loops (`rover.py`/`pioneer.py`) now always pass an explicit
+  `max_units` from `select_best_mining_target()`'s `estimated_units` (see
+  `VehicleEnergyMixin.max_mineable_units()` above), an energy-based trip size, so the
+  cargo-capacity default is now mainly a fallback (e.g. `_stationed_mining_cycle()`'s own
+  stock-headroom-based cap, computed independently).
   `mine_until_full_or_exhausted(target_coords)` wraps it with the recharge-and-resume-in-place loop
   (mirrors `execute_construction()`'s pattern in `pioneer.py`). The battery-interruption recharge
   stop can land at the *home base* station itself (not just a remote field station) — when it does
@@ -1622,7 +1766,8 @@ exist yet at controller-construction time.
   on `wake_smelter()`'s removal. (`power.shedded_machines` used to be written as an exact duplicate
   nothing ever read — retired.)
 - `fleet.status.<id>` / `rover.status.<id>`: Telemetry `{name, state, x, y, wh, level, target, tick}`
-- `rover.claims` / `survey.claims` (mirrored, legacy + current key): Atomic target reservation dict `{target_key: {"vehicle": id, "tick": tick}}`. Stale after `CLAIM_STALE_TICKS = 36,000` ticks (1 hr) — see `lib/vehicle_claims.py`.
+- `rover.claims` / `survey.claims` (mirrored, legacy + current key): Atomic target reservation dict `{target_key: {"vehicle": id, "tick": tick}}`. Stale after `CLAIM_STALE_TICKS = 36,000` ticks (1 hr) — see `lib/vehicle_claims.py`. No longer exclusivity-gates mineral mining sites (see `mining.reserved_yield` below); still exclusive for survey/POI targets (key prefix `"poi_"`) and construction jobs (key prefix `"build_"`, `PioneerController.construction_claim_key()`, see §1a's construction-job-claims entry).
+- `mining.reserved_yield`: Non-exclusive in-flight mining yield dict `{reservation_key: {"vehicle": id, "item_id": str, "units": int, "tick": tick}}`, home-demand mine-type missions only. Stale after `RESERVATION_STALE_TICKS = 36,000` ticks (same window as claims) — see `lib/mining_reservations.py`.
 - `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`.
 - `heat.optimal_setpoints`: Caching `{thermal_state: best_power}`
 - `pressure.optimal_resonance`: Caching `{resonance_state: best_window}`

@@ -20,7 +20,7 @@ You are an expert automation engineer and Python developer specializing in the g
    - Use atomic site reservations in `archive` (`lib/vehicle_claims.py`) with heartbeat renewal and timeout expiration to prevent duplicate assignments or collisions.
    - Enforce deadlock/terrain stall detection and staggered base staging slots (`lib/vehicle_navigation.py`).
 5. **Outpost Construction Safety Rule**:
-   - **NEVER** automatically found or construct an Outpost! Outpost foundation increases future outpost costs permanently and cannot be undone. All construction must be explicitly gated by human operator approval (e.g. via Control Panel or explicit command).
+   - **NEVER** automatically found or construct an Outpost! Outpost foundation increases future outpost costs. All construction must be explicitly gated by human operator approval (e.g. via Control Panel or explicit command) — **until** the planned building planner (deploys buildings from inventory via script; see TODO.md) exists. Outposts can now be decommissioned, so founding is no longer permanent; once the building planner ships, it may place outposts without per-instance human approval. Manual or ad-hoc script-driven founding outside the planner stays gated under this rule.
 6. **Decoupled Inter-Component Communication**:
    - Prefer Signal Bus (`get_component("comms")`) for real-time order/event broadcasts with age/stale checks (`latest_info()`).
    - Provide direct component read fallbacks when Signal Bus publishers are missing or stale.

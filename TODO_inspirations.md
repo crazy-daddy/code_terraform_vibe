@@ -47,6 +47,7 @@ Reviewed against the local component and guide documentation on 2026-09-13. The 
   - [O] Constructor Pioneer: consume the shared construction queue and build approved jobs. # O = Maybe; see below
   - [x] Keep the one-kit decision human-visible instead of silently founding the first candidate.
     - [X] Approve jobs via Control Panel, not automatically! Never automatically build an Outpost!
+      (Superseded pending the building planner phase — see TODO.md. Outposts can now be decommissioned, so founding is no longer permanent; once the planner exists it may place outposts without per-instance approval. This gate still applies to any manual/ad-hoc founding outside the planner.)
   - References: [inspirations/graviadaemon/pioneer_1.py](inspirations/graviadaemon/pioneer_1.py), [inspirations/graviadaemon/pioneer_2.py](inspirations/graviadaemon/pioneer_2.py), [inspirations/graviadaemon/lib/scout.py](inspirations/graviadaemon/lib/scout.py)
 - [X] Improve the current spiral survey with a candidate shortlist:
   - [X] Merge Nocturna POIs, Journal sites, unresolved sonar contacts, and archived survey points.
@@ -71,7 +72,7 @@ Reviewed against the local component and guide documentation on 2026-09-13. The 
 - [ ] Replace the current single-purpose construction loop with a generic queue worker:
   - [X] Read paused jobs first, ordered by completion percentage.
   - [X] Rejoin jobs this Pioneer previously started.
-  - [X] Then process pending jobs. # See above - never automatically build outposts, as the cost increases permanently!
+  - [X] Then process pending jobs. # See above - never automatically build outposts outside the (not-yet-built) building planner!
   - [X] Use `required_item` and `required_count` as the source of truth.
   - Reference: [inspirations/graviadaemon/lib/pioneer.py](inspirations/graviadaemon/lib/pioneer.py)
 - [X] Add construction departure gates:

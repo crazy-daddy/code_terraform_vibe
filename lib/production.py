@@ -1,6 +1,18 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
 from storage import total_stock
+import mining_reservations
+
+
+def _current_tick():
+    """Module-level tick read (mirrors VehicleController.get_current_tick()) for callers with no vehicle instance."""
+    clock = _component("clock")
+    if clock and hasattr(clock, "tick"):
+        try:
+            return clock.tick()
+        except Exception:
+            pass
+    return 0
 
 
 def _component(component_id):
@@ -583,6 +595,19 @@ def get_raw_material_demands(smelter=None):
                     _add_demand(raw_demands, raw_item, max(0, output_need * units_per_run - current))
         except Exception:
             pass
+
+    # Debit ore already promised by an in-flight home-demand mining trip
+    # (lib/mining.py's select_best_mining_target(reserve_demand=True)) so a
+    # peer's candidate search this cycle or later doesn't also chase a
+    # deficit that's already being fetched -- now that several Pioneers can
+    # mine the same POI, get_claims() alone no longer prevents that. Only
+    # the home-demand path reads this: outpost-stationed stockpile mining
+    # doesn't go through get_raw_material_demands() at all, and is already
+    # self-bounded by its own live stock-target check.
+    reserved = mining_reservations.get_reserved_yield_totals(_current_tick())
+    for item_id, units in reserved.items():
+        if item_id in raw_demands:
+            raw_demands[item_id] = max(0, raw_demands[item_id] - units)
 
     return raw_demands
 

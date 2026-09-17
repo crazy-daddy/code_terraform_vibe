@@ -6,6 +6,7 @@
 from production import get_raw_material_demands
 from vehicle import VehicleController
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
+import mining_reservations
 
 class RoverController(VehicleController):
     """
@@ -103,7 +104,7 @@ class RoverController(VehicleController):
         # Rover always treats a reachable mineral site as priority 2.
         candidates.extend(self.build_mineral_site_candidates())
 
-        target, budget, diagnostics = self.select_best_mining_target(candidates)
+        target, budget, diagnostics = self.select_best_mining_target(candidates, reserve_demand=True)
         if target:
             return target, budget
 
@@ -202,7 +203,7 @@ class RoverController(VehicleController):
         if target["type"] == "poi":
             self.scan_and_survey()
         elif target["type"] == "mine":
-            self.mine_until_full_or_exhausted(coords)
+            self.mine_until_full_or_exhausted(coords, max_units=target.get("estimated_units"))
 
         # Step 6: Return to base. A failed return (e.g. a rescue interrupts
         # drive_to() mid-trip) must not fall through to Step 7 --
@@ -218,6 +219,9 @@ class RoverController(VehicleController):
         # the same site forever (previously only an explicit recall or an
         # unhandled exception ever cleared it).
         self.release_target_claim()
+        if self.current_target_reserved:
+            mining_reservations.release_yield(self.name)
+            self.current_target_reserved = False
 
         # Step 7: Offload and recharge
         if self.unload_cargo() < 0:
@@ -243,9 +247,12 @@ class RoverController(VehicleController):
                     self.vehicle.nav.brake()
                 except Exception:
                     pass
-                # Release any active target claims on failure
+                # Release any active target claims (and yield reservation, if any) on failure
                 try:
                     self.release_target_claim()
+                    if self.current_target_reserved:
+                        mining_reservations.release_yield(self.name)
+                        self.current_target_reserved = False
                 except Exception:
                     pass
                 sleep(5.0)
