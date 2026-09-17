@@ -262,9 +262,15 @@ class FabricatorController:
 
     def recipe_is_sourceable(self, recipe):
         """Whether every input of this recipe -- solid and fluid alike -- has a currently known supply."""
+        return self.recipe_unsourceable_reason(recipe) is None
+
+    def recipe_unsourceable_reason(self, recipe):
+        """None if every input of this recipe -- solid and fluid alike -- has a currently known
+        supply, else a short human-readable reason naming the first unsourceable input (used to
+        annotate the "Skipping unreachable recipe(s)" log in choose_recipe())."""
         for item_id in (getattr(recipe, "inputs", {}) or {}):
             if not can_source_item(item_id):
-                return False
+                return f"no known source for input '{item_id}'"
         # fluid_inputs (e.g. {"water_in": 1.0}) is a separate field from
         # .inputs -- delivered via a FluidPort connection, not an
         # Inventory/Warehouse take (docs/components/fabricator.md). Without
@@ -274,8 +280,8 @@ class FabricatorController:
         # since there's nothing to connect .water_in/.steam_in/.oil_in to.
         for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
             if not can_source_fluid(fluid_key):
-                return False
-        return True
+                return f"no known source for fluid '{fluid_key}'"
+        return None
 
     def target_reason(self, item_id):
         """Describes the active demand driving a target quantity for item_id."""
@@ -323,8 +329,10 @@ class FabricatorController:
         blocked = []
         sourceable = []
         for missing, recipe in candidates:
-            if not self.recipe_is_sourceable(recipe):
-                blocked.append(getattr(recipe, "output_item", recipe))
+            reason = self.recipe_unsourceable_reason(recipe)
+            if reason is not None:
+                output_item = getattr(recipe, "output_item", recipe)
+                blocked.append(f"{output_item} ({reason})")
                 continue
             sourceable.append(recipe)
             recipe_id = getattr(recipe, "id", "")

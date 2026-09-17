@@ -272,6 +272,22 @@ def fluid_building_is_viable(fluid_key, type_id, building):
     expected = FLUID_LATCH_IDS.get(fluid_key)
     if not expected:
         return True
+    # `building` here is whatever outpost.buildings(type_id) handed us -- a
+    # bare BuildingRef snapshot (.id/.name/.type_id/.outpost/.powered/
+    # .position only, no .fluid()/.level()/etc, per docs/components/
+    # outpost.md) when called from discovery loops, but the full live
+    # component when called directly with one (e.g. from a unit test). A
+    # BuildingRef has no .fluid() of its own -- must resolve the real
+    # component via get_component(ref.id) first, or this always raises and
+    # every buffer tank looks permanently non-viable regardless of what it
+    # actually holds.
+    if not hasattr(building, "fluid"):
+        b_id = getattr(building, "id", None)
+        if not b_id:
+            return False
+        building = _component(b_id)
+        if not building:
+            return False
     try:
         return building.fluid() == expected
     except Exception:

@@ -1453,7 +1453,12 @@ output-side connection logic (§1b/§1c) just facing the other direction:
   (`production.FLUID_LATCH_IDS`). Without this, a Fabricator would set (and get stuck claiming) a
   recipe needing Oil off a wrong-fluid or empty tank's existence alone, connect "successfully" to
   it, then stall/blacklist/rescan/reconnect forever instead of ever falling back to a different
-  demanded recipe.
+  demanded recipe. `fluid_building_is_viable()`'s `building` arg is normally a bare `BuildingRef`
+  from `outpost.buildings(type_id)` (`.id`/`.name`/`.type_id`/`.outpost`/`.powered`/`.position`
+  only, per `docs/components/outpost.md` — no `.fluid()`), so it resolves the live component via
+  `get_component(ref.id)` first whenever the passed-in object has no `.fluid()` of its own; a
+  bug here silently made every buffer tank look permanently non-viable regardless of what it
+  actually held, since the raised `AttributeError` was swallowed by the surrounding `except`.
 - **No `is_stalled()` exists on the Fabricator itself** (unlike Steam Turbine/Thermal Cap/Water
   Pump), so reachability is inferred instead from the port's own `flow_rate()` staying `0` for
   `FLUID_STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* ticks while it still has room to receive
