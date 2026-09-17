@@ -241,15 +241,54 @@ FLUID_SOURCE_TYPE_IDS = {
     "steam_in": ("thermal_cap", "gas_tank"),
 }
 
+# liquid_tank/large_liquid_tank/gas_tank are generic multi-fluid buffers --
+# they latch onto whichever exact fluid is piped into them FIRST and hold
+# only that until drained to 0 (docs/components/liquid_tank.md,
+# docs/components/gas_tank.md). Their mere existence on the network says
+# nothing about which fluid they hold, or whether anything will ever fill
+# one with the fluid we actually need -- e.g. a Liquid Tank latched to Water,
+# or sitting empty with no Oil Pump anywhere to ever feed it, is not a
+# usable Oil source even though the tank itself is real. Every other type in
+# FLUID_SOURCE_TYPE_IDS is a dedicated producer (oil_pump, water_pump,
+# steam_condenser, thermal_cap) that only ever emits its one fixed fluid, so
+# its existence alone is sufficient.
+BUFFER_FLUID_TYPE_IDS = ("liquid_tank", "large_liquid_tank", "gas_tank")
+# Expected building.fluid() latch id for each fluid_key -- see both docs
+# pages' `.fluid()` method above.
+FLUID_LATCH_IDS = {"water_in": "water", "oil_in": "oil", "steam_in": "steam"}
+
+
+def fluid_building_is_viable(fluid_key, type_id, building):
+    """
+    Whether this specific discovered building can actually deliver
+    fluid_key, not just "this building type could in principle carry it".
+    Shared by can_source_fluid() below and lib/fabricator.py's connection
+    candidate discovery, so both apply the exact same buffer-latch rule --
+    see BUFFER_FLUID_TYPE_IDS' comment for why existence alone isn't enough
+    for a tank.
+    """
+    if type_id not in BUFFER_FLUID_TYPE_IDS:
+        return True
+    expected = FLUID_LATCH_IDS.get(fluid_key)
+    if not expected:
+        return True
+    try:
+        return building.fluid() == expected
+    except Exception:
+        return False
+
 
 def can_source_fluid(fluid_key):
     """
-    Whether any building type that could feed this FluidPort exists anywhere
-    on the outpost network. Deliberately checks existence only, not an
-    actual completed pipe route or fluid level -- matching can_source_item()'s
-    own "known source" bar (a surveyed site doesn't guarantee a working claim
-    either) -- so this only rules out the "not built at all yet" case, not
-    "built but not yet piped/full".
+    Whether a building that could feed this FluidPort right now exists
+    anywhere on the outpost network -- a dedicated producer of this exact
+    fluid, or a buffer tank already latched to it (see
+    fluid_building_is_viable()). Deliberately checks existence/latch state
+    only, not an actual completed pipe route or fluid level -- matching
+    can_source_item()'s own "known source" bar (a surveyed site doesn't
+    guarantee a working claim either) -- so this only rules out the "not
+    (yet) able to supply this fluid at all" case, not "built but not yet
+    piped/full".
     """
     type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key)
     if not type_ids:
@@ -260,8 +299,9 @@ def can_source_fluid(fluid_key):
     try:
         for outpost in network.outposts():
             for type_id in type_ids:
-                if outpost.buildings(type_id):
-                    return True
+                for building in outpost.buildings(type_id):
+                    if fluid_building_is_viable(fluid_key, type_id, building):
+                        return True
     except Exception:
         pass
     return False
@@ -492,17 +532,12 @@ def get_construction_material_reservations():
     return reservations
 
 
+_WARNED_UNKNOWN_MANUAL_ITEMS = set()
+
+
 def get_fabricator_targets():
     """Returns desired finished-goods quantities for Fabricator planning."""
     targets = get_fabricator_stock_targets()
-
-    # Manual build orders (get_manual_orders()) max()'d in like every other source below -- they
-    # don't add to a standing target, they just guarantee at least this many exist. Priority over
-    # other demanded recipes (build these first regardless of shortfall size) is handled separately
-    # in lib/fabricator.py's choose_recipe(), which needs get_manual_orders() itself, not just the
-    # folded-in quantity, to tell which candidates to jump ahead.
-    for item_id, quantity in get_manual_orders().items():
-        targets[item_id] = max(targets.get(item_id, 0), quantity)
 
     fabricator_outputs = set()
     fabricator = _default_fabricator()
@@ -514,6 +549,28 @@ def get_fabricator_targets():
                     fabricator_outputs.add(output_item)
         except Exception:
             pass
+
+    # Manual build orders (get_manual_orders()) max()'d in like every other source below -- they
+    # don't add to a standing target, they just guarantee at least this many exist. Priority over
+    # other demanded recipes (build these first regardless of shortfall size) is handled separately
+    # in lib/fabricator.py's choose_recipe(), which needs get_manual_orders() itself, not just the
+    # folded-in quantity, to tell which candidates to jump ahead.
+    #
+    # A manual order is hand-typed straight into the Data Archive Notebook (no validation on
+    # write), so a typo'd/renamed item_id (e.g. "small_drone" instead of "drone_small") silently
+    # never matches any recipe's output_item -- it still gets folded into targets here, but no
+    # Fabricator ever produces a candidate for it, and since nothing else was set either, the
+    # machine prints nothing at all (see lib/fabricator.py's step()/choose_recipe()). Warn once per
+    # script run so a bad key doesn't fail completely silently. fabricator_outputs only reflects
+    # the default Fabricator's currently unlocked recipes, so this can false-positive for an item
+    # only a different Fabricator (or a not-yet-unlocked recipe) can build -- it's a heads-up, not
+    # proof the order is unfulfillable.
+    for item_id, quantity in get_manual_orders().items():
+        targets[item_id] = max(targets.get(item_id, 0), quantity)
+        if fabricator_outputs and item_id not in fabricator_outputs and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
+            _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
+            print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which "
+                  f"doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
 
     for dock, order in _all_dock_orders():
         if not hasattr(order, "requires"):

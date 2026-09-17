@@ -1378,6 +1378,16 @@ Four demand sources are folded together into one `{item_id: quantity}` dict:
    from `drain_output()` with the quantity actually delivered to Inventory each step — not inferred
    from a stock-target/baseline comparison, so it counts down correctly even if some of the finished
    units get shipped or consumed elsewhere afterward.
+   The key must be the exact `item_id` a recipe's `output_item` uses (e.g. `drone_small`, not
+   `small_drone`) — it's hand-typed with no validation on write, and a mismatched key still gets
+   folded into the target (so nothing looks "wrong" in `fabricator.stock_targets`) but never matches
+   any recipe, leaving every Fabricator silently idle with no log output at all. `get_fabricator_targets()`
+   in `lib/production.py` now prints a one-time `[production] Warning: fabricator.manual_orders has
+   '<item_id>'... doesn't match any known Fabricator recipe output` when a key doesn't match the
+   default Fabricator's currently unlocked recipe outputs (per-script-run, via an in-memory
+   `_WARNED_UNKNOWN_MANUAL_ITEMS` set) — this is a heads-up, not proof the order is unfulfillable,
+   since it only checks the *default* Fabricator's *currently unlocked* recipes, so it can
+   false-positive for an item only a different Fabricator (or a not-yet-unlocked recipe) can build.
 
 ### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
 
@@ -1430,6 +1440,20 @@ output-side connection logic (§1b/§1c) just facing the other direction:
   names every building type that can feed it (e.g. `water_in` accepts `water_pump`,
   `steam_condenser`, `liquid_tank`, or `large_liquid_tank`) — the same mapping `can_source_fluid()`
   already uses, so "which buildings satisfy this fluid" has one source of truth.
+- **A `liquid_tank`/`large_liquid_tank`/`gas_tank` existing on the network is not by itself proof
+  it can supply a given fluid** — these are generic multi-fluid buffers that latch onto whichever
+  exact fluid is piped into them *first* and hold only that until drained to `0`
+  (`docs/components/liquid_tank.md`, `docs/components/gas_tank.md`). An empty tank exposes a
+  neutral port that `connect()`s "ok" to anything, then just never receives the fluid (e.g. Oil,
+  with no Oil Pump/surveyed oil well anywhere) — `production.BUFFER_FLUID_TYPE_IDS` +
+  `fluid_building_is_viable(fluid_key, type_id, building)` gate both `can_source_fluid()` and this
+  discovery loop identically: a dedicated producer (`oil_pump`/`water_pump`/`steam_condenser`/
+  `thermal_cap`) always counts since it only ever emits its one fixed fluid, but a buffer only
+  counts once its own `.fluid()` is already latched to the exact fluid needed
+  (`production.FLUID_LATCH_IDS`). Without this, a Fabricator would set (and get stuck claiming) a
+  recipe needing Oil off a wrong-fluid or empty tank's existence alone, connect "successfully" to
+  it, then stall/blacklist/rescan/reconnect forever instead of ever falling back to a different
+  demanded recipe.
 - **No `is_stalled()` exists on the Fabricator itself** (unlike Steam Turbine/Thermal Cap/Water
   Pump), so reachability is inferred instead from the port's own `flow_rate()` staying `0` for
   `FLUID_STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* ticks while it still has room to receive

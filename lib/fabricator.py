@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, consume_manual_order, craft_prefill_units, FLUID_SOURCE_TYPE_IDS
+from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS
 from archive import archive
 from storage import take_item, total_stock, best_unload_target
 
@@ -165,6 +165,8 @@ class FabricatorController:
                     for outpost in network.outposts():
                         for type_id in type_ids:
                             for building in outpost.buildings(type_id):
+                                if not fluid_building_is_viable(fluid_key, type_id, building):
+                                    continue  # e.g. a Liquid Tank latched to a different fluid, or empty with no producer to ever fill it -- see production.fluid_building_is_viable()
                                 b_id = getattr(building, "id", None)
                                 if b_id:
                                     ids.append(b_id)
