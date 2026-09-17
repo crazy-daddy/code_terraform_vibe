@@ -7,3 +7,6 @@
 [submodule "inspirations/cyber-f0x"]
 	path = inspirations/cyber-f0x
 	url = https://github.com/Cyber-F0x/Code-Terraform-Game
+[submodule "inspirations/torinad2"]
+	path = inspirations/torinad2
+	url = https://github.com/Torinad2/Code_Terraform.git
