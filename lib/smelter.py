@@ -9,7 +9,7 @@
 # Smelter independently re-elect the same answer every tick was pure
 # duplication.
 from archive import archive
-from production import get_material_demands, get_raw_material_reason
+from production import get_material_demands, get_raw_material_reason, get_smelter_worker_count, craft_prefill_units
 from storage import take_item, total_stock
 
 # A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
@@ -28,8 +28,11 @@ RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 # peer smelter at 0 even though demand called for splitting it (same real
 # case that motivated lib/fabricator.py's FABRICATOR_LOAD_CHUNK_SIZE, just
 # for ore instead of Fabricator ingredients). Capping each call to this many
-# units spreads a big top-up across several step() cycles instead of one,
-# giving a peer smelter's own poll a chance to interleave in between.
+# units bounds any single grab. The main fix for sharing a contested ore
+# fairly is now lib/production.py's craft_prefill_units() -- see Step 3's own
+# comment in step() -- which keeps every Smelter's total ask small and
+# recipe-scaled instead of racing to fill the full 50-unit buffer; this
+# constant remains as a simple per-call ceiling on top of that.
 SMELTER_LOAD_CHUNK_SIZE = 10
 
 
@@ -256,11 +259,39 @@ class SmelterController:
         # a Warehouse), pull it -- take_item() tries whatever's currently
         # connected first, then rotates through Warehouses if that's short.
         if ore_to_process and in_buf < 40:
-            # Capped to SMELTER_LOAD_CHUNK_SIZE per call -- see its comment
-            # above -- so a big top-up is spread across several step()
-            # cycles instead of one smelter monopolizing a contested ore in
-            # a single grab.
-            take_count = min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE)
+            recipe_inputs = getattr(recipe, "inputs", {}) or {}
+            output_count = max(1, getattr(recipe, "output_count", 1))
+            units_per_run = recipe_inputs.get(ore_to_process, 1)
+            demand_qty = get_material_demands().get(getattr(recipe, "output_item", None), 0)
+            worker_count = get_smelter_worker_count(recipe_id)
+            # This smelter's fair slice of the TOTAL current demand, ceil
+            # divided across every Smelter joined on this recipe -- mirrors
+            # lib/fabricator.py's crafts_remaining split (see
+            # get_smelter_worker_count()'s docstring).
+            share = -(-demand_qty // worker_count)
+            max_ore_for_share = (share * units_per_run + output_count - 1) // output_count
+            # Capped to SMELTER_LOAD_CHUNK_SIZE (avoids one huge single-call
+            # grab even when the other caps below are large), max_ore_for_share
+            # (this smelter's demand slice, in ore units -- without it, the
+            # buffer top-up used to ignore demand size entirely and always
+            # fill toward the full 50-unit cap the moment ANY demand existed,
+            # e.g. a demand of 5 finished units still filled a 50-unit ore
+            # buffer outright), and craft_prefill_units() (this recipe's
+            # ~INPUT_PREFILL_SECONDS-of-crafting buffer target, in ore units --
+            # see lib/production.py). The prefill cap also does double duty as
+            # the fairness fix: instead of every consumer reflexively racing
+            # to fill a fixed 50-unit buffer (whoever polls first wins it all,
+            # found live: one Smelter grabbing an entire contested ore stack
+            # across several chunked grabs before a sibling's poll ever got a
+            # turn), each Smelter now only ever asks for its own short,
+            # recipe-scaled prefill window -- a much smaller, quickly-satisfied
+            # ask that stops requesting more once topped up, leaving far more
+            # room and far more frequent openings for a peer to get its share
+            # too, without needing any cross-script coordination state.
+            # Bounded at 0 so a demand/prefill target that's already met (or
+            # shrank since ore was staged) never requests a negative take.
+            prefill_cap = craft_prefill_units(recipe, ore_to_process)
+            take_count = max(0, min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share - in_buf, prefill_cap - in_buf))
             if take_count > 0:
                 self.ensure_connections()
                 moved = take_item(self.smelter.input, ore_to_process, take_count)

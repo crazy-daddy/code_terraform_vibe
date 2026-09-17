@@ -24,17 +24,19 @@ import outpost_mining
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
-# ~1s at 10 ticks/sec (see lib/archive_cleaner.py's documented tick rate) --
+# ~1s and 10s at 10 ticks/sec (see lib/archive_cleaner.py's documented tick rate) --
 # the panel redraws every render tick regardless; only the actual automation
 # work (grid supervision, rebalance sweep, outpost diff) is throttled to this
 # cadence, matching what lib/solar.py's run(poll_interval=1.0) used to do.
-AUTOMATION_TICK_INTERVAL = 10
+SOLAR_TICK_INTERVAL = 10
+STORAGE_TICK_INTERVAL = 100
 
 # Loop-scoped state, created once and persisting across iterations (this
 # script is one continuous while-loop process, not re-invoked per tick --
 # same pattern panel_2.py uses for its scroll_label).
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
-last_automation_tick = 0
+last_solar_tick = 0
+last_storage_tick = 0
 last_automation_summary = "not yet run"
 last_cleaner_stats = None
 last_unsupported_count = None
@@ -104,17 +106,18 @@ while True:
             panel.draw_text(col4 + 18, y + 5, alert, 10, "text-secondary", width * 0.18)
 
     # ------------------------------------------------------------------
-    # AUTOMATION -- see module docstring. Throttled to AUTOMATION_TICK_INTERVAL;
+    # AUTOMATION -- see module docstring. Throttled to _TICK_INTERVAL;
     # buttons below still respond every tick regardless of the throttle.
     # ------------------------------------------------------------------
     auto_y = status_h + 8
     panel.card(8, auto_y, width - 16, height - auto_y - 8, "AUTOMATION")
 
     current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
-    due = (last_automation_tick == 0) or (current_tick - last_automation_tick >= AUTOMATION_TICK_INTERVAL)
+    solar_due = (last_solar_tick == 0) or (current_tick - last_solar_tick >= SOLAR_TICK_INTERVAL)
+    storage_due = (last_storage_tick == 0) or (current_tick - last_storage_tick >= STORAGE_TICK_INTERVAL)
 
-    if due:
-        last_automation_tick = current_tick
+    if solar_due:
+        last_solar_tick = current_tick
         grid_count = 0
         try:
             elevation = clock.get_elevation() if clock else 0.0
@@ -139,7 +142,9 @@ while True:
                     del grid_managers[stale_anchor]
         except Exception as e:
             print(f"[AUTOMATION] Grid supervision error: {e}")
-
+            
+    if storage_due:
+        last_storage_tick = current_tick
         try:
             rebalance_inventory_to_warehouses()
         except Exception as e:

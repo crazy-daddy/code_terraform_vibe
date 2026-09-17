@@ -1,7 +1,71 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
 from storage import total_stock
+from outpost_mining import stock_target_for, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
+from power import DAY_CYCLE_DURATION_SECONDS
 import mining_reservations
+
+# Recipe.duration_game_hours -> real seconds, from the fixed day-cycle
+# schedule lib/power.py's DAY_CYCLE_DURATION_SECONDS already derives from
+# (see docs/AI_CHEATSHEET.md) -- reused here, not redefined, so there's
+# exactly one place this constant lives.
+SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
+
+# How far ahead a Smelter/Fabricator should prefill its input buffer, in real
+# seconds of continuous crafting -- see craft_prefill_units(). Deliberately
+# time-based, not a fixed unit count: a fast recipe (a few seconds/craft)
+# still gets several crafts' worth staged so the Auto Feeder isn't paid
+# every single craft, while a slow recipe (tens of minutes/craft) only ever
+# prefills what it needs for its next craft or two, instead of reflexively
+# filling toward the machine's full hardware buffer cap regardless of how
+# long that material would then sit idle.
+INPUT_PREFILL_SECONDS = 30
+
+
+def _ceil(x):
+    """Ceiling without the math module -- this sandboxed script environment
+    doesn't permit `import math`. Plain arithmetic: int(x) truncates toward
+    zero, so for a non-negative x that's floor(x); bump by 1 whenever x has
+    a fractional remainder above that. Only ever called here with
+    non-negative x (seconds/unit ratios)."""
+    i = int(x)
+    return i + 1 if x > i else i
+
+
+def craft_seconds(recipe):
+    """Real-world seconds per craft for `recipe`, converted from its
+    `.duration_game_hours` via the fixed day-cycle schedule. Floors at 1
+    second if the recipe reports a missing/zero duration, so dividing
+    against it (craft_prefill_units()) never blows up."""
+    hours = getattr(recipe, "duration_game_hours", None)
+    if not hours or hours <= 0:
+        return 1.0
+    return hours * SECONDS_PER_GAME_HOUR
+
+
+def craft_prefill_units(recipe, item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
+    """
+    How many units of `item_id` (one of recipe.inputs) a Smelter/Fabricator
+    should keep staged to cover roughly the next `prefill_seconds` of real
+    time spent crafting -- ceil(prefill_seconds / craft_seconds(recipe))
+    crafts' worth, floored at one craft's own requirement (staging less than
+    a single craft needs would be pointless -- the craft can't start until
+    the full per-craft amount is present anyway). Returns 0 if item_id isn't
+    one of this recipe's inputs.
+
+    Deliberately per-recipe/time-based rather than a fixed unit chunk: this
+    is what makes the buffer target scale correctly whether a recipe crafts
+    every few seconds (many crafts fit in the window, more staged) or takes
+    tens of minutes (one craft's worth is already more than the window asks
+    for). Used as a cap on top-up size by both lib/smelter.py's ore intake
+    and lib/fabricator.py's load_inputs() -- see docs/AI_CHEATSHEET.md.
+    """
+    inputs = getattr(recipe, "inputs", {}) or {}
+    per_craft = inputs.get(item_id)
+    if not per_craft:
+        return 0
+    crafts = max(1, _ceil(prefill_seconds / craft_seconds(recipe)))
+    return int(_ceil(crafts * per_craft))
 
 
 def _current_tick():
@@ -231,6 +295,52 @@ def get_fabricator_stock_targets():
     }
 
 
+MANUAL_ORDERS_KEY = "fabricator.manual_orders"
+
+
+def get_manual_orders():
+    """{item_id: quantity_still_wanted} -- ad-hoc Fabricator build requests, edited directly in the
+    Data Archive Notebook (e.g. {"drone_small": 2}) on top of the standing stock targets/orders
+    get_fabricator_targets() already covers. No default is seeded (unlike
+    get_fabricator_stock_targets()) -- an empty manual order list is the normal state. Counted down
+    to 0 (then dropped entirely) as the Fabricator actually delivers finished units -- see
+    consume_manual_order(), called from lib/fabricator.py's drain_output()."""
+    if not archive.has(MANUAL_ORDERS_KEY):
+        archive.set(MANUAL_ORDERS_KEY, {})
+    stored = archive.get(MANUAL_ORDERS_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        item_id: int(qty) for item_id, qty in stored.items()
+        if isinstance(qty, (int, float)) and qty > 0
+    }
+
+
+def consume_manual_order(item_id, quantity):
+    """Counts down an active manual build order (see get_manual_orders()) by quantity actually
+    delivered to Inventory, dropping the entry entirely once it reaches zero. No-ops if item_id has
+    no active manual order or quantity <= 0."""
+    if not item_id or quantity <= 0:
+        return
+
+    def updater(stored):
+        stored = dict(stored or {})
+        remaining = stored.get(item_id)
+        if not isinstance(remaining, (int, float)) or remaining <= 0:
+            return stored
+        remaining -= quantity
+        if remaining <= 0:
+            del stored[item_id]
+        else:
+            stored[item_id] = remaining
+        return stored
+
+    try:
+        archive.transaction(MANUAL_ORDERS_KEY, {}, updater)
+    except Exception:
+        pass
+
+
 def _recipe_inputs_for(item_id):
     """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
     Smelter builds item_id, or None if neither does. Shared by
@@ -386,6 +496,14 @@ def get_fabricator_targets():
     """Returns desired finished-goods quantities for Fabricator planning."""
     targets = get_fabricator_stock_targets()
 
+    # Manual build orders (get_manual_orders()) max()'d in like every other source below -- they
+    # don't add to a standing target, they just guarantee at least this many exist. Priority over
+    # other demanded recipes (build these first regardless of shortfall size) is handled separately
+    # in lib/fabricator.py's choose_recipe(), which needs get_manual_orders() itself, not just the
+    # folded-in quantity, to tell which candidates to jump ahead.
+    for item_id, quantity in get_manual_orders().items():
+        targets[item_id] = max(targets.get(item_id, 0), quantity)
+
     fabricator_outputs = set()
     fabricator = _default_fabricator()
     if fabricator and hasattr(fabricator, "list_recipes"):
@@ -471,6 +589,33 @@ def _fabricator_worker_count(recipe_id):
     return max(1, count)
 
 
+def get_smelter_worker_count(recipe_id):
+    """
+    Live headcount of discovered Smelters currently holding recipe_id
+    (get_recipe() == recipe_id) right now -- mirrors _fabricator_worker_count()
+    exactly, same reasoning, for lib/smelter.py's ore-intake cap: with several
+    Smelters "joined" on the same recipe (select_needed_ore()'s pile-on
+    fallback, used whenever only one ore is currently demanded), each one
+    independently topping its own 50-unit ore buffer up to the FULL current
+    demand overshoots badly once you have more than one -- e.g. two Smelters
+    each independently filling to a demand of 50 produces 100, not 50. Public
+    (unlike the private _fabricator_worker_count) since lib/smelter.py needs
+    it directly, not just lib/production.py's own internals. Returns at
+    least 1.
+    """
+    count = 0
+    for smelter_id in discover_smelter_ids():
+        candidate = _component(smelter_id)
+        if not candidate or not hasattr(candidate, "get_recipe"):
+            continue
+        try:
+            if candidate.get_recipe() == recipe_id:
+                count += 1
+        except Exception:
+            pass
+    return max(1, count)
+
+
 def get_fabricator_active_recipe(fabricator=None):
     """Returns (recipe, crafts_remaining) for the Fabricator's selected recipe,
     where crafts_remaining covers the full remaining shortfall against its
@@ -515,13 +660,29 @@ def get_material_demands():
         current = total_stock(item_id)
         _add_demand(demands, item_id, max(0, target - current))
 
-    # A selected Fabricator recipe is an explicit production intention; scale
-    # by every remaining craft still needed to reach the target, not just one
-    # craft's worth, or demand collapses to 0 as soon as a single unit of an
-    # input is on hand even though hundreds more crafts remain.
-    fabricator = _default_fabricator()
-    recipe, crafts_remaining = get_fabricator_active_recipe(fabricator)
-    if recipe and crafts_remaining > 0:
+    # Every Fabricator's own selected recipe is an explicit production
+    # intention; scale by every remaining craft still needed to reach the
+    # target, not just one craft's worth, or demand collapses to 0 as soon as
+    # a single unit of an input is on hand even though hundreds more crafts
+    # remain. Looping every discovered Fabricator (not just _default_fabricator())
+    # matters as soon as a second one exists: with several Fabricators each
+    # holding a DIFFERENT claimed recipe (see lib/fabricator.py's
+    # claim_recipe()), only ever reading the first one's active recipe left
+    # every other Fabricator's own input demand invisible here -- e.g.
+    # fabricator_2 running craft_gas_pipe_segment (needs iron_ingot) never
+    # registered any iron_ingot demand while fabricator_1 was busy on a
+    # different recipe, so the Smelter never saw a reason to refine more,
+    # even with raw ore sitting in a Warehouse. Same hardcoded-single-instance
+    # bug class Phase A already fixed for Smelter/Fabricator/Supply Dock
+    # discovery elsewhere in this file.
+    fabricator_ids = discover_fabricator_ids() or ["fabricator_1"]
+    for fabricator_id in fabricator_ids:
+        fabricator = _component(fabricator_id)
+        if not fabricator:
+            continue
+        recipe, crafts_remaining = get_fabricator_active_recipe(fabricator)
+        if not recipe or crafts_remaining <= 0:
+            continue
         try:
             stockpile = fabricator.get_stockpile() or {}
             for item_id, required in (getattr(recipe, "inputs", {}) or {}).items():
@@ -596,14 +757,30 @@ def get_raw_material_demands(smelter=None):
         except Exception:
             pass
 
+    # Standing home ore buffer: keep at least one Warehouse slot's worth
+    # (outpost_mining.stock_target_for(), seed-once-editable) of every raw
+    # ore on hand at home even with zero active production/order demand --
+    # freely drawn down by Smelter/Supply Dock like any other stock, never a
+    # reserved amount, just a floor that creates replenishment demand once
+    # it's dipped into. Takes the max with (not additive to) whatever
+    # production demand already computed above, since both ultimately want
+    # the same ore delivered home -- adding them would double-count.
+    for item_id in RAW_ORE_ITEM_IDS:
+        buffer_deficit = max(0, stock_target_for(HOME_OUTPOST_ID, item_id) - total_stock(item_id))
+        if buffer_deficit > raw_demands.get(item_id, 0):
+            raw_demands[item_id] = buffer_deficit
+
     # Debit ore already promised by an in-flight home-demand mining trip
-    # (lib/mining.py's select_best_mining_target(reserve_demand=True)) so a
-    # peer's candidate search this cycle or later doesn't also chase a
-    # deficit that's already being fetched -- now that several Pioneers can
-    # mine the same POI, get_claims() alone no longer prevents that. Only
-    # the home-demand path reads this: outpost-stationed stockpile mining
-    # doesn't go through get_raw_material_demands() at all, and is already
-    # self-bounded by its own live stock-target check.
+    # (lib/mining.py's select_best_mining_target(reserve_demand=True)) or
+    # haul delivery (lib/vehicle_cargo.py's run_haul_loop()) so a peer's
+    # candidate search this cycle or later doesn't also chase a deficit
+    # that's already being fetched -- now that several Pioneers can mine the
+    # same POI, get_claims() alone no longer prevents that, and the same
+    # race applies across multiple mining-outpost haulers converging on the
+    # same home buffer deficit. Only the home-demand path reads this:
+    # outpost-stationed stockpile mining doesn't go through
+    # get_raw_material_demands() at all, and is already self-bounded by its
+    # own live stock-target check.
     reserved = mining_reservations.get_reserved_yield_totals(_current_tick())
     for item_id, units in reserved.items():
         if item_id in raw_demands:

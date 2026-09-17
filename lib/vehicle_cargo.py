@@ -12,6 +12,7 @@
 from production import get_raw_material_demands
 from storage import best_unload_target, take_item, total_stock, inventory_stack_size
 import outpost_reagents
+import mining_reservations
 
 
 def _outpost_haul_demand(dest_outpost_id):
@@ -217,14 +218,18 @@ class VehicleCargoMixin:
         in a single call could still stall on a full Inventory before the vehicle gets
         a chance to pull any of it back out, especially for a reagent Inventory has
         never stocked before. Draining stack-by-stack keeps that transient footprint to
-        about one slot regardless of the total planned amount. Returns a
-        ["Nx item_id", ...] summary of what actually got loaded.
+        about one slot regardless of the total planned amount. Returns
+        (["Nx item_id", ...], {item_id: moved}) -- the dict lets run_haul_loop()
+        reserve exactly what got physically loaded (mining_reservations),
+        rather than the originally planned amount, in case a shortfall (Shop
+        out of stock, storage race) meant less was actually loaded.
         """
         source_is_home = getattr(self.home_outpost, "is_home", True)
         shop = get_component("shop") if source_is_home else None
         stack_size = inventory_stack_size()
 
         loaded_summary = []
+        loaded_amounts = {}
         for item_id, amount in plan:
             moved_for_item = 0
             remaining = amount
@@ -246,7 +251,33 @@ class VehicleCargoMixin:
 
             if moved_for_item > 0:
                 loaded_summary.append(f"{moved_for_item}x {item_id}")
-        return loaded_summary
+                loaded_amounts[item_id] = moved_for_item
+        return loaded_summary, loaded_amounts
+
+    def _haul_reservation_key(self, item_id):
+        return f"haul:{self.name}:{item_id}"
+
+    def _reserve_home_haul(self, loaded_amounts):
+        """
+        Debits loaded_amounts from home's raw-ore deficit
+        (mining_reservations, shared with lib/mining.py's in-flight-mining
+        debit) for the duration of the delivery leg -- otherwise a second
+        transporter stationed at a different mining outpost would see the
+        same still-uncovered home buffer/production deficit on its own next
+        cycle and load a redundant amount before this vehicle's cargo ever
+        lands, overshooting the target (e.g. two haulers each bringing 380
+        of an ore with only 380 of room). Only meaningful for a home-bound
+        delivery -- get_raw_material_demands() is home-specific, so a
+        reagent-hauler's remote-outpost delivery has nothing to debit here.
+        """
+        curr_tick = self.get_current_tick()
+        for item_id, amount in loaded_amounts.items():
+            if amount > 0:
+                mining_reservations.reserve_yield(self.name, self._haul_reservation_key(item_id), item_id, amount, curr_tick)
+
+    def _release_home_haul(self, loaded_amounts):
+        for item_id in loaded_amounts:
+            mining_reservations.release_yield(self.name, self._haul_reservation_key(item_id))
 
     def run_haul_loop(self, dest_outpost_id, poll_interval=10.0):
         """
@@ -286,6 +317,7 @@ class VehicleCargoMixin:
         """
         print(f"[{self.name}] Haul Controller online. Hauling from '{self.home_base}' to '{dest_outpost_id}' on demand.")
         dest_outpost = self.get_outpost_ref(dest_outpost_id)
+        is_home_delivery = dest_outpost_id is None or dest_outpost_id == "outpost_home"
         while True:
             try:
                 if self.handle_recall_if_active():
@@ -299,6 +331,7 @@ class VehicleCargoMixin:
 
                 # Cargo already aboard (e.g. resuming after a reload) skips
                 # straight to delivery instead of (re-)planning a load.
+                haul_amounts = {}
                 loaded_items = self._current_supply_items()
                 if not loaded_items:
                     plan = self._plan_haul_load(self.vehicle.cargo.capacity(), dest_outpost_id)
@@ -329,12 +362,35 @@ class VehicleCargoMixin:
                             sleep(poll_interval)
                             continue
 
-                    loaded_summary = self._load_haul_plan(plan)
+                    loaded_summary, loaded_amounts = self._load_haul_plan(plan)
                     if not loaded_summary:
                         print(f"[{self.name}] Could not load any planned item at '{self.home_base}'.")
                         sleep(poll_interval)
                         continue
                     print(f"[{self.name}] Loaded {', '.join(loaded_summary)} at '{self.home_base}'.")
+
+                    # Debit what just got loaded from home's own raw-ore
+                    # deficit for the length of the delivery leg -- see
+                    # _reserve_home_haul() -- so a peer transporter stationed
+                    # at a different mining outpost doesn't also chase the
+                    # same now-already-covered deficit before this delivery
+                    # lands.
+                    if is_home_delivery:
+                        haul_amounts = loaded_amounts
+                        self._reserve_home_haul(haul_amounts)
+                elif is_home_delivery:
+                    # Resuming with cargo already aboard (e.g. after a script
+                    # restart mid-delivery) -- the reservation from the
+                    # original loading cycle may no longer exist (archive
+                    # survives, but nothing re-asserts it after a restart),
+                    # so rebuild it from what's physically in the hold right
+                    # now rather than skipping it.
+                    for stack in self.vehicle.cargo.stacks():
+                        item_id = getattr(stack, "id", None)
+                        count = getattr(stack, "count", 0)
+                        if item_id and count > 0:
+                            haul_amounts[item_id] = haul_amounts.get(item_id, 0) + count
+                    self._reserve_home_haul(haul_amounts)
 
                 dest_coords = dest_outpost.coords()
                 self.publish_telemetry("OUTBOUND", "delivering mixed cargo to the destination outpost")
@@ -349,6 +405,14 @@ class VehicleCargoMixin:
                     sleep(poll_interval)
                     continue
                 print(f"[{self.name}] Delivered {delivered} units to the destination outpost.")
+
+                # Cargo has physically landed and is now reflected in
+                # total_stock() at the destination -- release the in-flight
+                # debit so it doesn't linger subtracting from a deficit that
+                # no longer exists (would otherwise only self-correct once
+                # mining_reservations.RESERVATION_STALE_TICKS elapses).
+                if haul_amounts:
+                    self._release_home_haul(haul_amounts)
 
                 # Recharge fully at the destination before heading back --
                 # get_nearest_charging_station() (used internally by

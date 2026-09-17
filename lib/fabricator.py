@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, FLUID_SOURCE_TYPE_IDS
+from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, consume_manual_order, craft_prefill_units, FLUID_SOURCE_TYPE_IDS
 from archive import archive
 from storage import take_item, total_stock, best_unload_target
 
@@ -18,13 +18,14 @@ RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 # first and took() the whole available stock (e.g. 44 units) in a single
 # transfer, leaving the other at 0 with nothing left to grab even though
 # demand called for splitting it. Capping each take_item() call to this many
-# units means a heavy batch is spread across several step() cycles instead of
-# one, giving a peer Fabricator's own poll a chance to interleave and grab
-# its own share in between -- a small, deliberate throughput cost (loading a
-# large batch now takes several polls instead of one) in exchange for fair
-# sharing of a limited, contested source. Supply Dock deliberately does NOT
-# do this (see lib/supply_dock.py) -- it has no sibling competing for the
-# same order's materials, so there's nothing to share fairly with.
+# units bounds any single grab. The main fix for sharing a contested source
+# fairly is now lib/production.py's craft_prefill_units() -- see
+# load_inputs()'s own comment -- which keeps every Fabricator's total ask
+# small and recipe-scaled instead of racing for the full shortfall; this
+# constant remains as a simple per-call ceiling on top of that. Supply Dock
+# deliberately does NOT use either (see lib/supply_dock.py) -- it has no
+# sibling competing for the same order's materials, so there's nothing to
+# share fairly with.
 FABRICATOR_LOAD_CHUNK_SIZE = 10
 
 # ensure_fluid_connections() mirrors lib/steam_turbine.py's
@@ -276,6 +277,8 @@ class FabricatorController:
 
     def target_reason(self, item_id):
         """Describes the active demand driving a target quantity for item_id."""
+        if item_id in get_manual_orders():
+            return "manual build order"
         _, order = find_dock_order_requiring(item_id)
         if order:
             return f"Supply Dock Order {getattr(order, 'name', getattr(order, 'id', 'active'))}"
@@ -283,6 +286,7 @@ class FabricatorController:
 
     def choose_recipe(self):
         targets = get_fabricator_targets()
+        manual_items = get_manual_orders()
         try:
             recipes = self.machine.list_recipes()
         except Exception:
@@ -304,14 +308,16 @@ class FabricatorController:
             if missing > 0:
                 candidates.append((missing, recipe))
 
-        # Prefer the biggest shortfall, but skip anything currently blocked on
-        # an unavailable input (e.g. unsurveyed titanium) so the Fabricator
-        # keeps building whatever else it actually can. Also skip a recipe
-        # another Fabricator already holds a fresh claim on (see
-        # claim_recipe()) -- otherwise, with several Fabricators, all of them
-        # would converge on the same single biggest-shortfall recipe while
-        # every other demanded output goes unbuilt.
-        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        # Prefer a manual build order (get_manual_orders()) over every other demanded recipe
+        # regardless of shortfall size -- an operator asking for "2x drone (small)" right now
+        # shouldn't wait behind whichever recipe happens to have the biggest shortfall this poll.
+        # Within each group (manual vs. not), prefer the biggest shortfall, but skip anything
+        # currently blocked on an unavailable input (e.g. unsurveyed titanium) so the Fabricator
+        # keeps building whatever else it actually can. Also skip a recipe another Fabricator
+        # already holds a fresh claim on (see claim_recipe()) -- otherwise, with several
+        # Fabricators, all of them would converge on the same single biggest-shortfall recipe
+        # while every other demanded output goes unbuilt.
+        candidates.sort(key=lambda pair: (getattr(pair[1], "output_item", None) not in manual_items, -pair[0]))
         blocked = []
         sourceable = []
         for missing, recipe in candidates:
@@ -360,6 +366,7 @@ class FabricatorController:
                     result = self.machine.output.send(stack.id, stack.count)
             if result.status in ["ok", "partial"]:
                 print(f"[{self.name}] Sent {result.moved}x {stack.id} to Inventory.")
+                consume_manual_order(stack.id, result.moved)
             elif result.status not in ["busy", "no_op"]:
                 print(f"[{self.name}] Output notice: {result.status} - {result.message}")
 
@@ -387,11 +394,18 @@ class FabricatorController:
             missing = max(0, (required * crafts_remaining) - staged)
             if missing <= 0:
                 continue
-            # Capped to FABRICATOR_LOAD_CHUNK_SIZE per call -- see its
-            # comment above -- so a heavy batch is spread across several
-            # step() cycles instead of one Fabricator monopolizing a
-            # contested item (e.g. Glass) in a single grab.
-            amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE)
+            # Capped to FABRICATOR_LOAD_CHUNK_SIZE (see its comment above),
+            # and to craft_prefill_units() -- this recipe's
+            # ~INPUT_PREFILL_SECONDS-of-crafting buffer target for item_id,
+            # in ore/ingredient units, scaled by the recipe's own craft time
+            # (see lib/production.py). The prefill cap is what actually keeps
+            # a heavy batch from being monopolized in a single grab: rather
+            # than every Fabricator racing to fill the full remaining
+            # shortfall (whoever polls first wins it all), each one only
+            # ever asks for its own short, recipe-scaled prefill window, so
+            # it stops requesting more once topped up and leaves frequent
+            # openings for a peer Fabricator to get its own share too.
+            amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, craft_prefill_units(recipe, item_id) - staged))
             # take_item() checks Inventory first, then rotates through any
             # Warehouse holding this item -- see lib/storage.py.
             moved = take_item(self.machine.input, item_id, amount)

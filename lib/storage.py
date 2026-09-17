@@ -23,6 +23,19 @@ BIGGER_STACKS_TECH_ID = "research_high_density_storage"
 DEFAULT_STACK_SIZE = 10
 BIGGER_STACKS_SIZE = 20
 
+# item_catalog categories that must stay in Inventory, not a Warehouse (see
+# docs/components/item_catalog.md for the category list):
+#   - "equipment": deploys straight into a building/machine from Inventory
+#     only (a Gas Tank or Solar Generator bought/produced as itself) --
+#     moving one into a Warehouse would just strand it with no way to place
+#     it. NOTE: "construction_kit" (e.g. mining_drill_kit) is deliberately
+#     NOT included here -- those are placed by a Pioneer via blueprint
+#     construction, which doesn't require the kit to sit in Inventory.
+#   - "module" / "portable": vehicle equipment-slot gear (battery holders,
+#     cargo racks, portable batteries/bins/scanners) that has to be in
+#     Inventory to equip a newly-built or refitted Pioneer/Rover.
+NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable")
+
 
 def _component(component_id):
     try:
@@ -334,9 +347,25 @@ def inventory_stack_size():
     return DEFAULT_STACK_SIZE
 
 
+def _must_stay_in_inventory(item_id):
+    """True if item_catalog classifies item_id as one of
+    NON_WAREHOUSABLE_CATEGORIES -- equipment that deploys straight from
+    Inventory, or vehicle-slot gear needed to equip a Pioneer/Rover -- so the
+    inventory manager sweep must leave it alone."""
+    catalog = _component("item_catalog")
+    if not catalog or not hasattr(catalog, "lookup"):
+        return False
+    try:
+        info = catalog.lookup(item_id)
+    except Exception:
+        return False
+    return bool(info) and getattr(info, "category", None) in NON_WAREHOUSABLE_CATEGORIES
+
+
 def _occupied_stackable_slots_by_item():
-    """{item_id: [count_per_occupied_slot, ...]} for Inventory, skipping empty
-    and property-bearing (non-stackable) slots."""
+    """{item_id: [count_per_occupied_slot, ...]} for Inventory, skipping empty,
+    property-bearing (non-stackable), and Inventory-only-category slots
+    (see _must_stay_in_inventory)."""
     inventory = _component("inventory")
     if not inventory or not hasattr(inventory, "get_slots"):
         return {}
@@ -347,7 +376,7 @@ def _occupied_stackable_slots_by_item():
 
     per_item = {}
     for slot in slots:
-        item_id = getattr(slot, "item_id", None)
+        item_id = getattr(slot, "id", None)
         if not item_id:
             continue
         if getattr(slot, "properties", None) is not None:
@@ -355,6 +384,8 @@ def _occupied_stackable_slots_by_item():
         count = getattr(slot, "count", 0)
         if count <= 0:
             continue
+        if _must_stay_in_inventory(item_id):
+            continue  # equipment/module/portable: must stay in Inventory
         per_item.setdefault(item_id, []).append(count)
     return per_item
 
@@ -497,10 +528,18 @@ def rebalance_inventory_to_warehouses(outpost=None):
         # 2. Swap fallback: no Warehouse had any room at all for this item.
         occupant = _cheapest_warehouse_occupant(item_id, outpost)
         if not occupant:
+            print(f"[storage] Could not clear {remaining}x {item_id} from Inventory this cycle: no Warehouse has room, and no Warehouse holds anything to evict in its place.")
             continue
         warehouse_id, occupant_item, occupant_qty = occupant
 
-        slots_freed = slot_count
+        # Slots still actually stuck in Inventory *right now* -- not slot_count,
+        # which is this item's slot footprint from the TOP of this iteration,
+        # before the direct-move loop above may have already moved part of it
+        # out. Using the stale full count here overstated how many Inventory
+        # slots this swap would free, so a swap that looked "worth it" against
+        # the ORIGINAL total could actually be a net loss (or wash) against
+        # what's genuinely left after a partial direct move already happened.
+        slots_freed = -(-remaining // stack_size)  # ceil division
         slots_reclaimed = -(-occupant_qty // stack_size)  # ceil division
         if slots_freed <= slots_reclaimed:
             print(f"[storage] Skipping swap for {item_id}: evicting {occupant_qty}x {occupant_item} would cost {slots_reclaimed} Inventory slot(s) to reclaim only {slots_freed}.")
@@ -515,6 +554,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
             continue
         evicted = getattr(evict_res, "moved", 0) or 0
         if evicted <= 0:
+            print(f"[storage] Swap for {item_id} did not go through: evicting {occupant_qty}x {occupant_item} from Warehouse '{warehouse_id}' moved 0 units ({getattr(evict_res, 'status', '?')}).")
             continue
         print(f"[storage] Evicted {evicted}x {occupant_item} from Warehouse '{warehouse_id}' back to Inventory to free a slot (frees {slots_freed} vs costs {slots_reclaimed}).")
 
@@ -524,6 +564,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
             space = 0
         amount = min(remaining, space)
         if amount <= 0:
+            print(f"[storage] Freed a slot in Warehouse '{warehouse_id}' but it still reports no room for {item_id} -- skipping this cycle.")
             continue
         try:
             res = inventory.transfer_to(warehouse_id, item_id, amount)

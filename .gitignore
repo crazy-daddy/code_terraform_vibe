@@ -17,3 +17,5 @@ docs/Code-Terraform-DOCS-Manual.md
 *.pyd
 .codeterraform/
 internals/
+/.claude
+*codeterraform-retired*

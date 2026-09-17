@@ -52,6 +52,16 @@ DEFAULT_RESOURCE_ASSIGNMENT_RANGE_M = 200.0
 # titanium, cobalt, rare_earth, neutronium, lead_ore.
 RESOURCE_PURITY_LABELS = {"standard": "Standard", "rich": "Rich", "pure": "Pure"}
 
+# Every raw ore item_id mineable in this save (docs/types/world_and_sites.md).
+# Shared by production.py's home-buffer floor (see stock_target_for()'s
+# module docstring) so both the mining-outpost stockpile target and the home
+# buffer target iterate the exact same ore set.
+RAW_ORE_ITEM_IDS = ("iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore")
+
+# Canonical home outpost id (docs/components/outpost.md; also hardcoded as a
+# literal in lib/vehicle_cargo.py's _outpost_haul_demand()/pioneer_5-7.py).
+HOME_OUTPOST_ID = "outpost_home"
+
 
 def _component(component_id):
     try:
@@ -279,7 +289,11 @@ def stock_target_for(outpost_id, item_id):
     """
     Stockpile target (units) for item_id at outpost_id -- seed-once-then-
     editable, same convention as assigned_ores_for() used to follow, default
-    one Warehouse slot's worth (WAREHOUSE_SLOT_CAPACITY).
+    one Warehouse slot's worth (WAREHOUSE_SLOT_CAPACITY). Also used for
+    outpost_id=HOME_OUTPOST_ID by production.py's get_raw_material_demands()
+    as a standing home ore buffer -- same "1 Warehouse slot per ore" default,
+    freely drawn down by Smelter/Supply Dock (not a reserved stockpile), just
+    a floor that creates mining/haul demand to top itself back up.
     """
     archive = _archive()
     targets = archive.get(OUTPOST_ORE_STOCK_TARGETS_KEY, {}) or {}

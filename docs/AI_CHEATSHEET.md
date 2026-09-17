@@ -46,6 +46,27 @@ Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_1.py`, etc.) should 
 entrypoints that import and run a controller from `lib/` — they should not contain their own
 copies of tier lists, thresholds, or budgeting formulas.
 
+**No real stdlib — only a short, specific allowlist of "executable built-in modules" exists**
+(`docs/guide/programming_language_reference.md`'s "Imports & Libraries" section is authoritative;
+re-check it before reaching for any import, don't assume from ordinary Python). This has bitten
+agent-written code repeatedly (e.g. `lib/production.py` reaching for `import math` for a plain
+`ceil()`) — `ModuleNotFoundError`/`ImportError` at runtime, not a Pyright-catchable error locally,
+since `pyrightconfig.json`'s stubs don't model the sandbox's restricted runtime import set. The
+**only** executable modules are `random` (`randint`/`rand`/`random()`, also callable as bare global
+helpers), `re` (regex — but see the `re.escape`-unavailable gap noted elsewhere in this doc),
+`functools` (`reduce`, `total_ordering`), and `dataclasses` (`dataclass`, `field`) — nothing else,
+and critically **none of these are real system libraries the way they are in ordinary Python**: this
+is a small in-game reimplementation exposing just those names, not CPython's actual `random`/`re`/
+`functools`/`dataclasses` modules, so don't assume any stdlib behavior beyond what the guide
+documents. `math`, `sys`, `os`, `json`, `time`, `itertools`, `collections` (the concrete module, not
+`collections.abc`), etc. do **not** exist at runtime. Separately, `typing`, `types`,
+`collections.abc`, and `user_stubs` exist ONLY for editor/Pyright type annotations — their names are
+erased at runtime (`typing.TYPE_CHECKING` is always `False` in-game), so they can be imported for
+annotation purposes but never for executable helpers. **When you need something stdlib would give
+you (ceiling division, etc.), write the few lines of plain arithmetic/Python by hand instead of
+importing** — see `lib/production.py`'s `_ceil()` for the pattern this project now follows instead of
+`math.ceil()`.
+
 **Import depth limit**: the interpreter caps the nested import-resolution stack at
 `maxImportDepth = 256` (`interpreter.maxImportDepth`, confirmed from the decompiled simworker —
 see `internals/` [gitignored, not authoritative game docs]), raising a `RecursionError` /
@@ -755,6 +776,38 @@ branches of `_focus_coastal_order()` now require genuine remaining deficit, not 
 `.requires` or nonzero stock, before treating an order as actionable.
 `BioLuminizerController._fragment_remaining()` is now a thin delegate to the module-level version.
 
+**The Lab extracted every analyzed specimen unconditionally, with no demand check at all --
+`_cuticle_molt`/`_arm_segment` recurred even after the focus-order fix above.** Reported live:
+`ma_cuticle_molt` and `fs_arm_segment` both sat at their `MAX_LOCAL_GLOW_ARTIFACTS` share, neither
+needed by any current order, permanently wedging `BioCollectorController` (which refuses to harvest
+ANYTHING once the total-artifact cap is hit, needed or not). Root cause was structurally different from
+the earlier `_focus_coastal_order()` bug: `BioCollectorController` already gates *harvesting* on demand
+(`needed_fragments`), but `BioLabController` never gated *extraction* on demand at all -- once a
+specimen reached `stage == "analyzed"`, it went straight to loading reagents and calling `extract()`
+regardless of whether anything still wanted the result. `BioCollectorController`'s own "uncataloged
+discovery" harvesting (Priority 2 in its `step()`) picks up a specimen purely to identify a new
+location/fragment, with zero demand behind it -- analysis alone satisfies that (it's what populates
+`journal.cataloged_fragments()`), but the old code extracted it anyway, spending reagents and storage
+on a sample nothing would ever collect. Fixed with `_bio_demand_totals(comms, exchange, my_biome)`
+(module-level, shared by both controllers): `BioLabController.step()` now checks it right after
+`analyze()`, before loading any reagents (`if not loaded:` guards against interrupting a load already
+in progress) -- if demand for `fragment_id` doesn't exceed current local stock, `self.machine.discard()`
+runs instead of `extract()`. `BioCollectorController.step()`'s own demand computation was refactored to
+call the same shared helper instead of its previous inlined duplicate, so both controllers now agree on
+exactly one definition of "needed."
+
+**Self-cleaning backstop for artifacts already stuck before this fix (or from any other future edge
+case): `BioExchangeController._cleanup_orphaned_artifacts()`.** The demand-gated extract() above only
+stops the pileup from *recurring* -- like the per-fragment raw-backlog cap earlier in this section, it
+does nothing for stock already sitting there. Runs every `sweep_and_deliver()` cycle after the normal
+per-order delivery loop: for every locally-staged glow-tagged stack whose item id isn't in
+`_required_fragment_ids(all_orders)` (genuinely still needed, remaining > 0, by ANY incomplete order
+anywhere -- local or foreign, matching what the delivery loop above already tries to ship to), it's
+taken into `self.machine.input` (exact properties) and destroyed with `input.flush()`. Deliberately
+matches on item id only, not exact glow -- a raw, not-yet-tinted sample never matches any order's
+`target_glow` (that's the Luminizer's whole job), so gating on exact glow would misclassify perfectly
+good raw stock awaiting tinting as orphaned and destroy it.
+
 **`best_unload_target()`'s fallback tried to connect a remote machine's output to a non-local
 destination.** When no local Warehouse had room, it unconditionally returned the literal id
 `"inventory"` — but `"inventory"` only exists/connects at the home outpost (per `lib/storage.py`'s own
@@ -1185,6 +1238,72 @@ alternating turns against a shared, contested 44-unit Glass pool end up with a f
 both sides instead of 44/0; repeated Smelter `step()` calls keep topping up in the same chunk size
 across cycles.
 
+**Chunking alone wasn't enough — it shrank the race, it didn't fix it** (found from continued live
+reports after the chunking fix above shipped: "smelter_1 grabs 50 silicon in 5 stacks of 10 each,
+smelter_2 never gets any"). Each `take_item()`/Auto Feeder transfer locks the source Warehouse for
+the whole transfer duration (`docs/guide/input_and_output_ports.md`: "Both physical endpoints remain
+occupied for the resulting transfer duration"), so a smaller per-call chunk still lets whichever
+consumer's `step()` happens to poll first win it — and if one consumer consistently polls first
+(script start order, poll-interval phase), it wins every single chunk in a row, every cycle, forever.
+Chunking only bounded how much it could win in one grab, not how often it wins.
+
+An archive-based cooperative turn-taking scheme (`storage.take_item_fair()`, tracking per-item
+`"last winner"`/`"seen consumers"` state under a `storage.load_turn.<item_id>` key) was tried first and
+then deliberately reverted: it doesn't scale to multiple production outposts (an item id is global, but
+"who's contesting it" is really per-outpost — a second outpost's Smelter would needlessly defer to a
+first outpost's, or worse, collide on the same key for an unrelated pool of stock), and it grows the
+Data Archive by one entry per *distinct contested item id ever seen*, against the archive's hard
+512-entry save-wide cap (`docs/guide/data_archive_guide.md`) — an unbounded-by-design cost for what
+should be transient, in-memory coordination. Replaced with **`production.craft_prefill_units(recipe,
+item_id, prefill_seconds=INPUT_PREFILL_SECONDS)`** (`INPUT_PREFILL_SECONDS = 30`) — no archive state at
+all. Instead of asking "how much is left to load" (which naturally races toward a big number), it asks
+"how much do I need staged to keep crafting for the next ~30 real seconds" — `ceil(prefill_seconds /
+craft_seconds(recipe))` crafts' worth, floored at one craft's own requirement, where `craft_seconds()`
+converts `recipe.duration_game_hours` to real seconds via the fixed day-cycle schedule
+(`SECONDS_PER_GAME_HOUR = lib/power.py's DAY_CYCLE_DURATION_SECONDS / 24.0` — reused, not redefined, so
+there's exactly one place that conversion lives). This fixes the race as a side effect rather than
+coordinating around it: every consumer's total ask shrinks to a short, recipe-scaled window instead of
+the full remaining shortfall, so it tops up and stops far sooner, leaving much more frequent openings
+for a peer to get its own share in between — a probabilistic, self-limiting fix instead of a
+deterministic one, but stateless and correctly local-to-whatever-outpost-actually-has-the-contention
+(each Smelter/Fabricator's own `recipe` already came from its own outpost's building). Also directly
+fixes a second, independent bug — see below. `lib/smelter.py`'s ore top-up and `lib/fabricator.py`'s
+`load_inputs()` both cap their take amount with this now, alongside `SMELTER_LOAD_CHUNK_SIZE`/
+`FABRICATOR_LOAD_CHUNK_SIZE` (kept as a simple per-call ceiling on top, not the primary fairness
+mechanism any more). Supply Dock's material loading still has no reason to use any of this — same "no
+sibling competing" reasoning as its chunking exemption above.
+
+**Ore intake ignored demand SIZE entirely — a much bigger overproduction bug than the fairness race**
+(found live: ~80 excess Glass sitting in storage with no active demand for it). `lib/smelter.py`'s
+Step 3 buffer top-up used to gate purely on `demands.get(output_item, 0) > 0` (via `select_needed_ore()`)
+and then always fill the ore buffer toward the full 50-unit cap regardless of how large that demand
+actually was — a demand of 5 finished units still triggered filling a 50-unit ore buffer, because
+nothing ever compared the buffer top-up *amount* against the demand *quantity*, only checked it was
+nonzero. `lib/fabricator.py`'s `load_inputs()` never had this bug (it was always bounded by
+`required_per_craft * crafts_remaining`, itself netted against target/current stock), which is why
+this was Smelter-specific. Worse with 2+ Smelters "joined" on the same recipe (`select_needed_ore()`'s
+pile-on fallback, used whenever only one ore is currently demanded): each Smelter independently filled
+its own buffer toward the SAME undivided demand figure, so two Smelters could together refine roughly
+double the actual demand before `total_stock()` ever caught up enough to zero it out — matches the
+observed "smelter_1 and smelter_2 each grab their own full share, ~80 Glass more than needed" report
+exactly, and would have applied even to a single Smelter alone (no second consumer needed to
+overproduce, just needed to fill past a small demand). `craft_prefill_units()` above (the fairness fix)
+independently tightens this too — a slow-crafting recipe's window caps out at one craft's worth
+regardless of demand size — but the actual demand-size fix is two further additions to Step 3, both
+cast in ore units via `(qty * units_per_run + output_count - 1) // output_count` (same ceiling-division
+shape `get_raw_material_demands()` already uses for the identical unit conversion):
+`production.get_smelter_worker_count(recipe_id)` (mirrors `lib/fabricator.py`'s private
+`_fabricator_worker_count()`, made public since Smelter needs it directly) gives this Smelter's live
+headcount of peers on the same recipe; `share = ceil(demand_qty / worker_count)` is this Smelter's fair
+slice of the CURRENT total demand (re-read fresh every `step()`, so it naturally shrinks as any
+Smelter's output gets drained to Inventory/a Warehouse); `max_ore_for_share` converts that output-unit
+share into an ore-unit ceiling. The take amount is `max(0, min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE,
+max_ore_for_share - in_buf, craft_prefill_units(recipe, ore) - in_buf))` — floored at 0 so a demand or
+prefill target that shrank since ore was already staged never requests a negative amount (already-staged
+ore still finishes its craft normally, it just isn't topped up further). A single Smelter with a small
+demand now loads only that much ore, not a reflexive full 50; several Smelters on one recipe now split
+the demand instead of each independently re-filling to its entirety.
+
 ### 2a-0-3. Multi-Dock Support (`lib/production.py`, `lib/fabricator.py`)
 
 Same hardcoded-id bug class as Multi-Smelter/Multi-Fabricator above, just not caught for Supply Dock
@@ -1205,11 +1324,30 @@ single-item orders both correctly register demand (the actual bug — previously
 dock's order counted at all), and `find_dock_order_requiring()`/`get_raw_material_reason()` correctly
 attribute an item to whichever dock's order actually wants it.
 
+### 2a-0-4. Multi-Fabricator active-recipe input demand (`lib/production.py` `get_material_demands()`)
+
+Same hardcoded-single-instance bug class again, this time in `get_material_demands()`'s "a selected
+Fabricator recipe is an explicit production intention" block, which used to call
+`get_fabricator_active_recipe(_default_fabricator())` -- always the *first* discovered Fabricator --
+rather than looping every one. With two Fabricators each holding a different claimed recipe (see
+§2a-0-2's `claim_recipe()`), the second Fabricator's own active recipe and its inputs were entirely
+invisible to demand tracking: found live with `fabricator_1` running `craft_turbine_rotor` and
+`fabricator_2` running `craft_gas_pipe_segment` (needs `iron_ingot`) -- `fabricator_2`'s `iron_ingot`
+requirement never registered as demand at all, so `lib/smelter.py`'s `select_needed_ore()` (which
+reads `get_material_demands()`) saw zero demand for `iron_ingot` and refused to refine it even with
+raw `iron_ore` sitting in a Warehouse -- production silently stalled with no error anywhere. Fixed by
+looping `discover_fabricator_ids()` (falling back to `["fabricator_1"]` if discovery finds nothing,
+same convention as `_default_fabricator()`) and summing each Fabricator's own
+`get_fabricator_active_recipe()` input demand. Safe to sum rather than double-count: when several
+Fabricators share the same claimed recipe, `get_fabricator_active_recipe()` already divides
+`crafts_remaining` by the worker count (§2a-0-2), so each contributes only its fair share and the sum
+reconstructs the correct total.
+
 ### 2a-1. Fabricator demand tracking (`lib/production.py` `get_fabricator_targets()`)
 
 `get_fabricator_targets()` is the single source of truth for what the Fabricator should be
 building, and feeds `get_material_demands()` → `get_raw_material_demands()` (mining priority) too.
-Three demand sources are folded together into one `{item_id: quantity}` dict:
+Four demand sources are folded together into one `{item_id: quantity}` dict:
 
 1. `fabricator.stock_targets` archive key (defaults in `DEFAULT_FABRICATOR_STOCK_TARGETS`:
    `gas_pipe_segment`/`power_line_segment`/`liquid_pipe_segment` = 10 each) — edit the archived key
@@ -1230,6 +1368,16 @@ Three demand sources are folded together into one `{item_id: quantity}` dict:
    `load_construction_materials()` would just keep failing the job forever (deferred to
    `failed_jobs`, retried, deferred again). This is the concrete case of CLAUDE.md's "Plan ahead for
    future production needs based on... placed blueprints" rule.
+4. **`fabricator.manual_orders`** archive key (`{item_id: quantity}`, e.g. `{"drone_small": 2}`) —
+   ad-hoc one-off build requests, added by editing the key directly in the Data Archive Notebook (no
+   default seeded; empty is normal). `max()`'d into the target like every other source above, but
+   ALSO given queue priority in `lib/fabricator.py`'s `choose_recipe()`: a manually-ordered recipe is
+   picked ahead of every other demanded recipe regardless of shortfall size, so an operator's request
+   doesn't sit waiting behind whichever recipe happens to have the biggest shortfall this poll.
+   Counted down (and the entry dropped once it hits 0) by `production.consume_manual_order()`, called
+   from `drain_output()` with the quantity actually delivered to Inventory each step — not inferred
+   from a stock-target/baseline comparison, so it counts down correctly even if some of the finished
+   units get shipped or consumed elsewhere afterward.
 
 ### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
 
@@ -1396,10 +1544,12 @@ Nocturna Base.
   transfer between buildings is in flight" cost a same-building-only operation would have no reason
   to pay. Complements `best_unload_target()`'s now-consolidation-aware routing for stock that was
   already split before that fix landed (or split for any other reason, e.g. a manual move). Runs
-  once per `AUTOMATION_TICK_INTERVAL` cycle from `panel_1.py`'s AUTOMATION section for **every**
+  once per `STORAGE_TICK_INTERVAL` cycle from `panel_1.py`'s AUTOMATION section (§7) for **every**
   outpost (`network.outposts()`), not just home -- unlike `rebalance_inventory_to_warehouses()`
   (Inventory-only, so home-scoped), this fragmentation happens across Warehouses themselves and
-  affects remote outposts (e.g. the reagent-hauler's destination) too.
+  affects remote outposts (e.g. the reagent-hauler's destination) too. `STORAGE_TICK_INTERVAL` is
+  deliberately much coarser than the grid-supervision cadence -- see §7's note on why the AUTOMATION
+  card runs storage work and grid supervision on two separate timers, not one shared one.
 - `take_item(port, item_id, amount)`: the one function behind every
   `machine.input.take(item_id, amount)` call site (Smelter ore loading, Fabricator input loading,
   Supply Dock material loading, Pioneer's `load_construction_materials()`). Tries whatever `port` is
@@ -1444,6 +1594,16 @@ Nocturna Base.
   Inventory item gets moved to a Warehouse **entirely**, not partially — there's no real "quick
   access" cost to reading from a Warehouse instead of Inventory, so nothing is deliberately left
   behind — when either:
+  - **Exception**: items whose `item_catalog.lookup(item_id).category` is `"equipment"`,
+    `"module"`, or `"portable"` (`NON_WAREHOUSABLE_CATEGORIES` in `lib/storage.py`,
+    `_must_stay_in_inventory()`) are never swept at all, regardless of slot count or split state:
+    - `"equipment"` deploys straight into a building/machine from Inventory only (a Gas Tank or
+      Solar Generator bought/produced as itself) — a Warehouse has no way to deploy it, so moving
+      one there would just strand it. `"construction_kit"` (e.g. `mining_drill_kit`) is
+      deliberately *not* in this set — those are placed by a Pioneer via blueprint construction,
+      which doesn't need the kit sitting in Inventory, so it's fine to warehouse.
+    - `"module"`/`"portable"` (battery holders, cargo racks, portable batteries/bins/scanners) has
+      to be in Inventory to equip a newly-built or refitted Pioneer/Rover.
   1. It spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots on its own (the original rule), or
   2. **It's already split**: some units sit in Inventory while a Warehouse already holds some of the
      same item too, regardless of Inventory slot count (`_warehouse_item_ids()`) — added after a real
@@ -1465,7 +1625,21 @@ Nocturna Base.
     Inventory slots used, never a wash or a net loss. Verified by stub test against the exact
     scenario that prompted this: Warehouse full except a 5-unit Titanium Ingot slot, 60 Iron Ingot
     spanning 6 Inventory slots in Inventory — evicts the 5 titanium (costs 1 slot back), frees 6, a
-    clear net win.
+    clear net win. `slots_freed` is computed from `remaining` (units still stuck in Inventory *at
+    swap-fallback time*), not the item's original slot count captured at the top of the loop — the
+    direct-move step above can already have moved part of the item out before the swap is even
+    considered, and using the stale original count there overstated the net win. In practice, because
+    `slots_reclaimed` divides by the small Inventory `stack_size` (10/20) while `evicted_qty` can be
+    up to a full 2,000-unit Warehouse slot, a swap is only ever a net win for a *small*-quantity
+    occupant (roughly `slots_freed * stack_size` units or fewer) — once every Warehouse slot
+    everywhere holds a large quantity of something, the swap fallback will keep declining (logged as
+    `[storage] Skipping swap for <item>: ...`) and an item with no Warehouse slot of its own stays
+    split in Inventory until more Warehouse capacity is built. Every previously-silent failure path
+    here (`_cheapest_warehouse_occupant()` finding nothing at all, an eviction transfer moving 0
+    units, or the freed slot still reporting no room) now logs a `[storage] Could not clear...` /
+    `[storage] Swap for <item> did not go through...` / `[storage] Freed a slot... but it still
+    reports no room...` line instead of silently continuing, so a persistently-fragmented item is
+    diagnosable from the console instead of just never resolving with no explanation.
 - `inventory_stack_size()`: `10`, or `20` once `research.is_unlocked("research_high_density_storage")`
   ("Bigger Stacks") — reuses the existing `research.is_unlocked(tech_id)` pattern already used in
   `lib/vehicle_claims.py`, not inferred from current slot contents.
@@ -1514,6 +1688,30 @@ reassign a site just by editing the marker.
 - **`nearest_outpost_id(x, y)`** / **`outpost_by_id(outpost_id)`** — thin wrappers around
   `outpost_network.nearest()` / iterating `outpost_network.outposts()`, reused by both the
   auto-assignment logic above and Phase C's per-site candidate filtering (§2e).
+- **`RAW_ORE_ITEM_IDS`** — the 7 mineable ore item ids (`iron_ore`, `silicon`, `titanium`, `cobalt`,
+  `rare_earth`, `neutronium`, `lead_ore`), and **`HOME_OUTPOST_ID = "outpost_home"`** — shared constants
+  so `production.py`'s home ore buffer (below) and this module's own mining-outpost stock targets
+  iterate the identical ore set/home id rather than each keeping its own copy.
+- **Standing home ore buffer** (`production.py`'s `get_raw_material_demands()`): every raw ore also
+  gets a floor demand of `max(0, stock_target_for(HOME_OUTPOST_ID, item_id) - total_stock(item_id))` —
+  the same "1 Warehouse slot" default as a mining outpost's own stockpile, just applied to home too, so
+  home always keeps roughly one Warehouse slot of each ore in reserve even with zero active
+  production/order demand. Taken as a **max** with (never additive to) the production-driven deficit
+  computed earlier in the same function, since both want the same ore delivered home. **Not a reserved
+  stockpile** — Smelter/Supply Dock draw on it freely like any other stock; it's purely a floor that
+  creates replenishment demand once dipped into. Both home-based miners (`lib/mining.py`'s
+  `select_best_mining_target()`) and mining-outpost transporters (`lib/vehicle_cargo.py`'s
+  `run_haul_loop()`, home-bound leg only) read this same demand function, so both roles automatically
+  work toward the buffer without any outpost-specific code. **Overfill avoidance across concurrent
+  haulers**: a hauler debits what it just loaded from this same demand via
+  `mining_reservations.reserve_yield()` (`VehicleCargoMixin._reserve_home_haul()`, keyed
+  `"haul:{vehicle_name}:{item_id}"`, released via `_release_home_haul()` right after a successful
+  delivery lands) — the identical in-flight-debit mechanism `lib/mining.py` already used for concurrent
+  mining trips (see this file's Multi-Rover note), just reused for the haul leg too. This is what keeps
+  two haulers stationed at different mining outposts from each independently seeing the same uncovered
+  buffer deficit and both loading toward it — e.g. only 380 units of room left at home, the first hauler
+  to commit reserves all 380, so the second hauler's next demand read already shows 0 remaining, rather
+  than both loading 400 each and overshooting.
 
 ### 2e. Stationed Mining Role (`lib/vehicle.py`, `lib/vehicle_energy.py`, `lib/mining.py`)
 
@@ -1771,6 +1969,9 @@ exist yet at controller-construction time.
 - `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`.
 - `heat.optimal_setpoints`: Caching `{thermal_state: best_power}`
 - `pressure.optimal_resonance`: Caching `{resonance_state: best_window}`
+- `fabricator.manual_orders`: `{item_id: quantity}` ad-hoc Fabricator build requests, edited directly
+  in the Notebook (e.g. `{"drone_small": 2}`) — see §2a-1 item 4. Prioritized over other demanded
+  recipes and counted down to 0 (then dropped) as units are actually delivered.
 - `outposts.known_ids`: List of outpost ids `panel_1.py`'s AUTOMATION section has already seen —
   diffed each throttled tick against `outpost_network.outposts()` to detect a newly-founded outpost
   and auto-trigger `outpost_mining.reevaluate_unassigned_near_outpost()` for it. See §7.
@@ -1877,12 +2078,25 @@ resized narrow — but the recommended sizes above give the intended one-line-pe
 Smelter rebalance sweep, plus:
 - **Outpost-founding → resource marker auto-reassignment**: diffs `outpost_network.outposts()`'
   current id set against the stored `outposts.known_ids` (archive, list — the only archive key this
-  card adds) each throttled tick; any **new** id gets
+  card adds) each throttled storage tick; any **new** id gets
   `outpost_mining.reevaluate_unassigned_near_outpost(new_id)` (§2d) called on it automatically.
   `sync_resource_markers.py` remains for manual backfill/batch catch-up.
-- Throttled to `AUTOMATION_TICK_INTERVAL = 10` ticks (~1s at 10 ticks/sec — the panel loop itself has
-  no `sleep()` and redraws every render tick, so the automation work is gated separately via
-  `clock.tick()` rather than running at redraw frequency).
+- **Two independent throttle timers, not one shared `AUTOMATION_TICK_INTERVAL`** (an earlier version
+  had a single combined interval): `SOLAR_TICK_INTERVAL = 10` ticks (~1s at 10 ticks/sec) gates grid
+  supervision (`PowerGridManager.supervise_grid()` per grid — cheap, no Auto Feeder transfers
+  involved, safe to run often); `STORAGE_TICK_INTERVAL = 100` ticks (~10s) separately gates
+  `rebalance_inventory_to_warehouses()` + the outpost-diff/`consolidate_cross_warehouse_stock()` sweep.
+  Splitting them out fixes a real contention risk a single fast shared interval would create: both
+  `.transfer_to()` (rebalance) and `.compact()` (consolidation) lock their Warehouse as a material
+  endpoint for the whole transfer duration (`docs/guide/input_and_output_ports.md`, and see
+  `consolidate_cross_warehouse_stock()`'s own note above) — sweeping every Warehouse at every outpost
+  on a ~1s cadence would mean a Warehouse could plausibly still be mid-transfer from the *previous*
+  sweep when the *next* one starts, and would also cost a Smelter/Fabricator `take_item()` call a
+  `"busy"` rejection (see `craft_prefill_units()` above) far more often than a slower cadence would.
+  Grid supervision has no such cost, so it keeps the fast interval on its own timer instead of being
+  held back by storage's slower one. The panel loop itself has no `sleep()` and redraws every render
+  tick regardless — both intervals gate only the actual automation work via `clock.tick()`, not the
+  redraw.
 - **`panel.button("run_archive_cleaner", ...)`** — `ArchiveCleaner(dry_run=False, verbose=True).run()`
   (§4), live-commit, human-triggered only (never runs automatically on the throttled tick).
 - **`panel.button("run_unsupported_markers", ...)`** — `lib/unsupported_markers.py`'s
