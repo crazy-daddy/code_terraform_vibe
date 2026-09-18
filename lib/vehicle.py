@@ -21,6 +21,7 @@ from vehicle_claims import VehicleClaimsMixin
 from vehicle_cargo import VehicleCargoMixin
 from vehicle_survey import VehicleSurveyMixin
 from mining import MiningMixin
+from outpost_mining import HOME_OUTPOST_ID
 
 
 class VehicleController(
@@ -44,7 +45,10 @@ class VehicleController(
     def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         self.vehicle = vehicle
         self.name = getattr(vehicle, "id", getattr(vehicle, "name", "vehicle"))
-        # home_base is an outpost id (None = the production/home outpost) --
+        # home_base is an outpost id (None = the production/home outpost,
+        # normalized below to the real HOME_OUTPOST_ID string so every
+        # vehicle always has a concrete home_base -- e.g. vehicle_cargo.py's
+        # haul-status logs print the actual outpost id instead of "None") --
         # this vehicle's "home" for is_at_base()/return_to_base()/charging
         # purposes can be any outpost, not just the production base (see
         # TODO.md Phase 3's stationed-mining role). Resolved to live objects
@@ -62,7 +66,7 @@ class VehicleController(
         # recharge routing (get_nearest_charging_station()) always does its
         # own fresh network-wide walk regardless; only the cached staging
         # position (assigned_slot_coords) could lag by that much.
-        self.home_base = home_base
+        self.home_base = home_base if home_base is not None else HOME_OUTPOST_ID
         self.home_outpost = self.get_outpost_ref(home_base)
         self.home_charging_station = self.find_charging_station(self.home_outpost)
         # None (the common case -- a thin entrypoint script passes nothing)

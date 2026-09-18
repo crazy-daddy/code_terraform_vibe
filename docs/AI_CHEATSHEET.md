@@ -1579,9 +1579,22 @@ Mineral-site discovery and drill execution live in one place, shared by both Rov
   resumed `mine_current_site()` call gets the *full* cargo capacity as `max_units` instead of just the
   small amount freed by the interruption, so the vehicle can fill up further before the next
   interruption rather than immediately needing another trip.
-- Pioneer's mining role (`run_mining_loop()`, entrypoint `pioneer_3.py`) requires the operator to
-  have already mounted a drill (`mount_hardware()` / Control Panel) — it only checks
-  `hasattr(self.vehicle, "drill")` and idles with an advisory if absent; it never auto-mounts one.
+- Pioneer's mining role (`run_stationed_mining_loop(outpost_id)`, e.g. entrypoint `pioneer_3.py`)
+  requires the operator to have already mounted a drill (`mount_hardware()` / Control Panel) — it
+  only checks `hasattr(self.vehicle, "drill")` and idles with an advisory if absent; it never
+  auto-mounts one.
+- **Unified role entrypoint (`PioneerController.run()`/`detect_role()`, `lib/pioneer.py`)**: every
+  `pioneer_N.py` script now just constructs a `PioneerController` and calls `run()` instead of
+  naming a role's loop method by hand. `detect_role()` maps `ROLE_MODULES` (`{"constructor":
+  "constructor", "scout": "sonar", "miner": "drill"}`) via `hasattr(self.vehicle, <attr>)` — exactly
+  one mounted module picks that role; none mounted falls back to `"hauler"`; more than one mounted
+  is treated as a misconfigured loadout (`TreeConsole` warn + no-op, per §0a) unless the caller
+  passes `role_override=` to force one explicitly. `run()` then dispatches: constructor ->
+  `run_construction_loop()`, scout -> `run_survey_loop()`, miner -> `run_stationed_mining_loop(self.home_base)`
+  (never the home-demand-driven `run_mining_loop()`), hauler -> `run_haul_loop(dest_outpost_id=...)`
+  — `dest_outpost_id` is `run()`'s only argument besides `role_override`, since hauler is the one
+  role with no module to detect it by. Equipment is genuinely swappable at runtime (`mount()`/
+  `unmount()`, while docked) so this re-probes fresh on every script run rather than caching a role.
 
 ### 2c. Storage Management (`lib/storage.py`)
 
@@ -1928,9 +1941,9 @@ means Nocturna Base specifically; "its stationed outpost" always means wherever 
   stationed outpost after returning); drives back to the stationed outpost via `return_to_base()`
   before loading when not already there, instead of failing to load and idling in place indefinitely.
 
-  **Since generalized into `run_haul_loop()` (§2g), every thin entrypoint script calls it directly —
-  see §2g for why the old `run_supply_run_loop()`/`run_reagent_delivery_loop()` wrapper methods were
-  removed.**
+  **Since generalized into `run_haul_loop()` (§2g), every thin entrypoint script reaches it via the
+  unified `PioneerController.run(dest_outpost_id=...)` entrypoint (§2b) — see §2g for why the old
+  `run_supply_run_loop()`/`run_reagent_delivery_loop()` wrapper methods were removed.**
 
 ### 2g. Generalized Hauler + Reagent Resupply (`lib/vehicle_cargo.py` `run_haul_loop()`, `lib/outpost_reagents.py`)
 
@@ -1940,9 +1953,10 @@ For the ore-hauler, source = the mining outpost, dest = home (`None`). For the r
 = home (`home_base=None`, the default), dest = the coastal outpost. `run_supply_run_loop()` and
 `run_reagent_delivery_loop()` used to be one-line role-specific wrappers over a shared core; they're
 now **removed** — every thin entrypoint script (`pioneer_5.py`/`pioneer_6.py`/`pioneer_7.py`) calls
-`run_haul_loop(dest_outpost_id, poll_interval=10.0)` directly, since `dest_outpost_id` alone already
-disambiguates the role (`None` = production outpost = ore-hauler; any other id = a remote outpost's
-Bio Lab = reagent-hauler). The two params that used to be passed in at construction time —
+`PioneerController.run(dest_outpost_id=...)` (§2b), which detects the hauler role (no
+constructor/sonar/drill mounted) and forwards to `run_haul_loop(dest_outpost_id, poll_interval=10.0)`,
+since `dest_outpost_id` alone already disambiguates the role (`None` = production outpost =
+ore-hauler; any other id = a remote outpost's Bio Lab = reagent-hauler). The two params that used to be passed in at construction time —
 `candidate_items_fn` and `demand_fn` — are both gone:
 
 - **`demand_fn` is gone**: there's no reason to decide "what's needed" before a haul cycle actually

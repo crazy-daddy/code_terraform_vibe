@@ -16,4 +16,4 @@ DESTINATION_OUTPOST_ID = "outpost_1"
 SOURCE_OUTPOST_ID = "outpost_home"
 
 pioneer = PioneerController(self, home_base=SOURCE_OUTPOST_ID, cruise_throttle=1.0)
-pioneer.run_haul_loop(dest_outpost_id=DESTINATION_OUTPOST_ID)
+pioneer.run(dest_outpost_id=DESTINATION_OUTPOST_ID)

@@ -8,6 +8,7 @@ from archive import archive
 from vehicle import VehicleController
 from mining import ROVER_PREFERRED_MAX_HARDNESS
 from storage import take_item
+from tree_console import TreeConsole
 import mining_reservations
 
 class PioneerController(VehicleController):
@@ -21,8 +22,85 @@ class PioneerController(VehicleController):
     # nothing-drive-back cycles. Capped at whatever progress remains.
     TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25
 
+    # Role name -> the vehicle attribute whose presence identifies it, used by
+    # detect_role()/run() to pick a role from mounted equipment rather than
+    # requiring the entrypoint script to name the loop function directly.
+    # "hauler" is deliberately absent: it's the fallback when none of these
+    # are mounted, not a module-detected role.
+    ROLE_MODULES = {
+        "constructor": "constructor",
+        "scout": "sonar",
+        "miner": "drill",
+    }
+
     def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
+
+    def detect_role(self, role_override=None):
+        """
+        Inspects mounted modules (ROLE_MODULES) and returns one of
+        "constructor"/"scout"/"miner"/"hauler" (hauler = fallback, no
+        relevant module mounted). role_override skips equipment probing
+        entirely and returns that role as-is, for the rare intentionally
+        mixed loadout that would otherwise be ambiguous. Returns None only
+        when more than one role-defining module is mounted and no override
+        was given -- caller must treat that as "cannot start".
+        """
+        tree = TreeConsole()
+        if role_override is not None:
+            tree.debug(f"[{self.name}] Role override supplied: '{role_override}'; skipping equipment probe.")
+            return role_override
+
+        tree.start(f"[{self.name}] Detecting role from mounted equipment")
+        present = []
+        for role, attr in self.ROLE_MODULES.items():
+            mounted = hasattr(self.vehicle, attr)
+            tree.debug(f"{attr} module mounted: {mounted}")
+            if mounted:
+                present.append(role)
+
+        if len(present) > 1:
+            tree.level("warn").print(
+                f"[{self.name}] Multiple role-defining modules mounted ({', '.join(present)}); "
+                f"cannot auto-detect a role. Call run(role_override=...) with one of "
+                f"{list(self.ROLE_MODULES)} + 'hauler' to force a role."
+            )
+            tree.end(f"[{self.name}] Role detection failed")
+            return None
+
+        role = present[0] if present else "hauler"
+        tree.end(f"[{self.name}] Detected role: '{role}'")
+        return role
+
+    def run(self, dest_outpost_id=None, role_override=None):
+        """
+        Unified entrypoint: detects this Pioneer's role from its mounted
+        equipment (Constructor Module -> constructor, Sonar Module -> scout,
+        Drill Module -> miner, none of those -> hauler) and dispatches to the
+        matching loop, so a thin entrypoint script no longer needs to name
+        the loop function by hand. dest_outpost_id is only used (and
+        required) for the hauler role, since it's the only role without a
+        module to detect it by. role_override forces a specific role,
+        bypassing detection -- required when more than one role-defining
+        module is mounted at once (see detect_role()).
+        """
+        role = self.detect_role(role_override)
+        if role is None:
+            return
+
+        if role == "constructor":
+            self.run_construction_loop()
+        elif role == "scout":
+            self.run_survey_loop()
+        elif role == "miner":
+            self.run_stationed_mining_loop(self.home_base)
+        elif role == "hauler":
+            if not dest_outpost_id:
+                print(f"[{self.name}] Hauler role detected but no dest_outpost_id given; cannot start.")
+                return
+            self.run_haul_loop(dest_outpost_id=dest_outpost_id)
+        else:
+            print(f"[{self.name}] Unknown role '{role}'.")
 
     def construction_claim_key(self, job_id):
         """

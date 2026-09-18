@@ -4,7 +4,8 @@
 # assigned_ores_for(), see docs/AI_CHEATSHEET.md §2d) up to their stock
 # targets, independent of home's live demand -- run_mining_loop() (used by
 # mistake here previously) is the home-demand-driven loop and ignores outpost
-# marker assignment entirely; run_stationed_mining_loop() is the one that
+# marker assignment entirely; run() detects the Drill Module and dispatches
+# to run_stationed_mining_loop(self.home_base), which is the one that
 # actually respects it.
 
 from pioneer import PioneerController
@@ -13,4 +14,4 @@ from pioneer import PioneerController
 # (see vehicle_energy.py's DEFAULT_CRUISE_THROTTLE_KEY), settable via the
 # Data Archive Notebook.
 controller = PioneerController(self, home_base="outpost_2")
-controller.run_stationed_mining_loop("outpost_2")
+controller.run()

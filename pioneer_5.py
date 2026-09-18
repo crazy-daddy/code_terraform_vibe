@@ -31,4 +31,4 @@ DESTINATION_OUTPOST_ID = "outpost_home"
 # there too before heading back so the return leg can run at full throttle
 # (cruise_throttle below) -- see VehicleCargoMixin.run_haul_loop().
 pioneer = PioneerController(self, home_base=SOURCE_OUTPOST_ID, cruise_throttle=1.0)
-pioneer.run_haul_loop(dest_outpost_id=DESTINATION_OUTPOST_ID)
+pioneer.run(dest_outpost_id=DESTINATION_OUTPOST_ID)
