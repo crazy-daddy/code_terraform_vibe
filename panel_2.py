@@ -97,8 +97,12 @@ while True:
         for index, vehicle in enumerate(visible_vehicles):
             y = top + index * row_height
             name = str(getattr(vehicle, "name", getattr(vehicle, "id", "vehicle")))
+            # id-first, matching VehicleController.self.name (lib/vehicle.py) exactly --
+            # that's the key the vehicle's own script checks recall under, so this
+            # card must key the archive flag the same way rather than by display name.
+            vehicle_id = str(getattr(vehicle, "id", getattr(vehicle, "name", "vehicle")))
             role_label, role_color = vehicle_role(name)
-            recalled = is_vehicle_recalled(name)
+            recalled = is_vehicle_recalled(vehicle_id)
             raw_status = str(getattr(vehicle, "status", "unknown"))
 
             if getattr(vehicle, "is_being_rescued", False):
@@ -141,9 +145,9 @@ while True:
                 # clearance (see row_height's matching bump below).
                 panel.draw_text(40, y + 46, location, 10, "text-secondary")
 
-            switch_on = panel.switch(f"recall_{name}", recall_x, y + 6, recalled, "recall")
+            switch_on = panel.switch(f"recall_{vehicle_id}", recall_x, y + 6, recalled, "recall")
             if switch_on != recalled:
-                set_vehicle_recalled(name, switch_on)
+                set_vehicle_recalled(vehicle_id, switch_on)
 
             rescue = getattr(vehicle, "rescue_status", "none")
             badge_y = y + 22 if wide else y + 38

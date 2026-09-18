@@ -3,16 +3,7 @@
 # lamp-mix solve this drives. Imports its shared pipeline helpers from bio.py --
 # see that module's own header comment for why the split exists and why bio.py
 # never imports back from here.
-from bio import (
-    get_my_biome,
-    local_sibling,
-    is_order_incomplete,
-    is_local_order,
-    _local_sources,
-    _local_stock_snapshot,
-    _focus_local_order,
-    _order_fragment_remaining,
-)
+from bio import get_my_biome, local_sibling, is_order_incomplete, is_local_order, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 

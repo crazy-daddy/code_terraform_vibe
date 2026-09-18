@@ -1,14 +1,7 @@
 # Geothermal biome processor: DNA Sequencer gene-splicing.
 # See docs/components/dna_sequencer.md. Imports its shared pipeline helpers from
 # bio.py -- see that module's own header comment for why the split exists.
-from bio import (
-    get_my_biome,
-    local_sibling,
-    _local_sources,
-    _local_stock_snapshot,
-    _focus_local_order,
-    _order_fragment_remaining,
-)
+from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 from tree_console import TreeConsole

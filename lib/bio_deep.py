@@ -1,27 +1,16 @@
-# Deep biome processor: Bio Conditioner QC quiz -- DIAGNOSTIC ONLY.
+# Deep biome processor: Bio Conditioner QC automation.
 # See docs/components/bio_conditioner.md. Imports its shared pipeline helpers from
 # bio.py -- see that module's own header comment for why the split exists.
 #
-# The docs never expose the actual pass/fail rule for any of the 10 inspected
-# properties (only vague combo hints like "brightness reads glow"), and a wrong
-# accept()/reject() call burns (destroys) the whole specimen with no way to learn
-# the rule risk-free from the API alone. So this controller never calls
-# accept()/reject() automatically: it logs report()/current()/lights() every cycle
-# and only acts on an explicit "accept" or "reject" command sent via the machine's
-# Script Commands tab (docs/guide/editor_and_tools.md's "Script Commands" section),
-# recording the (property, value, decision, outcome) into a bounded archive history
-# so real observations accumulate across sessions toward working out the rulebook.
-# Full automatic order fulfillment for Deep orders is a follow-up once that
-# rulebook is known -- see TODO.md.
+# The rulebook below is not documented by the in-game API (only vague combo hints
+# like "brightness reads glow"). It was recovered from the decompiled game client
+# (internals/terraform_decompiled/simworker/deobfuscated.js, the $q predicate table)
+# and cross-checked against real accept()/reject() outcomes logged to
+# archive["bio.conditioner_observations"] during the prior diagnostic-only phase
+# (every observed green/red light matched these predicates). See
+# docs/AI_CHEATSHEET.md#1g for the rule summary and provenance note.
 from archive import archive
-from bio import (
-    get_my_biome,
-    local_sibling,
-    _local_sources,
-    _local_stock_snapshot,
-    _focus_local_order,
-    _order_fragment_remaining,
-)
+from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 from tree_console import TreeConsole
@@ -30,15 +19,38 @@ from tree_console import TreeConsole
 # rule (fixed-size histories, never unbounded logs) -- see docs/AI_CHEATSHEET.md.
 CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200
 
+# Pass/fail predicate for each of the 10 QC properties, each given the full
+# report() dict since some rules read a sibling property (brightness reads glow,
+# weight reads gunk, sound reads cracks) -- see module docstring for provenance.
+CONDITIONER_RULEBOOK = {
+    "glow": lambda r: r.get("glow") in ("blue", "green", "purple"),
+    "brightness": lambda r: (
+        45 <= r.get("brightness", -1) <= 80 if r.get("glow") in ("blue", "green")
+        else 20 <= r.get("brightness", -1) <= 50 if r.get("glow") == "purple"
+        else False
+    ),
+    "smell": lambda r: r.get("smell") in ("salty", "fishy"),
+    "gunk": lambda r: 70 <= r.get("gunk", -1) <= 85,
+    "cracks": lambda r: r.get("cracks") in ("none", "small"),
+    "feel": lambda r: r.get("feel") == "hard",
+    "twitch": lambda r: r.get("twitch") in ("weak", "still"),
+    "bugs": lambda r: 1 <= r.get("bugs", -1) <= 3,
+    "weight": lambda r: 180 <= r.get("weight", -1) <= (300 if r.get("gunk", 0) >= 70 else 260),
+    "sound": lambda r: (
+        True if r.get("sound") == "ding"
+        else r.get("cracks") in ("none", "small") if r.get("sound") == "thud"
+        else False
+    ),
+}
+
 
 class BioConditionerController:
     """
-    DIAGNOSTIC ONLY. Loads a raw local Deep sample the pipeline needs and, while its
-    5-stage QC run is live, logs report()/current()/lights() every cycle without
-    ever calling accept()/reject() on its own -- see module docstring for why. Only
-    an explicit "accept" or "reject" Script Command from the operator resolves a
-    stage; every decision and its outcome is recorded to
-    archive["bio.conditioner_observations"] for later rulebook analysis.
+    Loads a raw local Deep sample the pipeline needs and drives its 5-stage QC run
+    to completion automatically: each stage's quizzed property is looked up in
+    CONDITIONER_RULEBOOK against the full report() and accept()/reject()'d
+    accordingly. Every decision and its outcome is still recorded to
+    archive["bio.conditioner_observations"] for auditing.
     """
     def __init__(self, machine):
         self.machine = machine
@@ -78,7 +90,12 @@ class BioConditionerController:
                 count = getattr(stack, "count", 0)
                 if count <= 0:
                     continue
-                properties = getattr(stack, "properties", None) or {}
+                properties = getattr(stack, "properties", None)
+                if properties and properties.get("conditioned"):
+                    # Already-conditioned samples carry {'conditioned': True} in
+                    # .properties (confirmed live) -- never treat one as raw QC
+                    # input, it belongs to the Exchange for delivery.
+                    continue
                 return source_id, properties, count
         return None
 
@@ -98,7 +115,19 @@ class BioConditionerController:
             count = getattr(stack, "count", 0)
             if not staged_id or count <= 0:
                 continue
-            properties = getattr(stack, "properties", None) or {}
+            properties = getattr(stack, "properties", None)
+            if properties and properties.get("conditioned"):
+                # Already-conditioned (confirmed live: {'conditioned': True}) --
+                # never reload it into the chamber, recover it to storage for the
+                # Exchange to pick up instead. Mirrors the Luminizer's equivalent
+                # already-tinted-sample fix.
+                try:
+                    destination = best_unload_target(staged_id, count, outpost=outpost)
+                    self.machine.input.eject(destination, staged_id, count, properties, "exact")
+                    self.console.debug(f"[{self.name}] Recovered already-conditioned {staged_id} to '{destination}'.")
+                except Exception:
+                    pass
+                continue
             if raw_candidate is None:
                 raw_candidate = (staged_id, properties)
 
@@ -163,10 +192,10 @@ class BioConditionerController:
         except Exception:
             pass
 
-    def _observe_and_wait_for_command(self):
-        """Logs the current QC stage's full context, then only acts on an explicit
-        operator command -- never decides accept/reject on its own. See module
-        docstring."""
+    def _run_qc_stage(self):
+        """Looks up the current stage's quizzed property in CONDITIONER_RULEBOOK
+        against the full report() and calls accept()/reject() accordingly. See
+        module docstring for the rulebook's provenance."""
         fragment_id = self.machine.fragment()
         stage = self.machine.stage()
         current = self.machine.current()
@@ -178,22 +207,22 @@ class BioConditionerController:
             f"value={prop_value} report={report} lights={lights}"
         )
 
-        cmd_res = self.machine.next_command()
-        if cmd_res.status != "ok":
-            sleep(0.5)
-            return
-        cmd = cmd_res.command
-        if cmd.name not in ("accept", "reject"):
-            self.console.print(f"[{self.name}] Ignoring unrecognized command '{cmd.name}' -- send 'accept' or 'reject'.")
-            sleep(0.2)
+        rule = CONDITIONER_RULEBOOK.get(current)
+        if rule is None:
+            # Every quizzed property should be one of the 10 known ids; an
+            # unrecognized one means the rulebook is stale -- don't guess blind.
+            self.console.print(f"[{self.name}] WARNING: unrecognized QC property '{current}', halting to avoid a blind guess.")
+            sleep(1.0)
             return
 
-        action_res = self.machine.accept() if cmd.name == "accept" else self.machine.reject()
-        self._record_observation(fragment_id, stage, current, prop_value, cmd.name, action_res.status)
-        self.console.print(f"[{self.name}] Operator called {cmd.name}() at stage {stage} ({current}={prop_value}) -> {action_res.status}.")
+        decision = "accept" if rule(report) else "reject"
+        action_res = self.machine.accept() if decision == "accept" else self.machine.reject()
+        self._record_observation(fragment_id, stage, current, prop_value, decision, action_res.status)
+        self.console.print(f"[{self.name}] {decision}() at stage {stage} ({current}={prop_value}) -> {action_res.status}.")
         if action_res.status == "burned":
-            self.console.print(f"[{self.name}] WARNING: specimen burned.")
-        sleep(0.2)
+            self.console.print(f"[{self.name}] WARNING: specimen burned -- rulebook may be wrong for '{current}'.")
+        elif action_res.status == "conditioned":
+            self.console.print(f"[{self.name}] Conditioned {fragment_id} successfully.")
 
     def step(self):
         self._notify_heartbeat()
@@ -211,7 +240,7 @@ class BioConditionerController:
         snapshot = _local_stock_snapshot(outpost)
 
         if self.machine.is_running():
-            self._observe_and_wait_for_command()
+            self._run_qc_stage()
             return
 
         if self.machine.fragment() is not None:
@@ -227,7 +256,7 @@ class BioConditionerController:
         sleep(0.5)
 
     def run(self):
-        self.console.print(f"Bio Conditioner ({self.name}) online via Shared Library -- DIAGNOSTIC MODE, no automatic accept/reject.")
+        self.console.print(f"Bio Conditioner ({self.name}) online via Shared Library -- automated QC via recovered rulebook.")
         validate_game_version()
         while True:
             self.step()

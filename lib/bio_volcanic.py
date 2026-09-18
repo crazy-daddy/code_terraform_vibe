@@ -13,14 +13,7 @@
 # deployed and a first recipe attempted -- flip on debug() console output to see
 # required_materials() vs materials() vs what's staged in self.input if a cast()
 # unexpectedly returns "wrong_materials".
-from bio import (
-    get_my_biome,
-    local_sibling,
-    _local_sources,
-    _local_stock_snapshot,
-    _focus_local_order,
-    _order_fragment_remaining,
-)
+from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import take_item, best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 from tree_console import TreeConsole

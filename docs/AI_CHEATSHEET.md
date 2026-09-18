@@ -32,7 +32,7 @@ that way there is exactly one place to keep current.
 | &nbsp;&nbsp;↳ Coastal biome processor (glow-tint) | `bio_coastal.py` (`BioLuminizerController`) — see §1e/§1g |
 | &nbsp;&nbsp;↳ Volcanic biome processor (forge-cast) | `bio_volcanic.py` (`BioCasterController`) — see §1g |
 | &nbsp;&nbsp;↳ Geothermal biome processor (gene-splice) | `bio_geothermal.py` (`DnaSequencerController`) — see §1g |
-| &nbsp;&nbsp;↳ Deep biome processor (QC quiz, diagnostic-only) | `bio_deep.py` (`BioConditionerController`) — see §1g |
+| &nbsp;&nbsp;↳ Deep biome processor (QC quiz, automated) | `bio_deep.py` (`BioConditionerController`) — see §1g |
 | Outpost reagent stock-target scaffolding (Bio Lab resupply) | `outpost_reagents.py` — see §2g |
 | Vehicle charging stations | `charging.py` |
 | Fabrication | `fabricator.py` |
@@ -949,17 +949,38 @@ against `gene_catalog()` before ever calling `splice()` (an unknown gene id ther
 `"destroyed"` result). `chamber.spliced == True` is never spliced again ("one splice per fragment," per
 `docs/components/dna_sequencer.md`) — just discarded through to delivery.
 
-**Bio Conditioner (Deep, `lib/bio_deep.py` `BioConditionerController`) — diagnostic-only, not yet
-automated.** The docs never expose the actual pass/fail rule for any of the 10 QC properties (only vague
-combo hints like "brightness reads glow"), and a wrong `accept()`/`reject()` call `"burned"`s (destroys)
-the specimen with no risk-free way to learn the rule from the API alone. This controller therefore never
-calls `accept()`/`reject()` automatically — it logs `report()`/`current()`/`lights()` every cycle via
-`TreeConsole.debug()` and only acts on an explicit `"accept"`/`"reject"` Script Command sent from the
-operator (`docs/guide/editor_and_tools.md`'s "Script Commands" section, `self.next_command()`), recording
-every `(fragment_id, stage, property, value, decision, outcome)` into a bounded
-`archive["bio.conditioner_observations"]` history (`CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200`) so real
-observations accumulate across sessions toward working out the rulebook. No automatic Deep order
-fulfillment until that rulebook is known — see `TODO.md`.
+**Bio Conditioner (Deep, `lib/bio_deep.py` `BioConditionerController`) — fully automated.** The in-game
+docs never expose the actual pass/fail rule for any of the 10 QC properties (only vague combo hints like
+"brightness reads glow"), and a wrong `accept()`/`reject()` call `"burned"`s (destroys) the specimen. The
+rulebook was instead recovered from the decompiled game client
+(`internals/terraform_decompiled/simworker/deobfuscated.js`, the `$q` predicate table) and cross-checked
+against real logged outcomes from the prior diagnostic-only phase (every observed green/red light matched
+these predicates) — it now lives as `CONDITIONER_RULEBOOK` in `lib/bio_deep.py`, one predicate per
+property, each given the full `report()` dict since some rules read a sibling property:
+
+| Property | Pass rule |
+| --- | --- |
+| `glow` | `blue`, `green`, or `purple` |
+| `brightness` | 45–80 lm if `glow` is `blue`/`green`; 20–50 lm if `glow` is `purple`; fails otherwise (incl. `white`/`dark`) |
+| `smell` | `salty` or `fishy` |
+| `gunk` | 70–85% |
+| `cracks` | `none` or `small` |
+| `feel` | `hard` |
+| `twitch` | `weak` or `still` |
+| `bugs` | 1–3 |
+| `weight` | 180–260 g, extended to 300 g if `gunk` ≥ 70 |
+| `sound` | `ding`; or `thud` only if `cracks` is `none`/`small` |
+
+Every stage still gets recorded to bounded `archive["bio.conditioner_observations"]` history
+(`CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200`) for auditing, and an unrecognized `current()` property
+(rulebook gone stale) halts rather than guessing blind.
+
+**Confirmed live: a Conditioned fragment's `.properties` carries `{'conditioned': True}`**, distinct from
+an untested raw fragment's `properties=None`. `_find_raw_stack()` and `_load_next_sample()`'s staged-stack
+scan both skip/recover any stack with `properties.get("conditioned")` truthy instead of treating it as raw
+QC input — mirrors the Coastal Luminizer's equivalent already-tinted-sample fix (§1g above). Without this,
+the Conditioner can pull an already-passed specimen back into `self.input`, where `load()` can never accept
+it and the chamber stalls with no eject path.
 
 ---
 
@@ -2245,7 +2266,7 @@ exist yet at controller-construction time.
 | `bio_exchange` | 2,000 cr | -5 W | Orders queue | Earth biology order fulfillment & credit rewards. |
 | `bio_luminizer` | 60,000 cr | -12 W | 10 in / 10 out | Coastal glow-tinting (3-lamp mix solve, §1e). |
 | `bio_caster` | 150,000 cr | -15 W | 30 out, 20t steam/water buffers | Volcanic forge-casting (heat/cool band control, §1g). |
-| `bio_conditioner` | 225,000 cr | -25 W | 10 in / 10 out | Deep QC quiz (diagnostic-only, §1g — rulebook not yet known). |
+| `bio_conditioner` | 225,000 cr | -25 W | 10 in / 10 out | Deep QC quiz (automated, §1g). |
 | `dna_sequencer` | 100,000 cr | -20 W | 10 in / 10 out | Geothermal gene-splicing (§1g). |
 | `supply_dock` | 3,000 cr | -15 W | 50 units | Earth / Contractor campaign bulk order shipping. |
 | `vehicle_charging_station`| 2,000 cr | -50 W max | Pad + Rescue drone| Vehicle fast-charging & automatic rescue dispatch. |
