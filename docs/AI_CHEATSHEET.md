@@ -28,7 +28,11 @@ that way there is exactly one place to keep current.
 | Smelting | `smelter.py` |
 | Production planning (demand-driven) | `production.py` |
 | Supply Dock logistics | `supply_dock.py` |
-| Biology (collector/lab/exchange/luminizer) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout; see §2g |
+| Biology, shared pipeline (collector/lab/exchange + biome-processor discovery) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
+| &nbsp;&nbsp;↳ Coastal biome processor (glow-tint) | `bio_coastal.py` (`BioLuminizerController`) — see §1e/§1g |
+| &nbsp;&nbsp;↳ Volcanic biome processor (forge-cast) | `bio_volcanic.py` (`BioCasterController`) — see §1g |
+| &nbsp;&nbsp;↳ Geothermal biome processor (gene-splice) | `bio_geothermal.py` (`DnaSequencerController`) — see §1g |
+| &nbsp;&nbsp;↳ Deep biome processor (QC quiz, diagnostic-only) | `bio_deep.py` (`BioConditionerController`) — see §1g |
 | Outpost reagent stock-target scaffolding (Bio Lab resupply) | `outpost_reagents.py` — see §2g |
 | Vehicle charging stations | `charging.py` |
 | Fabrication | `fabricator.py` |
@@ -542,7 +546,14 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   has no `last_tick` to check at all and is always purged as a one-time migration. Runs as part of
   `ArchiveCleaner.run()`'s normal sweep, no separate invocation needed.
 
-### 1e. Bio Luminizer Lamp-Mix Solve (`lib/bio.py` `BioLuminizerController`, `_solve_3x3()`)
+### 1e. Bio Luminizer Lamp-Mix Solve (`lib/bio_coastal.py` `BioLuminizerController`, `_solve_3x3()`)
+
+*(Moved out of `lib/bio.py` into its own `lib/bio_coastal.py` module when the bio pipeline was split
+per biome to add Volcanic/Deep/Geothermal processors — see §0's module map and §1g below. Shared
+pipeline helpers this section references (`_focus_local_order()`, formerly `_focus_coastal_order()`;
+`_snapshot_property_count()`, formerly `_glow_matching_count()`/`_snapshot_glow_count()`) now live in
+`lib/bio.py` and are biome-agnostic; the history below is kept as written for the Coastal-only
+reasoning that led to them.)*
 
 Tints a coastal fragment's glow to a `BioOrder.target_glow` via `docs/components/bio_luminizer.md`'s
 three lamps: `self.lamp_signature("red"/"green"/"blue")` each give a fixed per-unit `[r,g,b]`
@@ -639,14 +650,16 @@ already-tinted unit waiting for delivery instead of genuinely raw stock, the sam
 the other direction. **The Luminizer should never pick up an already-tinted sample at all**, in either
 the "what's already staged" or "what to pull from storage" path — both now enforce this.
 
-### 1f. Raw-Specimen Backlog Throttle → Structural Idle-Gate (`lib/bio.py`, `BioCollectorController`/`BioLabController`/`BioLuminizerController`)
+### 1f. Raw-Specimen Backlog Throttle → Structural Idle-Gate (`lib/bio.py`'s `BioCollectorController`/`BioLabController`, `lib/bio_coastal.py`'s `BioLuminizerController`)
 
 **Note:** the numeric throttle described first below (`RAW_BACKLOG_CAP_PER_FRAGMENT`,
 `FOCUS_ORDER_COUNT`, `_glow_throttled()`) was later replaced by a structural fix — see the "Still ~6
-seconds..." entry partway through this section for what actually ships today
-(`_luminizer_is_idle()` + `MAX_LOCAL_GLOW_ARTIFACTS`). The numeric-throttle history is kept below
-because it's real "why we tried X and it wasn't enough" context, not because any of that code still
-exists.
+seconds..." entry partway through this section for what actually ships today. What was
+`_luminizer_is_idle()` + `MAX_LOCAL_GLOW_ARTIFACTS` (Luminizer/glow-only) is now `_processor_is_idle()`
++ `MAX_LOCAL_BIO_ARTIFACTS` (`lib/bio.py`), generalized to dispatch across whichever of the four biome
+processors is deployed and to count any currently-demanded fragment regardless of biome — see §1g. The
+numeric-throttle history is kept below because it's real "why we tried X and it wasn't enough" context,
+not because any of that code still exists.
 
 Caps how far `BioCollectorController` may collect a glow-requiring (coastal) fragment ahead of what
 the Luminizer has actually tinted, so raw specimens don't pile up and exhaust Warehouse material
@@ -875,6 +888,78 @@ next cycle) instead of attempting a connection that can't work. `drain_port_to_s
 `BioLabController.drain_output()`, and `vehicle_cargo.py`'s `unload_one()` were the three call sites
 that weren't already wrapped in a blanket `try/except` around the `.connect()` call, so those three
 got an explicit `if target is None:` early-return/skip added.
+
+### 1g. Multi-Biome Bio Pipeline (`lib/bio.py` shared + `lib/bio_coastal.py`/`lib/bio_volcanic.py`/`lib/bio_deep.py`/`lib/bio_geothermal.py`)
+
+The Collector→Lab→(transform)→Exchange pipeline is biome-agnostic in `lib/bio.py`; only the transform
+step differs per biome, each in its own module (see §0's module map). `get_my_biome()` always reads
+`machine.outpost.biome` live — never hardcoded — and `local_biome_processor(outpost)` probes for
+whichever of `BIOME_PROCESSOR_TYPE_IDS = ["bio_luminizer", "bio_caster", "bio_conditioner",
+"dna_sequencer"]` is actually deployed there, returning `(None, None)` for Frozen (no transform step at
+all) or an outpost that hasn't had its processor deployed yet.
+
+**Generic idle-gate across four differently-shaped machines.** `_processor_is_idle(processor,
+processor_type)` replaces the old Luminizer-only `_luminizer_is_idle()`. `bio_luminizer`/`dna_sequencer`
+expose `.chamber`; `bio_caster`/`bio_conditioner` instead expose `.fragment()` with no `.chamber` at
+all — the dispatch branches on `processor_type` to read the right one. `BioLabController` uses this
+(instead of a hardcoded Luminizer sibling lookup) to gate pulling its next specimen / draining its own
+output, waiting on a generic `"biome_processor_heartbeat"` Signal Bus broadcast (every processor
+controller fires it unconditionally each cycle, replacing the old Luminizer-only `"luminizer_heartbeat"`)
+instead of busy-polling.
+
+**Generic property matching, not just glow.** `_local_stock_snapshot()`'s second return value is
+`by_properties: {(item_id, properties_key): count}` — `_properties_key()` canonicalizes an item's whole
+properties dict (sorted, list values tupled) so the same index covers Coastal's `glow` triples,
+Geothermal's `genes` lists, or any future marker uniformly. `_snapshot_property_count()` (replacing the
+old Coastal-only `_snapshot_glow_count()`) queries it. `_order_target_properties(order, fragment_id)`
+resolves what "already correctly processed for this order" means: `{"glow": order.target_glow}` for
+Coastal, `{"genes": order.required_genes[fragment_id]}` for Geothermal, `None` for Volcanic/Deep (forging/
+conditioning isn't order-specific — any correctly Forged/Conditioned unit satisfies any order needing
+it, so those two rely on `matches_order()` at delivery time instead). `_order_fragment_remaining()` nets
+against this uniformly for every biome now, not just Coastal.
+
+**Biome-agnostic overflow safety net.** `MAX_LOCAL_BIO_ARTIFACTS = 4` (was `MAX_LOCAL_GLOW_ARTIFACTS`) +
+`_total_demanded_artifacts(snapshot, fragment_ids)` (was `_total_glow_artifacts()`, glow-only) is a
+plain sum of local stock across every currently-demanded fragment id, regardless of which (if any)
+biome marker property applies — a real simplification, not just a rename: no per-property indexing
+needed for the cap itself, and it now actually protects Volcanic/Deep/Geothermal backlogs too, which the
+old glow-only version silently didn't. Still just insurance — the structural idle-gate above is the
+primary flow control, per §1f.
+
+**`_focus_local_order()`** (was `_focus_coastal_order()`) additionally excludes Frozen orders outright
+(`order.biome == "frozen"`): every other biome has its own single-slot processor bottleneck worth
+coordinating the whole pipeline's harvest/tint/forge/splice focus around; Frozen has none (the Exchange's
+own blanket sweep already delivers a plain fragment the moment it's extracted), so narrowing focus for
+it would only cost the Collector options for no benefit.
+
+**Bio Caster (Volcanic, `lib/bio_volcanic.py` `BioCasterController`).** Bang-bang heat/cool control
+toward `required_range()`: full `set_heat(100)`/`set_cool(100)` outside a `CASTER_APPROACH_BAND_C = 50`
+°C band around the target range's edge, a reduced `CASTER_APPROACH_PCT = 25` % near it, both knobs to 0
+once `temperature()` is inside the band. Casts once temperature is in range AND `materials()` matches
+`required_materials()` exactly. **Unverified live:** the docs never document a distinct "load material
+into crucible" call separate from `load(fragment_id)` — this assumes staging a material into `self.input`
+via `take()` is enough for `cast()` to auto-consume it up to `required_materials()`, the same way a
+Fabricator/Smelter recipe auto-consumes its stockpile. Flip on `debug()` console output
+(`required_materials()` vs `materials()` vs what's staged) the first time a real recipe is attempted to
+confirm or correct this.
+
+**DNA Sequencer (Geothermal, `lib/bio_geothermal.py` `DnaSequencerController`).** Fully spec'd by the
+API, no live-verification gap: `order.required_genes[fragment_id]` is the splice target, validated
+against `gene_catalog()` before ever calling `splice()` (an unknown gene id there would risk a
+`"destroyed"` result). `chamber.spliced == True` is never spliced again ("one splice per fragment," per
+`docs/components/dna_sequencer.md`) — just discarded through to delivery.
+
+**Bio Conditioner (Deep, `lib/bio_deep.py` `BioConditionerController`) — diagnostic-only, not yet
+automated.** The docs never expose the actual pass/fail rule for any of the 10 QC properties (only vague
+combo hints like "brightness reads glow"), and a wrong `accept()`/`reject()` call `"burned"`s (destroys)
+the specimen with no risk-free way to learn the rule from the API alone. This controller therefore never
+calls `accept()`/`reject()` automatically — it logs `report()`/`current()`/`lights()` every cycle via
+`TreeConsole.debug()` and only acts on an explicit `"accept"`/`"reject"` Script Command sent from the
+operator (`docs/guide/editor_and_tools.md`'s "Script Commands" section, `self.next_command()`), recording
+every `(fragment_id, stage, property, value, decision, outcome)` into a bounded
+`archive["bio.conditioner_observations"]` history (`CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200`) so real
+observations accumulate across sessions toward working out the rulebook. No automatic Deep order
+fulfillment until that rulebook is known — see `TODO.md`.
 
 ---
 
@@ -2159,6 +2244,9 @@ exist yet at controller-construction time.
 | `bio_lab` | 5,000 cr | -5 W | 30 in / 30 stock | Specimen analysis and sample extraction. |
 | `bio_exchange` | 2,000 cr | -5 W | Orders queue | Earth biology order fulfillment & credit rewards. |
 | `bio_luminizer` | 60,000 cr | -12 W | 10 in / 10 out | Coastal glow-tinting (3-lamp mix solve, §1e). |
+| `bio_caster` | 150,000 cr | -15 W | 30 out, 20t steam/water buffers | Volcanic forge-casting (heat/cool band control, §1g). |
+| `bio_conditioner` | 225,000 cr | -25 W | 10 in / 10 out | Deep QC quiz (diagnostic-only, §1g — rulebook not yet known). |
+| `dna_sequencer` | 100,000 cr | -20 W | 10 in / 10 out | Geothermal gene-splicing (§1g). |
 | `supply_dock` | 3,000 cr | -15 W | 50 units | Earth / Contractor campaign bulk order shipping. |
 | `vehicle_charging_station`| 2,000 cr | -50 W max | Pad + Rescue drone| Vehicle fast-charging & automatic rescue dispatch. |
 

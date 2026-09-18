@@ -1,0 +1,82 @@
+# Inspiration file access tracker
+#
+# Format: <relative path> | <ISO date assessed> | <note>
+# Only files actually read and assessed are listed here. Files not listed are
+# unassessed and should be picked up in a future batch (see evaluate-inspirations
+# workflow). graviadaemon's core lib/*.py and panel_*.py files were reviewed prior
+# to this tracker's existence (see TODO_inspirations.md "Source Notes" section,
+# commit 3f6118a) and are not re-listed individually here yet.
+#
+# POLICY (operator decision, 2026-09-16): skip all contract puzzle scripts across every
+# inspiration repo (e.g. vakermit/scripts/contract/*, cyber-f0x/contracts/*). They are
+# one-off solvers for contract types we already handle with our own working code; not
+# worth review time. Do not queue these in future batches.
+
+vakermit/scripts/contract/*.py (remaining: beat_the_system, crosstalk, drifting_signal, lattice, the_loom, three_echoes) | 2026-09-16 | Skipped per contract-script policy above; not reviewed.
+inspirations/cyber-f0x/contracts/relay-hack.py | 2026-09-16 | Skipped per contract-script policy above; not reviewed.
+inspirations/cyber-f0x/atmosphere/heater_1.py | 2026-09-16 | Brute-force 0-999W efficiency probe; simpler than our weather-tracked lib/terraforming.py HeatController. Not actionable.
+inspirations/cyber-f0x/atmosphere/o2gen_1.py | 2026-09-16 | Flat CO2/10 intake heuristic; simpler than our dynamic sweet-spot OxygenController. Not actionable.
+inspirations/cyber-f0x/atmosphere/psigen_1.py | 2026-09-16 | Basic window-sync loop; simpler than our resonance-sweep PressureController. Not actionable.
+inspirations/cyber-f0x/station_components/solar_1.py | 2026-09-16 | Flat elevation-based tilt, no master/follower or grid management; far simpler than lib/solar.py SolarController. Not actionable.
+inspirations/cyber-f0x/harvesting/harvester_1.py | 2026-09-16 | Incomplete/buggy grid-move helper (unused Direction enum math, move() never actually called from main loop); superseded by lib/harvesting.py's BFS routing + heat protection. Not actionable.
+inspirations/cyber-f0x/harvesting/scanner_1.py | 2026-09-16 | Simple full-grid sector sweep; same pattern already implemented in our own scanner_1.py. Not actionable.
+inspirations/cyber-f0x/bio_lab/bio_collector_1.py | 2026-09-16 | Author-flagged buggy collection loop ("There is a bug here # Todo fix"); superseded by our Signal-Bus-driven lib/bio.py BioCollectorController. Not actionable.
+inspirations/cyber-f0x/bio_lab/bio_exchange_1.py | 2026-09-16 | Simple polling delivery loop, no Signal Bus; superseded by our BioExchangeController + sample_ready channel. Not actionable.
+inspirations/cyber-f0x/bio_lab/bio_lab_1.py | 2026-09-16 | Simple reagent-buy-and-extract loop; superseded by our BioLabController. Not actionable.
+inspirations/vakermit/scripts/power/boot.py | 2026-09-16 | One-line boot() entrypoint; matches our thin-entrypoint pattern, nothing new.
+inspirations/vakermit/scripts/power/charging_station_1.py | 2026-09-16 | Charging queue + one-drone rescue; already exceeded by lib/charging.py ChargingStationController (multi-station nearest-dispatch, return-floor redirect-before-rescue). Not actionable.
+inspirations/vakermit/scripts/power/solar_1.py | 2026-09-16 | Flat elevation-based tilt loop, no master/follower; far simpler than lib/solar.py SolarController. Not actionable.
+inspirations/vakermit/scripts/rover/rover_1.py | 2026-09-16 | Well-written single-file explore/mine/charge state machine w/ EMA Wh/m learning; every idea already matched or exceeded by our split lib/vehicle*.py + lib/charging.py architecture. Not actionable, logged for comparison in TODO_inspirations.md.
+inspirations/vakermit/scripts/atmos/heater_1.py | 2026-09-16 | Probe-and-learn state->power table w/ archive persistence; less capable than our weather-tracked HeatController. Not actionable.
+inspirations/vakermit/scripts/atmos/o2gen_1.py | 2026-09-16 | REAL FINDING: documents a dump-window-overshoot penalty bug our OxygenController.step() shares (no intake trimming); logged as an actionable TODO_inspirations.md item with the wpi/ppu learning approach to adapt.
+inspirations/vakermit/scripts/atmos/pressure_1.py | 2026-09-16 | Plain sync-window loop w/ rate learning + "window narrower than tick rate" warning; less capable overall than our resonance-sweep PressureController, but the warning check is worth considering. Logged briefly.
+inspirations/vakermit/scripts/bio/early/bio_collector_1.py | 2026-09-16 | Close to our current bio pipeline shape (reads Exchange's active order directly); nothing new to adopt.
+inspirations/vakermit/scripts/bio/early/bio_exchange_1.py | 2026-09-16 | Simple delivery loop, no persisted pricing; nothing new to adopt.
+inspirations/vakermit/scripts/bio/early/bio_lab_1.py | 2026-09-16 | Learns recipe costs in-memory only (lost on restart); early tier, nothing new to adopt.
+inspirations/vakermit/scripts/bio/mid/bio_collector_1.py | 2026-09-16 | Job-queue (bio.jobs) claim/requeue pattern across multiple Collectors; logged under new "Biology: Signal-Bus Job-Queue Economics" section.
+inspirations/vakermit/scripts/bio/mid/bio_exchange_1.py | 2026-09-16 | Real margin-based order scoring (bio.prices/bio.plan) + biome-coverage gating; logged as actionable ideas under "Biology: Signal-Bus Job-Queue Economics".
+inspirations/vakermit/scripts/bio/mid/bio_lab_1.py | 2026-09-16 | Persists learned reagent-cost price book to Data Archive + Signal Bus; logged under "Biology: Signal-Bus Job-Queue Economics".
+inspirations/vakermit/scripts/factory/fabricator_1.py | 2026-09-16 | Recursive BOM resolver over factory.needs/ore channels; same shape as our already-completed lib/production.py dependency graph. Not actionable.
+inspirations/vakermit/scripts/factory/smelter_1.py | 2026-09-16 | Demand-vs-floor batch chooser; matches our already-completed Smelter claim/leader-election work. Not actionable.
+inspirations/vakermit/scripts/harvesting/harvester_1.py | 2026-09-16 | Heat-priced greedy routing (weights empty hops 7x item hops) vs our reactive pause-at-ceiling policy; logged as a "worth evaluating" idea under "Harvester: Heat-Priced Routing".
+inspirations/vakermit/scripts/harvesting/scanner_1.py | 2026-09-16 | Full-grid sweep skipping known sectors; matches our own scanner_1.py. Not actionable.
+inspirations/vakermit/scripts/sensor/oxygen_sensor.py | 2026-09-16 | Trivial one-off calibration script; equivalent already completed. Not actionable.
+inspirations/vakermit/scripts/sensor/pressure_sensor.py | 2026-09-16 | Trivial one-off calibration script; equivalent already completed. Not actionable.
+inspirations/vakermit/scripts/sensor/uplink.py | 2026-09-16 | Trivial one-off temperature transmit script; equivalent already completed. Not actionable.
+inspirations/vakermit/tools/README.md | 2026-09-16 | Describes build_docs.py, an offline game-binary doc extractor; informational only, external tool outside this repo's scope. Logged briefly, not run.
+inspirations/vakermit/tools/build_docs.py | 2026-09-16 | Skipped by operator decision: pure reverse-engineering/extraction utility code, not game automation. Not reviewed.
+inspirations/vakermit/tools/jsparse.py | 2026-09-16 | Skipped by operator decision: pure reverse-engineering/extraction utility code, not game automation. Not reviewed.
+inspirations/vakermit/tools/pe.py | 2026-09-16 | Skipped by operator decision: pure reverse-engineering/extraction utility code, not game automation. Not reviewed.
+inspirations/cyber-f0x/README.md | 2026-09-16 | Personal repo blurb only, no code patterns; skipped as not actionable.
+inspirations/cyber-f0x/libraries/coordinate_handling.py | 2026-09-16 | Trivial Coord(row,col) class, far less capable than our existing lib/ coordinate handling; nothing to adopt.
+inspirations/vakermit/README.md | 2026-09-16 | Repo overview describing ct_sync.py/build_docs.py tooling; no game-automation content of its own.
+inspirations/vakermit/scripts/power/power.py | 2026-09-16 | One-line activate_power() entrypoint; matches our existing thin-entrypoint pattern, nothing new.
+inspirations/vakermit/bin/ct_sync.py | 2026-09-16 | Save-directory sync watcher (external dev tool, not in-game script). Idea logged in TODO_inspirations.md under "Developer Workflow Tooling".
+inspirations/classes.txt | 2026-09-16 | Standalone OOP BaseMachine + CommandStatusWrapper decorator sketch; decorator idea logged under Engineering Quality (result-status helpers), BaseMachine class shape not recommended (doesn't fit our thin-entrypoint convention).
+inspirations/vakermit/scripts/contract/buried_five.py | 2026-09-16 | Layered token-collapse contract solver; not a contract type we've seen yet. Logged as future-reference algorithm under "Contract Puzzle Solvers".
+inspirations/vakermit/scripts/contract/cold_boot.py | 2026-09-16 | Intcode-style bytecode VM contract solver; not a contract type we've seen yet. Logged as future-reference algorithm under "Contract Puzzle Solvers".
+inspirations/vakermit/scripts/contract/core_sample.py | 2026-09-16 | Constraint-propagation byte-record repair contract solver; not a contract type we've seen yet. Logged as future-reference algorithm under "Contract Puzzle Solvers".
+
+# STATUS (2026-09-16): full sweep of cyber-f0x and vakermit complete (contract scripts and
+# tools/*.py extractor code skipped by operator decision, noted above and in
+# TODO_inspirations.md). graviadaemon remains covered by its pre-existing review in
+# TODO_inspirations.md's "Source Notes" section (commit 3f6118a), not itemized here.
+# Nothing left unassessed as of this date; recheck inspirations/ for new/modified files
+# on a future run.
+
+inspirations/discord-panels/jasmine/2.png | 2026-09-18 | Colony Control Room mockup, STRATEGY tab: goal selector (BALANCED/DRONES/STEAM/BIOMASS) + STATE/OBJECTIVE/BOTTLENECK/PATH breadcrumb. Confirms existing "Colony Strategy" backlog card almost exactly; not a new idea. Logged under "Jasmine Control Room Panel Mockups".
+inspirations/discord-panels/jasmine/3.png | 2026-09-18 | Same STRATEGY tab, goal dropdown expanded showing the 4 options with a checkmark on the active one. Same finding as 2.png.
+inspirations/discord-panels/jasmine/4.png | 2026-09-18 | PRODUCTION tab: AUTO/high-priority mode toggle, fabricator target progress + blueprint selector, and a type-to-search recipe picker (search box + A-Z key grid). Confirms existing Production Operations Control card; the search/keyboard picker is a new widget idea, logged as an actionable TODO_inspirations.md item.
+inspirations/discord-panels/jasmine/5.png | 2026-09-18 | FLEET tab: Vehicle Operations Control (Pioneer priority, fit/exploration toggles, recall buttons) + Expansion Candidates (ranked site list, candidate detail panel) side by side. New detail: drones counted/shown as a fleet category distinct from ground vehicles, with their own service/recovery block. Logged.
+inspirations/discord-panels/jasmine/6.png | 2026-09-18 | OUTPOSTS tab: per-outpost building/slot capacity row with biome tag and color-coded capacity warning, plus a global BIO POWER toggle. New pattern not previously in backlog; logged as an actionable item.
+inspirations/discord-panels/jasmine/7.png | 2026-09-18 | INFRA/FLUIDS sub-view: per-tank routing rows (status, fill %, flow rate, source/dest edge) with SOURCE/RECEIVE role assignment buttons and pagination. New pattern; logged as an actionable item (read-only telemetry first, role assignment needs intent-publish pattern).
+inspirations/discord-panels/jasmine/8.png | 2026-09-18 | INFRA tab top level, showing FLUIDS/ATMOSPHERE/POWER sub-tabs (only FLUIDS mocked in detail via 7.png). Logged alongside 7.png.
+inspirations/discord-panels/jasmine/9.png | 2026-09-18 | OVERVIEW tab: one summary line per section + PRIORITY/ALERTS rollup + "select a top tab" footer hint. Cross-cutting convention, folded into existing panel visual-language backlog item.
+inspirations/discord-panels/jasmine/10.png | 2026-09-18 | Byte-identical duplicate of 2.png; no separate assessment needed.
+inspirations/discord-panels/jasmine/image.png | 2026-09-18 | Byte-identical duplicate of 9.png; no separate assessment needed.
+inspirations/discord-panels/manual_craft.png | 2026-09-18 | Separate "Control Room" mockup (smelter/crafter cards): throughput slider + CRAFT button, and paginated radio-button recipe list with SELECTED readout. New concrete widget shapes for manual production control; logged as part of the type-to-search/picker actionable item.
+
+# STATUS (2026-09-18): reviewed all new inspirations/discord-panels/jasmine/* screenshots and
+# manual_craft.png added since the 2026-09-16 sweep (user-added UI mockups, not runnable code).
+# Findings folded into TODO_inspirations.md under "Jasmine Control Room Panel Mockups
+# (Reviewed 2026-09-18)". Nothing else new found under inspirations/ as of this date.
