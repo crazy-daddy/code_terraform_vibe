@@ -41,6 +41,7 @@ that way there is exactly one place to keep current.
 | Data Archive persistence layer | `archive.py` |
 | Wildcard pattern matching helpers | `patterns.py` |
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
+| Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 
 Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_1.py`, etc.) should stay thin
 entrypoints that import and run a controller from `lib/` — they should not contain their own
@@ -74,6 +75,56 @@ see `internals/` [gitignored, not authoritative game docs]), raising a `Recursio
 mixins, at most 2-3 levels deep) is nowhere close, so this is purely a "if you ever see
 `RecursionError: maximum import depth exceeded`, look for a real import cycle" note, not a design
 constraint to actively budget against.
+
+### 0a. Structured Console Logging (`lib/tree_console.py` `TreeConsole`)
+
+Console output should work at two levels of detail, both tree-formatted the same way:
+
+- **Overview (info, always visible)** — major blocks and outcomes, roughly what scripts print
+  today, kept beautified and skimmable at a glance without opting into anything.
+- **Reasoning trail (debug, opt-in)** — the *why* underneath: which branch a decision took, what
+  candidates were considered/rejected, what a computed threshold or estimate came out to. Hidden
+  from the normal ALL view (`docs/components/console.md`'s `console.debug()`) so it doesn't spam
+  players who haven't opted in, but reading it with debug output enabled should tell the whole
+  story of a run without reaching for the in-game breakpoint/watch debugger (`§8`).
+
+`lib/tree_console.py`'s `TreeConsole` wraps `get_component("console")` with tree-drawn
+indentation (inspired by `inspirations/discord-panels/`) so both levels read like a call stack
+instead of a flat scroll:
+
+```python
+from tree_console import TreeConsole
+
+rc = TreeConsole()  # default_level="info"; grabs get_component("console") itself
+
+rc.start("Creating tasks")                              # info: visible overview
+for task_type in candidates:
+    rc.debug(f"Considering {task_type.__name__}: score={score:.2f}")  # debug: reasoning trail
+    rc.print(f"Creating task {task_type.__name__}")      # info: outcome
+rc.end("Task creation success")
+
+rc.color("#FF0000").end("Task creation failed")          # one-off color override, next line only
+rc.level("warn").print("Battery below safety floor, aborting trip")  # one-off level override
+```
+
+- `start(msg)` / `end(msg)` open/close a block, printing a `┏━`/`┗━` line and indenting
+  (`┃   ` per level) everything logged in between — mirrors how the decision logic itself nests
+  (task creation → per-candidate evaluation → simulation → resolution). These default to **info**,
+  since a block's start/end is normally the kind of thing that belongs in the overview.
+- `print(msg)` logs one line at the current indent depth, at `default_level` (info) unless
+  overridden with `.level(...)`.
+- `debug(msg)` is shorthand for `.level("debug").print(msg)` — use it for the in-depth,
+  opt-in reasoning trail (per-candidate scores, rejected options, computed intermediate values)
+  nested under the info-level blocks that describe what actually happened.
+- `color(c)` / `level(lvl)` set a one-shot override (CSS color / `info`\|`warn`\|`error`\|`debug`\|
+  custom) consumed by the *next* `print`/`start`/`end`/`debug` call only, then reset to the
+  instance default — use this to flag an unusual outcome (a failed block, an emergency fallback)
+  without changing the logger's default verbosity for everything else.
+- Every line still goes through `console.print(..., timestamp=True)`, so it keeps the game
+  time-of-day prefix and plays correctly with the Console's channel/level filters.
+- Reserve plain `warn`/`error` (via `.level("warn"|"error")`) for actual status changes and
+  problems a player should notice even without debug output; `debug()` is purely for detail, never
+  for something that needs attention.
 
 ---
 
