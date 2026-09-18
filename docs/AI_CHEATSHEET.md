@@ -39,6 +39,7 @@ that way there is exactly one place to keep current.
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
 | Data Archive persistence layer | `archive.py` |
+| Game version safety gate (halt on build change until operator confirms) | `version_guard.py` — see §4's `system.good_version`/`system.version_confirmed` entries and §7 |
 | Wildcard pattern matching helpers | `patterns.py` |
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
@@ -1281,13 +1282,16 @@ several `step()` cycles instead of one Fabricator monopolizing a contested item 
 a peer's own poll gets a chance to interleave and take its own chunk in between. `lib/smelter.py`'s
 ore top-up (Step 3 of `step()`) had the identical problem (up to a full 50-unit top-up in one call)
 and got the same fix, `SMELTER_LOAD_CHUNK_SIZE = 10`. Supply Dock's own material loading
-(`lib/supply_dock.py`) deliberately keeps loading its full remaining need in one call — it has no
-sibling competing for the same active order's materials, so there's nothing to share fairly with,
-and chunking it would only add pointless delay. Verified via stub tests: a single `load_inputs()`/ore
+(`lib/supply_dock.py`) used to deliberately skip this — at the time only one dock could ever exist
+per order, so there was no sibling to share fairly with. That's no longer true (§2a-0-5): several
+docks can now share one order, and `SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10` was added for the same reason.
+Verified via stub tests: a single `load_inputs()`/ore
 top-up call never exceeds its chunk size even with far more needed and available; two Fabricators
 alternating turns against a shared, contested 44-unit Glass pool end up with a fair nonzero split on
 both sides instead of 44/0; repeated Smelter `step()` calls keep topping up in the same chunk size
-across cycles.
+across cycles. **Supply Dock's own material loading now needs this too** (see §2a-0-5) — it did NOT
+when this section was first written, back when only one dock could ever exist per order; that's no
+longer true.
 
 **Chunking alone wasn't enough — it shrank the race, it didn't fix it** (found from continued live
 reports after the chunking fix above shipped: "smelter_1 grabs 50 silicon in 5 stacks of 10 each,
@@ -1321,8 +1325,10 @@ deterministic one, but stateless and correctly local-to-whatever-outpost-actuall
 fixes a second, independent bug — see below. `lib/smelter.py`'s ore top-up and `lib/fabricator.py`'s
 `load_inputs()` both cap their take amount with this now, alongside `SMELTER_LOAD_CHUNK_SIZE`/
 `FABRICATOR_LOAD_CHUNK_SIZE` (kept as a simple per-call ceiling on top, not the primary fairness
-mechanism any more). Supply Dock's material loading still has no reason to use any of this — same "no
-sibling competing" reasoning as its chunking exemption above.
+mechanism any more). Supply Dock's material loading doesn't use `craft_prefill_units()` — it isn't
+crafting anything, so there's no recipe/duration to derive a prefill window from — and stays on
+`SUPPLY_DOCK_LOAD_CHUNK_SIZE` alone; acceptable since a dock's per-item shortfall is typically much
+smaller and shorter-lived than a Fabricator's up-front stockpile batch.
 
 **Ore intake ignored demand SIZE entirely — a much bigger overproduction bug than the fairness race**
 (found live: ~80 excess Glass sitting in storage with no active demand for it). `lib/smelter.py`'s
@@ -1367,7 +1373,10 @@ ever routed toward its order. Fixed with `discover_supply_dock_ids()` (same shap
 discovery functions) and `_all_dock_orders()` (`[(dock, order), ...]` for every dock currently holding
 one), which every demand-cascade function now loops instead of reading one hardcoded dock. No claim
 coordination was needed here (unlike Fabricator recipes) — order fulfillment is inherently per-dock,
-so there's no "two docks converge on the same order" race to guard against. `find_dock_order_requiring(item_id)`
+so there's no "two docks converge on the same order" race to guard against
+(docs/components/supply_dock.md: "Several docks may serve the same order and share shipped
+progress" — sharing is explicitly fine, not a bug to prevent). §2a-0-5 below covers the separate
+question of which order each dock should even be assigned to. `find_dock_order_requiring(item_id)`
 consolidates "which dock's order wants this item" into one function, shared by
 `get_raw_material_reason()` and `lib/fabricator.py`'s `target_reason()` (previously its own separate
 `_component("supply_dock_1")` read). Verified via a stub test: two docks with two different
@@ -1393,6 +1402,60 @@ same convention as `_default_fabricator()`) and summing each Fabricator's own
 Fabricators share the same claimed recipe, `get_fabricator_active_recipe()` already divides
 `crafts_remaining` by the worker count (§2a-0-2), so each contributes only its fair share and the sum
 reconstructs the correct total.
+
+### 2a-0-5. Multi-Dock order planning & weekly-deadline feasibility (`lib/supply_dock.py`)
+
+A single dock could keep up with order throughput when there was only ever one; with larger orders
+and multiple docks, per-instance decision-making (each dock independently running its own
+`pick_best_order()` every cycle) has two problems: every dock redundantly re-scans the full Earth
+Order board (`list_orders()`/`list_weekly_orders()`, `can_fulfill_order()` per candidate) — the same
+N-times-redundant-per-cycle cost bio.py's Collector/Luminizer hit before their single-snapshot fix —
+and nothing coordinates *which* order each dock should work, so idle docks could all pile onto the
+same top-priority order even when a second, third, etc. order also genuinely needs shipping.
+
+Fixed with a central planner, `plan_dock_assignments(clock=None)`, run **once** per cycle from
+`panel_1.py`'s AUTOMATION section (throttled to `STORAGE_TICK_INTERVAL`, alongside the rebalance
+sweep) — not inside any one dock's own script, since `set_order()`/`clear_order()`/`set_enabled()`
+are all `*(self only)*` hardware calls (docs/components/supply_dock.md) that only the dock's own
+running script can issue. The planner only decides; it writes `{dock_id: order_id or None}` to the
+`"supply_dock.order_plan"` archive key (`ORDER_PLAN_ARCHIVE_KEY`), and each dock's own
+`SupplyDockController.step()` reads its own entry via `desired_order_id()` and performs the actual
+self-only `set_order()` call itself — same Archive-as-decoupling-channel pattern CLAUDE.md calls for
+when a decision can't be made by the component that has to act on it.
+
+- **Stability**: a dock already holding a still-`can_fulfill_order()`-true order keeps it in the plan
+  regardless of ranking — an order mid-shipment shouldn't get cleared over a marginal priority
+  difference elsewhere; clearing costs a drain-then-reassign cycle for zero benefit since docks can
+  already share one order (§2a-0-3).
+- **Spread-then-join for idle docks**: candidates are re-sorted before each idle-dock assignment by
+  `(docks_already_on_this_order ascending, priority descending)` — an idle dock joins whichever
+  qualifying candidate currently has the FEWEST docks on it, so several idle docks naturally spread
+  across several needed orders, but still all join the same one if it's the only good candidate (same
+  spread-then-join shape as `production._fabricator_worker_count()`'s Fabricator recipe split,
+  §2a-0-2).
+- **Weekly-deadline feasibility (the actual CLAUDE.md-flagged ask)**: `_weekly_infeasible(order,
+  current_day, dispatch_capacity_per_hour)` skips a Weekly Earth Order from the candidate list
+  entirely when `remaining_units > dispatch_capacity_per_hour * hours_remaining` (`hours_remaining =
+  (order.expires_day - current_day) * 24`) — i.e. even shipping flat-out with every currently known
+  dock's combined `dispatch_rate()` (already includes throughput research, per
+  docs/components/supply_dock.md), the remaining amount can't leave before `expires_day`. Deliberately
+  a dispatch-capacity ceiling only, not a production-rate forecast — knowing whether upstream
+  mining/smelting/fabrication can actually *produce* enough in time needs recipe throughput, active
+  worker counts (§2a-0-2, §2a-0-4), and upstream deficits all folded together, explicitly punted as a
+  "much later" TODO rather than attempted here. Returns `False` (don't block) whenever a needed input
+  is missing (`current_day`, `expires_day`, or capacity all unavailable) — never blocks an order on
+  missing data, only on a genuinely-computed shortfall. Applied to weekly orders only (campaign orders
+  have no `expires_day`, per docs/types/orders_and_comms.md).
+- **Fallback**: `SupplyDockController.desired_order_id()` uses the archive plan when this dock's id
+  is present in it, else falls back to this dock's own (now weekly-feasibility-aware too)
+  `pick_best_order()` — a lone dock, or any dock on a cycle panel_1 hasn't run yet, still assigns
+  itself an order rather than sitting idle waiting on a planner that may not be online. Unlike the
+  Solar/Smelter leader-election removal (§1a-1), this is a soft fallback, not a hard dependency —
+  the planner only adds cross-dock coordination and the weekly-deadline check on top of behavior a
+  single dock can still reproduce alone.
+- **Shared scoring**: `_score_campaign_order()`/`_score_weekly_order()`/`_order_readiness()` are
+  module-level functions used by both the central planner and the per-instance fallback, so ranking
+  is identical whichever path computed it — no drift between the two.
 
 ### 2a-1. Fabricator demand tracking (`lib/production.py` `get_fabricator_targets()`)
 
@@ -2048,6 +2111,9 @@ exist yet at controller-construction time.
   - Payload: `{"order_id": str, "specimen_id": str, "biome": str, "target_fragment": str, "count": int}`
 - **Channel `sample_ready`**: Lab notifies Exchange immediately upon sample extraction.
   - Payload: `{"order_id": str, "sample_id": str, "sample_type": str, "lab_id": str}`
+- **Channel `system.version_confirmed`**: `panel_1.py`'s "Confirm New Version" button broadcasts the
+  newly-confirmed build hash so every script parked in `validate_game_version()` wakes immediately
+  instead of polling — see `lib/version_guard.py` and the Data Archive entry below.
 
 ### Data Archive (`get_component("notebook")` / `lib/archive.py`)
 - `power.shedding_tiers`: Custom shedding tiers list-of-lists `[[tier1_machines...], [tier2_machines...], ...]` (or `power.shedding_tiers:<grid_anchor>`). Defaults to `DEFAULT_SHEDDING_TIERS` in `lib/power.py` — see §1a.
@@ -2069,6 +2135,13 @@ exist yet at controller-construction time.
 - `outposts.known_ids`: List of outpost ids `panel_1.py`'s AUTOMATION section has already seen —
   diffed each throttled tick against `outpost_network.outposts()` to detect a newly-founded outpost
   and auto-trigger `outpost_mining.reevaluate_unassigned_near_outpost()` for it. See §7.
+- `system.good_version`: Last operator-confirmed `get_game_version()` build hash (`lib/version_guard.py`).
+  Seeded from the current build on first read (a fresh save never immediately halts). Every controller's
+  `run()` calls `validate_game_version()` once at startup, before entering its loop (not every tick — a
+  build change only takes effect on the next script restart, same as the game itself); if the running
+  build no longer matches this key, that script blocks until the operator clicks "Confirm New Version"
+  on `panel_1.py` (which updates this key and broadcasts `system.version_confirmed`, see §7). Build
+  hashes only support equality checks, never "newer/older" comparisons.
 
 ---
 
@@ -2198,6 +2271,20 @@ Smelter rebalance sweep, plus:
   which never actually ran in the live game since `playground/` isn't synced — also available as the
   thin root entrypoint `mark_unsupported_targets.py` for a manual standalone run). Also
   human-triggered only.
+- **Version safety gate widget** (`lib/version_guard.py`, §4): a `VERSION` pill anchored
+  `width - 190` from the right edge (always drawn, success/error colored) plus, only while
+  `version_mismatch()` is true, a `was <old> -- new scripts halt on startup` note and a
+  `panel.button("confirm_new_version", ...)` — the button only exists in the tree on a mismatch tick,
+  matching the general `if panel.button(...):`-wrapped conditional-visibility idiom used for every
+  other button on this card (there's no widget-level `visible` param). This panel's own `while True:`
+  loop deliberately never calls `validate_game_version()` itself — it's the one script that must keep
+  running through a mismatch so the operator can reach the button. Every mutating action this card
+  performs (grid supervision, rebalance/consolidation sweeps, outpost/dock sync, and both manual
+  buttons) is gated behind `if not mismatch:` instead, so the panel keeps rendering and stays
+  clickable during a mismatch but makes no changes of its own until confirmed — the same rule
+  `validate_game_version()` enforces for every other controller, just applied per-action here since
+  this script can't block itself. The ALWAYS-ON status dot/summary line reflects this too (`"paused"`
+  / `"halted -- confirm new version above"` while mismatched).
 
 **Two real overlap bugs found and fixed across all three cards** (screenshot-driven — text was
 visibly stacked on top of other text in-game):

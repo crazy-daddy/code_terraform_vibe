@@ -11,6 +11,7 @@
 from archive import archive
 from production import get_material_demands, get_raw_material_reason, get_smelter_worker_count, craft_prefill_units
 from storage import take_item, total_stock
+from version_guard import validate_game_version
 
 # A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
 # this fresh -- if the owning smelter stalls/crashes without releasing it
@@ -432,6 +433,7 @@ class SmelterController:
 
     def run(self, poll_interval=2.0):
         print(f"Smelter Controller ({self.name}) online.")
+        validate_game_version()
         while True:
             try:
                 self.step()

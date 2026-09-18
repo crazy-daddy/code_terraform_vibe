@@ -1,4 +1,5 @@
 import fluid_routing
+from version_guard import validate_game_version
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing
@@ -199,6 +200,7 @@ class ThermalCapController:
 
     def run(self, poll_interval=1.0):
         print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")
+        validate_game_version()
         while True:
             try:
                 self.step()

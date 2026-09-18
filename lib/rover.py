@@ -6,6 +6,7 @@
 from production import get_raw_material_demands
 from vehicle import VehicleController
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
+from version_guard import validate_game_version
 import mining_reservations
 
 class RoverController(VehicleController):
@@ -235,6 +236,7 @@ class RoverController(VehicleController):
     def run(self):
         """Continuous autonomous rover mission loop."""
         print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
+        validate_game_version()
         while True:
             try:
                 if self.handle_recall_if_active():

@@ -4,6 +4,7 @@
 # lib/mining.py's MiningMixin.
 
 from archive import archive
+from version_guard import validate_game_version
 import outpost_mining
 
 SURVEY_SPIRAL_KEY = "survey.spiral"
@@ -274,6 +275,7 @@ class VehicleSurveyMixin:
             return
 
         print(f"Survey Controller ({self.name}) online. Starting battery-safe survey.")
+        validate_game_version()
         while True:
             try:
                 if self.handle_recall_if_active():

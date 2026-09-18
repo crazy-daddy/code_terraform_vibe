@@ -9,6 +9,7 @@ from vehicle import VehicleController
 from mining import ROVER_PREFERRED_MAX_HARDNESS
 from storage import take_item
 from tree_console import TreeConsole
+from version_guard import validate_game_version
 import mining_reservations
 
 class PioneerController(VehicleController):
@@ -308,6 +309,7 @@ class PioneerController(VehicleController):
         bp_component = get_component("construction_blueprint")
         failed_jobs = set()
 
+        validate_game_version()
         while True:
             try:
                 if self.handle_recall_if_active():

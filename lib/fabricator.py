@@ -2,6 +2,7 @@
 from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS
 from archive import archive
 from storage import take_item, total_stock, best_unload_target
+from version_guard import validate_game_version
 
 # Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
 # exactly, same reasoning: with several Fabricators, choose_recipe() picking
@@ -517,6 +518,7 @@ class FabricatorController:
 
     def run(self, poll_interval=2.0):
         print(f"Fabricator Controller ({self.name}) online. Building stock targets enabled.")
+        validate_game_version()
         while True:
             try:
                 self.step()

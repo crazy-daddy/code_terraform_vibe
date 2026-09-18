@@ -2,6 +2,7 @@
 # Manages docked vehicle fast-charging, queue optimization, and automated rescue
 # drone dispatch for stranded or critically low-battery vehicles in the field.
 from vehicle_energy import rescue_wh_per_meter_for
+from version_guard import validate_game_version
 
 class ChargingStationController:
     """
@@ -301,6 +302,7 @@ class ChargingStationController:
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()
         bay_rate = getattr(self.station, "get_bay_rate", lambda: 30)()
         print(f"Charging Station ({self.name}) online via Shared Library ({bay_count} bay(s), {bay_count * bay_rate} W max pool).")
+        validate_game_version()
         while True:
             try:
                 self.step()

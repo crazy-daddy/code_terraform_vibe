@@ -13,6 +13,7 @@
 # capable vehicle still picks up whatever's available rather than idling.
 
 from production import get_raw_material_demands, get_raw_material_reason
+from version_guard import validate_game_version
 from storage import total_stock
 from archive import archive
 import outpost_mining
@@ -416,6 +417,7 @@ class MiningMixin:
         belongs there -- see CLAUDE.md's thin-entrypoint rule).
         """
         print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}. Stationed at '{outpost_id}'.")
+        validate_game_version()
         while True:
             try:
                 if self.handle_recall_if_active():

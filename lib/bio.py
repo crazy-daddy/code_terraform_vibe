@@ -6,6 +6,7 @@
 # docs/AI_CHEATSHEET.md and TODO.md Phase 4.
 from archive import archive
 from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target
+from version_guard import validate_game_version
 
 def get_my_biome(machine):
     if hasattr(machine, "outpost") and machine.outpost:
@@ -620,6 +621,7 @@ class BioExchangeController:
 
     def run(self):
         print(f"Bio Exchange ({self.name}) online via Shared Library & Signal Bus.")
+        validate_game_version()
         while True:
             self.sweep_and_deliver()
 
@@ -873,6 +875,7 @@ class BioLabController:
 
     def run(self):
         print(f"Bio Lab ({self.name}) online via Shared Library & Signal Bus.")
+        validate_game_version()
         while True:
             self.step()
             sleep(0.5)
@@ -989,6 +992,7 @@ class BioCollectorController:
 
     def run(self):
         print(f"Bio Collector ({self.name}) online via Shared Library & Signal Bus.")
+        validate_game_version()
         while True:
             self.step()
 
@@ -1312,6 +1316,7 @@ class BioLuminizerController:
 
     def run(self):
         print(f"Bio Luminizer ({self.name}) online via Shared Library.")
+        validate_game_version()
         while True:
             self.step()
             sleep(0.5)

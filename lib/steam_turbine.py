@@ -1,4 +1,5 @@
 import fluid_routing
+from version_guard import validate_game_version
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid
@@ -249,6 +250,7 @@ class SteamTurbineController:
 
     def run(self, poll_interval=2.0):
         print(f"Steam Turbine Controller ({self.name}) online.")
+        validate_game_version()
         while True:
             try:
                 self.step()

@@ -1,8 +1,195 @@
 # Shared Library for Supply Dock Logistics
 # Automatically matches and assigns Earth Contractor Campaign Orders & Weekly Orders,
 # feeds required materials from Base Inventory, and enables continuous dispatch.
-from production import can_fulfill_order, get_construction_material_reservations
+#
+# Multi-Dock coordination (see docs/AI_CHEATSHEET.md §2a-0-5): with more than one
+# Supply Dock, a single dock's independent per-instance decision-making leaves
+# docks either all piling onto the same order (fine when it's genuinely the only
+# one worth doing, wasteful otherwise) or scanning the full Earth Order board
+# redundantly every cycle (the same N-times-redundant-per-cycle pattern bio.py's
+# Collector/Luminizer hit). `plan_dock_assignments()` is the central "decider" --
+# called once per cycle from panel_1.py's AUTOMATION section (this script's own
+# `set_order()`/`clear_order()`/`set_enabled()` are all `*(self only)*` hardware
+# calls per docs/components/supply_dock.md, so the plan itself has to be computed
+# somewhere else and handed to each dock via Archive; each dock's own
+# `SupplyDockController` then reads its assignment and performs the self-only
+# calls on itself). `desired_order_id()` falls back to this dock's own
+# `pick_best_order()` if no plan is available yet (panel_1 not running this
+# cycle, or not running at all) so a dock never sits idle waiting on a planner
+# that may not be online.
+from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids
 from storage import take_item, total_stock
+from archive import archive
+from version_guard import validate_game_version
+
+# {dock_id: order_id or None}, recomputed and overwritten wholesale every
+# planning cycle -- see plan_dock_assignments().
+ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
+
+# Several docks may now share the same active order (docs/components/supply_dock.md:
+# "Several docks may serve the same order and share shipped progress"), so a
+# dock's own material loading can no longer assume it has no sibling contesting
+# the same Inventory/Warehouse stock -- the same fairness problem
+# Fabricator/Smelter loading hit (docs/AI_CHEATSHEET.md §2a-0-2). Capped the
+# same way: a chunked per-call take instead of grabbing the full remaining need
+# in one shot, so a heavy shortfall spreads across several `step()` cycles and
+# a sibling dock's own poll gets a chance to interleave.
+SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
+
+
+def _order_readiness(order, reserved):
+    """(items_ready, total_needed) for order -- how much of its still-owed
+    requirement is already coverable from current Inventory/Warehouse stock,
+    net of active Construction Blueprint reservations. Shared by the
+    per-instance and central scoring paths so both rank orders identically."""
+    items_ready = 0
+    total_needed = 0
+    requires = getattr(order, "requires", {}) or {}
+    shipped = getattr(order, "shipped", {}) or {}
+    for item_id, req_count in requires.items():
+        still_needed = max(0, req_count - shipped.get(item_id, 0))
+        total_needed += still_needed
+        in_stock = max(0, total_stock(item_id) - reserved.get(item_id, 0))
+        items_ready += min(in_stock, still_needed)
+    return items_ready, total_needed
+
+
+def _order_remaining_units(order):
+    """Total units still owed across every item of order, ignoring stock
+    availability entirely -- used for the weekly deadline feasibility check,
+    which cares about total shippable volume, not readiness."""
+    requires = getattr(order, "requires", {}) or {}
+    shipped = getattr(order, "shipped", {}) or {}
+    return sum(max(0, req_count - shipped.get(item_id, 0)) for item_id, req_count in requires.items())
+
+
+def _weekly_infeasible(order, current_day, dispatch_capacity_per_hour):
+    """
+    True if order (a Weekly Earth Order) cannot possibly finish shipping its
+    remaining amount before `order.expires_day`, given `dispatch_capacity_per_hour`
+    units/h of AVAILABLE dock throughput. Deliberately coarse -- this is a
+    dispatch-capacity ceiling only ("can the docks physically ship this much in
+    time"), not a production-rate forecast ("will we mine/smelt/build enough in
+    time"); the latter needs recipe throughput, active worker counts, and
+    upstream deficits all folded together and was explicitly punted as a
+    "much later" TODO. Returns False (don't block) whenever a required input
+    (current day, expiry, capacity) is unavailable -- never blocks an order on
+    missing data.
+    """
+    expires_day = getattr(order, "expires_day", None)
+    if expires_day is None or current_day is None or dispatch_capacity_per_hour <= 0:
+        return False
+    hours_remaining = (expires_day - current_day) * 24.0
+    if hours_remaining <= 0:
+        return True
+    remaining = _order_remaining_units(order)
+    if remaining <= 0:
+        return False
+    max_shippable = dispatch_capacity_per_hour * hours_remaining
+    return remaining > max_shippable
+
+
+def _score_campaign_order(order, reserved):
+    prio = 10
+    if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
+        prio += 50  # Strongly prioritize technology and recipe unlocks!
+    items_ready, total_needed = _order_readiness(order, reserved)
+    if total_needed > 0:
+        prio += int((items_ready / total_needed) * 30)
+    return prio
+
+
+def _score_weekly_order(order, reserved):
+    prio = 5
+    items_ready, total_needed = _order_readiness(order, reserved)
+    if total_needed > 0:
+        prio += int((items_ready / total_needed) * 20)
+    return prio
+
+
+def plan_dock_assignments(clock=None):
+    """
+    Central per-cycle decision, run once from panel_1.py's AUTOMATION section:
+    which Earth Order (if any) each discovered Supply Dock should be working.
+    Docks already holding a still-fulfillable order keep it (stability -- an
+    order mid-shipment shouldn't get cleared over a marginal priority
+    difference elsewhere, and clearing loses no progress but does cost a
+    drain-then-reassign cycle for nothing). Idle/unfulfillable-order docks are
+    handed the best-ranked candidate order that currently has the FEWEST docks
+    already assigned to it -- spreads docks across several needed orders
+    instead of piling every idle dock onto a single top-priority one, while
+    still letting every dock share one order when it's the only good
+    candidate (mirrors production._fabricator_worker_count()'s
+    spread-then-join pattern). Writes the plan to archive and returns it.
+    """
+    orders_api = get_component("orders")
+    if not orders_api:
+        return {}
+
+    docks = {}
+    for dock_id in discover_supply_dock_ids():
+        dock = get_component(dock_id)
+        if dock and hasattr(dock, "current_order"):
+            docks[dock_id] = dock
+    if not docks:
+        return {}
+
+    reserved = get_construction_material_reservations()
+    current_day = clock.get_day() if clock and hasattr(clock, "get_day") else None
+
+    total_dispatch_capacity = 0.0
+    for dock in docks.values():
+        try:
+            total_dispatch_capacity += dock.dispatch_rate()
+        except Exception:
+            pass
+
+    candidates = []
+    try:
+        for o in orders_api.list_orders():
+            if getattr(o, "status", "") == "active" and can_fulfill_order(o):
+                candidates.append({"order": o, "priority": _score_campaign_order(o, reserved)})
+    except Exception:
+        pass
+    try:
+        for o in orders_api.list_weekly_orders():
+            if getattr(o, "status", "") != "active" or not can_fulfill_order(o):
+                continue
+            if _weekly_infeasible(o, current_day, total_dispatch_capacity):
+                print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
+                      f"remaining amount can't ship before it expires on day {o.expires_day}.")
+                continue
+            candidates.append({"order": o, "priority": _score_weekly_order(o, reserved)})
+    except Exception:
+        pass
+
+    plan = {}
+    idle_dock_ids = []
+    assigned_counts = {}
+    for dock_id, dock in docks.items():
+        try:
+            curr = dock.current_order()
+        except Exception:
+            curr = None
+        if curr and can_fulfill_order(curr):
+            plan[dock_id] = curr.id
+            assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
+        else:
+            idle_dock_ids.append(dock_id)
+
+    if candidates:
+        for dock_id in idle_dock_ids:
+            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"]))
+            best = candidates[0]["order"]
+            plan[dock_id] = best.id
+            assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
+    else:
+        for dock_id in idle_dock_ids:
+            plan[dock_id] = None
+
+    archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
+    return plan
+
 
 class SupplyDockController:
     """
@@ -52,7 +239,11 @@ class SupplyDockController:
 
     def pick_best_order(self):
         """
-        Selects the best available Earth Order:
+        Fallback order selection used only when no central plan is available
+        (see desired_order_id()) -- panel_1.py's plan_dock_assignments() is
+        the normal path and additionally spreads docks across candidates and
+        skips weekly orders that can't finish before they expire. This
+        per-instance fallback keeps a lone dock functional standalone:
         1. Campaign orders that unlock recipes or technology.
         2. Orders where materials are already available in Inventory.
         3. Other active campaign orders.
@@ -62,73 +253,28 @@ class SupplyDockController:
             return None
 
         candidates = []
-        # Materials an active Construction Blueprint is waiting on don't count
-        # toward an order's "readiness" score either -- otherwise an order
-        # can get prioritized as nearly-ready using stock that's actually
-        # earmarked for a build and won't be takeable (see step()).
         reserved = get_construction_material_reservations()
 
-        # 1. Inspect Contractor Campaign Orders (Helios, Spire, Vestibule)
         try:
             for o in self.orders_api.list_orders():
-                if getattr(o, "status", "") == "active":
-                    if not can_fulfill_order(o):
-                        print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': required materials have no known source.")
-                        continue
-                    prio = 10
-                    if getattr(o, "reward_kind", "") in ["recipe", "tech"]:
-                        prio += 50  # Strongly prioritize technology and recipe unlocks!
-
-                    items_ready = 0
-                    total_needed = 0
-                    if hasattr(o, "requires") and self.inventory:
-                        shipped = getattr(o, "shipped", {}) or {}
-                        for item_id, req_count in o.requires.items():
-                            still_needed = max(0, req_count - shipped.get(item_id, 0))
-                            total_needed += still_needed
-                            in_stock = max(0, total_stock(item_id) - reserved.get(item_id, 0))
-                            items_ready += min(in_stock, still_needed)
-
-                    if total_needed > 0:
-                        ready_pct = items_ready / total_needed
-                        prio += int(ready_pct * 30)
-
-                    candidates.append({
-                        "order": o,
-                        "priority": prio,
-                        "ready": items_ready,
-                        "needed": total_needed
-                    })
+                if getattr(o, "status", "") == "active" and can_fulfill_order(o):
+                    candidates.append({"order": o, "priority": _score_campaign_order(o, reserved)})
         except Exception:
             pass
 
-        # 2. Inspect Weekly Orders
         try:
+            current_day = None
+            clock = get_component("clock")
+            if clock and hasattr(clock, "get_day"):
+                current_day = clock.get_day()
+            dispatch_capacity = self.dock.dispatch_rate() if hasattr(self.dock, "dispatch_rate") else 0.0
             for o in self.orders_api.list_weekly_orders():
-                if getattr(o, "status", "") == "active":
-                    if not can_fulfill_order(o):
-                        continue
-                    prio = 5
-                    items_ready = 0
-                    total_needed = 0
-                    if hasattr(o, "requires") and self.inventory:
-                        shipped = getattr(o, "shipped", {}) or {}
-                        for item_id, req_count in o.requires.items():
-                            still_needed = max(0, req_count - shipped.get(item_id, 0))
-                            total_needed += still_needed
-                            in_stock = max(0, total_stock(item_id) - reserved.get(item_id, 0))
-                            items_ready += min(in_stock, still_needed)
-
-                    if total_needed > 0:
-                        ready_pct = items_ready / total_needed
-                        prio += int(ready_pct * 20)
-
-                    candidates.append({
-                        "order": o,
-                        "priority": prio,
-                        "ready": items_ready,
-                        "needed": total_needed
-                    })
+                if getattr(o, "status", "") != "active" or not can_fulfill_order(o):
+                    continue
+                if _weekly_infeasible(o, current_day, dispatch_capacity):
+                    print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
+                    continue
+                candidates.append({"order": o, "priority": _score_weekly_order(o, reserved)})
         except Exception:
             pass
 
@@ -137,6 +283,16 @@ class SupplyDockController:
 
         candidates.sort(key=lambda c: c["priority"], reverse=True)
         return candidates[0]["order"]
+
+    def desired_order_id(self):
+        """Reads this dock's assignment from the central plan (see
+        plan_dock_assignments()); falls back to this dock's own
+        pick_best_order() if no plan has been computed yet (or ever)."""
+        plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {}) or {}
+        if self.name in plan:
+            return plan[self.name]
+        best = self.pick_best_order()
+        return best.id if best else None
 
     def step(self):
         self.ensure_connected()
@@ -165,17 +321,19 @@ class SupplyDockController:
                 self.drain_dock_cargo()
                 return
 
-            best = self.pick_best_order()
-            if not best:
+            desired_id = self.desired_order_id()
+            if not desired_id:
                 print(f"[{self.name}] No active Earth Orders available. Standing by.")
                 return
 
-            reward_desc = f"{best.reward_credits} cr"
-            if getattr(best, "reward_kind", None):
+            best = self.orders_api.get_order(desired_id) if self.orders_api else None
+            reward_desc = f"{getattr(best, 'reward_credits', '?')} cr" if best else ""
+            if best and getattr(best, "reward_kind", None):
                 reward_desc += f" + {best.reward_kind} ({getattr(best, 'reward_label', '')})"
 
-            print(f"[{self.name}] Assigning Earth Order '{best.name}' (ID: {best.id}, Reward: {reward_desc})...")
-            res = self.dock.set_order(best.id)
+            order_name = getattr(best, "name", desired_id) if best else desired_id
+            print(f"[{self.name}] Assigning Earth Order '{order_name}' (ID: {desired_id}, Reward: {reward_desc})...")
+            res = self.dock.set_order(desired_id)
             if res.status == "cargo_present":
                 # Defensive fallback in case cargo appeared between the total()
                 # check above and this call -- drain and let the next cycle retry.
@@ -184,13 +342,18 @@ class SupplyDockController:
             if res.status != "ok":
                 print(f"[{self.name}] Could not assign order: {res.status} - {res.message}")
                 return
-            curr_order = best
+            curr_order = self.dock.current_order()
 
         # Step 2: Load required materials from Inventory or a Warehouse, but
         # never take stock an active Construction Blueprint is waiting on --
         # otherwise the Dock can "snack away" materials (e.g. titanium
         # ingots) out from under a Pioneer build the moment they land in
         # storage, well before the build gets a chance to collect them.
+        # Chunked per SUPPLY_DOCK_LOAD_CHUNK_SIZE: several docks can now share
+        # the same order (docs/components/supply_dock.md), so a sibling dock
+        # may be contesting the same Inventory/Warehouse stock for the same
+        # item -- see the module docstring's note on the fairness fix this
+        # mirrors from Fabricator/Smelter loading.
         if curr_order and hasattr(curr_order, "requires"):
             reserved = get_construction_material_reservations()
             shipped = getattr(curr_order, "shipped", {}) or {}
@@ -203,7 +366,7 @@ class SupplyDockController:
 
                 avail = total_stock(item_id)
                 available_after_reservation = max(0, avail - reserved.get(item_id, 0))
-                to_take = min(available_after_reservation, needed)
+                to_take = min(available_after_reservation, needed, SUPPLY_DOCK_LOAD_CHUNK_SIZE)
                 if to_take > 0:
                     moved = take_item(self.dock.input, item_id, to_take)
                     if moved > 0:
@@ -226,6 +389,7 @@ class SupplyDockController:
 
     def run(self, poll_interval=3.0):
         print(f"Supply Dock Controller ({self.name}) online. Initializing logistics loop...")
+        validate_game_version()
         while True:
             try:
                 self.step()

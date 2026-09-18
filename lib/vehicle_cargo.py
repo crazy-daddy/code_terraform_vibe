@@ -10,6 +10,7 @@
 # running.
 
 from production import get_raw_material_demands
+from version_guard import validate_game_version
 from storage import best_unload_target, take_item, total_stock, inventory_stack_size
 import outpost_reagents
 import mining_reservations
@@ -318,6 +319,7 @@ class VehicleCargoMixin:
         print(f"[{self.name}] Haul Controller online. Hauling from '{self.home_base}' to '{dest_outpost_id}' on demand.")
         dest_outpost = self.get_outpost_ref(dest_outpost_id)
         is_home_delivery = dest_outpost_id is None or dest_outpost_id == "outpost_home"
+        validate_game_version()
         while True:
             try:
                 if self.handle_recall_if_active():

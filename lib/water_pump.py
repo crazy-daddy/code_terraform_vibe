@@ -1,4 +1,5 @@
 import fluid_routing
+from version_guard import validate_game_version
 
 # Shared Water Pump automation: keep water_out pointed at a reachable Liquid
 # Tank / Large Liquid Tank, load-balancing across whichever ones have room.
@@ -125,6 +126,7 @@ class WaterPumpController:
 
     def run(self, poll_interval=1.0):
         print(f"Water Pump Controller ({self.name}) online. Routing water to network Liquid Tanks.")
+        validate_game_version()
         while True:
             try:
                 self.step()

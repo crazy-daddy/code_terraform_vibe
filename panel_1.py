@@ -9,6 +9,11 @@
 #   - Cross-warehouse stock consolidation, every outpost, once per cycle.
 #   - Outpost-founding -> resource marker auto-reassignment
 #     (lib/outpost_mining.py's reevaluate_unassigned_near_outpost()).
+#   - Supply Dock order-assignment planning across every discovered dock
+#     (lib/supply_dock.py's plan_dock_assignments() -- the central "decider"
+#     so multiple docks share/split Earth Orders instead of each redundantly
+#     scanning the order board and independently guessing; see
+#     docs/AI_CHEATSHEET.md #2a-0-5).
 #   - Manual "Clean Archive" / "Sync Unsupported" buttons.
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController no
 # longer do any of this themselves -- it's a hard dependency on this script
@@ -20,7 +25,9 @@ from power import PowerGridManager
 from storage import rebalance_inventory_to_warehouses, consolidate_cross_warehouse_stock
 from archive_cleaner import ArchiveCleaner
 from unsupported_markers import update_unsupported_markers
+from version_guard import version_mismatch, good_version, confirm_new_version
 import outpost_mining
+import supply_dock
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
@@ -112,101 +119,131 @@ while True:
     auto_y = status_h + 8
     panel.card(8, auto_y, width - 16, height - auto_y - 8, "AUTOMATION")
 
-    current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
-    solar_due = (last_solar_tick == 0) or (current_tick - last_solar_tick >= SOLAR_TICK_INTERVAL)
-    storage_due = (last_storage_tick == 0) or (current_tick - last_storage_tick >= STORAGE_TICK_INTERVAL)
+    # ------------------------------------------------------------------
+    # VERSION SAFETY GATE -- see lib/version_guard.py. Every controller
+    # (solar, rover, pioneer, smelter, ...) checks this once at its own
+    # startup and blocks there until confirmed; this panel never blocks
+    # itself so the operator can always reach the button below.
+    # ------------------------------------------------------------------
+    ver_x = width - 190
+    mismatch = version_mismatch()
+    panel.label(ver_x, auto_y + 20, "VERSION", "caption")
+    panel.pill(ver_x, auto_y + 34, get_game_version(), "error" if mismatch else "success")
+    if mismatch:
+        panel.draw_text(ver_x, auto_y + 58, f"was {good_version()} -- new scripts halt on startup", 10, "text-secondary", 180)
+        if panel.button("confirm_new_version", ver_x, auto_y + 78, 172, 26, "Confirm New Version"):
+            confirm_new_version()
 
-    if solar_due:
-        last_solar_tick = current_tick
-        grid_count = 0
-        try:
-            elevation = clock.get_elevation() if clock else 0.0
-            live_grids = power.grids() if power and hasattr(power, "grids") else []
-            current_anchors = set()
-            for grid in live_grids:
-                anchor = getattr(grid, "anchor_id", None)
-                current_anchors.add(anchor)
-                manager = grid_managers.get(anchor)
-                if manager is None:
-                    manager = PowerGridManager(grid, clock=clock, power=power)
-                    grid_managers[anchor] = manager
-                manager.supervise_grid(grid, elevation)
-                grid_count += 1
+    # Every mutating action below (grid supervision, rebalance/consolidation
+    # sweeps, outpost/dock sync, and the two manual buttons) is gated behind
+    # `not mismatch` -- this panel keeps rendering and stays reachable during
+    # a version mismatch (see VERSION SAFETY GATE above), but it must not
+    # itself make any changes to the save until the operator confirms, same
+    # as every other script halted in validate_game_version().
+    if not mismatch:
+        current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
+        solar_due = (last_solar_tick == 0) or (current_tick - last_solar_tick >= SOLAR_TICK_INTERVAL)
+        storage_due = (last_storage_tick == 0) or (current_tick - last_storage_tick >= STORAGE_TICK_INTERVAL)
 
-            # Grids that stopped being reported (merged into another via a new
-            # power line) -- release anything they still had shed rather than
-            # stranding it forever (see PowerGridManager.release_all()).
-            for stale_anchor in list(grid_managers.keys()):
-                if stale_anchor not in current_anchors:
-                    grid_managers[stale_anchor].release_all()
-                    del grid_managers[stale_anchor]
-        except Exception as e:
-            print(f"[AUTOMATION] Grid supervision error: {e}")
-            
-    if storage_due:
-        last_storage_tick = current_tick
-        try:
-            rebalance_inventory_to_warehouses()
-        except Exception as e:
-            print(f"[AUTOMATION] Rebalance sweep error: {e}")
+        if solar_due:
+            last_solar_tick = current_tick
+            grid_count = 0
+            try:
+                elevation = clock.get_elevation() if clock else 0.0
+                live_grids = power.grids() if power and hasattr(power, "grids") else []
+                current_anchors = set()
+                for grid in live_grids:
+                    anchor = getattr(grid, "anchor_id", None)
+                    current_anchors.add(anchor)
+                    manager = grid_managers.get(anchor)
+                    if manager is None:
+                        manager = PowerGridManager(grid, clock=clock, power=power)
+                        grid_managers[anchor] = manager
+                    manager.supervise_grid(grid, elevation)
+                    grid_count += 1
 
-        outpost_new_count = 0
-        try:
-            network = get_component("outpost_network")
-            if network and hasattr(network, "outposts"):
-                outposts = network.outposts()
-                current_ids = {getattr(o, "id", None) for o in outposts}
-                current_ids.discard(None)
-                known_ids = set(archive.get(OUTPOST_KNOWN_IDS_KEY, []) or [])
-                new_ids = current_ids - known_ids
-                for new_id in new_ids:
-                    assigned = outpost_mining.reevaluate_unassigned_near_outpost(new_id)
-                    print(f"[AUTOMATION] New outpost '{new_id}' detected -- assigned {assigned} nearby resource marker(s).")
-                    outpost_new_count += 1
-                if current_ids != known_ids:
-                    archive.set(OUTPOST_KNOWN_IDS_KEY, sorted(current_ids))
+                # Grids that stopped being reported (merged into another via a new
+                # power line) -- release anything they still had shed rather than
+                # stranding it forever (see PowerGridManager.release_all()).
+                for stale_anchor in list(grid_managers.keys()):
+                    if stale_anchor not in current_anchors:
+                        grid_managers[stale_anchor].release_all()
+                        del grid_managers[stale_anchor]
+            except Exception as e:
+                print(f"[AUTOMATION] Grid supervision error: {e}")
 
-                # Cross-warehouse consolidation sweep (storage.py's
-                # consolidate_cross_warehouse_stock(), which calls
-                # .compact()) -- every outpost, not just home, since a
-                # remote outpost's Warehouses (e.g. a Bio Lab reagent drop)
-                # can end up with the same item split across multiple
-                # Warehouse buildings the same way repeat hauler deliveries
-                # can at home.
-                for o in outposts:
-                    o_id = getattr(o, "id", "?")
-                    try:
-                        consolidate_cross_warehouse_stock(o)
-                    except Exception as e:
-                        print(f"[AUTOMATION] Cross-warehouse consolidation error at '{o_id}': {e}")
-        except Exception as e:
-            print(f"[AUTOMATION] Outpost sync error: {e}")
+        if storage_due:
+            last_storage_tick = current_tick
+            try:
+                rebalance_inventory_to_warehouses()
+            except Exception as e:
+                print(f"[AUTOMATION] Rebalance sweep error: {e}")
 
-        last_automation_summary = f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s)"
+            outpost_new_count = 0
+            try:
+                network = get_component("outpost_network")
+                if network and hasattr(network, "outposts"):
+                    outposts = network.outposts()
+                    current_ids = {getattr(o, "id", None) for o in outposts}
+                    current_ids.discard(None)
+                    known_ids = set(archive.get(OUTPOST_KNOWN_IDS_KEY, []) or [])
+                    new_ids = current_ids - known_ids
+                    for new_id in new_ids:
+                        assigned = outpost_mining.reevaluate_unassigned_near_outpost(new_id)
+                        print(f"[AUTOMATION] New outpost '{new_id}' detected -- assigned {assigned} nearby resource marker(s).")
+                        outpost_new_count += 1
+                    if current_ids != known_ids:
+                        archive.set(OUTPOST_KNOWN_IDS_KEY, sorted(current_ids))
+
+                    # Cross-warehouse consolidation sweep (storage.py's
+                    # consolidate_cross_warehouse_stock(), which calls
+                    # .compact()) -- every outpost, not just home, since a
+                    # remote outpost's Warehouses (e.g. a Bio Lab reagent drop)
+                    # can end up with the same item split across multiple
+                    # Warehouse buildings the same way repeat hauler deliveries
+                    # can at home.
+                    for o in outposts:
+                        o_id = getattr(o, "id", "?")
+                        try:
+                            consolidate_cross_warehouse_stock(o)
+                        except Exception as e:
+                            print(f"[AUTOMATION] Cross-warehouse consolidation error at '{o_id}': {e}")
+            except Exception as e:
+                print(f"[AUTOMATION] Outpost sync error: {e}")
+
+            dock_plan_count = 0
+            try:
+                plan = supply_dock.plan_dock_assignments(clock=clock)
+                dock_plan_count = sum(1 for v in plan.values() if v)
+            except Exception as e:
+                print(f"[AUTOMATION] Supply Dock planning error: {e}")
+
+            last_automation_summary = f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned"
 
     panel.label(24, auto_y + 34, "ALWAYS-ON", "caption")
-    panel.status_dot(29, auto_y + 58, 5, "running")
-    panel.draw_text(42, auto_y + 64, last_automation_summary, 10, "text-secondary", width * 0.30)
+    panel.status_dot(29, auto_y + 58, 5, "paused" if mismatch else "running")
+    panel.draw_text(42, auto_y + 64, "halted -- confirm new version above" if mismatch else last_automation_summary, 10, "text-secondary", width * 0.30)
 
     btn_y = auto_y + 88
     btn_w = min(160, width * 0.22)
 
-    if panel.button("run_archive_cleaner", 24, btn_y, btn_w, 26, "Clean Archive"):
-        try:
-            last_cleaner_stats = ArchiveCleaner(dry_run=False, verbose=True).run()
-        except Exception as e:
-            last_cleaner_stats = {"error": str(e)}
-    if last_cleaner_stats is not None:
-        scanned = last_cleaner_stats.get("keys_scanned", "-")
-        removed = sum(v for k, v in last_cleaner_stats.items() if k.endswith("_removed") or k.endswith("_purged"))
-        panel.label(24, btn_y + 34, f"scanned {scanned}, purged {removed}", "muted")
+    if not mismatch:
+        if panel.button("run_archive_cleaner", 24, btn_y, btn_w, 26, "Clean Archive"):
+            try:
+                last_cleaner_stats = ArchiveCleaner(dry_run=False, verbose=True).run()
+            except Exception as e:
+                last_cleaner_stats = {"error": str(e)}
+        if last_cleaner_stats is not None:
+            scanned = last_cleaner_stats.get("keys_scanned", "-")
+            removed = sum(v for k, v in last_cleaner_stats.items() if k.endswith("_removed") or k.endswith("_purged"))
+            panel.label(24, btn_y + 34, f"scanned {scanned}, purged {removed}", "muted")
 
-    btn2_x = 24 + btn_w + 24
-    if panel.button("run_unsupported_markers", btn2_x, btn_y, btn_w, 26, "Sync Unsupported"):
-        try:
-            last_unsupported_count = update_unsupported_markers(clear_previous=True)
-        except Exception as e:
-            last_unsupported_count = -1
-    if last_unsupported_count is not None:
-        summary = "error" if last_unsupported_count < 0 else f"{last_unsupported_count} marker(s) placed"
-        panel.label(btn2_x, btn_y + 34, summary, "muted")
+        btn2_x = 24 + btn_w + 24
+        if panel.button("run_unsupported_markers", btn2_x, btn_y, btn_w, 26, "Sync Unsupported"):
+            try:
+                last_unsupported_count = update_unsupported_markers(clear_previous=True)
+            except Exception as e:
+                last_unsupported_count = -1
+        if last_unsupported_count is not None:
+            summary = "error" if last_unsupported_count < 0 else f"{last_unsupported_count} marker(s) placed"
+            panel.label(btn2_x, btn_y + 34, summary, "muted")

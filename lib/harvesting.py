@@ -2,6 +2,8 @@
 # Handles grid mapping coordination, BFS shortest-path navigation,
 # safe heat management, surface item collection, crop harvesting, and inventory offloading.
 
+from version_guard import validate_game_version
+
 class HarvesterController:
     """
     Automated controller for the Harvester surface vehicle.
@@ -301,6 +303,7 @@ class HarvesterController:
     def run(self):
         """Continuous harvesting and collection loop."""
         print(f"Harvester Controller ({self.name}) online. Base depot: {self.base_sector}.")
+        validate_game_version()
         while True:
             try:
                 self.step()

@@ -3,6 +3,7 @@
 # Note: Solar Generators and Power Grid Management have been moved to lib/power.py.
 
 from archive import archive
+from version_guard import validate_game_version
 
 class HeatController:
     """
@@ -48,6 +49,7 @@ class HeatController:
 
     def run(self, poll_interval=2.0):
         print(f"Heat Generator ({self.name}) online via Shared Library.")
+        validate_game_version()
         while True:
             self.step()
             sleep(poll_interval)
@@ -89,6 +91,7 @@ class PressureController:
 
     def run(self, poll_interval=0.1):
         print(f"Pressure Generator ({self.name}) online via Shared Library.")
+        validate_game_version()
         while True:
             self.step()
             sleep(poll_interval)
@@ -119,6 +122,7 @@ class OxygenController:
 
     def run(self, poll_interval=1.0):
         print(f"Oxygen Generator ({self.name}) online via Shared Library.")
+        validate_game_version()
         while True:
             self.step()
             sleep(poll_interval)

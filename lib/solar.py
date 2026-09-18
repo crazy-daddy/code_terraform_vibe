@@ -1,3 +1,5 @@
+from version_guard import validate_game_version
+
 # Shared Library for Solar Generator Automation
 # Pure closed-loop sun tracking -- Power Grid supervision (brownout
 # load-shedding, day/night calibration) is owned centrally by panel_1.py's
@@ -29,6 +31,7 @@ class SolarController:
 
     def run(self, poll_interval=1.0):
         print(f"Solar Tracker ({self.name}) online via Shared Library.")
+        validate_game_version()
         while True:
             self.step()
             sleep(poll_interval)
