@@ -19,7 +19,7 @@ def get_battery_pct():
         return 1.0
 
 while True:
-    current_day = int(clock.get_days())
+    current_day = int(clock.get_day())
     bat_pct = get_battery_pct()
 
     # Dynamic Battery Protection: Throttle heater if battery drops below 25%
