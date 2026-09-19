@@ -33,6 +33,7 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 from dap_client import launch_script  # type: ignore
+from early_game import find_latest_workspace  # type: ignore
 
 STATE_FILE = os.path.join(SCRIPT_DIR, ".deployed_state.json")
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
@@ -391,9 +392,12 @@ class AutoDeployer:
 
 
 def main():
-    default_ws = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+    # 'tools' is distributed standalone; its install location says nothing
+    # about where the workspace is. Resolve via early_game's discovery (cwd,
+    # then the game's app-data save_*_scripts folders) instead.
+    default_ws = find_latest_workspace()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--workspace", default=default_ws, help=f"Workspace root (default: {default_ws})")
+    parser.add_argument("--workspace", default=default_ws, help=f"Workspace root (default: {default_ws or 'auto-detect'})")
     parser.add_argument("--scan", action="store_true", help="One-shot scan and deploy idle machines")
     parser.add_argument("--daemon", action="store_true", help="Continuous monitoring daemon")
     parser.add_argument("--deploy", dest="deploy_id", metavar="MACHINE_ID", help="Deploy a specific machine ID")
@@ -402,6 +406,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Simulate without writing files or launching")
     parser.add_argument("--force", action="store_true", help="Deploy even if recorded in .deployed_state.json")
     args = parser.parse_args()
+
+    if not args.workspace:
+        print("[AutoDeploy] Error: No active save workspace found. Specify with --workspace <path>")
+        sys.exit(1)
 
     deployer = AutoDeployer(workspace=args.workspace, dry_run=args.dry_run, force=args.force)
 

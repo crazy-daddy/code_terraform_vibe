@@ -1,13 +1,11 @@
 # Code: Terraform — Walkthrough Documentation Index
 
-The comprehensive progression and automation documentation for **Code: Terraform** has been split into two dedicated blueprints:
-
-1. **[Manual Progression Walkthrough (`manual_walkthrough.md`)](file:///c:/Users/Adrian/AppData/Roaming/io.codeterraform.game/save_mtzkzly3_4ww80o_scripts/manual_walkthrough.md)**
+1. **[Manual Progression Walkthrough (`manual_walkthrough.md`)](manual_walkthrough.md)**
    - **Full Game Progression (A $\rightarrow$ Z)**: From cold boot to 1,000,000 TP planetary completion.
    - **Prerequisite Matrix & Critical Bottlenecks**: Dependency graphs covering Titanium, Piped Water, Drones, Petroleum Cracking, and Neutronium.
    - **Chronological Master Roadmap**: Detailed phase-by-phase execution guide across all 6 terraforming pillars.
 
-2. **[Autonomous Architecture & Early Speedrunner (`auto_walkthrough.md`)](file:///c:/Users/Adrian/AppData/Roaming/io.codeterraform.game/save_mtzkzly3_4ww80o_scripts/auto_walkthrough.md)**
+2. **[Autonomous Architecture & Early Speedrunner (`auto_walkthrough.md`)](auto_walkthrough.md)**
    - **Master Automation Architecture**: Decoupled engine design, service daemons, and communication backplane (Data Archive, Signal Bus).
    - **Revised 0 $\rightarrow$ 150k TP Speedrun Strategy**: Nocturna Base 25-slot optimization, revised tech gates (5.0 ppt Smelter, 9.0 ppt Charging Station & Rover, 12.0 HU Heat, 100k TP Pioneer).
    - **Master Building Buyer (`solar_1.py`)**: Dynamic master panel election and autonomous building purchasing state machine.

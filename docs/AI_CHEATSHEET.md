@@ -13,11 +13,11 @@ that way there is exactly one place to keep current.
 
 For high-level operational workflows, progression roadmaps, and automation orchestration, refer to the dedicated walkthrough guides:
 
-- **[`manual_walkthrough.md`](../manual_walkthrough.md)**: **Manual Progression Roadmap (0 $\rightarrow$ 1,000,000 TP Victory)**
+- **[`manual_walkthrough.md`](../tools/manual_walkthrough.md)**: **Manual Progression Roadmap (0 $\rightarrow$ 1,000,000 TP Victory)**
   - Detailed playbook for manual progression: First Contact onboarding steps, Earth Clearance contract solvers (+3,750 cr & +22,500 cr), research prerequisites, critical bottleneck matrix, and chronological phase breakdown from Phase 0 (Cold Boot) through Phase 7 (Deep Biome, Nuclear Reactor Recovery & Endgame Victory).
-- **[`auto_walkthrough.md`](../auto_walkthrough.md)**: **Autonomous Architecture & Early Speedrunner (0 $\rightarrow$ 150,000 TP)**
+- **[`auto_walkthrough.md`](../tools/auto_walkthrough.md)**: **Autonomous Architecture & Early Speedrunner (0 $\rightarrow$ 150,000 TP)**
   - Blueprint for hands-off automation: Master Automation Architecture, revised 25-slot Nocturna Base speedrun strategy, `solar_1.py` master building-buyer (autonomous buy/deploy/sell cycles), `tools/early_game.py` speedrunner daemon & machine watcher, Earth Clearance contract solvers, and the 150k TP mid-game migration protocol to `lib/`.
-- *(Top-level navigation hub: [`walkthrough.md`](../walkthrough.md))*
+- *(Top-level navigation hub: [`walkthrough.md`](../tools/walkthrough.md))*
 
 ---
 

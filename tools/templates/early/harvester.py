@@ -16,6 +16,19 @@
 #      cross 97, and calculates the exact sleep duration needed.
 #   4. Instant liquidation: Deposits via store() and immediately sells all via shop
 #      to maximize credit velocity and keep outpost inventory 100% clear.
+#   5. Two-mode targeting: value-density scoring (val / d^1.35) maximizes early credit
+#      velocity while the base build-out is still funding-critical - but it never lets
+#      go of that bias, so a low-value item sitting far from the pack can keep losing
+#      every scoring round to nearer/richer newcomers indefinitely (starvation, not just
+#      delay - the map never actually finishes clearing while fresher, better-scoring
+#      targets keep appearing). Once Nocturna Base's building slots hit 25/25 for the
+#      first time, the credit-funded buildout (batteries, solar, generators, ...) is
+#      essentially done and slot occupancy will only fluctuate around full from here
+#      (recycle-and-rebuild between phases) - not grow again - so that first full-25
+#      reading is a clean, one-way signal that credit velocity no longer needs to win
+#      over completeness. Deliberately NOT tied to scanner coverage: the scanner sweeps
+#      its ~192 local sectors well before the multi-phase, multi-day buildout is done,
+#      which would flip modes too early and blunt the credit rush while it still matters.
 # ==============================================================================
 
 SCANNER_ID    = "scanner_1"
@@ -28,12 +41,25 @@ IDLE_HOURS    = 0.5     # World-hours to wait when no targets are known
 
 scanner = get_component(SCANNER_ID)
 shop = get_component("shop")
+home = get_component("outpost_home")
 
 try:
     clock = get_component("clock")
     RSPH = clock.real_seconds_per_hour()
 except Exception:
     RSPH = 30.0
+
+def base_is_full():
+    # True once Nocturna Base's building slots have ever hit capacity (25, or 30 post
+    # outpost_expansion_unlock) - mirrors solar.py's get_free_base_slots() slot reading.
+    if not home:
+        return False
+    try:
+        cap = home.buildings_capacity() if callable(getattr(home, "buildings_capacity", None)) else getattr(home, "buildings_capacity", 25)
+        used = home.buildings_used() if callable(getattr(home, "buildings_used", None)) else getattr(home, "buildings_used", 0)
+        return int(used) >= int(cap)
+    except Exception:
+        return False
 
 def parse(sid: str):
     return (ord(sid[0].upper()) - 64, int(sid[1:]))
@@ -58,7 +84,7 @@ def cool_to(target):
         print(f"[harvester] Heat {self.get_heat():.1f} - cooling {hours:.2f}h to reach {target}...")
         sleep(hours * RSPH + 0.2)
 
-def choose_target(pos, pts):
+def choose_target(pos, pts, clearing_mode=False):
     pr, pc = pos
 
     # Priority 1: Clear immediate local items (d <= 2)
@@ -74,7 +100,20 @@ def choose_target(pos, pts):
         local_cands.sort()
         return local_cands[0][2]
 
-    # Priority 2: For farther items, penalize empty-space distance (d^1.35)
+    # Priority 2 (CLEARING MODE): once the map is basically fully surveyed, whatever
+    # is left is what value-density scoring kept skipping over - sweep nearest-first,
+    # ignoring value entirely, so the field actually finishes clearing.
+    if clearing_mode:
+        best = None
+        best_d = None
+        for p in pts:
+            d = abs(p[0] - pr) + abs(p[1] - pc)
+            if best_d is None or d < best_d:
+                best_d = d
+                best = p
+        return best
+
+    # Priority 2 (CREDIT RUSH): For farther items, penalize empty-space distance (d^1.35)
     # Empty hops (+7 heat) build up heat and force cooling naps, making long trips costly.
     best = None
     best_score = -1.0
@@ -194,8 +233,15 @@ while True:
     print(f"[harvester] Waiting for scanner to map base sector ({scanned_count}/{min_scanned_sectors} sectors)...")
     sleep(2.0)
 
+clearing_mode = False
+
 while True:
     pts = read_map()
+
+    if not clearing_mode and base_is_full():
+        clearing_mode = True
+        print("[harvester] Base build-out at full slot capacity - switching to CLEARING MODE (nearest-first, full field sweep).")
+
     if not pts:
         sleep(IDLE_HOURS * RSPH)
         continue
@@ -209,7 +255,7 @@ while True:
         take(pos, pts)
         continue
 
-    tgt = choose_target(pos, pts)
+    tgt = choose_target(pos, pts, clearing_mode)
     if not tgt:
         sleep(IDLE_HOURS * RSPH)
         continue

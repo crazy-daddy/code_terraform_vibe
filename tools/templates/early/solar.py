@@ -145,17 +145,7 @@ while True:
         continue
     last_eval_time = now
 
-    # Tech Guard: Ship Computer must be unlocked before using computer component
-    if not is_tech_unlocked("research_computer"):
-        sleep(5.0)
-        continue
-
-    computer = get_component("computer")
-    if not computer:
-        sleep(5.0)
-        continue
-
-    # Sensor Telemetry
+    # Sensor Telemetry - no Ship Computer needed, these are direct sensor/planet reads
     pressure = pressure_sensor.get_value() if pressure_sensor else 0.0
     o2 = oxygen_sensor.get_value() if oxygen_sensor else 0.0
     temp = thermometer.get_value() if thermometer else 0.0
@@ -164,6 +154,49 @@ while True:
     if now - last_heartbeat >= 20.0:
         print(f"[buyer] Master on {self.id} | P: {pressure:.3f}/0.200 kPa | O2: {o2:.3f}/9.0 ppt | Temp: {temp:.1f}/12.0 HU | TP: {int(total_tp):,}")
         last_heartbeat = now
+
+    # --------------------------------------------------------------------------
+    # POWER-ON PASS (power_control only - no Ship Computer needed)
+    # --------------------------------------------------------------------------
+    # Deliberately runs before the Ship Computer gate below: powering a building on/off
+    # goes through power_control, never through computer.deploy()/undeploy(). Ship
+    # Computer (research_computer) doesn't unlock until 10,000 TP, which can trail
+    # behind 1.0 ppt Oxygen - nesting this under that gate (as it used to be) meant the
+    # Bio-Loop stayed powered off long after Auto Feeders unlocked, for a tech reason
+    # that was never actually a real dependency of this step.
+    pc = get_component("power_control")
+    if pc and hasattr(pc, "set_powered"):
+        for b in home.buildings():
+            # Keep bio unpowered if o2 < 1.0 or feeder not unlocked.
+            # Must be the public research id ("research_auto_feeders", per docs/components/
+            # research.md's is_unlocked() example) - the catalog's internal "Tech id" field
+            # ("feeder_unlock") is a different namespace read from save-state unlockedTech
+            # lists (see early_game.py's scan_and_deploy_machines), not what is_unlocked()
+            # accepts. Passing "feeder_unlock" here made is_tech_unlocked()'s variant-guessing
+            # (strip/append research_/_unlock) permanently return False, since it can never
+            # derive "research_auto_feeders" from "feeder_unlock" - the two don't share a
+            # stem - which kept every Bio-Loop building powered off even past 1.0 ppt O2.
+            if "bio_" in b.id and (o2 < 1.0 or not is_tech_unlocked("research_auto_feeders")):
+                continue
+            try:
+                if hasattr(pc, "is_powered") and not pc.is_powered(b.id):
+                    res = pc.set_powered(b.id, True)
+                    print(f"[buyer] Powered ON {b.id}: {res.status}")
+                elif not hasattr(pc, "is_powered"):
+                    pc.set_powered(b.id, True)
+            except Exception as e:
+                pass
+
+    # Tech Guard: Ship Computer must be unlocked before using the computer component
+    # (deploy/undeploy/buy) - everything below this point needs it, nothing above does.
+    if not is_tech_unlocked("research_computer"):
+        sleep(5.0)
+        continue
+
+    computer = get_component("computer")
+    if not computer:
+        sleep(5.0)
+        continue
 
     # --------------------------------------------------------------------------
     # POWER GRID ANCHOR (3 Batteries + 6 Solar)
@@ -183,22 +216,6 @@ while True:
 
     if s_count < 6:
         safe_buy_and_deploy(computer, "solar_generator", 6 - s_count)
-
-    # Ensure all active base machines are powered ON
-    pc = get_component("power_control")
-    if pc and hasattr(pc, "set_powered"):
-        for b in home.buildings():
-            # Keep bio unpowered if o2 < 1.0 or feeder not unlocked
-            if "bio_" in b.id and (o2 < 1.0 or not is_tech_unlocked("feeder_unlock")):
-                continue
-            try:
-                if hasattr(pc, "is_powered") and not pc.is_powered(b.id):
-                    res = pc.set_powered(b.id, True)
-                    print(f"[buyer] Powered ON {b.id}: {res.status}")
-                elif not hasattr(pc, "is_powered"):
-                    pc.set_powered(b.id, True)
-            except Exception as e:
-                pass
 
     # --------------------------------------------------------------------------
     # MID-FLIGHT GUARD: Finish active Pressure rush if already near 0.200 kPa
@@ -291,12 +308,17 @@ while True:
         if count_vehicles("pioneer") == 0:
             print("[buyer] 100k TP Milestone: Deploying Pioneer Chassis...")
             if safe_buy_and_deploy(computer, "pioneer", 1, "research_pioneer"):
+                # Scout loadout only (see mount_vehicle.py): Wide Sonar needs Pressure
+                # 6.0 kPa and Constructor Module needs Heat 10 HU, both confirmed live
+                # as not yet unlocked at the 100k TP Pioneer breakout under this
+                # speedrun's Pressure/Heat Rush targets (0.200 kPa / 12.0 HU) - buying
+                # them here was pure waste. No Cargo Rack either: a pure Scout has
+                # nothing to haul. Basic Sonar + 6x Battery Holder (max range) instead.
                 shop.buy("nav_module", 1)
-                shop.buy("battery_holder_small", 1)
-                shop.buy("portable_battery", 1)
-                shop.buy("cargo_rack_small", 1)
-                shop.buy("portable_bin", 1)
-                print("[buyer] Ordered Pioneer expansion modules into base Inventory.")
+                shop.buy("sonar_module", 1)
+                shop.buy("battery_holder_small", 6)
+                shop.buy("portable_battery", 6)
+                print("[buyer] Ordered Pioneer Scout modules into base Inventory.")
 
     # --------------------------------------------------------------------------
     # PHASE 5: 150k TP Mid-Game Migration Signal

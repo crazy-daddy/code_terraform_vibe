@@ -42,6 +42,8 @@ Prints the stack trace and top-frame locals at the first breakpoint hit,
 then resumes and disconnects (non-terminating).
 """
 import json
+import os
+import shutil
 import subprocess
 import threading
 import queue
@@ -49,8 +51,28 @@ import sys
 import time
 import argparse
 
-NODE = r"C:\Program Files\nodejs\node.exe"
-ADAPTER = r"C:\Users\Adrian\AppData\Roaming\io.codeterraform.game\external-ide\server\debug-adapter.cjs"
+
+def _default_node() -> str:
+    """Resolves 'node' from PATH; falls back to the bare command name so a
+    missing PATH entry surfaces as a clear FileNotFoundError from Popen
+    rather than a silently wrong hardcoded location."""
+    return shutil.which("node") or "node"
+
+
+def _default_adapter() -> str:
+    """Locates debug-adapter.cjs under the game's per-user data directory
+    (%APPDATA%/io.codeterraform.game on Windows; XDG_CONFIG_HOME or
+    ~/.config on other platforms), independent of machine or username."""
+    app_data = (
+        os.environ.get("APPDATA")
+        or os.environ.get("XDG_CONFIG_HOME")
+        or os.path.join(os.path.expanduser("~"), ".config")
+    )
+    return os.path.join(app_data, "io.codeterraform.game", "external-ide", "server", "debug-adapter.cjs")
+
+
+NODE = _default_node()
+ADAPTER = _default_adapter()
 
 
 class DapClient:
