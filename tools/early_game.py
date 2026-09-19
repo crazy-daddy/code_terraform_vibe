@@ -239,15 +239,26 @@ def check_workspace_ready(workspace: str) -> bool:
 
 
 def read_save_state(workspace: str) -> Dict[str, Any]:
-    """Reads the complete live simulation state from the active save_*.json file."""
+    """Reads the complete live simulation state from the active save_*.json file.
+    Retries briefly on PermissionError/OSError: the game holds an exclusive lock
+    on this file for the few ms it takes to write an autosave, so a read landing
+    in that window is a normal race, not a real failure."""
     save_json = resolve_save_json(workspace)
     if save_json and os.path.exists(save_json):
-        try:
-            with open(save_json, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get("state", {})
-        except Exception as e:
-            print(f"[EarlyGame] Warning: Failed to read {save_json} with Exception: {e}")
+        attempts = 3
+        for attempt in range(attempts):
+            try:
+                with open(save_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data.get("state", {})
+            except (PermissionError, OSError) as e:
+                if attempt < attempts - 1:
+                    time.sleep(0.1)
+                    continue
+                print(f"[EarlyGame] Warning: Failed to read {save_json} with Exception: {e}")
+            except Exception as e:
+                print(f"[EarlyGame] Warning: Failed to read {save_json} with Exception: {e}")
+                break
     return {}
 
 
@@ -1015,9 +1026,6 @@ def scan_and_deploy_machines(workspace: str, dry_run: bool = False) -> int:
             if content:
                 print(f"[EarlyGame] Deploying operational {deploy_template_name} template to {m_id} ({script_name})...")
                 ok = write_and_launch(workspace, script_name, content, dry_run=dry_run)
-                if not dry_run:
-                    # Send hot-restart via command.json
-                    restart_game_script(workspace, m_id, content)
                 _DEPLOYED_IN_SESSION.add(m_id)
                 deployed_count += 1
                 time.sleep(0.3)
