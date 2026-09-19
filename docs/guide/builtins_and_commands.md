@@ -1082,6 +1082,45 @@ Return a decorator that preserves the wrapped callable's supported name, qualifi
 
 - **Returns** `any`
 
+##### `functools.partial(func, /, *args, **keywords)`
+
+Return a new callable that calls `func` with some arguments already filled in. `partial(move, rover)` is a one-argument function; later positional arguments follow the bound ones and later keywords replace bound keywords of the same name. The result carries `.func`, `.args` and `.keywords`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `func` | `any` | Function to bind arguments to |
+| `*args` | `any` | Positional arguments to bind now; arguments passed later follow them |
+| `**keywords` | `any` | Keyword arguments to bind now; a keyword passed later replaces the bound one |
+
+- **Returns** `any`
+
+##### `functools.lru_cache(maxsize=128, typed=False)`
+
+Decorator that remembers what the function returned for each set of arguments, so a repeat call returns the stored value instead of running the body. Use it on pure calculations that a loop repeats, never on a function that reads the world. A cached reading is frozen at the first call and will not follow the machine. The wrapped function gains `.cache_clear()` and `.cache_info()`. Arguments must be hashable, exactly as dict keys are.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `maxsize` | `any` | How many results to keep, **128** by default. Past that the least recently used one is dropped. `None` asks for no limit, which this game caps anyway so a script that runs all session cannot grow a cache forever |
+| `typed` | `boolean` | Treat arguments of different types as different keys, so `f(1)` and `f(1.5)` never share a result |
+
+- **Returns** `any`
+
+##### `functools.cache(user_function, /)`
+
+Decorator that remembers every result, the same as `lru_cache(maxsize=None)`. The same warning applies: cache calculations, never world readings.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `user_function` | `any` | Function to memoize |
+
+- **Returns** `any`
+
 *Built-in Modules*
 
 ---
@@ -1221,6 +1260,12 @@ Split `string` wherever `pattern` matches. `maxsplit=0` means no limit. Capturin
 
 Built-in record-class helpers. Works without Shared Library research. Generates concise user-class value objects; use TypedDict for JSON-shaped records.
 
+##### `dataclasses.MISSING: any`
+
+Sentinel telling a field with no default apart from one that defaults to `None`. Test it with `field.default is MISSING`.
+
+- **Returns** `any`
+
 ##### `dataclasses.dataclass(cls?, /, *, init=True, repr=True, eq=True, order=False, kw_only=False, unsafe_hash=False, frozen=False, slots=False, weakref_slot=False)`
 
 Decorate a class to generate declaration-ordered construction, representation, value equality, and optional ordering. Supports both `@dataclass` and `@dataclass(...)`, inherited fields, `__post_init__`, and explicit-method preservation. Generated behavior is controlled by `init`, `repr`, `eq`, `order`, and `kw_only`. Compatibility flags `unsafe_hash`, `frozen`, `slots`, and `weakref_slot` may be passed only as `False`; their `True` behavior and every unlisted standard-library option are rejected rather than ignored. Dataclass instances remain ordinary user objects and cannot cross JSON-shaped game API boundaries.
@@ -1259,7 +1304,225 @@ Configure one annotated dataclass field. Use `default` for an immutable or hasha
 
 - **Returns** `any`
 
-*Language / Basics*
+##### `dataclasses.asdict(obj, /)`
+
+Return a record-class instance as a dict, recursing into nested record classes, lists, tuples, dicts and sets. Dict keys are converted too, so a record class used as a key raises `TypeError` here rather than surviving into a result that cannot be sent. This is the bridge out of a class: the result is accepted by `json.dumps()`, `comms.send()` and the Data Archive, which all refuse a class instance. Values that are not containers are placed in the result as they are, not copied, so a shared list stays shared.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `obj` | `any` | Record-class instance to convert |
+
+- **Returns** `dict`
+
+##### `dataclasses.astuple(obj, /)`
+
+Return a record-class instance as a tuple of its field values, recursing the same way `asdict()` does. Useful as a sort key or a dict key when every field is hashable.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `obj` | `any` | Record-class instance to convert |
+
+- **Returns** `tuple`
+
+##### `dataclasses.fields(obj, /)`
+
+Return one `Field` per declared field, in declaration order. Accepts a record class or one of its instances.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `obj` | `any` | Record class or instance to inspect |
+
+- **Returns** `tuple<Field>`
+
+##### `dataclasses.replace(obj, /, **changes)`
+
+Return a new instance with the named fields changed and every other field copied from `obj`. The class is constructed normally, so `__init__` runs again. A field declared `init=False` cannot be replaced.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `obj` | `any` | Record-class instance to copy |
+| `**changes` | `any` | Fields to set by name; every other field is copied from `obj` |
+
+- **Returns** `any`
+
+##### `dataclasses.is_dataclass(obj, /)`
+
+True when the value is a record class or an instance of one.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `obj` | `any` | Value to test |
+
+- **Returns** `boolean`
+
+*Built-in Modules*
+
+---
+
+## json
+
+Built-in JSON text helpers. Turns records into text and back, using the same value shapes the Signal Bus and Data Archive accept. Works without Shared Library research.
+
+##### `json.dumps(obj, /, *, indent=None, sort_keys=False, ensure_ascii=True, separators=None, allow_nan=True, skipkeys=False)`
+
+Return `obj` as JSON text. Accepts `None`, booleans, numbers, strings, lists, tuples and dicts whose keys are strings, numbers, booleans or `None`, the same shapes the Signal Bus and Data Archive store. A set, a class instance or a function raises `TypeError`; convert it first, for example with `dataclasses.asdict()`. A container that contains itself raises `ValueError`, and one nested deeper than **256** levels raises `RecursionError`, which is the same depth `loads()` reads back.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `obj` | `any` | Value to write as JSON text |
+| `indent` | `any` | `None` for one compact line, a number of spaces, or the literal text to indent each level with |
+| `sort_keys` | `boolean` | Write object keys in sorted order, so two equal dicts built in a different order produce identical text. Use this whenever the text is a cache key. The keys themselves are sorted, so numeric keys order numerically (**1, 2, 10**) and a dict mixing key types Python cannot compare raises `TypeError` |
+| `ensure_ascii` | `boolean` | Escape every non-ASCII character as `\uXXXX`. Pass `False` to write the characters directly |
+| `separators` | `any` | A two-item `(item, key)` tuple of strings replacing the defaults `(", ", ": ")` |
+| `allow_nan` | `boolean` | Write `nan` and infinities as `NaN`, `Infinity` and `-Infinity`. Pass `False` to raise `ValueError` instead. Note that those three spellings are not standard JSON, and a value that round-trips here can still be refused by `comms.send()` and the Data Archive |
+| `skipkeys` | `boolean` | Silently drop dict entries whose key has no JSON spelling instead of raising `TypeError` |
+
+- **Returns** `string`
+
+##### `json.loads(s, /)`
+
+Read JSON text and return the value: `None`, a boolean, a number, a string, a list, or a dict with string keys. Malformed text raises `ValueError` naming the line, column and character position. Note that a whole number always comes back as an int, because in this language a whole float IS an int.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `s` | `string` | JSON text to read |
+
+- **Returns** `any`
+
+*Built-in Modules*
+
+---
+
+## heapq
+
+Built-in priority-queue helpers. Keeps an ordinary list arranged so the smallest item is always first. Works without Shared Library research.
+
+##### `heapq.heappush(heap, item, /)`
+
+Add `item` to `heap`, keeping the smallest item at `heap[0]`. The heap is an ordinary list, so `len()` and `heap[0]` work as usual, and only the ordering of the rest is the heap's business.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `heap` | `list` | List arranged as a heap by the other heapq functions |
+| `item` | `any` | Value to add |
+
+- **Returns** `None`
+
+##### `heapq.heappop(heap, /)`
+
+Remove and return the smallest item, keeping the heap arranged. Raises `IndexError` on an empty heap, so check `len(heap)` first.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `heap` | `list` | List arranged as a heap by the other heapq functions |
+
+- **Returns** `any`
+
+##### `heapq.heappushpop(heap, item, /)`
+
+Add `item` and return the smallest item, in one pass. Faster than a push followed by a pop, and never grows the heap.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `heap` | `list` | List arranged as a heap by the other heapq functions |
+| `item` | `any` | Value to add |
+
+- **Returns** `any`
+
+##### `heapq.heapreplace(heap, item, /)`
+
+Return the smallest item and add `item`, in one pass. The heap keeps its size. Raises `IndexError` on an empty heap.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `heap` | `list` | List arranged as a heap by the other heapq functions |
+| `item` | `any` | Value to add |
+
+- **Returns** `any`
+
+##### `heapq.heapify(x, /)`
+
+Rearrange an existing list into a heap, in place. Cheaper than pushing the items one at a time.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `list` | List to rearrange in place |
+
+- **Returns** `None`
+
+##### `heapq.nsmallest(n, iterable, /, key=None)`
+
+Return the `n` smallest items as a sorted list. Pass `key=` to compare something derived from each item, exactly as `sorted()` does.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `number` | How many items to return |
+| `iterable` | `any` | Values to choose from |
+| `key` | `any` | Optional function called once per item; the returned values are compared instead of the items |
+
+- **Returns** `list`
+
+##### `heapq.nlargest(n, iterable, /, key=None)`
+
+Return the `n` largest items as a list, largest first. Pass `key=` to compare something derived from each item, exactly as `sorted()` does.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `number` | How many items to return |
+| `iterable` | `any` | Values to choose from |
+| `key` | `any` | Optional function called once per item; the returned values are compared instead of the items |
+
+- **Returns** `list`
+
+*Built-in Modules*
+
+---
+
+## traceback
+
+Built-in traceback helpers. Report where a caught exception came from, frame by frame. Works without Shared Library research.
+
+##### `traceback.format_exc()`
+
+Return the traceback of the exception currently being handled, as a string: the chain of calls that led to it, innermost last, each with its file, line and function. Call it inside an `except` block. Outside one it returns `NoneType: None`.
+
+- **Returns** `string`
+
+##### `traceback.print_exc()`
+
+Write the traceback of the exception currently being handled to the console's error output. Same text as `format_exc()`, printed instead of returned. This is the answer to "the message says what broke, but where?" for an exception your own code caught.
+
+- **Returns** `None`
+
+*Built-in Modules*
 
 ---
 

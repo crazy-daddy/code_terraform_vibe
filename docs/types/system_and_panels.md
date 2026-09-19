@@ -5,6 +5,9 @@ Complete property specifications, descriptions, units, and return types from the
 ## Index
 
 - [`Panel`](#panel) (PANELS)
+- [`PanelClick`](#panelclick) (PANELS)
+- [`PanelKey`](#panelkey) (PANELS)
+- [`PanelMouse`](#panelmouse) (PANELS)
 - [`ActionResult`](#actionresult) (SYSTEM)
 - [`CommandResult`](#commandresult) (SYSTEM)
 - [`CountResult`](#countresult) (SYSTEM)
@@ -38,15 +41,7 @@ card(8, 8, 264, 64, "Section")
 | `h` | `number` | Height (pixels) |
 | `title` | `string` | Optional card title |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `divider(x1, y1, x2, y2)`
 
@@ -65,15 +60,7 @@ divider(10, 40, 270, 40)
 | `x2` | `number` | End X (pixels) |
 | `y2` | `number` | End Y (pixels) |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `label(x, y, text, style?)`
 
@@ -92,15 +79,7 @@ label(10, 30, "OXYGEN", "caption")
 | `text` | `string` | Label text |
 | `style` | `string` | Text style preset. |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `status_dot(x, y, r, status)`
 
@@ -119,17 +98,9 @@ status_dot(0, 0, 5, "running")
 | `r` | `number` | Radius (pixels) |
 | `status` | `string` | Status preset. |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
+- **Returns** `None`
 
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
-
-##### `toggle(x, y, on, label?)`
+##### `toggle(x, y, on, label?, size?)`
 
 Green/grey power-toggle pill matching the dashboard's machine on/off control. This widget only displays the `on` value you pass in; use `panel.switch(...)` for a clickable control.
 
@@ -145,18 +116,11 @@ toggle(10, 12, true, "powered")
 | `y` | `number` | Y (pixels) |
 | `on` | `boolean` | Whether the toggle is on |
 | `label` | `string` | Optional label |
+| `size` | `number` | Pill height in pixels (default 18). The width, knob and label follow it. |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
+- **Returns** `None`
 
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
-
-##### `pill(x, y, text, color?)`
+##### `pill(x, y, text, color?, size?)`
 
 Rounded badge with text, achievement-style. Color accepts theme tokens (`"accent"`, `"success"`, `"warning"`, `"error"`, `"text-muted"`) or hex. Use for status labels or category tags.
 
@@ -172,16 +136,9 @@ pill(10, 22, "earned", "success")
 | `y` | `number` | Y (pixels) |
 | `text` | `string` | Pill text |
 | `color` | `string` | Theme token (e.g. `"accent"`), or any CSS color (hex, `rgb()`, `hsl()`, named). |
+| `size` | `number` | Pill height in pixels (default 18). The text and padding follow it; the width still comes from the text. |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `counter(x, y, value, label?, size?)`
 
@@ -201,15 +158,7 @@ counter(16, 38, 87, "shipped", 26)
 | `label` | `string` | Optional label |
 | `size` | `number` | Optional numeric font size in pixels (default 24) |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `progress_bar(x, y, w, h, fraction, color?)`
 
@@ -230,15 +179,7 @@ progress_bar(0.72, "success")
 | `fraction` | `number` | Fill (0-1) |
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `vertical_bar(x, y, w, h, fraction, color?)`
 
@@ -259,15 +200,7 @@ vertical_bar(110, 10, 30, 60, 0.6)
 | `fraction` | `number` | Fill (0-1) |
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `bar_chart(x, y, w, h, values, max?, labels?)`
 
@@ -289,15 +222,7 @@ bar_chart(0, 0, 0, 0, [42, 80, 26, 61, 95], 100)
 | `max` | `number` | Optional maximum value |
 | `labels` | `any` | Optional labels |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `gauge(x, y, radius, fraction, label?)`
 
@@ -317,15 +242,7 @@ gauge(140, 50, 32, 0.62, "62%")
 | `fraction` | `number` | Fill fraction in the **0-1** range |
 | `label` | `string` | Optional label |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `spark_line(x, y, w, h, values)`
 
@@ -345,15 +262,7 @@ spark_line(0, 0, 0, 0)
 | `h` | `number` | Height (pixels) |
 | `values` | `any` | Numeric values to plot |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `button(key, x, y, w?, h?, label?)`
 
@@ -376,7 +285,7 @@ button(10, 12, 90, 26, "shed now")
 
 - **Returns** `boolean`
 
-##### `switch(key, x, y, default_on?, label?)`
+##### `switch(key, x, y, default_on?, label?, size?)`
 
 An interactive on/off switch, the player clicks it to flip. Pass a unique `key`; `default_on` sets the starting state the first time the card runs. Returns the current boolean every tick, and the flip persists in the card's state across reloads. Unlike the display `toggle` (which only shows a state you pass in), this one is clickable: `auto = panel.switch("auto_recover", 165, 128, True)`.
 
@@ -393,10 +302,11 @@ switch(10, 12, true, "auto-recover")
 | `y` | `number` | Y (pixels) |
 | `default_on` | `boolean` | Initial on/off state |
 | `label` | `string` | Optional label |
+| `size` | `number` | Pill height in pixels (default 18). The clickable area follows it. |
 
 - **Returns** `boolean`
 
-##### `slider(key, x, y, w, default?, label?)`
+##### `slider(key, x, y, w, default?, label?, size?)`
 
 A horizontal slider the player clicks to set a value. Pass a unique `key`; `default` (**0-1**) sets the starting value. Returns the current value as a **0-1** number every tick, persisted in the card's state. Use it for thresholds the player tunes live, a buy-trigger level, a throttle target.
 
@@ -414,8 +324,259 @@ slider(10, 14, 120, 0.5, "rate")
 | `w` | `number` | Width (pixels) |
 | `default` | `number` | Initial value 0-1 |
 | `label` | `string` | Optional label |
+| `size` | `number` | Track height in pixels (default 14). The knob, label and clickable area follow it. |
 
 - **Returns** `number`
+
+##### `checkbox(key, x, y, default_on?, label?, size?)`
+
+A check box the player clicks. Same stored state as `panel.switch(...)`, so `set_switch` drives either one; the difference is the shape. Pass a unique `key`; `default_on` sets the starting state the first time the card runs.
+
+```preview
+checkbox(10, 12, true, "night mode")
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Unique key this box stores its state under. |
+| `x` | `number` | X (pixels) |
+| `y` | `number` | Y (pixels) |
+| `default_on` | `boolean` | Checked state the first time the card runs. |
+| `label` | `string` | Optional label drawn to the right. |
+| `size` | `number` | Box edge length in pixels (default 14). The tick and label follow it. |
+
+- **Returns** `boolean`
+
+##### `radio_group(key, x, y, options, default?, row_height?)`
+
+One choice out of several, drawn one option per row. The whole group shares a single `key`, which is why five options cost the card one stored value instead of five: building radio buttons out of five separate switches is what leaves five keys behind. Returns the selected option's text every tick. `default` accepts the option text or its row number.
+
+```preview
+radio_group(10, 6, ["ore", "ingots", "both"], 1)
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Unique key the whole group stores its choice under. |
+| `x` | `number` | X (pixels) |
+| `y` | `number` | Y (pixels) |
+| `options` | `any` | List of choices, drawn one per row. |
+| `default` | `any` | Option text, or row number, selected the first time the card runs. |
+| `row_height` | `number` | Row pitch in pixels (default 20). The dot and text follow it. |
+
+- **Returns** `string`
+
+##### `combo(key, x, y, w, options, default?, label?, size?)`
+
+A dropdown. Clicking it opens the game's own menu over the card, so the choices stay readable at any card size and never get clipped by the panel edge. Returns the selected option's text every tick, and `None` while `options` is empty. `default` accepts the option text or its row number.
+
+```preview
+combo(10, 12, 150, "iron_ingot", "recipe")
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Unique key this box stores its choice under. |
+| `x` | `number` | X (pixels) |
+| `y` | `number` | Y (pixels) |
+| `w` | `number` | Width (pixels) |
+| `options` | `any` | List of choices shown when the player opens the box. |
+| `default` | `any` | Option text, or row number, selected the first time the card runs. |
+| `label` | `string` | Optional label drawn to the right. |
+| `size` | `number` | Box height in pixels (default 24). The text and caret follow it. |
+
+- **Returns** `string`
+
+##### `text_field(key, x, y, w, default?, placeholder?, label?, size?)`
+
+A one-line text box. Clicking it opens a real text editor over the field, so selection, copy, paste and your keyboard's own input method all work; the card shows the committed value. Returns the current text every tick. Up to 1024 characters, saved with the card.
+
+```preview
+text_field(10, 12, 180, "outpost_north", "name...")
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Unique key this field stores its text under. |
+| `x` | `number` | X (pixels) |
+| `y` | `number` | Y (pixels) |
+| `w` | `number` | Width (pixels) |
+| `default` | `string` | Text the field holds the first time the card runs. |
+| `placeholder` | `string` | Muted text shown while the field is empty. |
+| `label` | `string` | Title shown on the editor the player types into. |
+| `size` | `number` | Field height in pixels (default 24). The text follows it. |
+
+- **Returns** `string`
+
+##### `list(key, x, y, w, h, items, row_height?)`
+
+A scrolling list of rows the player can pick from. Rows past the box height scroll with the wheel; the selected row is stored with the card and returned every tick, or `None` while `items` is empty. Use it where a card has more entries than space, which is most fleet and inventory boards.
+
+```preview
+list(10, 6, 160, 68, ["rover_1", "pioneer_1", "drone_1", "drone_2"], 0)
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Unique key this list stores its selected row under. |
+| `x` | `number` | X (pixels) |
+| `y` | `number` | Y (pixels) |
+| `w` | `number` | Width (pixels) |
+| `h` | `number` | Height (pixels). Rows past it scroll. |
+| `items` | `any` | List of rows to show. |
+| `row_height` | `number` | Row pitch in pixels (default 20). The text follows it. |
+
+- **Returns** `string`
+
+##### `icon_button(key, x, y, size, item_id)`
+
+A square button whose label is an item icon. Returns `True` the single tick it is pressed, exactly like `panel.button(...)`. Use it for a toolbar strip where a word would not fit. `panel.icon_ids()` lists every id it can draw.
+
+```preview
+icon_button(10, 8, 44, "iron_ingot")
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Unique key so the click routes back to this button. |
+| `x` | `number` | X (pixels) |
+| `y` | `number` | Y (pixels) |
+| `size` | `number` | Button edge length in pixels (default 32). |
+| `item_id` | `string` | Icon to draw inside the button. `panel.icon_ids()` lists every id. |
+
+- **Returns** `boolean`
+
+##### `set_switch(key, on)`
+
+Force a switch or check box to a state from code, instead of waiting for the player to click it. Use it to build a radio group out of switches, to reset a cockpit to a known layout, or to reflect a state the card read from the world.
+
+```
+if not power.is_online():
+  panel.set_switch("auto_dispatch", False)
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Key of the switch or check box to set. |
+| `on` | `boolean` | New state. |
+
+- **Returns** `None`
+
+##### `set_slider(key, value)`
+
+Force a slider to a value (0-1) from code.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Key of the slider to set. |
+| `value` | `number` | New value, clamped to 0-1. |
+
+- **Returns** `None`
+
+##### `set_selected(key, option)`
+
+Force a radio group, combo box, or list to a choice from code. Accepts the option's text or its row number.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Key of the radio group, combo box, or list to set. |
+| `option` | `any` | Option text, or row number. |
+
+- **Returns** `None`
+
+##### `set_text(key, text)`
+
+Force a text field's contents from code.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Key of the text field to set. |
+| `text` | `string` | New text. |
+
+- **Returns** `None`
+
+##### `forget(key)`
+
+Drop one stored widget value. The next paint of that widget starts from its declared default again, which is how a card resets one control without disturbing the others.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `string` | Key to drop from the card's stored input state. |
+
+- **Returns** `None`
+
+##### `clear_inputs()`
+
+Drop every stored widget value on this card. Widget keys are never swept automatically, because a card that only paints one page at a time would lose the other page's state; this is the deliberate reset. A card is limited to 512 stored keys, and a key built from changing data (a tick count, a name that varies) is what reaches that limit.
+
+- **Returns** `None`
+
+##### `mouse()`
+
+Where the cursor is on this card, in the same coordinates you draw in. `over` is `False` while the cursor is elsewhere. The sample is taken once per tick and the card repaints at the same rate, so a highlight drawn from it follows the cursor about a frame behind: right for showing what is under the pointer, wrong for anything that must track it exactly.
+
+```
+m = panel.mouse()
+if m.over and m.x < panel.width() / 2:
+  panel.fill_rect(0, 0, panel.width() / 2, panel.height(), "bg-surface")
+```
+
+- **Returns** `PanelMouse`
+
+##### `clicks()`
+
+Every click since the last time you asked that did not land on a widget, oldest first. This is what lets a card hit-test its own drawing: a map, a chart, a seating plan. Each click is handed out once. Up to 32 are kept between reads.
+
+```
+for c in panel.clicks():
+  if c.x > 250:
+    print("right half", c.x, c.y)
+```
+
+- **Returns** `list<PanelClick>`
+
+##### `capture_keys()`
+
+Ask for the keyboard. After this, clicking the card gives it focus and its keystrokes go to `panel.keys()` instead of the game's own shortcuts; Escape or clicking elsewhere hands the keyboard back. Call it once above your loop. A card that never calls it can never take a key.
+
+- **Returns** `None`
+
+##### `keys()`
+
+Every key pressed since the last time you asked, oldest first, for a card that called `panel.capture_keys()` and holds focus. Each press is handed out once. Up to 32 are kept between reads.
+
+```
+panel.capture_keys()
+while True:
+  panel.clear()
+  for k in panel.keys():
+    if k.key == "ArrowUp":
+      cursor = cursor - 1
+```
+
+- **Returns** `list<PanelKey>`
 
 ##### `draw_text(x, y, text, size?, color?, wrap?)`
 
@@ -436,15 +597,7 @@ draw_text(10, 24, "Hello, panel.", 14, "text-bright")
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 | `wrap` | `number` | Optional wrap width in pixels |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `icon_ids()`
 
@@ -474,15 +627,7 @@ draw_icon()
 | `item_id` | `string` | Item id to draw the icon for |
 | `size` | `number` | Icon size in pixels (default 32) |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `draw_rect(x, y, w, h, color?)`
 
@@ -502,15 +647,7 @@ draw_rect(10, 10, 260, 60, "accent")
 | `h` | `number` | Height (pixels) |
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `fill_rect(x, y, w, h, color?)`
 
@@ -530,15 +667,7 @@ fill_rect(10, 10, 260, 60, "success")
 | `h` | `number` | Height (pixels) |
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `draw_circle(x, y, r, color?)`
 
@@ -557,15 +686,7 @@ draw_circle(140, 40, 24, "accent")
 | `r` | `number` | Radius |
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `fill_circle(x, y, r, color?)`
 
@@ -584,15 +705,7 @@ fill_circle(140, 40, 24, "warning")
 | `r` | `number` | Radius |
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `draw_line(x1, y1, x2, y2, color?)`
 
@@ -612,29 +725,98 @@ draw_line(10, 40, 270, 40, "accent")
 | `y2` | `number` | End Y (pixels) |
 | `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
+- **Returns** `None`
 
-*Outcomes*
+##### `draw_polygon(points, color?)`
 
-| Status | Kind | Meaning |
+Outlined closed shape through a flat list of coordinates: `[x1, y1, x2, y2, ...]`. Needs at least two points. Up to 4096 points per call.
+
+```preview
+draw_polygon([40, 10, 120, 30, 100, 70, 30, 60], "accent")
+```
+
+*Parameters*
+
+| Name | Type | Description |
 | --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+| `points` | `any` | Flat list of coordinates: `[x1, y1, x2, y2, ...]`. |
+| `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
+
+- **Returns** `None`
+
+##### `fill_polygon(points, color?)`
+
+Filled closed shape through a flat list of coordinates. Same input as `draw_polygon`.
+
+```preview
+fill_polygon([40, 10, 120, 30, 100, 70, 30, 60], "success")
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `points` | `any` | Flat list of coordinates: `[x1, y1, x2, y2, ...]`. |
+| `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
+
+- **Returns** `None`
+
+##### `polyline(points, color?, width?)`
+
+Open line through a flat list of coordinates, with an optional width. Use it for a path, a route, or a chart trace your own code computed.
+
+```preview
+polyline([10, 60, 60, 20, 110, 50, 160, 15, 210, 40], "accent", 2)
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `points` | `any` | Flat list of coordinates: `[x1, y1, x2, y2, ...]`. |
+| `color` | `string` | Theme token, or any CSS color (hex, `rgb()`, `hsl()`, named). |
+| `width` | `number` | Line width in pixels (default 1). |
+
+- **Returns** `None`
+
+##### `clip_rect(x, y, w, h)`
+
+Confine every later drawing call to a rectangle, until `clear_clip()`. Use it to keep a scrolling or oversized drawing inside its box. Clips nest up to 16 deep; any left open are closed for you when the frame finishes.
+
+```
+panel.clip_rect(10, 10, 200, 80)
+panel.draw_text(12, 30, long_line, 12)
+panel.clear_clip()
+```
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `number` | X (pixels) |
+| `y` | `number` | Y (pixels) |
+| `w` | `number` | Width (pixels) |
+| `h` | `number` | Height (pixels) |
+
+- **Returns** `None`
+
+##### `clear_clip(all?)`
+
+Close the innermost `clip_rect`, or every open one when passed `True`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `all` | `boolean` | True closes every open clip; omitted closes the innermost one. |
+
+- **Returns** `None`
 
 ##### `clear()`
 
 Wipe the panel canvas. Call at the top of every `while True:` loop iteration so old paint doesn't ghost behind new paint.
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
+- **Returns** `None`
 
 ##### `width()`
 
@@ -648,7 +830,97 @@ Current logical canvas height in pixels: **200** for a one-row card or **400** f
 
 - **Returns** `number`
 
-*Types / Contracts*
+*Types / Panels*
+
+---
+
+## PanelClick
+
+**Returned by:** `panel.clicks()` (panel scripts only)
+
+### Properties
+
+##### `.x`
+
+Click X in panel coordinates.
+
+- **Returns** `number`
+
+##### `.y`
+
+Click Y in panel coordinates.
+
+- **Returns** `number`
+
+*Types / Panels*
+
+---
+
+## PanelKey
+
+**Returned by:** `panel.keys()` (panel scripts only)
+
+### Properties
+
+##### `.key`
+
+Key name, such as `"a"`, `"Enter"`, or `"ArrowLeft"`.
+
+- **Returns** `string`
+
+##### `.ctrl`
+
+True when Ctrl was held.
+
+- **Returns** `boolean`
+
+##### `.shift`
+
+True when Shift was held.
+
+- **Returns** `boolean`
+
+##### `.alt`
+
+True when Alt was held.
+
+- **Returns** `boolean`
+
+##### `.meta`
+
+True when Cmd or the Windows key was held.
+
+- **Returns** `boolean`
+
+*Types / Panels*
+
+---
+
+## PanelMouse
+
+**Returned by:** `panel.mouse()` (panel scripts only)
+
+### Properties
+
+##### `.x`
+
+Cursor X in panel coordinates.
+
+- **Returns** `number`
+
+##### `.y`
+
+Cursor Y in panel coordinates.
+
+- **Returns** `number`
+
+##### `.over`
+
+True while the cursor is over this card.
+
+- **Returns** `boolean`
+
+*Types / Panels*
 
 ---
 

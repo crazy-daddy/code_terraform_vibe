@@ -289,7 +289,7 @@ while True:
   # ... call panel.draw_X(...) and panel.widget(...) here ...
 ```
 
-Your script controls the layout, colors, data shown, and update cadence. The same read APIs you use from machine scripts work here too: `get_component(...)`, `clock.get_elevation()`, `orders.list_orders()`. Panels can read component state; they change the base only through shared authorities such as `power_control`, `shop`, `comms`, `inventory`, or `atmosphere`.
+Your script controls the layout, colors, data shown, and update cadence. The same read APIs you use from machine scripts work here too: `get_component(...)`, `clock.get_elevation()`, `orders.list_orders()`. Panels can read component state; they change the base only through shared authorities such as `power_control`, `shop`, `comms`, `inventory`, `atmosphere`, or `computer`.
 
 ### Common uses
 
@@ -306,19 +306,27 @@ The data comes from existing APIs; panels provide a canvas and widgets for displ
 
 ### The widget set
 
-**Fifteen named widgets** for common patterns:
+**Twenty-one named widgets** for common patterns:
 
 - **Layout:** `card`, `divider`, `label`
 - **Indicators:** `status_dot`, `toggle`, `pill`, `counter`
 - **Bars:** `progress_bar`, `vertical_bar`, `bar_chart`
 - **Curves:** `gauge`, `spark_line`
-- **Interactive (the player clicks them):** `button`, `switch`, `slider`, read them each tick to act on the player's input
+- **Interactive (the player clicks them):** `button`, `icon_button`, `switch`, `checkbox`, `slider`, `radio_group`, `combo`, `text_field`, `list`, read them each tick to act on the player's input
 
-**Ten primitives** for everything the named widgets don't cover:
+A radio group, a combo box and a list each take their choices as one list and store one value, so a five-way choice costs the card one saved key rather than five. `combo` and `text_field` open the game's own menu and a real text editor over the card, which is why they stay readable at any card size and why typing into a field has working selection, clipboard and input method.
+
+**Fifteen primitives** for everything the named widgets don't cover:
 
 - `draw_text` (with optional `wrap`), `draw_icon`
 - `draw_rect` / `fill_rect`, `draw_circle` / `fill_circle`, `draw_line`
+- `draw_polygon` / `fill_polygon`, `polyline`
+- `clip_rect` / `clear_clip`
 - `clear`, `width`, `height`
+
+**Driving the widgets from code:** `set_switch`, `set_slider`, `set_selected` and `set_text` force a control to a value without waiting for a click; `forget` drops one stored value and `clear_inputs` drops them all. Stored keys are never swept for you, because a card that paints one page at a time would lose the other page's state, so a card is capped at 512 of them.
+
+**Reading the player directly:** `mouse()` gives the cursor position on this card, `clicks()` hands you every click that missed a widget so you can hit-test your own drawing, and `capture_keys()` plus `keys()` give a focused card the keyboard. The cursor is sampled once per tick and the card repaints at the same rate, so anything you draw from `mouse()` follows the pointer about a frame behind: right for showing what is under it, wrong for anything that must track it exactly.
 
 Every widget that takes a `color` parameter accepts theme tokens: `"accent"`, `"success"`, `"warning"`, `"error"`, `"text-bright"`, `"text-secondary"`, `"text-muted"`, `"text-value"`. Cards can also paint with **surface tokens**, bg-base, bg-surface, bg-panel, border, border-dim. Wrap a `card(x, y, w, h, title)` for the bordered+titled frame, fill zones with `fill_rect(x, y, w, h, "bg-surface")`, and a manage-style row is `status_dot` (green) + `draw_text` (name) + `button` (play/manage). Theme tokens resolve from the active theme whenever the script redraws the card.
 
@@ -349,7 +357,7 @@ No `sleep()` needed, the interpreter paces the loop automatically. The panel rep
 
 ### Watch for...
 
-> Cards can command only through shared authorities. A card has no `self` over a machine, so a machine's own actions (`set_throttle`, `set_recipe`, `move_to`, `mine`) don't work from a card. It can still call shared authorities such as `power_control` (breakers), `shop` (buy/sell), `comms` (Signal Bus), `inventory`, and `atmosphere`. Treat cards as trusted automation because they can change base state.
+> Cards can command only through shared authorities. A card has no `self` over a machine, so a machine's own actions (`set_throttle`, `set_recipe`, `move_to`, `mine`) don't work from a card. It can still call shared authorities such as `power_control` (breakers), `shop` (buy/sell), `comms` (Signal Bus), `inventory`, `atmosphere`, and `computer` (deploy, undeploy, decommission, rename). Treat cards as trusted automation because they can change base state.
 
 > The canvas does not auto-clear. Always call `panel.clear()` at the top of every loop iteration, or old paint will pile up under new paint and the panel will look smeared.
 

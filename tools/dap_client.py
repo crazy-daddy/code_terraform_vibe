@@ -223,6 +223,39 @@ def run_session(workspace, script, breakpoints, mode="attach", on_stopped=None, 
         client.close()
 
 
+def launch_script(workspace, script, timeout=15):
+    """
+    Launches an idle game script via DAP without breakpoints,
+    starts its execution in the game (runIfIdle=True), and disconnects cleanly.
+    Returns True on success, False on failure.
+    """
+    client = DapClient()
+    try:
+        r = client.request("initialize", {
+            "clientID": "dap_client.py", "adapterID": "codeterraform",
+            "pathFormat": "path", "linesStartAt1": True, "columnsStartAt1": True,
+        }, timeout=timeout)
+        if not r or not r.get("success"):
+            return False
+
+        client.send("request", "launch", {"workspace": workspace, "script": script})
+        ev = client.wait_for(lambda m: m.get("type") == "event" and m.get("event") == "initialized", timeout=timeout)
+        if not ev:
+            return False
+
+        r = client.request("configurationDone", {}, timeout=timeout)
+        if not r or not r.get("success"):
+            return False
+
+        client.wait_for(lambda m: m.get("type") == "response" and m.get("command") == "launch", timeout=timeout)
+        client.request("disconnect", {"terminateDebuggee": False}, timeout=timeout)
+        return True
+    except Exception:
+        return False
+    finally:
+        client.close()
+
+
 def _print_stopped_state(client, stopped_event):
     thread_id = stopped_event["body"]["threadId"]
     frames = client.request("stackTrace", {"threadId": thread_id})
@@ -242,10 +275,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--script", required=True)
-    parser.add_argument("--break", dest="breaks", action="append", required=True, metavar="FILE:LINE")
+    parser.add_argument("--launch", action="store_true", help="Launch an idle script in the running game without breakpoints")
+    parser.add_argument("--break", dest="breaks", action="append", metavar="FILE:LINE", help="Breakpoint for debug session")
     parser.add_argument("--mode", choices=["attach", "launch"], default="attach")
     parser.add_argument("--timeout", type=int, default=20)
     args = parser.parse_args()
+
+    if args.launch:
+        ok = launch_script(args.workspace, args.script, timeout=args.timeout)
+        if ok:
+            print(f"Successfully launched {args.script} in game.")
+            sys.exit(0)
+        else:
+            print(f"Failed to launch {args.script}.")
+            sys.exit(1)
+
+    if not args.breaks:
+        parser.error("Either --launch or at least one --break must be specified.")
 
     breakpoints = []
     for spec in args.breaks:

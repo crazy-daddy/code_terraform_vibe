@@ -3,7 +3,7 @@
 Quick reference map to all modular documentation files.
 
 
-## Components (87 files)
+## Components (88 files)
 
 - [atmosphere](components/atmosphere.md)
 - [battery](components/battery.md)
@@ -73,6 +73,7 @@ Quick reference map to all modular documentation files.
 - [run_control](components/run_control.md)
 - [scanner](components/scanner.md)
 - [seed_maker](components/seed_maker.md)
+- [ship_computer](components/ship_computer.md)
 - [shop](components/shop.md)
 - [signal_bus](components/signal_bus.md)
 - [smelter](components/smelter.md)

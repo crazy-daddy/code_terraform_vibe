@@ -162,6 +162,7 @@ The save has grown past a single production base: multiple outposts are founded,
 
 ### Outpost Infrastructure & Freight
 - [ ] Building planner: deploy structures from inventory via script. Once built, it may place Outposts without per-instance human approval — decommissioning now exists, so founding is no longer permanent (see CLAUDE.md's Outpost Construction Safety Rule).
+  - **Unblocked by v0.1.25** (`changelog.txt`): "Scripts can deploy, undeploy, decommission and rename hardware through the Ship Computer" — this is the missing script-side API this task has been waiting on. The `docs/` snapshot in this repo has not been refreshed for v0.1.25 yet (no `ship_computer`/deploy-related doc exists, and the new `json`/`heapq`/`traceback` builtins and custom-exception support from the same release aren't in `docs/models/python_builtins.md` either) — re-export DOCS from the in-game manual first, then read whatever new component/guide page covers the Ship Computer's deploy/undeploy/decommission/rename calls before writing the planner.
 - [X] Lay power lines and liquid/gas transport pipes to satellite Outposts.
 - [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
   - [ ] Fabricate and deploy a Drone Depot into an outpost.

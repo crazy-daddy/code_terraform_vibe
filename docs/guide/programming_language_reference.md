@@ -493,7 +493,7 @@ Exceptions let a helper function stop with a named error when the caller gives i
 
 ### Raise an error
 
-Call an exception constructor with zero or one clear message, then `raise` it:
+Call an exception class with a clear message, then `raise` it:
 
 ```
 def normalize_sector(sector):
@@ -512,7 +512,7 @@ Gameplay APIs follow the same distinction. Wrong argument kinds raise `TypeError
 
 ### Catch and keep running
 
-Use `try` / `except` when a script can recover and continue. The variable after `as` is the exception object: printing it shows its message, while `type(error)`, `isinstance(error, ValueError)`, identity checks, and `raise error` retain its exception class and identity.
+Use `try` / `except` when a script can recover and continue. The variable after `as` is the exception object: printing it shows its message, `error.args` holds the arguments it was created with, and `type(error)`, `isinstance(error, ValueError)`, identity checks, and `raise error` retain its exception class and identity.
 
 ```
 target = None
@@ -533,7 +533,7 @@ Catch the narrowest error that makes sense. `except Exception as error:` catches
 
 A `try` block may have `else`, which runs only when the `try` body finishes without an exception, and `finally`, which always runs before control leaves through success, error, `return`, `break`, or `continue`. A new error or control-flow exit from `finally` replaces the pending one, so keep cleanup small and predictable. Bare `raise` inside an active handler or its `finally` block re-raises the same exception identity.
 
-`raise RuntimeError("message") from cause` evaluates and validates the cause, but the game console intentionally shows only the raised exception. Chained traceback metadata is not part of the displayed runtime surface.
+`raise RuntimeError("message") from cause` stores the cause on the new exception's `__cause__` (and `from None` marks the chain as deliberately cut). An exception raised while another is being handled records that one on `__context__`. The game console shows only the raised exception; your handler can walk `__cause__` and `__context__` when the earlier failure matters.
 
 ### Built-in names
 
@@ -541,7 +541,28 @@ Common choices are `ValueError` for a value with the right type but wrong conten
 
 Other supported names include `NameError`, `UnboundLocalError`, `ImportError`, `ModuleNotFoundError`, `ZeroDivisionError`, `StopIteration`, `GeneratorExit`, `AssertionError`, `NotImplementedError`, `RecursionError`, `IndentationError`, `OverflowError`, and `SyntaxError`. A completed generator raises `StopIteration`; its `.value` is the generator's `return` value. `GeneratorExit` is used by `generator.close()` and normally belongs inside generator cleanup.
 
-You cannot define new exception classes in scripts. Pick the closest built-in name and make the message specific enough that the console tells you where the problem came from.
+### Your own exception classes
+
+Derive a class from `Exception` (or from any built-in exception) when a failure deserves its own name, for example so a library can signal one condition and every caller can catch exactly that:
+
+```
+class LowBattery(Exception):
+  def __init__(self, level):
+    super().__init__(f"battery at {level}%")
+    self.level = level
+
+def check(rover):
+  level = rover.battery.percent()
+  if level < 20:
+    raise LowBattery(level)
+
+try:
+  check(get_component("rover_1"))
+except LowBattery as err:
+  print(err, err.level)
+```
+
+`class Empty(Exception): pass` is enough for a class with no extra data: `Empty("no cargo")` stores the message on `.args` and `str(err)` returns it. A bare `raise Empty` creates the object with no arguments. `except Exception as err:` catches every class derived from `Exception`, including yours, and `isinstance(err, LowBattery)` and `issubclass(LowBattery, Exception)` walk the hierarchy. Override `__str__` when the console text should differ from the message argument. Pick the closest built-in base so generic handlers keep working, and keep the message specific enough that the console tells you where the problem came from.
 
 *Guide / Programming*
 

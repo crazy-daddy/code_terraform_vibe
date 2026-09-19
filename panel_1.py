@@ -132,7 +132,10 @@ while True:
     if mismatch:
         panel.draw_text(ver_x, auto_y + 58, f"was {good_version()} -- new scripts halt on startup", 10, "text-secondary", 180)
         if panel.button("confirm_new_version", ver_x, auto_y + 78, 172, 26, "Confirm New Version"):
-            confirm_new_version()
+            try:
+                confirm_new_version()
+            except Exception as e:
+                print(f"[AUTOMATION] Confirm new version error: {e}")
 
     # Every mutating action below (grid supervision, rebalance/consolidation
     # sweeps, outpost/dock sync, and the two manual buttons) is gated behind

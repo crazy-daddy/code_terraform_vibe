@@ -2468,17 +2468,25 @@ running game interpreter, not a simulation. Setup and full details:
   (`publish_telemetry` ← `run_expedition_cycle` ← `run` ← the script's module scope) and real
   locals (`state='IDLE_AT_BASE'`, the live `RoverController` instance), then resumed cleanly leaving
   the script running.
-  - **`attach` does not restart an already-running script** — it just starts observing it, so a
-    breakpoint on a line that already executed (e.g. inside `__init__`, which only runs once at
-    construction) will never fire again; pick a line the ongoing loop actually still reaches (e.g.
-    inside `publish_telemetry()`, hit every cycle) instead of assuming a fresh run. A plain `launch`
-    on an already-running script behaves the same way — it attaches rather than restarting, matching
-    the external-ide README's own wording. A guessed `launch` argument (`"restart": True`) had no
-    effect — `initialize`'s advertised capabilities don't list any restart support, so there's no
-    confirmed way to force a genuine restart of a running script through this raw DAP surface; VS
-    Code's own **Run Script in Game** command may do this via extension-specific plumbing outside
-    `debug-adapter.cjs`'s plain interface, not reproduced here. Don't keep guessing undocumented
-    fields against a live session — pick an always-reached line instead, as done here.
+  - **`launch` starts idle scripts without breakpoints**: `dap_client.launch_script(workspace, script)`
+    (or CLI `python tools/dap_client.py --workspace <dir> --script <path> --launch`) sends `initialize` →
+    `launch` → `configurationDone` with no breakpoints set, triggering `{ action: "start", runIfIdle: true }`
+    in `debug-adapter.cjs`. It then cleanly disconnects with `terminateDebuggee=False`, leaving the freshly-started
+    script running in the live game.
+- **Automated Script Deployment (`tools/auto_deploy.py`)**:
+  - Automatically bridges newly placed/deployed hardware (via in-game `computer.deploy(...)`) to their host-side Python controller scripts.
+  - **Dual-Channel Monitoring**:
+    - Watches `logs/all.log` for explicit `[DEPLOY]` lines with arbitrary parameter assignments (e.g. `[DEPLOY] machine_id=pioneer_5 template=pioneer_hauler HOME_BASE="outpost_3" DESTINATION="outpost_home"`).
+    - Periodically scans `codeterraform-workspace.json` for newly registered machines whose script slots are idle and unpopulated.
+  - **Template Directory (`tools/templates/`)**:
+    - Stores modular templates (e.g., `solar.py`, `heater.py`, `smelter.py`, `pioneer_hauler.py`).
+    - Supports flexible parameter substitution: `${PARAM:default_value}` or `{PARAM}`.
+    - Built-in variables automatically injected: `MACHINE_ID`, `TYPE_ID`, `LOCATION_ID`.
+  - **CLI Modes**:
+    - `python tools/auto_deploy.py --scan`: One-shot scan and deploy for all unscripted idle machines.
+    - `python tools/auto_deploy.py --scan --dry-run`: Preview generated script code and parameters without modifying disk or launching.
+    - `python tools/auto_deploy.py --daemon`: Continuous background watcher loop.
+    - `python tools/auto_deploy.py --deploy <machine_id> [--template <name>] [--param KEY=VALUE ...]`: Targeted single-machine deployment.
 
 **Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**: ask the
 user first, every time — never assume standing permission from a prior yes.** A debug session runs
