@@ -115,6 +115,12 @@ def safe_buy_and_deploy(computer, item_id, count_needed, tech_gate=None):
         if d_res.status == "ok":
             deployed += 1
             print(f"[buyer] Deployed {item_id} -> {d_res.machine_id}")
+            pc = get_component("power_control")
+            if pc and hasattr(pc, "set_powered"):
+                try:
+                    pc.set_powered(d_res.machine_id, True)
+                except Exception:
+                    pass
         else:
             print(f"[buyer] Deploy {item_id} -> {d_res.status}: {d_res.message}")
             break
@@ -160,59 +166,95 @@ while True:
         last_heartbeat = now
 
     # --------------------------------------------------------------------------
-    # PHASE 1: Pressure Rush to 0.200 kPa
+    # POWER GRID ANCHOR (3 Batteries + 6 Solar)
     # --------------------------------------------------------------------------
-    if pressure < 0.200:
-        p_count = count_buildings("pressure_generator")
-        if p_count < 10:
-            print(f"[buyer] Phase 1: Scaling Pressure Generators ({p_count}/10)...")
-            safe_buy_and_deploy(computer, "pressure_generator", 10 - p_count)
+    # Batteries arrive pre-charged with 500 Wh (+1,000 Wh instant buffer from shop!)
+    s_count = count_buildings("solar_generator")
+    b_count = count_buildings("battery")
+    p_count = count_buildings("pressure_generator")
+    o2_count = count_buildings("oxygen_generator")
+
+    # Maintain power grid anchor: 3 Batteries + 6 Solar Panels (9 slots)
+    if b_count < 3:
+        safe_buy_and_deploy(computer, "battery", 3 - b_count)
+    elif b_count > 3 and pressure < 0.200:
+        # Recycle surplus batteries down to 3 during early game to free slots
+        safe_undeploy_and_sell(computer, "battery", 3, "battery")
+
+    if s_count < 6:
+        safe_buy_and_deploy(computer, "solar_generator", 6 - s_count)
+
+    # Ensure all active base machines are powered ON
+    pc = get_component("power_control")
+    if pc and hasattr(pc, "set_powered"):
+        for b in home.buildings():
+            # Keep bio unpowered if o2 < 1.0 or feeder not unlocked
+            if "bio_" in b.id and (o2 < 1.0 or not is_tech_unlocked("feeder_unlock")):
+                continue
+            try:
+                if hasattr(pc, "is_powered") and not pc.is_powered(b.id):
+                    res = pc.set_powered(b.id, True)
+                    print(f"[buyer] Powered ON {b.id}: {res.status}")
+                elif not hasattr(pc, "is_powered"):
+                    pc.set_powered(b.id, True)
+            except Exception as e:
+                pass
 
     # --------------------------------------------------------------------------
-    # PHASE 2: Oxygen Rush to 9.0 ppt (Smelter @ 5.0, Charger + Rover @ 9.0)
+    # MID-FLIGHT GUARD: Finish active Pressure rush if already near 0.200 kPa
+    # --------------------------------------------------------------------------
+    if pressure < 0.200 and p_count >= 8:
+        # Recycle any lingering O2 gens (0% atmospheric gas decay!)
+        if o2 >= 9.0 and o2_count > 0:
+            safe_undeploy_and_sell(computer, "oxygen_generator", 0, "oxygen_generator")
+        if count_buildings("charging_station") == 0 and is_tech_unlocked("research_charging_station"):
+            safe_buy_and_deploy(computer, "charging_station", 1, "research_charging_station")
+        if p_count < 12:
+            safe_buy_and_deploy(computer, "pressure_generator", 12 - p_count)
+
+    # --------------------------------------------------------------------------
+    # PHASE 1: Oxygen Rush to 9.0 ppt (Bio-Loop @ 1.0, Contracts @ 3.0, Smelter @ 5.0, Charger @ 9.0)
     # --------------------------------------------------------------------------
     elif o2 < 9.0:
-        # Step A: Recycle 9 Pressure Generators down to 1
-        safe_undeploy_and_sell(computer, "pressure_generator", 1, "pressure_generator")
-
-        # Step B: Ensure 3 Batteries (1,500 Wh buffer for 12 O2 gens)
-        bat_count = count_buildings("battery")
-        if bat_count < 3:
-            safe_buy_and_deploy(computer, "battery", 3 - bat_count)
-
-        # Step C: Power ON Bio-Loop at 1.0 ppt O2 (Auto Feeders unlocked)
-        if o2 >= 1.0 and is_tech_unlocked("feeder_unlock"):
-            for bio_id in ("bio_collector_1", "bio_lab_1", "bio_exchange_1"):
-                b_comp = get_component(bio_id)
-                if b_comp and hasattr(b_comp, "set_powered"):
-                    try:
-                        b_comp.set_powered(True)
-                    except Exception:
-                        pass
-
-        # Step D: Scale Oxygen Generators up to 12 (occupies 23/25 slots, 2 free)
-        # Note: Smelter is deferred until 9.0 ppt when Rovers and Charging Station unlock.
-        o2_count = count_buildings("oxygen_generator")
-        if o2_count < 12:
-            safe_buy_and_deploy(computer, "oxygen_generator", 12 - o2_count)
+        # Scale Oxygen Generators up to 13 (occupies exact 25/25 slots: 6 Solar + 3 Bat + 3 Bio + 13 O2)
+        if o2_count < 13:
+            print(f"[buyer] Phase 1: Scaling Oxygen Generators ({o2_count}/13)...")
+            safe_buy_and_deploy(computer, "oxygen_generator", 13 - o2_count)
 
     # --------------------------------------------------------------------------
-    # PHASE 2 Transition: Vehicle Charging Station, Smelter & 2 Rovers (@ 9.0 ppt)
+    # PHASE 2: Pressure Rush to 0.200 kPa (Charging Station deployed, rush Rover tech)
     # --------------------------------------------------------------------------
-    if o2 >= 9.0 and is_tech_unlocked("research_charging_station"):
-        # Deploy Vehicle Charging Station 1
-        if count_buildings("charging_station") == 0:
+    elif pressure < 0.200:
+        # Step A: Deploy Vehicle Charging Station 1 (unlocked at 9.0 ppt O2)
+        if count_buildings("charging_station") == 0 and is_tech_unlocked("research_charging_station"):
             print("[buyer] O2 >= 9.0 ppt: Deploying Vehicle Charging Station 1...")
             safe_buy_and_deploy(computer, "charging_station", 1, "research_charging_station")
 
-        # Deploy Smelter 1
+        # Step B: Recycle all 13 Oxygen Generators down to 0 (0% atmospheric gas decay, recovers 13 slots!)
+        safe_undeploy_and_sell(computer, "oxygen_generator", 0, "oxygen_generator")
+
+        # Step C: Scale Pressure Generators up to 12 (occupies exact 25/25 slots: 6 Solar + 3 Bat + 3 Bio + 1 Charger + 12 Pres)
+        # Note: Resonance sweep gauge takes ~4 sweeps to reach 100% sync efficiency.
+        if p_count < 12:
+            print(f"[buyer] Phase 2: Scaling Pressure Generators ({p_count}/12)...")
+            safe_buy_and_deploy(computer, "pressure_generator", 12 - p_count)
+
+    # --------------------------------------------------------------------------
+    # PHASE 2 Transition: Vehicle Charging Station, Smelter & 2 Rovers (@ 0.200 kPa & 9.0 ppt O2)
+    # --------------------------------------------------------------------------
+    if count_buildings("charging_station") == 0 and is_tech_unlocked("research_charging_station"):
+        print("[buyer] Deploying Vehicle Charging Station 1...")
+        safe_buy_and_deploy(computer, "charging_station", 1, "research_charging_station")
+
+    if pressure >= 0.200 and count_buildings("charging_station") >= 1:
+        # Deploy Smelter 1 (unlocked at 5.0 ppt O2)
         if count_buildings("smelter") == 0 and is_tech_unlocked("research_smelter"):
             print("[buyer] Deploying Smelter 1 for Rover ore processing...")
             safe_buy_and_deploy(computer, "smelter", 1, "research_smelter")
 
-        # Deploy 2 Rovers and order their modules
+        # Deploy 2 Rovers and order modules (unlocked at 0.200 kPa Pressure)
         r_count = count_vehicles("rover")
-        if r_count < 2 and is_tech_unlocked("research_rover"):
+        if r_count < 2 and is_tech_unlocked("research_rover") and is_tech_unlocked("research_deep_extraction"):
             needed_rovers = 2 - r_count
             print(f"[buyer] Deploying {needed_rovers}x Rover chassis...")
             for _ in range(needed_rovers):
@@ -225,9 +267,9 @@ while True:
     # --------------------------------------------------------------------------
     # PHASE 3: Heat Rush to 12.0 HU (Strict 25/25 Base Slots, 0% Penalty)
     # --------------------------------------------------------------------------
-    if o2 >= 9.0 and temp < 12.0 and count_buildings("charging_station") >= 1:
-        # Step A: Recycle 11 Oxygen Generators down to 1 (recovers 11 slots and credits)
-        safe_undeploy_and_sell(computer, "oxygen_generator", 1, "oxygen_generator")
+    if pressure >= 0.200 and o2 >= 9.0 and temp < 12.0 and count_buildings("charging_station") >= 1:
+        # Step A: Recycle 11 Pressure Generators down to 1 (recovers 11 slots and credits)
+        safe_undeploy_and_sell(computer, "pressure_generator", 1, "pressure_generator")
 
         # Step B: Scale power to 7 Solar Panels + 4 Batteries (2,000 Wh reserve)
         s_count = count_buildings("solar_generator")
@@ -237,7 +279,7 @@ while True:
         if b_count < 4:
             safe_buy_and_deploy(computer, "battery", 4 - b_count)
 
-        # Step C: Deploy 7 Heaters (Exact 25/25 slots: 7 Solar + 4 Bat + 3 Bio + 1 Charger + 1 Smelter + 1 Pres + 1 O2 + 7 Heat = 25)
+        # Step C: Deploy 7 Heaters (Exact 25/25 slots: 7 Solar + 4 Bat + 3 Bio + 1 Charger + 1 Smelter + 1 Pres + 7 Heat = 24 slots, +1 spare!)
         h_count = count_buildings("temp_heater")
         if h_count < 7:
             safe_buy_and_deploy(computer, "temp_heater", 7 - h_count)
@@ -263,3 +305,4 @@ while True:
         print("[MIGRATE] 150k TP reached! Bus, Archive & Control Panel unlocked. Ready for mid-game architecture.")
 
     sleep(2.0)
+

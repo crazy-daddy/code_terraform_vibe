@@ -129,11 +129,20 @@ def better(candidate, champion):
 
 
 def pick_order(orders):
-    # Best unfinished order, or None when every order is complete.
+    # Best unfinished order matching our outpost's biome, or None when every order is complete.
+    my_biome = None
+    if hasattr(self, "outpost") and self.outpost is not None:
+        my_biome = getattr(self.outpost, "biome", None)
+
     champion = None
     for order in orders:
         if order.status == "complete":
             continue
+
+        # If outpost biome is known, restrict to orders belonging to that biome
+        if my_biome is not None and hasattr(order, "biome") and order.biome is not None:
+            if order.biome != my_biome:
+                continue
 
         candidate = score_order(order)
         if candidate["remaining"] <= 0:
@@ -146,6 +155,7 @@ def pick_order(orders):
         elif better(candidate, champion):
             champion = candidate
     return champion
+
 
 
 def ensure_ports():
@@ -209,12 +219,14 @@ while True:
 
     order = choice["order"]
 
-    if order.status != "active":
+    active = self.active_order()
+    if active is None or active.id != order.id:
         result = self.set_order(order.id)
         if result.status != "ok":
             print("[exchange] cannot activate", order.name, "-", result.message)
             sleep(IDLE_SLEEP)
             continue
+
 
     if last_active != order.id:
         print("[exchange] target:", order.name, "- pays", order.reward, "cr for",

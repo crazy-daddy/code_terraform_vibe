@@ -59,14 +59,28 @@ def cool_to(target):
         sleep(hours * RSPH + 0.2)
 
 def choose_target(pos, pts):
-    best = None
-    best_score = -1.0
     pr, pc = pos
+
+    # Priority 1: Clear immediate local items (d <= 2)
+    # Moving onto an item sheds heat (net cooling!), so clearing local items is free and fast!
+    local_cands = []
     for p, val in pts.items():
         d = abs(p[0] - pr) + abs(p[1] - pc)
         if d == 0:
             return p
-        score = val / (d * 1.0)
+        if d <= 2:
+            local_cands.append((d, -val, p))
+    if local_cands:
+        local_cands.sort()
+        return local_cands[0][2]
+
+    # Priority 2: For farther items, penalize empty-space distance (d^1.35)
+    # Empty hops (+7 heat) build up heat and force cooling naps, making long trips costly.
+    best = None
+    best_score = -1.0
+    for p, val in pts.items():
+        d = abs(p[0] - pr) + abs(p[1] - pc)
+        score = val / (d ** 1.35)
         if score > best_score:
             best_score = score
             best = p
@@ -167,6 +181,18 @@ def take(p, pts):
     return False
 
 print(f"[harvester] Online at {self.get_position()}, heat {self.get_heat():.1f}")
+
+# Wait for scanner to survey an initial radius around base before harvesting
+min_scanned_sectors = 60
+while True:
+    try:
+        scanned_count = len(scanner.get_scanned())
+    except Exception:
+        scanned_count = 0
+    if scanned_count >= min_scanned_sectors:
+        break
+    print(f"[harvester] Waiting for scanner to map base sector ({scanned_count}/{min_scanned_sectors} sectors)...")
+    sleep(2.0)
 
 while True:
     pts = read_map()

@@ -209,7 +209,8 @@ def is_script_registered(workspace: str, filename: str) -> bool:
     """Checks whether filename or script ID is listed in codeterraform-workspace.json documents."""
     registered = get_registered_documents(workspace)
     base = os.path.basename(filename)
-    return base in registered or filename in registered
+    stem = os.path.splitext(base)[0]
+    return base in registered or filename in registered or stem in registered
 
 
 def wait_for_script_registration(workspace: str, filename: str, prompt_message: str = "", timeout: float = 60.0) -> bool:
@@ -387,13 +388,11 @@ def write_and_launch(workspace: str, filename: str, content: str, dry_run: bool 
 
     if not dry_run:
         if not is_script_registered(workspace, filename):
-            if prompt_message:
-                ok = wait_for_script_registration(workspace, filename, prompt_message, timeout=60.0)
-                if not ok:
-                    print(f"[EarlyGame] [!] Skipping launch of {filename} (unregistered).")
-                    return False
-            else:
-                time.sleep(0.5)
+            msg = prompt_message or f"Please click on '{filename}' in the in-game UI to create its script slot..."
+            ok = wait_for_script_registration(workspace, filename, msg, timeout=60.0)
+            if not ok:
+                print(f"[EarlyGame] [!] Skipping launch of {filename} (unregistered in game documents).")
+                return False
 
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -448,7 +447,8 @@ def run_onboarding(workspace: str, dry_run: bool = False) -> None:
     else:
         print("[EarlyGame] Step 2: Running planet_power.py (activate_power)...")
         offset = get_log_offset(workspace)
-        if write_and_launch(workspace, "planet_power.py", get_onboarding_script("planet_power.py"), dry_run) and not dry_run:
+        prompt_power = "Please click 'Turn on Power' in the in-game UI to create its script slot..."
+        if write_and_launch(workspace, "planet_power.py", get_onboarding_script("planet_power.py"), dry_run, prompt_message=prompt_power) and not dry_run:
             ok = wait_for_log_pattern(workspace, r"Turn On Power:\s*online", offset, timeout=35.0)
             if ok:
                 print("[EarlyGame] [OK] Power system online.")
@@ -462,7 +462,8 @@ def run_onboarding(workspace: str, dry_run: bool = False) -> None:
     else:
         print("[EarlyGame] Step 3: Running planet_sensors.py (activate_sensors)...")
         offset = get_log_offset(workspace)
-        if write_and_launch(workspace, "planet_sensors.py", get_onboarding_script("planet_sensors.py"), dry_run) and not dry_run:
+        prompt_sensors = "Please click 'Read Sensor Data' in the in-game UI to create its script slot..."
+        if write_and_launch(workspace, "planet_sensors.py", get_onboarding_script("planet_sensors.py"), dry_run, prompt_message=prompt_sensors) and not dry_run:
             ok = wait_for_log_pattern(workspace, r"Read Sensor Data:\s*online", offset, timeout=35.0)
             if ok:
                 print("[EarlyGame] [OK] Sensors active.")
@@ -476,7 +477,8 @@ def run_onboarding(workspace: str, dry_run: bool = False) -> None:
     else:
         print("[EarlyGame] Step 4: Running uplink.py (transmitting temperature to Earth)...")
         offset = get_log_offset(workspace)
-        if write_and_launch(workspace, "uplink.py", get_onboarding_script("uplink.py"), dry_run) and not dry_run:
+        prompt_uplink = "Please click 'Establish Uplink' in the in-game UI to create its script slot..."
+        if write_and_launch(workspace, "uplink.py", get_onboarding_script("uplink.py"), dry_run, prompt_message=prompt_uplink) and not dry_run:
             ok = wait_for_log_pattern(workspace, r"Establish Uplink:\s*online", offset, timeout=35.0)
             if ok:
                 print("[EarlyGame] [OK] Uplink established! First Contact completed.")
@@ -621,6 +623,55 @@ def run_contracts(workspace: str, dry_run: bool = False) -> None:
     print("[EarlyGame] Contract solving complete. Capital unlocked for base expansion.")
 
 
+_CONTRACTS_SOLVING = set()
+
+def scan_and_solve_contracts(workspace: str, dry_run: bool = False) -> int:
+    """Monitors for newly clicked or registered Earth contracts, puts solver code in place, and executes them."""
+    if not check_workspace_ready(workspace):
+        return 0
+
+    ctx = read_workspace_context(workspace)
+    contract_status = ctx.get("contractStatus", {})
+
+    CONTRACTS = [
+        ("relay_hack", "relay_hack.py"),
+        ("xenogenetics", "xenogenetics.py"),
+        ("corrupted_archive", "corrupted_archive.py"),
+        ("sealed_vault", "sealed_vault.py"),
+        ("terminal_breach", "terminal_breach.py"),
+        ("data_tablet", "data_tablet.py"),
+    ]
+
+    solved_count = 0
+    for cid, filename in CONTRACTS:
+        # If already completed, skip
+        if contract_status.get(cid) == "completed":
+            continue
+
+        # Check if the contract is registered in game documents (user clicked it or slot exists)
+        if not is_script_registered(workspace, filename) and not is_script_registered(workspace, f"contract_{cid}"):
+            continue
+
+        script_path = os.path.join(workspace, filename)
+        is_empty = not os.path.exists(script_path) or os.path.getsize(script_path) == 0
+
+        # Deploy solver if file is empty on disk or not yet launched this session
+        if is_empty or cid not in _CONTRACTS_SOLVING:
+            solver_code = get_contract_script(filename)
+            if not solver_code:
+                continue
+
+            print(f"[EarlyGame] Contract '{cid}' ({filename}) detected! Auto-deploying and executing solver...")
+            _CONTRACTS_SOLVING.add(cid)
+            ok = write_and_launch(workspace, filename, solver_code, dry_run=dry_run)
+            if ok:
+                solved_count += 1
+                time.sleep(0.5)
+
+    return solved_count
+
+
+
 # ==============================================================================
 # STANDALONE MACHINE TEMPLATES & DEPLOYMENT (<20k TP)
 # ==============================================================================
@@ -702,6 +753,8 @@ def trigger_midgame_migration(workspace: str) -> bool:
 # In-memory tracking of machines deployed and vehicles mounted
 _DEPLOYED_IN_SESSION = set()
 _VEHICLE_MOUNTED = set()
+_LAST_DEPLOY_TIME = {}
+
 
 def scan_and_deploy_machines(workspace: str, dry_run: bool = False) -> int:
     """Finds idle, errored, or unscripted deployed machines and assigns early templates."""
@@ -744,6 +797,11 @@ def scan_and_deploy_machines(workspace: str, dry_run: bool = False) -> int:
             if o2_val < 1.0 and "feeder_unlock" not in unlocked_tech:
                 continue
 
+        # Ensure machine breaker is powered on before launching scripts
+        # Prevents engine rejection: '<machine_id> is offline. Power it on first.'
+        if not m_data.get("powered", True):
+            continue
+
         script_name = f"{m_id}.py"
         script_file_path = os.path.join(workspace, script_name)
 
@@ -782,12 +840,18 @@ def scan_and_deploy_machines(workspace: str, dry_run: bool = False) -> int:
 
         # Determine if machine needs operational template
         should_deploy = False
-        if not file_exists or (is_idle and not has_source) or is_error or needs_repair:
-            should_deploy = True
+        now = time.time()
+        cooldown_ok = (now - _LAST_DEPLOY_TIME.get(m_id, 0)) >= 15.0
+
+        if not file_exists or is_idle or is_error or needs_repair:
+            if cooldown_ok:
+                should_deploy = True
         elif template_name in ("rover", "pioneer") and m_id in _VEHICLE_MOUNTED and status != "running":
-            should_deploy = True
+            if cooldown_ok:
+                should_deploy = True
 
         if should_deploy:
+            _LAST_DEPLOY_TIME[m_id] = now
             content = get_template_content(template_name, use_early=use_early)
             if content:
                 print(f"[EarlyGame] Deploying operational {template_name} template to {m_id} ({script_name})...")
@@ -800,8 +864,9 @@ def scan_and_deploy_machines(workspace: str, dry_run: bool = False) -> int:
                 time.sleep(0.3)
         elif status == "running" and m_id in _DEPLOYED_IN_SESSION:
             pass
-        elif (is_error or needs_repair) and m_id in _DEPLOYED_IN_SESSION:
+        elif (is_error or needs_repair) and m_id in _DEPLOYED_IN_SESSION and cooldown_ok:
             _DEPLOYED_IN_SESSION.discard(m_id)
+
 
     if deployed_count > 0:
         print(f"[EarlyGame] Machine scan complete. Deployed/repaired: {deployed_count}")
@@ -863,6 +928,7 @@ def get_live_metrics(workspace: str) -> Dict[str, Any]:
         "scanner": 0,
         "bio": 0,
         "rover": 0,
+        "charger": 0,
     }
     for m_id, m in machines.items():
         t = m.get("typeId") or m.get("type", "")
@@ -878,6 +944,8 @@ def get_live_metrics(workspace: str) -> Dict[str, Any]:
             counts["heater"] += 1
         elif t == "smelter":
             counts["smelter"] += 1
+        elif t in ("charging_station", "vehicle_charging_station"):
+            counts["charger"] += 1
         elif t == "harvester":
             counts["harvester"] += 1
         elif t == "scanner":
@@ -893,25 +961,40 @@ def get_live_metrics(workspace: str) -> Dict[str, Any]:
     slots_max = 30 if "outpost_expansion_unlock" in unlocked_tech else 25
     slots_free = max(0, slots_max - slots_used)
 
+    generation = power.get("generation", power.get("generated", 0.0))
+    consumption = power.get("consumption", power.get("consumed", 0.0))
+    stored = power.get("stored", 0.0)
+
     return {
         "credits": credits,
         "total_credits": total_credits,
-        "total_tp": total_tp,
-        "tp_rate": tp_rate,
-        "o2": o2_val,
-        "o2_rate": o2_delta,
         "pressure": p_val,
         "pressure_rate": p_delta,
+        "oxygen": o2_val,
+        "o2": o2_val,
+        "oxygen_rate": o2_delta,
+        "o2_rate": o2_delta,
+        "temperature": heat_units,
         "heat_units": heat_units,
+        "temperature_rate": heat_delta,
         "heat_rate": heat_delta,
+        "surface_temp_c": surface_temp,
         "surface_temp": surface_temp,
         "biomass": bio_val,
-        "day": clock.get("dayNumber", 1),
+        "biomass_tons": bio_val,
+        "tp": total_tp,
+        "total_tp": total_tp,
+        "tp_rate": tp_rate,
+        "day": clock.get("day", 1),
         "time_of_day": clock.get("timeOfDay", "day"),
         "solar_eff": float(clock.get("solarEfficiency", 0.0)) * 100.0,
-        "power_gen": power.get("generated", 0),
-        "power_con": power.get("consumed", 0),
-        "power_stored": power.get("stored", 0),
+        "generation": generation,
+        "power_gen": generation,
+        "consumption": consumption,
+        "power_con": consumption,
+        "stored": stored,
+        "power_stored": stored,
+        "counts": counts,
         "machine_counts": counts,
         "slots_used": slots_used,
         "slots_max": slots_max,
@@ -924,32 +1007,28 @@ def get_live_metrics(workspace: str) -> Dict[str, Any]:
 
 
 def get_speedrun_recommendations(metrics: Dict[str, Any]) -> Tuple[str, List[str], List[str]]:
-    """Calculates the current speedrun phase, upcoming milestones, and immediate actionable steps."""
-    tp = metrics["total_tp"]
+    """Evaluates live metrics and produces stage-specific speedrun advisory."""
+    tp = metrics["tp"]
     p = metrics["pressure"]
-    o2 = metrics["o2"]
-    heat = metrics["heat_units"]
-    c = metrics["machine_counts"]
-    unlocked = metrics["unlocked_tech"]
+    o2 = metrics["oxygen"]
+    heat = metrics["temperature"]
+    c = metrics["counts"]
 
-    milestones: List[str] = []
-    recs: List[str] = []
+    milestones = []
+    recs = []
 
-    # Milestones tracking
+    # Milestone checks
+    if o2 < 1.0:
+        milestones.append(f"1.0 ppt Oxygen (currently {o2:.3f}) -> [!] Target: Auto Feeders & Immediate Bio-Loop Activation")
+    if o2 < 9.0:
+        milestones.append(f"9.0 ppt Oxygen (currently {o2:.3f}) -> [!] Target: Vehicle Charging Station & Smelter")
+
     if p < 0.200:
-        milestones.append(f"0.200 kPa Pressure (currently {p:.3f}) -> [!] Target: Mining Operations & Rover Chassis")
-    elif o2 < 9.0:
-        if o2 < 1.0:
-            milestones.append(f"1.000 ppt O2 (currently {o2:.3f}) -> Unlocks Auto Feeders (Power ON Bio-Loop)")
-        if o2 < 3.0:
-            milestones.append(f"3.000 ppt O2 (currently {o2:.3f}) -> Unlocks Earth Clearance contracts")
-        if o2 < 5.0:
-            milestones.append(f"5.000 ppt O2 (currently {o2:.3f}) -> Unlocks Smelter (deferred until 9.0 ppt)")
-        milestones.append(f"9.000 ppt O2 (currently {o2:.3f}) -> [!] Target: Vehicle Charging Station & Smelter Deployment")
+        milestones.append(f"0.200 kPa Pressure (currently {p:.3f}) -> [!] Target: Mining Operations, Rover Chassis & Drill")
 
+    if heat < 10.0:
+        milestones.append(f"10.0 HU Heat (currently {heat:.1f}) -> Unlocks Constructor Module")
     if heat < 12.0:
-        if heat < 10.0:
-            milestones.append(f"10.0 HU Heat (currently {heat:.1f}) -> Unlocks Constructor Module")
         milestones.append(f"12.0 HU Heat (currently {heat:.1f}) -> [!] Target: Small Battery Holder & 100k TP Tri-Pillar")
 
     if tp < 100000:
@@ -958,54 +1037,81 @@ def get_speedrun_recommendations(metrics: Dict[str, Any]) -> Tuple[str, List[str
         milestones.append(f"150,000 TP (currently {tp:,}) -> [!] MID-GAME MODULAR MIGRATION (Signal Bus, Archive, Control Panel)")
 
     # Phase detection & actionable recommendations
-    if p < 0.200:
-        if c["battery"] < 2 or c["solar"] < 4:
-            phase_title = "Phase 0: Boot & Power Foundation (Sec. 7.3 Step 1)"
-            if c["battery"] < 2:
-                needed = 2 - c["battery"]
-                recs.append(f"POWER ANCHOR: Buy {needed}x Small Battery (500 cr ea, currently {c['battery']}/2) -> Needs 1,000 Wh night reserve.")
-            if c["bio"] < 3:
-                recs.append("BIO-LOOP: Ensure bio_collector_1, bio_lab_1, bio_exchange_1 are connected to grid (18W continuous).")
-            recs.append(f"PRESSURE RUSH PREP: Currently {c['pressure']}/10 Pressure Gens. Once power is anchored, rush 10 Pressure Gens!")
+    # Fresh run order: Oxygen Rush (to 9.0 ppt) -> Pressure Rush (to 0.200 kPa) -> Heat Rush (to 12.0 HU)
+    # Note: If player already deployed heavy pressure (e.g. 8+ pressure gens), finish active pressure rush first!
+    if p < 0.200 and c["pressure"] >= 8:
+        phase_title = "Phase 1 (Active): Completing Pressure Rush to 0.200 kPa"
+        if c["battery"] < 3:
+            recs.append(f"SCALE BATTERIES: Buy {3 - c['battery']}x Small Battery (300 cr ea) -> 1,500 Wh buffer (arrives pre-charged with 500 Wh!).")
+        elif c["battery"] > 3:
+            recs.append(f"RECYCLE BATTERIES: Recycle {c['battery'] - 3}x surplus battery down to 3 to free building slots.")
+        if c["solar"] < 6:
+            recs.append(f"SCALE SOLAR: Buy {6 - c['solar']}x Solar Generator (500 cr ea) -> 300W peak daytime generation (~122W continuous).")
+        if c["pressure"] < 12:
+            recs.append(f"PRESSURE RUSH ACTIVE: {c['pressure']}/12 Pressure Generators running! Pressure currently at {p:.3f}/0.200 kPa.")
+            recs.append("  -> Note: Resonance sweep gauge takes ~4 sweeps to sync to 100% output (+25% sync inside window, -10% miss).")
         else:
-            phase_title = "Phase 1: Pressure Rush to 0.20 kPa (Sec. 7.3 Step 2)"
-            if c["pressure"] < 10:
-                needed = 10 - c["pressure"]
-                recs.append(f"PRESSURE RUSH: Buy {needed}x Pressure Generator (1,200 cr ea, currently {c['pressure']}/10).")
-                recs.append("  -> 10 Pressure Gens draw 70W; hits 0.20 kPa in ~1.5 - 2 planetary days!")
-            else:
-                recs.append("PRESSURE RUSH ACTIVE: All 10 Pressure Generators running at resonance sync! Rushing 0.200 kPa for Mining & Rover.")
-            if c["solar"] < 4:
-                recs.append(f"Scale solar to 4 panels (currently {c['solar']}/4) to support 88W total load (18W Bio + 70W Pressure).")
-            recs.append("NEXT SWAP: When Pressure hits 0.20 kPa, recycle 9 Pressure Gens down to 1, and build 12x Oxygen Gens for Phase 2!")
+            recs.append(f"PRESSURE RUSH ACTIVE: 12/12 Pressure Generators running at resonance sync! Pressure currently at {p:.3f}/0.200 kPa.")
+        recs.append("NEXT SWAP: At 0.200 kPa, recycle 11 Pressure down to 1, deploy Smelter 1 + 2 Rovers with Drill/Sonar/Nav modules.")
 
     elif o2 < 9.0:
-        phase_title = "Phase 2: Oxygen Rush to 9.0 ppt & Bio-Loop Activation (Sec. 7.3 Step 3)"
+        phase_title = "Phase 1: Oxygen Rush to 9.0 ppt & Immediate Bio-Loop Activation"
+        if c["battery"] < 3 or c["solar"] < 6:
+            if c["battery"] < 3:
+                recs.append(f"POWER ANCHOR: Buy {3 - c['battery']}x Small Battery (300 cr ea, currently {c['battery']}/3).")
+                recs.append("  -> TIP: Batteries come pre-charged with 500 Wh (+1,000 Wh instant buffer to power early rush!).")
+            if c["solar"] < 6:
+                recs.append(f"POWER ANCHOR: Buy {6 - c['solar']}x Solar Generator (500 cr ea, currently {c['solar']}/6) -> 300W peak output.")
+
         if o2 >= 1.0:
-            recs.append("BIO-LOOP ACTIVE: Auto Feeders unlocked at 1.0 ppt! Ensure Bio Collector, Lab, and Exchange are powered ON.")
-        if c["o2gen"] < 12:
-            needed = 12 - c["o2gen"]
-            recs.append(f"OXYGEN RUSH: Scale to 12x Oxygen Generator (currently {c['o2gen']}/12, 8W ea = 96W load, occupies 23/25 slots).")
-            recs.append("  -> Rushes 9.0 ppt O2 in ~3-4 days (Smelter deferred until 9.0 ppt to maximize O2 generation!).")
-        if o2 < 9.0:
-            recs.append(f"CHARGING STATION LOCKED: Vehicle Charging Station requires 9.0 ppt O2 (currently {o2:.2f}/9.0 ppt). Keep running 12 O2 gens!")
-        recs.append("NEXT SWAP: At 9.0 ppt O2, deploy Charging Station 1 + Smelter 1 + 2 Rovers, recycle 11 O2 gens, scale to 7 Solar + 4 Batteries + 7 Heaters (exact 25/25 slots)!")
+            recs.append("BIO-LOOP ACTIVE: Auto Feeders unlocked at 1.0 ppt! Bio Collector, Lab, and Exchange are generating Biomass TP & Credits.")
+        else:
+            recs.append(f"RUSH AUTO FEEDERS: Oxygen currently {o2:.3f}/1.0 ppt. Unlocks Auto Feeders & activates Bio-Loop in < 1 day!")
+
+        if c["o2gen"] < 13:
+            needed = 13 - c["o2gen"]
+            recs.append(f"OXYGEN RUSH: Scale to 13x Oxygen Generator (1,000 cr ea, currently {c['o2gen']}/13, 8W ea = 104W load).")
+            recs.append("  -> Exact 25/25 Base Slots: 6 Solar + 3 Batteries + 3 Bio-Loop + 13 O2 Generators (0% overcrowding penalty!).")
+        else:
+            recs.append("OXYGEN RUSH ACTIVE: 13 Oxygen Generators operating at 100% capacity! Rushing toward 9.0 ppt.")
+
+        if o2 >= 3.0:
+            recs.append("CONTRACTS UNLOCKED: Earth Clearance active! Complete advanced contracts for massive credit rewards.")
+        if o2 >= 5.0:
+            recs.append("SMELTER UNLOCKED: Smelter available in shop (650 cr), ready for when Rover mining begins.")
+
+        recs.append("NEXT SWAP: At 9.0 ppt O2, Vehicle Charging Station unlocks! Deploy Charger, recycle all 13 O2 gens down to 0 (0% gas decay), and deploy 12 Pressure Gens.")
+
+    elif p < 0.200:
+        phase_title = "Phase 2: Pressure Rush to 0.200 kPa (Charging Station Ready for Rovers)"
+        if c["charger"] < 1:
+            recs.append("DEPLOY CHARGER: Deploy Vehicle Charging Station 1 (1,200 cr) now that 9.0 ppt O2 is reached.")
+        if c["o2gen"] > 0:
+            recs.append(f"RECYCLE OXYGEN: Atmosphere has 0% gas decay! Recycle {c['o2gen']}x Oxygen Generators down to 0 to free slots & credits.")
+        if c["pressure"] < 12:
+            needed = 12 - c["pressure"]
+            recs.append(f"PRESSURE RUSH: Deploy {needed}x Pressure Generator (900 cr ea, currently {c['pressure']}/12).")
+            recs.append("  -> Exact 25/25 Base Slots: 6 Solar + 3 Batteries + 3 Bio-Loop + 1 Charging Station + 12 Pressure Gens (0% penalty!).")
+            recs.append("  -> Note: Resonance sweep gauge takes ~4 sweeps to reach 100% sync efficiency (+25% sync, -10% miss).")
+        else:
+            recs.append("PRESSURE RUSH ACTIVE: 12 Pressure Generators running at resonance sync! Rushing 0.200 kPa for Rover Chassis & Drill.")
+        recs.append("NEXT STEP: At 0.200 kPa, deploy 2 Rovers + Smelter 1. With Charging Station already active, Rovers mine with 0% stranding!")
 
     elif heat < 12.0:
-        phase_title = "Phase 3: The Heat Rush to 12.0 Temp (Strict 25/25 Slots, Sec. 7.3 Step 4)"
+        phase_title = "Phase 3: The Heat Rush to 12.0 Temp (Strict 25/25 Slots, 0% Penalty)"
+        if c["smelter"] < 1:
+            recs.append("DEPLOY SMELTER: Deploy Smelter 1 (650 cr) to refine Iron and Silicon delivered by Rovers.")
+        if c["rover"] < 2:
+            recs.append(f"DEPLOY ROVERS: Commission 2x Rover chassis (2,000 cr + 2,300 cr modules ea, currently {c['rover']}/2).")
         if c["solar"] < 7 or c["battery"] < 4:
             if c["solar"] < 7:
-                recs.append(f"SCALE POWER: Buy {7 - c['solar']}x Solar Generator (currently {c['solar']}/7) for 7-Heater continuous load.")
+                recs.append(f"SCALE POWER: Buy {7 - c['solar']}x Solar Generator (500 cr ea, currently {c['solar']}/7) for 7-Heater continuous load.")
             if c["battery"] < 4:
-                recs.append(f"SCALE BATTERIES: Buy {4 - c['battery']}x Small Battery (currently {c['battery']}/4) for 2,000 Wh night reserve.")
-        if c["smelter"] < 1:
-            recs.append("DEPLOY SMELTER: Deploy Smelter 1 to refine Iron and Silicon delivered by Rovers.")
-        if c["rover"] < 2:
-            recs.append(f"DEPLOY ROVERS: Commission 2x Rover chassis (currently {c['rover']}/2) with Nav, Sonar, and Drill modules.")
+                recs.append(f"SCALE BATTERIES: Buy {4 - c['battery']}x Small Battery (300 cr ea, currently {c['battery']}/4) for 2,000 Wh night reserve.")
         if c["heater"] < 7:
             needed = 7 - c["heater"]
-            recs.append(f"HEAT RUSH: Deploy {needed}x Heat Generator (currently {c['heater']}/7, auto-calibrated to 100% efficiency).")
-            recs.append("  -> Exact 25/25 Base Slots: 7 Solar + 4 Bat + 3 Bio + 1 Charger + 1 Smelter + 1 Pres + 1 O2 + 7 Heat (0% penalty!).")
+            recs.append(f"HEAT RUSH: Recycle 11 Pressure gens down to 1. Deploy {needed}x Heat Generator (800 cr ea, currently {c['heater']}/7).")
+            recs.append("  -> Exact 24-25 Base Slots: 7 Solar + 4 Bat + 3 Bio + 1 Charger + 1 Smelter + 1 Pres + 7 Heat (0% penalty!).")
             recs.append(f"  -> Reaches 12.0 Temp in ~5-6 days ({heat:.1f}/12.0 HU).")
         recs.append("NEXT STEP: At 12.0 Temp, Tri-Pillar hits ~98,600 TP + Bio-Loop -> 100,000 TP Pioneer Breakout!")
 
@@ -1020,6 +1126,10 @@ def get_speedrun_recommendations(metrics: Dict[str, Any]) -> Tuple[str, List[str
         recs.append("PIONEER ERA ACTIVE: Deep mining, Geothermal Power at thermal vents, Water Pump & Hydrology, Drone fleet.")
 
     return phase_title, milestones, recs
+
+
+# Backward-compatibility alias
+get_speedrun_advisory = get_speedrun_recommendations
 
 
 def print_speedrun_dashboard(metrics: Dict[str, Any]) -> None:
@@ -1076,6 +1186,10 @@ def run_daemon(workspace: str, dry_run: bool = False, interval: float = 5.0) -> 
             # Check for newly placed machines to auto-deploy
             scan_and_deploy_machines(workspace, dry_run=dry_run)
 
+            # Check for newly clicked/registered contracts to auto-solve
+            scan_and_solve_contracts(workspace, dry_run=dry_run)
+
+
             time.sleep(min(1.0, interval))
         except KeyboardInterrupt:
             print("\n[EarlyGame] Speedrun Advisor daemon stopped.")
@@ -1124,6 +1238,8 @@ def main():
 
     if do_scan:
         scan_and_deploy_machines(workspace, dry_run=args.dry_run)
+        scan_and_solve_contracts(workspace, dry_run=args.dry_run)
+
 
     if do_advisor and not do_daemon:
         metrics = get_live_metrics(workspace)

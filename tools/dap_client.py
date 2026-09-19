@@ -241,9 +241,16 @@ def launch_script(workspace, script, timeout=15):
             return False
 
         client.send("request", "launch", {"workspace": workspace, "script": script})
-        ev = client.wait_for(lambda m: m.get("type") == "event" and m.get("event") == "initialized", timeout=timeout)
+        ev = client.wait_for(
+            lambda m: (m.get("type") == "event" and m.get("event") == "initialized") or
+                      (m.get("type") == "response" and m.get("command") == "launch" and not m.get("success")),
+            timeout=timeout
+        )
         if not ev:
             print(f"[DAP] Timeout waiting for 'initialized' event for {script}", file=sys.stderr)
+            return False
+        if ev.get("type") == "response" and not ev.get("success"):
+            print(f"[DAP] Launch rejected by game adapter: {ev.get('message', 'unknown error')}", file=sys.stderr)
             return False
 
         r = client.request("configurationDone", {}, timeout=timeout)

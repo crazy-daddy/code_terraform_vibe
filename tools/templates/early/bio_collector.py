@@ -143,28 +143,34 @@ while True:
     # --- decide what kind of trip this is -----------------------------------
     bootstrapping = unknowns_sampled < BOOTSTRAP_UNKNOWNS
     explore_turn = trips % EXPLORE_EVERY == (EXPLORE_EVERY - 1)
-    want_unknown = bootstrapping or explore_turn or len(remaining) == 0
-
     target = None
     kind = ""
 
-    if not want_unknown:
-        target = pick_wanted(known, remaining)
-        kind = "order"
+    # 1. If we specifically want an unknown (bootstrapping or explore turn) AND unknowns exist:
+    if (bootstrapping or explore_turn) and len(unknown) > 0:
 
-    if target is None and len(unknown) > 0:
-        # Rotate through unknown dots rather than always taking the nearest —
-        # sites do not deplete, so the nearest one would repeat forever.
         target = unknown[rotation % len(unknown)]
         rotation = rotation + 1
         kind = "unknown"
 
-    if target is None and not want_unknown:
-        # Nothing unknown left in this biome and no cataloged dot matches the
-        # order. Fall back to the nearest cataloged dot to keep the Lab fed.
-        if len(known) > 0:
-            target = known[0]
-            kind = "spare"
+    # 2. Otherwise try to pick a fragment wanted by the active order
+    if target is None and len(remaining) > 0:
+        target = pick_wanted(known, remaining)
+        if target is not None:
+            kind = "order"
+
+    # 3. If no order match (or no order), but unknowns exist, explore:
+    if target is None and len(unknown) > 0:
+        target = unknown[rotation % len(unknown)]
+        rotation = rotation + 1
+        kind = "unknown"
+
+    # 4. If all dots are known and none match order (or no order), harvest nearest known dot:
+    if target is None and len(known) > 0:
+        target = known[rotation % len(known)]
+        rotation = rotation + 1
+        kind = "spare"
+
 
     if target is None:
         if last_state != "empty":
