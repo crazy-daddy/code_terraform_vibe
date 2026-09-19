@@ -658,8 +658,18 @@ def resolve_machine_template_type(type_id: str) -> Optional[str]:
         "vehicle_charging_station": "charging_station",
         "rover": "rover",
         "pioneer": "pioneer",
+        "bio_collector": "bio_collector",
+        "bio_lab": "bio_lab",
+        "bio_exchange": "bio_exchange",
     }
-    return mapping.get(type_id)
+    if not type_id:
+        return None
+    if type_id in mapping:
+        return mapping[type_id]
+    for key, val in mapping.items():
+        if type_id.startswith(key):
+            return val
+    return None
 
 
 def trigger_midgame_migration(workspace: str) -> bool:
@@ -704,8 +714,14 @@ def scan_and_deploy_machines(workspace: str, dry_run: bool = False) -> int:
     scripts = state.get("scripts", {})
     unlocked_tech = set(state.get("unlockedTech", []))
 
-    # Early templates remain active until the 150k TP mid-game architecture migration
+    # Atmosphere telemetry
+    planet = state.get("planet", {})
+    atmos = planet.get("atmosphere", {})
     research_rates = state.get("researchRates", {})
+    o2_rate = research_rates.get("oxygen", {})
+    o2_val = float(atmos.get("oxygen", o2_rate.get("lastValue", 0.0)))
+
+    # Early templates remain active until the 150k TP mid-game architecture migration
     total_tp = int(research_rates.get("terraform", {}).get("lastValue", 0))
     if total_tp >= 150_000:
         trigger_midgame_migration(workspace)
@@ -719,7 +735,14 @@ def scan_and_deploy_machines(workspace: str, dry_run: bool = False) -> int:
         type_id = m_data.get("typeId") or m_data.get("type")
         template_name = resolve_machine_template_type(type_id)
         if not template_name:
+            template_name = resolve_machine_template_type(m_id)
+        if not template_name:
             continue
+
+        # Bio-Loop machines remain dormant until 1.0 ppt O2 (or feeder_unlock)
+        if template_name in ("bio_collector", "bio_lab", "bio_exchange"):
+            if o2_val < 1.0 and "feeder_unlock" not in unlocked_tech:
+                continue
 
         script_name = f"{m_id}.py"
         script_file_path = os.path.join(workspace, script_name)
@@ -864,8 +887,8 @@ def get_live_metrics(workspace: str) -> Dict[str, Any]:
         elif t == "rover":
             counts["rover"] += 1
 
-    # Base building slots (only buildings at outpost_home consume building slots)
-    base_buildings = [m for m in machines.values() if m.get("locationId") == "outpost_home"]
+    # Base building slots (only fixed buildings at outpost_home consume base slots; mobile units do not)
+    base_buildings = [m for m in machines.values() if m.get("locationId") == "outpost_home" and m.get("typeId") not in ("rover", "pioneer", "harvester", "scanner")]
     slots_used = len(base_buildings)
     slots_max = 30 if "outpost_expansion_unlock" in unlocked_tech else 25
     slots_free = max(0, slots_max - slots_used)
@@ -900,104 +923,95 @@ def get_live_metrics(workspace: str) -> Dict[str, Any]:
     }
 
 
-def get_speedrun_advisory(metrics: Dict[str, Any]) -> Tuple[str, List[str], List[str]]:
-    """
-    Evaluates current state against Section 7 Optimized Speedrun Strategy (0 -> 100k TP Pioneer Rush).
-    Returns (phase_title, next_milestones_list, recommendations_list).
-    """
+def get_speedrun_recommendations(metrics: Dict[str, Any]) -> Tuple[str, List[str], List[str]]:
+    """Calculates the current speedrun phase, upcoming milestones, and immediate actionable steps."""
     tp = metrics["total_tp"]
+    p = metrics["pressure"]
     o2 = metrics["o2"]
-    pressure = metrics["pressure"]
     heat = metrics["heat_units"]
-    counts = metrics["machine_counts"]
-    credits = metrics["credits"]
-    tech = metrics["unlocked_tech"]
+    c = metrics["machine_counts"]
+    unlocked = metrics["unlocked_tech"]
 
-    milestones = []
-    recs = []
+    milestones: List[str] = []
+    recs: List[str] = []
 
-    # Milestone tracking aligned with Section 7 speedrun targets
-    if pressure < 0.20:
-        if pressure < 0.10:
-            milestones.append(f"0.100 kPa Pressure (currently {pressure:.3f}) -> Unlocks Mining Operations")
-        if pressure < 0.11:
-            milestones.append(f"0.110 kPa Pressure (currently {pressure:.3f}) -> Unlocks Rover Chassis")
-        milestones.append(f"0.200 kPa Pressure (currently {pressure:.3f}) -> [!] Target: Atmospheric Density for Surface Rover")
-
-    if o2 < 5.0:
+    # Milestones tracking
+    if p < 0.200:
+        milestones.append(f"0.200 kPa Pressure (currently {p:.3f}) -> [!] Target: Mining Operations & Rover Chassis")
+    elif o2 < 9.0:
         if o2 < 1.0:
-            milestones.append(f"1.000 ppt O2 (currently {o2:.3f}) -> Unlocks Auto Feeders (feeder_unlock)")
+            milestones.append(f"1.000 ppt O2 (currently {o2:.3f}) -> Unlocks Auto Feeders (Power ON Bio-Loop)")
         if o2 < 3.0:
             milestones.append(f"3.000 ppt O2 (currently {o2:.3f}) -> Unlocks Earth Clearance contracts")
-        milestones.append(f"5.000 ppt O2 (currently {o2:.3f}) -> [!] Target: Ore Refinement & Smelter Unlock")
+        if o2 < 5.0:
+            milestones.append(f"5.000 ppt O2 (currently {o2:.3f}) -> Unlocks Smelter (deferred until 9.0 ppt)")
+        milestones.append(f"9.000 ppt O2 (currently {o2:.3f}) -> [!] Target: Vehicle Charging Station & Smelter Deployment")
 
     if heat < 12.0:
         if heat < 10.0:
             milestones.append(f"10.0 HU Heat (currently {heat:.1f}) -> Unlocks Constructor Module")
         milestones.append(f"12.0 HU Heat (currently {heat:.1f}) -> [!] Target: Small Battery Holder & 100k TP Tri-Pillar")
 
-    if tp < 20000:
-        milestones.append(f"20,000 TP (currently {tp:,d}) -> Unlocks Shared Library (lib/ modular code)")
     if tp < 100000:
-        milestones.append(f"100,000 TP (currently {tp:,d}) -> [!] PIONEER CHASSIS BREAKOUT (~98.6k TP at 0.2P + 5.0 O2 + 12.0 HU)")
+        milestones.append(f"100,000 TP (currently {tp:,}) -> [!] PIONEER CHASSIS BREAKOUT (~98.6k TP at 0.2P + 9.0 O2 + 12.0 HU + Bio)")
+    elif tp < 150000:
+        milestones.append(f"150,000 TP (currently {tp:,}) -> [!] MID-GAME MODULAR MIGRATION (Signal Bus, Archive, Control Panel)")
 
-    # Section 7 Speedrun Phase Progression
-    if pressure < 0.20:
-        # Phase 0 (Power Anchor) or Phase 1 (Pressure Rush)
-        if counts["solar"] < 4 or counts["battery"] < 2:
-            phase_title = "Phase 0: Boot & Power Anchor (Sec. 7.3 Step 1)"
-            if counts["solar"] < 4:
-                needed = 4 - counts["solar"]
-                recs.append(f"POWER ANCHOR: Buy {needed}x Solar Generator (500 cr ea, currently {counts['solar']}/4) -> Needs 4 Solar (~78W avg).")
-            if counts["battery"] < 2:
-                needed = 2 - counts["battery"]
-                recs.append(f"POWER ANCHOR: Buy {needed}x Small Battery (500 cr ea, currently {counts['battery']}/2) -> Needs 1,000 Wh night reserve.")
-            if counts["bio"] < 3:
+    # Phase detection & actionable recommendations
+    if p < 0.200:
+        if c["battery"] < 2 or c["solar"] < 4:
+            phase_title = "Phase 0: Boot & Power Foundation (Sec. 7.3 Step 1)"
+            if c["battery"] < 2:
+                needed = 2 - c["battery"]
+                recs.append(f"POWER ANCHOR: Buy {needed}x Small Battery (500 cr ea, currently {c['battery']}/2) -> Needs 1,000 Wh night reserve.")
+            if c["bio"] < 3:
                 recs.append("BIO-LOOP: Ensure bio_collector_1, bio_lab_1, bio_exchange_1 are connected to grid (18W continuous).")
-            recs.append(f"PRESSURE RUSH PREP: Currently {counts['pressure']}/10 Pressure Gens. Once power is anchored, rush 10 Pressure Gens!")
+            recs.append(f"PRESSURE RUSH PREP: Currently {c['pressure']}/10 Pressure Gens. Once power is anchored, rush 10 Pressure Gens!")
         else:
             phase_title = "Phase 1: Pressure Rush to 0.20 kPa (Sec. 7.3 Step 2)"
-            if counts["pressure"] < 10:
-                needed = 10 - counts["pressure"]
-                recs.append(f"PRESSURE RUSH: Buy {needed}x Pressure Generator (1,200 cr ea, currently {counts['pressure']}/10).")
+            if c["pressure"] < 10:
+                needed = 10 - c["pressure"]
+                recs.append(f"PRESSURE RUSH: Buy {needed}x Pressure Generator (1,200 cr ea, currently {c['pressure']}/10).")
                 recs.append("  -> 10 Pressure Gens draw 70W; hits 0.20 kPa in ~1.5 - 2 planetary days!")
             else:
                 recs.append("PRESSURE RUSH ACTIVE: All 10 Pressure Generators running at resonance sync! Rushing 0.200 kPa for Mining & Rover.")
-            if counts["solar"] < 4:
-                recs.append(f"Scale solar to 4 panels (currently {counts['solar']}/4) to support 88W total load (18W Bio + 70W Pressure).")
-            recs.append("NEXT SWAP: When Pressure hits 0.20 kPa, recycle 9 Pressure Gens down to 1, and build 9x Oxygen Gens for Phase 2!")
+            if c["solar"] < 4:
+                recs.append(f"Scale solar to 4 panels (currently {c['solar']}/4) to support 88W total load (18W Bio + 70W Pressure).")
+            recs.append("NEXT SWAP: When Pressure hits 0.20 kPa, recycle 9 Pressure Gens down to 1, and build 12x Oxygen Gens for Phase 2!")
 
     elif o2 < 9.0:
-        phase_title = "Phase 2: Oxygen Rush to 9.0 ppt & Mining Setup (Sec. 7.3 Step 3)"
-        if counts["o2gen"] < 11:
-            needed = 11 - counts["o2gen"]
-            recs.append(f"OXYGEN RUSH: Scale to 11x Oxygen Generator (currently {counts['o2gen']}/11, 8W ea = 88W load).")
-            recs.append("  -> Rushes 9.0 ppt O2 in ~3-4 days (Auto Feeders @ 1.0, Earth Clearance @ 3.0, Smelter @ 5.0, Charging Station @ 9.0).")
-        if o2 >= 5.0 and counts["smelter"] < 1:
-            recs.append("DEPLOY SMELTER: Oxygen >= 5.0 ppt unlocked! Deploy Smelter 1 to refine iron ore & silicon.")
+        phase_title = "Phase 2: Oxygen Rush to 9.0 ppt & Bio-Loop Activation (Sec. 7.3 Step 3)"
+        if o2 >= 1.0:
+            recs.append("BIO-LOOP ACTIVE: Auto Feeders unlocked at 1.0 ppt! Ensure Bio Collector, Lab, and Exchange are powered ON.")
+        if c["o2gen"] < 12:
+            needed = 12 - c["o2gen"]
+            recs.append(f"OXYGEN RUSH: Scale to 12x Oxygen Generator (currently {c['o2gen']}/12, 8W ea = 96W load, occupies 23/25 slots).")
+            recs.append("  -> Rushes 9.0 ppt O2 in ~3-4 days (Smelter deferred until 9.0 ppt to maximize O2 generation!).")
         if o2 < 9.0:
-            recs.append(f"CHARGING STATION LOCKED: Vehicle Charging Station requires 9.0 ppt O2 (currently {o2:.2f}/9.0 ppt). Keep running 11 O2 gens!")
-        else:
-            recs.append("CHARGING STATION UNLOCKED: Deploy Vehicle Charging Station 1 + Rover 1 chassis and mount Nav/Sonar/Drill modules!")
-        recs.append("NEXT SWAP: At 9.0 ppt O2 with Rover active, recycle 10 O2 gens down to 1, scale to 7 Solar + 4 Batteries for Phase 3 Heat Rush!")
+            recs.append(f"CHARGING STATION LOCKED: Vehicle Charging Station requires 9.0 ppt O2 (currently {o2:.2f}/9.0 ppt). Keep running 12 O2 gens!")
+        recs.append("NEXT SWAP: At 9.0 ppt O2, deploy Charging Station 1 + Smelter 1 + 2 Rovers, recycle 11 O2 gens, scale to 7 Solar + 4 Batteries + 7 Heaters (exact 25/25 slots)!")
 
     elif heat < 12.0:
-        phase_title = "Phase 3: The Heat Rush to 12.0 Temp (Sec. 7.3 Step 4)"
-        if counts["solar"] < 7 or counts["battery"] < 4:
-            if counts["solar"] < 7:
-                recs.append(f"SCALE POWER: Buy {7 - counts['solar']}x Solar Generator (currently {counts['solar']}/7) for 10-Heater continuous load.")
-            if counts["battery"] < 4:
-                recs.append(f"SCALE BATTERIES: Buy {4 - counts['battery']}x Small Battery (currently {counts['battery']}/4) for 2,000 Wh night reserve.")
-        if counts["heater"] < 10:
-            needed = 10 - counts["heater"]
-            recs.append(f"HEAT RUSH: Deploy {needed}x Heat Generator (currently {counts['heater']}/10, auto-calibrated to 100% efficiency).")
-            recs.append("  -> Sweet spot: 10 Heaters + 4 Fixed gives +18.5W surplus (leaves 30W margin for Rover charging with ZERO brownouts!).")
-            recs.append(f"  -> Reaches 12.0 Temp in ~4.8 days ({heat:.1f}/12.0 HU).")
-        recs.append("NEXT STEP: At 12.0 Temp, Tri-Pillar hits ~98,579 TP + Bio-Loop -> 100,000 TP Pioneer Breakout!")
+        phase_title = "Phase 3: The Heat Rush to 12.0 Temp (Strict 25/25 Slots, Sec. 7.3 Step 4)"
+        if c["solar"] < 7 or c["battery"] < 4:
+            if c["solar"] < 7:
+                recs.append(f"SCALE POWER: Buy {7 - c['solar']}x Solar Generator (currently {c['solar']}/7) for 7-Heater continuous load.")
+            if c["battery"] < 4:
+                recs.append(f"SCALE BATTERIES: Buy {4 - c['battery']}x Small Battery (currently {c['battery']}/4) for 2,000 Wh night reserve.")
+        if c["smelter"] < 1:
+            recs.append("DEPLOY SMELTER: Deploy Smelter 1 to refine Iron and Silicon delivered by Rovers.")
+        if c["rover"] < 2:
+            recs.append(f"DEPLOY ROVERS: Commission 2x Rover chassis (currently {c['rover']}/2) with Nav, Sonar, and Drill modules.")
+        if c["heater"] < 7:
+            needed = 7 - c["heater"]
+            recs.append(f"HEAT RUSH: Deploy {needed}x Heat Generator (currently {c['heater']}/7, auto-calibrated to 100% efficiency).")
+            recs.append("  -> Exact 25/25 Base Slots: 7 Solar + 4 Bat + 3 Bio + 1 Charger + 1 Smelter + 1 Pres + 1 O2 + 7 Heat (0% penalty!).")
+            recs.append(f"  -> Reaches 12.0 Temp in ~5-6 days ({heat:.1f}/12.0 HU).")
+        recs.append("NEXT STEP: At 12.0 Temp, Tri-Pillar hits ~98,600 TP + Bio-Loop -> 100,000 TP Pioneer Breakout!")
 
     elif tp < 100000:
         phase_title = "Phase 4: 100k TP Breakout & Pioneer Transition (Sec. 7.3 Step 5)"
-        recs.append("PIONEER THRESHOLD REACHED: Tri-Pillar complete (0.20 kPa + 5.0 ppt + 12.0 HU = ~98.6k TP).")
+        recs.append("PIONEER THRESHOLD REACHED: Tri-Pillar complete (0.20 kPa + 9.0 ppt + 12.0 HU = ~98.6k TP + Bio).")
         recs.append("COMMISSION PIONEER: Fabricate Pioneer Chassis + Modular Small Cargo Racks + Nav + Battery + Constructor.")
         recs.append("Transition Nocturna Base into multi-outpost deep-field hub!")
 

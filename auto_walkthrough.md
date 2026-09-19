@@ -50,15 +50,15 @@ graph LR
 
 ## ⚡ Part 2: Revised Speedrun Strategy (0 $\rightarrow$ 150,000 TP)
 
-The speedrun strategy optimizes the 25-slot Nocturna Base building sequence from cold boot to the **150,000 TP Mid-Game Transition**, guaranteeing **zero brownouts** under worst-case weather ("doodoo" conditions) and zero wasted credits.
+The speedrun strategy optimizes the 25-slot Nocturna Base building sequence from cold boot to the **150,000 TP Mid-Game Transition**, guaranteeing **zero brownouts**, strict **25/25 slot occupancy (0% over-capacity penalty)**, and zero wasted credits.
 
 ```mermaid
 flowchart TD
     Phase0["Phase 0: Boot & Power Anchor<br/>Bio-Loop (3) + 4 Solar + 2 Battery (60W surplus)"]
     Phase1["Phase 1: Pressure Rush to 0.200 kPa<br/>10 Pressure Gens @ 70W load<br/>Unlocks Mining Operations & Rover Chassis"]
-    Phase2["Phase 2: Oxygen Rush to 9.0 ppt<br/>Recycle 9 Pressure Gens -> Deploy 11 O2 Gens + 3rd Battery<br/>5.0 ppt: Deploy Smelter 1<br/>9.0 ppt: Deploy Charging Station 1 + Rover 1"]
-    Phase3["Phase 3: Heat Rush to 12.0 HU<br/>Recycle 10 O2 Gens -> Deploy 10 Heaters<br/>Scale Power: 7 Solar + 4 Batteries (2,000 Wh reserve)"]
-    Phase4["Phase 4: 100k TP Breakout<br/>Tri-Pillar complete (0.2P + 9.0 O2 + 12.0 HU = ~98.6k TP + Bio)<br/>Fabricate Pioneer Chassis + Modular Cargo Racks"]
+    Phase2["Phase 2: Oxygen Rush to 9.0 ppt<br/>Recycle 9 Pressure Gens -> Deploy 12 O2 Gens + 3rd Battery<br/>1.0 ppt: Power ON Bio-Loop (Auto Feeders)<br/>5.0 ppt: Defer Smelter (Maximize O2 speed!)<br/>9.0 ppt: Deploy Charger 1 + Smelter 1 + 2 Rovers"]
+    Phase3["Phase 3: Heat Rush to 12.0 HU (Strict 25/25 Slots)<br/>Recycle 11 O2 Gens -> Deploy 7 Heaters<br/>Scale Power: 7 Solar + 4 Batteries (2,000 Wh reserve)<br/>Dynamic night-battery heater throttling (<25%)"]
+    Phase4["Phase 4: 100k TP Breakout<br/>Tri-Pillar complete (0.2P + 9.0 O2 + 12.0 HU = ~98.6k TP + Bio = 100k TP)<br/>Fabricate Pioneer Chassis + Modular Cargo Racks"]
     Phase5["Phase 5: 150k TP Modular Architecture Migration<br/>Copy lib/ -> Swap standalone templates for Bus/Archive ecosystem"]
 
     Phase0 --> Phase1 --> Phase2 --> Phase3 --> Phase4 --> Phase5
@@ -70,30 +70,42 @@ Research trees show prerequisites, but physical progression requires strict phas
 
 | Phase | Milestone | Tech Gate Unlocked | System Action Taken |
 |---|---|---|---|
-| **Phase 0** | **0 TP** | Power & Sensors Online | Deploy 4 Solar, 2 Battery, 3 Bio-Loop. Solve 3 intro Earth contracts (+3,750 cr). |
+| **Phase 0** | **0 TP** | Power & Sensors Online | Deploy 4 Solar, 2 Battery, 3 Bio-Loop (initially unpowered). Solve 3 intro Earth contracts (+3,750 cr). |
 | **Phase 1** | **0.200 kPa** | Mining Operations, Rover Chassis (`research_rover`) | Scale to 10 Pressure Gens. Hits 0.200 kPa in ~1.5–2 days. Undeploy 9 Pressure Gens (+8,100 cr). |
-| **Phase 2** | **1.0 ppt $\text{O}_2$** | Auto Feeders (`research_auto_feeders`) | Enables automated container port transfers for Smelter. |
-| **Phase 2** | **5.0 ppt $\text{O}_2$** | Ore Refinement (`research_smelter`) | Deploy Smelter 1; configure baseline stock floors (50 iron, 50 silicon). |
-| **Phase 2** | **9.0 ppt $\text{O}_2$** | Vehicle Charging Station (`research_charging_station`) | Deploy Charging Station 1 + Rover 1. Purchase Nav, Sonar, and Drill modules into Base Inventory. |
-| **Phase 3** | **12.0 HU Heat** | Small Battery Holder (`research_battery_holder_small`) | Recycle 10 O2 Gens; scale to 7 Solar + 4 Batteries; deploy 10 Heaters. Hits 12.0 HU in ~4.8 days. |
-| **Phase 4** | **100,000 TP** | Pioneer Chassis (`research_pioneer`) | Tri-Pillar complete (~98.6k TP + Bio-Loop). Assemble Pioneer with Constructor Module. |
+| **Phase 2** | **1.0 ppt $\text{O}_2$** | Auto Feeders (`research_auto_feeders`) | **Power ON Bio-Loop**: Collector, Lab, and Exchange now have container transfer support. |
+| **Phase 2** | **3.0 ppt $\text{O}_2$** | Earth Clearance (`research_earth_clearance`) | Solve 3 advanced Earth contracts (`sealed_vault`, `terminal_breach`, `data_tablet`) for **+22,500 cr**. |
+| **Phase 2** | **5.0 ppt $\text{O}_2$** | Ore Refinement (`research_smelter`) | **Defer Smelter deployment**: With no rovers active yet, keep slot as a 12th $\text{O}_2$ Gen to reach 9.0 ppt faster. |
+| **Phase 2** | **9.0 ppt $\text{O}_2$** | Vehicle Charging Station (`research_charging_station`) | Deploy Charging Station 1 + Smelter 1 + **2 Rovers** (Chassis + Nav/Sonar/Drill). |
+| **Phase 3** | **12.0 HU Heat** | Small Battery Holder (`research_battery_holder_small`) | Recycle 11 $\text{O}_2$ Gens; scale to 7 Solar + 4 Batteries; deploy **7 Heaters** (exact 25/25 slots). Hits 12.0 HU in ~5–6 days. |
+| **Phase 4** | **100,000 TP** | Pioneer Chassis (`research_pioneer`) | Tri-Pillar complete (~98.6k TP + Bio-Loop = **100,000 TP**). Assemble Pioneer with Constructor Module. |
 | **Phase 5** | **150,000 TP** | Full Mid-Game Modular Architecture | `trigger_midgame_migration()` copies `lib/`; machine scripts swap to Signal Bus & Data Archive controllers. |
 
 ---
 
-### 2.2 Nocturna Base Slot & Power Accounting (25 Slots)
+### 2.2 Nocturna Base Slot & Power Accounting (Strict 25 Slots, 0% Penalty)
+
+Exceeding 25 base buildings triggers the engine's soft threshold penalty (e.g. 27/25 runs all base machines at -20% efficiency). The speedrun path enforces strict $\le 25/25$ limits:
 
 1. **Power Infrastructure**:
    - **Tracked Solar Panel**: $468\text{ Wh/day} \approx 19.5\text{ W}$ continuous average ($50\text{ W}$ daytime peak).
    - **Small Battery**: $500\text{ Wh}$ capacity ($10.08\text{ h}$ night duration).
-2. **Fixed Baselines**:
+2. **Fixed Non-Power Baselines**:
    - **Bio-Loop (3 slots, 18 W continuous)**: Bio Collector ($5\text{ W}$) + Bio Lab ($5\text{ W}$) + Bio Exchange ($8\text{ W}$).
    - **Vehicle Charging Station (1 slot, 0–30 W)**: $0\text{ W}$ idle, $30\text{ W}$ during vehicle recharge.
+   - **Smelter (1 slot, 0–25 W)**: $0\text{ W}$ idle, $25\text{ W}$ active crafting.
+   - **Atmospheric Anchors (2 slots, 15 W)**: 1 Pressure Gen ($7\text{ W}$) + 1 $\text{O}_2$ Gen ($8\text{ W}$).
 3. **Flexible Slot Allocations Across Phases**:
-   - **Phase 1**: 4 Solar + 2 Batteries + 3 Bio + 10 Pressure Gens = 19 slots (6 free).
-   - **Phase 2**: 4 Solar + 3 Batteries + 3 Bio + 1 Pressure + 11 O2 Gens + 1 Smelter = 23 slots (2 free).
-   - **Phase 3**: 7 Solar + 4 Batteries + 3 Bio + 1 Charging Station + 1 Pressure + 1 O2 Gen + 10 Heaters = 27 slots (expanded by Nocturna upgrades, or 9 Heaters at 25 slots).
-
+   - **Phase 1**: 4 Solar + 2 Batteries + 3 Bio + 10 Pressure Gens = **19 slots** (6 free).
+   - **Phase 2**: 4 Solar + 3 Batteries + 3 Bio + 1 Pressure + 12 $\text{O}_2$ Gens = **23 slots** (2 free).
+   - **Phase 3**: 7 Solar + 4 Batteries + 3 Bio + 1 Charging Station + 1 Smelter + 1 Pressure + 1 $\text{O}_2$ Gen + 7 Heaters = **EXACTLY 25 / 25 SLOTS**!
+4. **Field Units (0 Base Slots)**:
+   - **2 Rovers**: Both equipped with Nav + Sonar + Drill modules. Mobile units do not consume base capacity.
+   - **1 Harvester + 1 Scanner**: 0 slots.
+5. **Night Power Budget & Dynamic Throttling**:
+   - 4 Batteries = **2,000 Wh** reserve.
+   - Continuous baseload: 15W Atmo + 18W Bio + 84W (7 Heaters) = **117 W**.
+   - Night consumption: $117\text{ W} \times 10.08\text{ h} = 1,179.4\text{ Wh}$ ($820.6\text{ Wh}$ surplus buffer for Rover charging).
+   - Heaters dynamically throttle to 1W if battery drops below **25%**, preventing brownouts under any surge.
 ---
 
 ## 🛠️ Part 3: Master Building Buyer (`solar_1.py`)
@@ -193,7 +205,7 @@ Earth contracts provide massive non-dilutive starter capital. `early_game.py` re
   - **Mechanic**: Radar probing of a buried alien tablet containing hidden characters.
   - **Algorithm**: Sweeps grid coordinates $(r, c)$ using `tablet.probe(r, c)`. When `distance == 0`, a message character is located. Sorts located characters in standard reading order (row-major: top-to-bottom, left-to-right), concatenates string, and transmits to Earth.
 
-*Combined Early Contract Yield: **~26,250+ credits**, single-handedly financing all 10 Pressure Gens, 11 Oxygen Gens, Batteries, Smelter, Vehicle Charging Station, and Rover chassis with zero reliance on manual scavenging.*
+*Combined Early Contract Yield: **~26,250+ credits**, single-handedly financing all 10 Pressure Gens, 12 Oxygen Gens, 4 Batteries, Smelter, Vehicle Charging Station, and 2x Rover chassis with zero reliance on manual scavenging.*
 
 ---
 

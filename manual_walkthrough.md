@@ -134,11 +134,14 @@ Phase 7: Hardness-4 Edge Mining, Nuclear Era & 1,000,000 TP Completion
   - Run `harvester_1.py` (`lib/harvesting.py`) across local sectors A1..H24 to collect surface scrap.
 - [x] **1.2 Rover H1 Mining Loop (Integrated Cargo)**:
   - Reach **Pressure 0.10–0.20 kPa**: Unlock Rover, Basic Nav, Basic Sonar, Basic Drill.
-  - Deploy `rover_1` (uses its **integrated 10-unit cargo hold**; Rovers do not require Cargo Racks).
+  - Deploy `rover_1` and `rover_2` (uses their **integrated 10-unit cargo hold**; Rovers do not require Cargo Racks).
+  - *Speedrun note*: Rover field operations start as soon as the **Vehicle Charging Station** unlocks at **Oxygen 9.0 ppt**.
   - Survey and mine **Iron Ore** (H1) and **Silicon** (H1), offloading directly into Base Inventory.
   - Enforce atomic site reservations (`lib/vehicle_claims.py`) and there-and-back energy budgeting (`lib/vehicle_energy.py`).
 - [x] **1.3 Ore Refinement & Storage Expansion**:
-  - Reach **Oxygen 5 ppt**: Deploy `smelter_1` (`lib/smelter.py`); refine mined Iron Ore into Iron Ingots.
+  - Reach **Oxygen 5 ppt**: Unlocks `smelter_1` (`lib/smelter.py`).
+  - *Speedrun note*: In automated early play, Smelter deployment is deferred until **9.0 ppt $\text{O}_2$** (synchronized with Rover 1 & 2 deployment), allowing an extra $\text{O}_2$ generator to rush the 9.0 ppt milestone.
+  - Refine mined Iron Ore into Iron Ingots and Silicon Ore into Silicon.
   - Apply soft-shedding to Smelter (idle is 0 W; pause crafts rather than cutting breaker power).
   - Reach **Temp 5**: Deploy **Storage Bins** (single-material stockpiles to relieve Base Inventory).
   - Reach **Temp 8**: Unlock **Small Cargo Racks** & Portable Bins (modular cargo hardware prepared for Pioneer deployment).
