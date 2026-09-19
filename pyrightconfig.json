@@ -1,3 +1,6 @@
 {
-  "extends": "./pyrightconfig.codeterraform.json"
+  "extends": "./pyrightconfig.codeterraform.json",
+  "exclude": [
+    "tools", "**/node_modules", "**/__pycache__", "**/.*"
+  ]
 }

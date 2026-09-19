@@ -9,6 +9,18 @@ that way there is exactly one place to keep current.
 
 ---
 
+## 🗺️ Progression Walkthroughs & Speedrun Guides
+
+For high-level operational workflows, progression roadmaps, and automation orchestration, refer to the dedicated walkthrough guides:
+
+- **[`manual_walkthrough.md`](../manual_walkthrough.md)**: **Manual Progression Roadmap (0 $\rightarrow$ 1,000,000 TP Victory)**
+  - Detailed playbook for manual progression: First Contact onboarding steps, Earth Clearance contract solvers (+3,750 cr & +22,500 cr), research prerequisites, critical bottleneck matrix, and chronological phase breakdown from Phase 0 (Cold Boot) through Phase 7 (Deep Biome, Nuclear Reactor Recovery & Endgame Victory).
+- **[`auto_walkthrough.md`](../auto_walkthrough.md)**: **Autonomous Architecture & Early Speedrunner (0 $\rightarrow$ 150,000 TP)**
+  - Blueprint for hands-off automation: Master Automation Architecture, revised 25-slot Nocturna Base speedrun strategy, `solar_1.py` master building-buyer (autonomous buy/deploy/sell cycles), `tools/early_game.py` speedrunner daemon & machine watcher, Earth Clearance contract solvers, and the 150k TP mid-game migration protocol to `lib/`.
+- *(Top-level navigation hub: [`walkthrough.md`](../walkthrough.md))*
+
+---
+
 ## 🧱 0. Shared Library Module Map (`lib/`)
 
 | Concern | Module(s) |
@@ -2488,10 +2500,15 @@ running game interpreter, not a simulation. Setup and full details:
     - `python tools/auto_deploy.py --daemon`: Continuous background watcher loop.
     - `python tools/auto_deploy.py --deploy <machine_id> [--template <name>] [--param KEY=VALUE ...]`: Targeted single-machine deployment.
 
-**Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**: ask the
-user first, every time — never assume standing permission from a prior yes.** A debug session runs
+**Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**: 
+If we're runnign the users main save (save_mtzkzly3_4ww80o): ask the user first, every time — 
+never assume standing permission from a prior yes.** A debug session runs
 against the live save with real effects (a script that spends credits, moves a vehicle, fires a
 drill, etc. does so for real, not in a sandbox) — pausing at a breakpoint can also leave a machine
 mid-action in a state the player didn't intend. Treat this the same as any other action with
 real-world (real-save) side effects per this project's risk-awareness rules, not as a routine
 read-only inspection step.
+In other - throwaway - saves you can be more liberal. Especially when we're developing the auto-play tools like 
+tools/auto_deply.py
+tools/early_game.py
+etc.

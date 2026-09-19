@@ -236,21 +236,27 @@ def launch_script(workspace, script, timeout=15):
             "pathFormat": "path", "linesStartAt1": True, "columnsStartAt1": True,
         }, timeout=timeout)
         if not r or not r.get("success"):
+            msg = r.get("message") if r else "no response"
+            print(f"[DAP] initialize failed: {msg}", file=sys.stderr)
             return False
 
         client.send("request", "launch", {"workspace": workspace, "script": script})
         ev = client.wait_for(lambda m: m.get("type") == "event" and m.get("event") == "initialized", timeout=timeout)
         if not ev:
+            print(f"[DAP] Timeout waiting for 'initialized' event for {script}", file=sys.stderr)
             return False
 
         r = client.request("configurationDone", {}, timeout=timeout)
         if not r or not r.get("success"):
+            msg = r.get("message") if r else "no response"
+            print(f"[DAP] configurationDone failed for {script}: {msg}", file=sys.stderr)
             return False
 
         client.wait_for(lambda m: m.get("type") == "response" and m.get("command") == "launch", timeout=timeout)
         client.request("disconnect", {"terminateDebuggee": False}, timeout=timeout)
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[DAP] Exception during launch_script({script}): {e}", file=sys.stderr)
         return False
     finally:
         client.close()

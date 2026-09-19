@@ -1,0 +1,196 @@
+# ==============================================================================
+# OPTIMAL HARVESTER - Heat-Aware & Value-Weighted Autonomous Collector
+# ==============================================================================
+# Thermal mechanics from Code: Terraform engine:
+#   - Move onto an ITEM sector   -> +1 heat (sheds 1.5h during 0.5h move -> net cooling!)
+#   - Move onto an EMPTY sector  -> +7 heat (sheds 1.5h -> net +5.5 heat)
+#   - Collect on an EMPTY sector -> +9 heat (never do this; map is verified live)
+#   - Max heat: 100. Heat drains at 3.0 per world-hour passively.
+#   - RSPH = clock.real_seconds_per_hour() (~30s real per world hour)
+#
+# Key Optimizations:
+#   1. Value-density target selection: Chooses target maximizing (value / Manhattan distance).
+#   2. Axis-smart pathfinding: When stepping towards target, chooses the axis landing
+#      on an item sector (+1 heat instead of +7 heat).
+#   3. Exact-need cooling: Travels up to heat 97. Only cools when the next step would
+#      cross 97, and calculates the exact sleep duration needed.
+#   4. Instant liquidation: Deposits via store() and immediately sells all via shop
+#      to maximize credit velocity and keep outpost inventory 100% clear.
+# ==============================================================================
+
+SCANNER_ID    = "scanner_1"
+HEAT_MAX      = 100
+HEAT_SAFETY   = 3       # Never plan a hop that exceeds 97 heat
+COOL_PER_HOUR = 3.0     # Heat drained per world-hour
+COST_ITEM     = 1       # Heat cost moving to item sector
+COST_EMPTY    = 7       # Heat cost moving to empty sector
+IDLE_HOURS    = 0.5     # World-hours to wait when no targets are known
+
+scanner = get_component(SCANNER_ID)
+shop = get_component("shop")
+
+try:
+    clock = get_component("clock")
+    RSPH = clock.real_seconds_per_hour()
+except Exception:
+    RSPH = 30.0
+
+def parse(sid: str):
+    return (ord(sid[0].upper()) - 64, int(sid[1:]))
+
+def fmt(p):
+    return chr(64 + p[0]) + str(p[1])
+
+def read_map():
+    pts = {}
+    data = scanner.get_scanned()
+    for sid, res in data.items():
+        if getattr(res, "status", None) == "ok":
+            pts[parse(sid)] = getattr(res, "value", 1)
+    return pts
+
+def cool_to(target):
+    n = 0
+    while self.get_heat() > target and n < 6:
+        n += 1
+        excess = self.get_heat() - target
+        hours = max(0.1, excess / COOL_PER_HOUR)
+        print(f"[harvester] Heat {self.get_heat():.1f} - cooling {hours:.2f}h to reach {target}...")
+        sleep(hours * RSPH + 0.2)
+
+def choose_target(pos, pts):
+    best = None
+    best_score = -1.0
+    pr, pc = pos
+    for p, val in pts.items():
+        d = abs(p[0] - pr) + abs(p[1] - pc)
+        if d == 0:
+            return p
+        score = val / (d * 1.0)
+        if score > best_score:
+            best_score = score
+            best = p
+    return best
+
+def next_hop(pos, tgt, pts):
+    dr = tgt[0] - pos[0]
+    dc = tgt[1] - pos[1]
+    cands = []
+    if dr > 0:
+        cands.append((pos[0] + 1, pos[1]))
+    elif dr < 0:
+        cands.append((pos[0] - 1, pos[1]))
+    if dc > 0:
+        cands.append((pos[0], pos[1] + 1))
+    elif dc < 0:
+        cands.append((pos[0], pos[1] - 1))
+    
+    # Priority 1: Pick an axis that lands on an item cell (+1 heat vs +7 heat!)
+    for q in cands:
+        if q in pts:
+            return q
+    if not cands:
+        return None
+    # Priority 2: Stay near diagonal to maximize future options
+    if len(cands) == 2 and abs(dc) > abs(dr):
+        return cands[1]
+    return cands[0]
+
+def put_away():
+    waited = 0
+    while True:
+        if not self.get_held():
+            return True
+        r = self.store()
+        if r.status == "ok":
+            try:
+                sale = shop.sell_all(r.item_id)
+                if sale.status == "ok":
+                    print(f"[harvester] Sold {sale.units}x {sale.item_id} (+{sale.credits} cr)")
+                else:
+                    print(f"[harvester] Stored {r.item_id} (shop status: {sale.status})")
+            except Exception as e:
+                print(f"[harvester] Stored {r.item_id} (shop exception: {e})")
+            return True
+        elif r.status == "empty":
+            return True
+        elif r.status == "inventory_full":
+            if waited % 5 == 0:
+                print(f"[harvester] Inventory full! Holding {self.get_held()}, retrying...")
+            waited += 1
+            sleep(IDLE_HOURS * RSPH)
+            continue
+        print(f"[harvester] Store error: {r.message}")
+        return False
+
+def go(q, pts):
+    cost = COST_ITEM if q in pts else COST_EMPTY
+    if self.get_heat() + cost > HEAT_MAX - HEAT_SAFETY:
+        cool_to(HEAT_MAX - HEAT_SAFETY - cost)
+    
+    sid = fmt(q)
+    for _ in range(8):
+        r = self.move(sid)
+        if r.status in ("ok", "already_here"):
+            return True
+        elif r.status == "overheated":
+            cool_to(HEAT_MAX - HEAT_SAFETY - cost)
+        elif r.status in ("moving", "busy"):
+            sleep(0.25 * RSPH)
+        else:
+            print(f"[harvester] Move {sid} -> {r.status}: {r.message}")
+            return False
+    return False
+
+def take(p, pts):
+    if self.get_held():
+        if not put_away():
+            return False
+    for _ in range(8):
+        res = self.collect()
+        s = res.status
+        if s == "ok":
+            pts.pop(p, None)
+            val = getattr(res, "value", "?")
+            name = getattr(res, "name", getattr(res, "id", "item"))
+            print(f"[harvester] + {name} ({val} cr) at {fmt(p)} | heat {self.get_heat():.1f}")
+            return put_away()
+        elif s == "holding":
+            put_away()
+        elif s == "overheated":
+            cool_to(HEAT_MAX - HEAT_SAFETY - 9)
+        elif s in ("moving", "busy", "collecting"):
+            sleep(0.25 * RSPH)
+        else:
+            pts.pop(p, None) # empty / stale
+            return False
+    return False
+
+print(f"[harvester] Online at {self.get_position()}, heat {self.get_heat():.1f}")
+
+while True:
+    pts = read_map()
+    if not pts:
+        sleep(IDLE_HOURS * RSPH)
+        continue
+
+    pos = parse(self.get_position())
+    if self.get_held():
+        put_away()
+
+    # If standing on an item, pick it up
+    if pos in pts:
+        take(pos, pts)
+        continue
+
+    tgt = choose_target(pos, pts)
+    if not tgt:
+        sleep(IDLE_HOURS * RSPH)
+        continue
+
+    q = next_hop(pos, tgt, pts)
+    if not q:
+        continue
+
+    if not go(q, pts):
+        pts.pop(q, None)
