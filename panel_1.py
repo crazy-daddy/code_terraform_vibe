@@ -1,50 +1,39 @@
 # Control Room status + automation card: clock, power, storage, actionable
-# warnings (STATUS), plus the centralized always-on housekeeping this script
-# is the one process guaranteed to keep running (AUTOMATION) -- see
-# docs/AI_CHEATSHEET.md:
-#   - Power Grid supervision (brownout load-shedding, day/night calibration)
-#     for every grid, one PowerGridManager instance per grid, reused across
-#     ticks so its day/night state persists.
-#   - The Smelter Inventory->Warehouse rebalance sweep, once per cycle.
-#   - Cross-warehouse stock consolidation, every outpost, once per cycle.
-#   - Outpost-founding -> resource marker auto-reassignment
-#     (lib/outpost_mining.py's reevaluate_unassigned_near_outpost()).
-#   - Supply Dock order-assignment planning across every discovered dock
-#     (lib/supply_dock.py's plan_dock_assignments() -- the central "decider"
-#     so multiple docks share/split Earth Orders instead of each redundantly
-#     scanning the order board and independently guessing; see
-#     docs/AI_CHEATSHEET.md #2a-0-5).
-#   - Manual "Clean Archive" / "Sync Unsupported" buttons.
-# lib/solar.py's SolarController and lib/smelter.py's SmelterController no
-# longer do any of this themselves -- it's a hard dependency on this script
-# running (see legacy/README.md for pre-Control-Room saves).
+# warnings (STATUS), plus a live view of panel_1.py's automation results
+# (AUTOMATION) -- see docs/AI_CHEATSHEET.md.
+#
+# panel_1.py is the actual "always-on" worker (grid supervision, rebalance
+# sweep, outpost sync, Supply Dock planning) -- it runs headless, with no
+# panel.* calls of its own. Split out this way because mixing a per-tick
+# UI-rendering loop with a multi-second synchronous call
+# (supply_dock.plan_dock_assignments() churning through several orders) was
+# found live to wedge THIS card's own rendering permanently: the script kept
+# running fine underneath (confirmed via temporary debug prints -- iterations
+# kept completing every ~100ms) but the Custom Panel canvas stayed blank from
+# the first stall onward, with no error anywhere. panel_1.py publishes its
+# result summary to `archive` (AUTOMATION_SUMMARY_KEY below) for this card to
+# read and display instead -- same Archive-as-decoupling-channel pattern
+# CLAUDE.md calls for when a result can't be produced by the component that
+# has to display it.
+#
+# Everything drawn here (STATUS's clock/power/storage/alerts, the version
+# gate, and the manual buttons) is either a cheap single-call component read
+# or a rare user-triggered one-off -- none of it is the chronic per-cycle
+# cost that forced panel_1.py to go headless, so it stays inline in this UI
+# script rather than being routed through archive too.
 # Recommended card size: 2 columns x 2 rows -- see docs/AI_CHEATSHEET.md.
 
 from archive import archive
-from power import PowerGridManager
-from storage import rebalance_inventory_to_warehouses, consolidate_cross_warehouse_stock
 from archive_cleaner import ArchiveCleaner
 from unsupported_markers import update_unsupported_markers
 from version_guard import version_mismatch, good_version, confirm_new_version
-import outpost_mining
-import supply_dock
 
-OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
-
-# ~1s and 10s at 10 ticks/sec (see lib/archive_cleaner.py's documented tick rate) --
-# the panel redraws every render tick regardless; only the actual automation
-# work (grid supervision, rebalance sweep, outpost diff) is throttled to this
-# cadence, matching what lib/solar.py's run(poll_interval=1.0) used to do.
-SOLAR_TICK_INTERVAL = 10
-STORAGE_TICK_INTERVAL = 100
+# Must match panel_1.py's own AUTOMATION_SUMMARY_KEY.
+AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 
 # Loop-scoped state, created once and persisting across iterations (this
 # script is one continuous while-loop process, not re-invoked per tick --
 # same pattern panel_2.py uses for its scroll_label).
-grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
-last_solar_tick = 0
-last_storage_tick = 0
-last_automation_summary = "not yet run"
 last_cleaner_stats = None
 last_unsupported_count = None
 
@@ -113,17 +102,18 @@ while True:
             panel.draw_text(col4 + 18, y + 5, alert, 10, "text-secondary", width * 0.18)
 
     # ------------------------------------------------------------------
-    # AUTOMATION -- see module docstring. Throttled to _TICK_INTERVAL;
-    # buttons below still respond every tick regardless of the throttle.
+    # AUTOMATION -- a live view of panel_1.py's headless worker (see module
+    # docstring). This card does not itself run any of that automation; the
+    # buttons below are the one exception (rare, user-triggered one-offs).
     # ------------------------------------------------------------------
     auto_y = status_h + 8
     panel.card(8, auto_y, width - 16, height - auto_y - 8, "AUTOMATION")
 
     # ------------------------------------------------------------------
-    # VERSION SAFETY GATE -- see lib/version_guard.py. Every controller
-    # (solar, rover, pioneer, smelter, ...) checks this once at its own
-    # startup and blocks there until confirmed; this panel never blocks
-    # itself so the operator can always reach the button below.
+    # VERSION SAFETY GATE -- see lib/version_guard.py. panel_1.py's own
+    # automation loop checks version_mismatch() independently and halts its
+    # own mutating work; this card just surfaces the same gate and the
+    # confirm button so the operator can always reach it.
     # ------------------------------------------------------------------
     ver_x = width - 190
     mismatch = version_mismatch()
@@ -137,92 +127,7 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Confirm new version error: {e}")
 
-    # Every mutating action below (grid supervision, rebalance/consolidation
-    # sweeps, outpost/dock sync, and the two manual buttons) is gated behind
-    # `not mismatch` -- this panel keeps rendering and stays reachable during
-    # a version mismatch (see VERSION SAFETY GATE above), but it must not
-    # itself make any changes to the save until the operator confirms, same
-    # as every other script halted in validate_game_version().
-    if not mismatch:
-        current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
-        solar_due = (last_solar_tick == 0) or (current_tick - last_solar_tick >= SOLAR_TICK_INTERVAL)
-        storage_due = (last_storage_tick == 0) or (current_tick - last_storage_tick >= STORAGE_TICK_INTERVAL)
-
-        if solar_due:
-            last_solar_tick = current_tick
-            grid_count = 0
-            try:
-                elevation = clock.get_elevation() if clock else 0.0
-                live_grids = power.grids() if power and hasattr(power, "grids") else []
-                current_anchors = set()
-                for grid in live_grids:
-                    anchor = getattr(grid, "anchor_id", None)
-                    current_anchors.add(anchor)
-                    manager = grid_managers.get(anchor)
-                    if manager is None:
-                        manager = PowerGridManager(grid, clock=clock, power=power)
-                        grid_managers[anchor] = manager
-                    manager.supervise_grid(grid, elevation)
-                    grid_count += 1
-
-                # Grids that stopped being reported (merged into another via a new
-                # power line) -- release anything they still had shed rather than
-                # stranding it forever (see PowerGridManager.release_all()).
-                for stale_anchor in list(grid_managers.keys()):
-                    if stale_anchor not in current_anchors:
-                        grid_managers[stale_anchor].release_all()
-                        del grid_managers[stale_anchor]
-            except Exception as e:
-                print(f"[AUTOMATION] Grid supervision error: {e}")
-
-        if storage_due:
-            last_storage_tick = current_tick
-            try:
-                rebalance_inventory_to_warehouses()
-            except Exception as e:
-                print(f"[AUTOMATION] Rebalance sweep error: {e}")
-
-            outpost_new_count = 0
-            try:
-                network = get_component("outpost_network")
-                if network and hasattr(network, "outposts"):
-                    outposts = network.outposts()
-                    current_ids = {getattr(o, "id", None) for o in outposts}
-                    current_ids.discard(None)
-                    known_ids = set(archive.get(OUTPOST_KNOWN_IDS_KEY, []) or [])
-                    new_ids = current_ids - known_ids
-                    for new_id in new_ids:
-                        assigned = outpost_mining.reevaluate_unassigned_near_outpost(new_id)
-                        print(f"[AUTOMATION] New outpost '{new_id}' detected -- assigned {assigned} nearby resource marker(s).")
-                        outpost_new_count += 1
-                    if current_ids != known_ids:
-                        archive.set(OUTPOST_KNOWN_IDS_KEY, sorted(current_ids))
-
-                    # Cross-warehouse consolidation sweep (storage.py's
-                    # consolidate_cross_warehouse_stock(), which calls
-                    # .compact()) -- every outpost, not just home, since a
-                    # remote outpost's Warehouses (e.g. a Bio Lab reagent drop)
-                    # can end up with the same item split across multiple
-                    # Warehouse buildings the same way repeat hauler deliveries
-                    # can at home.
-                    for o in outposts:
-                        o_id = getattr(o, "id", "?")
-                        try:
-                            consolidate_cross_warehouse_stock(o)
-                        except Exception as e:
-                            print(f"[AUTOMATION] Cross-warehouse consolidation error at '{o_id}': {e}")
-            except Exception as e:
-                print(f"[AUTOMATION] Outpost sync error: {e}")
-
-            dock_plan_count = 0
-            try:
-                plan = supply_dock.plan_dock_assignments(clock=clock)
-                dock_plan_count = sum(1 for v in plan.values() if v)
-            except Exception as e:
-                print(f"[AUTOMATION] Supply Dock planning error: {e}")
-
-            last_automation_summary = f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned"
-
+    last_automation_summary = archive.get(AUTOMATION_SUMMARY_KEY, "not yet run")
     panel.label(24, auto_y + 34, "ALWAYS-ON", "caption")
     panel.status_dot(29, auto_y + 58, 5, "paused" if mismatch else "running")
     panel.draw_text(42, auto_y + 64, "halted -- confirm new version above" if mismatch else last_automation_summary, 10, "text-secondary", width * 0.30)

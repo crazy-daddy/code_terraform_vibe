@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS
+from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
 from archive import archive
 from storage import take_item, total_stock, best_unload_target
 from version_guard import validate_game_version
@@ -261,16 +261,22 @@ class FabricatorController:
                 elif res.status != "busy":
                     print(f"[{self.name}] {fluid_key} connect notice for '{source_id}': {res.status} - {res.message}")
 
-    def recipe_is_sourceable(self, recipe):
+    def recipe_is_sourceable(self, recipe, cache=None):
         """Whether every input of this recipe -- solid and fluid alike -- has a currently known supply."""
-        return self.recipe_unsourceable_reason(recipe) is None
+        return self.recipe_unsourceable_reason(recipe, cache) is None
 
-    def recipe_unsourceable_reason(self, recipe):
+    def recipe_unsourceable_reason(self, recipe, cache=None):
         """None if every input of this recipe -- solid and fluid alike -- has a currently known
         supply, else a short human-readable reason naming the first unsourceable input (used to
-        annotate the "Skipping unreachable recipe(s)" log in choose_recipe())."""
+        annotate the "Skipping unreachable recipe(s)" log in choose_recipe()).
+
+        Pass a shared `cache` (production.SourceCache) when checking several
+        recipes in one pass (see choose_recipe()) -- otherwise each call
+        re-runs Smelter/Fabricator discovery, list_recipes(), and the fluid
+        outpost.buildings() scan from scratch."""
+        cache = SourceCache() if cache is None else cache
         for item_id in (getattr(recipe, "inputs", {}) or {}):
-            if not can_source_item(item_id):
+            if not can_source_item(item_id, cache):
                 return f"no known source for input '{item_id}'"
         # fluid_inputs (e.g. {"water_in": 1.0}) is a separate field from
         # .inputs -- delivered via a FluidPort connection, not an
@@ -280,7 +286,7 @@ class FabricatorController:
         # ingredients alone, get set as the active recipe, and stall forever
         # since there's nothing to connect .water_in/.steam_in/.oil_in to.
         for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
-            if not can_source_fluid(fluid_key):
+            if not can_source_fluid(fluid_key, cache):
                 return f"no known source for fluid '{fluid_key}'"
         return None
 
@@ -329,8 +335,9 @@ class FabricatorController:
         candidates.sort(key=lambda pair: (getattr(pair[1], "output_item", None) not in manual_items, -pair[0]))
         blocked = []
         sourceable = []
+        cache = SourceCache()  # shared across every candidate below -- see recipe_unsourceable_reason()
         for missing, recipe in candidates:
-            reason = self.recipe_unsourceable_reason(recipe)
+            reason = self.recipe_unsourceable_reason(recipe, cache)
             if reason is not None:
                 output_item = getattr(recipe, "output_item", recipe)
                 blocked.append(f"{output_item} ({reason})")

@@ -47,6 +47,15 @@ For high-level operational workflows, progression roadmaps, and automation orche
 | &nbsp;&nbsp;↳ Deep biome processor (QC quiz, automated) | `bio_deep.py` (`BioConditionerController`) — see §1g |
 | Outpost reagent stock-target scaffolding (Bio Lab resupply) | `outpost_reagents.py` — see §2g |
 | Vehicle charging stations | `charging.py` |
+| Drones (scout/miner base) | `drone.py` (`DroneController`, composes the mixins below — see §2h) |
+| &nbsp;&nbsp;↳ go_to()/go_to_station()/go_to_drill() wrappers, arrival polling | `drone_navigation.py` |
+| &nbsp;&nbsp;↳ linear Wh/meter trip budgeting, drone_service/drone_depot discovery | `drone_energy.py` — see §2h |
+| &nbsp;&nbsp;↳ exclusive biosite claims + scout empty-POI cache + mission persistence | `drone_claims.py` — see §2h |
+| &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering | `drone_cargo.py` |
+| &nbsp;&nbsp;↳ scout role loop (POI bio-scanning) | `drone_scout.py` |
+| &nbsp;&nbsp;↳ miner role loop (biosite extraction) | `drone_mining.py` |
+| Drone Service Station (charging/rescue) | `drone_service.py` — see §2h |
+| Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h |
 | Fabrication | `fabricator.py` |
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
@@ -1621,6 +1630,58 @@ Four demand sources are folded together into one `{item_id: quantity}` dict:
    since it only checks the *default* Fabricator's *currently unlocked* recipes, so it can
    false-positive for an item only a different Fabricator (or a not-yet-unlocked recipe) can build.
 
+### 2a-1b. Sourceability caching across a pass (`lib/production.py` `SourceCache`)
+
+`can_source_item()`, `can_source_fluid()`, and `can_fulfill_order()` (§2a-0-5) each walk real
+game-API calls — Smelter/Fabricator discovery + `list_recipes()`, `outpost.buildings()` for fluid
+sources, `journal.surveyed_sites()`, and `total_stock()`'s own per-Warehouse discovery + `count()`
+calls — not free local computation. Found live: `panel_1.py` (then still a combined UI+automation
+script — see §7's note on the later panel_1/panel_4 split) taking ~10s per call inside
+`plan_dock_assignments()`, and Fabricator scripts sitting at "running — busy" for tens of ticks
+inside `choose_recipe()`. Root cause was two compounding bugs:
+
+1. **No caching across sibling recursion branches.** `can_source_item()`'s old recursive walk passed
+   `seen.copy()` to each recipe input, so two inputs sharing a common sub-item (e.g. Steel under both
+   Circuit Panel and Iron Ingot) each independently re-walked that sub-item's own recipe chain from
+   scratch instead of sharing one answer — exponential blowup on any recipe DAG with shared
+   ancestors, not just linear replay.
+2. **No caching across sibling *calls*.** Every one of `plan_dock_assignments()`'s
+   `can_fulfill_order()` checks (once per candidate order, once per dock's current order) and every
+   one of `choose_recipe()`'s `recipe_unsourceable_reason()` checks (once per candidate recipe)
+   independently re-ran Smelter/Fabricator discovery, `list_recipes()`, and the fluid
+   `outpost.buildings()` scan from zero, even though none of that changes mid-pass.
+
+`SourceCache` (instantiate once per pass, thread it through) fixes both: it memoizes
+`smelter_recipes()`/`fabricator_recipes()`/`surveyed_sites()`/the stock snapshot (§ below) lazily
+(each underlying game call fires at most once per cache instance), memoizes `can_source_item()`/
+`can_source_fluid()` results per item/fluid-key (a shared sub-item resolves once, not once per
+branch that needs it — e.g. two orders that both bottom out at Steel only ever resolve Steel's own
+recipe chain the first time either one asks), and uses a separate `_item_stack` set purely for cycle
+detection so it never poisons the memo with an in-progress answer. `can_fulfill_order()` and the
+`all(...)` generator checks inside `can_source_item()`/`recipe_unsourceable_reason()` already
+short-circuit on the first unsourceable item/input — no further reason to keep checking once one
+requirement fails.
+
+A third, initially-missed cost: `stock(item_id)` originally called `storage.total_stock()` per item,
+which discovers Inventory + every Warehouse AND calls `.count(item_id)` on each — so D distinct
+items across W warehouses cost `D*(1+W)` real game calls for storage alone even after the
+recipe-side caching above. Fixed by dropping `total_stock()` entirely inside `SourceCache` in favor
+of `.stacks()` (`docs/models/storage_and_items.md`'s `Inventory`/`Warehouse` — returns EVERY
+`ItemStack` a building holds in one call, not just one item's count): `_build_stock_map()` calls
+`.stacks()` once per Inventory/Warehouse, sums each stack's `.count` by `.id` into one
+`{item_id: total_units}` snapshot, and `stock(item_id)` is then a plain dict lookup against it. Total
+cost drops to `1+W` calls **for the whole pass**, regardless of how many distinct items get checked —
+strictly better than the `D*(1+W)` `.count()`-per-item shape, since `.stacks()` already had to read
+every slot to answer even one `.count()` call.
+
+All three call sites (`can_source_item()`, `can_source_fluid()`, `can_fulfill_order()`) default
+`cache=None` (falls back to a private one-off `SourceCache()`, preserving old single-call behavior)
+but the hot paths build and share one explicitly: `plan_dock_assignments()` builds one cache and
+passes it to every `can_fulfill_order()` call in that pass, and `FabricatorController.choose_recipe()`
+builds one and passes it to every `recipe_unsourceable_reason()` call over its candidate list. A
+cache instance is a snapshot of build/tech state for one pass only — never held across ticks or
+reused between passes.
+
 ### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
 
 `set_recipe()`/`clear_recipe()` both explicitly preserve the input stockpile untouched
@@ -2208,6 +2269,99 @@ Lab; `BioLuminizerController` for its Exchange. No caching -- resolved fresh per
 `storage.discover_storage_buildings()`'s convention, since a sibling building isn't guaranteed to
 exist yet at controller-construction time.
 
+### 2h. Drone Energy Budgeting Detail (`lib/drone_energy.py` `DroneEnergyMixin`)
+
+First working slice of drone automation (Phase 4 prerequisite): a `DroneController` base
+(`lib/drone.py`) with scout (`lib/drone_scout.py`) and miner (`lib/drone_mining.py`) roles, plus
+`lib/drone_service.py` (charging/rescue station) and `lib/drone_depot.py` (Drone Depot cargo
+station). Drones are a **fresh hierarchy, not a `VehicleController` subclass** — no `.drive`/`.nav`,
+no terrain/stall handling, route-based `go_to(x, y)`/`go_to_station(name)`/`go_to_drill(name)` rather
+than a blocking drive loop, and a different (simpler, linear) power/speed model — but
+`DroneController` follows the same mixin-composition philosophy as `lib/vehicle.py`. Electric drones
+only this pass; heli support (`oil_tank` instead of `battery`, `refuel()` instead of `charge()`) can
+follow the same pattern later without disrupting this design.
+
+- **Linear travel model** (`docs/components/drone.md`): full throttle = **5 Wh/h** burn at **300
+  m/h**; both scale with throttle (speed linear, burn quadratic), collapsing to a flat
+  `Wh/meter = DRONE_WH_PER_METER_PER_THROTTLE (=5.0/300.0 ≈ 0.01667) × throttle` — structurally like
+  Rover's own flat model (§2a), just a different constant and with **no** per-drone/cargo/module term
+  at all (unlike Pioneer's formula). Standalone `drone_wh_per_meter_at_throttle(throttle)` /
+  `drone_rescue_wh_per_meter()` module-level functions (no drone object needed, since the model has
+  no vehicle-specific terms) let `lib/drone_service.py` reuse the same rate cross-script, mirroring
+  `vehicle_energy.py`'s `_for(vehicle)` pattern. `max_safe_throttle_for_leg()` solves the safe-throttle
+  bound **directly linear** (`t <= available_for_leg / (distance × rate × SAFETY_MARGIN_MULTIPLIER)`),
+  not Pioneer's `sqrt(throttle)` form, since Wh/m is linear in throttle here. Treat the drone's own
+  `range_remaining()` as ground truth; this formula is for planning only (trip feasibility, throttle
+  selection), verified against the live battery before committing.
+- **`MIN_EMERGENCY_RESERVE_WH = 4.0`** (vs. `VehicleEnergyMixin`'s `8.0`) — electric drone batteries
+  are much smaller than a Rover/Pioneer's, so the same flat 8 Wh floor would eat a large fraction of
+  total capacity. `SAFETY_MARGIN_MULTIPLIER = 1.05` is unchanged from the vehicle model.
+- **Two distinct "home" endpoints**, unlike ground vehicles' single combined base/charging-station
+  pair: `get_nearest_drone_service()` (the **power** home — `calculate_trip_energy()`/
+  `return_floor_wh()` always budget the return leg against this one) and `get_nearest_drone_depot()`
+  (the **cargo** home — where a miner drone unloads). Both are separate `discover_drone_buildings()`
+  network-wide discovery calls (mirrors `vehicle_energy.py`'s `get_all_charging_stations()` shape),
+  each returning `{"id", "coords", "outpost"}` dicts — the `"outpost"` field (a `BuildingRef.outpost`)
+  is how `DroneController.__init__` resolves `self.home_outpost`/`self.home_biome`, since **a drone
+  has no `.outpost` property of its own** (unlike a Rover/Pioneer/building — confirmed against
+  `docs/models/vehicles_and_modules.md`'s `DroneSmall`/`DroneMedium`/`DroneLarge` class definitions):
+  it resolves from the nearest Drone Depot's outpost first, falling back to the nearest
+  drone_service's outpost, then to the network's home outpost if neither is deployed yet.
+- **No "biosphere region."** It's per-outpost + per-biome: a sample can only be locally processed
+  (Essence Liquifier) at the outpost it's dropped off at, and only if native to that outpost's biome
+  (`nocturna.life_form_biome(item_id) == outpost.biome`, `docs/components/essence_liquifier.md`). A
+  miner drone filters `journal.biomass_coords()` candidates to samples native to its **home outpost's
+  biome** (`lib/drone_cargo.py`'s `is_home_biome_sample()`), not a spatial "biosphere." A biosite whose
+  tile carries a **mixed** biome sample set (some home-biome, some not) is skipped entirely in v1 —
+  `PortableBioExtractor.extract()` takes **no species argument** at all
+  (`docs/types/biosphere.md`), confirming it can't be told to pull only the home-biome sample, so
+  correct-by-construction (skip the whole tile) beats risking a foreign species landing in a chamber
+  that can't be processed locally. Cross-outpost drone ferrying of foreign samples is a deferred
+  TODO.md Phase 4 bullet, not implemented this pass.
+- **Exclusive biosite claims, not shared yield-debit reservations.** Biosite extraction is
+  exclusive-WITH-COOLDOWN: only one drone may extract a given biosite at a time
+  (`journal.is_ready(x, y)`/`next_ready_at(x, y)`, `BioExtractionResult.status == "cooling"` only
+  after full depletion) — this is a fundamentally different mechanic from mineral mining's
+  now-shareable sites (§2b), which use `mining_reservations.py`'s **additive, non-exclusive**
+  yield-debit bookkeeping instead. `lib/drone_claims.py`'s `claim_biosite()`/`refresh_biosite_claim()`/
+  `release_biosite_claim()` reuse `vehicle_claims.py`'s claim/heartbeat/staleness **shape** verbatim
+  (same `CLAIM_STALE_TICKS = 36,000`), but on their own archive key (`biosite.claims`) so they never
+  collide with ground-vehicle claims — **do not** route biosite selection through
+  `mining_reservations.py`; that module solves shared-site partial-yield accounting, which does not
+  apply here. Miner target selection order: (1) `journal.is_ready(x, y)` cooldown gate, read-only,
+  checked **before** even attempting a claim; (2) exclusive claim attempt; (3) the scout's separate
+  bounded "confirmed-empty POI" cache (`SCOUTED_EMPTY_POI_KEY`, coord -> tick scanned, capped at
+  `SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000`) — a fixed fact about that coordinate once a bio scanner
+  confirms it empty, unlike `blacklist_target()`'s wrong-scanner case which can be revisited on
+  upgrade; kept as a **separate** small archive-key wrapper from `biosite.claims`, not the same table.
+- **Resumability**: `drone.mission:<name>` (own key prefix, mirrors `vehicle.mission:<name>`) persists
+  the in-progress target. Key difference from ground vehicles: a drone's `go_to()` is fire-and-forget
+  and **is cancelled by a script restart** (`drone.md`: "completing the script... cancels this
+  route"), unlike a rover's `drive_to()` loop where the underlying command can persist — so on resume,
+  `run_miner_loop()` re-validates the claim, checks `position()`/`current_station()` for actual
+  physical state, and **re-issues** `go_to()` rather than assuming the flight continued.
+  `extract()`/`scan()` themselves *do* survive a restart transparently per their own docs ("stays
+  occupied... including across a script stop and restart") — only the flight leg needs re-issuing.
+  The scout has no mission to persist beyond its empty-POI cache (repeat scans are free).
+- **`lib/drone_service.py`** structurally mirrors `lib/charging.py`: docked charge queue, fleet-wide
+  stranded/scrambled detection via `fleet.drones()` (stranded predicate additionally includes
+  `"scrambled"`, a state ground vehicles don't have), nearest-station coordination
+  (`is_nearest_station_to()`), and a proactive same-outpost nudge for a low-battery field drone
+  (`order_return_to_service()`) before it needs a full rescue. **Resolved open question**: whether a
+  station script's cross-script `drone.go_to()` call works despite `drone.md`'s `(self only)` tag —
+  yes, by direct precedent already relied on in this codebase: `nav_module.md` tags
+  `NavModule.set_target()`/`set_throttle()` `(self only)` too, yet `lib/charging.py`'s
+  `order_return_to_station()` already calls `get_component(vehicle_ref.id).nav.set_target(...)`
+  successfully from a *different* script (the charging station's) in production code. `(self only)`
+  documents the method's intended caller convention, not an engine-enforced same-script restriction.
+- **`lib/drone_depot.py`** is mostly passive — no active drain/rescue-style verb exists for a Depot;
+  cargo moves via the drone's own `cargo.load()`/`cargo.unload()` while docked, and ports drain
+  passively once connected (same pattern as Warehouse Auto Feeders). Its controller's only jobs are
+  (1) one-time idempotent `self.output.connect(...)` wiring to the outpost's Essence Liquifier, **only
+  when unambiguous** (exactly one same-outpost Liquifier — otherwise logged and left for manual
+  wiring, never guessed), and (2) a lightweight periodic telemetry publish (`drone_depot.status.<id>`)
+  for dashboards and for miner/scout drones' own "is my depot full" decisions.
+
 ---
 
 ## 🗺️ 3. Planet Map Biome Colors (player-observed, verify with `nocturna.biome_at(x, y)`)
@@ -2229,7 +2383,7 @@ exist yet at controller-construction time.
   - Payload: `{"order_id": str, "specimen_id": str, "biome": str, "target_fragment": str, "count": int}`
 - **Channel `sample_ready`**: Lab notifies Exchange immediately upon sample extraction.
   - Payload: `{"order_id": str, "sample_id": str, "sample_type": str, "lab_id": str}`
-- **Channel `system.version_confirmed`**: `panel_1.py`'s "Confirm New Version" button broadcasts the
+- **Channel `system.version_confirmed`**: `panel_4.py`'s "Confirm New Version" button broadcasts the
   newly-confirmed build hash so every script parked in `validate_game_version()` wakes immediately
   instead of polling — see `lib/version_guard.py` and the Data Archive entry below.
 
@@ -2253,12 +2407,20 @@ exist yet at controller-construction time.
 - `outposts.known_ids`: List of outpost ids `panel_1.py`'s AUTOMATION section has already seen —
   diffed each throttled tick against `outpost_network.outposts()` to detect a newly-founded outpost
   and auto-trigger `outpost_mining.reevaluate_unassigned_near_outpost()` for it. See §7.
+- `control_room.automation_summary`: `panel_1.py`'s one-line automation result string (grids
+  supervised, new outposts, docks assigned), published each storage tick for `panel_4.py`'s
+  ALWAYS-ON line to display — see §7's panel_1/panel_4 split.
+- `biosite.claims`: Exclusive biosite extraction claims dict `{target_key: {"drone": id, "coords", "name", "tick"}}` — own key, distinct from `rover.claims`/`survey.claims`, so ground-vehicle and drone claims never collide. Stale after `CLAIM_STALE_TICKS = 36,000` ticks — see `lib/drone_claims.py` and §2h. **Exclusive**, not the shared yield-debit pattern `mining.reserved_yield` uses — see §2h's note distinguishing the two.
+- `scout.empty_pois`: Scout's bounded "confirmed-empty POI" cache `{"<x>_<y>": tick_scanned}`, capped at `SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000` (oldest entries dropped first). A fixed fact about that coordinate, not a hardware-capability blacklist like `survey.unsupported_targets` — see `lib/drone_claims.py` and §2h.
+- `drone.mission:<name>`: Per-drone resumable mission record `{"target_key", "target", "kind", "tick"}`, mirrors `vehicle.mission:<name>`'s shape but on its own prefix. See `lib/drone_claims.py` and §2h's resumability note (a drone's `go_to()` is cancelled by a script restart, unlike a rover's persistent drive command, so only the flight leg needs re-issuing on resume).
+- `drone_depot.status.<id>`: Drone Depot telemetry `{name, docked, bay_count, bays_occupied, slots_used, slot_capacity, is_full}`, published by `lib/drone_depot.py` for dashboards and for miner/scout drones' own "is my depot full" decisions.
+- `fleet.status.<id>` / `drone.status.<id>` (mirrored): Drone telemetry `{name, state, x, y, wh, level, target, tick}`, same shape/convention as ground vehicles' `fleet.status.<id>`/`rover.status.<id>` — see `lib/drone.py`'s `publish_telemetry()`.
 - `system.good_version`: Last operator-confirmed `get_game_version()` build hash (`lib/version_guard.py`).
   Seeded from the current build on first read (a fresh save never immediately halts). Every controller's
   `run()` calls `validate_game_version()` once at startup, before entering its loop (not every tick — a
   build change only takes effect on the next script restart, same as the game itself); if the running
   build no longer matches this key, that script blocks until the operator clicks "Confirm New Version"
-  on `panel_1.py` (which updates this key and broadcasts `system.version_confirmed`, see §7). Build
+  on `panel_4.py` (which updates this key and broadcasts `system.version_confirmed`, see §7). Build
   hashes only support equality checks, never "newer/older" comparisons.
 
 ---
@@ -2309,7 +2471,28 @@ controller.run()
 
 ---
 
-## 🖥️ 7. Control Room Panel Cards (`panel_1.py`, `panel_2.py`, `panel_3.py`)
+## 🖥️ 7. Control Room Panel Cards (`panel_1.py`, `panel_2.py`, `panel_3.py`, `panel_4.py`)
+
+**`panel_1.py`/`panel_4.py` split (headless calculator + UI card).** `panel_1.py` used to be both:
+draw the STATUS/AUTOMATION card *and* run all the automation itself (grid supervision, rebalance
+sweep, outpost sync, `supply_dock.plan_dock_assignments()`). Found live: `plan_dock_assignments()`
+running inside that same per-tick loop (even after §2a-1b's `SourceCache` fix cut its cost to ~2s)
+wedged the card's own rendering outright — confirmed via temporary debug prints that the script kept
+looping and completing fine underneath (~100ms/iteration) the entire time the card stayed visually
+blank, with no exception anywhere. There's no known threshold under which an occasional
+multi-second stall is safe for a script that also renders every tick, and this game has no true
+background/daemon script type — a Custom Panel is the only slot that can host an "always-on, not
+tied to one building" process — so the fix is structural, not a further speedup: `panel_1.py` is now
+**headless** (no `panel.*` calls at all, `sleep(1.0)`-paced like every other controller's `run()`)
+and does nothing but the automation work, publishing its result summary to `archive`
+(`AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"`); `panel_4.py` is the actual STATUS/
+AUTOMATION card UI, reading that summary back out instead of computing it. `panel_1.py` keeps the
+name/slot specifically because it's the first Custom Panel that exists on any save — the natural
+home for a process everything else has a hard dependency on already being alive. Everything
+`panel_4.py` draws (STATUS's clock/power/storage/alerts, the version gate, the manual buttons) is
+either a cheap single-call component read or a rare user-triggered one-off, not the chronic
+per-cycle cost that forced `panel_1.py` headless, so it stays inline in that UI script rather than
+also being routed through archive.
 
 Card size is set from the Control Room UI (drag-resize or the size picker next to a card's
 `Manage` button), **not** from the script — `panel.width()`/`panel.height()` just report whatever
@@ -2330,9 +2513,9 @@ sections, a right-anchored control) will clip/overflow on a `1x2` card because i
 `1x2`, and the per-vehicle recall switch (anchored from the right edge assuming ~1000px) ran off
 the card.
 
-**Sizing recommendations for these three cards** (each has a multi-column row layout that wants
-width, not height):
-- `panel_1.py` (STATUS + AUTOMATION): **`2 x 2`** (1000x400) — STATUS alone only ever needed `2 x 1`,
+**Sizing recommendations for these cards** (each has a multi-column row layout that wants width,
+not height; `panel_1.py` itself draws nothing and has no card/size to set — see the split above):
+- `panel_4.py` (STATUS + AUTOMATION): **`2 x 2`** (1000x400) — STATUS alone only ever needed `2 x 1`,
   but the AUTOMATION card added below it (see below) needs its own vertical room; the script splits
   `panel.height()` ~55/45 between the two rather than assuming a fixed pixel split, so it still
   degrades reasonably at `2 x 1` (just cramped) rather than clipping outright.
@@ -2362,11 +2545,11 @@ Both also degrade gracefully at 1-column widths (`wide = width >= 900` branches 
 height and, for `panel_2.py` specifically, hides the location column) so neither overflows even if
 resized narrow — but the recommended sizes above give the intended one-line-per-row layout.
 
-**`panel_1.py`'s AUTOMATION card** — everything from §1a-1's centralized Power Grid supervision +
-Smelter rebalance sweep, plus:
+**`panel_1.py`'s automation work, displayed on `panel_4.py`'s AUTOMATION card** — everything from
+§1a-1's centralized Power Grid supervision + Smelter rebalance sweep, plus:
 - **Outpost-founding → resource marker auto-reassignment**: diffs `outpost_network.outposts()`'
-  current id set against the stored `outposts.known_ids` (archive, list — the only archive key this
-  card adds) each throttled storage tick; any **new** id gets
+  current id set against the stored `outposts.known_ids` (archive, list — the only archive key
+  `panel_1.py` adds for this) each throttled storage tick; any **new** id gets
   `outpost_mining.reevaluate_unassigned_near_outpost(new_id)` (§2d) called on it automatically.
   `sync_resource_markers.py` remains for manual backfill/batch catch-up.
 - **Two independent throttle timers, not one shared `AUTOMATION_TICK_INTERVAL`** (an earlier version
@@ -2382,30 +2565,34 @@ Smelter rebalance sweep, plus:
   sweep when the *next* one starts, and would also cost a Smelter/Fabricator `take_item()` call a
   `"busy"` rejection (see `craft_prefill_units()` above) far more often than a slower cadence would.
   Grid supervision has no such cost, so it keeps the fast interval on its own timer instead of being
-  held back by storage's slower one. The panel loop itself has no `sleep()` and redraws every render
-  tick regardless — both intervals gate only the actual automation work via `clock.tick()`, not the
-  redraw.
-- **`panel.button("run_archive_cleaner", ...)`** — `ArchiveCleaner(dry_run=False, verbose=True).run()`
-  (§4), live-commit, human-triggered only (never runs automatically on the throttled tick).
-- **`panel.button("run_unsupported_markers", ...)`** — `lib/unsupported_markers.py`'s
+  held back by storage's slower one. `panel_1.py`'s own loop is `sleep(1.0)`-paced (see the split
+  above) — both intervals still gate via `clock.tick()` rather than assuming 1 real second is exactly
+  10 game ticks, so this stays correct under time acceleration. `panel_4.py`'s render loop, by
+  contrast, has no `sleep()` and redraws every render tick as usual — it isn't doing any of this
+  throttled work itself, just reading the published summary each frame.
+- **`panel.button("run_archive_cleaner", ...)`** on `panel_4.py` — `ArchiveCleaner(dry_run=False,
+  verbose=True).run()` (§4), live-commit, human-triggered only, executed directly in that UI script
+  (not delegated to `panel_1.py`) since it's a rare one-off, not chronic per-cycle work.
+- **`panel.button("run_unsupported_markers", ...)`** on `panel_4.py` — `lib/unsupported_markers.py`'s
   `update_unsupported_markers(clear_previous=True)` (promoted from `playground/mark_unsupported_targets.py`,
   which never actually ran in the live game since `playground/` isn't synced — also available as the
   thin root entrypoint `mark_unsupported_targets.py` for a manual standalone run). Also
-  human-triggered only.
-- **Version safety gate widget** (`lib/version_guard.py`, §4): a `VERSION` pill anchored
-  `width - 190` from the right edge (always drawn, success/error colored) plus, only while
-  `version_mismatch()` is true, a `was <old> -- new scripts halt on startup` note and a
+  human-triggered only, executed directly in `panel_4.py`.
+- **Version safety gate widget** (`lib/version_guard.py`, §4), drawn on `panel_4.py`: a `VERSION`
+  pill anchored `width - 190` from the right edge (always drawn, success/error colored) plus, only
+  while `version_mismatch()` is true, a `was <old> -- new scripts halt on startup` note and a
   `panel.button("confirm_new_version", ...)` — the button only exists in the tree on a mismatch tick,
   matching the general `if panel.button(...):`-wrapped conditional-visibility idiom used for every
-  other button on this card (there's no widget-level `visible` param). This panel's own `while True:`
-  loop deliberately never calls `validate_game_version()` itself — it's the one script that must keep
-  running through a mismatch so the operator can reach the button. Every mutating action this card
-  performs (grid supervision, rebalance/consolidation sweeps, outpost/dock sync, and both manual
-  buttons) is gated behind `if not mismatch:` instead, so the panel keeps rendering and stays
-  clickable during a mismatch but makes no changes of its own until confirmed — the same rule
-  `validate_game_version()` enforces for every other controller, just applied per-action here since
-  this script can't block itself. The ALWAYS-ON status dot/summary line reflects this too (`"paused"`
-  / `"halted -- confirm new version above"` while mismatched).
+  other button on this card (there's no widget-level `visible` param). Neither `panel_1.py` nor
+  `panel_4.py` calls `validate_game_version()` itself — both independently check
+  `version_mismatch()` instead and gate their own mutating work behind `if not mismatch:` (`panel_1.py`
+  for its automation, `panel_4.py` for its two manual buttons), so `panel_4.py` keeps rendering and
+  stays clickable during a mismatch but neither script makes changes of its own until confirmed — the
+  same rule `validate_game_version()` enforces for every other controller, just applied per-action
+  here since a Custom Panel script can't block itself the way a one-shot controller can. The
+  ALWAYS-ON status dot/summary line on `panel_4.py` reflects this too (`"paused"` /
+  `"halted -- confirm new version above"` while mismatched, reading `panel_1.py`'s published summary
+  only when not mismatched).
 
 **Two real overlap bugs found and fixed across all three cards** (screenshot-driven — text was
 visibly stacked on top of other text in-game):

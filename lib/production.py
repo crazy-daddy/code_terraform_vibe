@@ -1,6 +1,6 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
-from storage import total_stock
+from storage import total_stock, discover_storage_buildings
 from outpost_mining import stock_target_for, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
 import mining_reservations
@@ -294,7 +294,7 @@ def fluid_building_is_viable(fluid_key, type_id, building):
         return False
 
 
-def can_source_fluid(fluid_key):
+def can_source_fluid(fluid_key, cache=None):
     """
     Whether a building that could feed this FluidPort right now exists
     anywhere on the outpost network -- a dedicated producer of this exact
@@ -305,22 +305,39 @@ def can_source_fluid(fluid_key):
     guarantee a working claim either) -- so this only rules out the "not
     (yet) able to supply this fluid at all" case, not "built but not yet
     piped/full".
+
+    Pass a shared `cache` (SourceCache) when checking several
+    recipes/items/orders in one pass -- see SourceCache's docstring for why
+    that matters; the outpost.buildings() scan this does is a real game call
+    per fluid_key, otherwise repeated once per recipe that needs it.
     """
+    if cache is not None and fluid_key in cache._fluid_results:
+        return cache._fluid_results[fluid_key]
+
     type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key)
     if not type_ids:
-        return True  # unrecognized fluid key -- don't block on something we don't model
-    network = _component("outpost_network")
-    if not network or not hasattr(network, "outposts"):
-        return False
-    try:
-        for outpost in network.outposts():
-            for type_id in type_ids:
-                for building in outpost.buildings(type_id):
-                    if fluid_building_is_viable(fluid_key, type_id, building):
-                        return True
-    except Exception:
-        pass
-    return False
+        result = True  # unrecognized fluid key -- don't block on something we don't model
+    else:
+        result = False
+        network = _component("outpost_network")
+        if network and hasattr(network, "outposts"):
+            try:
+                for outpost in network.outposts():
+                    for type_id in type_ids:
+                        for building in outpost.buildings(type_id):
+                            if fluid_building_is_viable(fluid_key, type_id, building):
+                                result = True
+                                break
+                        if result:
+                            break
+                    if result:
+                        break
+            except Exception:
+                pass
+
+    if cache is not None:
+        cache._fluid_results[fluid_key] = result
+    return result
 
 
 def _add_demand(demands, item_id, quantity):
@@ -862,59 +879,163 @@ def get_raw_material_demands(smelter=None):
     return raw_demands
 
 
-def _has_surveyed_mineral(item_id):
-    journal = _component("journal")
-    if not journal or not hasattr(journal, "surveyed_sites"):
-        return False
+class SourceCache:
+    """
+    Per-pass memo for can_source_item()/can_source_fluid()'s underlying
+    game-API lookups (Smelter/Fabricator discovery + list_recipes(),
+    outpost.buildings() for fluid sources, journal.surveyed_sites(), a
+    one-shot Inventory+Warehouse stock snapshot) plus the
+    can_source_item()/can_source_fluid() results themselves.
+
+    Each of those lookups is a real call across the script/game boundary, not
+    a free local computation -- and callers that evaluate several
+    items/recipes/orders in one pass (Supply Dock's plan_dock_assignments()
+    across every order and dock, Fabricator's choose_recipe() across every
+    candidate recipe) used to re-run every one of them from scratch per item,
+    per recipe, and per order, which is what turned a single
+    can_fulfill_order() call into several real seconds. That in turn was found
+    to wedge panel_1.py's Custom Panel rendering outright whenever this ran
+    inside its per-tick loop (not just slow it down) -- see panel_1.py's
+    module docstring for why that script is now a headless calculator with no
+    panel.* calls of its own. Building one SourceCache per pass and threading
+    it through means each underlying game call happens at most once per pass,
+    and a sub-item shared by several recipes/orders (e.g. Steel) gets resolved
+    once instead of re-walked from scratch down every branch that needs it.
+
+    Discard it once the pass finishes -- it's a snapshot of build/tech state
+    that can change between ticks, not something to hold onto across calls.
+    """
+
+    def __init__(self):
+        self._smelter_recipes = None
+        self._fabricator_recipes = None
+        self._fluid_results = {}
+        self._item_results = {}
+        self._item_stack = set()
+        self._surveyed_sites = None
+        self._stock_map = None
+
+    def _build_stock_map(self):
+        """One .stacks() call per Inventory/Warehouse -- each returns that
+        building's ENTIRE contents in one shot -- summed by item id into a
+        single {item_id: total_units} snapshot for the whole pass. Calling
+        stock(item_id) per distinct item instead (total_stock()'s normal
+        per-item .count(item_id) shape) would still cost one call per
+        building per distinct item; a single .stacks() sweep per building up
+        front replaces that with one call per building, period, no matter how
+        many distinct items this pass ends up checking."""
+        totals = {}
+        inventory = _component("inventory")
+        sources = [inventory] + [b["component"] for b in discover_storage_buildings()]
+        for component in sources:
+            if not component or not hasattr(component, "stacks"):
+                continue
+            try:
+                for stack in component.stacks():
+                    stack_item_id = getattr(stack, "id", None)
+                    if stack_item_id:
+                        totals[stack_item_id] = totals.get(stack_item_id, 0) + getattr(stack, "count", 0)
+            except Exception:
+                pass
+        return totals
+
+    def stock(self, item_id):
+        """Item's total units across Inventory + every Warehouse, from this
+        pass's one-shot stock snapshot -- see _build_stock_map()."""
+        if self._stock_map is None:
+            self._stock_map = self._build_stock_map()
+        return self._stock_map.get(item_id, 0)
+
+    def smelter_recipes(self):
+        if self._smelter_recipes is None:
+            component = _default_smelter()
+            try:
+                self._smelter_recipes = list(component.list_recipes()) if component and hasattr(component, "list_recipes") else []
+            except Exception:
+                self._smelter_recipes = []
+        return self._smelter_recipes
+
+    def fabricator_recipes(self):
+        if self._fabricator_recipes is None:
+            component = _default_fabricator()
+            try:
+                self._fabricator_recipes = list(component.list_recipes()) if component and hasattr(component, "list_recipes") else []
+            except Exception:
+                self._fabricator_recipes = []
+        return self._fabricator_recipes
+
+    def surveyed_sites(self):
+        if self._surveyed_sites is None:
+            journal = _component("journal")
+            try:
+                self._surveyed_sites = list(journal.surveyed_sites("nocturna")) if journal and hasattr(journal, "surveyed_sites") else []
+            except Exception:
+                self._surveyed_sites = []
+        return self._surveyed_sites
+
+
+def _has_surveyed_mineral(item_id, cache):
     try:
         return any(
             getattr(site, "kind", lambda: "")() == "mineral"
             and getattr(site, "item_id", None) == item_id
-            for site in journal.surveyed_sites("nocturna")
+            for site in cache.surveyed_sites()
         )
     except Exception:
         return False
 
 
-def can_source_item(item_id, seen=None):
-    """Whether an item has storage (Inventory/Warehouse), surveyed-source, or unlocked recipe supply."""
-    if total_stock(item_id) > 0:
+def can_source_item(item_id, cache=None):
+    """Whether an item has storage (Inventory/Warehouse), surveyed-source, or unlocked recipe supply.
+
+    Pass a shared `cache` (SourceCache) when checking several items/recipes/
+    orders in one pass -- see SourceCache's docstring for why that matters.
+    """
+    cache = SourceCache() if cache is None else cache
+    if item_id in cache._item_results:
+        return cache._item_results[item_id]
+    if cache.stock(item_id) > 0:
+        cache._item_results[item_id] = True
         return True
+    if item_id in cache._item_stack:
+        return False  # cycle guard -- not memoized, this item's own answer is still being computed higher up
+    cache._item_stack.add(item_id)
 
-    seen = set() if seen is None else seen
-    if item_id in seen:
-        return False
-    seen.add(item_id)
+    try:
+        result = _has_surveyed_mineral(item_id, cache)
+        if not result:
+            for recipes in (cache.smelter_recipes(), cache.fabricator_recipes()):
+                for recipe in recipes:
+                    if getattr(recipe, "output_item", None) != item_id:
+                        continue
+                    inputs = getattr(recipe, "inputs", {}) or {}
+                    fluid_inputs = getattr(recipe, "fluid_inputs", {}) or {}
+                    if all(can_source_fluid(fk, cache) for fk in fluid_inputs) and all(can_source_item(input_id, cache) for input_id in inputs):
+                        result = True
+                        break
+                if result:
+                    break
+    finally:
+        cache._item_stack.discard(item_id)
 
-    if _has_surveyed_mineral(item_id):
-        return True
-
-    for component in [_default_smelter(), _default_fabricator()]:
-        if not component or not hasattr(component, "list_recipes"):
-            continue
-        try:
-            recipes = component.list_recipes()
-        except Exception:
-            continue
-        for recipe in recipes:
-            if getattr(recipe, "output_item", None) != item_id:
-                continue
-            inputs = getattr(recipe, "inputs", {}) or {}
-            fluid_inputs = getattr(recipe, "fluid_inputs", {}) or {}
-            if all(can_source_fluid(fk) for fk in fluid_inputs) and all(can_source_item(input_id, seen.copy()) for input_id in inputs):
-                return True
-
-    return False
+    cache._item_results[item_id] = result
+    return result
 
 
-def can_fulfill_order(order):
-    """Checks whether every remaining order item has a currently known source."""
+def can_fulfill_order(order, cache=None):
+    """Checks whether every remaining order item has a currently known source.
+
+    Pass a shared `cache` (SourceCache) when checking several orders in one
+    pass (e.g. Supply Dock's plan_dock_assignments()) -- see SourceCache's
+    docstring for why that matters.
+    """
     if not order or not hasattr(order, "requires"):
         return False
+    cache = SourceCache() if cache is None else cache
     shipped = getattr(order, "shipped", {}) or {}
     for item_id, required in order.requires.items():
         remaining = max(0, required - shipped.get(item_id, 0))
-        if remaining > 0 and not can_source_item(item_id):
+        if remaining > 0 and not can_source_item(item_id, cache):
             return False
     return True
 

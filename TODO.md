@@ -117,6 +117,7 @@ This document tracks our strategic progress from initial boot to full terraforma
   - [ ] Add read-only Control Room telemetry for status, terraforming, production, fleet, and Earth order views.
     - [x] Implement initial read-only Status, Fleet, and Production cards (`panel_1.py`, `panel_2.py`, `panel_3.py`).
     - [x] **`panel_1.py` gained an AUTOMATION card** — not read-only, this is where the always-on housekeeping that used to have no reliable home (or was duplicated per-instance unnecessarily) now lives, since a panel script is the one process guaranteed to keep running: centralized Power Grid supervision + Smelter rebalance sweep (see Phase A's leader-election-removal bullet above), outpost-founding → resource marker auto-reassignment, and manual "Clean Archive" (`lib/archive_cleaner.py`'s `ArchiveCleaner`, previously dead code — only ever run from `playground/clean_archive.py`, which isn't synced into the live game) / "Sync Unsupported" (`lib/unsupported_markers.py`, promoted from `playground/mark_unsupported_targets.py` for the same reason — also has a thin root entrypoint `mark_unsupported_targets.py`) buttons. See `docs/AI_CHEATSHEET.md` §7.
+    - [x] **Split `panel_1.py` into a headless calculator + `panel_4.py` UI card.** Found live that running `supply_dock.plan_dock_assignments()` (a multi-second call even after `lib/production.py`'s `SourceCache` fix) inside `panel_1.py`'s own per-tick render loop wedged that Custom Panel's rendering permanently — the script kept executing fine underneath, but the card stayed blank. `panel_1.py` is now headless (no `panel.*` calls, `sleep(1.0)`-paced) and does only the automation work, publishing its summary to `archive` (`control_room.automation_summary`); `panel_4.py` is the actual STATUS/AUTOMATION card, reading that back plus drawing the version gate and manual buttons directly (cheap/rare, not chronic per-cycle cost). See `docs/AI_CHEATSHEET.md` §7.
     - [ ] Add Terraform and Earth order cards.
     - [ ] Add shared readout helpers and stale-data presentation across all cards.
   - [ ] Add compact Data Archive summaries for operator dashboards and scripts that cannot draw panels.
@@ -167,7 +168,11 @@ The save has grown past a single production base: multiple outposts are founded,
 - [ ] Configure autonomous Drone freight routes between Outpost storage bins and Base Inventory:
   - [ ] Fabricate and deploy a Drone Depot into an outpost.
   - [ ] Commission electric drones, then mount thruster, battery, Cargo Pod, and logistics modules through service controls.
-  - [ ] Add service-station charging, rescue, exposure, and `cargo.space_for()` checks to route scripts.
+  - [x] Add service-station charging, rescue, exposure, and `cargo.space_for()` checks to route scripts
+    — `lib/drone_service.py` (charging queue + fleet-wide stranded/scrambled rescue dispatch) and
+    `lib/drone_cargo.py` (`space_for()`/`cargo_full()`) now exist as shared library pieces any drone
+    route script (scout/miner today, a future freight hauler) can use; exposure-threshold handling
+    itself is not yet wired into a route loop (no route this pass collects Storm Glass/Raw Uranium).
 - [ ] Verify power subnet topology after every remote build:
   - [ ] Confirm every line/bridge is complete and physically touches the intended service footprints.
   - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.
@@ -195,11 +200,31 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
 ---
 
 ## 🌿 Phase 4: Biosphere Tier 1 — Planetary Biomass (Unlocks at 210k Index)
-- [ ] Deploy **Drone Biosurvey** fleet: *(→ Needs to be moved)*
-  - [ ] Equip drones with **Bio Scanners** to classify all 35 permanent biosites (7 per biome).
-  - [ ] Equip drones with **Bio Extractors** to harvest native fauna specimens.
-  - [ ] Persist biosite coordinates and specimen demand in the Journal/Data Archive.
-  - [ ] Respect drone cargo space, service range, battery/oil, and rescue thresholds.
+- [x] Deploy **Drone Biosurvey** fleet — first working slice: `lib/drone.py` (`DroneController` base,
+  fresh hierarchy not a `VehicleController` subclass), `lib/drone_scout.py`/`lib/drone_mining.py`
+  (scout/miner roles), `lib/drone_service.py`/`lib/drone_depot.py` (station controllers), entrypoints
+  `drone_1.py`/`drone_service_1.py`/`drone_station_1.py`. Electric drones only this pass; heli support
+  can follow the same pattern later. See `docs/AI_CHEATSHEET.md` §2h.
+  - [x] Equip drones with **Bio Scanners** to classify permanent biosites — `run_scout_loop()` iterates
+    `nocturna.points_of_interest()`, skips scanned/confirmed-empty ones, flies + `bio_scanner.scan()`s.
+  - [x] Equip drones with **Bio Extractors** to harvest native fauna specimens — `run_miner_loop()`
+    filters `journal.biomass_coords()` to the drone's home-outpost biome, exclusive-claims a
+    `journal.is_ready()` site, flies + `bio_extractor.extract()`s to depletion, returns to the nearest
+    Drone Depot, unloads, releases the claim.
+  - [x] Persist biosite coordinates and specimen demand in the Journal/Data Archive — biosite
+    discovery/cooldown state lives in `journal` (game-owned, restart-safe); claims/mission/empty-POI
+    cache live in `lib/drone_claims.py`'s `biosite.claims`/`drone.mission:<name>`/`scout.empty_pois`
+    archive keys.
+  - [x] Respect drone cargo space, service range, battery/oil, and rescue thresholds — `lib/drone_cargo.py`'s
+    `space_for()`/`cargo_full()`, `lib/drone_energy.py`'s linear Wh/meter there-and-back budgeting
+    against the nearest `drone_service` (not necessarily the nearest `drone_depot` — two distinct
+    "home" endpoints), and `lib/drone_service.py`'s fleet-wide stranded/scrambled rescue dispatch.
+  - [ ] **Deferred: cross-outpost drone ferrying of foreign-biome samples.** v1 skips any biosite whose
+    tile carries a non-home-biome sample alongside a home-biome one (`PortableBioExtractor.extract()`
+    takes no species argument, so it can't be told to pull only the matching one) and never ferries an
+    already-extracted foreign sample to the outpost that could process it. Revisit once there's a
+    concrete need — the mining/hauler transporter pattern (`lib/vehicle_cargo.py` `run_haul_loop()`,
+    §2g) is the likely template. See `docs/AI_CHEATSHEET.md` §2h.
 - [ ] Construct regional **Essence Liquifiers** at biome outposts to produce localized Biome Essences.
   - [ ] Connect local storage to each Liquifier and drain output before its buffer blocks production.
 - [ ] Connect multi-biome essence pipeline to central **Biomass Mixers**.

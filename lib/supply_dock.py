@@ -17,7 +17,7 @@
 # `pick_best_order()` if no plan is available yet (panel_1 not running this
 # cycle, or not running at all) so a dock never sits idle waiting on a planner
 # that may not be online.
-from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids
+from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, SourceCache
 from storage import take_item, total_stock
 from archive import archive
 from version_guard import validate_game_version
@@ -144,16 +144,28 @@ def plan_dock_assignments(clock=None):
         except Exception:
             pass
 
+    # Shared across every can_fulfill_order() call in this pass (every
+    # candidate order below, plus each dock's current order) -- see
+    # SourceCache's docstring in lib/production.py. Without it, this single
+    # planning pass used to re-run Smelter/Fabricator discovery + list_recipes()
+    # and the outpost.buildings() fluid scan from scratch per order/dock,
+    # which is what made this function take ~10s -- even after SourceCache cut
+    # that to ~2s, a call this slow running inside panel_1.py's own per-tick
+    # loop was found to wedge that Custom Panel's rendering outright, which is
+    # why panel_1.py is now a headless calculator with its UI moved to
+    # panel_4.py (see panel_1.py's module docstring).
+    cache = SourceCache()
+
     candidates = []
     try:
         for o in orders_api.list_orders():
-            if getattr(o, "status", "") == "active" and can_fulfill_order(o):
+            if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
                 candidates.append({"order": o, "priority": _score_campaign_order(o, reserved)})
     except Exception:
         pass
     try:
         for o in orders_api.list_weekly_orders():
-            if getattr(o, "status", "") != "active" or not can_fulfill_order(o):
+            if getattr(o, "status", "") != "active" or not can_fulfill_order(o, cache):
                 continue
             if _weekly_infeasible(o, current_day, total_dispatch_capacity):
                 print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
@@ -171,7 +183,7 @@ def plan_dock_assignments(clock=None):
             curr = dock.current_order()
         except Exception:
             curr = None
-        if curr and can_fulfill_order(curr):
+        if curr and can_fulfill_order(curr, cache):
             plan[dock_id] = curr.id
             assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
         else:
