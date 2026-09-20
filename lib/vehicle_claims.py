@@ -4,6 +4,10 @@
 # hardware can't handle.
 
 from archive import archive
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from vehicle import VehicleController
 
 SCAN_RESEARCH_IDS = [
     "research_geological_survey",
@@ -58,10 +62,15 @@ class VehicleClaimsMixin:
     VehicleController. Requires get_current_tick(), self.name, and
     release_target_claim() interplay with self.current_target(_key).
     """
+
+    @property
+    def _host(self) -> "VehicleController":
+        return self  # type: ignore[return-value]
+
     CLAIM_STALE_TICKS = 36000
 
     def mission_key(self):
-        return f"{MISSION_KEY_PREFIX}{self.name}"
+        return f"{MISSION_KEY_PREFIX}{self._host.name}"
 
     def save_mission(self, kind, target):
         """
@@ -75,7 +84,7 @@ class VehicleClaimsMixin:
             "target_key": self.current_target_key,
             "target": target,
             "kind": kind,
-            "tick": self.get_current_tick(),
+            "tick": self._host.get_current_tick(),
         })
 
     def clear_mission(self):
@@ -94,7 +103,7 @@ class VehicleClaimsMixin:
 
         target_key = record["target_key"]
         claim = self.get_claims().get(target_key)
-        if not claim or (claim.get("vehicle") != self.name and claim.get("rover") != self.name):
+        if not claim or (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
             self.clear_mission()
             return None
 
@@ -110,7 +119,7 @@ class VehicleClaimsMixin:
         active mission is abandoned promptly rather than only at the next
         natural idle point.
         """
-        return is_vehicle_recalled(self.name)
+        return is_vehicle_recalled(self._host.name)
 
     def handle_recall_if_active(self):
         """
@@ -124,15 +133,15 @@ class VehicleClaimsMixin:
         if not self.is_recalled():
             return False
 
-        if self.is_at_base():
-            self.log.debug(f"[{self.name}] Recall active and already at base ({self.get_position()}); idling in RECALLED state.")
-            self.publish_telemetry("RECALLED")
+        if self._host.is_at_base():
+            self._host.log.debug(f"[{self._host.name}] Recall active and already at base ({self._host.get_position()}); idling in RECALLED state.")
+            self._host.publish_telemetry("RECALLED")
         else:
-            self.log.print(f"[{self.name}] Recall active; returning to base.")
-            self.log.debug(f"[{self.name}] Recall active while away from base (current position {self.get_position()}, base slot {self.assigned_slot_coords}); abandoning current_target_key={self.current_target_key!r} and heading home.")
-            self.publish_telemetry("RECALLED")
+            self._host.log.print(f"[{self._host.name}] Recall active; returning to base.")
+            self._host.log.debug(f"[{self._host.name}] Recall active while away from base (current position {self._host.get_position()}, base slot {self._host.assigned_slot_coords}); abandoning current_target_key={self.current_target_key!r} and heading home.")
+            self._host.publish_telemetry("RECALLED")
             self.release_target_claim()
-            self.return_to_base()
+            self._host.return_to_base()
         return True
 
     def claim_target(self, target_key, target_info):
@@ -141,7 +150,7 @@ class VehicleClaimsMixin:
         Returns True if claim successfully acquired, False otherwise.
         """
         claimed = [False]
-        curr_tick = self.get_current_tick()
+        curr_tick = self._host.get_current_tick()
 
         def updater(claims):
             if not isinstance(claims, dict):
@@ -153,16 +162,16 @@ class VehicleClaimsMixin:
                 claim_tick = existing.get("tick", 0)
                 claim_age = curr_tick - claim_tick
 
-                if claim_owner != self.name:
+                if claim_owner != self._host.name:
                     if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                        self.log.debug(f"[{self.name}] claim_target('{target_key}'): lost -- held by '{claim_owner}', age={claim_age} ticks (< CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}, curr_tick={curr_tick}).")
+                        self._host.log.debug(f"[{self._host.name}] claim_target('{target_key}'): lost -- held by '{claim_owner}', age={claim_age} ticks (< CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}, curr_tick={curr_tick}).")
                         claimed[0] = False
                         return claims
-                    self.log.debug(f"[{self.name}] claim_target('{target_key}'): stale claim from '{claim_owner}' (age={claim_age} ticks >= CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}) -- taking over.")
+                    self._host.log.debug(f"[{self._host.name}] claim_target('{target_key}'): stale claim from '{claim_owner}' (age={claim_age} ticks >= CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}) -- taking over.")
 
             claims[target_key] = {
-                "rover": self.name,
-                "vehicle": self.name,
+                "rover": self._host.name,
+                "vehicle": self._host.name,
                 "type": target_info.get("type", "unknown"),
                 "coords": target_info.get("coords", (0, 0)),
                 "name": target_info.get("name", target_key),
@@ -172,16 +181,16 @@ class VehicleClaimsMixin:
             return claims
 
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
-        self.log.debug(f"[{self.name}] claim_target('{target_key}'): {'won' if claimed[0] else 'lost'} the race.")
+        self._host.log.debug(f"[{self._host.name}] claim_target('{target_key}'): {'won' if claimed[0] else 'lost'} the race.")
         return claimed[0]
 
     def refresh_claim(self, target_key):
         """Renews heartbeat timestamp on an active target claim."""
-        curr_tick = self.get_current_tick()
+        curr_tick = self._host.get_current_tick()
 
         def updater(claims):
             if isinstance(claims, dict) and target_key in claims:
-                if claims[target_key].get("rover") == self.name or claims[target_key].get("vehicle") == self.name:
+                if claims[target_key].get("rover") == self._host.name or claims[target_key].get("vehicle") == self._host.name:
                     claims[target_key]["tick"] = curr_tick
             return claims
 
@@ -189,9 +198,9 @@ class VehicleClaimsMixin:
 
     def cleanup_stale_claims(self):
         """Removes expired fleet claims before selecting a new mission."""
-        curr_tick = self.get_current_tick()
+        curr_tick = self._host.get_current_tick()
         if curr_tick <= 0:
-            self.log.debug(f"[{self.name}] cleanup_stale_claims(): skipped, curr_tick={curr_tick} (clock not ready yet).")
+            self._host.log.debug(f"[{self._host.name}] cleanup_stale_claims(): skipped, curr_tick={curr_tick} (clock not ready yet).")
             return
 
         expired = [0]
@@ -213,7 +222,7 @@ class VehicleClaimsMixin:
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
         if expired[0]:
-            self.log.debug(f"[{self.name}] cleanup_stale_claims(): removed {expired[0]} claim(s) older than CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS} at curr_tick={curr_tick}.")
+            self._host.log.debug(f"[{self._host.name}] cleanup_stale_claims(): removed {expired[0]} claim(s) older than CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS} at curr_tick={curr_tick}.")
 
     def release_target_claim(self, target_key=None):
         """Releases claim on target_key or releases all claims owned by this vehicle."""
@@ -223,11 +232,11 @@ class VehicleClaimsMixin:
             if not isinstance(claims, dict):
                 return {}
             if target_key:
-                if target_key in claims and (claims[target_key].get("rover") == self.name or claims[target_key].get("vehicle") == self.name):
+                if target_key in claims and (claims[target_key].get("rover") == self._host.name or claims[target_key].get("vehicle") == self._host.name):
                     del claims[target_key]
                     released[0].append(target_key)
             else:
-                keys_to_remove = [k for k, v in claims.items() if isinstance(v, dict) and (v.get("rover") == self.name or v.get("vehicle") == self.name)]
+                keys_to_remove = [k for k, v in claims.items() if isinstance(v, dict) and (v.get("rover") == self._host.name or v.get("vehicle") == self._host.name)]
                 for k in keys_to_remove:
                     del claims[k]
                 released[0].extend(keys_to_remove)
@@ -236,9 +245,9 @@ class VehicleClaimsMixin:
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
         if released[0]:
-            self.log.debug(f"[{self.name}] release_target_claim({target_key!r}): released {released[0]}.")
+            self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): released {released[0]}.")
         else:
-            self.log.debug(f"[{self.name}] release_target_claim({target_key!r}): nothing to release (not owned or not found).")
+            self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): nothing to release (not owned or not found).")
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
@@ -278,7 +287,7 @@ class VehicleClaimsMixin:
                 # Ambiguous without an explicit caller hint (both sonar.survey() and
                 # drill.mine() can report these) -- prefer whichever module the vehicle
                 # actually has, since a scout without a drill can only mean sonar.
-                if hasattr(self.vehicle, "drill") and not hasattr(self.vehicle, "sonar"):
+                if hasattr(self._host.vehicle, "drill") and not hasattr(self._host.vehicle, "sonar"):
                     scanner_type = "drill"
                 else:
                     scanner_type = "sonar"
@@ -289,35 +298,35 @@ class VehicleClaimsMixin:
 
         scanner_range = 50.0
         if scanner_tier is None:
-            if scanner_type == "sonar" and hasattr(self.vehicle, "sonar"):
+            if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
                 try:
-                    scanner_tier = self.vehicle.sonar.tier()
+                    scanner_tier = self._host.vehicle.sonar.tier()
                 except Exception:
                     scanner_tier = "basic"
-            elif scanner_type == "drill" and hasattr(self.vehicle, "drill"):
+            elif scanner_type == "drill" and hasattr(self._host.vehicle, "drill"):
                 try:
-                    h = self.vehicle.drill.hardness_limit()
+                    h = self._host.vehicle.drill.hardness_limit()
                     scanner_tier = "heavy" if h >= 4 else ("industrial" if h >= 3 else "basic")
                 except Exception:
                     scanner_tier = "basic"
             else:
                 scanner_tier = "basic"
 
-        if scanner_type == "sonar" and hasattr(self.vehicle, "sonar"):
+        if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
             try:
-                scanner_range = self.vehicle.sonar.range()
+                scanner_range = self._host.vehicle.sonar.range()
             except Exception:
                 scanner_range = 50.0
 
         if hardness_limit is None:
-            if scanner_type == "sonar" and hasattr(self.vehicle, "sonar"):
+            if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
                 try:
-                    hardness_limit = self.vehicle.sonar.hardness_limit()
+                    hardness_limit = self._host.vehicle.sonar.hardness_limit()
                 except Exception:
                     hardness_limit = 1.0
-            elif scanner_type == "drill" and hasattr(self.vehicle, "drill"):
+            elif scanner_type == "drill" and hasattr(self._host.vehicle, "drill"):
                 try:
-                    hardness_limit = self.vehicle.drill.hardness_limit()
+                    hardness_limit = self._host.vehicle.drill.hardness_limit()
                 except Exception:
                     hardness_limit = 1.0
             else:
@@ -351,17 +360,17 @@ class VehicleClaimsMixin:
                 "hardness_limit": hardness_limit,
                 "unlocked_research_count": unlocked_research_count,
                 "unlocked_scan_researches": unlocked_scan_researches,
-                "rover": self.name,
-                "vehicle": self.name,
-                "tick": self.get_current_tick()
+                "rover": self._host.name,
+                "vehicle": self._host.name,
+                "tick": self._host.get_current_tick()
             }
             return targets
 
         archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
         self.release_target_claim(target_key)
-        self.log.print(f"[{self.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
+        self._host.log.print(f"[{self._host.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
         try:
-            notify(f"[{self.name}] Skipped {target_key}: {reason} (req > {scanner_tier} T{hardness_limit})", level="info", duration_seconds=8.0)
+            notify(f"[{self._host.name}] Skipped {target_key}: {reason} (req > {scanner_tier} T{hardness_limit})", level="info", duration_seconds=8.0)
         except Exception:
             pass
 
@@ -425,30 +434,30 @@ class VehicleClaimsMixin:
 
         # Biological contacts require bio scanner
         if reason == "wrong_scanner":
-            if hasattr(self.vehicle, "bio_scanner"):
+            if hasattr(self._host.vehicle, "bio_scanner"):
                 return True, "has_bio_scanner"
             return False, "requires_bio_scanner"
 
         # Hardness limitation / tier limitation (sonar or drill)
         if reason in ["too_hard", "tier_too_low"]:
             if recorded_type == "sonar":
-                if hasattr(self.vehicle, "sonar"):
+                if hasattr(self._host.vehicle, "sonar"):
                     curr_h = 1.0
-                    if hasattr(self.vehicle.sonar, "hardness_limit"):
+                    if hasattr(self._host.vehicle.sonar, "hardness_limit"):
                         try:
-                            curr_h = self.vehicle.sonar.hardness_limit()
+                            curr_h = self._host.vehicle.sonar.hardness_limit()
                         except Exception:
                             curr_h = 1.0
                     curr_tier = "basic"
-                    if hasattr(self.vehicle.sonar, "tier"):
+                    if hasattr(self._host.vehicle.sonar, "tier"):
                         try:
-                            curr_tier = self.vehicle.sonar.tier()
+                            curr_tier = self._host.vehicle.sonar.tier()
                         except Exception:
                             curr_tier = "basic"
                     curr_range = 50.0
-                    if hasattr(self.vehicle.sonar, "range"):
+                    if hasattr(self._host.vehicle.sonar, "range"):
                         try:
-                            curr_range = self.vehicle.sonar.range()
+                            curr_range = self._host.vehicle.sonar.range()
                         except Exception:
                             curr_range = 50.0
 
@@ -463,11 +472,11 @@ class VehicleClaimsMixin:
                 return False, f"sonar_tier_too_low (has {recorded_tier} limit {recorded_h_limit})"
 
             elif recorded_type == "drill":
-                if hasattr(self.vehicle, "drill"):
+                if hasattr(self._host.vehicle, "drill"):
                     curr_h = 1.0
-                    if hasattr(self.vehicle.drill, "hardness_limit"):
+                    if hasattr(self._host.vehicle.drill, "hardness_limit"):
                         try:
-                            curr_h = self.vehicle.drill.hardness_limit()
+                            curr_h = self._host.vehicle.drill.hardness_limit()
                         except Exception:
                             curr_h = 1.0
                     if curr_h > recorded_h_limit:

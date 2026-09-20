@@ -14,6 +14,10 @@ from version_guard import validate_game_version
 from storage import best_unload_target, take_item, total_stock, inventory_stack_size
 import outpost_reagents
 import mining_reservations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from vehicle import VehicleController
 
 
 def _outpost_haul_demand(dest_outpost_id):
@@ -35,6 +39,10 @@ def _outpost_haul_demand(dest_outpost_id):
 class VehicleCargoMixin:
     """Cargo offload behavior mixed into VehicleController."""
 
+    @property
+    def _host(self) -> "VehicleController":
+        return self  # type: ignore[return-value]
+
     def unload_cargo(self, outpost=None):
         """Transfers mined/gathered minerals and items into outpost's Inventory/
         Warehouse (default: this vehicle's own self.home_outpost -- see
@@ -43,37 +51,37 @@ class VehicleCargoMixin:
         outpost (its own home_outpost) still needs to unload at the
         destination outpost specifically for its delivery leg, not wherever
         it happens to be stationed."""
-        if not hasattr(self.vehicle, "cargo"):
+        if not hasattr(self._host.vehicle, "cargo"):
             return 0
 
-        cargo_count = self.vehicle.cargo.count()
-        self.log.trace(f"[{self.name}] unload_cargo() enter: outpost={outpost!r}, cargo_count={cargo_count}")
+        cargo_count = self._host.vehicle.cargo.count()
+        self._host.log.trace(f"[{self._host.name}] unload_cargo() enter: outpost={outpost!r}, cargo_count={cargo_count}")
         if cargo_count == 0:
-            self.log.trace(f"[{self.name}] unload_cargo() exit: cargo empty, nothing to unload.")
+            self._host.log.trace(f"[{self._host.name}] unload_cargo() exit: cargo empty, nothing to unload.")
             return 0
 
-        target_outpost = outpost if outpost is not None else self.home_outpost
+        target_outpost = outpost if outpost is not None else self._host.home_outpost
 
-        self.log.print(f"[{self.name}] Offloading {cargo_count} items...")
-        self.publish_telemetry("UNLOADING")
+        self._host.log.print(f"[{self._host.name}] Offloading {cargo_count} items...")
+        self._host.publish_telemetry("UNLOADING")
 
-        out_port = getattr(self.vehicle, "output", None)
+        out_port = getattr(self._host.vehicle, "output", None)
         if not out_port:
             for attr in ["output_1", "port_out", "out"]:
-                if hasattr(self.vehicle, attr):
-                    out_port = getattr(self.vehicle, attr)
+                if hasattr(self._host.vehicle, attr):
+                    out_port = getattr(self._host.vehicle, attr)
                     break
 
         if not out_port:
-            self.log.level("error").print(f"[{self.name}] Error: No output port found on vehicle!")
+            self._host.log.level("error").print(f"[{self._host.name}] Error: No output port found on vehicle!")
             return 0
 
         unloaded = 0
         inventory_full = False
         stacks = []
-        if hasattr(self.vehicle.cargo, "stacks"):
+        if hasattr(self._host.vehicle.cargo, "stacks"):
             try:
-                stacks = self.vehicle.cargo.stacks()
+                stacks = self._host.vehicle.cargo.stacks()
             except Exception:
                 stacks = []
 
@@ -90,33 +98,33 @@ class VehicleCargoMixin:
             bookkeeping."""
             target = best_unload_target(item_id, count, outpost=target_outpost)
             if target is None:
-                self.log.level("warn").print(f"[{self.name}] WARNING: no local storage at destination has room for {item_id}. Cargo remains aboard.")
+                self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id}. Cargo remains aboard.")
                 return 0, True
-            self.log.debug(f"[{self.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
+            self._host.log.debug(f"[{self._host.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
             if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
                 c_res = out_port.connect(target)
                 if c_res.status != "ok":
-                    self.log.level("warn").print(f"[{self.name}] Connect to '{target}' notice: {c_res.status} - {c_res.message}")
+                    self._host.log.level("warn").print(f"[{self._host.name}] Connect to '{target}' notice: {c_res.status} - {c_res.message}")
 
             retries = 0
             while retries < 10:
                 res = out_port.send(item_id, count)
                 if res.status == "ok":
                     moved = getattr(res, "moved", count)
-                    self.log.print(f"[{self.name}] Transferred {moved}x {item_id} to '{target}'.")
+                    self._host.log.print(f"[{self._host.name}] Transferred {moved}x {item_id} to '{target}'.")
                     return moved, False
                 elif res.status == "busy":
                     sleep(0.5)
                     retries += 1
                 elif res.status in ["target_full", "slots_full", "inventory_full"]:
-                    self.log.level("warn").print(f"[{self.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
+                    self._host.log.level("warn").print(f"[{self._host.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
                     try:
-                        notify(f"[{self.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
+                        notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
                     except Exception:
                         pass
                     return 0, True
                 else:
-                    self.log.level("warn").print(f"[{self.name}] Offload notice: {res.status} - {res.message}")
+                    self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {res.status} - {res.message}")
                     return 0, False
                 sleep(0.3)
             return 0, False
@@ -124,7 +132,7 @@ class VehicleCargoMixin:
         # If stacks are listed, transfer each stack (may span more than one
         # item id, so the destination is chosen per stack, not once overall)
         if stacks:
-            self.log.debug(f"[{self.name}] unload_cargo(): routing {len(stacks)} cargo stack(s) individually.")
+            self._host.log.debug(f"[{self._host.name}] unload_cargo(): routing {len(stacks)} cargo stack(s) individually.")
             for stack in stacks:
                 item_id = getattr(stack, "id", None)
                 count = getattr(stack, "count", 0)
@@ -138,9 +146,9 @@ class VehicleCargoMixin:
         else:
             # Fallback for common mined minerals if stacks() returned empty but hold has cargo
             for cand in ["iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore"]:
-                if self.vehicle.cargo.count() == 0:
+                if self._host.vehicle.cargo.count() == 0:
                     break
-                moved, went_full = unload_one(cand, self.vehicle.cargo.count())
+                moved, went_full = unload_one(cand, self._host.vehicle.cargo.count())
                 unloaded += moved
                 if went_full:
                     inventory_full = True
@@ -149,15 +157,15 @@ class VehicleCargoMixin:
                     break
 
         result = -1 if inventory_full else unloaded
-        self.log.trace(f"[{self.name}] unload_cargo() exit: unloaded={unloaded}, inventory_full={inventory_full}, result={result}")
+        self._host.log.trace(f"[{self._host.name}] unload_cargo() exit: unloaded={unloaded}, inventory_full={inventory_full}, result={result}")
         return result
 
     def _current_supply_items(self):
         """All item ids already loaded (e.g. resuming a mixed delivery after a reload), or [] if the hold is empty."""
-        if self.vehicle.cargo.count() == 0:
+        if self._host.vehicle.cargo.count() == 0:
             return []
         try:
-            stacks = self.vehicle.cargo.stacks()
+            stacks = self._host.vehicle.cargo.stacks()
         except Exception:
             stacks = []
         return [item_id for item_id in (getattr(s, "id", None) for s in stacks) if item_id]
@@ -182,10 +190,10 @@ class VehicleCargoMixin:
         """
         demands = _outpost_haul_demand(dest_outpost_id)
         if not demands:
-            self.log.debug(f"[{self.name}] _plan_haul_load(): no haul demand at destination '{dest_outpost_id}'.")
+            self._host.log.debug(f"[{self._host.name}] _plan_haul_load(): no haul demand at destination '{dest_outpost_id}'.")
             return []
-        self.log.debug(f"[{self.name}] _plan_haul_load(): demand at '{dest_outpost_id}': {demands}")
-        source_is_home = getattr(self.home_outpost, "is_home", True)
+        self._host.log.debug(f"[{self._host.name}] _plan_haul_load(): demand at '{dest_outpost_id}': {demands}")
+        source_is_home = getattr(self._host.home_outpost, "is_home", True)
         ranked = []
         for item_id, unmet in demands.items():
             if unmet <= 0:
@@ -198,7 +206,7 @@ class VehicleCargoMixin:
             else:
                 # No Shop delivery anywhere but home: real stock on hand is the
                 # hard ceiling, same as before this role was generalized.
-                available = total_stock(item_id, outpost=self.home_outpost)
+                available = total_stock(item_id, outpost=self._host.home_outpost)
                 if available <= 0:
                     continue
             ranked.append((unmet, item_id, available))
@@ -214,7 +222,7 @@ class VehicleCargoMixin:
                 continue
             plan.append((item_id, amount))
             remaining -= amount
-        self.log.debug(f"[{self.name}] _plan_haul_load(): planned {plan} (capacity={capacity}).")
+        self._host.log.debug(f"[{self._host.name}] _plan_haul_load(): planned {plan} (capacity={capacity}).")
         return plan
 
     def _load_haul_plan(self, plan):
@@ -234,7 +242,7 @@ class VehicleCargoMixin:
         rather than the originally planned amount, in case a shortfall (Shop
         out of stock, storage race) meant less was actually loaded.
         """
-        source_is_home = getattr(self.home_outpost, "is_home", True)
+        source_is_home = getattr(self._host.home_outpost, "is_home", True)
         shop = get_component("shop") if source_is_home else None
         stack_size = inventory_stack_size()
 
@@ -244,7 +252,7 @@ class VehicleCargoMixin:
             moved_for_item = 0
             remaining = amount
             while remaining > 0:
-                on_hand = total_stock(item_id, outpost=self.home_outpost)
+                on_hand = total_stock(item_id, outpost=self._host.home_outpost)
                 if on_hand <= 0 and shop:
                     buy_qty = min(remaining, stack_size)
                     buy_res = shop.buy(item_id, buy_qty)
@@ -253,7 +261,7 @@ class VehicleCargoMixin:
                 elif on_hand <= 0:
                     break
 
-                moved = take_item(self.vehicle.input, item_id, min(remaining, stack_size), outpost=self.home_outpost)
+                moved = take_item(self._host.vehicle.input, item_id, min(remaining, stack_size), outpost=self._host.home_outpost)
                 if moved <= 0:
                     break
                 moved_for_item += moved
@@ -265,7 +273,7 @@ class VehicleCargoMixin:
         return loaded_summary, loaded_amounts
 
     def _haul_reservation_key(self, item_id):
-        return f"haul:{self.name}:{item_id}"
+        return f"haul:{self._host.name}:{item_id}"
 
     def _reserve_home_haul(self, loaded_amounts):
         """
@@ -280,14 +288,14 @@ class VehicleCargoMixin:
         delivery -- get_raw_material_demands() is home-specific, so a
         reagent-hauler's remote-outpost delivery has nothing to debit here.
         """
-        curr_tick = self.get_current_tick()
+        curr_tick = self._host.get_current_tick()
         for item_id, amount in loaded_amounts.items():
             if amount > 0:
-                mining_reservations.reserve_yield(self.name, self._haul_reservation_key(item_id), item_id, amount, curr_tick)
+                mining_reservations.reserve_yield(self._host.name, self._haul_reservation_key(item_id), item_id, amount, curr_tick)
 
     def _release_home_haul(self, loaded_amounts):
         for item_id in loaded_amounts:
-            mining_reservations.release_yield(self.name, self._haul_reservation_key(item_id))
+            mining_reservations.release_yield(self._host.name, self._haul_reservation_key(item_id))
 
     def run_haul_loop(self, dest_outpost_id, poll_interval=10.0):
         """
@@ -325,18 +333,18 @@ class VehicleCargoMixin:
         heading back (so the return leg can run at full throttle), then returns to
         the stationed outpost to wait for the next deficit.
         """
-        self.log.print(f"[{self.name}] Haul Controller online. Hauling from '{self.home_base}' to '{dest_outpost_id}' on demand.")
-        dest_outpost = self.get_outpost_ref(dest_outpost_id)
+        self._host.log.print(f"[{self._host.name}] Haul Controller online. Hauling from '{self._host.home_base}' to '{dest_outpost_id}' on demand.")
+        dest_outpost = self._host.get_outpost_ref(dest_outpost_id)
         is_home_delivery = dest_outpost_id is None or dest_outpost_id == "outpost_home"
         validate_game_version()
         while True:
             try:
-                if self.handle_recall_if_active():
+                if self._host.handle_recall_if_active():
                     sleep(poll_interval)
                     continue
 
                 if not dest_outpost or not hasattr(dest_outpost, "coords"):
-                    self.log.level("warn").print(f"[{self.name}] Haul: destination outpost unavailable this cycle.")
+                    self._host.log.level("warn").print(f"[{self._host.name}] Haul: destination outpost unavailable this cycle.")
                     sleep(poll_interval)
                     continue
 
@@ -345,15 +353,15 @@ class VehicleCargoMixin:
                 haul_amounts = {}
                 loaded_items = self._current_supply_items()
                 if not loaded_items:
-                    plan = self._plan_haul_load(self.vehicle.cargo.capacity(), dest_outpost_id)
+                    plan = self._plan_haul_load(self._host.vehicle.cargo.capacity(), dest_outpost_id)
                     if not plan:
-                        if not self.is_at_base():
-                            self.return_to_base()
-                        self.publish_telemetry("IDLE_AT_OUTPOST", "no demand for candidate items")
+                        if not self._host.is_at_base():
+                            self._host.return_to_base()
+                        self._host.publish_telemetry("IDLE_AT_OUTPOST", "no demand for candidate items")
                         sleep(poll_interval)
                         continue
-                    if not hasattr(self.vehicle, "input"):
-                        self.log.level("warn").print(f"[{self.name}] Haul requires an input port and Auto Feeders.")
+                    if not hasattr(self._host.vehicle, "input"):
+                        self._host.log.level("warn").print(f"[{self._host.name}] Haul requires an input port and Auto Feeders.")
                         sleep(poll_interval)
                         continue
 
@@ -366,19 +374,19 @@ class VehicleCargoMixin:
                     # destination after its last delivery -- would just fail
                     # to load forever instead of returning to its stationed
                     # outpost.
-                    if not self.is_at_base():
-                        self.publish_telemetry("RETURNING", f"returning to '{self.home_base}' to load")
-                        if not self.return_to_base():
-                            self.log.level("warn").print(f"[{self.name}] Could not reach '{self.home_base}' to load; will retry.")
+                    if not self._host.is_at_base():
+                        self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}' to load")
+                        if not self._host.return_to_base():
+                            self._host.log.level("warn").print(f"[{self._host.name}] Could not reach '{self._host.home_base}' to load; will retry.")
                             sleep(poll_interval)
                             continue
 
                     loaded_summary, loaded_amounts = self._load_haul_plan(plan)
                     if not loaded_summary:
-                        self.log.level("warn").print(f"[{self.name}] Could not load any planned item at '{self.home_base}'.")
+                        self._host.log.level("warn").print(f"[{self._host.name}] Could not load any planned item at '{self._host.home_base}'.")
                         sleep(poll_interval)
                         continue
-                    self.log.print(f"[{self.name}] Loaded {', '.join(loaded_summary)} at '{self.home_base}'.")
+                    self._host.log.print(f"[{self._host.name}] Loaded {', '.join(loaded_summary)} at '{self._host.home_base}'.")
 
                     # Debit what just got loaded from home's own raw-ore
                     # deficit for the length of the delivery leg -- see
@@ -396,7 +404,7 @@ class VehicleCargoMixin:
                     # survives, but nothing re-asserts it after a restart),
                     # so rebuild it from what's physically in the hold right
                     # now rather than skipping it.
-                    for stack in self.vehicle.cargo.stacks():
+                    for stack in self._host.vehicle.cargo.stacks():
                         item_id = getattr(stack, "id", None)
                         count = getattr(stack, "count", 0)
                         if item_id and count > 0:
@@ -404,18 +412,18 @@ class VehicleCargoMixin:
                     self._reserve_home_haul(haul_amounts)
 
                 dest_coords = dest_outpost.coords()
-                self.publish_telemetry("OUTBOUND", "delivering mixed cargo to the destination outpost")
-                if not self.drive_with_recharge(dest_coords[0], dest_coords[1]):
-                    self.log.level("warn").print(f"[{self.name}] Could not reach the destination outpost this cycle; will retry.")
+                self._host.publish_telemetry("OUTBOUND", "delivering mixed cargo to the destination outpost")
+                if not self._host.drive_with_recharge(dest_coords[0], dest_coords[1]):
+                    self._host.log.level("warn").print(f"[{self._host.name}] Could not reach the destination outpost this cycle; will retry.")
                     sleep(poll_interval)
                     continue
 
-                delivered = self.vehicle.cargo.count()
+                delivered = self._host.vehicle.cargo.count()
                 if self.unload_cargo(outpost=dest_outpost) < 0:
-                    self.publish_telemetry("WAITING_INVENTORY_SPACE")
+                    self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
                     sleep(poll_interval)
                     continue
-                self.log.print(f"[{self.name}] Delivered {delivered} units to the destination outpost.")
+                self._host.log.print(f"[{self._host.name}] Delivered {delivered} units to the destination outpost.")
 
                 # Cargo has physically landed and is now reflected in
                 # total_stock() at the destination -- release the in-flight
@@ -436,17 +444,17 @@ class VehicleCargoMixin:
                 # without drive_with_recharge() needing to plan an
                 # intermediate stop for it -- faster round trips than only
                 # recharging back at the stationed outpost.
-                self.publish_telemetry("CHARGING_AT_BASE")
-                self.recharge_at_station(target_level=1.0)
+                self._host.publish_telemetry("CHARGING_AT_BASE")
+                self._host.recharge_at_station(target_level=1.0)
 
-                self.publish_telemetry("RETURNING", f"returning to '{self.home_base}'")
-                if self.return_to_base():
-                    self.recharge_at_station(target_level=1.0)
-                self.publish_telemetry("READY_AT_OUTPOST")
+                self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}'")
+                if self._host.return_to_base():
+                    self._host.recharge_at_station(target_level=1.0)
+                self._host.publish_telemetry("READY_AT_OUTPOST")
             except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Haul exception: {error}")
+                self._host.log.level("error").print(f"[{self._host.name}] Haul exception: {error}")
                 try:
-                    self.vehicle.nav.brake()
+                    self._host.vehicle.nav.brake()
                 except Exception:
                     pass
             sleep(poll_interval)

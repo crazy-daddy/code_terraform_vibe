@@ -31,6 +31,11 @@
 # curve above, so it is a genuinely different model, not a parameterization of
 # Pioneer's.
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from vehicle import VehicleController
+
 def is_rover_chassis_for(vehicle):
     """
     Standalone chassis-type probe for a raw get_component() object (no live
@@ -220,6 +225,11 @@ class VehicleEnergyMixin:
     Battery telemetry, developer-confirmed travel power/speed model, and
     outpost-aware charging-station discovery, mixed into VehicleController.
     """
+
+    @property
+    def _host(self) -> "VehicleController":
+        return self  # type: ignore[return-value]
+
     SONAR_WH_BUDGET = 2.0
     # Flat fallback only, used when calculate_trip_energy() isn't given a
     # mine_item_id (e.g. a non-mining candidate) -- see mine_wh_per_unit()/
@@ -255,19 +265,19 @@ class VehicleEnergyMixin:
         "drill_module"). Passive containers (Battery Holder, Cargo Rack) don't
         count. See docs/database/equipment_modules.md.
         """
-        return active_modules_count_for(self.vehicle)
+        return active_modules_count_for(self._host.vehicle)
 
     def cargo_units_count(self):
         """Live cargo unit count, for the travel power formula's cargo-weight term."""
-        return cargo_units_count_for(self.vehicle)
+        return cargo_units_count_for(self._host.vehicle)
 
     def nav_speed_multiplier(self):
         """Top-speed multiplier from mounted Sport Nav modules: 1.0 basic, 1+Sport Nav count (docs/components/nav_module.md .speed_multiplier())."""
-        return nav_speed_multiplier_for(self.vehicle)
+        return nav_speed_multiplier_for(self._host.vehicle)
 
     def mine_wh_per_unit(self, item_id, purity=None):
         """Exact mining Wh/unit for this vehicle's actually-mounted drill (see mine_wh_per_unit_for())."""
-        return mine_wh_per_unit_for(self.vehicle, item_id, purity)
+        return mine_wh_per_unit_for(self._host.vehicle, item_id, purity)
 
     def nav_power_multiplier(self):
         """
@@ -276,7 +286,7 @@ class VehicleEnergyMixin:
         Navs isn't precisely documented ("raises draw faster"), so this linearly
         extrapolates the same +1.6x power per +1.0x speed above the 1.0 baseline.
         """
-        return nav_power_multiplier_for(self.vehicle)
+        return nav_power_multiplier_for(self._host.vehicle)
 
     def default_cruise_throttle(self):
         """
@@ -300,7 +310,7 @@ class VehicleEnergyMixin:
         return max(self.MIN_SPEEDMODE_THROTTLE, min(self.MAX_SPEEDMODE_THROTTLE, value))
 
     def construction_calibration_key(self):
-        return f"vehicle.wh_per_progress:{self.name}"
+        return f"vehicle.wh_per_progress:{self._host.name}"
 
     def load_wh_per_progress(self):
         value = archive.get(self.construction_calibration_key(), None)
@@ -320,9 +330,9 @@ class VehicleEnergyMixin:
     def get_battery(self):
         """Returns (current_wh, capacity_wh, fraction 0-1)."""
         try:
-            wh = self.vehicle.battery.wh()
-            cap = self.vehicle.battery.capacity()
-            lvl = self.vehicle.battery.level()
+            wh = self._host.vehicle.battery.wh()
+            cap = self._host.vehicle.battery.capacity()
+            lvl = self._host.vehicle.battery.level()
             return wh, cap, lvl
         except Exception:
             return 0.0, 100.0, 0.0
@@ -365,23 +375,23 @@ class VehicleEnergyMixin:
         to test best-case feasibility at the speedmode throttle floor). Defaults to the
         cruise-throttle rate, computed separately per leg since cargo differs between them.
         """
-        self.log.trace(
-            f"[{self.name}] calculate_trip_energy(target={target_coords}, planned_drill_units={planned_drill_units}, "
+        self._host.log.trace(
+            f"[{self._host.name}] calculate_trip_energy(target={target_coords}, planned_drill_units={planned_drill_units}, "
             f"planned_scans={planned_scans}, planned_construction_progress={planned_construction_progress}, "
             f"wh_per_meter={wh_per_meter}, mine_item_id={mine_item_id}, mine_purity={mine_purity}) called."
         )
-        current_pos = self.get_position()
-        dist_outbound = self.distance_between(current_pos, target_coords)
+        current_pos = self._host.get_position()
+        dist_outbound = self._host.distance_between(current_pos, target_coords)
         nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
-        dist_inbound = self.distance_between(target_coords, nearest_cs_from_target)
+        dist_inbound = self._host.distance_between(target_coords, nearest_cs_from_target)
 
         if wh_per_meter is not None:
             outbound_rate = wh_per_meter
             inbound_rate = wh_per_meter
         else:
             curr_cargo = self.cargo_units_count()
-            outbound_rate = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo)
-            inbound_rate = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo + planned_drill_units)
+            outbound_rate = self.wh_per_meter_at_throttle(self._host.cruise_throttle, cargo_units=curr_cargo)
+            inbound_rate = self.wh_per_meter_at_throttle(self._host.cruise_throttle, cargo_units=curr_cargo + planned_drill_units)
 
         drive_out_wh = dist_outbound * outbound_rate
         drive_home_wh = dist_inbound * inbound_rate
@@ -397,8 +407,8 @@ class VehicleEnergyMixin:
         curr_wh, cap_wh, lvl = self.get_battery()
         is_achievable = curr_wh >= total_required_wh
 
-        self.log.debug(
-            f"[{self.name}] Trip budget: drive_out={drive_out_wh:.1f} Wh ({dist_outbound:.1f}m), "
+        self._host.log.debug(
+            f"[{self._host.name}] Trip budget: drive_out={drive_out_wh:.1f} Wh ({dist_outbound:.1f}m), "
             f"drive_home={drive_home_wh:.1f} Wh ({dist_inbound:.1f}m to {nearest_cs_from_target}), "
             f"sonar={sonar_wh:.1f} Wh, mining={mining_wh:.1f} Wh ({planned_drill_units} units @ {mine_rate:.2f} Wh/unit), "
             f"construction={construction_wh:.1f} Wh -> net={net_expedition_wh:.1f} Wh, "
@@ -422,7 +432,7 @@ class VehicleEnergyMixin:
             "current_wh": curr_wh,
             "is_achievable": is_achievable
         }
-        self.log.trace(f"[{self.name}] calculate_trip_energy() -> {result}.")
+        self._host.log.trace(f"[{self._host.name}] calculate_trip_energy() -> {result}.")
         return result
 
     def max_mineable_units(self, target_coords, item_id, purity=None):
@@ -444,15 +454,15 @@ class VehicleEnergyMixin:
         units (mined Wh via mine_wh_per_unit(), extra return-drive Wh from the
         added cargo weight), so the max affordable count follows in one step.
         """
-        current_pos = self.get_position()
-        dist_outbound = self.distance_between(current_pos, target_coords)
+        current_pos = self._host.get_position()
+        dist_outbound = self._host.distance_between(current_pos, target_coords)
         nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
-        dist_inbound = self.distance_between(target_coords, nearest_cs_from_target)
+        dist_inbound = self._host.distance_between(target_coords, nearest_cs_from_target)
 
         curr_cargo = self.cargo_units_count()
-        outbound_rate = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo)
-        inbound_rate_base = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo)
-        inbound_rate_plus_one = self.wh_per_meter_at_throttle(self.cruise_throttle, cargo_units=curr_cargo + 1)
+        outbound_rate = self.wh_per_meter_at_throttle(self._host.cruise_throttle, cargo_units=curr_cargo)
+        inbound_rate_base = self.wh_per_meter_at_throttle(self._host.cruise_throttle, cargo_units=curr_cargo)
+        inbound_rate_plus_one = self.wh_per_meter_at_throttle(self._host.cruise_throttle, cargo_units=curr_cargo + 1)
         marginal_inbound_rate_per_unit = inbound_rate_plus_one - inbound_rate_base
 
         fixed_wh = (dist_outbound * outbound_rate) + (dist_inbound * inbound_rate_base)
@@ -461,24 +471,24 @@ class VehicleEnergyMixin:
         curr_wh, _, _ = self.get_battery()
         available_for_units = curr_wh - self.MIN_EMERGENCY_RESERVE_WH - (fixed_wh * self.SAFETY_MARGIN_MULTIPLIER)
         if available_for_units <= 0 or marginal_wh_per_unit <= 0:
-            self.log.debug(f"[{self.name}] max_mineable_units({item_id}, purity={purity}): 0 units affordable (available_for_units={available_for_units:.1f} Wh, marginal_wh_per_unit={marginal_wh_per_unit:.2f} Wh -- fixed_wh={fixed_wh:.1f}, curr_wh={curr_wh:.1f}, reserve={self.MIN_EMERGENCY_RESERVE_WH:.1f}).")
+            self._host.log.debug(f"[{self._host.name}] max_mineable_units({item_id}, purity={purity}): 0 units affordable (available_for_units={available_for_units:.1f} Wh, marginal_wh_per_unit={marginal_wh_per_unit:.2f} Wh -- fixed_wh={fixed_wh:.1f}, curr_wh={curr_wh:.1f}, reserve={self.MIN_EMERGENCY_RESERVE_WH:.1f}).")
             return 0
 
         max_units = int(available_for_units // (marginal_wh_per_unit * self.SAFETY_MARGIN_MULTIPLIER))
-        cargo_capacity = self.vehicle.cargo.capacity() if hasattr(self.vehicle, "cargo") else max_units
+        cargo_capacity = self._host.vehicle.cargo.capacity() if hasattr(self._host.vehicle, "cargo") else max_units
         final_units = max(0, min(max_units, cargo_capacity))
-        self.log.debug(f"[{self.name}] max_mineable_units({item_id}, purity={purity}): energy-affordable={max_units} (available={available_for_units:.1f} Wh / {marginal_wh_per_unit:.2f} Wh/unit), cargo_capacity={cargo_capacity} -> {final_units} units.")
+        self._host.log.debug(f"[{self._host.name}] max_mineable_units({item_id}, purity={purity}): energy-affordable={max_units} (available={available_for_units:.1f} Wh / {marginal_wh_per_unit:.2f} Wh/unit), cargo_capacity={cargo_capacity} -> {final_units} units.")
         return final_units
 
     def energy_needed_to_reach(self, target_coords):
         """Calculates minimum energy required to reach target coordinates with safety buffer."""
-        dist = self.distance_between(self.get_position(), target_coords)
-        drive_wh = dist * self.wh_per_meter_at_throttle(self.cruise_throttle)
+        dist = self._host.distance_between(self._host.get_position(), target_coords)
+        drive_wh = dist * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
     def energy_needed_to_reach_base(self):
         """Calculates energy required to drive back to home base staging slot."""
-        return self.energy_needed_to_reach(self.assigned_slot_coords)
+        return self.energy_needed_to_reach(self._host.assigned_slot_coords)
 
     def energy_needed_to_return_now(self):
         """
@@ -489,7 +499,7 @@ class VehicleEnergyMixin:
         check must not assume the typical cruise-throttle cost.
         """
         nearest_cs, _ = self.get_nearest_charging_station()
-        dist_cs = self.distance_between(self.get_position(), nearest_cs)
+        dist_cs = self._host.distance_between(self._host.get_position(), nearest_cs)
         drive_wh = dist_cs * self.minimum_wh_per_meter()
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
@@ -514,8 +524,8 @@ class VehicleEnergyMixin:
         safety check, not a scheduling decision, and must never be softened.
         """
         nearest_cs, _ = self.get_nearest_charging_station()
-        dist_cs = self.distance_between(self.get_position(), nearest_cs)
-        drive_wh = dist_cs * self.wh_per_meter_at_throttle(self.cruise_throttle)
+        dist_cs = self._host.distance_between(self._host.get_position(), nearest_cs)
+        drive_wh = dist_cs * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
     def _drive_speed_m_per_hour(self, throttle):
@@ -565,28 +575,28 @@ class VehicleEnergyMixin:
             leg_wh(t) * SAFETY_MARGIN_MULTIPLIER <= available_for_leg
             => t <= (available_for_leg / (distance * coeff * SAFETY_MARGIN_MULTIPLIER)) ** 2
         """
-        distance = self.distance_to(target_coords[0], target_coords[1])
+        distance = self._host.distance_to(target_coords[0], target_coords[1])
         if distance <= 0:
             return self.MAX_SPEEDMODE_THROTTLE
 
         curr_wh, _, _ = self.get_battery()
         nearest_cs, _ = self.get_nearest_charging_station(from_coords=target_coords)
-        reserve_needed = (self.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        reserve_needed = (self._host.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
-            self.log.debug(f"[{self.name}] max_safe_throttle_for_leg({target_coords}): 0.0 (no safe reserve -- {curr_wh:.1f} Wh on board < {reserve_needed:.1f} Wh needed to reach {nearest_cs} afterward).")
+            self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg({target_coords}): 0.0 (no safe reserve -- {curr_wh:.1f} Wh on board < {reserve_needed:.1f} Wh needed to reach {nearest_cs} afterward).")
             return 0.0
 
         base_w = self.BASE_TRAVEL_POWER_W + (self.MODULE_TRAVEL_POWER_W * self.active_modules_count()) + (self.CARGO_UNIT_TRAVEL_POWER_W * self.cargo_units_count())
         coeff = (base_w * self.nav_power_multiplier()) / (self.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * self.nav_speed_multiplier())
         denom = distance * coeff * self.SAFETY_MARGIN_MULTIPLIER
         if denom <= 0:
-            self.log.debug(f"[{self.name}] max_safe_throttle_for_leg({target_coords}): {self.MAX_SPEEDMODE_THROTTLE} (zero-cost leg, denom={denom}).")
+            self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg({target_coords}): {self.MAX_SPEEDMODE_THROTTLE} (zero-cost leg, denom={denom}).")
             return self.MAX_SPEEDMODE_THROTTLE
 
         sqrt_t_max = available_for_leg / denom
         result = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, sqrt_t_max ** 2))
-        self.log.debug(f"[{self.name}] max_safe_throttle_for_leg({target_coords}): {result*100:.0f}% (available_for_leg={available_for_leg:.1f} Wh, distance={distance:.1f}m, reserve_needed={reserve_needed:.1f} Wh).")
+        self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg({target_coords}): {result*100:.0f}% (available_for_leg={available_for_leg:.1f} Wh, distance={distance:.1f}m, reserve_needed={reserve_needed:.1f} Wh).")
         return result
 
     def select_cruise_throttle(self, target_x, target_y):
@@ -606,7 +616,7 @@ class VehicleEnergyMixin:
         capping only ever throttles DOWN from whatever baseline was
         requested, never up past it.
         """
-        baseline = min(self.cruise_throttle, self.MAX_SPEEDMODE_THROTTLE)
+        baseline = min(self._host.cruise_throttle, self.MAX_SPEEDMODE_THROTTLE)
         max_safe = self.max_safe_throttle_for_leg((target_x, target_y))
         if max_safe >= baseline:
             return baseline
@@ -640,7 +650,7 @@ class VehicleEnergyMixin:
                     b_id = getattr(b, "id", "")
                     if not b_id or b_id in found_ids:
                         continue
-                    pos = self.extract_coords(getattr(b, "position", None))
+                    pos = self._host.extract_coords(getattr(b, "position", None))
                     if not pos:
                         continue
                     found_ids.add(b_id)
@@ -657,17 +667,17 @@ class VehicleEnergyMixin:
         Returns the closest known charging station tuple: (coords, station_info_dict).
         If no station is detected, falls back to (self.home_coords, {}).
         """
-        ref_coords = from_coords if from_coords is not None else self.get_position()
+        ref_coords = from_coords if from_coords is not None else self._host.get_position()
         stations = self.get_all_charging_stations()
         if not stations:
-            self.log.debug(f"[{self.name}] get_nearest_charging_station({ref_coords}): no stations discovered network-wide, falling back to home slot {self.home_coords}.")
-            return self.home_coords, {"id": "home_slot", "coords": self.home_coords, "component": self.home_charging_station}
+            self._host.log.debug(f"[{self._host.name}] get_nearest_charging_station({ref_coords}): no stations discovered network-wide, falling back to home slot {self._host.home_coords}.")
+            return self._host.home_coords, {"id": "home_slot", "coords": self._host.home_coords, "component": self._host.home_charging_station}
 
         best_station = min(
             stations,
-            key=lambda st: self.distance_between(ref_coords, st["coords"])
+            key=lambda st: self._host.distance_between(ref_coords, st["coords"])
         )
-        self.log.debug(f"[{self.name}] get_nearest_charging_station({ref_coords}): chose '{best_station.get('id')}' at {best_station['coords']} ({self.distance_between(ref_coords, best_station['coords']):.1f}m), out of {len(stations)} candidate(s).")
+        self._host.log.debug(f"[{self._host.name}] get_nearest_charging_station({ref_coords}): chose '{best_station.get('id')}' at {best_station['coords']} ({self._host.distance_between(ref_coords, best_station['coords']):.1f}m), out of {len(stations)} candidate(s).")
         return best_station["coords"], best_station
 
     def get_outpost_ref(self, outpost_id=None):
@@ -706,7 +716,7 @@ class VehicleEnergyMixin:
             return None
         try:
             for b in outpost.buildings(CHARGING_STATION_TYPE_ID):
-                if self.extract_coords(getattr(b, "position", None)):
+                if self._host.extract_coords(getattr(b, "position", None)):
                     return b
         except Exception:
             pass
@@ -724,13 +734,13 @@ class VehicleEnergyMixin:
         a literal (0, 0) if outpost_network itself was unavailable at
         construction time.
         """
-        if self.home_charging_station is not None:
-            pos = self.extract_coords(getattr(self.home_charging_station, "position", None))
+        if self._host.home_charging_station is not None:
+            pos = self._host.extract_coords(getattr(self._host.home_charging_station, "position", None))
             if pos:
                 return pos
-        if self.home_outpost is not None and hasattr(self.home_outpost, "coords"):
+        if self._host.home_outpost is not None and hasattr(self._host.home_outpost, "coords"):
             try:
-                coords = self.home_outpost.coords()
+                coords = self._host.home_outpost.coords()
                 if coords:
                     return (float(coords[0]), float(coords[1]))
             except Exception:
@@ -745,7 +755,7 @@ class VehicleEnergyMixin:
         """
         curr_wh, cap_wh, lvl = self.get_battery()
         if lvl >= target_level - 0.02:
-            self.log.print(f"[{self.name}] Battery already charged ({lvl*100:.0f}%).")
+            self._host.log.print(f"[{self._host.name}] Battery already charged ({lvl*100:.0f}%).")
             return True
 
         cs = None
@@ -760,7 +770,7 @@ class VehicleEnergyMixin:
                 cs = get_component(station_id)
             if not cs:
                 for st in self.get_all_charging_stations():
-                    if self.distance_between(st["coords"], station_coords) < 2.0:
+                    if self._host.distance_between(st["coords"], station_coords) < 2.0:
                         cs = st.get("component")
                         if not station_id:
                             station_id = st.get("id")
@@ -777,14 +787,14 @@ class VehicleEnergyMixin:
                     if not station_id:
                         station_id = fallback.get("id")
 
-        cs_coords = station_coords or self.home_coords
+        cs_coords = station_coords or self._host.home_coords
 
         # Verify whether vehicle is actually inside the station's docked set
         is_docked = False
         if cs and hasattr(cs, "get_docked"):
             try:
                 docked_fn = getattr(cs, "get_docked")
-                is_docked = self.name in docked_fn()
+                is_docked = self._host.name in docked_fn()
             except Exception:
                 pass
 
@@ -795,19 +805,19 @@ class VehicleEnergyMixin:
             # (which also drives to assigned_slot_coords, not necessarily
             # cs_coords, and releases the current target claim) -- just always
             # re-issue the drive command toward the actual station coords.
-            dist_to_cs = self.distance_to(cs_coords[0], cs_coords[1])
-            self.log.print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
-            self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
+            dist_to_cs = self._host.distance_to(cs_coords[0], cs_coords[1])
+            self._host.log.print(f"[{self._host.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
+            self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
 
-        if hasattr(self.vehicle, "nav"):
+        if hasattr(self._host.vehicle, "nav"):
             try:
-                self.vehicle.nav.brake()
+                self._host.vehicle.nav.brake()
             except Exception:
                 pass
 
         sleep(0.5)
-        self.publish_telemetry("CHARGING")
-        self.log.print(f"[{self.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
+        self._host.publish_telemetry("CHARGING")
+        self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
 
         wait_cycles = 0
         last_reported_lvl = lvl
@@ -815,11 +825,11 @@ class VehicleEnergyMixin:
         while True:
             curr_wh, cap_wh, lvl = self.get_battery()
             if lvl >= target_level - 0.01:
-                self.log.print(f"[{self.name}] Charging complete ({curr_wh:.1f} Wh, {lvl*100:.0f}%).")
+                self._host.log.print(f"[{self._host.name}] Charging complete ({curr_wh:.1f} Wh, {lvl*100:.0f}%).")
                 break
 
             if abs(lvl - last_reported_lvl) >= 0.10:
-                self.log.print(f"[{self.name}] Charging in progress... ({lvl*100:.0f}%, {curr_wh:.1f} Wh)")
+                self._host.log.print(f"[{self._host.name}] Charging in progress... ({lvl*100:.0f}%, {curr_wh:.1f} Wh)")
                 last_reported_lvl = lvl
 
             wait_cycles += 1
@@ -827,21 +837,21 @@ class VehicleEnergyMixin:
                 try:
                     get_docked_fn = getattr(cs, "get_docked", None)
                     docked = get_docked_fn() if get_docked_fn else []
-                    if self.name not in docked:
-                        self.log.level("warn").print(f"[{self.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
-                        self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
-                        if hasattr(self.vehicle, "nav"):
-                            self.vehicle.nav.brake()
+                    if self._host.name not in docked:
+                        self._host.log.level("warn").print(f"[{self._host.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
+                        self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
+                        if hasattr(self._host.vehicle, "nav"):
+                            self._host.vehicle.nav.brake()
                     else:
                         get_active_fn = getattr(cs, "get_active", None)
                         get_queue_fn = getattr(cs, "get_queue", None)
                         active = get_active_fn() if get_active_fn else []
                         queued = get_queue_fn() if get_queue_fn else []
-                        if self.name not in active and self.name not in queued:
+                        if self._host.name not in active and self._host.name not in queued:
                             st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
-                            self.log.level("warn").print(f"[{self.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
+                            self._host.log.level("warn").print(f"[{self._host.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
                             try:
-                                notify(f"[{self.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
+                                notify(f"[{self._host.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
                             except Exception:
                                 pass
                 except Exception:
