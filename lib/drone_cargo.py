@@ -99,6 +99,6 @@ class DroneCargoMixin:
             unloaded += moved
             if res.status in ("slots_full", "target_full") or moved < count:
                 depot_full = True
-                print(f"[{self.name}] Drone Depot notice for {item_id}: {res.status} - {res.message}")
+                self.log.level("warn").print(f"[{self.name}] Drone Depot notice for {item_id}: {res.status} - {res.message}")
 
         return -1 if depot_full and unloaded == 0 else unloaded

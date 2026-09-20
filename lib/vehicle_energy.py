@@ -717,7 +717,7 @@ class VehicleEnergyMixin:
         """
         curr_wh, cap_wh, lvl = self.get_battery()
         if lvl >= target_level - 0.02:
-            print(f"[{self.name}] Battery already charged ({lvl*100:.0f}%).")
+            self.log.print(f"[{self.name}] Battery already charged ({lvl*100:.0f}%).")
             return True
 
         cs = None
@@ -768,7 +768,7 @@ class VehicleEnergyMixin:
             # cs_coords, and releases the current target claim) -- just always
             # re-issue the drive command toward the actual station coords.
             dist_to_cs = self.distance_to(cs_coords[0], cs_coords[1])
-            print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
+            self.log.print(f"[{self.name}] Position is {dist_to_cs:.1f}m from charging station '{station_id or 'station'}'. Driving to docking pad...")
             self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
 
         if hasattr(self.vehicle, "nav"):
@@ -779,7 +779,7 @@ class VehicleEnergyMixin:
 
         sleep(0.5)
         self.publish_telemetry("CHARGING")
-        print(f"[{self.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
+        self.log.print(f"[{self.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
 
         wait_cycles = 0
         last_reported_lvl = lvl
@@ -787,11 +787,11 @@ class VehicleEnergyMixin:
         while True:
             curr_wh, cap_wh, lvl = self.get_battery()
             if lvl >= target_level - 0.01:
-                print(f"[{self.name}] Charging complete ({curr_wh:.1f} Wh, {lvl*100:.0f}%).")
+                self.log.print(f"[{self.name}] Charging complete ({curr_wh:.1f} Wh, {lvl*100:.0f}%).")
                 break
 
             if abs(lvl - last_reported_lvl) >= 0.10:
-                print(f"[{self.name}] Charging in progress... ({lvl*100:.0f}%, {curr_wh:.1f} Wh)")
+                self.log.print(f"[{self.name}] Charging in progress... ({lvl*100:.0f}%, {curr_wh:.1f} Wh)")
                 last_reported_lvl = lvl
 
             wait_cycles += 1
@@ -800,7 +800,7 @@ class VehicleEnergyMixin:
                     get_docked_fn = getattr(cs, "get_docked", None)
                     docked = get_docked_fn() if get_docked_fn else []
                     if self.name not in docked:
-                        print(f"[{self.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
+                        self.log.level("warn").print(f"[{self.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
                         self.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
                         if hasattr(self.vehicle, "nav"):
                             self.vehicle.nav.brake()
@@ -811,7 +811,7 @@ class VehicleEnergyMixin:
                         queued = get_queue_fn() if get_queue_fn else []
                         if self.name not in active and self.name not in queued:
                             st_script = f"{station_id}.py" if station_id and "charging_station" in station_id else "charging_station_1.py"
-                            print(f"[{self.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
+                            self.log.level("warn").print(f"[{self.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
                             try:
                                 notify(f"[{self.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
                             except Exception:

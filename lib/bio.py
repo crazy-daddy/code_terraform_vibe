@@ -14,6 +14,7 @@
 from archive import archive
 from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 def get_my_biome(machine):
     if hasattr(machine, "outpost") and machine.outpost:
@@ -482,6 +483,7 @@ class BioExchangeController:
         self.name = getattr(machine, "id", "bio_exchange")
         self.comms = get_component("comms")
         self.sweep_delay = sweep_delay
+        self.log = TreeConsole(module="bio")
 
     def drain_output(self):
         drain_port_to_storage(self.machine.output, self.machine.outpost)
@@ -557,7 +559,7 @@ class BioExchangeController:
                 take_res = self.machine.input.take(item_id, count, properties, "exact")
                 if getattr(take_res, "moved", 0) > 0:
                     flush_res = self.machine.input.flush()
-                    print(f"[EXCHANGE] Flushed {getattr(flush_res, 'moved', count)}x orphaned {item_id} "
+                    self.log.debug(f"[EXCHANGE] Flushed {getattr(flush_res, 'moved', count)}x orphaned {item_id} "
                           f"(properties {properties}) from '{source_id}' -- no order needs this fragment.")
 
     def broadcast_demands(self):
@@ -609,7 +611,7 @@ class BioExchangeController:
         all_orders = self.machine.orders()
         delivered_count = 0
 
-        print(f"[EXCHANGE] Starting sweep across {len(all_orders)} orders. Checking local storage...")
+        self.log.print(f"[EXCHANGE] Starting sweep across {len(all_orders)} orders. Checking local storage...")
 
         for ord_info in all_orders:
             if not is_order_incomplete(ord_info):
@@ -634,17 +636,17 @@ class BioExchangeController:
                 if active is None or active.id != ord_info.id:
                     set_res = self.machine.set_order(ord_info.id)
                     if set_res.status != "ok":
-                        print(f"[EXCHANGE] Failed to set order {ord_info.id}: {set_res.status} - {set_res.message}")
+                        self.log.level("warn").print(f"[EXCHANGE] Failed to set order {ord_info.id}: {set_res.status} - {set_res.message}")
                         continue
                     biome_tag = getattr(ord_info, "biome", "order")
-                    print(f"[EXCHANGE] Switched to {ord_info.id} ({ord_info.name} - {biome_tag}) to deliver {to_deliver}x {item_id}")
+                    self.log.print(f"[EXCHANGE] Switched to {ord_info.id} ({ord_info.name} - {biome_tag}) to deliver {to_deliver}x {item_id}")
 
                 for _ in range(to_deliver):
                     self.drain_output()
 
                     match = _find_matching_stack(self.machine, item_id, outpost)
                     if not match:
-                        print(f"[EXCHANGE] No locally-staged {item_id} variant currently satisfies this order.")
+                        self.log.debug(f"[EXCHANGE] No locally-staged {item_id} variant currently satisfies this order.")
                         break
                     source_id, properties = match
 
@@ -653,7 +655,7 @@ class BioExchangeController:
 
                     take_res = self.machine.input.take(item_id, 1, properties, "exact")
                     if take_res.status != "ok":
-                        print(f"[EXCHANGE] Take {item_id} status: {take_res.status} - {take_res.message}")
+                        self.log.level("warn").print(f"[EXCHANGE] Take {item_id} status: {take_res.status} - {take_res.message}")
                         if take_res.status == "target_wrong_material":
                             self.clear_input()
                         break
@@ -665,7 +667,7 @@ class BioExchangeController:
 
                     if deliv_res.status in ["ok", "complete"]:
                         delivered_count += 1
-                        print(f"[EXCHANGE] Delivered 1x {item_id} -> {ord_info.id} ({ord_info.name}) (Status: {deliv_res.status})")
+                        self.log.print(f"[EXCHANGE] Delivered 1x {item_id} -> {ord_info.id} ({ord_info.name}) (Status: {deliv_res.status})")
                         if deliv_res.status == "complete":
                             reward_str = f" (+{ord_info.reward} credits)" if getattr(ord_info, "reward", 0) else ""
                             try:
@@ -681,7 +683,7 @@ class BioExchangeController:
                             except Exception:
                                 pass
                     else:
-                        print(f"[EXCHANGE] Deliver error: {deliv_res.status} - {deliv_res.message}")
+                        self.log.level("error").print(f"[EXCHANGE] Deliver error: {deliv_res.status} - {deliv_res.message}")
                         break
 
         self.drain_output()
@@ -689,7 +691,7 @@ class BioExchangeController:
         self._cleanup_orphaned_artifacts(all_orders)
 
         if delivered_count > 0:
-            print(f"[EXCHANGE] Sweep finished: delivered {delivered_count} sample(s).")
+            self.log.print(f"[EXCHANGE] Sweep finished: delivered {delivered_count} sample(s).")
 
         # Select a local incomplete order for ongoing collection
         my_biome = get_my_biome(self.machine)
@@ -699,13 +701,13 @@ class BioExchangeController:
                 if is_order_incomplete(ord_info):
                     if is_local_order(ord_info, my_biome):
                         self.machine.set_order(ord_info.id)
-                        print(f"[EXCHANGE] Set default local order: {ord_info.id} ({ord_info.name})")
+                        self.log.print(f"[EXCHANGE] Set default local order: {ord_info.id} ({ord_info.name})")
                         break
 
         self.broadcast_demands()
 
     def run(self):
-        print(f"Bio Exchange ({self.name}) online via Shared Library & Signal Bus.")
+        self.log.print(f"Bio Exchange ({self.name}) online via Shared Library & Signal Bus.")
         validate_game_version()
         while True:
             self.sweep_and_deliver()
@@ -716,7 +718,7 @@ class BioExchangeController:
                     # Non-blocking check for instant delivery trigger
                     msg = self.comms.receive("sample_ready")
                     if msg.status == "ok":
-                        print(f"[EXCHANGE] Received sample_ready event ({msg.packet.get('sample_id')}), triggering immediate sweep!")
+                        self.log.print(f"[EXCHANGE] Received sample_ready event ({msg.packet.get('sample_id')}), triggering immediate sweep!")
                         continue
                 except Exception:
                     pass
@@ -738,6 +740,7 @@ class BioLabController:
         self.shop = get_component("shop")
         self.comms = get_component("comms")
         self.inventory_full_notified = False
+        self.log = TreeConsole(module="bio")
 
     def drain_output(self):
         outpost = self.machine.outpost
@@ -750,7 +753,7 @@ class BioLabController:
                     self.machine.output.connect(target)
                 res_send = self.machine.output.send(stack.id, stack.count)
                 if res_send.status == "ok":
-                    print(f"[{self.name}] Sent {res_send.moved}x {stack.id} to '{target}'.")
+                    self.log.print(f"[{self.name}] Sent {res_send.moved}x {stack.id} to '{target}'.")
                     self.inventory_full_notified = False
                 elif res_send.status == "busy":
                     sleep(0.2)
@@ -759,7 +762,7 @@ class BioLabController:
                     self.handle_storage_full()
                     return False
                 else:
-                    print(f"[{self.name}] Output notice: {res_send.status} - {res_send.message}")
+                    self.log.level("warn").print(f"[{self.name}] Output notice: {res_send.status} - {res_send.message}")
                     sleep(0.5)
                     return False
         return True
@@ -767,7 +770,7 @@ class BioLabController:
     def handle_storage_full(self):
         """Pause extraction while preserving the sample in the lab output."""
         if not self.inventory_full_notified:
-            print(f"[{self.name}] WARNING: local storage is full. Free space to resume sample extraction.")
+            self.log.level("warn").print(f"[{self.name}] WARNING: local storage is full. Free space to resume sample extraction.")
             try:
                 notify(f"[{self.name}] Storage Full! Free space to resume extraction.", level="warn", duration_seconds=8.0)
             except Exception:
@@ -832,16 +835,16 @@ class BioLabController:
             if collector and collector.cargo is not None:
                 t_res = self.machine.take_from(collector)
                 if t_res.status == "ok":
-                    print(f"[{self.name}] Transferred specimen from collector to lab chamber.")
+                    self.log.print(f"[{self.name}] Transferred specimen from collector to lab chamber.")
             sleep(0.5)
             return
 
         # Stage 1: Analyze
         if specimen.stage == "collected":
-            print(f"[{self.name}] Analyzing specimen...")
+            self.log.print(f"[{self.name}] Analyzing specimen...")
             a_res = self.machine.analyze()
             if a_res.status == "ok":
-                print(f"[{self.name}] Analyzed: {a_res.info.name} ({a_res.info.fragment_id}). Recipe: {a_res.info.required_recipe}")
+                self.log.print(f"[{self.name}] Analyzed: {a_res.info.name} ({a_res.info.fragment_id}). Recipe: {a_res.info.required_recipe}")
                 try:
                     def update_recipes(curr):
                         d = dict(curr or {})
@@ -877,7 +880,7 @@ class BioLabController:
                 my_biome = get_my_biome(self.machine)
                 demand_totals = _bio_demand_totals(self.comms, exchange, my_biome)
                 if demand_totals.get(fragment_id, 0) <= local_stock(fragment_id, outpost):
-                    print(f"[{self.name}] {fragment_id} not needed by any order -- discarding instead of extracting.")
+                    self.log.debug(f"[{self.name}] {fragment_id} not needed by any order -- discarding instead of extracting.")
                     self.machine.discard()
                     sleep(0.5)
                     return
@@ -887,7 +890,7 @@ class BioLabController:
             # Unload wrong reagents
             mismatched = any(r not in recipe or q > recipe.get(r, 0) for r, q in loaded.items())
             if mismatched:
-                print(f"[{self.name}] Unloading mismatched reagents...")
+                self.log.debug(f"[{self.name}] Unloading mismatched reagents...")
                 self.machine.unload_reagents()
                 sleep(0.5)
                 return
@@ -923,12 +926,12 @@ class BioLabController:
                             buy_qty = missing - local_have
                             buy_res = self.shop.buy(reagent_id, buy_qty)
                             if buy_res.status == "ok":
-                                print(f"[{self.name}] Purchased {buy_qty}x {reagent_id} from shop.")
+                                self.log.print(f"[{self.name}] Purchased {buy_qty}x {reagent_id} from shop.")
                             else:
                                 sleep(1.0)
                                 break
                         else:
-                            print(f"[{self.name}] Waiting on {reagent_id} resupply ({local_have}/{missing} on hand locally).")
+                            self.log.level("warn").print(f"[{self.name}] Waiting on {reagent_id} resupply ({local_have}/{missing} on hand locally).")
                             sleep(2.0)
                             break
 
@@ -939,11 +942,11 @@ class BioLabController:
                     break
 
             if not needs_loading:
-                print(f"[{self.name}] Extracting sample for {specimen.fragment_id}...")
+                self.log.print(f"[{self.name}] Extracting sample for {specimen.fragment_id}...")
                 ext_res = self.machine.extract()
                 if ext_res.status == "ok":
                     sample_id = specimen.fragment_id
-                    print(f"[{self.name}] Extracted sample: {sample_id}!")
+                    self.log.print(f"[{self.name}] Extracted sample: {sample_id}!")
                     if not processor_idle:
                         self._wait_for_processor()
                         return
@@ -958,7 +961,7 @@ class BioLabController:
                             pass
 
     def run(self):
-        print(f"Bio Lab ({self.name}) online via Shared Library & Signal Bus.")
+        self.log.print(f"Bio Lab ({self.name}) online via Shared Library & Signal Bus.")
         validate_game_version()
         while True:
             self.step()
@@ -977,6 +980,7 @@ class BioCollectorController:
         self.name = getattr(machine, "id", "bio_collector")
         self.comms = get_component("comms")
         self.pending_analysis = set()
+        self.log = TreeConsole(module="bio")
 
     def coord_key(self, c):
         return (round(c[0], 2), round(c[1], 2))
@@ -1044,13 +1048,13 @@ class BioCollectorController:
             for loc in locations:
                 if loc.cataloged and loc.fragment_id in needed_fragments and loc.fragment_id in preferred_fragments:
                     target_coords = loc.coords
-                    print(f"[{self.name}] Harvesting needed specimen (current order): {loc.fragment_id} at {loc.coords}")
+                    self.log.print(f"[{self.name}] Harvesting needed specimen (current order): {loc.fragment_id} at {loc.coords}")
                     break
             if target_coords is None:
                 for loc in locations:
                     if loc.cataloged and loc.fragment_id in needed_fragments:
                         target_coords = loc.coords
-                        print(f"[{self.name}] Harvesting needed specimen (other order): {loc.fragment_id} at {loc.coords}")
+                        self.log.print(f"[{self.name}] Harvesting needed specimen (other order): {loc.fragment_id} at {loc.coords}")
                         break
 
         # Priority 2: Uncataloged discovery (strictly throttled)
@@ -1062,7 +1066,7 @@ class BioCollectorController:
                     if not loc.cataloged and self.coord_key(loc.coords) not in self.pending_analysis:
                         target_coords = loc.coords
                         self.pending_analysis.add(self.coord_key(loc.coords))
-                        print(f"[{self.name}] Harvesting uncataloged fragment at {loc.coords} (discovery)")
+                        self.log.print(f"[{self.name}] Harvesting uncataloged fragment at {loc.coords} (discovery)")
                         break
 
         if target_coords:
@@ -1075,7 +1079,7 @@ class BioCollectorController:
             sleep(2.0)
 
     def run(self):
-        print(f"Bio Collector ({self.name}) online via Shared Library & Signal Bus.")
+        self.log.print(f"Bio Collector ({self.name}) online via Shared Library & Signal Bus.")
         validate_game_version()
         while True:
             self.step()

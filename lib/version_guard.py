@@ -60,8 +60,8 @@ def validate_game_version():
     if not version_mismatch():
         return
 
-    tree = TreeConsole()
-    tree.level("warn").print(
+    log = TreeConsole(module="version_guard")
+    log.level("warn").print(
         f"Game version changed ({good_version()} -> {get_game_version()}); "
         f"halted until confirmed on panel_1's AUTOMATION card."
     )
@@ -71,4 +71,4 @@ def validate_game_version():
             comms.wait_broadcast(VERSION_CONFIRMED_CHANNEL)
         else:
             sleep(POLL_FALLBACK_SECONDS)
-    tree.print(f"Version confirmed ({get_game_version()}); resuming.")
+    log.print(f"Version confirmed ({get_game_version()}); resuming.")

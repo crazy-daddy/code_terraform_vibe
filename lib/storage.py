@@ -13,6 +13,10 @@
 # Everything here defaults to the home outpost, matching how Inventory itself
 # only participates at Nocturna Base (docs/components/inventory.md).
 
+from tree_console import TreeConsole
+
+log = TreeConsole(module="storage")
+
 STORAGE_TYPE_IDS = ("warehouse", "large_warehouse")
 
 # "inventory manager" sweep: an item spanning more than this many Inventory
@@ -331,7 +335,7 @@ def consolidate_cross_warehouse_stock(outpost=None):
         moved = getattr(res, "moved", 0) or 0
         if moved > 0:
             moved_total += moved
-            print(f"[storage] Compacted {moved} unit(s) into Warehouse '{building['id']}'.")
+            log.print(f"[storage] Compacted {moved} unit(s) into Warehouse '{building['id']}'.")
     return moved_total
 
 
@@ -520,7 +524,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
             moved = getattr(res, "moved", 0) or 0
             if moved > 0:
                 remaining -= moved
-                print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{building['id']}' ({slot_count} Inventory slots occupied).")
+                log.print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{building['id']}' ({slot_count} Inventory slots occupied).")
 
         if remaining <= 0:
             continue
@@ -528,7 +532,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
         # 2. Swap fallback: no Warehouse had any room at all for this item.
         occupant = _cheapest_warehouse_occupant(item_id, outpost)
         if not occupant:
-            print(f"[storage] Could not clear {remaining}x {item_id} from Inventory this cycle: no Warehouse has room, and no Warehouse holds anything to evict in its place.")
+            log.level("warn").print(f"[storage] Could not clear {remaining}x {item_id} from Inventory this cycle: no Warehouse has room, and no Warehouse holds anything to evict in its place.")
             continue
         warehouse_id, occupant_item, occupant_qty = occupant
 
@@ -542,7 +546,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
         slots_freed = -(-remaining // stack_size)  # ceil division
         slots_reclaimed = -(-occupant_qty // stack_size)  # ceil division
         if slots_freed <= slots_reclaimed:
-            print(f"[storage] Skipping swap for {item_id}: evicting {occupant_qty}x {occupant_item} would cost {slots_reclaimed} Inventory slot(s) to reclaim only {slots_freed}.")
+            log.level("warn").print(f"[storage] Skipping swap for {item_id}: evicting {occupant_qty}x {occupant_item} would cost {slots_reclaimed} Inventory slot(s) to reclaim only {slots_freed}.")
             continue
 
         warehouse_component = next((b["component"] for b in warehouses if b["id"] == warehouse_id), None)
@@ -554,9 +558,9 @@ def rebalance_inventory_to_warehouses(outpost=None):
             continue
         evicted = getattr(evict_res, "moved", 0) or 0
         if evicted <= 0:
-            print(f"[storage] Swap for {item_id} did not go through: evicting {occupant_qty}x {occupant_item} from Warehouse '{warehouse_id}' moved 0 units ({getattr(evict_res, 'status', '?')}).")
+            log.level("warn").print(f"[storage] Swap for {item_id} did not go through: evicting {occupant_qty}x {occupant_item} from Warehouse '{warehouse_id}' moved 0 units ({getattr(evict_res, 'status', '?')}).")
             continue
-        print(f"[storage] Evicted {evicted}x {occupant_item} from Warehouse '{warehouse_id}' back to Inventory to free a slot (frees {slots_freed} vs costs {slots_reclaimed}).")
+        log.print(f"[storage] Evicted {evicted}x {occupant_item} from Warehouse '{warehouse_id}' back to Inventory to free a slot (frees {slots_freed} vs costs {slots_reclaimed}).")
 
         try:
             space = warehouse_component.space_for(item_id)
@@ -564,7 +568,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
             space = 0
         amount = min(remaining, space)
         if amount <= 0:
-            print(f"[storage] Freed a slot in Warehouse '{warehouse_id}' but it still reports no room for {item_id} -- skipping this cycle.")
+            log.level("warn").print(f"[storage] Freed a slot in Warehouse '{warehouse_id}' but it still reports no room for {item_id} -- skipping this cycle.")
             continue
         try:
             res = inventory.transfer_to(warehouse_id, item_id, amount)
@@ -573,4 +577,4 @@ def rebalance_inventory_to_warehouses(outpost=None):
         moved = getattr(res, "moved", 0) or 0
         if moved > 0:
             remaining -= moved
-            print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{warehouse_id}' after swap.")
+            log.print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{warehouse_id}' after swap.")

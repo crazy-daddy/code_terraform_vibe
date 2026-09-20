@@ -1,3 +1,4 @@
+from tree_console import TreeConsole
 from version_guard import validate_game_version
 
 # Shared Library for Solar Generator Automation
@@ -18,6 +19,7 @@ class SolarController:
         self.machine = machine
         self.name = getattr(machine, "id", "solar")
         self.clock = clock or get_component("clock")
+        self.log = TreeConsole(module="solar")
 
     def track_sun(self):
         """Adjusts tilt angle based on current sun elevation."""
@@ -30,7 +32,7 @@ class SolarController:
         self.track_sun()
 
     def run(self, poll_interval=1.0):
-        print(f"Solar Tracker ({self.name}) online via Shared Library.")
+        self.log.print(f"Solar Tracker ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             self.step()

@@ -4,6 +4,7 @@
 # deduplicates survey waypoints, and prunes stale telemetry.
 
 from archive import archive
+from tree_console import TreeConsole
 
 # Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
 CLAIM_STALE_TICKS = 36000
@@ -54,6 +55,7 @@ class ArchiveCleaner:
         self.dry_run = dry_run
         self.verbose = verbose
         self.log_messages = []
+        self.console = TreeConsole(module="archive_cleaner")
         self.stats = {
             "keys_scanned": 0,
             "claims_checked": 0,
@@ -75,7 +77,7 @@ class ArchiveCleaner:
     def log(self, msg):
         self.log_messages.append(msg)
         if self.verbose:
-            print(msg)
+            self.console.print(msg)
 
     def is_available(self):
         return self.archive is not None and getattr(self.archive, "available", False)

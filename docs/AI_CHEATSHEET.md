@@ -100,15 +100,30 @@ import cycle.
 
 ### 0a. Structured Console Logging (`lib/tree_console.py` `TreeConsole`)
 
-Console output works at two levels of detail, both tree-formatted the same way:
+Console output works at three levels of detail, all tree-formatted the same way:
 
 - **Overview (info, always visible)** — major blocks and outcomes, kept beautified and skimmable
   at a glance without opting into anything.
-- **Reasoning trail (debug, opt-in)** — the *why* underneath: which branch a decision took, what
-  candidates were considered/rejected, what a computed threshold or estimate came out to. Hidden
-  from the normal ALL view (`docs/components/console.md`'s `console.debug()`), so it doesn't spam
-  players who haven't opted in, but reading it with debug output enabled should tell the whole
-  story of a run without reaching for the in-game breakpoint/watch debugger (`§8`).
+- **Reasoning trail (debug, opt-in, always written)** — the *why* underneath: which branch a
+  decision took, what candidates were considered/rejected, what a computed threshold or estimate
+  came out to. Hidden from the normal ALL view (`docs/components/console.md`'s
+  `console.debug()`), so it doesn't spam players who haven't opted in, but cheap enough to leave
+  on in most `lib/` files — reading it with debug output enabled should tell the whole story of a
+  run without reaching for the in-game breakpoint/watch debugger (`§8`).
+- **Trace (opt-in per module, gated before it ever reaches `console`)** — genuinely high-volume
+  noise: method entry/exit, per-item loop detail. `TreeConsole.trace()` is a true no-op (no
+  `console` call, no disk write) unless `TreeConsole(module=...)`'s module is listed `"verbose"`
+  in the `console.log_levels` archive dict (`{module_name: "normal"|"verbose"}`, default
+  `"normal"`). The level is read once at construction — restart the script after editing the
+  archive key via the Data Archive Notebook, it does not re-check per tick. `module` must be
+  passed explicitly (the sandbox has no `inspect`/frame introspection to auto-detect a caller);
+  by convention use the `lib/` filename without extension (e.g. `"power"`, `"vehicle_energy"`).
+  This is what actually gets sprinkled liberally across most files per the workflow rule on
+  debug logging, without `debug()`'s always-on cost applying to it too. When it does fire, it
+  still emits at **debug** level (not a custom `"trace"` badge) — `docs/components/console.md`'s
+  `console.print()` only treats `info`/`warn`/`error`/`debug` as filter-feeding; any other string
+  is a colored badge shown in the normal ALL view, which would defeat the whole point of gating
+  this as opt-in output.
 
 `lib/tree_console.py`'s `TreeConsole` wraps `get_component("console")` with tree-drawn
 indentation (inspired by `inspirations/discord-panels/`) so both levels read like a call stack
@@ -117,16 +132,21 @@ instead of a flat scroll:
 ```python
 from tree_console import TreeConsole
 
-rc = TreeConsole()  # default_level="info"; grabs get_component("console") itself
+# Create once in __init__ (or once before a run_*_loop()'s `while True:`), store as
+# self.log — never re-construct per call/per tick, since __init__ reads the
+# console.log_levels archive dict. Variable/attribute name is `log`, not `tree`
+# (the tree-drawing is just formatting, `log` is what it's used for).
+self.log = TreeConsole(module="power")  # default_level="info"; grabs get_component("console") itself
 
-rc.start("Creating tasks")                              # info: visible overview
+self.log.start("Creating tasks")                              # info: visible overview
 for task_type in candidates:
-    rc.debug(f"Considering {task_type.__name__}: score={score:.2f}")  # debug: reasoning trail
-    rc.print(f"Creating task {task_type.__name__}")      # info: outcome
-rc.end("Task creation success")
+    self.log.trace(f"Evaluating candidate {task_type.__name__}")  # trace: no-op unless "power" is "verbose"
+    self.log.debug(f"Considering {task_type.__name__}: score={score:.2f}")  # debug: reasoning trail
+    self.log.print(f"Creating task {task_type.__name__}")      # info: outcome
+self.log.end("Task creation success")
 
-rc.color("#FF0000").end("Task creation failed")          # one-off color override, next line only
-rc.level("warn").print("Battery below safety floor, aborting trip")  # one-off level override
+self.log.color("#FF0000").end("Task creation failed")          # one-off color override, next line only
+self.log.level("warn").print("Battery below safety floor, aborting trip")  # one-off level override
 ```
 
 - `start(msg)` / `end(msg)` open/close a block, printing a `┏━`/`┗━` line and indenting
@@ -134,14 +154,25 @@ rc.level("warn").print("Battery below safety floor, aborting trip")  # one-off l
 - `print(msg)` logs one line at the current indent depth, at `default_level` (info) unless
   overridden with `.level(...)`.
 - `debug(msg)` is shorthand for `.level("debug").print(msg)` — the in-depth, opt-in reasoning
-  trail, nested under the info-level blocks that describe what actually happened.
+  trail, nested under the info-level blocks that describe what actually happened. Always written.
+- `trace(msg)` is the same shape at **debug** level (not a custom `"trace"` badge — see above),
+  but short-circuits before calling `console` at all unless the `module=` passed to
+  `TreeConsole(...)` is `"verbose"` in `console.log_levels` (default `"normal"` if `module` is
+  omitted or unlisted). Use it for method entry/exit and per-item loop noise you want available
+  during an active debugging session but not paying for otherwise.
+- **Convention going forward**: construct one `TreeConsole` per controller instance, in
+  `__init__` (or once before a `run_*_loop()`'s `while True:` for a bare function, not inside
+  it), and store it as `self.log`/`log` — never re-construct it per call or per tick, since
+  `__init__` reads the `console.log_levels` archive dict. Name the variable/attribute `log`
+  (not `tree` — the tree-drawing is just formatting, `log` names what it's actually for).
 - `color(c)` / `level(lvl)` set a one-shot override (CSS color / `info`\|`warn`\|`error`\|`debug`\|
-  custom) consumed by the *next* `print`/`start`/`end`/`debug` call only, then reset to the
-  instance default.
+  custom) consumed by the *next* `print`/`start`/`end`/`debug`/`trace` call only, then reset to
+  the instance default.
 - Every line still goes through `console.print(..., timestamp=True)`, so it keeps the game
   time-of-day prefix and plays correctly with the Console's channel/level filters.
 - Reserve plain `warn`/`error` for actual status changes a player should notice even without
-  debug output; `debug()` is purely for detail, never for something that needs attention.
+  debug output; `debug()`/`trace()` are purely for detail, never for something that needs
+  attention.
 
 ---
 
@@ -1215,7 +1246,7 @@ the same pattern later.
 - `fleet.status.<id>` / `rover.status.<id>`: Telemetry `{name, state, x, y, wh, level, target, tick}`
 - `rover.claims` / `survey.claims` (mirrored, legacy + current key): Atomic target reservation dict `{target_key: {"vehicle": id, "tick": tick}}`. Stale after `CLAIM_STALE_TICKS = 36,000` ticks (1 hr) — see `lib/vehicle_claims.py`. No longer exclusivity-gates mineral mining sites (see `mining.reserved_yield` below); still exclusive for survey/POI targets (key prefix `"poi_"`) and construction jobs (key prefix `"build_"`, `PioneerController.construction_claim_key()`, see §2a's construction-job-claims entry).
 - `mining.reserved_yield`: Non-exclusive in-flight mining yield dict `{reservation_key: {"vehicle": id, "item_id": str, "units": int, "tick": tick}}`, home-demand mine-type missions only. Stale after `RESERVATION_STALE_TICKS = 36,000` ticks (same window as claims) — see `lib/mining_reservations.py`.
-- `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`.
+- `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`. Populated per-contact from `SonarScanResult.blocked` (`docs/types/fleet_and_vehicles.md` `BlockedContact`: `.x`/`.y`/`.reason`/`.message`), not from `scan()`'s own top-level `.status` — a wide/deep sonar sweep covers several "?" contacts at once, and `.status` is one verdict for the WHOLE sweep (`"ok"` as soon as any contact in range resolves, even if others in the same sweep stayed blocked), so reading only `.status` silently drops every blocked contact except when nothing at all resolved. `scan_and_survey()` (`lib/vehicle_survey.py`) iterates `res.blocked` and blacklists each contact by its own coordinates instead.
 - `heat.optimal_setpoints`: Caching `{thermal_state: best_power}`
 - `pressure.optimal_resonance`: Caching `{resonance_state: best_window}`
 - `fabricator.manual_orders`: `{item_id: quantity}` ad-hoc Fabricator build requests, edited directly

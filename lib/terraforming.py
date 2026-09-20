@@ -4,6 +4,7 @@
 
 from archive import archive
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 class HeatController:
     """
@@ -18,6 +19,7 @@ class HeatController:
         self.learned_optimal = archive.get("heat.optimal_setpoints", {})
         self.last_day = None
         self.last_state = None
+        self.log = TreeConsole(module="terraforming")
 
     def step(self):
         current_day = self.clock.get_day() if self.clock else None
@@ -30,7 +32,7 @@ class HeatController:
             if current_state in self.learned_optimal:
                 best_p = self.learned_optimal[current_state]
                 self.machine.set_power(best_p)
-                print(f"[{self.name}] Applied cached power {best_p} W for '{current_state}' (Eff: {self.machine.efficiency():.0f}%, {self.machine.output():.3f} heat/h)")
+                self.log.print(f"[{self.name}] Applied cached power {best_p} W for '{current_state}' (Eff: {self.machine.efficiency():.0f}%, {self.machine.output():.3f} heat/h)")
             else:
                 best_p = 5
                 best_eff = -1
@@ -45,10 +47,10 @@ class HeatController:
                 self.machine.set_power(best_p)
                 self.learned_optimal[current_state] = best_p
                 archive.set("heat.optimal_setpoints", self.learned_optimal)
-                print(f"[{self.name}] Calibrated '{current_state}': {best_p} W ({best_eff:.0f}% eff, {self.machine.output():.3f} heat/h) [Saved to Data Archive]")
+                self.log.print(f"[{self.name}] Calibrated '{current_state}': {best_p} W ({best_eff:.0f}% eff, {self.machine.output():.3f} heat/h) [Saved to Data Archive]")
 
     def run(self, poll_interval=2.0):
-        print(f"Heat Generator ({self.name}) online via Shared Library.")
+        self.log.print(f"Heat Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             self.step()
@@ -66,6 +68,7 @@ class PressureController:
         self.name = getattr(machine, "id", "pressure")
         self.synced_this_sweep = False
         self.last_gauge = self.machine.gauge()
+        self.log = TreeConsole(module="terraforming")
 
     def step(self):
         gauge = self.machine.gauge()
@@ -85,12 +88,12 @@ class PressureController:
             if res.status == "ok":
                 self.synced_this_sweep = True
                 eff = self.machine.efficiency()
-                print(f"[{self.name}] Sync hit! Gauge: {gauge:.1f} in [{low:.1f}, {high:.1f}] -> Eff: {eff:.0f}%, Output: {self.machine.output():.4f} kPa/h")
+                self.log.print(f"[{self.name}] Sync hit! Gauge: {gauge:.1f} in [{low:.1f}, {high:.1f}] -> Eff: {eff:.0f}%, Output: {self.machine.output():.4f} kPa/h")
             elif res.status != "busy":
-                print(f"[{self.name}] Sync status:", res.status, "-", res.message)
+                self.log.level("warn").print(f"[{self.name}] Sync status: {res.status} - {res.message}")
 
     def run(self, poll_interval=0.1):
-        print(f"Pressure Generator ({self.name}) online via Shared Library.")
+        self.log.print(f"Pressure Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             self.step()
@@ -107,6 +110,7 @@ class OxygenController:
         self.machine = machine
         self.atmo = atmo or get_component("atmosphere")
         self.name = getattr(machine, "id", "o2gen")
+        self.log = TreeConsole(module="terraforming")
 
     def step(self):
         if self.atmo:
@@ -118,10 +122,10 @@ class OxygenController:
         if current_waste >= 50:
             res = self.machine.dump_waste()
             penalty = getattr(res, "penalty", 0.0)
-            print(f"[{self.name}] Dumped waste at {current_waste:.1f}. Penalty: {penalty}")
+            self.log.print(f"[{self.name}] Dumped waste at {current_waste:.1f}. Penalty: {penalty}")
 
     def run(self, poll_interval=1.0):
-        print(f"Oxygen Generator ({self.name}) online via Shared Library.")
+        self.log.print(f"Oxygen Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             self.step()

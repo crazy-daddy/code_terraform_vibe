@@ -71,7 +71,7 @@ class VehicleNavigationMixin:
         3. Stall / obstacle detection.
         """
         if not hasattr(self.vehicle, "nav"):
-            print(f"[{self.name}] Error: No NavModule mounted!")
+            self.log.level("error").print(f"[{self.name}] Error: No NavModule mounted!")
             return False
 
         start_pos = self.get_position()
@@ -85,7 +85,7 @@ class VehicleNavigationMixin:
         throttle = self.select_cruise_throttle(target_x, target_y)
         if timeout_ticks is None:
             timeout_ticks = self.drive_timeout_ticks(self.distance_between(start_pos, (target_x, target_y)), throttle)
-        print(f"[{self.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self.cruise_throttle*100:.0f}%).")
+        self.log.print(f"[{self.name}] Driving to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self.cruise_throttle*100:.0f}%).")
 
         # Destination itself is a charging station/base slot: the return-reserve
         # abort check below must never apply here, or the vehicle could abort its
@@ -100,12 +100,12 @@ class VehicleNavigationMixin:
         # Set target and engage throttle
         res = self.vehicle.nav.set_target(target_x, target_y)
         if res.status != "ok":
-            print(f"[{self.name}] Nav set_target rejected: {res.status} - {res.message}")
+            self.log.level("warn").print(f"[{self.name}] Nav set_target rejected: {res.status} - {res.message}")
             return False
 
         t_res = self.vehicle.nav.set_throttle(throttle)
         if t_res.status != "ok":
-            print(f"[{self.name}] Nav set_throttle rejected: {t_res.status} - {t_res.message}")
+            self.log.level("warn").print(f"[{self.name}] Nav set_throttle rejected: {t_res.status} - {t_res.message}")
             self.vehicle.nav.brake()
             return False
 
@@ -116,7 +116,7 @@ class VehicleNavigationMixin:
 
             if hasattr(self.vehicle, "is_being_rescued") and self.vehicle.is_being_rescued():
                 self.vehicle.nav.brake()
-                print(f"[{self.name}] Rescue in progress; navigation suspended.")
+                self.log.level("warn").print(f"[{self.name}] Rescue in progress; navigation suspended.")
                 return False
 
             # Skipped when driving to the station/base itself, same reasoning as the
@@ -124,7 +124,7 @@ class VehicleNavigationMixin:
             # it is asking for, or the vehicle deadlocks aborting its own recall.
             if self.is_recalled() and not is_driving_to_station:
                 self.vehicle.nav.brake()
-                print(f"[{self.name}] Recall requested mid-trip; aborting to return to base.")
+                self.log.level("warn").print(f"[{self.name}] Recall requested mid-trip; aborting to return to base.")
                 return False
 
             curr_pos = self.get_position()
@@ -144,7 +144,7 @@ class VehicleNavigationMixin:
             if not is_driving_to_station and self.distance_between(curr_pos, nearest_cs) > 3.0:
                 energy_needed = self.energy_needed_to_return_now()
                 if curr_wh <= energy_needed:
-                    print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest station at {nearest_cs}). Aborting trip!")
+                    self.log.level("warn").print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest station at {nearest_cs}). Aborting trip!")
                     self.vehicle.nav.brake()
                     return False
 
@@ -161,13 +161,13 @@ class VehicleNavigationMixin:
                 if stalled_cycles >= 8:
                     stall_recoveries += 1
                     if stall_recoveries > 3:
-                        print(f"[{self.name}] Stall recovery failed {stall_recoveries - 1} times at {curr_pos}; giving up to avoid draining the battery further.")
+                        self.log.level("warn").print(f"[{self.name}] Stall recovery failed {stall_recoveries - 1} times at {curr_pos}; giving up to avoid draining the battery further.")
                         self.vehicle.nav.brake()
                         return False
                     # Drop to the floor throttle on retry to minimize further drain
                     # while stuck (and sometimes a gentler approach clears the obstacle).
                     throttle = self.MIN_SPEEDMODE_THROTTLE
-                    print(f"[{self.name}] Vehicle appears stalled/stuck at {curr_pos}. Re-issuing drive command at {throttle*100:.0f}% throttle (attempt {stall_recoveries}/3).")
+                    self.log.level("warn").print(f"[{self.name}] Vehicle appears stalled/stuck at {curr_pos}. Re-issuing drive command at {throttle*100:.0f}% throttle (attempt {stall_recoveries}/3).")
                     self.vehicle.nav.brake()
                     sleep(0.5)
                     self.vehicle.nav.set_target(target_x, target_y)
@@ -179,7 +179,7 @@ class VehicleNavigationMixin:
 
             last_pos = curr_pos
 
-        print(f"[{self.name}] Navigation timed out after {timeout_ticks} ticks.")
+        self.log.level("warn").print(f"[{self.name}] Navigation timed out after {timeout_ticks} ticks.")
         self.vehicle.nav.brake()
         return False
 
@@ -231,10 +231,10 @@ class VehicleNavigationMixin:
             if best_station:
                 st_coords = best_station["coords"]
                 st_id = best_station.get("id", "station")
-                print(f"[{self.name}] Destination ({target_x:.1f}, {target_y:.1f}) exceeds direct battery ({curr_wh:.1f} Wh < {total_required:.1f} Wh). Stopping at intermediate station '{st_id}' at {st_coords} to recharge.")
+                self.log.print(f"[{self.name}] Destination ({target_x:.1f}, {target_y:.1f}) exceeds direct battery ({curr_wh:.1f} Wh < {total_required:.1f} Wh). Stopping at intermediate station '{st_id}' at {st_coords} to recharge.")
                 reached = self.drive_to(st_coords[0], st_coords[1], precision=1.0)
                 if not reached:
-                    print(f"[{self.name}] Failed to reach intermediate station '{st_id}'.")
+                    self.log.level("warn").print(f"[{self.name}] Failed to reach intermediate station '{st_id}'.")
                     return False
                 self.recharge_at_station(target_level=1.0, station_coords=st_coords, station_id=best_station.get("id"))
                 stops += 1
@@ -243,7 +243,7 @@ class VehicleNavigationMixin:
                 nearest_cs, n_info = self.get_nearest_charging_station()
                 dist_near_cs = self.distance_between(curr_pos, nearest_cs)
                 if dist_near_cs > 2.0 and curr_wh < (cap_wh * 0.90):
-                    print(f"[{self.name}] Topping off at nearest station '{n_info.get('id', 'station')}' before proceeding.")
+                    self.log.print(f"[{self.name}] Topping off at nearest station '{n_info.get('id', 'station')}' before proceeding.")
                     reached = self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
                     if reached:
                         self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
@@ -259,7 +259,7 @@ class VehicleNavigationMixin:
         self.publish_telemetry("RETURNING_HOME")
         slot_x, slot_y = self.get_home_slot_coords()
         self.assigned_slot_coords = (slot_x, slot_y)
-        print(f"[{self.name}] Returning to base slot ({slot_x:.1f}, {slot_y:.1f})...")
+        self.log.print(f"[{self.name}] Returning to base slot ({slot_x:.1f}, {slot_y:.1f})...")
         reached = self.drive_with_recharge(slot_x, slot_y, precision=1.0)
 
         if self.current_target_key:
@@ -271,7 +271,7 @@ class VehicleNavigationMixin:
         """Drives to the nearest charging station in the network to recharge."""
         st_coords, st_info = self.get_nearest_charging_station()
         st_id = st_info.get("id", "charging_station")
-        print(f"[{self.name}] Heading to nearest charging station '{st_id}' at {st_coords}...")
+        self.log.print(f"[{self.name}] Heading to nearest charging station '{st_id}' at {st_coords}...")
         self.publish_telemetry("RETURNING_TO_STATION")
         reached = self.drive_to(st_coords[0], st_coords[1], precision=1.0)
         return reached

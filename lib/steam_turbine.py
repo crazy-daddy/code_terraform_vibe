@@ -1,5 +1,6 @@
 import fluid_routing
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid
@@ -63,6 +64,7 @@ class SteamTurbineController:
         self.name = getattr(turbine, "id", "steam_turbine")
         self.clock = get_component("clock")
         self.power = get_component("power_control")
+        self.log = TreeConsole(module="steam_turbine")
         self.connected_input = False
         # connect()'s "ok" status only means the pairing was logically
         # accepted -- it never verifies a completed Gas Pipe route actually
@@ -148,7 +150,7 @@ class SteamTurbineController:
                 pass
             if current_id:
                 self.blacklist.blacklist(current_id, curr_tick)
-                print(f"[{self.name}] '{current_id}' stalled for {self.stall_streak} consecutive ticks -- likely no completed Gas Pipe route (not just vent dormancy). Blacklisting and picking a different source.")
+                self.log.level("warn").print(f"[{self.name}] '{current_id}' stalled for {self.stall_streak} consecutive ticks -- likely no completed Gas Pipe route (not just vent dormancy). Blacklisting and picking a different source.")
             self.connected_input = False
             self.stall_streak = 0
 
@@ -162,7 +164,7 @@ class SteamTurbineController:
             # once would reintroduce the exact ping-pong bug per-entry expiry
             # fixes (see RESCAN_INTERVAL_TICKS).
             if all_known_candidates:
-                print(f"[{self.name}] Every known source is still within its blacklist window; waiting for one to expire.")
+                self.log.debug(f"[{self.name}] Every known source is still within its blacklist window; waiting for one to expire.")
             return
 
         for source_id in candidates:
@@ -172,10 +174,10 @@ class SteamTurbineController:
                 continue
             if res.status == "ok":
                 self.connected_input = True
-                print(f"[{self.name}] Connected steam_in -> '{source_id}'.")
+                self.log.print(f"[{self.name}] Connected steam_in -> '{source_id}'.")
                 return
             elif res.status != "busy":
-                print(f"[{self.name}] steam_in connect notice for '{source_id}': {res.status} - {res.message}")
+                self.log.level("warn").print(f"[{self.name}] steam_in connect notice for '{source_id}': {res.status} - {res.message}")
 
     def buffer_fraction(self):
         """Fraction (0-1) of steam_in's own buffer currently filled."""
@@ -246,14 +248,14 @@ class SteamTurbineController:
             self.turbine.set_throttle(throttle)
 
         if hasattr(self.turbine, "is_stalled") and self.turbine.is_stalled():
-            print(f"[{self.name}] Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")
+            self.log.level("warn").print(f"[{self.name}] Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")
 
     def run(self, poll_interval=2.0):
-        print(f"Steam Turbine Controller ({self.name}) online.")
+        self.log.print(f"Steam Turbine Controller ({self.name}) online.")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as error:
-                print(f"[{self.name}] Steam Turbine exception: {error}")
+                self.log.level("error").print(f"[{self.name}] Steam Turbine exception: {error}")
             sleep(poll_interval)

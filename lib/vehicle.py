@@ -15,6 +15,7 @@
 #     rather than duplicated between rover.py and pioneer.py
 
 from archive import archive
+from tree_console import TreeConsole
 from vehicle_navigation import VehicleNavigationMixin
 from vehicle_energy import VehicleEnergyMixin
 from vehicle_claims import VehicleClaimsMixin
@@ -86,6 +87,11 @@ class VehicleController(
         self.total_distance_driven = 0.0
         self.total_wh_spent_moving = 0.0
 
+        # Created once here (not per-call in vehicle_survey.py's scan_and_survey()/
+        # unscanned_pois(), which both run every survey cycle) since TreeConsole.__init__
+        # reads the console.log_levels archive dict -- see docs/AI_CHEATSHEET.md #0a.
+        self.log = TreeConsole(module="vehicle_survey")
+
         # State tracking
         self.state = "INIT"
         self.current_target = None
@@ -103,7 +109,7 @@ class VehicleController(
         # if we still own that target's claim (see vehicle_claims.py).
         resumed = self.load_mission()
         if resumed:
-            print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+            self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
             if resumed.get("kind") == "mine":
                 self.restore_yield_reservation_flag()
 

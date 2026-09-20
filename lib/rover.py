@@ -75,7 +75,7 @@ class RoverController(VehicleController):
         # script reload takes priority over discovery, so the rover continues
         # toward the same destination instead of restarting the search.
         if self.current_target_key and self.current_target and self.current_target.get("coords"):
-            print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
+            self.log.print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
             is_mine = self.current_target.get("type") == "mine"
             budget = self.calculate_trip_energy(
                 self.current_target["coords"],
@@ -124,7 +124,7 @@ class RoverController(VehicleController):
         if self.is_at_base():
             curr_wh, cap_wh, lvl = self.get_battery()
             if lvl < 0.95:
-                print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
+                self.log.print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                 self.recharge_at_station(target_level=1.0)
 
         # A target restored from a saved mission after a script reload (see
@@ -144,7 +144,7 @@ class RoverController(VehicleController):
         # resumed target itself is untouched (current_target_key stays set),
         # so Step 3 still resumes it right after, just with clean cargo.
         if has_resumable_target and not self.cargo_matches_target(self.current_target):
-            print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
+            self.log.print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
             has_resumable_target = False
 
         # Step 2: Ensure cargo is empty before launch. "inventory" is only a
@@ -155,9 +155,9 @@ class RoverController(VehicleController):
         # attempting the transfer from wherever the vehicle currently stands.
         if not has_resumable_target and self.vehicle.cargo.count() > 0:
             if not self.is_at_base():
-                print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
+                self.log.print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
                 if not self.return_to_base():
-                    print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                    self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
                     sleep(5.0)
                     return
             if self.unload_cargo() < 0:
@@ -177,26 +177,26 @@ class RoverController(VehicleController):
                 reason = "matching targets exist but none fit the round-trip battery budget"
             else:
                 reason = f"targets blocked by active claims ({diagnostics.get('claim_count', 0)} claims)"
-            print(f"[{self.name}] No mission target: {reason}. Standing by at base slot.")
+            self.log.level("warn").print(f"[{self.name}] No mission target: {reason}. Standing by at base slot.")
             self.publish_telemetry("IDLE_AT_BASE")
             sleep(10.0)
             return
 
         coords = target["coords"]
         if target["type"] == "mine":
-            print(
+            self.log.print(
                 f"[{self.name}] Reserved {target['name']} to harvest "
                 f"{target['harvest_item']} for {target['reason']} at {coords} "
                 f"(Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
             )
         else:
-            print(f"[{self.name}] Reserved target '{target['name']}' at {coords} (Est. trip cost: {budget['total_required_wh']:.1f} Wh).")
+            self.log.print(f"[{self.name}] Reserved target '{target['name']}' at {coords} (Est. trip cost: {budget['total_required_wh']:.1f} Wh).")
         self.publish_telemetry("OUTBOUND", target["name"])
 
         # Step 4: Drive to target (using intermediate recharge stops if needed)
         reached = self.drive_with_recharge(coords[0], coords[1])
         if not reached:
-            print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
+            self.log.level("warn").print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
             self.return_to_base()
             return
 
@@ -211,7 +211,7 @@ class RoverController(VehicleController):
         # unload_cargo() requires actually being at the home outpost's
         # service area, and will just fail with "not_at_target" otherwise.
         if not self.return_to_base():
-            print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+            self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
             sleep(5.0)
             return
 
@@ -231,11 +231,11 @@ class RoverController(VehicleController):
             return
         self.recharge_at_station(target_level=1.0)
         self.publish_telemetry("READY_AT_BASE")
-        print(f"[{self.name}] Expedition complete and rover secured at base.")
+        self.log.print(f"[{self.name}] Expedition complete and rover secured at base.")
 
     def run(self):
         """Continuous autonomous rover mission loop."""
-        print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
+        self.log.print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         validate_game_version()
         while True:
             try:
@@ -244,7 +244,7 @@ class RoverController(VehicleController):
                     continue
                 self.run_expedition_cycle()
             except Exception as e:
-                print(f"[{self.name}] Mission exception: {e}. Executing emergency failsafe brake.")
+                self.log.level("error").print(f"[{self.name}] Mission exception: {e}. Executing emergency failsafe brake.")
                 try:
                     self.vehicle.nav.brake()
                 except Exception:

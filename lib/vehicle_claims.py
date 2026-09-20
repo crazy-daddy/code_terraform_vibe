@@ -127,7 +127,7 @@ class VehicleClaimsMixin:
         if self.is_at_base():
             self.publish_telemetry("RECALLED")
         else:
-            print(f"[{self.name}] Recall active; returning to base.")
+            self.log.print(f"[{self.name}] Recall active; returning to base.")
             self.publish_telemetry("RECALLED")
             self.release_target_claim()
             self.return_to_base()
@@ -334,7 +334,7 @@ class VehicleClaimsMixin:
         archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_UNSUPPORTED_KEY, {}, updater)
         self.release_target_claim(target_key)
-        print(f"[{self.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
+        self.log.print(f"[{self.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
         try:
             notify(f"[{self.name}] Skipped {target_key}: {reason} (req > {scanner_tier} T{hardness_limit})", level="info", duration_seconds=8.0)
         except Exception:

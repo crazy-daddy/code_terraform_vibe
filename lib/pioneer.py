@@ -8,7 +8,6 @@ from archive import archive
 from vehicle import VehicleController
 from mining import ROVER_PREFERRED_MAX_HARDNESS
 from storage import take_item
-from tree_console import TreeConsole
 from version_guard import validate_game_version
 import mining_reservations
 
@@ -47,30 +46,29 @@ class PioneerController(VehicleController):
         when more than one role-defining module is mounted and no override
         was given -- caller must treat that as "cannot start".
         """
-        tree = TreeConsole()
         if role_override is not None:
-            tree.debug(f"[{self.name}] Role override supplied: '{role_override}'; skipping equipment probe.")
+            self.log.debug(f"[{self.name}] Role override supplied: '{role_override}'; skipping equipment probe.")
             return role_override
 
-        tree.start(f"[{self.name}] Detecting role from mounted equipment")
+        self.log.start(f"[{self.name}] Detecting role from mounted equipment")
         present = []
         for role, attr in self.ROLE_MODULES.items():
             mounted = hasattr(self.vehicle, attr)
-            tree.debug(f"{attr} module mounted: {mounted}")
+            self.log.debug(f"{attr} module mounted: {mounted}")
             if mounted:
                 present.append(role)
 
         if len(present) > 1:
-            tree.level("warn").print(
+            self.log.level("warn").print(
                 f"[{self.name}] Multiple role-defining modules mounted ({', '.join(present)}); "
                 f"cannot auto-detect a role. Call run(role_override=...) with one of "
                 f"{list(self.ROLE_MODULES)} + 'hauler' to force a role."
             )
-            tree.end(f"[{self.name}] Role detection failed")
+            self.log.end(f"[{self.name}] Role detection failed")
             return None
 
         role = present[0] if present else "hauler"
-        tree.end(f"[{self.name}] Detected role: '{role}'")
+        self.log.end(f"[{self.name}] Detected role: '{role}'")
         return role
 
     def run(self, dest_outpost_id=None, role_override=None):
@@ -97,11 +95,11 @@ class PioneerController(VehicleController):
             self.run_stationed_mining_loop(self.home_base)
         elif role == "hauler":
             if not dest_outpost_id:
-                print(f"[{self.name}] Hauler role detected but no dest_outpost_id given; cannot start.")
+                self.log.level("warn").print(f"[{self.name}] Hauler role detected but no dest_outpost_id given; cannot start.")
                 return
             self.run_haul_loop(dest_outpost_id=dest_outpost_id)
         else:
-            print(f"[{self.name}] Unknown role '{role}'.")
+            self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
 
     def construction_claim_key(self, job_id):
         """
@@ -152,14 +150,14 @@ class PioneerController(VehicleController):
             try:
                 return self.vehicle.modules()
             except Exception as e:
-                print(f"[{self.name}] Error reading modules: {e}")
+                self.log.level("error").print(f"[{self.name}] Error reading modules: {e}")
         return []
 
     def mount_hardware(self, slot_index, module_item_id):
         """Mounts a module into the specified slot index while at a base/outpost service area."""
         if hasattr(self.vehicle, "mount"):
             res = self.vehicle.mount(slot_index, module_item_id)
-            print(f"[{self.name}] Mount slot {slot_index} -> '{module_item_id}': {res.status} ({res.message})")
+            self.log.print(f"[{self.name}] Mount slot {slot_index} -> '{module_item_id}': {res.status} ({res.message})")
             return res.status == "ok"
         return False
 
@@ -167,7 +165,7 @@ class PioneerController(VehicleController):
         """Unmounts a module from the specified slot index back to inventory."""
         if hasattr(self.vehicle, "unmount"):
             res = self.vehicle.unmount(slot_index)
-            print(f"[{self.name}] Unmount slot {slot_index}: {res.status} ({res.message})")
+            self.log.print(f"[{self.name}] Unmount slot {slot_index}: {res.status} ({res.message})")
             return res.status == "ok"
         return False
 
@@ -187,13 +185,13 @@ class PioneerController(VehicleController):
         because the job is still incomplete and needs another recharge round later.
         """
         if not hasattr(self.vehicle, "constructor"):
-            print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")
+            self.log.level("error").print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")
             return False
 
         if coords:
-            print(f"[{self.name}] Driving to construction site at {coords}...")
+            self.log.print(f"[{self.name}] Driving to construction site at {coords}...")
             if not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
-                print(f"[{self.name}] Could not reach construction site at {coords} safely.")
+                self.log.level("warn").print(f"[{self.name}] Could not reach construction site at {coords} safely.")
                 return False
 
         if hasattr(self.vehicle, "nav"):
@@ -207,14 +205,14 @@ class PioneerController(VehicleController):
             # caller is expected to claim_target() before calling this), so
             # safe to call unconditionally.
             self.refresh_claim(self.construction_claim_key(blueprint_id))
-            print(f"[{self.name}] Executing blueprint '{blueprint_id}'...")
+            self.log.print(f"[{self.name}] Executing blueprint '{blueprint_id}'...")
             self.publish_telemetry("CONSTRUCTING", blueprint_id)
             progress_before = self.get_construction_progress(blueprint_id)
             wh_before, _, _ = self.get_battery()
             res = self.vehicle.constructor.execute(blueprint_id)
             progress_after = self.get_construction_progress(blueprint_id)
             self.calibrate_wh_per_progress(progress_after - progress_before, wh_before - self.get_battery()[0])
-            print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
+            self.log.print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
 
             if res.status == "ok":
                 return True
@@ -222,17 +220,17 @@ class PioneerController(VehicleController):
                 return False  # genuine rejection, not a power issue -- don't keep retrying
 
             if progress_after <= progress_before:
-                print(f"[{self.name}] No progress made this cycle ({res.status}); leaving paused for a later attempt.")
+                self.log.level("warn").print(f"[{self.name}] No progress made this cycle ({res.status}); leaving paused for a later attempt.")
                 return True
 
-            print(f"[{self.name}] Construction paused ({res.status}) at {progress_after*100:.0f}% progress. Recharging nearby and resuming.")
+            self.log.print(f"[{self.name}] Construction paused ({res.status}) at {progress_after*100:.0f}% progress. Recharging nearby and resuming.")
             nearest_cs, _ = self.get_nearest_charging_station()
             if not self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
-                print(f"[{self.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")
+                self.log.level("warn").print(f"[{self.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")
                 return True
             self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
             if coords and not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
-                print(f"[{self.name}] Could not return to construction site after recharge; leaving paused for a later attempt.")
+                self.log.level("warn").print(f"[{self.name}] Could not return to construction site after recharge; leaving paused for a later attempt.")
                 return True
             if hasattr(self.vehicle, "nav"):
                 try:
@@ -289,7 +287,7 @@ class PioneerController(VehicleController):
             return True
 
         if not hasattr(self.vehicle, "input"):
-            print(f"[{self.name}] Cannot load {required_item}: no input port / Auto Feeders.")
+            self.log.level("warn").print(f"[{self.name}] Cannot load {required_item}: no input port / Auto Feeders.")
             return False
 
         missing = max(0, goal - have)
@@ -298,14 +296,14 @@ class PioneerController(VehicleController):
 
         moved = take_item(self.vehicle.input, required_item, missing)
         if moved > 0:
-            print(f"[{self.name}] Loaded {moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
+            self.log.print(f"[{self.name}] Loaded {moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
         elif self.cargo_count(required_item) < required_count:
-            print(f"[{self.name}] Could not load {required_item}: not found in Inventory or any Warehouse.")
+            self.log.level("warn").print(f"[{self.name}] Could not load {required_item}: not found in Inventory or any Warehouse.")
         return self.cargo_count(required_item) >= required_count
 
     def run_construction_loop(self):
         """Continuously polls pending and paused construction blueprints and executes available builds."""
-        print(f"Pioneer Controller ({self.name}) online. Monitoring construction blueprints.")
+        self.log.print(f"Pioneer Controller ({self.name}) online. Monitoring construction blueprints.")
         bp_component = get_component("construction_blueprint")
         failed_jobs = set()
 
@@ -327,7 +325,7 @@ class PioneerController(VehicleController):
                 # conserve mode nothing to spend but the slowest possible crawl home).
                 curr_wh, _, _ = self.get_battery()
                 if curr_wh <= self.energy_needed_to_return_comfortably():
-                    print(f"[{self.name}] Return reserve reached in field; returning to nearest station to recharge.")
+                    self.log.print(f"[{self.name}] Return reserve reached in field; returning to nearest station to recharge.")
                     nearest_st, _ = self.get_nearest_charging_station()
                     self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                     self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
@@ -387,7 +385,7 @@ class PioneerController(VehicleController):
                         break
                     elif self.distance_to_home() > 3.0:
                         # Cannot reach safely from current field position; recharge at nearest station
-                        print(f"[{self.name}] Insufficient energy to reach paused job safely; recharging at nearest station.")
+                        self.log.level("warn").print(f"[{self.name}] Insufficient energy to reach paused job safely; recharging at nearest station.")
                         nearest_st, _ = self.get_nearest_charging_station()
                         self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                         self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
@@ -397,7 +395,7 @@ class PioneerController(VehicleController):
                     job_id = getattr(active_job, "id", None)
                     coords = self.extract_coords(getattr(active_job, "position", None))
                     if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
-                        print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
+                        self.log.print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
                         success = self.execute_construction(job_id, coords)
                         if not success:
                             failed_jobs.add(job_id)
@@ -447,7 +445,7 @@ class PioneerController(VehicleController):
                         job_id = getattr(candidate, "id", getattr(candidate, "blueprint_id", None))
                         coords = self.extract_coords(getattr(candidate, "position", None))
                         if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
-                            print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
+                            self.log.print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
                             success = self.execute_construction(job_id, coords)
                             if not success:
                                 failed_jobs.add(job_id)
@@ -462,14 +460,14 @@ class PioneerController(VehicleController):
                         # We have cargo matching pending jobs, but cannot reach any right now
                         nearest_st, _ = self.get_nearest_charging_station()
                         if self.distance_between(current_pos, nearest_st) > 3.0:
-                            print(f"[{self.name}] Insufficient energy to reach next construction site; recharging at nearest station.")
+                            self.log.level("warn").print(f"[{self.name}] Insufficient energy to reach next construction site; recharging at nearest station.")
                             self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                             self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
                             continue
                         else:
                             curr_wh, cap_wh, lvl = self.get_battery()
                             if lvl < 0.98:
-                                print(f"[{self.name}] At station with materials but need charge ({lvl*100:.0f}%); recharging to full.")
+                                self.log.print(f"[{self.name}] At station with materials but need charge ({lvl*100:.0f}%); recharging to full.")
                                 self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
                                 continue
                             else:
@@ -490,7 +488,7 @@ class PioneerController(VehicleController):
                                     else:
                                         req_details.append(f"{j_id}")
                                     failed_jobs.add(j_id)
-                                print(f"[{self.name}] Advisory: Matching construction job(s) exceed maximum battery range even at minimum throttle ({cap_wh:.1f} Wh): {', '.join(req_details)}.")
+                                self.log.level("warn").print(f"[{self.name}] Advisory: Matching construction job(s) exceed maximum battery range even at minimum throttle ({cap_wh:.1f} Wh): {', '.join(req_details)}.")
                                 sleep(5.0)
                                 continue
 
@@ -516,7 +514,7 @@ class PioneerController(VehicleController):
                         required_wh = ((dist_station_leg * self.minimum_wh_per_meter()) + construction_wh) * self.SAFETY_MARGIN_MULTIPLIER + self.MIN_EMERGENCY_RESERVE_WH
                         if required_wh > cap_wh:
                             if j_id not in failed_jobs:
-                                print(f"[{self.name}] Construction job '{j_id}' at {j_coords} permanently exceeds battery capacity from nearest station even at minimum throttle ({required_wh:.1f} Wh required, {cap_wh:.1f} Wh max capacity). Marking failed.")
+                                self.log.level("warn").print(f"[{self.name}] Construction job '{j_id}' at {j_coords} permanently exceeds battery capacity from nearest station even at minimum throttle ({required_wh:.1f} Wh required, {cap_wh:.1f} Wh max capacity). Marking failed.")
                                 failed_jobs.add(j_id)
                             continue
                     achievable_targets.append(j)
@@ -578,13 +576,13 @@ class PioneerController(VehicleController):
 
                     # Check if we already have the materials loaded
                     if self.cargo_count(required_item) < required_count:
-                        print(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
+                        self.log.print(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
                         if not self.load_construction_materials(target_job, target_count=batch_needed):
                             # required_item genuinely isn't obtainable right now (e.g. Inventory
                             # empty and nothing produces it yet) -- defer this job rather than
                             # retrying it forever and starving every other pending job behind it
                             # in the list (failed_jobs clears once no other option remains).
-                            print(f"[{self.name}] Could not load materials for job {job_id}; deferring to try other pending jobs.")
+                            self.log.level("warn").print(f"[{self.name}] Could not load materials for job {job_id}; deferring to try other pending jobs.")
                             failed_jobs.add(job_id)
                             self.release_target_claim(self.construction_claim_key(job_id))
                             sleep(2.0)
@@ -598,7 +596,7 @@ class PioneerController(VehicleController):
                         self.unload_cargo()
 
             except Exception as e:
-                print(f"[{self.name}] Pioneer loop exception: {e}")
+                self.log.level("error").print(f"[{self.name}] Pioneer loop exception: {e}")
                 try:
                     self.vehicle.nav.brake()
                 except Exception:
@@ -624,7 +622,7 @@ class PioneerController(VehicleController):
         pick of easy ore while this Pioneer still falls back to it if nothing
         harder is currently pending.
         """
-        print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
+        self.log.print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         while True:
             try:
                 if self.handle_recall_if_active():
@@ -632,7 +630,7 @@ class PioneerController(VehicleController):
                     continue
 
                 if not hasattr(self.vehicle, "drill"):
-                    print(f"[{self.name}] No Drill Module mounted; mining role idle. Mount an Industrial/Heavy Drill to begin.")
+                    self.log.level("warn").print(f"[{self.name}] No Drill Module mounted; mining role idle. Mount an Industrial/Heavy Drill to begin.")
                     self.publish_telemetry("IDLE_NO_DRILL")
                     sleep(30.0)
                     continue
@@ -644,7 +642,7 @@ class PioneerController(VehicleController):
                 if self.is_at_base():
                     _, _, lvl = self.get_battery()
                     if lvl < 0.95:
-                        print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
+                        self.log.print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                         self.recharge_at_station(target_level=1.0)
 
                 # A target restored from a saved mission after a script
@@ -666,7 +664,7 @@ class PioneerController(VehicleController):
                 # target itself is untouched (current_target_key stays set),
                 # so Step 3 still resumes it right after, just with clean cargo.
                 if has_resumable_target and not self.cargo_matches_target(self.current_target):
-                    print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
+                    self.log.print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
                     has_resumable_target = False
 
                 # Step 2: Ensure cargo is empty before launch. "inventory" is
@@ -678,9 +676,9 @@ class PioneerController(VehicleController):
                 # wherever the vehicle currently stands.
                 if not has_resumable_target and self.vehicle.cargo.count() > 0:
                     if not self.is_at_base():
-                        print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
+                        self.log.print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
                         if not self.return_to_base():
-                            print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                            self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
                             sleep(5.0)
                             continue
                     if self.unload_cargo() < 0:
@@ -691,7 +689,7 @@ class PioneerController(VehicleController):
                 # Step 3: Select safe target with exclusive claim, preferring
                 # sites only this Pioneer's drill can reach.
                 if has_resumable_target:
-                    print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
+                    self.log.print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
                     target = self.current_target
                     budget = self.calculate_trip_energy(
                         target["coords"],
@@ -704,13 +702,13 @@ class PioneerController(VehicleController):
                     target, budget, _ = self.select_best_mining_target(candidates, reserve_demand=True)
 
                 if not target or not budget:
-                    print(f"[{self.name}] No mining target: no reachable mineral site currently matches demand. Standing by at base slot.")
+                    self.log.print(f"[{self.name}] No mining target: no reachable mineral site currently matches demand. Standing by at base slot.")
                     self.publish_telemetry("IDLE_AT_BASE")
                     sleep(15.0)
                     continue
 
                 coords = target["coords"]
-                print(
+                self.log.print(
                     f"[{self.name}] Reserved {target['name']} to harvest "
                     f"{target['harvest_item']} for {target['reason']} at {coords} "
                     f"(Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
@@ -719,7 +717,7 @@ class PioneerController(VehicleController):
 
                 # Step 4: Drive to target (using intermediate recharge stops if needed)
                 if not self.drive_with_recharge(coords[0], coords[1]):
-                    print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
+                    self.log.level("warn").print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
                     self.return_to_base()
                     continue
 
@@ -732,7 +730,7 @@ class PioneerController(VehicleController):
                 # actually being at the home outpost's service area, and will
                 # just fail with "not_at_target" otherwise.
                 if not self.return_to_base():
-                    print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                    self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
                     sleep(5.0)
                     continue
 
@@ -752,9 +750,9 @@ class PioneerController(VehicleController):
                     continue
                 self.recharge_at_station(target_level=1.0)
                 self.publish_telemetry("READY_AT_BASE")
-                print(f"[{self.name}] Mining expedition complete and Pioneer secured at base.")
+                self.log.print(f"[{self.name}] Mining expedition complete and Pioneer secured at base.")
             except Exception as e:
-                print(f"[{self.name}] Mining loop exception: {e}. Executing emergency failsafe brake.")
+                self.log.level("error").print(f"[{self.name}] Mining loop exception: {e}. Executing emergency failsafe brake.")
                 try:
                     self.vehicle.nav.brake()
                 except Exception:

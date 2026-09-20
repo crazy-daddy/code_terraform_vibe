@@ -83,6 +83,11 @@ class DroneController(
 
         self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
 
+        # Created once here (not per-call) since TreeConsole.__init__ reads
+        # the console.log_levels archive dict -- see
+        # docs/AI_CHEATSHEET.md #0a.
+        self.log = TreeConsole(module="drone")
+
         self.state = "INIT"
         self.current_target = None
         self.current_target_key = None
@@ -94,7 +99,7 @@ class DroneController(
         # re-issuing -- see drone_mining.py's run_miner_loop() resume path.
         resumed = self.load_mission()
         if resumed:
-            print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+            self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
 
     def get_current_tick(self):
         clock = get_component("clock")
@@ -132,32 +137,31 @@ class DroneController(
         both modules are mounted -- caller must treat that as "cannot
         start".
         """
-        tree = TreeConsole()
         if role_override is not None:
-            tree.debug(f"[{self.name}] Role override supplied: '{role_override}'; skipping equipment probe.")
+            self.log.debug(f"[{self.name}] Role override supplied: '{role_override}'; skipping equipment probe.")
             return role_override
 
-        tree.start(f"[{self.name}] Detecting role from mounted equipment")
+        self.log.start(f"[{self.name}] Detecting role from mounted equipment")
         present = []
         for role, attr in self.ROLE_MODULES.items():
             mounted = hasattr(self.drone, attr)
-            tree.debug(f"{attr} module mounted: {mounted}")
+            self.log.debug(f"{attr} module mounted: {mounted}")
             if mounted:
                 present.append(role)
 
         if len(present) > 1:
-            tree.level("warn").print(
+            self.log.level("warn").print(
                 f"[{self.name}] Multiple role-defining modules mounted ({', '.join(present)}); "
                 f"cannot auto-detect a role. Call run(role_override=...) with one of {list(self.ROLE_MODULES)}."
             )
-            tree.end(f"[{self.name}] Role detection failed")
+            self.log.end(f"[{self.name}] Role detection failed")
             return None
         if not present:
-            tree.end(f"[{self.name}] No role-defining module mounted")
+            self.log.end(f"[{self.name}] No role-defining module mounted")
             return None
 
         role = present[0]
-        tree.end(f"[{self.name}] Detected role: '{role}'")
+        self.log.end(f"[{self.name}] Detected role: '{role}'")
         return role
 
     def run(self, role_override=None):
@@ -169,7 +173,7 @@ class DroneController(
         """
         role = self.detect_role(role_override)
         if role is None:
-            print(f"[{self.name}] No role-defining module (bio_scanner/bio_extractor) mounted; cannot start. Mount one via couple() at a Drone Depot, or pass run(role_override=...).")
+            self.log.level("warn").print(f"[{self.name}] No role-defining module (bio_scanner/bio_extractor) mounted; cannot start. Mount one via couple() at a Drone Depot, or pass run(role_override=...).")
             return
 
         validate_game_version()
@@ -178,4 +182,4 @@ class DroneController(
         elif role == "miner":
             self.run_miner_loop()
         else:
-            print(f"[{self.name}] Unknown role '{role}'.")
+            self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")

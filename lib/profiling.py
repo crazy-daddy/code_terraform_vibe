@@ -22,6 +22,9 @@
 # from that script) apart from one still being actively written to.
 
 from archive import archive
+from tree_console import TreeConsole
+
+log = TreeConsole(module="profiling")
 
 ARCHIVE_KEY_PREFIX = "profiling."
 HISTORY_LEN = 50
@@ -65,7 +68,7 @@ def end(name, start_tick, warn_threshold=SLOW_STEP_TICK_THRESHOLD, log_slow=True
 
     _record(name, delta, end_tick)
     if log_slow and delta > warn_threshold:
-        print(f"[profiling] '{name}' step() cost {delta} sim ticks (> {warn_threshold}) -- look for expensive per-call work that should be cached or rate-limited.")
+        log.level("warn").print(f"[profiling] '{name}' step() cost {delta} sim ticks (> {warn_threshold}) -- look for expensive per-call work that should be cached or rate-limited.")
     return delta
 
 
@@ -108,8 +111,8 @@ def report(names=None):
             continue
         name = key[len(prefix):]
         avg = sum(history) / len(history)
-        print(f"[profiling] {name}: avg={avg:.1f} max={max(history)} samples={len(history)} ticks/step")
+        log.print(f"[profiling] {name}: avg={avg:.1f} max={max(history)} samples={len(history)} ticks/step")
         printed = True
 
     if not printed:
-        print("[profiling] No recorded samples yet.")
+        log.print("[profiling] No recorded samples yet.")

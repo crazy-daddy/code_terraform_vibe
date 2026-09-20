@@ -2,6 +2,7 @@
 # Generic master controller that can oversee any power grid (solar, oil, reactor, turbine).
 from archive import archive
 from patterns import is_wildcard_pattern, filter_wildcard_matches
+from tree_console import TreeConsole
 
 # Default shedding tiers (configurable via archive key 'power.shedding_tiers')
 # Tier 1: Passive background terraforming machinery (shed first)
@@ -86,6 +87,7 @@ class PowerGridManager:
     def __init__(self, grid, clock=None, power=None):
         self.clock = clock or get_component("clock")
         self.power = power or get_component("power_control")
+        self.log = TreeConsole(module="power")
 
         # Identity is bound once, from the grid snapshot this manager was
         # created for -- not left None until the first supervise_grid() call
@@ -186,7 +188,7 @@ class PowerGridManager:
         self.night_wh_accumulated = 0.0
         self.last_energy_sample_hour = current_hour
         archive.set("power.sunset_hour", self.sunset_hour)
-        print(f"[POWER] Sunset detected on '{grid_id_str}' at day {current_day} (hour {current_hour:.1f}). Night mode active.")
+        self.log.print(f"[POWER] Sunset detected on '{grid_id_str}' at day {current_day} (hour {current_hour:.1f}). Night mode active.")
 
         if self.has_observed_day and current_day != self.last_advisory_day:
             self.last_advisory_day = current_day
@@ -203,7 +205,7 @@ class PowerGridManager:
                 bats_needed = int(shortfall // 500) + 1
                 hist_tag = f" (Historical night: {hist_wh:.0f} Wh)" if hist_wh else ""
                 msg = f"Battery capacity ({capacity_wh:.0f} Wh) on '{grid_id_str}' insufficient for night loads ({baseline_wh:.0f} Wh needed{hist_tag}). Recommend {bats_needed}x Battery at Shop."
-                print(f"[POWER ADVISORY] {msg}")
+                self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
                 try:
                     notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
                 except Exception:
@@ -212,7 +214,7 @@ class PowerGridManager:
             if capacity_wh > 0 and self.peak_day_battery_wh < (capacity_wh * 0.90):
                 charge_pct = (self.peak_day_battery_wh / capacity_wh) * 100
                 msg = f"Solar generation deficit on '{grid_id_str}'! Batteries only reached {charge_pct:.0f}% charge. Recommend 1x Solar Generator (500 cr) at Shop."
-                print(f"[POWER ADVISORY] {msg}")
+                self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
                 try:
                     notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
                 except Exception:
@@ -233,7 +235,7 @@ class PowerGridManager:
             archive.set(hist_key, round(new_hist, 1))
 
         hist_str = f", {self.night_wh_accumulated:.0f} Wh used overnight" if self.night_wh_accumulated > 0 else ""
-        print(f"[POWER] Sunrise detected on '{grid_id_str}'. Night lasted {self.night_duration:.1f} game hours (fixed schedule){hist_str}.")
+        self.log.print(f"[POWER] Sunrise detected on '{grid_id_str}'. Night lasted {self.night_duration:.1f} game hours (fixed schedule){hist_str}.")
 
         self.peak_day_battery_wh = 0.0
         self.has_observed_day = True
@@ -285,7 +287,7 @@ class PowerGridManager:
                 shortfall = wh_needed - stored_wh
                 bats_needed = max(1, int(shortfall // 500) + 1)
                 adv_msg = f"Night deficit on '{grid_id_str}'! Stored energy ({stored_wh:.0f} Wh) cannot survive remaining night ({wh_needed:.0f} Wh needed, {remaining_night:.1f}h left). Recommend {bats_needed}x Battery at Shop."
-                print(f"[BATTERY ADVISORY] {adv_msg}")
+                self.log.level("warn").print(f"[BATTERY ADVISORY] {adv_msg}")
                 try:
                     notify(f"[Battery Advisory - {grid_id_str}] {adv_msg}", level="warn", duration_seconds=10.0)
                 except Exception:
@@ -310,7 +312,7 @@ class PowerGridManager:
                             if m_id not in self.shedded_machines:
                                 self.shedded_machines.add(m_id)
                                 shed_changed = True
-                                print(f"[POWER GUARD] Marked {m_id} shedded (Tier {t_num}) on '{grid_id_str}' -- production paused, power stays on.")
+                                self.log.print(f"[POWER GUARD] Marked {m_id} shedded (Tier {t_num}) on '{grid_id_str}' -- production paused, power stays on.")
                             continue
 
                         try:
@@ -321,14 +323,14 @@ class PowerGridManager:
                                     shed_changed = True
                                     if is_critical_tier:
                                         reason = f"Critical power deficit ({stored_wh:.0f} Wh, {battery_pct*100:.0f}% battery)"
-                                        print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
+                                        self.log.level("error").print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
                                         try:
                                             notify(f"[Power Guard CRITICAL] Shed load ({m_id}) on {grid_id_str}: {reason}", level="error", duration_seconds=8.0)
                                         except Exception:
                                             pass
                                     else:
                                         reason = "Emergency reserve guard (<20%)" if emergency_low else f"Insufficient storage ({stored_wh:.1f} Wh < {wh_needed:.1f} Wh needed)"
-                                        print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
+                                        self.log.level("warn").print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
                                         try:
                                             notify(f"[Power Guard] Shed load ({m_id}) on {grid_id_str}: {reason}", level="warn", duration_seconds=6.0)
                                         except Exception:
@@ -359,7 +361,7 @@ class PowerGridManager:
                             if soft:
                                 self.shedded_machines.discard(m_id)
                                 recovered_any = True
-                                print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh), resuming production.")
+                                self.log.print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh), resuming production.")
                                 continue
                             try:
                                 if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
@@ -367,7 +369,7 @@ class PowerGridManager:
                                     if res.status == "ok":
                                         self.shedded_machines.discard(m_id)
                                         recovered_any = True
-                                        print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh).")
+                                        self.log.print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh).")
                             except Exception:
                                 pass
             if recovered_any:
@@ -398,7 +400,7 @@ class PowerGridManager:
                         if soft:
                             self.shedded_machines.discard(m_id)
                             recovered_any = True
-                            print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active, resuming production.")
+                            self.log.print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active, resuming production.")
                             continue
                         try:
                             if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
@@ -406,7 +408,7 @@ class PowerGridManager:
                                 if res.status == "ok":
                                     self.shedded_machines.discard(m_id)
                                     recovered_any = True
-                                    print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active ({generated_w:.0f} W gen vs {consumed_w:.0f} W con).")
+                                    self.log.print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active ({generated_w:.0f} W gen vs {consumed_w:.0f} W con).")
                         except Exception:
                             pass
         if recovered_any:

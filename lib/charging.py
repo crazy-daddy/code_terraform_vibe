@@ -3,6 +3,7 @@
 # drone dispatch for stranded or critically low-battery vehicles in the field.
 from vehicle_energy import rescue_wh_per_meter_for
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 class ChargingStationController:
     """
@@ -25,6 +26,7 @@ class ChargingStationController:
 
         self.last_rescued_vehicle = None
         self.return_commands = set()
+        self.log = TreeConsole(module="charging")
 
     def all_station_refs(self):
         """
@@ -163,7 +165,7 @@ class ChargingStationController:
             throttle_res = vehicle.nav.set_throttle(0.35) if set_res.status == "ok" else set_res
             if set_res.status == "ok" and throttle_res.status == "ok":
                 if vehicle_ref.id not in self.return_commands:
-                    print(f"[{self.name}] {vehicle_ref.name} low on charge; returning to nearest charging station at {target} before rescue.")
+                    self.log.print(f"[{self.name}] {vehicle_ref.name} low on charge; returning to nearest charging station at {target} before rescue.")
                     self.return_commands.add(vehicle_ref.id)
                 return True
         except Exception:
@@ -202,9 +204,9 @@ class ChargingStationController:
                     if v_id not in active_bays and v_id not in queued:
                         res = self.station.charge(v_id, self.target_charge_level)
                         if res.status in ["ok", "charging", "queued"]:
-                            print(f"[{self.name}] Queued docked vehicle {v_id} ({lvl*100:.0f}%, {wh:.1f} Wh) for charge.")
+                            self.log.print(f"[{self.name}] Queued docked vehicle {v_id} ({lvl*100:.0f}%, {wh:.1f} Wh) for charge.")
                         elif res.status != "target_reached":
-                            print(f"[{self.name}] Charge queue notice for {v_id}: {res.status} - {res.message}")
+                            self.log.level("warn").print(f"[{self.name}] Charge queue notice for {v_id}: {res.status} - {res.message}")
             except Exception as e:
                 pass
 
@@ -218,7 +220,7 @@ class ChargingStationController:
             target_name = self.station.get_rescue_target()
             if target_name and target_name != self.last_rescued_vehicle:
                 self.last_rescued_vehicle = target_name
-                print(f"[{self.name}] Rescue drone currently in field assisting: {target_name}.")
+                self.log.print(f"[{self.name}] Rescue drone currently in field assisting: {target_name}.")
             return
 
         self.last_rescued_vehicle = None
@@ -270,7 +272,7 @@ class ChargingStationController:
                     continue
 
                 reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh, below {self.return_floor_wh(v_ref):.1f} Wh return floor)"
-                print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
+                self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
 
                 try:
                     notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
@@ -280,13 +282,13 @@ class ChargingStationController:
                 # Dispatch rescue drone
                 res = self.station.dispatch_rescue(v_id, target_level)
                 if res.status == "ok":
-                    print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level*100:.0f}% for safe station return.")
+                    self.log.print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level*100:.0f}% for safe station return.")
                     self.last_rescued_vehicle = v_id
                     break
                 elif res.status == "already_dispatched":
                     break
                 else:
-                    print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
+                    self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
 
     def step(self):
         """Single supervision cycle for dock charging and field rescue."""
@@ -301,11 +303,11 @@ class ChargingStationController:
         """Continuous supervision loop."""
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()
         bay_rate = getattr(self.station, "get_bay_rate", lambda: 30)()
-        print(f"Charging Station ({self.name}) online via Shared Library ({bay_count} bay(s), {bay_count * bay_rate} W max pool).")
+        self.log.print(f"Charging Station ({self.name}) online via Shared Library ({bay_count} bay(s), {bay_count * bay_rate} W max pool).")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as e:
-                print(f"[{self.name}] Error in supervision cycle: {e}")
+                self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
             sleep(poll_interval)

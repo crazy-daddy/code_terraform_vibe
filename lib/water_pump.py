@@ -1,5 +1,6 @@
 import fluid_routing
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 # Shared Water Pump automation: keep water_out pointed at a reachable Liquid
 # Tank / Large Liquid Tank, load-balancing across whichever ones have room.
@@ -51,6 +52,7 @@ class WaterPumpController:
         self.pump = pump
         self.name = getattr(pump, "id", "water_pump")
         self.clock = get_component("clock")
+        self.log = TreeConsole(module="water_pump")
         # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
         # the full rationale (per-entry blacklist expiry, BuildingRef
         # resolution, id-lookup/connected-id-sync caching) -- this router
@@ -96,18 +98,18 @@ class WaterPumpController:
         is_stalled = fluid_routing.safe_is_stalled(self.pump)
 
         def on_blacklisted(target_id):
-            print(f"[{self.name}] '{target_id}' reported stalled (well water available, valve open, nothing transferred) -- likely no completed Liquid Pipe route. Blacklisting and picking a different target.")
+            self.log.level("warn").print(f"[{self.name}] '{target_id}' reported stalled (well water available, valve open, nothing transferred) -- likely no completed Liquid Pipe route. Blacklisting and picking a different target.")
 
         def on_connect_notice(target_id, status, message):
-            print(f"[{self.name}] water_out connect notice for '{target_id}': {status} - {message}")
+            self.log.level("warn").print(f"[{self.name}] water_out connect notice for '{target_id}': {status} - {message}")
 
         event = self._router.ensure_connection(port, curr_tick, is_stalled, on_blacklisted, on_connect_notice)
         if event.kind == "connected":
-            print(f"[{self.name}] Connected water_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+            self.log.print(f"[{self.name}] Connected water_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
         elif event.kind == "waiting":
-            print(f"[{self.name}] Every known Liquid Tank is still within its blacklist window; waiting for one to expire.")
+            self.log.debug(f"[{self.name}] Every known Liquid Tank is still within its blacklist window; waiting for one to expire.")
         elif event.kind == "not_found":
-            print(f"[{self.name}] No Liquid Tank or Large Liquid Tank found network-wide yet; water_out has no destination.")
+            self.log.debug(f"[{self.name}] No Liquid Tank or Large Liquid Tank found network-wide yet; water_out has no destination.")
 
     def step(self):
         self.ensure_output_connection()
@@ -122,14 +124,14 @@ class WaterPumpController:
             self.pump.set_throttle(1.0)
 
         if hasattr(self.pump, "is_stalled") and self.pump.is_stalled():
-            print(f"[{self.name}] Stalled: valve open with well water available but nothing downstream is accepting it. Check water_out connection / Liquid Tank / pipe route.")
+            self.log.level("warn").print(f"[{self.name}] Stalled: valve open with well water available but nothing downstream is accepting it. Check water_out connection / Liquid Tank / pipe route.")
 
     def run(self, poll_interval=1.0):
-        print(f"Water Pump Controller ({self.name}) online. Routing water to network Liquid Tanks.")
+        self.log.print(f"Water Pump Controller ({self.name}) online. Routing water to network Liquid Tanks.")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as error:
-                print(f"[{self.name}] Water Pump exception: {error}")
+                self.log.level("error").print(f"[{self.name}] Water Pump exception: {error}")
             sleep(poll_interval)

@@ -109,10 +109,10 @@ class DroneNavigationMixin:
         nearest_service, _ = self.get_nearest_drone_service()
         is_flying_to_service = self.distance_between(target_coords, nearest_service) <= 3.0
 
-        print(f"[{self.name}] Flying to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self.cruise_throttle*100:.0f}%).")
+        self.log.print(f"[{self.name}] Flying to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self.cruise_throttle*100:.0f}%).")
         res = self.drone.go_to(target_x, target_y)
         if res.status != "ok":
-            print(f"[{self.name}] go_to({target_x:.1f}, {target_y:.1f}) rejected: {res.status} - {res.message}")
+            self.log.level("warn").print(f"[{self.name}] go_to({target_x:.1f}, {target_y:.1f}) rejected: {res.status} - {res.message}")
             return False
 
         ticks = 0
@@ -121,7 +121,7 @@ class DroneNavigationMixin:
             ticks += 10
 
             if self.is_stranded():
-                print(f"[{self.name}] Drone {self.status()} mid-flight; awaiting drone_service rescue.")
+                self.log.level("warn").print(f"[{self.name}] Drone {self.status()} mid-flight; awaiting drone_service rescue.")
                 return False
 
             if self.current_target_key:
@@ -138,10 +138,10 @@ class DroneNavigationMixin:
                 curr_wh, _, _ = self.get_battery()
                 energy_needed = self.energy_needed_to_return_now()
                 if curr_wh <= energy_needed:
-                    print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest drone_service). Aborting flight.")
+                    self.log.level("warn").print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest drone_service). Aborting flight.")
                     return False
 
-        print(f"[{self.name}] Flight to ({target_x:.1f}, {target_y:.1f}) timed out after {timeout_ticks} ticks.")
+        self.log.level("warn").print(f"[{self.name}] Flight to ({target_x:.1f}, {target_y:.1f}) timed out after {timeout_ticks} ticks.")
         return False
 
     def fly_to_station(self, name, timeout_ticks=1500):
@@ -155,7 +155,7 @@ class DroneNavigationMixin:
             return False
         res = self.drone.go_to_station(name)
         if res.status != "ok":
-            print(f"[{self.name}] go_to_station('{name}') rejected: {res.status} - {res.message}")
+            self.log.level("warn").print(f"[{self.name}] go_to_station('{name}') rejected: {res.status} - {res.message}")
             return False
 
         ticks = 0
@@ -167,7 +167,7 @@ class DroneNavigationMixin:
             if self.current_station():
                 return True
 
-        print(f"[{self.name}] go_to_station('{name}') timed out after {timeout_ticks} ticks.")
+        self.log.level("warn").print(f"[{self.name}] go_to_station('{name}') timed out after {timeout_ticks} ticks.")
         return False
 
     def fly_to_drill(self, name, timeout_ticks=1500):
@@ -176,7 +176,7 @@ class DroneNavigationMixin:
             return False
         res = self.drone.go_to_drill(name)
         if res.status != "ok":
-            print(f"[{self.name}] go_to_drill('{name}') rejected: {res.status} - {res.message}")
+            self.log.level("warn").print(f"[{self.name}] go_to_drill('{name}') rejected: {res.status} - {res.message}")
             return False
 
         ticks = 0
@@ -188,5 +188,5 @@ class DroneNavigationMixin:
             if self.current_drill():
                 return True
 
-        print(f"[{self.name}] go_to_drill('{name}') timed out after {timeout_ticks} ticks.")
+        self.log.level("warn").print(f"[{self.name}] go_to_drill('{name}') timed out after {timeout_ticks} ticks.")
         return False

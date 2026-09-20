@@ -7,6 +7,9 @@
 # AUTOMATION section "Sync Unsupported" button.
 
 from archive import archive
+from tree_console import TreeConsole
+
+log = TreeConsole(module="unsupported_markers")
 
 # Prefix used for all markers created by this module
 MARKER_PREFIX = "unsupported."
@@ -112,11 +115,11 @@ def update_unsupported_markers(clear_previous=True):
     """
     markers = _component("markers")
     if not markers:
-        print("[ERROR] Map Markers component ('markers') is unavailable. Unlocked by Cartography research.")
+        log.level("error").print("Map Markers component ('markers') is unavailable. Unlocked by Cartography research.")
         return 0
 
     if not archive or not archive.available:
-        print("[ERROR] Data Archive ('notebook') is unavailable or locked.")
+        log.level("error").print("Data Archive ('notebook') is unavailable or locked.")
         return 0
 
     # Read unsupported targets
@@ -125,10 +128,10 @@ def update_unsupported_markers(clear_previous=True):
         unsupported = archive.get("rover.unsupported_targets", {}) or {}
 
     if not isinstance(unsupported, dict) or not unsupported:
-        print("[INFO] No unsupported targets found in archive.")
+        log.print("No unsupported targets found in archive.")
         if clear_previous:
             markers.clear(MARKER_PREFIX)
-            print(f"[INFO] Cleared existing '{MARKER_PREFIX}' markers.")
+            log.print(f"Cleared existing '{MARKER_PREFIX}' markers.")
         return 0
 
     # Load journal sites for site coordinate lookups
@@ -145,13 +148,13 @@ def update_unsupported_markers(clear_previous=True):
         clear_res = markers.clear(MARKER_PREFIX)
         cleared_count = getattr(clear_res, "count", 0)
         if cleared_count > 0:
-            print(f"[INFO] Cleared {cleared_count} previous unsupported target markers.")
+            log.print(f"Cleared {cleared_count} previous unsupported target markers.")
 
     placed_count = 0
     skipped_count = 0
     breakdown = {}
 
-    print(f"Syncing {len(unsupported)} unsupported target entries to Planet Map markers...")
+    log.print(f"Syncing {len(unsupported)} unsupported target entries to Planet Map markers...")
 
     for key, entry in unsupported.items():
         if not isinstance(entry, dict):
@@ -160,7 +163,7 @@ def update_unsupported_markers(clear_previous=True):
 
         coords = resolve_coordinates(key, entry, journal_sites)
         if not coords:
-            print(f"  [SKIP] Could not resolve coordinates for '{key}'")
+            log.level("warn").print(f"  Could not resolve coordinates for '{key}'")
             skipped_count += 1
             continue
 
@@ -182,10 +185,10 @@ def update_unsupported_markers(clear_previous=True):
             placed_count += 1
             breakdown[reason] = breakdown.get(reason, 0) + 1
         else:
-            print(f"  [FAIL] Failed placing marker for '{key}': {res.status} - {getattr(res, 'message', '')}")
+            log.level("warn").print(f"  Failed placing marker for '{key}': {res.status} - {getattr(res, 'message', '')}")
 
-    print(f"\n[DONE] Successfully placed {placed_count} map markers ({skipped_count} skipped).")
+    log.print(f"Successfully placed {placed_count} map markers ({skipped_count} skipped).")
     for r, count in breakdown.items():
-        print(f"  - {r}: {count} markers")
+        log.print(f"  - {r}: {count} markers")
 
     return placed_count

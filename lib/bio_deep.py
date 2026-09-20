@@ -56,7 +56,7 @@ class BioConditionerController:
         self.machine = machine
         self.name = getattr(machine, "id", "bio_conditioner")
         self.comms = get_component("comms")
-        self.console = TreeConsole()
+        self.log = TreeConsole(module="bio_deep")
 
     def _find_local_order(self, orders, snapshot, fragment_id=None):
         """Delegates to bio.py's _focus_local_order() -- shared with
@@ -124,7 +124,7 @@ class BioConditionerController:
                 try:
                     destination = best_unload_target(staged_id, count, outpost=outpost)
                     self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                    self.console.debug(f"[{self.name}] Recovered already-conditioned {staged_id} to '{destination}'.")
+                    self.log.debug(f"[{self.name}] Recovered already-conditioned {staged_id} to '{destination}'.")
                 except Exception:
                     pass
                 continue
@@ -139,13 +139,13 @@ class BioConditionerController:
                 # 5-stage run, per docs/components/bio_conditioner.md.
                 load_res = self.machine.load(staged_id, properties, "exact")
                 if load_res.status == "ok":
-                    self.console.print(f"[{self.name}] Loaded {staged_id}, QC run started.")
+                    self.log.print(f"[{self.name}] Loaded {staged_id}, QC run started.")
                 return
             try:
                 count = self.machine.input.count()
                 destination = best_unload_target(staged_id, count, outpost=outpost)
                 self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.console.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
+                self.log.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
             except Exception:
                 pass
             return
@@ -171,7 +171,7 @@ class BioConditionerController:
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
-                self.console.print(f"[{self.name}] Loaded {fragment_id}, QC run started.")
+                self.log.print(f"[{self.name}] Loaded {fragment_id}, QC run started.")
             return
 
     def _record_observation(self, fragment_id, stage, prop_name, prop_value, decision, outcome):
@@ -202,7 +202,7 @@ class BioConditionerController:
         report = self.machine.report() or {}
         lights = self.machine.lights()
         prop_value = report.get(current) if current else None
-        self.console.debug(
+        self.log.debug(
             f"[{self.name}] fragment={fragment_id} stage={stage} current={current} "
             f"value={prop_value} report={report} lights={lights}"
         )
@@ -211,18 +211,18 @@ class BioConditionerController:
         if rule is None:
             # Every quizzed property should be one of the 10 known ids; an
             # unrecognized one means the rulebook is stale -- don't guess blind.
-            self.console.print(f"[{self.name}] WARNING: unrecognized QC property '{current}', halting to avoid a blind guess.")
+            self.log.print(f"[{self.name}] WARNING: unrecognized QC property '{current}', halting to avoid a blind guess.")
             sleep(1.0)
             return
 
         decision = "accept" if rule(report) else "reject"
         action_res = self.machine.accept() if decision == "accept" else self.machine.reject()
         self._record_observation(fragment_id, stage, current, prop_value, decision, action_res.status)
-        self.console.print(f"[{self.name}] {decision}() at stage {stage} ({current}={prop_value}) -> {action_res.status}.")
+        self.log.print(f"[{self.name}] {decision}() at stage {stage} ({current}={prop_value}) -> {action_res.status}.")
         if action_res.status == "burned":
-            self.console.print(f"[{self.name}] WARNING: specimen burned -- rulebook may be wrong for '{current}'.")
+            self.log.print(f"[{self.name}] WARNING: specimen burned -- rulebook may be wrong for '{current}'.")
         elif action_res.status == "conditioned":
-            self.console.print(f"[{self.name}] Conditioned {fragment_id} successfully.")
+            self.log.print(f"[{self.name}] Conditioned {fragment_id} successfully.")
 
     def step(self):
         self._notify_heartbeat()
@@ -247,7 +247,7 @@ class BioConditionerController:
             # stage()==0 with a fragment still present means a run just resolved but
             # the result hasn't drained, or something's stuck -- eject rather than
             # ever calling load()/accept()/reject() blind.
-            self.console.debug(f"[{self.name}] Fragment present with no active run -- ejecting.")
+            self.log.debug(f"[{self.name}] Fragment present with no active run -- ejecting.")
             self.machine.eject()
             sleep(0.5)
             return
@@ -256,7 +256,7 @@ class BioConditionerController:
         sleep(0.5)
 
     def run(self):
-        self.console.print(f"Bio Conditioner ({self.name}) online via Shared Library -- automated QC via recovered rulebook.")
+        self.log.print(f"Bio Conditioner ({self.name}) online via Shared Library -- automated QC via recovered rulebook.")
         validate_game_version()
         while True:
             self.step()

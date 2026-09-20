@@ -6,6 +6,7 @@
 from bio import get_my_biome, local_sibling, is_order_incomplete, is_local_order, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 
 class BioLuminizerController:
@@ -20,6 +21,7 @@ class BioLuminizerController:
         self.name = getattr(machine, "id", "bio_luminizer")
         self.comms = get_component("comms")
         self._lamp_matrix = None  # (red_sig, green_sig, blue_sig) -- fixed hardware, read once
+        self.log = TreeConsole(module="bio_coastal")
 
     def _lamp_matrix_cols(self):
         if self._lamp_matrix is None:
@@ -189,7 +191,7 @@ class BioLuminizerController:
                 try:
                     destination = best_unload_target(staged_id, count, outpost=outpost)
                     self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                    print(f"[{self.name}] Ejected already-tinted {staged_id} (glow {glow}) to '{destination}' for delivery.")
+                    self.log.print(f"[{self.name}] Ejected already-tinted {staged_id} (glow {glow}) to '{destination}' for delivery.")
                 except Exception:
                     pass
                 continue
@@ -203,7 +205,7 @@ class BioLuminizerController:
             if order and self._fragment_remaining(order, staged_id, snapshot) > 0:
                 load_res = self.machine.load(staged_id, properties, "exact")
                 if load_res.status == "ok":
-                    print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
+                    self.log.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
                 return
             # No current local order needs it any more -- recover it to
             # storage instead of leaving input stuck on dead material forever.
@@ -211,7 +213,7 @@ class BioLuminizerController:
                 count = self.machine.input.count()
                 destination = best_unload_target(staged_id, count, outpost=outpost)
                 self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                print(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
+                self.log.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
             except Exception:
                 pass
             return
@@ -237,7 +239,7 @@ class BioLuminizerController:
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
-                print(f"[{self.name}] Loaded {fragment_id} into chamber.")
+                self.log.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
             return
 
     def _try_lamps(self, r, g, b, target):
@@ -253,14 +255,14 @@ class BioLuminizerController:
     def _commit_infuse(self, target):
         res = self.machine.infuse()
         if res.status == "ok":
-            print(f"[{self.name}] Infused sample at glow {target}.")
+            self.log.print(f"[{self.name}] Infused sample at glow {target}.")
         elif res.status == "busy":
             sleep(0.2)
 
     def _solve_and_apply(self, target):
         matrix = self._lamp_matrix_cols()
         if not matrix:
-            print(f"[{self.name}] Lamp signature unavailable this cycle.")
+            self.log.level("warn").print(f"[{self.name}] Lamp signature unavailable this cycle.")
             return
 
         zero_res = self.machine.set_lamps(0, 0, 0)
@@ -273,7 +275,7 @@ class BioLuminizerController:
         delta = [target[i] - base[i] for i in range(3)]
         solved = _solve_3x3(matrix, delta)
         if solved is None:
-            print(f"[{self.name}] Could not solve lamp mix for target {target} (singular lamp matrix).")
+            self.log.level("warn").print(f"[{self.name}] Could not solve lamp mix for target {target} (singular lamp matrix).")
             return
 
         r, g, b = (max(0, min(40, round(v))) for v in solved)
@@ -291,7 +293,7 @@ class BioLuminizerController:
                     if self._try_lamps(r + dr, g + dg, b + db, target):
                         return
 
-        print(f"[{self.name}] WARNING: no exact lamp match found near ({r},{g},{b}) for target {target}.")
+        self.log.level("warn").print(f"[{self.name}] WARNING: no exact lamp match found near ({r},{g},{b}) for target {target}.")
 
     def step(self):
         self._notify_heartbeat()
@@ -328,7 +330,7 @@ class BioLuminizerController:
         self._solve_and_apply(target)
 
     def run(self):
-        print(f"Bio Luminizer ({self.name}) online via Shared Library.")
+        self.log.print(f"Bio Luminizer ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             self.step()

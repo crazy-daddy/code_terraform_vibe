@@ -1,5 +1,6 @@
 import fluid_routing
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing
@@ -88,6 +89,7 @@ class ThermalCapController:
         self.name = getattr(cap, "id", "thermal_cap")
         self.last_phase = None
         self.clock = get_component("clock")
+        self.log = TreeConsole(module="thermal_cap")
         # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
         # the full rationale (per-entry blacklist expiry, BuildingRef
         # resolution, id-lookup/connected-id-sync caching) -- this router
@@ -136,20 +138,20 @@ class ThermalCapController:
         is_stalled = fluid_routing.safe_is_stalled(self.cap)
 
         def on_blacklisted(target_id):
-            print(f"[{self.name}] '{target_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
+            self.log.level("warn").print(f"[{self.name}] '{target_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
 
         def on_connect_notice(target_id, status, message):
-            print(f"[{self.name}] steam_out connect notice for '{target_id}': {status} - {message}")
+            self.log.level("warn").print(f"[{self.name}] steam_out connect notice for '{target_id}': {status} - {message}")
 
         event = self._router.ensure_connection(port, curr_tick, is_stalled, on_blacklisted, on_connect_notice)
         if event.kind == "connected":
-            print(f"[{self.name}] Connected steam_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+            self.log.print(f"[{self.name}] Connected steam_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
         elif event.kind == "waiting":
             # The relief valve (step()) is the safety net for this window,
             # not a forced reconnect attempt here.
-            print(f"[{self.name}] Every known Gas Tank is still within its blacklist window; waiting for one to expire.")
+            self.log.debug(f"[{self.name}] Every known Gas Tank is still within its blacklist window; waiting for one to expire.")
         elif event.kind == "not_found":
-            print(f"[{self.name}] No Gas Tank found network-wide yet; steam_out has no destination.")
+            self.log.debug(f"[{self.name}] No Gas Tank found network-wide yet; steam_out has no destination.")
 
     def release_throttle_for_pressure(self, pressure):
         """Proportional release-valve setting for the given chamber pressure."""
@@ -166,7 +168,7 @@ class ThermalCapController:
 
         phase = self.cap.phase() if hasattr(self.cap, "phase") else None
         if phase != self.last_phase and phase is not None:
-            print(f"[{self.name}] Vent phase changed: {self.last_phase} -> {phase}.")
+            self.log.print(f"[{self.name}] Vent phase changed: {self.last_phase} -> {phase}.")
             self.last_phase = phase
 
         pressure = self.cap.pressure() if hasattr(self.cap, "pressure") else 0.0
@@ -184,26 +186,26 @@ class ThermalCapController:
                 relief = min(1.0, (pressure - PRESSURE_RELIEF_THRESHOLD) / (1.0 - PRESSURE_RELIEF_THRESHOLD))
                 self.cap.set_relief(relief)
                 if relief > 0:
-                    print(f"[{self.name}] Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
+                    self.log.level("warn").print(f"[{self.name}] Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
             else:
                 self.cap.set_relief(0.0)
 
         if hasattr(self.cap, "is_stalled") and self.cap.is_stalled():
-            print(f"[{self.name}] Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")
+            self.log.level("warn").print(f"[{self.name}] Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")
 
         if hasattr(self.cap, "is_overpressured") and self.cap.is_overpressured():
-            print(f"[{self.name}] WARNING: Chamber overpressured -- banked steam was lost to atmosphere. Releasing sooner next cycle.")
+            self.log.level("error").print(f"[{self.name}] WARNING: Chamber overpressured -- banked steam was lost to atmosphere. Releasing sooner next cycle.")
             try:
                 notify(f"[{self.name}] Thermal Cap overpressured; banked steam lost.", level="warn", duration_seconds=8.0)
             except Exception:
                 pass
 
     def run(self, poll_interval=1.0):
-        print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")
+        self.log.print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as error:
-                print(f"[{self.name}] Thermal Cap exception: {error}")
+                self.log.level("error").print(f"[{self.name}] Thermal Cap exception: {error}")
             sleep(poll_interval)

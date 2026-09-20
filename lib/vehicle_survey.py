@@ -20,36 +20,55 @@ class VehicleSurveyMixin:
 
     def scan_and_survey(self):
         """Scans the local area and surveys discovered sites."""
+        log = self.log
         self.last_scan_status = "unavailable"
         if not hasattr(self.vehicle, "sonar"):
-            print(f"[{self.name}] Error: No SonarModule mounted!")
+            log.level("error").print(f"[{self.name}] Error: No SonarModule mounted!")
             return []
 
-        print(f"[{self.name}] Activating Sonar sweep...")
+        log.print(f"[{self.name}] Activating Sonar sweep...")
+        log.debug(f"[{self.name}] scan_and_survey(): current_target_key={self.current_target_key!r}")
         self.publish_telemetry("SCANNING")
         res = self.vehicle.sonar.scan()
         self.last_scan_status = res.status
-        if res.status not in ["ok", "too_hard", "tier_too_low", "research_required"]:
-            print(f"[{self.name}] Sonar scan status: {res.status} - {res.message}")
-            if res.status in ["wrong_scanner", "not_allowed", "out_of_range"]:
-                if self.current_target_key:
-                    self.blacklist_target(self.current_target_key, res.status, res.message)
+        blocked = getattr(res, "blocked", [])
+        log.debug(
+            f"[{self.name}] sonar.scan() -> status={res.status!r}, message={getattr(res, 'message', '')!r}, "
+            f"sites={[getattr(s, 'id', s) for s in getattr(res, 'sites', [])]}, "
+            f"blocked={[(c.x, c.y, c.reason) for c in blocked]}"
+        )
+        if res.status not in ["ok", "too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
+            log.level("warn").print(f"[{self.name}] Sonar scan status: {res.status} - {res.message}")
             return []
 
-        if res.status in ["too_hard", "tier_too_low", "research_required"]:
-            print(f"[{self.name}] Sonar scan limitation: {res.status} - {res.message}")
-            if self.current_target_key:
-                self.blacklist_target(self.current_target_key, res.status, res.message)
+        # A wide/deep sonar's range routinely covers several "?" contacts at
+        # once (see the "range-aware scanning" TODO), each possibly blocked
+        # for a DIFFERENT reason -- so this can't collapse onto a single
+        # self.current_target_key the way scan()'s own top-level .status
+        # does (that's one verdict for the whole sweep: "ok" as soon as ANY
+        # contact in range resolves, even if the vehicle's own target stayed
+        # unclassified). SonarScanResult.blocked gives the real per-contact
+        # x/y/reason/message instead (see docs/types/fleet_and_vehicles.md
+        # BlockedContact), so blacklist each one by its own coordinates.
+        for contact in blocked:
+            key = f"poi_{contact.x}_{contact.y}"
+            log.level("warn").print(f"[{self.name}] Blocked contact at ({contact.x}, {contact.y}): {contact.reason} - {contact.message}")
+            log.debug(f"[{self.name}] Blacklisting {key} (reason={contact.reason!r}).")
+            self.blacklist_target(key, contact.reason, contact.message)
 
         sites = getattr(res, "sites", [])
         if res.status == "ok" and self.current_target_key:
-            self.clear_unsupported_target(self.current_target_key)
+            still_blocked = any(f"poi_{c.x}_{c.y}" == self.current_target_key for c in blocked)
+            if not still_blocked:
+                log.debug(f"[{self.name}] Scan resolved cleanly; clearing any prior unsupported entry for {self.current_target_key!r}.")
+                self.clear_unsupported_target(self.current_target_key)
 
         surveyed_sites = []
         for s in sites:
             if not getattr(s, "surveyed", False):
-                print(f"[{self.name}] Surveying site {s.id} ({s.kind()})...")
+                log.print(f"[{self.name}] Surveying site {s.id} ({s.kind()})...")
                 s_res = self.vehicle.sonar.survey(s.id)
+                log.debug(f"[{self.name}] sonar.survey({s.id!r}) -> status={s_res.status!r}")
                 if s_res.status == "ok":
                     self.clear_unsupported_target(f"site_{s.id}")
                     surveyed_sites.append(s_res.site)
@@ -62,7 +81,7 @@ class VehicleSurveyMixin:
                         except Exception:
                             pass
                 elif s_res.status in ["too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
-                    print(f"[{self.name}] Site {s.id} survey limitation: {s_res.status} - {s_res.message}")
+                    log.level("warn").print(f"[{self.name}] Site {s.id} survey limitation: {s_res.status} - {s_res.message}")
                     self.blacklist_target(f"site_{s.id}", s_res.status, s_res.message)
                     surveyed_sites.append(s)
                 else:
@@ -91,6 +110,7 @@ class VehicleSurveyMixin:
 
     def unscanned_pois(self):
         """Returns known map contacts that still need a vehicle sonar scan."""
+        log = self.log
         planet = get_component("nocturna")
         if not planet or not hasattr(planet, "points_of_interest"):
             return []
@@ -108,15 +128,19 @@ class VehicleSurveyMixin:
                 # Check unsupported / blacklisted targets across fleet
                 target_entry = unsupported_targets.get(key) or unsupported_targets.get(legacy_key)
                 if target_entry:
-                    can_attempt, _ = self.can_attempt_target(key, target_entry)
+                    can_attempt, attempt_reason = self.can_attempt_target(key, target_entry)
+                    log.debug(f"[{self.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
                     if not can_attempt:
                         continue
+                else:
+                    log.debug(f"[{self.name}] {key}: no unsupported entry on record.")
 
                 # Check if claimed by another active vehicle (Rover, Pioneer, or peer)
                 claim = existing_claims.get(key)
                 if claim and (claim.get("vehicle") != self.name and claim.get("rover") != self.name):
                     claim_age = curr_tick - claim.get("tick", 0)
                     if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
+                        log.debug(f"[{self.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
                         continue
 
                 points.append(point)
@@ -206,7 +230,7 @@ class VehicleSurveyMixin:
         resumed = None
         if self.current_target_key and self.current_target and self.current_target.get("coords"):
             resumed = (self.current_target_key, tuple(self.current_target["coords"]))
-            print(f"[{self.name}] Resuming previously claimed POI '{resumed[0]}' at {resumed[1]} after reload.")
+            self.log.print(f"[{self.name}] Resuming previously claimed POI '{resumed[0]}' at {resumed[1]} after reload.")
 
         while completed < max_points:
             current_pos = self.get_position()
@@ -232,7 +256,7 @@ class VehicleSurveyMixin:
                         break
                 if poi is None:
                     if candidates:
-                        print(f"[{self.name}] Remaining known POIs exceed the current route budget; returning home.")
+                        self.log.print(f"[{self.name}] Remaining known POIs exceed the current route budget; returning home.")
                     break
 
                 target = (poi.x, poi.y)
@@ -243,16 +267,16 @@ class VehicleSurveyMixin:
             self.current_target = {"coords": target, "name": target_key, "type": "poi"}
             self.save_mission("poi_survey", self.current_target)
             self.publish_telemetry("SURVEY_POI", f"POI_{target[0]}_{target[1]}")
-            print(f"[{self.name}] Surveying known unscanned POI at {target} ({self.distance_between(current_pos, target):.1f} m leg).")
+            self.log.print(f"[{self.name}] Surveying known unscanned POI at {target} ({self.distance_between(current_pos, target):.1f} m leg).")
             if not self.drive_to(target[0], target[1]):
-                print(f"[{self.name}] Could not safely reach POI at {target}; ending survey pass.")
+                self.log.level("warn").print(f"[{self.name}] Could not safely reach POI at {target}; ending survey pass.")
                 self.release_target_claim(target_key)
                 break
             self.vehicle.nav.brake()
             scan_reserve = self.SONAR_WH_BUDGET * 4 * self.SAFETY_MARGIN_MULTIPLIER
             # Comfortable reserve, not the bare floor -- keeps the return leg fast.
             if self.get_battery()[0] <= self.energy_needed_to_return_comfortably() + scan_reserve:
-                print(f"[{self.name}] Insufficient energy to scan POI at {target}; returning home.")
+                self.log.level("warn").print(f"[{self.name}] Insufficient energy to scan POI at {target}; returning home.")
                 self.release_target_claim(target_key)
                 break
             sites = self.scan_and_survey()
@@ -262,19 +286,19 @@ class VehicleSurveyMixin:
             if self.get_battery()[0] < self.energy_needed_to_return_comfortably():
                 break
         if completed:
-            print(f"[{self.name}] Completed {completed} POI scans on one outward route; returning home.")
+            self.log.print(f"[{self.name}] Completed {completed} POI scans on one outward route; returning home.")
         return completed
 
     def run_survey_loop(self, max_points=160, spiral_fallback=False):
         """Autonomous survey loop: scans known POIs first, optionally falls back to spiral."""
         if not hasattr(self.vehicle, "sonar"):
-            print(f"[{self.name}] Survey loop requires a mounted Sonar Module.")
+            self.log.level("warn").print(f"[{self.name}] Survey loop requires a mounted Sonar Module.")
             return
         if not hasattr(self.vehicle, "nav"):
-            print(f"[{self.name}] Survey loop requires a mounted Nav Module.")
+            self.log.level("warn").print(f"[{self.name}] Survey loop requires a mounted Nav Module.")
             return
 
-        print(f"Survey Controller ({self.name}) online. Starting battery-safe survey.")
+        self.log.print(f"Survey Controller ({self.name}) online. Starting battery-safe survey.")
         validate_game_version()
         while True:
             try:
@@ -299,7 +323,7 @@ class VehicleSurveyMixin:
                     continue
 
                 if not spiral_fallback:
-                    print(f"[{self.name}] All known POIs are scanned; no random spiral fallback requested.")
+                    self.log.print(f"[{self.name}] All known POIs are scanned; no random spiral fallback requested.")
                     self.publish_telemetry("SURVEY_COMPLETE", "all known POIs scanned")
                     sleep(30.0)
                     continue
@@ -312,10 +336,10 @@ class VehicleSurveyMixin:
                     max_points=max_points,
                 ):
                     if hasattr(self.vehicle, "is_being_rescued") and self.vehicle.is_being_rescued():
-                        print(f"[{self.name}] Rescue in progress; pausing survey loop.")
+                        self.log.level("warn").print(f"[{self.name}] Rescue in progress; pausing survey loop.")
                         break
                     if self.is_recalled():
-                        print(f"[{self.name}] Recall requested; pausing spiral survey.")
+                        self.log.print(f"[{self.name}] Recall requested; pausing spiral survey.")
                         break
 
                     budget = self.calculate_trip_energy(
@@ -323,40 +347,56 @@ class VehicleSurveyMixin:
                         planned_scans=4,
                     )
                     if not budget["is_achievable"]:
-                        print(f"[{self.name}] Spiral boundary reached at ({target_x:.1f}, {target_y:.1f}); returning home.")
+                        self.log.print(f"[{self.name}] Spiral boundary reached at ({target_x:.1f}, {target_y:.1f}); returning home.")
                         break
 
                     self.publish_telemetry("SURVEY_OUTBOUND", f"{target_x:.1f},{target_y:.1f}")
                     if not self.drive_to(target_x, target_y):
-                        print(f"[{self.name}] Could not safely reach spiral waypoint; returning home.")
+                        self.log.level("warn").print(f"[{self.name}] Could not safely reach spiral waypoint; returning home.")
                         break
 
                     # Comfortable reserve, not the bare floor -- keeps the return leg fast.
                     scan_reserve = self.SONAR_WH_BUDGET * 4 * self.SAFETY_MARGIN_MULTIPLIER
                     if self.get_battery()[0] <= self.energy_needed_to_return_comfortably() + scan_reserve:
-                        print(f"[{self.name}] Insufficient energy for safe scan at ({target_x:.1f}, {target_y:.1f}); returning home.")
+                        self.log.level("warn").print(f"[{self.name}] Insufficient energy for safe scan at ({target_x:.1f}, {target_y:.1f}); returning home.")
                         break
 
+                    # scan_and_survey() attributes any too_hard/tier_too_low/
+                    # research_required/wrong_scanner status to
+                    # self.current_target_key -- spiral waypoints aren't
+                    # claimed via claim_target() (not fleet-reserved), but
+                    # this still has to be set to *something* or an
+                    # unresolved contact found here is silently dropped
+                    # instead of blacklisted, and keeps getting rediscovered
+                    # every pass (known-POI scans of the same coordinates
+                    # never get a chance to fix it, since a genuinely
+                    # unresolved contact has no PointOfInterest entry of its
+                    # own to enumerate).
+                    spiral_key = f"poi_{target_x}_{target_y}"
+                    self.current_target_key = spiral_key
+                    self.current_target = {"coords": (target_x, target_y), "name": spiral_key, "type": "poi"}
                     sites = self.scan_and_survey()
+                    self.current_target_key = None
+                    self.current_target = None
                     if hasattr(self.vehicle, "is_being_rescued") and self.vehicle.is_being_rescued():
-                        print(f"[{self.name}] Rescue started during scan; abandoning survey pass.")
+                        self.log.level("warn").print(f"[{self.name}] Rescue started during scan; abandoning survey pass.")
                         break
                     self.save_survey_waypoint(point_index, (target_x, target_y), sites)
                     completed += 1
 
                     if self.get_battery()[0] < self.energy_needed_to_return_comfortably():
-                        print(f"[{self.name}] Return reserve reached after survey; returning home.")
+                        self.log.print(f"[{self.name}] Return reserve reached after survey; returning home.")
                         break
 
                 self.return_to_base()
                 spiral_data = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
                 next_index = spiral_data.get("next_index", start_index)
                 self.publish_telemetry("SURVEY_COMPLETE", f"{completed} waypoints; next {next_index}")
-                print(f"[{self.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}. Recharging before continuing.")
+                self.log.print(f"[{self.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}. Recharging before continuing.")
                 self.recharge_at_station(target_level=1.0)
                 sleep(5.0)
             except Exception as e:
-                print(f"[{self.name}] Survey loop exception: {e}. Returning home.")
+                self.log.level("error").print(f"[{self.name}] Survey loop exception: {e}. Returning home.")
                 try:
                     self.vehicle.nav.brake()
                 except Exception:

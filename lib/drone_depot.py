@@ -8,6 +8,7 @@
 # unambiguous, and (2) lightweight periodic telemetry.
 
 from archive import archive
+from tree_console import TreeConsole
 from version_guard import validate_game_version
 
 DEPOT_STATUS_KEY_PREFIX = "drone_depot.status."
@@ -21,6 +22,7 @@ class DroneDepotController:
         self.station = station
         self.name = getattr(station, "id", "drone_station")
         self._wired = False
+        self.log = TreeConsole(module="drone_depot")
 
     def _find_local_liquifier(self):
         """
@@ -37,7 +39,7 @@ class DroneDepotController:
             return None
         if len(liquifiers) != 1:
             if len(liquifiers) > 1:
-                print(f"[{self.name}] {len(liquifiers)} Essence Liquifiers found at this outpost; leaving output unwired for manual routing.")
+                self.log.level("warn").print(f"[{self.name}] {len(liquifiers)} Essence Liquifiers found at this outpost; leaving output unwired for manual routing.")
             return None
         return get_component(liquifiers[0].id)
 
@@ -61,12 +63,12 @@ class DroneDepotController:
                 return
             res = self.station.output.connect(liquifier.id)
             if getattr(res, "status", "") == "ok":
-                print(f"[{self.name}] Wired output -> Essence Liquifier '{liquifier.id}'.")
+                self.log.print(f"[{self.name}] Wired output -> Essence Liquifier '{liquifier.id}'.")
                 self._wired = True
             else:
-                print(f"[{self.name}] Output wiring to '{liquifier.id}' notice: {res.status} - {res.message}")
+                self.log.level("warn").print(f"[{self.name}] Output wiring to '{liquifier.id}' notice: {res.status} - {res.message}")
         except Exception as e:
-            print(f"[{self.name}] Could not wire output to Essence Liquifier: {e}")
+            self.log.level("error").print(f"[{self.name}] Could not wire output to Essence Liquifier: {e}")
 
     def publish_telemetry(self):
         """
@@ -107,11 +109,11 @@ class DroneDepotController:
 
     def run(self, poll_interval=10.0):
         bay_count = getattr(self.station, "bay_count", lambda: 1)()
-        print(f"Drone Depot Controller ({self.name}) online ({bay_count} bay(s)).")
+        self.log.print(f"Drone Depot Controller ({self.name}) online ({bay_count} bay(s)).")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as e:
-                print(f"[{self.name}] Error in supervision cycle: {e}")
+                self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
             sleep(poll_interval)

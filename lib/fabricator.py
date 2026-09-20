@@ -3,6 +3,7 @@ from production import get_fabricator_targets, get_fabricator_active_recipe, can
 from archive import archive
 from storage import take_item, total_stock, best_unload_target
 from version_guard import validate_game_version
+from tree_console import TreeConsole
 
 # Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
 # exactly, same reasoning: with several Fabricators, choose_recipe() picking
@@ -55,6 +56,7 @@ class FabricatorController:
         self.connected_input = False
         self.connected_output = False
         self.clock = get_component("clock")
+        self.log = TreeConsole(module="fabricator")
 
         # Per-fluid-key (water_in/steam_in/oil_in) connection state -- see
         # ensure_fluid_connections(). Keyed dicts rather than one shared value
@@ -132,12 +134,12 @@ class FabricatorController:
             result = self.machine.input.connect("inventory")
             self.connected_input = result.status == "ok"
             if not self.connected_input and result.status not in ["busy"]:
-                print(f"[{self.name}] Input connection notice: {result.status} - {result.message}")
+                self.log.level("warn").print(f"[{self.name}] Input connection notice: {result.status} - {result.message}")
         if not self.connected_output and hasattr(self.machine, "output"):
             result = self.machine.output.connect("inventory")
             self.connected_output = result.status == "ok"
             if not self.connected_output and result.status not in ["busy"]:
-                print(f"[{self.name}] Output connection notice: {result.status} - {result.message}")
+                self.log.level("warn").print(f"[{self.name}] Output connection notice: {result.status} - {result.message}")
 
     def _fluid_is_blacklisted(self, fluid_key, source_id, curr_tick):
         """Per-entry blacklist expiry -- see lib/thermal_cap.py's identical is_blacklisted()."""
@@ -235,7 +237,7 @@ class FabricatorController:
                     pass
                 if current_id:
                     self._fluid_unreachable.setdefault(fluid_key, {})[current_id] = curr_tick
-                    print(f"[{self.name}] '{current_id}' ({fluid_key}) starved for {streak} consecutive ticks -- likely no completed pipe route. Blacklisting and picking a different source.")
+                    self.log.level("warn").print(f"[{self.name}] '{current_id}' ({fluid_key}) starved for {streak} consecutive ticks -- likely no completed pipe route. Blacklisting and picking a different source.")
                 self._fluid_connected[fluid_key] = False
                 self._fluid_stall_streak[fluid_key] = 0
 
@@ -246,7 +248,7 @@ class FabricatorController:
                 # (or none exist at all) -- deliberately do NOT wipe the
                 # blacklist here; each entry expires on its own schedule.
                 if all_known_candidates:
-                    print(f"[{self.name}] Every known {fluid_key} source is still within its blacklist window; waiting for one to expire.")
+                    self.log.level("warn").print(f"[{self.name}] Every known {fluid_key} source is still within its blacklist window; waiting for one to expire.")
                 continue
 
             for source_id in candidates:
@@ -256,10 +258,10 @@ class FabricatorController:
                     continue
                 if res.status == "ok":
                     self._fluid_connected[fluid_key] = True
-                    print(f"[{self.name}] Connected {fluid_key} -> '{source_id}'.")
+                    self.log.print(f"[{self.name}] Connected {fluid_key} -> '{source_id}'.")
                     break
                 elif res.status != "busy":
-                    print(f"[{self.name}] {fluid_key} connect notice for '{source_id}': {res.status} - {res.message}")
+                    self.log.level("warn").print(f"[{self.name}] {fluid_key} connect notice for '{source_id}': {res.status} - {res.message}")
 
     def recipe_is_sourceable(self, recipe, cache=None):
         """Whether every input of this recipe -- solid and fluid alike -- has a currently known supply."""
@@ -351,7 +353,7 @@ class FabricatorController:
             # piling on is the fallback below, only once every candidate has
             # been tried.
         if blocked:
-            print(f"[{self.name}] Skipping unreachable recipe(s) for now: {', '.join(blocked)}.")
+            self.log.level("warn").print(f"[{self.name}] Skipping unreachable recipe(s) for now: {', '.join(blocked)}.")
 
         # Every demanded, sourceable recipe is already claimed by a different
         # Fabricator -- with only ONE demanded recipe (a single large order),
@@ -368,7 +370,7 @@ class FabricatorController:
         # remaining shortfall (see production.py).
         if sourceable:
             recipe = sourceable[0]
-            print(f"[{self.name}] Joining '{getattr(recipe, 'id', '?')}' alongside another Fabricator (biggest remaining shortfall, no other demanded recipe to work instead).")
+            self.log.print(f"[{self.name}] Joining '{getattr(recipe, 'id', '?')}' alongside another Fabricator (biggest remaining shortfall, no other demanded recipe to work instead).")
             return recipe
         return None
 
@@ -383,10 +385,10 @@ class FabricatorController:
                 if self.connected_output:
                     result = self.machine.output.send(stack.id, stack.count)
             if result.status in ["ok", "partial"]:
-                print(f"[{self.name}] Sent {result.moved}x {stack.id} to Inventory.")
+                self.log.print(f"[{self.name}] Sent {result.moved}x {stack.id} to Inventory.")
                 consume_manual_order(stack.id, result.moved)
             elif result.status not in ["busy", "no_op"]:
-                print(f"[{self.name}] Output notice: {result.status} - {result.message}")
+                self.log.level("warn").print(f"[{self.name}] Output notice: {result.status} - {result.message}")
 
     def load_inputs(self, recipe):
         # Fill the stockpile with enough for several crafts at once (not just
@@ -429,7 +431,7 @@ class FabricatorController:
             moved = take_item(self.machine.input, item_id, amount)
             if moved <= 0:
                 continue
-            print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
+            self.log.print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
             remaining_capacity -= moved
 
     def eject_excess_inputs(self):
@@ -479,7 +481,7 @@ class FabricatorController:
                 continue
             moved = getattr(result, "moved", 0) or 0
             if moved > 0:
-                print(f"[{self.name}] Ejected {moved}x {item_id} from the stockpile back to '{destination}' (no longer needed for the active batch).")
+                self.log.print(f"[{self.name}] Ejected {moved}x {item_id} from the stockpile back to '{destination}' (no longer needed for the active batch).")
 
     def step(self):
         self.ensure_connection()
@@ -503,7 +505,7 @@ class FabricatorController:
             # clear_recipe() preserves the stockpile (it's staged material,
             # not tied to the recipe), so a partial load must not block this.
             if prior_recipe_id and not self.machine.is_running():
-                print(f"[{self.name}] Clearing recipe: every buildable stock target/order item is met or unreachable.")
+                self.log.print(f"[{self.name}] Clearing recipe: every buildable stock target/order item is met or unreachable.")
                 self.machine.clear_recipe()
                 self.release_recipe(prior_recipe_id)
             return
@@ -517,18 +519,18 @@ class FabricatorController:
                         self.release_recipe(prior_recipe_id)
                     output_item = getattr(recipe, "output_item", "?")
                     reason = self.target_reason(output_item)
-                    print(f"[{self.name}] Set recipe '{recipe_id}' to build {output_item} for {reason}.")
+                    self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to build {output_item} for {reason}.")
             return
 
         if self.machine.get_stockpile_used() < self.machine.get_stockpile_capacity():
             self.load_inputs(recipe)
 
     def run(self, poll_interval=2.0):
-        print(f"Fabricator Controller ({self.name}) online. Building stock targets enabled.")
+        self.log.print(f"Fabricator Controller ({self.name}) online. Building stock targets enabled.")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as error:
-                print(f"[{self.name}] Fabricator exception: {error}")
+                self.log.level("error").print(f"[{self.name}] Fabricator exception: {error}")
             sleep(poll_interval)

@@ -20,7 +20,7 @@ class DnaSequencerController:
         self.machine = machine
         self.name = getattr(machine, "id", "dna_sequencer")
         self.comms = get_component("comms")
-        self.console = TreeConsole()
+        self.log = TreeConsole(module="bio_geothermal")
         self._gene_catalog = None  # fixed hardware, read once
 
     def _known_genes(self):
@@ -100,13 +100,13 @@ class DnaSequencerController:
             if order and _order_fragment_remaining(order, staged_id, snapshot) > 0:
                 load_res = self.machine.load(staged_id, properties, "exact")
                 if load_res.status == "ok":
-                    self.console.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
+                    self.log.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
                 return
             try:
                 count = self.machine.input.count()
                 destination = best_unload_target(staged_id, count, outpost=outpost)
                 self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.console.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
+                self.log.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
             except Exception:
                 pass
             return
@@ -132,7 +132,7 @@ class DnaSequencerController:
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
-                self.console.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
+                self.log.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
             return
 
     def step(self):
@@ -173,22 +173,22 @@ class DnaSequencerController:
         known = self._known_genes()
         unknown = [g for g in target_genes if known and g not in known]
         if unknown:
-            self.console.debug(f"[{self.name}] Target genes {target_genes} include unrecognized ids {unknown} -- discarding rather than risk splice().")
+            self.log.debug(f"[{self.name}] Target genes {target_genes} include unrecognized ids {unknown} -- discarding rather than risk splice().")
             self.machine.discard()
             sleep(0.5)
             return
 
         splice_res = self.machine.splice(target_genes)
         if splice_res.status == "ok":
-            self.console.print(f"[{self.name}] Spliced {chamber.fragment_id} to genes {target_genes}.")
+            self.log.print(f"[{self.name}] Spliced {chamber.fragment_id} to genes {target_genes}.")
         elif splice_res.status == "destroyed":
-            self.console.print(f"[{self.name}] WARNING: splice({target_genes}) on {chamber.fragment_id} destroyed the target.", channel="")
+            self.log.print(f"[{self.name}] WARNING: splice({target_genes}) on {chamber.fragment_id} destroyed the target.", channel="")
         elif splice_res.status != "busy":
-            self.console.debug(f"[{self.name}] splice() -> {splice_res.status}: {splice_res.message}")
+            self.log.debug(f"[{self.name}] splice() -> {splice_res.status}: {splice_res.message}")
         sleep(0.5)
 
     def run(self):
-        self.console.print(f"DNA Sequencer ({self.name}) online via Shared Library.")
+        self.log.print(f"DNA Sequencer ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             self.step()

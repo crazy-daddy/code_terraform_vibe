@@ -296,7 +296,7 @@ class MiningMixin:
     def mine_current_site(self, max_units=None):
         """Extracts minerals using the mounted Drill Module while enforcing battery & cargo limits."""
         if not hasattr(self.vehicle, "drill"):
-            print(f"[{self.name}] Error: No DrillModule mounted!")
+            self.log.level("error").print(f"[{self.name}] Error: No DrillModule mounted!")
             return 0
 
         cargo_capacity = self.vehicle.cargo.capacity() if hasattr(self.vehicle, "cargo") else 10
@@ -309,11 +309,11 @@ class MiningMixin:
 
         while mined_count < max_units:
             if self.vehicle.cargo.full():
-                print(f"[{self.name}] Cargo hold full ({cargo_capacity}/{cargo_capacity}). Finishing mining operation.")
+                self.log.print(f"[{self.name}] Cargo hold full ({cargo_capacity}/{cargo_capacity}). Finishing mining operation.")
                 break
 
             if self.is_recalled():
-                print(f"[{self.name}] Recall requested; ceasing extraction to return to base.")
+                self.log.print(f"[{self.name}] Recall requested; ceasing extraction to return to base.")
                 break
 
             curr_wh, _, _ = self.get_battery()
@@ -322,7 +322,7 @@ class MiningMixin:
             # to the true floor and being forced to crawl home at minimum throttle.
             needed_to_return = self.energy_needed_to_return_comfortably()
             if curr_wh <= (needed_to_return + self.MINE_WH_PER_UNIT * 1.5):
-                print(f"[{self.name}] Reached return energy threshold ({curr_wh:.1f} Wh left). Ceasing extraction for recharge.")
+                self.log.print(f"[{self.name}] Reached return energy threshold ({curr_wh:.1f} Wh left). Ceasing extraction for recharge.")
                 self.mining_interrupted_battery = True
                 break
 
@@ -331,11 +331,11 @@ class MiningMixin:
                 mined_count += 1
                 if self.current_target_key:
                     self.clear_unsupported_target(self.current_target_key)
-                print(f"[{self.name}] Mined unit {mined_count}/{max_units}. Cargo: {self.vehicle.cargo.count()}/{cargo_capacity}.")
+                self.log.print(f"[{self.name}] Mined unit {mined_count}/{max_units}. Cargo: {self.vehicle.cargo.count()}/{cargo_capacity}.")
             elif m_res.status == "busy":
                 sleep(0.5)
             else:
-                print(f"[{self.name}] Drill finished or stopped: {m_res.status} - {m_res.message}")
+                self.log.print(f"[{self.name}] Drill finished or stopped: {m_res.status} - {m_res.message}")
                 if m_res.status in ["tier_too_low", "too_hard", "research_required", "depleted", "not_found", "empty"]:
                     if self.current_target_key:
                         self.blacklist_target(self.current_target_key, m_res.status, m_res.message)
@@ -362,9 +362,9 @@ class MiningMixin:
 
         while getattr(self, "mining_interrupted_battery", False) and not self.vehicle.cargo.full():
             if self.is_recalled():
-                print(f"[{self.name}] Recall requested; not resuming mining after recharge.")
+                self.log.print(f"[{self.name}] Recall requested; not resuming mining after recharge.")
                 return
-            print(f"[{self.name}] Mining job at {target_coords} interrupted by low battery. Diverting to recharge and resume.")
+            self.log.print(f"[{self.name}] Mining job at {target_coords} interrupted by low battery. Diverting to recharge and resume.")
             if self.current_target_key:
                 self.refresh_claim(self.current_target_key)
                 if self.current_target_reserved:
@@ -373,7 +373,7 @@ class MiningMixin:
             nearest_cs, _ = self.get_nearest_charging_station()
             reached_cs = self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
             if not reached_cs:
-                print(f"[{self.name}] Failed to reach charging station during mining interruption.")
+                self.log.level("warn").print(f"[{self.name}] Failed to reach charging station during mining interruption.")
                 return
 
             # A battery-interruption recharge stop can land at the home base
@@ -387,17 +387,17 @@ class MiningMixin:
             # call below can fill more before the next interruption, not just
             # recover exactly what was lost.
             if self.is_at_base() and self.vehicle.cargo.count() > 0:
-                print(f"[{self.name}] At base with cargo aboard; unloading before recharging.")
+                self.log.print(f"[{self.name}] At base with cargo aboard; unloading before recharging.")
                 self.unload_cargo()
 
             self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
 
-            print(f"[{self.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
+            self.log.print(f"[{self.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
             if self.current_target:
                 self.publish_telemetry("OUTBOUND", self.current_target.get("name", "mining site"))
             reached_site = self.drive_with_recharge(target_coords[0], target_coords[1], precision=1.5)
             if not reached_site:
-                print(f"[{self.name}] Could not reach mining site after recharge.")
+                self.log.level("warn").print(f"[{self.name}] Could not reach mining site after recharge.")
                 return
 
             remaining_space = self.vehicle.cargo.capacity() - self.vehicle.cargo.count()
@@ -416,7 +416,7 @@ class MiningMixin:
         script should call directly (a single line: no while/recall logic
         belongs there -- see CLAUDE.md's thin-entrypoint rule).
         """
-        print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}. Stationed at '{outpost_id}'.")
+        self.log.print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}. Stationed at '{outpost_id}'.")
         validate_game_version()
         while True:
             try:
@@ -425,7 +425,7 @@ class MiningMixin:
                     continue
                 self._stationed_mining_cycle(outpost_id)
             except Exception as e:
-                print(f"[{self.name}] Stationed mining exception: {e}. Executing emergency failsafe brake.")
+                self.log.level("error").print(f"[{self.name}] Stationed mining exception: {e}. Executing emergency failsafe brake.")
                 try:
                     self.vehicle.nav.brake()
                 except Exception:
@@ -451,7 +451,7 @@ class MiningMixin:
         if self.is_at_base():
             curr_wh, cap_wh, lvl = self.get_battery()
             if lvl < 0.95:
-                print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
+                self.log.print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                 self.recharge_at_station(target_level=1.0)
 
         # Same reload-resume safety net as run_expedition_cycle()/run_mining_loop():
@@ -460,14 +460,14 @@ class MiningMixin:
         has_resumable_target = bool(self.current_target_key and self.current_target and self.current_target.get("coords"))
 
         if has_resumable_target and not self.cargo_matches_target(self.current_target):
-            print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
+            self.log.print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
             has_resumable_target = False
 
         if not has_resumable_target and self.vehicle.cargo.count() > 0:
             if not self.is_at_base():
-                print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
+                self.log.print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
                 if not self.return_to_base():
-                    print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                    self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
                     sleep(5.0)
                     return
             if self.unload_cargo() < 0:
@@ -476,7 +476,7 @@ class MiningMixin:
                 return
 
         if has_resumable_target:
-            print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
+            self.log.print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
             target = self.current_target
             budget = self.calculate_trip_energy(
                 target["coords"],
@@ -489,13 +489,13 @@ class MiningMixin:
             target, budget, _ = self.select_best_mining_target(candidates)
 
         if not target or not budget:
-            print(f"[{self.name}] No stockpile target at outpost '{outpost_id}': every assigned ore is at its stock target, unreachable, or claimed by a peer. Standing by.")
+            self.log.print(f"[{self.name}] No stockpile target at outpost '{outpost_id}': every assigned ore is at its stock target, unreachable, or claimed by a peer. Standing by.")
             self.publish_telemetry("IDLE_AT_OUTPOST")
             sleep(30.0)
             return
 
         coords = target["coords"]
-        print(
+        self.log.print(
             f"[{self.name}] Reserved {target['name']} to stockpile {target['harvest_item']} "
             f"for outpost '{outpost_id}' at {coords} (Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
         )
@@ -503,7 +503,7 @@ class MiningMixin:
 
         reached = self.drive_with_recharge(coords[0], coords[1])
         if not reached:
-            print(f"[{self.name}] Could not safely complete outbound trip. Returning to outpost.")
+            self.log.level("warn").print(f"[{self.name}] Could not safely complete outbound trip. Returning to outpost.")
             self.return_to_base()
             return
 
@@ -519,7 +519,7 @@ class MiningMixin:
         self.mine_until_full_or_exhausted(coords, max_units=max(1, remaining_target))
 
         if not self.return_to_base():
-            print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+            self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
             sleep(5.0)
             return
 
@@ -540,4 +540,4 @@ class MiningMixin:
             return
         self.recharge_at_station(target_level=1.0)
         self.publish_telemetry("READY_AT_OUTPOST")
-        print(f"[{self.name}] Stockpile run complete; secured at outpost '{outpost_id}'.")
+        self.log.print(f"[{self.name}] Stockpile run complete; secured at outpost '{outpost_id}'.")

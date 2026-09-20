@@ -39,7 +39,7 @@ class BioCasterController:
         self.machine = machine
         self.name = getattr(machine, "id", "bio_caster")
         self.comms = get_component("comms")
-        self.console = TreeConsole()
+        self.log = TreeConsole(module="bio_volcanic")
 
     def _find_local_order(self, orders, snapshot, fragment_id=None):
         """Delegates to bio.py's _focus_local_order() -- shared with
@@ -108,13 +108,13 @@ class BioCasterController:
                 if set_res.status == "ok":
                     load_res = self.machine.load(staged_id, properties, "exact")
                     if load_res.status == "ok":
-                        self.console.print(f"[{self.name}] Loaded {staged_id} into crucible.")
+                        self.log.print(f"[{self.name}] Loaded {staged_id} into crucible.")
                 return
             try:
                 count = self.machine.input.count()
                 destination = best_unload_target(staged_id, count, outpost=outpost)
                 self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.console.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
+                self.log.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
             except Exception:
                 pass
             return
@@ -145,7 +145,7 @@ class BioCasterController:
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
-                self.console.print(f"[{self.name}] Loaded {fragment_id} into crucible.")
+                self.log.print(f"[{self.name}] Loaded {fragment_id} into crucible.")
             return
 
     def _load_materials(self, required_materials, outpost):
@@ -160,7 +160,7 @@ class BioCasterController:
             if missing <= 0:
                 continue
             moved = take_item(self.machine.input, material_id, missing, outpost=outpost)
-            self.console.debug(f"[{self.name}] Staged {moved}x {material_id} toward {required_qty} required.")
+            self.log.debug(f"[{self.name}] Staged {moved}x {material_id} toward {required_qty} required.")
             return
 
     def _drive_temperature(self, target_range):
@@ -181,7 +181,7 @@ class BioCasterController:
         else:
             self.machine.set_heat(0)
             self.machine.set_cool(0)
-        self.console.debug(
+        self.log.debug(
             f"[{self.name}] temperature={temp:.1f}C target=[{low:.1f},{high:.1f}] "
             f"heat={self.machine.heat()} cool={self.machine.cool()}"
         )
@@ -219,7 +219,7 @@ class BioCasterController:
         required_range = self.machine.required_range()
         required_materials = self.machine.required_materials() or {}
         if not required_range:
-            self.console.debug(f"[{self.name}] No recipe selected despite a loaded fragment -- ejecting.")
+            self.log.debug(f"[{self.name}] No recipe selected despite a loaded fragment -- ejecting.")
             self.machine.eject()
             sleep(0.5)
             return
@@ -239,13 +239,13 @@ class BioCasterController:
         if low <= temp <= high:
             cast_res = self.machine.cast()
             if cast_res.status == "ok":
-                self.console.print(f"[{self.name}] Cast {fragment_id} at {temp:.1f}C.")
+                self.log.print(f"[{self.name}] Cast {fragment_id} at {temp:.1f}C.")
             elif cast_res.status != "busy":
-                self.console.debug(f"[{self.name}] cast() -> {cast_res.status}: {cast_res.message}")
+                self.log.debug(f"[{self.name}] cast() -> {cast_res.status}: {cast_res.message}")
         sleep(0.5)
 
     def run(self):
-        self.console.print(f"Bio Caster ({self.name}) online via Shared Library.")
+        self.log.print(f"Bio Caster ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             self.step()

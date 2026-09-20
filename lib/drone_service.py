@@ -17,6 +17,7 @@
 # the same way, mirroring order_return_to_station() exactly.
 
 from drone_energy import discover_drone_services, drone_rescue_wh_per_meter
+from tree_console import TreeConsole
 from version_guard import validate_game_version
 
 STRANDED_STATUSES = ("stalled_no_battery", "scrambled")
@@ -46,6 +47,7 @@ class DroneServiceController:
         self.power = get_component("power_control")
         self.last_rescued_drone = None
         self.nudge_commands = set()
+        self.log = TreeConsole(module="drone_service")
 
     def all_station_refs(self):
         return discover_drone_services()
@@ -128,7 +130,7 @@ class DroneServiceController:
             res = drone.go_to(target[0], target[1])
             if res.status == "ok":
                 if drone_ref.id not in self.nudge_commands:
-                    print(f"[{self.name}] {drone_ref.name} low on charge; nudging home to drone_service at {target}.")
+                    self.log.print(f"[{self.name}] {drone_ref.name} low on charge; nudging home to drone_service at {target}.")
                     self.nudge_commands.add(drone_ref.id)
                 return True
         except Exception:
@@ -165,9 +167,9 @@ class DroneServiceController:
                     if d_id not in active_bays and d_id not in queued:
                         res = self.station.charge(d_id, self.target_charge_level)
                         if res.status in ("charging", "queued"):
-                            print(f"[{self.name}] Queued docked drone {d_id} ({lvl*100:.0f}%) for charge.")
+                            self.log.print(f"[{self.name}] Queued docked drone {d_id} ({lvl*100:.0f}%) for charge.")
                         elif res.status != "target_reached":
-                            print(f"[{self.name}] Charge queue notice for {d_id}: {res.status} - {res.message}")
+                            self.log.level("warn").print(f"[{self.name}] Charge queue notice for {d_id}: {res.status} - {res.message}")
             except Exception:
                 pass
 
@@ -182,7 +184,7 @@ class DroneServiceController:
             target_name = self.station.get_rescue_target()
             if target_name and target_name != self.last_rescued_drone:
                 self.last_rescued_drone = target_name
-                print(f"[{self.name}] Recovery vehicle currently in field assisting: {target_name}.")
+                self.log.print(f"[{self.name}] Recovery vehicle currently in field assisting: {target_name}.")
             return
 
         self.last_rescued_drone = None
@@ -215,7 +217,7 @@ class DroneServiceController:
                     continue
 
                 reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL BATTERY ({v_wh:.1f} Wh, below {self.return_floor_wh(d_ref):.1f} Wh return floor)"
-                print(f"[{self.name}] Emergency! Drone {d_ref.name} ({d_ref.id}) in distress: {reason} at ({d_ref.x:.1f}, {d_ref.y:.1f}).")
+                self.log.level("warn").print(f"[{self.name}] Emergency! Drone {d_ref.name} ({d_ref.id}) in distress: {reason} at ({d_ref.x:.1f}, {d_ref.y:.1f}).")
                 try:
                     notify(f"[RESCUE DISPATCH] Sending recovery vehicle to {d_ref.name} ({reason})!", level="warn", duration_seconds=10.0)
                 except Exception:
@@ -223,13 +225,13 @@ class DroneServiceController:
 
                 res = self.station.dispatch_rescue(d_ref.id, target_level)
                 if res.status == "ok":
-                    print(f"[{self.name}] Rescue dispatched to {d_ref.id}; target charge {target_level*100:.0f}%.")
+                    self.log.print(f"[{self.name}] Rescue dispatched to {d_ref.id}; target charge {target_level*100:.0f}%.")
                     self.last_rescued_drone = d_ref.id
                     break
                 elif res.status == "already_dispatched":
                     break
                 else:
-                    print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
+                    self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
 
     def step(self):
         if not self.is_station_powered():
@@ -240,11 +242,11 @@ class DroneServiceController:
 
     def run(self, poll_interval=1.5):
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()
-        print(f"Drone Service Station ({self.name}) online via Shared Library ({bay_count} bay(s)).")
+        self.log.print(f"Drone Service Station ({self.name}) online via Shared Library ({bay_count} bay(s)).")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as e:
-                print(f"[{self.name}] Error in supervision cycle: {e}")
+                self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
             sleep(poll_interval)

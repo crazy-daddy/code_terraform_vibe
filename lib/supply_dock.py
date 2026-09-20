@@ -21,6 +21,9 @@ from production import can_fulfill_order, get_construction_material_reservations
 from storage import take_item, total_stock
 from archive import archive
 from version_guard import validate_game_version
+from tree_console import TreeConsole
+
+log = TreeConsole(module="supply_dock")
 
 # {dock_id: order_id or None}, recomputed and overwritten wholesale every
 # planning cycle -- see plan_dock_assignments().
@@ -169,7 +172,7 @@ def plan_dock_assignments(clock=None):
             if getattr(o, "status", "") != "active" or not can_fulfill_order(o, cache):
                 continue
             if _weekly_infeasible(o, current_day, total_dispatch_capacity):
-                print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
+                log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
             candidates.append({"order": o, "priority": _score_weekly_order(o, reserved)})
@@ -216,6 +219,7 @@ class SupplyDockController:
         self.orders_api = get_component("orders")
         self.inventory = get_component("inventory")
         self.connected = False
+        self.log = TreeConsole(module="supply_dock")
 
     def ensure_connected(self):
         """Ensures the dock input port is connected to base Inventory."""
@@ -244,9 +248,9 @@ class SupplyDockController:
                     continue
                 res = self.dock.input.eject("inventory", item_id, count)
                 if res.status == "ok":
-                    print(f"[{self.name}] Ejected {count}x {item_id} from dock back to Inventory.")
+                    self.log.print(f"[{self.name}] Ejected {count}x {item_id} from dock back to Inventory.")
                 elif res.status not in ["busy", "no_op"]:
-                    print(f"[{self.name}] Eject notice for {item_id}: {res.status} - {res.message}")
+                    self.log.level("warn").print(f"[{self.name}] Eject notice for {item_id}: {res.status} - {res.message}")
         except Exception:
             pass
 
@@ -285,7 +289,7 @@ class SupplyDockController:
                 if getattr(o, "status", "") != "active" or not can_fulfill_order(o):
                     continue
                 if _weekly_infeasible(o, current_day, dispatch_capacity):
-                    print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
+                    self.log.level("warn").print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
                     continue
                 candidates.append({"order": o, "priority": _score_weekly_order(o, reserved)})
         except Exception:
@@ -321,7 +325,7 @@ class SupplyDockController:
             if loaded == 0 and hasattr(self.dock, "clear_order"):
                 clear_res = self.dock.clear_order()
                 if clear_res.status == "ok":
-                    print(f"[{self.name}] Cleared undeliverable order '{curr_order.name}'.")
+                    self.log.print(f"[{self.name}] Cleared undeliverable order '{curr_order.name}'.")
                     curr_order = None
 
         if not curr_order:
@@ -336,7 +340,7 @@ class SupplyDockController:
 
             desired_id = self.desired_order_id()
             if not desired_id:
-                print(f"[{self.name}] No active Earth Orders available. Standing by.")
+                self.log.print(f"[{self.name}] No active Earth Orders available. Standing by.")
                 return
 
             best = self.orders_api.get_order(desired_id) if self.orders_api else None
@@ -345,7 +349,7 @@ class SupplyDockController:
                 reward_desc += f" + {best.reward_kind} ({getattr(best, 'reward_label', '')})"
 
             order_name = getattr(best, "name", desired_id) if best else desired_id
-            print(f"[{self.name}] Assigning Earth Order '{order_name}' (ID: {desired_id}, Reward: {reward_desc})...")
+            self.log.print(f"[{self.name}] Assigning Earth Order '{order_name}' (ID: {desired_id}, Reward: {reward_desc})...")
             res = self.dock.set_order(desired_id)
             if res.status == "cargo_present":
                 # Defensive fallback in case cargo appeared between the total()
@@ -353,7 +357,7 @@ class SupplyDockController:
                 self.drain_dock_cargo()
                 return
             if res.status != "ok":
-                print(f"[{self.name}] Could not assign order: {res.status} - {res.message}")
+                self.log.level("warn").print(f"[{self.name}] Could not assign order: {res.status} - {res.message}")
                 return
             curr_order = self.dock.current_order()
 
@@ -383,29 +387,29 @@ class SupplyDockController:
                 if to_take > 0:
                     moved = take_item(self.dock.input, item_id, to_take)
                     if moved > 0:
-                        print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
+                        self.log.print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
                 elif avail > 0 and item_id in reserved:
-                    print(f"[{self.name}] Holding back {item_id}: all {avail} unit(s) in storage reserved by active Construction Blueprint(s).")
+                    self.log.level("warn").print(f"[{self.name}] Holding back {item_id}: all {avail} unit(s) in storage reserved by active Construction Blueprint(s).")
 
         # Step 3: Enable continuous dispatch
         if not self.dock.is_enabled() and self.dock.total() > 0:
             e_res = self.dock.set_enabled(True)
             if e_res.status == "ok":
-                print(f"[{self.name}] Dispatch enabled at {self.dock.dispatch_rate():.0f} units/h.")
+                self.log.print(f"[{self.name}] Dispatch enabled at {self.dock.dispatch_rate():.0f} units/h.")
 
         # Step 4: Status report
         active_disp = self.dock.current_dispatch()
         if active_disp:
             prog = self.dock.dispatch_progress()
             rate = self.dock.dispatch_rate()
-            print(f"[{self.name}] Shipping {active_disp}... Progress: {prog*100:.0f}% (Rate: {rate:.0f} u/h).")
+            self.log.print(f"[{self.name}] Shipping {active_disp}... Progress: {prog*100:.0f}% (Rate: {rate:.0f} u/h).")
 
     def run(self, poll_interval=3.0):
-        print(f"Supply Dock Controller ({self.name}) online. Initializing logistics loop...")
+        self.log.print(f"Supply Dock Controller ({self.name}) online. Initializing logistics loop...")
         validate_game_version()
         while True:
             try:
                 self.step()
             except Exception as e:
-                print(f"[{self.name}] Exception in supply dock loop: {e}")
+                self.log.level("error").print(f"[{self.name}] Exception in supply dock loop: {e}")
             sleep(poll_interval)

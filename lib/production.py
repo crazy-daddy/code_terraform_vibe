@@ -3,7 +3,10 @@ from archive import archive
 from storage import total_stock, discover_storage_buildings
 from outpost_mining import stock_target_for, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
+from tree_console import TreeConsole
 import mining_reservations
+
+log = TreeConsole(module="production")
 
 # Recipe.duration_game_hours -> real seconds, from the fixed day-cycle
 # schedule lib/power.py's DAY_CYCLE_DURATION_SECONDS already derives from
@@ -602,7 +605,7 @@ def get_fabricator_targets():
         targets[item_id] = max(targets.get(item_id, 0), quantity)
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
-            print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which "
+            log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which "
                   f"doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
 
     for dock, order in _all_dock_orders():
