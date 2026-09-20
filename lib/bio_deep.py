@@ -101,6 +101,7 @@ class BioConditionerController:
 
     def _load_next_sample(self, orders, snapshot):
         outpost = self.machine.outpost
+        self.log.trace(f"[{self.name}] _load_next_sample: entry")
 
         staged_stacks = []
         if hasattr(self.machine.input, "stacks"):
@@ -134,12 +135,16 @@ class BioConditionerController:
         if raw_candidate:
             staged_id, properties = raw_candidate
             order = self._find_local_order(orders, snapshot, staged_id)
-            if order and _order_fragment_remaining(order, staged_id, snapshot) > 0:
+            remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
+            self.log.debug(f"[{self.name}] Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
+            if order and remaining > 0:
                 # load() both pulls the sample into the chamber AND starts a fresh
                 # 5-stage run, per docs/components/bio_conditioner.md.
                 load_res = self.machine.load(staged_id, properties, "exact")
                 if load_res.status == "ok":
                     self.log.print(f"[{self.name}] Loaded {staged_id}, QC run started.")
+                else:
+                    self.log.debug(f"[{self.name}] load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
                 return
             try:
                 count = self.machine.input.count()
@@ -151,28 +156,38 @@ class BioConditionerController:
             return
 
         if staged_stacks:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, {len(staged_stacks)} stack(s) already staged (non-raw) -- nothing to do this cycle.")
             return
 
         order = self._find_local_order(orders, snapshot)
         if not order:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, no local order to focus on.")
             return
 
         for fragment_id in (order.requires or {}).keys():
-            if _order_fragment_remaining(order, fragment_id, snapshot) <= 0:
+            remaining = _order_fragment_remaining(order, fragment_id, snapshot)
+            if remaining <= 0:
+                self.log.debug(f"[{self.name}] {order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
                 continue
             found = self._find_raw_stack(fragment_id, outpost)
             if not found:
+                self.log.debug(f"[{self.name}] {order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
                 continue
-            source_id, properties, _ = found
+            source_id, properties, count = found
+            self.log.debug(f"[{self.name}] Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
             if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
                 self.machine.input.connect(source_id)
             take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
             if take_res.status != "ok":
+                self.log.debug(f"[{self.name}] take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
                 self.log.print(f"[{self.name}] Loaded {fragment_id}, QC run started.")
+            else:
+                self.log.debug(f"[{self.name}] load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
             return
+        self.log.trace(f"[{self.name}] _load_next_sample: exit, no fragment of {order.id} both needed and locally available as raw stock.")
 
     def _record_observation(self, fragment_id, stage, prop_name, prop_value, decision, outcome):
         entry = {
@@ -196,6 +211,7 @@ class BioConditionerController:
         """Looks up the current stage's quizzed property in CONDITIONER_RULEBOOK
         against the full report() and calls accept()/reject() accordingly. See
         module docstring for the rulebook's provenance."""
+        self.log.trace(f"[{self.name}] _run_qc_stage: entry")
         fragment_id = self.machine.fragment()
         stage = self.machine.stage()
         current = self.machine.current()
@@ -215,7 +231,9 @@ class BioConditionerController:
             sleep(1.0)
             return
 
-        decision = "accept" if rule(report) else "reject"
+        passed = rule(report)
+        decision = "accept" if passed else "reject"
+        self.log.debug(f"[{self.name}] QC quiz: property='{current}' value={prop_value} rulebook_predicate_passed={passed} -> decision={decision}()")
         action_res = self.machine.accept() if decision == "accept" else self.machine.reject()
         self._record_observation(fragment_id, stage, current, prop_value, decision, action_res.status)
         self.log.print(f"[{self.name}] {decision}() at stage {stage} ({current}={prop_value}) -> {action_res.status}.")
@@ -223,6 +241,7 @@ class BioConditionerController:
             self.log.print(f"[{self.name}] WARNING: specimen burned -- rulebook may be wrong for '{current}'.")
         elif action_res.status == "conditioned":
             self.log.print(f"[{self.name}] Conditioned {fragment_id} successfully.")
+        self.log.trace(f"[{self.name}] _run_qc_stage: exit, result={action_res.status}")
 
     def step(self):
         self._notify_heartbeat()
@@ -238,6 +257,7 @@ class BioConditionerController:
             except Exception:
                 orders = []
         snapshot = _local_stock_snapshot(outpost)
+        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, is_running={self.machine.is_running()}")
 
         if self.machine.is_running():
             self._run_qc_stage()

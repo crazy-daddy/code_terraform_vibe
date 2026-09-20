@@ -8,6 +8,9 @@
 # never blocks a peer the way vehicle_claims.py's claims do.
 
 from archive import archive
+from tree_console import TreeConsole
+
+log = TreeConsole(module="mining_reservations")
 
 RESERVED_YIELD_KEY = "mining.reserved_yield"
 
@@ -35,6 +38,7 @@ def reserve_yield(vehicle_name, reservation_key, item_id, units, curr_tick):
         return reservations
 
     archive.transaction(RESERVED_YIELD_KEY, {}, updater)
+    log.debug(f"reserve_yield({reservation_key!r}): {vehicle_name} reserved {units}x {item_id} at tick {curr_tick}.")
 
 
 def refresh_yield(vehicle_name, reservation_key, curr_tick):
@@ -50,11 +54,14 @@ def refresh_yield(vehicle_name, reservation_key, curr_tick):
 
 def release_yield(vehicle_name, reservation_key=None):
     """Releases reservation_key or every reservation owned by vehicle_name."""
+    released = []
+
     def updater(reservations):
         if not isinstance(reservations, dict):
             return {}
         if reservation_key:
             if reservation_key in reservations and reservations[reservation_key].get("vehicle") == vehicle_name:
+                released.append(reservation_key)
                 del reservations[reservation_key]
         else:
             keys_to_remove = [
@@ -62,10 +69,15 @@ def release_yield(vehicle_name, reservation_key=None):
                 if isinstance(v, dict) and v.get("vehicle") == vehicle_name
             ]
             for k in keys_to_remove:
+                released.append(k)
                 del reservations[k]
         return reservations
 
     archive.transaction(RESERVED_YIELD_KEY, {}, updater)
+    if released:
+        log.debug(f"release_yield({vehicle_name!r}, reservation_key={reservation_key!r}): released {released}.")
+    else:
+        log.debug(f"release_yield({vehicle_name!r}, reservation_key={reservation_key!r}): nothing owned by {vehicle_name} to release.")
 
 
 def get_reserved_yield_totals(curr_tick):
@@ -78,7 +90,8 @@ def get_reserved_yield_totals(curr_tick):
     totals = {}
     if not isinstance(reservations, dict):
         return totals
-    for reservation in reservations.values():
+    stale_count = 0
+    for key, reservation in reservations.items():
         if not isinstance(reservation, dict):
             continue
         item_id = reservation.get("item_id")
@@ -87,6 +100,10 @@ def get_reserved_yield_totals(curr_tick):
         if not item_id or units <= 0:
             continue
         if curr_tick - tick >= RESERVATION_STALE_TICKS:
+            stale_count += 1
+            log.debug(f"get_reserved_yield_totals(): {key!r} ({reservation.get('vehicle')}, {units}x {item_id}) is stale ({curr_tick - tick} ticks old); excluded from totals.")
             continue
         totals[item_id] = totals.get(item_id, 0) + units
+    if stale_count:
+        log.debug(f"get_reserved_yield_totals(): totals={totals} ({stale_count} stale reservation(s) excluded, tick={curr_tick}).")
     return totals

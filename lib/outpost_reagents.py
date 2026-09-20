@@ -9,6 +9,9 @@
 
 from storage import warehouse_stock
 from outpost_mining import outpost_by_id
+from tree_console import TreeConsole
+
+log = TreeConsole(module="outpost_reagents")
 
 # Tune against actual credit budget as the save progresses -- see docs/AI_CHEATSHEET.md.
 # A reagent this dict doesn't yet know about (a future dev addition) still gets a
@@ -48,6 +51,7 @@ def assigned_reagents_for(outpost_id):
     assignments = dict(assignments)
     assignments[outpost_id] = computed
     archive.set(OUTPOST_REAGENT_ASSIGNMENTS_KEY, assignments)
+    log.debug(f"assigned_reagents_for({outpost_id}): seeding default reagent list (first lookup) -> {computed}")
     return list(computed)
 
 
@@ -70,6 +74,7 @@ def reagent_stock_target_for(outpost_id, item_id):
     outpost_targets[item_id] = default
     targets[outpost_id] = outpost_targets
     archive.set(OUTPOST_REAGENT_STOCK_TARGETS_KEY, targets)
+    log.debug(f"reagent_stock_target_for({outpost_id}, {item_id}): seeding default target {default} (first lookup)")
     return default
 
 
@@ -88,4 +93,5 @@ def get_outpost_reagent_demand(outpost_id):
         deficit = target - have
         if deficit > 0:
             demand[item_id] = deficit
+            log.debug(f"get_outpost_reagent_demand({outpost_id}): {item_id} have={have} target={target} -> deficit={deficit}")
     return demand

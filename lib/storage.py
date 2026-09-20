@@ -183,10 +183,17 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
     if not pool:
         resolved = outpost if outpost is not None else _home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
-        return "inventory" if is_home else None
+        fallback = "inventory" if is_home else None
+        log.debug(f"best_unload_target({item_id}): no Warehouse has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
+        return fallback
 
     pool.sort(key=_fill_fraction)
-    return pool[0]["id"]
+    winner = pool[0]
+    if holders:
+        log.debug(f"best_unload_target({item_id}): {len(holders)} Warehouse(s) already hold this item, picked '{winner['id']}' (fill={_fill_fraction(winner):.2f}) to consolidate onto")
+    else:
+        log.debug(f"best_unload_target({item_id}): no Warehouse already holds this item, picked least-full '{winner['id']}' (fill={_fill_fraction(winner):.2f}) among {len(others)} candidate(s)")
+    return winner["id"]
 
 
 def take_item(port, item_id, amount, outpost=None):
@@ -336,6 +343,9 @@ def consolidate_cross_warehouse_stock(outpost=None):
         if moved > 0:
             moved_total += moved
             log.print(f"[storage] Compacted {moved} unit(s) into Warehouse '{building['id']}'.")
+        else:
+            log.trace(f"consolidate_cross_warehouse_stock: '{building['id']}' compact() moved 0 units ({getattr(res, 'status', '?')})")
+    log.debug(f"consolidate_cross_warehouse_stock: moved {moved_total} unit(s) total across every discovered Warehouse")
     return moved_total
 
 
@@ -497,6 +507,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
         return
 
     bulky_items.sort(key=lambda t: t[1], reverse=True)
+    log.debug(f"rebalance_inventory_to_warehouses: {len(bulky_items)} item(s) qualify for rebalance, worst-first: {[(iid, slots) for iid, slots, _ in bulky_items]}")
     stack_size = inventory_stack_size()
 
     for item_id, slot_count, total_units in bulky_items:

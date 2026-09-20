@@ -32,27 +32,33 @@ def resolve_coordinates(key, entry, journal_sites=None):
         c = entry["coords"]
         if isinstance(c, (list, tuple)) and len(c) >= 2:
             try:
-                return float(c[0]), float(c[1])
+                coords = float(c[0]), float(c[1])
+                log.debug(f"resolve_coordinates('{key}'): resolved from payload 'coords' field -> {coords}")
+                return coords
             except (ValueError, TypeError):
-                pass
+                log.debug(f"resolve_coordinates('{key}'): payload 'coords' field present but non-numeric ({c!r})")
 
     # 2. Key format: poi_X_Y
     if key.startswith("poi_"):
         parts = key.split("_")
         if len(parts) >= 3:
             try:
-                return float(parts[1]), float(parts[2])
+                coords = float(parts[1]), float(parts[2])
+                log.debug(f"resolve_coordinates('{key}'): resolved from 'poi_X_Y' key format -> {coords}")
+                return coords
             except (ValueError, TypeError):
-                pass
+                log.debug(f"resolve_coordinates('{key}'): 'poi_X_Y' key format matched but non-numeric parts {parts!r}")
 
     # 3. Legacy key format: X:Y
     if ":" in key and not key.startswith("site"):
         parts = key.split(":")
         if len(parts) >= 2:
             try:
-                return float(parts[0]), float(parts[1])
+                coords = float(parts[0]), float(parts[1])
+                log.debug(f"resolve_coordinates('{key}'): resolved from legacy 'X:Y' key format -> {coords}")
+                return coords
             except (ValueError, TypeError):
-                pass
+                log.debug(f"resolve_coordinates('{key}'): legacy 'X:Y' key format matched but non-numeric parts {parts!r}")
 
     # 4. Site lookup in Journal
     if journal_sites:
@@ -60,7 +66,9 @@ def resolve_coordinates(key, entry, journal_sites=None):
         for s in journal_sites:
             if str(getattr(s, "id", "")) == clean_site_id:
                 if hasattr(s, "x") and hasattr(s, "y"):
-                    return float(s.x), float(s.y)
+                    coords = float(s.x), float(s.y)
+                    log.debug(f"resolve_coordinates('{key}'): resolved via journal site lookup (site_id='{clean_site_id}') -> {coords}")
+                    return coords
 
     return None
 
@@ -106,6 +114,7 @@ def get_marker_style(reason, entry):
         label = f"Unsupported: {reason}"[:48]
         note = f"{reason}: {msg} (reported by {vehicle})"[:240]
 
+    log.debug(f"get_marker_style(reason='{reason}'): categorized as icon='{icon}' color='{color}' label='{label}'")
     return icon, color, label, note
 
 
@@ -123,9 +132,7 @@ def update_unsupported_markers(clear_previous=True):
         return 0
 
     # Read unsupported targets
-    unsupported = archive.get("survey.unsupported_targets", None)
-    if unsupported is None:
-        unsupported = archive.get("rover.unsupported_targets", {}) or {}
+    unsupported = archive.get("survey.unsupported_targets", {}) or {}
 
     if not isinstance(unsupported, dict) or not unsupported:
         log.print("No unsupported targets found in archive.")
@@ -158,6 +165,7 @@ def update_unsupported_markers(clear_previous=True):
 
     for key, entry in unsupported.items():
         if not isinstance(entry, dict):
+            log.debug(f"  Skipping '{key}': entry payload is not a dict ({entry!r})")
             skipped_count += 1
             continue
 
@@ -184,6 +192,7 @@ def update_unsupported_markers(clear_previous=True):
         if getattr(res, "status", "") == "ok":
             placed_count += 1
             breakdown[reason] = breakdown.get(reason, 0) + 1
+            log.debug(f"  Placed marker '{marker_id}' at ({coords[0]}, {coords[1]}) icon='{icon}' color='{color}' reason='{reason}'")
         else:
             log.level("warn").print(f"  Failed placing marker for '{key}': {res.status} - {getattr(res, 'message', '')}")
 

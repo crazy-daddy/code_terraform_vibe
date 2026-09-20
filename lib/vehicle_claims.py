@@ -125,9 +125,11 @@ class VehicleClaimsMixin:
             return False
 
         if self.is_at_base():
+            self.log.debug(f"[{self.name}] Recall active and already at base ({self.get_position()}); idling in RECALLED state.")
             self.publish_telemetry("RECALLED")
         else:
             self.log.print(f"[{self.name}] Recall active; returning to base.")
+            self.log.debug(f"[{self.name}] Recall active while away from base (current position {self.get_position()}, base slot {self.assigned_slot_coords}); abandoning current_target_key={self.current_target_key!r} and heading home.")
             self.publish_telemetry("RECALLED")
             self.release_target_claim()
             self.return_to_base()
@@ -153,8 +155,10 @@ class VehicleClaimsMixin:
 
                 if claim_owner != self.name:
                     if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
+                        self.log.debug(f"[{self.name}] claim_target('{target_key}'): lost -- held by '{claim_owner}', age={claim_age} ticks (< CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}, curr_tick={curr_tick}).")
                         claimed[0] = False
                         return claims
+                    self.log.debug(f"[{self.name}] claim_target('{target_key}'): stale claim from '{claim_owner}' (age={claim_age} ticks >= CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}) -- taking over.")
 
             claims[target_key] = {
                 "rover": self.name,
@@ -167,9 +171,8 @@ class VehicleClaimsMixin:
             claimed[0] = True
             return claims
 
-        archive.transaction("rover.claims", {}, updater)
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
-        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
+        self.log.debug(f"[{self.name}] claim_target('{target_key}'): {'won' if claimed[0] else 'lost'} the race.")
         return claimed[0]
 
     def refresh_claim(self, target_key):
@@ -182,15 +185,16 @@ class VehicleClaimsMixin:
                     claims[target_key]["tick"] = curr_tick
             return claims
 
-        archive.transaction("rover.claims", {}, updater)
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
-        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
 
     def cleanup_stale_claims(self):
         """Removes expired fleet claims before selecting a new mission."""
         curr_tick = self.get_current_tick()
         if curr_tick <= 0:
+            self.log.debug(f"[{self.name}] cleanup_stale_claims(): skipped, curr_tick={curr_tick} (clock not ready yet).")
             return
+
+        expired = [0]
 
         def updater(claims):
             if not isinstance(claims, dict):
@@ -202,29 +206,39 @@ class VehicleClaimsMixin:
                 claim_tick = claim.get("tick", 0)
                 if curr_tick - claim_tick < self.CLAIM_STALE_TICKS:
                     active[key] = claim
+                else:
+                    expired[0] += 1
             return active
 
-        archive.transaction("rover.claims", {}, updater)
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
+        if expired[0]:
+            self.log.debug(f"[{self.name}] cleanup_stale_claims(): removed {expired[0]} claim(s) older than CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS} at curr_tick={curr_tick}.")
 
     def release_target_claim(self, target_key=None):
         """Releases claim on target_key or releases all claims owned by this vehicle."""
+        released = [[]]
+
         def updater(claims):
             if not isinstance(claims, dict):
                 return {}
             if target_key:
                 if target_key in claims and (claims[target_key].get("rover") == self.name or claims[target_key].get("vehicle") == self.name):
                     del claims[target_key]
+                    released[0].append(target_key)
             else:
                 keys_to_remove = [k for k, v in claims.items() if isinstance(v, dict) and (v.get("rover") == self.name or v.get("vehicle") == self.name)]
                 for k in keys_to_remove:
                     del claims[k]
+                released[0].extend(keys_to_remove)
             return claims
 
-        archive.transaction("rover.claims", {}, updater)
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
+        if released[0]:
+            self.log.debug(f"[{self.name}] release_target_claim({target_key!r}): released {released[0]}.")
+        else:
+            self.log.debug(f"[{self.name}] release_target_claim({target_key!r}): nothing to release (not owned or not found).")
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
@@ -249,12 +263,25 @@ class VehicleClaimsMixin:
         or equipped with appropriate technology, the target can be automatically revisited.
         Stores scanner tier, range, hardness limit, and unlocked scan researches so that
         when a vehicle is upgraded or scanning research is unlocked, it can be automatically revisited.
+
+        Callers should pass scanner_type explicitly whenever they know which module produced
+        the failure (sonar.scan()/survey() vs drill.mine()) -- the target_key's naming
+        convention ("poi_"/"site_") is not a reliable proxy for that (e.g. a sonar survey()
+        failure on a "site_" key is still a sonar limitation, not a drill one; per
+        docs/components/sonar_module.md and docs/components/drill_module.md only sonar ever
+        reports "tier_too_low", and only drill's .mine() reports mining-time "too_hard").
         """
         if scanner_type is None:
-            if reason in ["wrong_scanner", "not_allowed", "out_of_range"]:
+            if reason in ["wrong_scanner", "not_allowed", "out_of_range", "tier_too_low"]:
                 scanner_type = "sonar"
-            elif reason in ["too_hard", "tier_too_low", "research_required"]:
-                scanner_type = "sonar" if target_key.startswith("poi_") else "drill"
+            elif reason in ["too_hard", "research_required"]:
+                # Ambiguous without an explicit caller hint (both sonar.survey() and
+                # drill.mine() can report these) -- prefer whichever module the vehicle
+                # actually has, since a scout without a drill can only mean sonar.
+                if hasattr(self.vehicle, "drill") and not hasattr(self.vehicle, "sonar"):
+                    scanner_type = "drill"
+                else:
+                    scanner_type = "sonar"
             elif reason in ["depleted", "empty"]:
                 scanner_type = "drill"
             else:
@@ -330,9 +357,7 @@ class VehicleClaimsMixin:
             }
             return targets
 
-        archive.transaction("rover.unsupported_targets", {}, updater)
         archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
-        archive.transaction(LEGACY_ROVER_UNSUPPORTED_KEY, {}, updater)
         self.release_target_claim(target_key)
         self.log.print(f"[{self.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
         try:
@@ -346,7 +371,6 @@ class VehicleClaimsMixin:
             if isinstance(targets, dict) and target_key in targets:
                 del targets[target_key]
             return targets
-        archive.transaction("rover.unsupported_targets", {}, updater)
         archive.transaction(SURVEY_UNSUPPORTED_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_UNSUPPORTED_KEY, {}, updater)
         def p_updater(records):

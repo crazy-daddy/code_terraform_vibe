@@ -159,6 +159,7 @@ class BioLuminizerController:
 
     def _load_next_sample(self, orders, snapshot):
         outpost = self.machine.outpost
+        self.log.trace(f"[{self.name}] _load_next_sample: entry")
 
         # self.input latches to whatever's already staged (e.g. left over
         # from an earlier interrupted cycle) until load()/flush() clears it.
@@ -202,10 +203,14 @@ class BioLuminizerController:
         if raw_candidate:
             staged_id, properties = raw_candidate
             order = self._find_coastal_order(orders, snapshot, staged_id)
-            if order and self._fragment_remaining(order, staged_id, snapshot) > 0:
+            remaining = self._fragment_remaining(order, staged_id, snapshot) if order else 0
+            self.log.debug(f"[{self.name}] Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
+            if order and remaining > 0:
                 load_res = self.machine.load(staged_id, properties, "exact")
                 if load_res.status == "ok":
                     self.log.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
+                else:
+                    self.log.debug(f"[{self.name}] load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
                 return
             # No current local order needs it any more -- recover it to
             # storage instead of leaving input stuck on dead material forever.
@@ -219,36 +224,49 @@ class BioLuminizerController:
             return
 
         if staged_stacks:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, {len(staged_stacks)} stack(s) already-tinted and ejected above.")
             return  # everything staged this cycle was already-tinted and just got ejected above
 
         order = self._find_coastal_order(orders, snapshot)
         if not order:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, no local coastal order to focus on.")
             return
 
         for fragment_id in (order.requires or {}).keys():
-            if self._fragment_remaining(order, fragment_id, snapshot) <= 0:
+            remaining = self._fragment_remaining(order, fragment_id, snapshot)
+            if remaining <= 0:
+                self.log.debug(f"[{self.name}] {order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
                 continue
             found = self._find_raw_stack(orders, fragment_id, outpost)
             if not found:
+                self.log.debug(f"[{self.name}] {order.id} still needs {remaining}x {fragment_id}, but no raw (untinted) stack found locally.")
                 continue
-            source_id, properties, _ = found
+            source_id, properties, count = found
+            self.log.debug(f"[{self.name}] Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
             if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
                 self.machine.input.connect(source_id)
             take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
             if take_res.status != "ok":
+                self.log.debug(f"[{self.name}] take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
                 self.log.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
+            else:
+                self.log.debug(f"[{self.name}] load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
             return
+        self.log.trace(f"[{self.name}] _load_next_sample: exit, no fragment of {order.id} both needed and locally available as raw stock.")
 
     def _try_lamps(self, r, g, b, target):
         if not (0 <= r <= 40 and 0 <= g <= 40 and 0 <= b <= 40):
+            self.log.trace(f"[{self.name}] _try_lamps: ({r},{g},{b}) out of [0,40] bounds -- skipping.")
             return False
         self.machine.set_lamps(r, g, b)
         current = self.machine.glow()
         if current is None or list(current) != list(target):
+            self.log.debug(f"[{self.name}] Tried lamps ({r},{g},{b}) -> glow={current}, target={target} -- no match.")
             return False
+        self.log.debug(f"[{self.name}] Lamps ({r},{g},{b}) produced exact glow match {current} for target {target}.")
         self._commit_infuse(target)
         return True
 
@@ -260,6 +278,7 @@ class BioLuminizerController:
             sleep(0.2)
 
     def _solve_and_apply(self, target):
+        self.log.trace(f"[{self.name}] _solve_and_apply: entry, target={target}")
         matrix = self._lamp_matrix_cols()
         if not matrix:
             self.log.level("warn").print(f"[{self.name}] Lamp signature unavailable this cycle.")
@@ -267,9 +286,11 @@ class BioLuminizerController:
 
         zero_res = self.machine.set_lamps(0, 0, 0)
         if zero_res.status != "ok":
+            self.log.debug(f"[{self.name}] set_lamps(0,0,0) -> {zero_res.status}: {getattr(zero_res, 'message', '')} -- aborting solve this cycle.")
             return
         base = self.machine.glow()
         if base is None:
+            self.log.debug(f"[{self.name}] glow() returned None after zeroing lamps -- aborting solve this cycle.")
             return
 
         delta = [target[i] - base[i] for i in range(3)]
@@ -279,21 +300,26 @@ class BioLuminizerController:
             return
 
         r, g, b = (max(0, min(40, round(v))) for v in solved)
+        self.log.debug(f"[{self.name}] Solved lamp mix base={base} delta={delta} -> raw_solve={solved}, rounded/clamped=({r},{g},{b}).")
         if self._try_lamps(r, g, b, target):
+            self.log.trace(f"[{self.name}] _solve_and_apply: exit, exact solve matched on first try ({r},{g},{b}).")
             return
 
         # Bounded local search over the +/-1-per-channel neighborhood for rounding
         # error -- cheap (<=27 combinations) and avoids trusting the rounded solve
         # blindly, without brute-forcing the full 41^3 space against the live game.
+        self.log.debug(f"[{self.name}] Exact solve ({r},{g},{b}) missed target {target} -- searching +/-1-per-channel neighborhood (<=27 combos).")
         for dr in (-1, 0, 1):
             for dg in (-1, 0, 1):
                 for db in (-1, 0, 1):
                     if dr == 0 and dg == 0 and db == 0:
                         continue
                     if self._try_lamps(r + dr, g + dg, b + db, target):
+                        self.log.trace(f"[{self.name}] _solve_and_apply: exit, neighborhood search matched ({r+dr},{g+dg},{b+db}).")
                         return
 
         self.log.level("warn").print(f"[{self.name}] WARNING: no exact lamp match found near ({r},{g},{b}) for target {target}.")
+        self.log.trace(f"[{self.name}] _solve_and_apply: exit, no match found.")
 
     def step(self):
         self._notify_heartbeat()
@@ -313,6 +339,7 @@ class BioLuminizerController:
             except Exception:
                 orders = []
         snapshot = _local_stock_snapshot(outpost)
+        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, chamber_empty={self.machine.chamber is None}")
 
         chamber = self.machine.chamber
         if chamber is None:
@@ -323,10 +350,12 @@ class BioLuminizerController:
         target = self._active_target_for(orders, snapshot, chamber.fragment_id)
         if not target:
             # No glow requirement for this fragment right now -- pass through unchanged.
+            self.log.debug(f"[{self.name}] No local order requires {chamber.fragment_id} tinted right now -- discarding unchanged.")
             self.machine.discard()
             sleep(0.5)
             return
 
+        self.log.debug(f"[{self.name}] {chamber.fragment_id} target_glow={target} -- solving lamp mix.")
         self._solve_and_apply(target)
 
     def run(self):

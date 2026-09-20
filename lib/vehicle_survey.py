@@ -21,6 +21,7 @@ class VehicleSurveyMixin:
     def scan_and_survey(self):
         """Scans the local area and surveys discovered sites."""
         log = self.log
+        log.trace(f"[{self.name}] scan_and_survey() enter")
         self.last_scan_status = "unavailable"
         if not hasattr(self.vehicle, "sonar"):
             log.level("error").print(f"[{self.name}] Error: No SonarModule mounted!")
@@ -54,7 +55,7 @@ class VehicleSurveyMixin:
             key = f"poi_{contact.x}_{contact.y}"
             log.level("warn").print(f"[{self.name}] Blocked contact at ({contact.x}, {contact.y}): {contact.reason} - {contact.message}")
             log.debug(f"[{self.name}] Blacklisting {key} (reason={contact.reason!r}).")
-            self.blacklist_target(key, contact.reason, contact.message)
+            self.blacklist_target(key, contact.reason, contact.message, scanner_type="sonar")
 
         sites = getattr(res, "sites", [])
         if res.status == "ok" and self.current_target_key:
@@ -82,7 +83,7 @@ class VehicleSurveyMixin:
                             pass
                 elif s_res.status in ["too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
                     log.level("warn").print(f"[{self.name}] Site {s.id} survey limitation: {s_res.status} - {s_res.message}")
-                    self.blacklist_target(f"site_{s.id}", s_res.status, s_res.message)
+                    self.blacklist_target(f"site_{s.id}", s_res.status, s_res.message, scanner_type="sonar")
                     surveyed_sites.append(s)
                 else:
                     surveyed_sites.append(s)
@@ -90,6 +91,7 @@ class VehicleSurveyMixin:
                 surveyed_sites.append(s)
             sleep(0.5)
 
+        log.trace(f"[{self.name}] scan_and_survey() exit: {len(sites)} candidate site(s) in range, {len(surveyed_sites)} returned.")
         return surveyed_sites
 
     def sonar_signature(self):
@@ -106,13 +108,15 @@ class VehicleSurveyMixin:
         """Remember a limited contact until sonar capability changes."""
         target_key = f"poi_{int(round(coords[0]))}_{int(round(coords[1]))}"
         status = getattr(self, "last_scan_status", "unknown")
-        self.blacklist_target(target_key, status, f"Scan limited: {status}")
+        self.blacklist_target(target_key, status, f"Scan limited: {status}", scanner_type="sonar")
 
     def unscanned_pois(self):
         """Returns known map contacts that still need a vehicle sonar scan."""
         log = self.log
+        log.trace(f"[{self.name}] unscanned_pois() enter")
         planet = get_component("nocturna")
         if not planet or not hasattr(planet, "points_of_interest"):
+            log.trace(f"[{self.name}] unscanned_pois() exit: no 'nocturna' points_of_interest available.")
             return []
         try:
             unsupported_targets = self.get_unsupported_targets()
@@ -146,7 +150,59 @@ class VehicleSurveyMixin:
                 points.append(point)
             home = self.assigned_slot_coords
             points.sort(key=lambda p: self.distance_between(home, (p.x, p.y)))
+            log.trace(f"[{self.name}] unscanned_pois() exit: {len(points)} candidate(s), nearest-first from {home}.")
             return points
+        except Exception:
+            return []
+
+    def unsurveyed_known_sites(self):
+        """
+        Known Sites already classified by sonar (kind revealed) but never fully
+        surveyed -- typically because a previous sonar.survey() call failed with
+        too_hard/tier_too_low. These sites are invisible to unscanned_pois()
+        because PointOfInterest.scanned flips True the moment scan() classifies
+        the contact, independent of whether survey() itself ever succeeds --
+        without this, a capability-blocked site would never be revisited again,
+        even after a sonar upgrade or a new scan research unlock. Only returns
+        sites can_attempt_target() says are actually worth another try (compares
+        the mounted sonar's current tier/hardness/range and unlocked scan
+        researches against what was recorded at blacklist time), so the vehicle
+        doesn't repeatedly drive back to a site nothing has changed for.
+        """
+        log = self.log
+        journal = get_component("journal")
+        if not journal or not hasattr(journal, "discovered_sites"):
+            return []
+        try:
+            unsupported_targets = self.get_unsupported_targets()
+            existing_claims = self.get_claims()
+            curr_tick = self.get_current_tick()
+            sites = []
+            for site in journal.discovered_sites("nocturna"):
+                if getattr(site, "surveyed", False):
+                    continue
+                key = f"site_{site.id}"
+
+                target_entry = unsupported_targets.get(key)
+                if target_entry:
+                    can_attempt, attempt_reason = self.can_attempt_target(key, target_entry)
+                    log.debug(f"[{self.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
+                    if not can_attempt:
+                        continue
+                else:
+                    log.debug(f"[{self.name}] {key}: no unsupported entry on record.")
+
+                claim = existing_claims.get(key)
+                if claim and (claim.get("vehicle") != self.name and claim.get("rover") != self.name):
+                    claim_age = curr_tick - claim.get("tick", 0)
+                    if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
+                        log.debug(f"[{self.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
+                        continue
+
+                sites.append(site)
+            home = self.assigned_slot_coords
+            sites.sort(key=lambda s: self.distance_between(home, (s.x, s.y)))
+            return sites
         except Exception:
             return []
 
@@ -238,36 +294,50 @@ class VehicleSurveyMixin:
             if resumed:
                 target_key, target = resumed
                 resumed = None
+                target_label = "resumed target"
             else:
-                points = self.unscanned_pois()
+                # Two pools: fresh "?" contacts to scan, and already-classified
+                # sites whose survey() previously failed but may now succeed
+                # (upgraded sonar, new scan research) -- see
+                # unsurveyed_known_sites(). Merged into one distance-sorted
+                # route so the vehicle doesn't need a separate pass for each.
                 candidates = [
-                    p for p in points
-                    if (getattr(p, "x", None), getattr(p, "y", None)) not in visited
+                    {"key": f"poi_{p.x}_{p.y}", "coords": (p.x, p.y), "label": "unscanned POI"}
+                    for p in self.unscanned_pois()
+                    if (p.x, p.y) not in visited
+                ] + [
+                    {"key": f"site_{s.id}", "coords": (s.x, s.y), "label": f"unsurveyed site {s.id}"}
+                    for s in self.unsurveyed_known_sites()
+                    if (s.x, s.y) not in visited
                 ]
-                candidates.sort(key=lambda p: self.distance_between(current_pos, (p.x, p.y)))
+                candidates.sort(key=lambda c: self.distance_between(current_pos, c["coords"]))
+                self.log.debug(f"[{self.name}] survey_known_pois(): {len(candidates)} nearest-first candidate(s) from {current_pos}.")
 
-                poi = None
+                chosen = None
                 for candidate in candidates:
-                    key = (candidate.x, candidate.y)
-                    budget = self.calculate_trip_energy((candidate.x, candidate.y), planned_scans=4)
+                    budget = self.calculate_trip_energy(candidate["coords"], planned_scans=4)
                     if budget["is_achievable"]:
-                        poi = candidate
-                        visited.add(key)
+                        self.log.debug(f"[{self.name}] survey_known_pois(): chose {candidate['key']} ({candidate['label']}) at {candidate['coords']}, budget={budget['total_required_wh']:.1f} Wh.")
+                        chosen = candidate
+                        visited.add(candidate["coords"])
                         break
-                if poi is None:
+                    else:
+                        self.log.debug(f"[{self.name}] survey_known_pois(): rejected {candidate['key']} ({candidate['label']}), unreachable within budget ({budget['total_required_wh']:.1f} Wh required).")
+                if chosen is None:
                     if candidates:
-                        self.log.print(f"[{self.name}] Remaining known POIs exceed the current route budget; returning home.")
+                        self.log.print(f"[{self.name}] Remaining known POIs/sites exceed the current route budget; returning home.")
                     break
 
-                target = (poi.x, poi.y)
-                target_key = f"poi_{poi.x}_{poi.y}"
+                target = chosen["coords"]
+                target_key = chosen["key"]
+                target_label = chosen["label"]
 
             self.claim_target(target_key, {"coords": target, "name": target_key, "type": "poi"})
             self.current_target_key = target_key
             self.current_target = {"coords": target, "name": target_key, "type": "poi"}
             self.save_mission("poi_survey", self.current_target)
             self.publish_telemetry("SURVEY_POI", f"POI_{target[0]}_{target[1]}")
-            self.log.print(f"[{self.name}] Surveying known unscanned POI at {target} ({self.distance_between(current_pos, target):.1f} m leg).")
+            self.log.print(f"[{self.name}] Surveying known {target_label} at {target} ({self.distance_between(current_pos, target):.1f} m leg).")
             if not self.drive_to(target[0], target[1]):
                 self.log.level("warn").print(f"[{self.name}] Could not safely reach POI at {target}; ending survey pass.")
                 self.release_target_claim(target_key)
@@ -298,7 +368,7 @@ class VehicleSurveyMixin:
             self.log.level("warn").print(f"[{self.name}] Survey loop requires a mounted Nav Module.")
             return
 
-        self.log.print(f"Survey Controller ({self.name}) online. Starting battery-safe survey.")
+        self.log.print(f"[{self.name}] Survey Controller online. Starting battery-safe survey.")
         validate_game_version()
         while True:
             try:
@@ -315,7 +385,7 @@ class VehicleSurveyMixin:
                         self.recharge_at_station(target_level=1.0)
 
                 poi_completed = self.survey_known_pois(max_points=max_points)
-                if poi_completed > 0 or self.unscanned_pois():
+                if poi_completed > 0 or self.unscanned_pois() or self.unsurveyed_known_sites():
                     self.return_to_base()
                     self.publish_telemetry("SURVEY_COMPLETE", f"{poi_completed} known POIs")
                     self.recharge_at_station(target_level=1.0)

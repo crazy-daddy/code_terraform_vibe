@@ -24,6 +24,10 @@
 # the same way the code it replaces did: gather candidates, try connect(),
 # verify via is_stalled(), blacklist on failure.
 
+from tree_console import TreeConsole
+
+log = TreeConsole(module="fluid_routing")
+
 
 def safe_is_stalled(building):
     """hasattr-guarded, exception-swallowed building.is_stalled() probe. See module docstring for why is_stalled() is the only live reachability signal."""
@@ -81,9 +85,13 @@ class PerEntryBlacklist:
         if blacklisted_at is None:
             return False
         age = curr_tick - blacklisted_at
-        return curr_tick == 0 or age < self.rescan_interval_ticks
+        still_blacklisted = curr_tick == 0 or age < self.rescan_interval_ticks
+        if not still_blacklisted:
+            log.debug(f"PerEntryBlacklist: '{entry_id}' blacklist expired (age={age} >= {self.rescan_interval_ticks}), eligible again")
+        return still_blacklisted
 
     def blacklist(self, entry_id, curr_tick):
+        log.debug(f"PerEntryBlacklist: blacklisting '{entry_id}' at tick={curr_tick} (expires after {self.rescan_interval_ticks} ticks)")
         self._blacklisted_at[entry_id] = curr_tick
 
     def filter_reachable(self, entries, curr_tick, key=lambda e: e):
@@ -151,6 +159,7 @@ def discover_network_buildings(type_ids, resolve=True):
                             pairs.append((b_id, outpost_id))
         except Exception:
             pass
+    log.trace(f"discover_network_buildings({type_ids}): found {len(pairs)} building(s)")
     return pairs
 
 
@@ -225,6 +234,7 @@ class FluidOutputRouter:
             for building in self._cached_targets:
                 self._target_lookup[building.id] = building
             self._ticks_since_discovery = 0
+            log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(self._cached_targets)} candidate target(s)")
         else:
             self._ticks_since_discovery += 1
         return self._cached_targets
@@ -255,6 +265,7 @@ class FluidOutputRouter:
         self.ticks_since_connect += 1
 
         if is_stalled and current_id and not self.blacklist.is_blacklisted(current_id, curr_tick) and self.ticks_since_connect >= self.connection_grace_ticks:
+            log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' stalled past grace period ({self.ticks_since_connect} >= {self.connection_grace_ticks} ticks), blacklisting")
             self.blacklist.blacklist(current_id, curr_tick)
             if on_blacklisted:
                 on_blacklisted(current_id)
@@ -272,11 +283,13 @@ class FluidOutputRouter:
             # Every known target is still within its own blacklist window
             # (or none exist at all) -- deliberately do NOT wipe the
             # blacklist here; each entry expires on its own schedule.
+            log.debug(f"FluidOutputRouter({self.type_ids}): {'every known target still blacklisted' if all_known_targets else 'no known targets at all'}")
             return FluidOutputEvent("waiting") if all_known_targets else FluidOutputEvent("not_found")
 
         # Try the least-full known target first (load-balances across
         # several), falling through to the next since not every target is
         # necessarily physically pipe-reachable from this port's location.
+        log.debug(f"FluidOutputRouter({self.type_ids}): current='{current_id}' not healthy, rebalancing among {len(targets)} reachable candidate(s) (least-full first)")
         for target in sorted(targets, key=fill_pct_of):
             if target.id == current_id:
                 continue
@@ -287,9 +300,11 @@ class FluidOutputRouter:
             if res.status == "ok":
                 self.ticks_since_connect = 0
                 self._connected_id = target.id
+                log.debug(f"FluidOutputRouter({self.type_ids}): connected -> '{target.id}' (fill={fill_pct_of(target):.2f})")
                 return FluidOutputEvent("connected", target_id=target.id, fill_pct=fill_pct_of(target))
             elif res.status != "busy":
                 if on_connect_notice:
                     on_connect_notice(target.id, res.status, res.message)
 
+        log.debug(f"FluidOutputRouter({self.type_ids}): every candidate rejected or busy this pass -- exhausted")
         return FluidOutputEvent("exhausted")

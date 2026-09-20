@@ -74,6 +74,7 @@ class RoverController(VehicleController):
         # A target restored from a saved mission (see vehicle_claims.py) after a
         # script reload takes priority over discovery, so the rover continues
         # toward the same destination instead of restarting the search.
+        self.log.trace(f"[{self.name}] find_best_mission_target() enter")
         if self.current_target_key and self.current_target and self.current_target.get("coords"):
             self.log.print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
             is_mine = self.current_target.get("type") == "mine"
@@ -84,6 +85,7 @@ class RoverController(VehicleController):
                 mine_item_id=self.current_target.get("harvest_item") if is_mine else None,
                 mine_purity=self.current_target.get("purity") if is_mine else None,
             )
+            self.log.trace(f"[{self.name}] find_best_mission_target() exit: resumed target '{self.current_target_key}'")
             return self.current_target, budget
 
         self.cleanup_stale_claims()
@@ -99,14 +101,18 @@ class RoverController(VehicleController):
                 "name": f"POI_{poi.x}_{poi.y}",
                 "priority": 1
             })
+        poi_candidate_count = len(candidates)
 
         # Candidate pool 2: Surveyed mineral deposits matching demand and this
         # Rover's actual mounted drill capability. No deprioritization -- a
         # Rover always treats a reachable mineral site as priority 2.
-        candidates.extend(self.build_mineral_site_candidates())
+        mineral_candidates = self.build_mineral_site_candidates()
+        candidates.extend(mineral_candidates)
+        self.log.debug(f"[{self.name}] find_best_mission_target(): {poi_candidate_count} unscanned POI(s), {len(mineral_candidates)} mineral site candidate(s).")
 
         target, budget, diagnostics = self.select_best_mining_target(candidates, reserve_demand=True)
         if target:
+            self.log.trace(f"[{self.name}] find_best_mission_target() exit: chose '{target['key']}' (type={target['type']})")
             return target, budget
 
         self.last_target_diagnostics = {
@@ -114,6 +120,7 @@ class RoverController(VehicleController):
             "claim_count": len(self.get_claims()),
             **diagnostics,
         }
+        self.log.trace(f"[{self.name}] find_best_mission_target() exit: no achievable target ({diagnostics})")
         return None, None
 
     def run_expedition_cycle(self):
@@ -126,6 +133,8 @@ class RoverController(VehicleController):
             if lvl < 0.95:
                 self.log.print(f"[{self.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                 self.recharge_at_station(target_level=1.0)
+            else:
+                self.log.debug(f"[{self.name}] At base with battery at {lvl*100:.0f}%; already charged, skipping pre-launch recharge.")
 
         # A target restored from a saved mission after a script reload (see
         # vehicle_claims.py) means cargo aboard right now is expected

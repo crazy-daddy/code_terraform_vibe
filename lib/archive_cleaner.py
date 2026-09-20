@@ -107,6 +107,7 @@ class ArchiveCleaner:
                         scanned_keys.add(f"{px}:{py}")
             except Exception as e:
                 self.log(f"[WARN] Failed querying points_of_interest: {e}")
+        self.console.debug(f"get_scanned_pois: resolved {len(scanned_coords)} coords / {len(scanned_keys)} keys")
         return scanned_keys, scanned_coords
 
     def get_surveyed_sites(self):
@@ -127,6 +128,7 @@ class ArchiveCleaner:
                             surveyed_ids.add(f"site_{s.id}")
             except Exception as e:
                 self.log(f"[WARN] Failed querying surveyed_sites: {e}")
+        self.console.debug(f"get_surveyed_sites: resolved {len(surveyed_ids)} ids / {len(surveyed_coords)} coords")
         return surveyed_ids, surveyed_coords
 
     def get_active_vehicle_names(self):
@@ -142,6 +144,7 @@ class ArchiveCleaner:
                         vehicles.add(str(v.name))
             except Exception as e:
                 self.log(f"[WARN] Failed querying fleet.vehicles: {e}")
+        self.console.debug(f"get_active_vehicle_names: resolved {len(vehicles)} active vehicle identifiers")
         return vehicles
 
     def get_active_grid_anchors(self):
@@ -158,6 +161,7 @@ class ArchiveCleaner:
                         anchors.add(anchor)
             except Exception as e:
                 self.log(f"[WARN] Failed querying power_control.grids: {e}")
+        self.console.debug(f"get_active_grid_anchors: resolved {len(anchors)} active grid anchors")
         return anchors
 
     def clean_claims(self, current_tick, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords):
@@ -238,6 +242,7 @@ class ArchiveCleaner:
                 claims_removed += 1
                 continue
 
+            self.console.debug(f"  Claim '{key}' retained: tick_age={current_tick - claim_tick if current_tick > 0 else 'n/a'}, not a scanned POI or surveyed site")
             clean_claims_map[key] = claim
 
         self.stats["claims_removed"] += claims_removed
@@ -245,16 +250,16 @@ class ArchiveCleaner:
 
         if not self.dry_run and (claims_removed > 0 or shared_claims != clean_claims_map or legacy_claims != clean_claims_map):
             self.archive.set(SURVEY_CLAIMS_KEY, clean_claims_map)
-            # LEGACY_ROVER_CLAIMS_KEY ("rover.claims") is an ongoing compat
-            # mirror, not a one-time migration -- vehicle_claims.py's
-            # claim_target()/refresh_claim()/release_target_claim()/
-            # cleanup_stale_claims() all dual-write it unconditionally on
-            # every single claim operation. A delete right after this set()
-            # would just get overwritten by the next claim anyway (has() is
-            # always true immediately after set()), so previously this branch
-            # deleted it every live run for no effect other than confusing
-            # anyone reading the code -- keep it synced, don't delete it.
-            self.archive.set(LEGACY_ROVER_CLAIMS_KEY, clean_claims_map)
+            # LEGACY_ROVER_CLAIMS_KEY ("rover.claims") no longer gains new
+            # entries -- vehicle_claims.py's claim_target()/refresh_claim()
+            # only write SURVEY_CLAIMS_KEY now; cleanup_stale_claims() and
+            # release_target_claim() still prune this key so old-save entries
+            # can shrink out, same treatment as LEGACY_PIONEER_SONAR_KEY below.
+            # Fully retire it once its entries have been folded into the
+            # canonical key above.
+            if legacy_claims and isinstance(legacy_claims, dict):
+                if self.archive.has(LEGACY_ROVER_CLAIMS_KEY):
+                    self.archive.delete(LEGACY_ROVER_CLAIMS_KEY)
 
     def clean_unsupported_targets(self, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords):
         """
@@ -355,6 +360,9 @@ class ArchiveCleaner:
             if ":" in key and not key.startswith("poi_") and coords:
                 canonical_key = f"poi_{coords[0]}_{coords[1]}"
 
+            if canonical_key != key:
+                self.console.debug(f"  Unsupported key '{key}' normalized to canonical form '{canonical_key}'")
+            self.console.debug(f"  Unsupported entry '{canonical_key}' retained (reason='{reason}')")
             clean_unsupported[canonical_key] = entry
 
         self.stats["unsupported_removed"] += removed_count
@@ -362,20 +370,17 @@ class ArchiveCleaner:
 
         if not self.dry_run:
             self.archive.set(SURVEY_UNSUPPORTED_KEY, clean_unsupported)
-            # LEGACY_ROVER_UNSUPPORTED_KEY ("rover.unsupported_targets") is an
-            # ongoing compat mirror, not a one-time migration --
-            # vehicle_claims.py's blacklist_target()/clear_unsupported_target()
-            # dual-write it unconditionally on every call, same reasoning as
-            # LEGACY_ROVER_CLAIMS_KEY in clean_claims() -- keep it synced,
-            # don't delete it (a delete here used to fire every live run for
-            # no lasting effect, since has() is always true right after set()).
-            self.archive.set(LEGACY_ROVER_UNSUPPORTED_KEY, clean_unsupported)
-            # LEGACY_PIONEER_SONAR_KEY ("pioneer.sonar_retries") is different:
-            # nothing writes NEW entries to it any more (only
-            # clear_unsupported_target()'s delete-only updater still touches
-            # it, to retire entries as they resolve), so it only ever shrinks
-            # -- fully retire it once its entries have been folded into the
-            # canonical keys above.
+            # LEGACY_ROVER_UNSUPPORTED_KEY ("rover.unsupported_targets") and
+            # LEGACY_PIONEER_SONAR_KEY ("pioneer.sonar_retries") no longer
+            # gain new entries -- vehicle_claims.py's blacklist_target() only
+            # writes SURVEY_UNSUPPORTED_KEY now; clear_unsupported_target()'s
+            # delete-only updaters still touch both legacy keys to retire
+            # entries as they resolve, so each only ever shrinks. Fully
+            # retire each once its entries have been folded into the
+            # canonical key above.
+            if legacy_rover and isinstance(legacy_rover, dict):
+                if self.archive.has(LEGACY_ROVER_UNSUPPORTED_KEY):
+                    self.archive.delete(LEGACY_ROVER_UNSUPPORTED_KEY)
             if legacy_pioneer and isinstance(legacy_pioneer, dict):
                 if self.archive.has(LEGACY_PIONEER_SONAR_KEY):
                     self.archive.delete(LEGACY_PIONEER_SONAR_KEY)
@@ -413,6 +418,7 @@ class ArchiveCleaner:
 
         for wp in waypoints:
             if not isinstance(wp, dict) or "x" not in wp or "y" not in wp:
+                self.console.debug(f"  Waypoint discarded: not a dict or missing x/y ({wp!r})")
                 cleaned_count += 1
                 continue
             idx = wp.get("index")
@@ -420,14 +426,17 @@ class ArchiveCleaner:
                 x = round(float(wp["x"]), 1)
                 y = round(float(wp["y"]), 1)
             except (ValueError, TypeError):
+                self.console.debug(f"  Waypoint index={idx} discarded: non-numeric x/y ({wp.get('x')!r}, {wp.get('y')!r})")
                 cleaned_count += 1
                 continue
 
             coord_pair = (x, y)
             if idx is not None and idx in seen_indices:
+                self.console.debug(f"  Waypoint index={idx} discarded: duplicate index (already seen)")
                 cleaned_count += 1
                 continue
             if coord_pair in seen_coords:
+                self.console.debug(f"  Waypoint index={idx} discarded: duplicate coordinate {coord_pair} (already seen)")
                 cleaned_count += 1
                 continue
 
@@ -442,6 +451,7 @@ class ArchiveCleaner:
         # Check next_index
         next_idx = spiral_data.get("next_index")
         if next_idx is None or not isinstance(next_idx, int) or next_idx < len(clean_waypoints):
+            self.console.debug(f"  next_index invalid/stale (was {next_idx!r}), resetting to waypoint count {len(clean_waypoints)}")
             next_idx = len(clean_waypoints)
 
         self.stats["waypoints_cleaned"] += cleaned_count
@@ -490,6 +500,8 @@ class ArchiveCleaner:
                 telemetry_removed += 1
                 if not self.dry_run:
                     self.archive.delete(k)
+            else:
+                self.console.debug(f"  Telemetry '{k}' retained: vehicle '{vehicle_name}' active, payload well-formed")
 
         self.stats["telemetry_removed"] += telemetry_removed
         self.log(f"  Result: {telemetry_removed} obsolete telemetry entries purged.")
@@ -512,6 +524,7 @@ class ArchiveCleaner:
             if k.endswith(".wh_per_meter") or k == "wh_per_meter" or k.startswith("vehicle.wh_per_meter:")
         ]
         calib_purged = 0
+        self.console.debug(f"Found {len(calib_keys)} legacy Wh/m calibration key(s) to purge")
 
         for k in calib_keys:
             self.log(f"  [DELETE CALIBRATION] Key '{k}': Obsolete Wh/m calibration entry (no longer used).")
@@ -586,6 +599,7 @@ class ArchiveCleaner:
                         continue
                     anchor = k[len(prefix):]
                     if anchor in active_grid_anchors:
+                        self.console.debug(f"  Grid state key '{k}' retained: anchor '{anchor}' still active")
                         continue
                     self.log(f"  [DELETE GRID STATE] Key '{k}': grid anchor '{anchor}' no longer active (grids likely joined).")
                     purged += 1
@@ -662,6 +676,8 @@ class ArchiveCleaner:
                 self.stats["corrupted_keys_deleted"] += 1
                 if not self.dry_run:
                     self.archive.delete(heat_key)
+            else:
+                self.console.debug(f"  Key '{heat_key}' valid (dict, {len(heat_val)} entries)")
 
         num_keys = {
             "power.sunset_hour": (0.0, 24.0),
@@ -675,6 +691,8 @@ class ArchiveCleaner:
                     self.stats["corrupted_keys_deleted"] += 1
                     if not self.dry_run:
                         self.archive.delete(k)
+                else:
+                    self.console.debug(f"  Key '{k}'={v} within valid range [{min_v}, {max_v}]")
 
     def clean_logistics_and_bio(self):
         """
@@ -693,6 +711,8 @@ class ArchiveCleaner:
                 self.stats["corrupted_keys_deleted"] += 1
                 if not self.dry_run:
                     self.archive.delete(route_key)
+            elif route:
+                self.console.debug(f"  Key '{route_key}' valid (dict, {len(route)} entries)")
 
         stock_key = "fabricator.stock_targets"
         if self.archive.has(stock_key):
@@ -702,6 +722,8 @@ class ArchiveCleaner:
                 self.stats["corrupted_keys_deleted"] += 1
                 if not self.dry_run:
                     self.archive.delete(stock_key)
+            else:
+                self.console.debug(f"  Key '{stock_key}' valid (dict, {len(targets)} entries)")
 
         bio_orders_key = "bio.completed_orders"
         if self.archive.has(bio_orders_key):
@@ -715,6 +737,8 @@ class ArchiveCleaner:
                     self.log(f"  [REPAIR] Key '{bio_orders_key}' contained duplicate orders. Cleaned.")
                     if not self.dry_run:
                         self.archive.set(bio_orders_key, unique_orders)
+                else:
+                    self.console.debug(f"  Key '{bio_orders_key}' valid ({len(orders)} orders, no duplicates)")
             elif orders is not None:
                 self.log(f"  [REPAIR] Key '{bio_orders_key}' is not a list. Deleting.")
                 self.stats["corrupted_keys_deleted"] += 1
@@ -741,6 +765,8 @@ class ArchiveCleaner:
             except Exception as e:
                 self.log(f"  [ERROR] Failed inspecting key '{k}': {e}")
                 self.stats["errors"] += 1
+
+        self.console.debug(f"clean_corrupted_or_empty_keys: scanned {len(all_keys)} keys, {self.stats['corrupted_keys_deleted']} corrupted-so-far, {self.stats['errors']} inspection errors")
 
     def run(self):
         """Executes full archive validation and cleaning workflow."""

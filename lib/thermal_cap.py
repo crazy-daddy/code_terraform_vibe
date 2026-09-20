@@ -136,6 +136,7 @@ class ThermalCapController:
 
         curr_tick = self.get_current_tick()
         is_stalled = fluid_routing.safe_is_stalled(self.cap)
+        self.log.debug(f"[{self.name}] Evaluating steam_out connection at tick {curr_tick} (stalled={is_stalled}, known candidates cached={len(self._router._cached_targets) if self._router._cached_targets is not None else 0}).")
 
         def on_blacklisted(target_id):
             self.log.level("warn").print(f"[{self.name}] '{target_id}' reported stalled (steam available, valve open, nothing transferred) -- likely no completed Gas Pipe route. Blacklisting and picking a different target.")
@@ -146,10 +147,15 @@ class ThermalCapController:
         event = self._router.ensure_connection(port, curr_tick, is_stalled, on_blacklisted, on_connect_notice)
         if event.kind == "connected":
             self.log.print(f"[{self.name}] Connected steam_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+        elif event.kind == "healthy":
+            self.log.debug(f"[{self.name}] Current steam_out target still healthy; no rebalance needed this cycle.")
         elif event.kind == "waiting":
             # The relief valve (step()) is the safety net for this window,
             # not a forced reconnect attempt here.
             self.log.debug(f"[{self.name}] Every known Gas Tank is still within its blacklist window; waiting for one to expire.")
+            for tid, blacklisted_at in self._router.blacklist._blacklisted_at.items():
+                remaining = max(0, self._router.blacklist.rescan_interval_ticks - (curr_tick - blacklisted_at))
+                self.log.debug(f"[{self.name}] Blacklisted target '{tid}': {remaining} tick(s) remaining until retry-eligible.")
         elif event.kind == "not_found":
             self.log.debug(f"[{self.name}] No Gas Tank found network-wide yet; steam_out has no destination.")
 
@@ -176,6 +182,7 @@ class ThermalCapController:
         throttle = self.release_throttle_for_pressure(pressure)
         if hasattr(self.cap, "set_throttle"):
             self.cap.set_throttle(throttle)
+        self.log.debug(f"[{self.name}] Pressure {pressure*100:.0f}% -> release throttle {throttle:.1f}.")
 
         # Relief valve: only engage once the release valve is already wide
         # open (throttle == 1.0) and pressure is still climbing toward the
@@ -189,6 +196,7 @@ class ThermalCapController:
                     self.log.level("warn").print(f"[{self.name}] Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
             else:
                 self.cap.set_relief(0.0)
+                self.log.debug(f"[{self.name}] Relief valve closed: pressure {pressure*100:.0f}% (need throttle==1.0 and >= {PRESSURE_RELIEF_THRESHOLD*100:.0f}% to engage relief); release throttle is {throttle:.1f}.")
 
         if hasattr(self.cap, "is_stalled") and self.cap.is_stalled():
             self.log.level("warn").print(f"[{self.name}] Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")

@@ -147,11 +147,13 @@ class DroneServiceController:
 
     def manage_docked_drones(self):
         """Queues docked electric drones below target charge level for charging."""
+        self.log.trace(f"[{self.name}] manage_docked_drones() entry.")
         try:
             docked_ids = self.station.get_docked()
         except Exception:
             return
         if not docked_ids:
+            self.log.trace(f"[{self.name}] manage_docked_drones(): no docked drones this cycle.")
             return
 
         active_bays = self.station.get_active()
@@ -161,6 +163,7 @@ class DroneServiceController:
             try:
                 d = get_component(d_id)
                 if not d or not hasattr(d, "battery"):
+                    self.log.debug(f"[{self.name}] Docked drone {d_id} has no battery component (heli drone); skipping charge management.")
                     continue  # heli drone -- refuel() branching is out of scope this pass
                 lvl = d.battery.percent()
                 if lvl < (self.target_charge_level - 0.02):
@@ -170,8 +173,13 @@ class DroneServiceController:
                             self.log.print(f"[{self.name}] Queued docked drone {d_id} ({lvl*100:.0f}%) for charge.")
                         elif res.status != "target_reached":
                             self.log.level("warn").print(f"[{self.name}] Charge queue notice for {d_id}: {res.status} - {res.message}")
+                    else:
+                        self.log.debug(f"[{self.name}] Docked drone {d_id} ({lvl*100:.0f}%) below target but already active/queued; not re-queuing.")
+                else:
+                    self.log.trace(f"[{self.name}] Docked drone {d_id} at {lvl*100:.0f}%, at or above target {self.target_charge_level*100:.0f}%; no charge needed.")
             except Exception:
                 pass
+        self.log.trace(f"[{self.name}] manage_docked_drones() exit: {len(docked_ids)} docked drone(s) evaluated.")
 
     def manage_fleet_rescues(self):
         """
@@ -180,6 +188,7 @@ class DroneServiceController:
         for anything stranded/scrambled or already below its own return
         floor.
         """
+        self.log.trace(f"[{self.name}] manage_fleet_rescues() entry.")
         if self.station.is_rescuing():
             target_name = self.station.get_rescue_target()
             if target_name and target_name != self.last_rescued_drone:
@@ -209,11 +218,13 @@ class DroneServiceController:
             is_below_floor = v_wh <= self.return_floor_wh(d_ref)
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
+                self.log.debug(f"[{self.name}] {d_ref.name}: level {v_lvl*100:.0f}% below rescue target {target_level*100:.0f}%, not yet stranded/below-floor; nudging home.")
                 if self.order_return_to_service(d_ref):
                     continue
 
             if is_stranded or is_below_floor:
                 if not self.is_nearest_station_to(d_ref):
+                    self.log.debug(f"[{self.name}] {d_ref.name} in distress but a closer drone_service station exists; deferring dispatch to it.")
                     continue
 
                 reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL BATTERY ({v_wh:.1f} Wh, below {self.return_floor_wh(d_ref):.1f} Wh return floor)"
@@ -229,9 +240,11 @@ class DroneServiceController:
                     self.last_rescued_drone = d_ref.id
                     break
                 elif res.status == "already_dispatched":
+                    self.log.debug(f"[{self.name}] Rescue for {d_ref.id} already dispatched; not re-issuing.")
                     break
                 else:
                     self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
+        self.log.trace(f"[{self.name}] manage_fleet_rescues() exit: {len(drones)} drone(s) evaluated.")
 
     def step(self):
         if not self.is_station_powered():

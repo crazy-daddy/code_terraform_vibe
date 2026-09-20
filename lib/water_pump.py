@@ -96,6 +96,7 @@ class WaterPumpController:
 
         curr_tick = self.get_current_tick()
         is_stalled = fluid_routing.safe_is_stalled(self.pump)
+        self.log.debug(f"[{self.name}] Evaluating water_out connection at tick {curr_tick} (stalled={is_stalled}, known candidates cached={len(self._router._cached_targets) if self._router._cached_targets is not None else 0}).")
 
         def on_blacklisted(target_id):
             self.log.level("warn").print(f"[{self.name}] '{target_id}' reported stalled (well water available, valve open, nothing transferred) -- likely no completed Liquid Pipe route. Blacklisting and picking a different target.")
@@ -106,8 +107,13 @@ class WaterPumpController:
         event = self._router.ensure_connection(port, curr_tick, is_stalled, on_blacklisted, on_connect_notice)
         if event.kind == "connected":
             self.log.print(f"[{self.name}] Connected water_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+        elif event.kind == "healthy":
+            self.log.debug(f"[{self.name}] Current water_out target still healthy; no rebalance needed this cycle.")
         elif event.kind == "waiting":
             self.log.debug(f"[{self.name}] Every known Liquid Tank is still within its blacklist window; waiting for one to expire.")
+            for tid, blacklisted_at in self._router.blacklist._blacklisted_at.items():
+                remaining = max(0, self._router.blacklist.rescan_interval_ticks - (curr_tick - blacklisted_at))
+                self.log.debug(f"[{self.name}] Blacklisted target '{tid}': {remaining} tick(s) remaining until retry-eligible.")
         elif event.kind == "not_found":
             self.log.debug(f"[{self.name}] No Liquid Tank or Large Liquid Tank found network-wide yet; water_out has no destination.")
 

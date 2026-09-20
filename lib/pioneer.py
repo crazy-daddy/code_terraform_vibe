@@ -184,6 +184,7 @@ class PioneerController(VehicleController):
         etc.) or an inability to physically reach the site/station -- never merely
         because the job is still incomplete and needs another recharge round later.
         """
+        self.log.trace(f"[{self.name}] execute_construction() enter: blueprint_id={blueprint_id!r}, coords={coords}")
         if not hasattr(self.vehicle, "constructor"):
             self.log.level("error").print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")
             return False
@@ -192,6 +193,7 @@ class PioneerController(VehicleController):
             self.log.print(f"[{self.name}] Driving to construction site at {coords}...")
             if not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
                 self.log.level("warn").print(f"[{self.name}] Could not reach construction site at {coords} safely.")
+                self.log.trace(f"[{self.name}] execute_construction() exit: could not reach site")
                 return False
 
         if hasattr(self.vehicle, "nav"):
@@ -215,22 +217,27 @@ class PioneerController(VehicleController):
             self.log.print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
 
             if res.status == "ok":
+                self.log.trace(f"[{self.name}] execute_construction() exit: blueprint '{blueprint_id}' complete")
                 return True
             if res.status not in ("paused_no_power", "paused"):
+                self.log.trace(f"[{self.name}] execute_construction() exit: genuine rejection ({res.status})")
                 return False  # genuine rejection, not a power issue -- don't keep retrying
 
             if progress_after <= progress_before:
                 self.log.level("warn").print(f"[{self.name}] No progress made this cycle ({res.status}); leaving paused for a later attempt.")
+                self.log.trace(f"[{self.name}] execute_construction() exit: no progress made, leaving paused")
                 return True
 
             self.log.print(f"[{self.name}] Construction paused ({res.status}) at {progress_after*100:.0f}% progress. Recharging nearby and resuming.")
             nearest_cs, _ = self.get_nearest_charging_station()
             if not self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
                 self.log.level("warn").print(f"[{self.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")
+                self.log.trace(f"[{self.name}] execute_construction() exit: could not reach charging station")
                 return True
             self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
             if coords and not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
                 self.log.level("warn").print(f"[{self.name}] Could not return to construction site after recharge; leaving paused for a later attempt.")
+                self.log.trace(f"[{self.name}] execute_construction() exit: could not return to site after recharge")
                 return True
             if hasattr(self.vehicle, "nav"):
                 try:
@@ -347,6 +354,7 @@ class PioneerController(VehicleController):
                             pending = []
 
                 if not paused and not pending:
+                    self.log.debug(f"[{self.name}] run_construction_loop(): no paused or pending construction jobs; idling.")
                     if failed_jobs:
                         failed_jobs.clear()
                     if self.distance_to_home() > 3.0:
@@ -522,6 +530,7 @@ class PioneerController(VehicleController):
                 target_jobs = achievable_targets
                 if not target_jobs:
                     # All pending jobs currently marked failed; clear failure set and wait
+                    self.log.debug(f"[{self.name}] run_construction_loop(): every pending job is unreachable this cycle; clearing failed_jobs and idling.")
                     failed_jobs.clear()
                     if self.distance_to_home() > 3.0:
                         self.return_to_base()
@@ -589,9 +598,11 @@ class PioneerController(VehicleController):
                             continue
                     else:
                         # Already have materials loaded; avoid rapid cycling
+                        self.log.debug(f"[{self.name}] run_construction_loop(): {required_item} already loaded for job {job_id}; waiting a beat before retry.")
                         sleep(2.0)
                 else:
                     # Deconstruction job - ensure cargo has space for reclaimed materials
+                    self.log.debug(f"[{self.name}] run_construction_loop(): deconstruction job {job_id}, no materials required.")
                     if hasattr(self.vehicle, "cargo") and self.vehicle.cargo.full():
                         self.unload_cargo()
 

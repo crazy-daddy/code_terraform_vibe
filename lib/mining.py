@@ -87,6 +87,7 @@ class MiningMixin:
 
         raw_demands = get_raw_material_demands()
         if not raw_demands:
+            self.log.debug(f"[{self.name}] build_mineral_site_candidates(): no active raw-material demand; skipping candidate search.")
             return []
 
         max_drill_hardness = 1.0
@@ -95,6 +96,10 @@ class MiningMixin:
                 max_drill_hardness = self.vehicle.drill.hardness_limit()
             except Exception:
                 max_drill_hardness = 1.0
+        self.log.debug(
+            f"[{self.name}] build_mineral_site_candidates(): demand={raw_demands}, max_drill_hardness={max_drill_hardness}, "
+            f"deprioritize_hardness_at_or_below={deprioritize_hardness_at_or_below}"
+        )
 
         unsupported_targets = self.get_unsupported_targets()
 
@@ -110,17 +115,20 @@ class MiningMixin:
                     continue
                 hardness = getattr(site, "hardness", 99)
                 if hardness > max_drill_hardness:
+                    self.log.debug(f"[{self.name}] site_{site.id}: hardness {hardness} exceeds drill limit {max_drill_hardness}; skipped.")
                     continue
 
                 key = f"site_{site.id}"
                 if key in unsupported_targets:
-                    can_attempt, _ = self.can_attempt_target(key, unsupported_targets[key])
+                    can_attempt, reason = self.can_attempt_target(key, unsupported_targets[key])
                     if not can_attempt:
+                        self.log.debug(f"[{self.name}] {key}: blocked by unsupported-target record ({reason}); skipped.")
                         continue
 
                 priority = 2
                 if deprioritize_hardness_at_or_below is not None and hardness <= deprioritize_hardness_at_or_below:
                     priority = 3
+                    self.log.debug(f"[{self.name}] {key}: hardness {hardness} deprioritized (<= {deprioritize_hardness_at_or_below}); priority=3.")
 
                 candidates.append({
                     "key": key,
@@ -135,6 +143,7 @@ class MiningMixin:
         except Exception:
             pass
 
+        self.log.debug(f"[{self.name}] build_mineral_site_candidates(): {len(candidates)} candidate(s) built.")
         return candidates
 
     def build_local_stockpile_candidates(self, outpost_id):
@@ -209,6 +218,7 @@ class MiningMixin:
         except Exception:
             pass
 
+        self.log.debug(f"[{self.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}).")
         return candidates
 
     def select_best_mining_target(self, candidates, reserve_demand=False):
@@ -245,6 +255,7 @@ class MiningMixin:
             ),
         )
 
+        self.log.trace(f"[{self.name}] select_best_mining_target() enter: {len(candidates)} candidate(s), reserve_demand={reserve_demand}")
         budget_candidates = 0
         for cand in candidates:
             planned_mine = 10 if cand["type"] == "mine" else 0
@@ -260,19 +271,29 @@ class MiningMixin:
             if budget["is_achievable"]:
                 budget_candidates += 1
                 claimed = self.claim_target(cand["key"], cand)
-                if claimed:
-                    self.current_target_reserved = False
-                    if cand["type"] == "mine":
-                        estimated_units = self.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
-                        cand["estimated_units"] = estimated_units
-                        if reserve_demand and estimated_units > 0:
-                            mining_reservations.reserve_yield(self.name, cand["key"], cand["harvest_item"], estimated_units, self.get_current_tick())
-                            self.current_target_reserved = True
-                    self.current_target = cand
-                    self.current_target_key = cand["key"]
-                    self.save_mission(cand["type"], cand)
-                    return cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+                if not claimed:
+                    self.log.debug(f"[{self.name}] {cand['key']}: within budget ({budget['total_required_wh']:.1f} Wh) but claim lost to a peer; trying next candidate.")
+                    continue
+                self.log.debug(
+                    f"[{self.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, "
+                    f"purity={cand.get('purity')}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
+                )
+                self.current_target_reserved = False
+                if cand["type"] == "mine":
+                    estimated_units = self.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
+                    cand["estimated_units"] = estimated_units
+                    if reserve_demand and estimated_units > 0:
+                        mining_reservations.reserve_yield(self.name, cand["key"], cand["harvest_item"], estimated_units, self.get_current_tick())
+                        self.current_target_reserved = True
+                self.current_target = cand
+                self.current_target_key = cand["key"]
+                self.save_mission(cand["type"], cand)
+                self.log.trace(f"[{self.name}] select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")
+                return cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+            else:
+                self.log.debug(f"[{self.name}] {cand['key']}: unreachable within budget ({budget['total_required_wh']:.1f} Wh required); rejected.")
 
+        self.log.trace(f"[{self.name}] select_best_mining_target() exit: no achievable candidate ({budget_candidates}/{len(candidates)} within budget).")
         return None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
 
     def restore_yield_reservation_flag(self):
@@ -338,7 +359,7 @@ class MiningMixin:
                 self.log.print(f"[{self.name}] Drill finished or stopped: {m_res.status} - {m_res.message}")
                 if m_res.status in ["tier_too_low", "too_hard", "research_required", "depleted", "not_found", "empty"]:
                     if self.current_target_key:
-                        self.blacklist_target(self.current_target_key, m_res.status, m_res.message)
+                        self.blacklist_target(self.current_target_key, m_res.status, m_res.message, scanner_type="drill")
                 break
 
             if self.current_target_key:
@@ -358,11 +379,13 @@ class MiningMixin:
         (mirrors the recharge-and-resume pattern used for construction jobs
         in pioneer.py's execute_construction()).
         """
-        self.mine_current_site(max_units=max_units)
+        self.log.trace(f"[{self.name}] mine_until_full_or_exhausted() enter: target_coords={target_coords}, max_units={max_units}")
+        total_mined = self.mine_current_site(max_units=max_units)
 
         while getattr(self, "mining_interrupted_battery", False) and not self.vehicle.cargo.full():
             if self.is_recalled():
                 self.log.print(f"[{self.name}] Recall requested; not resuming mining after recharge.")
+                self.log.trace(f"[{self.name}] mine_until_full_or_exhausted() exit: recalled, total_mined={total_mined}")
                 return
             self.log.print(f"[{self.name}] Mining job at {target_coords} interrupted by low battery. Diverting to recharge and resume.")
             if self.current_target_key:
@@ -374,6 +397,7 @@ class MiningMixin:
             reached_cs = self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
             if not reached_cs:
                 self.log.level("warn").print(f"[{self.name}] Failed to reach charging station during mining interruption.")
+                self.log.trace(f"[{self.name}] mine_until_full_or_exhausted() exit: could not reach charging station, total_mined={total_mined}")
                 return
 
             # A battery-interruption recharge stop can land at the home base
@@ -398,15 +422,18 @@ class MiningMixin:
             reached_site = self.drive_with_recharge(target_coords[0], target_coords[1], precision=1.5)
             if not reached_site:
                 self.log.level("warn").print(f"[{self.name}] Could not reach mining site after recharge.")
+                self.log.trace(f"[{self.name}] mine_until_full_or_exhausted() exit: could not reach site after recharge, total_mined={total_mined}")
                 return
 
             remaining_space = self.vehicle.cargo.capacity() - self.vehicle.cargo.count()
             if max_units is not None:
                 remaining_space = min(remaining_space, max(0, max_units - self.vehicle.cargo.count()))
             if remaining_space > 0:
-                self.mine_current_site(max_units=remaining_space)
+                total_mined += self.mine_current_site(max_units=remaining_space)
             else:
+                self.log.trace(f"[{self.name}] mine_until_full_or_exhausted() exit: no remaining space, total_mined={total_mined}")
                 return
+        self.log.trace(f"[{self.name}] mine_until_full_or_exhausted() exit: complete, total_mined={total_mined}")
 
     def run_stationed_mining_loop(self, outpost_id):
         """
@@ -478,12 +505,14 @@ class MiningMixin:
         if has_resumable_target:
             self.log.print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
             target = self.current_target
+            self.log.trace(f"[{self.name}] _stationed_mining_cycle(): calculate_trip_energy() for resumed target {target['coords']}")
             budget = self.calculate_trip_energy(
                 target["coords"],
                 planned_drill_units=10,
                 mine_item_id=target.get("harvest_item"),
                 mine_purity=target.get("purity"),
             )
+            self.log.trace(f"[{self.name}] _stationed_mining_cycle(): budget total_required_wh={budget['total_required_wh']:.1f}, is_achievable={budget['is_achievable']}")
         else:
             candidates = self.build_local_stockpile_candidates(outpost_id)
             target, budget, _ = self.select_best_mining_target(candidates)

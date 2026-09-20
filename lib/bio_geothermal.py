@@ -76,6 +76,7 @@ class DnaSequencerController:
 
     def _load_next_sample(self, orders, snapshot):
         outpost = self.machine.outpost
+        self.log.trace(f"[{self.name}] _load_next_sample: entry")
 
         staged_stacks = []
         if hasattr(self.machine.input, "stacks"):
@@ -97,10 +98,14 @@ class DnaSequencerController:
         if raw_candidate:
             staged_id, properties = raw_candidate
             order = self._find_local_order(orders, snapshot, staged_id)
-            if order and _order_fragment_remaining(order, staged_id, snapshot) > 0:
+            remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
+            self.log.debug(f"[{self.name}] Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
+            if order and remaining > 0:
                 load_res = self.machine.load(staged_id, properties, "exact")
                 if load_res.status == "ok":
                     self.log.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
+                else:
+                    self.log.debug(f"[{self.name}] load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
                 return
             try:
                 count = self.machine.input.count()
@@ -112,28 +117,38 @@ class DnaSequencerController:
             return
 
         if staged_stacks:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, {len(staged_stacks)} stack(s) already staged -- nothing to do this cycle.")
             return
 
         order = self._find_local_order(orders, snapshot)
         if not order:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, no local order to focus on.")
             return
 
         for fragment_id in (order.requires or {}).keys():
-            if _order_fragment_remaining(order, fragment_id, snapshot) <= 0:
+            remaining = _order_fragment_remaining(order, fragment_id, snapshot)
+            if remaining <= 0:
+                self.log.debug(f"[{self.name}] {order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
                 continue
             found = self._find_raw_stack(fragment_id, outpost)
             if not found:
+                self.log.debug(f"[{self.name}] {order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
                 continue
-            source_id, properties, _ = found
+            source_id, properties, count = found
+            self.log.debug(f"[{self.name}] Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
             if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
                 self.machine.input.connect(source_id)
             take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
             if take_res.status != "ok":
+                self.log.debug(f"[{self.name}] take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
                 self.log.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
+            else:
+                self.log.debug(f"[{self.name}] load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
             return
+        self.log.trace(f"[{self.name}] _load_next_sample: exit, no fragment of {order.id} both needed and locally available as raw stock.")
 
     def step(self):
         self._notify_heartbeat()
@@ -149,6 +164,7 @@ class DnaSequencerController:
             except Exception:
                 orders = []
         snapshot = _local_stock_snapshot(outpost)
+        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, chamber_empty={self.machine.chamber is None}")
 
         chamber = self.machine.chamber
         if chamber is None:
@@ -159,6 +175,7 @@ class DnaSequencerController:
         if chamber.spliced:
             # Already spliced by an earlier cycle -- "One splice per fragment" per
             # docs/components/dna_sequencer.md, so just let it flow to delivery.
+            self.log.debug(f"[{self.name}] {chamber.fragment_id} already spliced -- discarding to flow toward delivery.")
             self.machine.discard()
             sleep(0.5)
             return
@@ -166,12 +183,14 @@ class DnaSequencerController:
         target_genes = self._target_genes_for(orders, snapshot, chamber.fragment_id)
         if not target_genes:
             # No local order needs this fragment spliced right now -- pass through unchanged.
+            self.log.debug(f"[{self.name}] No local order requires {chamber.fragment_id} spliced right now -- discarding unchanged.")
             self.machine.discard()
             sleep(0.5)
             return
 
         known = self._known_genes()
         unknown = [g for g in target_genes if known and g not in known]
+        self.log.debug(f"[{self.name}] Target genes for {chamber.fragment_id}: {target_genes}, recognized_catalog_size={len(known)}, unrecognized={unknown}")
         if unknown:
             self.log.debug(f"[{self.name}] Target genes {target_genes} include unrecognized ids {unknown} -- discarding rather than risk splice().")
             self.machine.discard()

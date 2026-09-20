@@ -88,17 +88,21 @@ class FabricatorController:
                 age = current_tick - existing.get("tick", 0)
                 if current_tick == 0 or age <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
+                self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('fabricator')}' is stale (age={age} > {FABRICATOR_RECIPE_CLAIM_STALE_TICKS}), taking over")
             claims[recipe_id] = {"fabricator": self.name, "tick": current_tick}
             return claims
 
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
         except Exception:
+            self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
             return True  # can't verify; don't block production over an archive hiccup
 
         claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
         owner = (claims.get(recipe_id) or {}).get("fabricator")
-        return owner == self.name
+        won = owner == self.name
+        self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): {'won' if won else f'held by other fabricator {owner!r}'}")
+        return won
 
     def release_recipe(self, recipe_id):
         if not recipe_id:
@@ -112,6 +116,7 @@ class FabricatorController:
 
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
+            self.log.debug(f"[{self.name}] release_recipe({recipe_id}): released")
         except Exception:
             pass
 
@@ -324,6 +329,7 @@ class FabricatorController:
             missing = max(0, target - current - output_buffer)
             if missing > 0:
                 candidates.append((missing, recipe))
+                self.log.debug(f"[{self.name}] choose_recipe: candidate {recipe.output_item} target={target} current={current} output_buffer={output_buffer} -> missing={missing}")
 
         # Prefer a manual build order (get_manual_orders()) over every other demanded recipe
         # regardless of shortfall size -- an operator asking for "2x drone (small)" right now
@@ -347,11 +353,13 @@ class FabricatorController:
             sourceable.append(recipe)
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
+                self.log.debug(f"[{self.name}] choose_recipe: claimed '{recipe_id}' (missing={missing}, {'manual order' if getattr(recipe, 'output_item', None) in manual_items else 'biggest sourceable shortfall'})")
                 return recipe
             # another Fabricator already has a fresh claim on this one -- try
             # the next candidate first, rather than piling on immediately;
             # piling on is the fallback below, only once every candidate has
             # been tried.
+            self.log.debug(f"[{self.name}] choose_recipe: '{recipe_id}' already claimed by another fabricator, trying next candidate")
         if blocked:
             self.log.level("warn").print(f"[{self.name}] Skipping unreachable recipe(s) for now: {', '.join(blocked)}.")
 
@@ -372,6 +380,7 @@ class FabricatorController:
             recipe = sourceable[0]
             self.log.print(f"[{self.name}] Joining '{getattr(recipe, 'id', '?')}' alongside another Fabricator (biggest remaining shortfall, no other demanded recipe to work instead).")
             return recipe
+        self.log.debug(f"[{self.name}] choose_recipe: no candidates at all (target-met, unreachable, or empty demand) -- returning None")
         return None
 
     def drain_output(self):
@@ -426,6 +435,7 @@ class FabricatorController:
             # it stops requesting more once topped up and leaves frequent
             # openings for a peer Fabricator to get its own share too.
             amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, craft_prefill_units(recipe, item_id) - staged))
+            self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={craft_prefill_units(recipe, item_id)} -> amount={amount}")
             # take_item() checks Inventory first, then rotates through any
             # Warehouse holding this item -- see lib/storage.py.
             moved = take_item(self.machine.input, item_id, amount)

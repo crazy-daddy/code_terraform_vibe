@@ -80,6 +80,7 @@ class BioCasterController:
 
     def _load_next_sample(self, orders, snapshot):
         outpost = self.machine.outpost
+        self.log.trace(f"[{self.name}] _load_next_sample: entry")
 
         staged_stacks = []
         if hasattr(self.machine.input, "stacks"):
@@ -95,6 +96,7 @@ class BioCasterController:
             if not staged_id or count <= 0:
                 continue
             if self.machine.find_recipe(staged_id) is None:
+                self.log.debug(f"[{self.name}] Staged {staged_id} has no matching recipe -- treating as a fabricated material, not a raw fragment.")
                 continue  # a staged fabricated material, not a forgeable raw fragment
             properties = getattr(stack, "properties", None) or {}
             if raw_candidate is None:
@@ -103,12 +105,18 @@ class BioCasterController:
         if raw_candidate:
             staged_id, properties = raw_candidate
             order = self._find_local_order(orders, snapshot, staged_id)
-            if order and _order_fragment_remaining(order, staged_id, snapshot) > 0:
+            remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
+            self.log.debug(f"[{self.name}] Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
+            if order and remaining > 0:
                 set_res = self.machine.set_recipe(staged_id)
                 if set_res.status == "ok":
                     load_res = self.machine.load(staged_id, properties, "exact")
                     if load_res.status == "ok":
                         self.log.print(f"[{self.name}] Loaded {staged_id} into crucible.")
+                    else:
+                        self.log.debug(f"[{self.name}] load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+                else:
+                    self.log.debug(f"[{self.name}] set_recipe({staged_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
                 return
             try:
                 count = self.machine.input.count()
@@ -120,33 +128,44 @@ class BioCasterController:
             return
 
         if staged_stacks:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, {len(staged_stacks)} stack(s) staged (fabricated materials awaiting recipe).")
             return  # everything staged is a fabricated material waiting for its recipe
 
         order = self._find_local_order(orders, snapshot)
         if not order:
+            self.log.trace(f"[{self.name}] _load_next_sample: exit, no local order to focus on.")
             return
 
         for fragment_id in (order.requires or {}).keys():
             if self.machine.find_recipe(fragment_id) is None:
                 continue  # not a Bio Caster recipe -- some other biome's fragment
-            if _order_fragment_remaining(order, fragment_id, snapshot) <= 0:
+            remaining = _order_fragment_remaining(order, fragment_id, snapshot)
+            if remaining <= 0:
+                self.log.debug(f"[{self.name}] {order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
                 continue
             found = self._find_raw_stack(fragment_id, outpost)
             if not found:
+                self.log.debug(f"[{self.name}] {order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
                 continue
-            source_id, properties, _ = found
+            source_id, properties, count = found
+            self.log.debug(f"[{self.name}] Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
             if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
                 self.machine.input.connect(source_id)
             take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
             if take_res.status != "ok":
+                self.log.debug(f"[{self.name}] take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
                 continue
             set_res = self.machine.set_recipe(fragment_id)
             if set_res.status != "ok":
+                self.log.debug(f"[{self.name}] set_recipe({fragment_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
                 self.log.print(f"[{self.name}] Loaded {fragment_id} into crucible.")
+            else:
+                self.log.debug(f"[{self.name}] load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
             return
+        self.log.trace(f"[{self.name}] _load_next_sample: exit, no fragment of {order.id} both needed and locally available as raw stock.")
 
     def _load_materials(self, required_materials, outpost):
         """Stages the first still-short fabricated material into self.input from
@@ -158,24 +177,29 @@ class BioCasterController:
             have = loaded.get(material_id, 0)
             missing = required_qty - have
             if missing <= 0:
+                self.log.trace(f"[{self.name}] Material {material_id}: have={have} required={required_qty} -- already sufficient.")
                 continue
             moved = take_item(self.machine.input, material_id, missing, outpost=outpost)
-            self.log.debug(f"[{self.name}] Staged {moved}x {material_id} toward {required_qty} required.")
+            self.log.debug(f"[{self.name}] Staged {moved}x {material_id} toward {required_qty} required (have={have}, missing={missing}).")
             return
 
     def _drive_temperature(self, target_range):
         low, high = target_range
         temp = self.machine.temperature()
         if temp < low - CASTER_APPROACH_BAND_C:
+            self.log.debug(f"[{self.name}] temp={temp:.1f}C is >{CASTER_APPROACH_BAND_C}C below low={low:.1f}C -- full heat(100).")
             self.machine.set_cool(0)
             self.machine.set_heat(100)
         elif temp < low:
+            self.log.debug(f"[{self.name}] temp={temp:.1f}C within {CASTER_APPROACH_BAND_C}C of low={low:.1f}C -- approach heat({CASTER_APPROACH_PCT}).")
             self.machine.set_cool(0)
             self.machine.set_heat(CASTER_APPROACH_PCT)
         elif temp > high + CASTER_APPROACH_BAND_C:
+            self.log.debug(f"[{self.name}] temp={temp:.1f}C is >{CASTER_APPROACH_BAND_C}C above high={high:.1f}C -- full cool(100).")
             self.machine.set_heat(0)
             self.machine.set_cool(100)
         elif temp > high:
+            self.log.debug(f"[{self.name}] temp={temp:.1f}C within {CASTER_APPROACH_BAND_C}C of high={high:.1f}C -- approach cool({CASTER_APPROACH_PCT}).")
             self.machine.set_heat(0)
             self.machine.set_cool(CASTER_APPROACH_PCT)
         else:
@@ -200,6 +224,7 @@ class BioCasterController:
             except Exception:
                 orders = []
         snapshot = _local_stock_snapshot(outpost)
+        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, fragment_loaded={self.machine.fragment() is not None}")
 
         fragment_id = self.machine.fragment()
         if fragment_id is None:
@@ -210,8 +235,10 @@ class BioCasterController:
             return
 
         order = self._find_local_order(orders, snapshot, fragment_id)
-        if not order or _order_fragment_remaining(order, fragment_id, snapshot) <= 0:
+        remaining = _order_fragment_remaining(order, fragment_id, snapshot) if order else 0
+        if not order or remaining <= 0:
             # Nothing local needs this fragment forged right now -- pass through unchanged.
+            self.log.debug(f"[{self.name}] {fragment_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining} -- nothing needs it forged, ejecting unchanged.")
             self.machine.eject()
             sleep(0.5)
             return
@@ -228,6 +255,7 @@ class BioCasterController:
             (self.machine.materials() or {}).get(m, 0) >= qty
             for m, qty in required_materials.items()
         )
+        self.log.debug(f"[{self.name}] {fragment_id}: required_materials={required_materials} materials_ready={materials_ready} required_range={required_range}")
         self._drive_temperature(required_range)
         if not materials_ready:
             self._load_materials(required_materials, outpost)
@@ -237,11 +265,14 @@ class BioCasterController:
         temp = self.machine.temperature()
         low, high = required_range
         if low <= temp <= high:
+            self.log.debug(f"[{self.name}] temperature={temp:.1f}C within target [{low:.1f},{high:.1f}] and materials ready -- attempting cast().")
             cast_res = self.machine.cast()
             if cast_res.status == "ok":
                 self.log.print(f"[{self.name}] Cast {fragment_id} at {temp:.1f}C.")
             elif cast_res.status != "busy":
                 self.log.debug(f"[{self.name}] cast() -> {cast_res.status}: {cast_res.message}")
+        else:
+            self.log.debug(f"[{self.name}] temperature={temp:.1f}C outside target [{low:.1f},{high:.1f}] -- holding cast(), still driving toward range.")
         sleep(0.5)
 
     def run(self):

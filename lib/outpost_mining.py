@@ -29,6 +29,10 @@
 # written to archive; every read after that returns the stored value untouched,
 # so a player's manual edit is never silently clobbered by a background loop.
 
+from tree_console import TreeConsole
+
+log = TreeConsole(module="outpost_mining")
+
 OUTPOST_ORE_STOCK_TARGETS_KEY = "outposts.ore_stock_targets"
 
 # One Warehouse slot's worth (docs/components/warehouse.md: 5 slots x 2000
@@ -204,6 +208,12 @@ def auto_assign_new_site(site, range_m=None):
     if not outpost_id:
         effective_range = range_m if range_m is not None else resource_assignment_range_m()
         outpost_id = _closest_outpost_within_range(site.x, site.y, effective_range) or ""
+        if outpost_id:
+            log.debug(f"auto_assign_new_site: {item_id} site at ({site.x:.0f},{site.y:.0f}) assigned to closest outpost '{outpost_id}' within {effective_range:.0f}m")
+        else:
+            log.debug(f"auto_assign_new_site: {item_id} site at ({site.x:.0f},{site.y:.0f}) has no owned outpost within {effective_range:.0f}m, left unassigned")
+    else:
+        log.debug(f"auto_assign_new_site: {item_id} site at ({site.x:.0f},{site.y:.0f}) already assigned to '{outpost_id}', refreshing marker only")
 
     return sync_resource_marker(site, outpost_id=outpost_id)
 
@@ -246,6 +256,8 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
         )
         if getattr(res, "status", "") == "ok":
             assigned += 1
+            log.debug(f"reevaluate_unassigned_near_outpost({outpost_id}): claimed unassigned marker '{marker.id}' ({marker.label}) within {effective_range:.0f}m")
+    log.debug(f"reevaluate_unassigned_near_outpost({outpost_id}): assigned {assigned} previously-unassigned marker(s) out of {len(candidates)} scanned")
     return assigned
 
 
@@ -282,7 +294,9 @@ def assigned_ores_for(outpost_id):
         item_id = _item_id_from_label(getattr(marker, "label", ""))
         if item_id:
             items.add(item_id)
-    return sorted(items)
+    result = sorted(items)
+    log.trace(f"assigned_ores_for({outpost_id}): {result}")
+    return result
 
 
 def stock_target_for(outpost_id, item_id):
@@ -306,4 +320,5 @@ def stock_target_for(outpost_id, item_id):
     outpost_targets[item_id] = WAREHOUSE_SLOT_CAPACITY
     targets[outpost_id] = outpost_targets
     archive.set(OUTPOST_ORE_STOCK_TARGETS_KEY, targets)
+    log.debug(f"stock_target_for({outpost_id}, {item_id}): seeding default target {WAREHOUSE_SLOT_CAPACITY} (first lookup)")
     return WAREHOUSE_SLOT_CAPACITY

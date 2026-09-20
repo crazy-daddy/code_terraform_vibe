@@ -184,8 +184,10 @@ class DroneEnergyMixin:
         stations = self.get_all_drone_services()
         if not stations:
             fallback = getattr(self, "home_coords", (0.0, 0.0))
+            self.log.debug(f"[{self.name}] get_nearest_drone_service: no drone_service_station deployed yet; falling back to home_coords {fallback}.")
             return fallback, {"id": "", "coords": fallback}
         best = min(stations, key=lambda st: self.distance_between(ref_coords, st["coords"]))
+        self.log.debug(f"[{self.name}] get_nearest_drone_service: {len(stations)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self.distance_between(ref_coords, best['coords']):.1f}m).")
         return best["coords"], best
 
     def get_nearest_drone_depot(self, from_coords=None):
@@ -198,8 +200,10 @@ class DroneEnergyMixin:
         depots = self.get_all_drone_depots()
         if not depots:
             fallback = getattr(self, "home_coords", (0.0, 0.0))
+            self.log.debug(f"[{self.name}] get_nearest_drone_depot: no drone_depot deployed yet; falling back to home_coords {fallback}.")
             return fallback, {"id": "", "coords": fallback}
         best = min(depots, key=lambda d: self.distance_between(ref_coords, d["coords"]))
+        self.log.debug(f"[{self.name}] get_nearest_drone_depot: {len(depots)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self.distance_between(ref_coords, best['coords']):.1f}m).")
         return best["coords"], best
 
     def return_floor_wh(self, from_coords=None):
@@ -252,6 +256,13 @@ class DroneEnergyMixin:
         total_required_wh = buffered_wh + self.MIN_EMERGENCY_RESERVE_WH
 
         curr_wh, cap_wh, lvl = self.get_battery()
+        is_achievable = curr_wh >= total_required_wh
+        self.log.debug(
+            f"[{self.name}] calculate_trip_energy to {target_coords}: "
+            f"out={drive_out_wh:.2f}Wh ({dist_outbound:.1f}m), home={drive_home_wh:.2f}Wh ({dist_inbound:.1f}m to '{nearest_service}'), "
+            f"buffered={buffered_wh:.2f}Wh (x{self.SAFETY_MARGIN_MULTIPLIER}), reserve={self.MIN_EMERGENCY_RESERVE_WH:.1f}Wh, "
+            f"total_required={total_required_wh:.2f}Wh, current={curr_wh:.2f}Wh -> achievable={is_achievable}."
+        )
         return {
             "dist_outbound": dist_outbound,
             "dist_inbound": dist_inbound,
@@ -261,7 +272,7 @@ class DroneEnergyMixin:
             "net_expedition_wh": net_wh,
             "total_required_wh": total_required_wh,
             "current_wh": curr_wh,
-            "is_achievable": curr_wh >= total_required_wh,
+            "is_achievable": is_achievable,
         }
 
     def max_safe_throttle_for_leg(self, target_coords):
@@ -283,16 +294,22 @@ class DroneEnergyMixin:
         reserve_needed = (self.distance_between(target_coords, nearest_service) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
+            self.log.debug(f"[{self.name}] max_safe_throttle_for_leg to {target_coords}: no energy available for leg (current={curr_wh:.2f}Wh, reserve_needed={reserve_needed:.2f}Wh); throttle=0%.")
             return 0.0
 
         denom = distance * self.DRONE_WH_PER_METER_PER_THROTTLE * self.SAFETY_MARGIN_MULTIPLIER
         if denom <= 0:
             return self.MAX_SPEEDMODE_THROTTLE
-        return max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, available_for_leg / denom))
+        throttle = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, available_for_leg / denom))
+        self.log.debug(f"[{self.name}] max_safe_throttle_for_leg to {target_coords}: distance={distance:.1f}m, available={available_for_leg:.2f}Wh, reserve_needed={reserve_needed:.2f}Wh -> max_safe_throttle={throttle*100:.0f}%.")
+        return throttle
 
     def select_cruise_throttle(self, target_coords):
         baseline = min(self.cruise_throttle, self.MAX_SPEEDMODE_THROTTLE)
         max_safe = self.max_safe_throttle_for_leg(target_coords)
         if max_safe >= baseline:
+            self.log.debug(f"[{self.name}] select_cruise_throttle: baseline {baseline*100:.0f}% is within safe max ({max_safe*100:.0f}%); using baseline.")
             return baseline
-        return max(self.MIN_SPEEDMODE_THROTTLE, min(baseline, max_safe))
+        throttle = max(self.MIN_SPEEDMODE_THROTTLE, min(baseline, max_safe))
+        self.log.debug(f"[{self.name}] select_cruise_throttle: baseline {baseline*100:.0f}% exceeds safe max ({max_safe*100:.0f}%); capping to {throttle*100:.0f}%.")
+        return throttle

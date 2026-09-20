@@ -78,6 +78,7 @@ class DroneClaimsMixin:
         target_key = record["target_key"]
         claim = self.get_biosite_claims().get(target_key)
         if not claim or claim.get("drone") != self.name:
+            self.log.debug(f"[{self.name}] load_mission: saved mission for '{target_key}' found but claim no longer owned by this drone; discarding.")
             self.clear_mission()
             return None
 
@@ -106,7 +107,9 @@ class DroneClaimsMixin:
                 if claim_owner != self.name:
                     if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
                         claimed[0] = False
+                        self.log.debug(f"[{self.name}] claim_biosite('{target_key}'): lost -- held by '{claim_owner}' (age={claim_age} ticks < stale threshold {self.CLAIM_STALE_TICKS}).")
                         return claims
+                    self.log.debug(f"[{self.name}] claim_biosite('{target_key}'): existing claim by '{claim_owner}' is stale (age={claim_age} ticks >= {self.CLAIM_STALE_TICKS}); taking over.")
             claims[target_key] = {
                 "drone": self.name,
                 "coords": target_info.get("coords", (0, 0)),
@@ -114,6 +117,7 @@ class DroneClaimsMixin:
                 "tick": curr_tick,
             }
             claimed[0] = True
+            self.log.debug(f"[{self.name}] claim_biosite('{target_key}'): won at tick {curr_tick}.")
             return claims
 
         archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
@@ -139,10 +143,14 @@ class DroneClaimsMixin:
             if target_key:
                 if target_key in claims and claims[target_key].get("drone") == self.name:
                     del claims[target_key]
+                    self.log.debug(f"[{self.name}] release_biosite_claim('{target_key}'): released.")
+                else:
+                    self.log.debug(f"[{self.name}] release_biosite_claim('{target_key}'): not owned by this drone; no-op.")
             else:
                 keys_to_remove = [k for k, v in claims.items() if isinstance(v, dict) and v.get("drone") == self.name]
                 for k in keys_to_remove:
                     del claims[k]
+                self.log.debug(f"[{self.name}] release_biosite_claim(all): released {len(keys_to_remove)} claim(s): {keys_to_remove}.")
             return claims
 
         archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
@@ -157,6 +165,8 @@ class DroneClaimsMixin:
         if curr_tick <= 0:
             return
 
+        removed_count = [0]
+
         def updater(claims):
             if not isinstance(claims, dict):
                 return {}
@@ -166,9 +176,13 @@ class DroneClaimsMixin:
                     continue
                 if curr_tick - claim.get("tick", 0) < self.CLAIM_STALE_TICKS:
                     active[key] = claim
+                else:
+                    removed_count[0] += 1
             return active
 
         archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
+        if removed_count[0]:
+            self.log.debug(f"[{self.name}] cleanup_stale_biosite_claims: removed {removed_count[0]} stale claim(s) at tick {curr_tick}.")
 
     def get_biosite_claims(self):
         """Returns the fleet-wide biosite claims dict {target_key: {"drone", "coords", "name", "tick"}}."""
@@ -190,7 +204,9 @@ class DroneClaimsMixin:
         cache = archive.get(SCOUTED_EMPTY_POI_KEY, {}) or {}
         if not isinstance(cache, dict):
             return False
-        return f"{int(x)}_{int(y)}" in cache
+        hit = f"{int(x)}_{int(y)}" in cache
+        self.log.debug(f"[{self.name}] is_poi_confirmed_empty({int(x)}, {int(y)}): cache {'hit' if hit else 'miss'} ({len(cache)} entries cached).")
+        return hit
 
     def mark_poi_empty(self, x, y):
         """
@@ -210,6 +226,8 @@ class DroneClaimsMixin:
                 oldest = sorted(cache.items(), key=lambda kv: kv[1])[:overflow]
                 for k, _ in oldest:
                     del cache[k]
+                self.log.debug(f"[{self.name}] mark_poi_empty: cache overflow ({SCOUTED_EMPTY_POI_MAX_ENTRIES} cap), evicted {overflow} oldest entries.")
             return cache
 
         archive.transaction(SCOUTED_EMPTY_POI_KEY, {}, updater)
+        self.log.debug(f"[{self.name}] mark_poi_empty({int(x)}, {int(y)}): recorded confirmed-empty at tick {curr_tick}.")

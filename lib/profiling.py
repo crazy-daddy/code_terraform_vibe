@@ -82,13 +82,17 @@ def _record(name, delta, current_tick):
     apart from "nobody's called end() for this name in a long time, purge
     it" -- last_tick is what makes that distinction possible.
     """
+    log.trace(f"_record start: name='{name}' delta={delta} current_tick={current_tick}")
     key = ARCHIVE_KEY_PREFIX + name
     entry = archive.get(key, None)
     history = entry.get("history", []) if isinstance(entry, dict) else []
     history.append(delta)
     if len(history) > HISTORY_LEN:
+        overflow = len(history) - HISTORY_LEN
+        log.debug(f"[profiling] '{name}' history window trimmed: {len(history)} samples > cap {HISTORY_LEN}, dropping {overflow} oldest")
         history = history[-HISTORY_LEN:]
     archive.set(key, {"history": history, "last_tick": current_tick})
+    log.trace(f"_record end: name='{name}' stored history_len={len(history)} last_tick={current_tick}")
 
 
 def report(names=None):
@@ -111,6 +115,7 @@ def report(names=None):
             continue
         name = key[len(prefix):]
         avg = sum(history) / len(history)
+        log.debug(f"[profiling] '{name}' average computed from {len(history)} samples: sum={sum(history)} avg={avg:.2f} max={max(history)}")
         log.print(f"[profiling] {name}: avg={avg:.1f} max={max(history)} samples={len(history)} ticks/step")
         printed = True
 

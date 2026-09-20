@@ -29,8 +29,10 @@ class DroneMiningMixin:
         drone's home biome and currently journal.is_ready() (cooldown gate,
         checked before even attempting a claim -- see module docstring).
         """
+        self.log.trace(f"[{self.name}] _biosite_candidates() entry.")
         journal = get_component("journal")
         if not journal or not self.home_biome:
+            self.log.debug(f"[{self.name}] _biosite_candidates(): missing journal or unknown home_biome; returning no candidates.")
             return []
 
         try:
@@ -40,6 +42,9 @@ class DroneMiningMixin:
 
         pos = self.position()
         candidates = []
+        skipped_no_home_forms = 0
+        skipped_mixed_biome = 0
+        skipped_cooling = 0
         for site in sites:
             coord = getattr(site, "coord", None)
             life_forms = getattr(site, "life_forms", []) or []
@@ -49,13 +54,17 @@ class DroneMiningMixin:
 
             home_forms = [lf for lf in life_forms if self.is_home_biome_sample(getattr(lf, "type", None))]
             if not home_forms:
+                skipped_no_home_forms += 1
                 continue
             if len(home_forms) != len(life_forms):
                 # Mixed-biome tile: extract() takes no species argument (see
                 # module docstring), so v1 skips this site entirely rather
                 # than risk pulling the wrong species.
+                skipped_mixed_biome += 1
+                self.log.debug(f"[{self.name}] Biosite ({x}, {y}) skipped: mixed-biome tile ({len(home_forms)}/{len(life_forms)} home-biome samples).")
                 continue
             if not journal.is_ready(x, y):
+                skipped_cooling += 1
                 continue
 
             sample = home_forms[0]
@@ -67,6 +76,11 @@ class DroneMiningMixin:
             })
 
         candidates.sort(key=lambda c: self.distance_between(pos, c["coords"]))
+        self.log.debug(
+            f"[{self.name}] _biosite_candidates(): {len(sites)} known site(s), {len(candidates)} ready home-biome candidate(s) "
+            f"(skipped {skipped_no_home_forms} non-home, {skipped_mixed_biome} mixed-biome, {skipped_cooling} cooling-down)."
+        )
+        self.log.trace(f"[{self.name}] _biosite_candidates() exit: {len(candidates)} candidate(s).")
         return candidates
 
     def select_biosite_target(self, candidates):
@@ -78,12 +92,17 @@ class DroneMiningMixin:
         so this tries the next candidate rather than giving up for the
         cycle).
         """
+        self.log.trace(f"[{self.name}] select_biosite_target() entry: {len(candidates)} candidate(s).")
         for candidate in candidates:
             budget = self.calculate_trip_energy(candidate["coords"])
             if not budget["is_achievable"]:
+                self.log.debug(f"[{self.name}] Biosite {candidate['target_key']}: {budget['total_required_wh']:.1f} Wh required, not achievable on current battery; skipping.")
                 continue
             if self.claim_biosite(candidate["target_key"], {"coords": candidate["coords"], "name": candidate["target_key"]}):
+                self.log.trace(f"[{self.name}] select_biosite_target() exit: claimed {candidate['target_key']}.")
                 return candidate, budget
+            self.log.debug(f"[{self.name}] Lost claim race on biosite {candidate['target_key']} to a peer drone; trying next candidate.")
+        self.log.trace(f"[{self.name}] select_biosite_target() exit: no claimable candidate.")
         return None, None
 
     def run_miner_loop(self, poll_interval=5.0):
@@ -181,6 +200,7 @@ class DroneMiningMixin:
         this loop needs no extra resumability handling itself -- only the
         flight leg to get here needed re-issuing (see run_miner_loop()).
         """
+        self.log.trace(f"[{self.name}] _extract_until_done({coords}) entry.")
         while True:
             if self.current_target_key:
                 self.refresh_biosite_claim(self.current_target_key)
@@ -204,14 +224,17 @@ class DroneMiningMixin:
             else:
                 self.log.level("warn").print(f"[{self.name}] Extraction notice at {coords}: {res.status} - {res.message}")
                 break
+        self.log.trace(f"[{self.name}] _extract_until_done({coords}) exit.")
 
     def _return_and_unload(self):
+        self.log.trace(f"[{self.name}] _return_and_unload() entry.")
         depot_coords, depot_info = self.get_nearest_drone_depot()
         depot_id = depot_info.get("id")
         self.publish_telemetry("RETURNING_TO_DEPOT")
 
         reached = bool(depot_id) and self.fly_to_station(depot_id)
         if not reached:
+            self.log.debug(f"[{self.name}] fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
             reached = self.fly_to(depot_coords[0], depot_coords[1], precision=1.5)
         if not reached:
             self.log.level("warn").print(f"[{self.name}] Could not reach Drone Depot to unload; will retry.")
@@ -226,3 +249,4 @@ class DroneMiningMixin:
 
         self.release_biosite_claim()
         self.publish_telemetry("READY_AT_DEPOT")
+        self.log.trace(f"[{self.name}] _return_and_unload() exit: unloaded={unloaded}.")

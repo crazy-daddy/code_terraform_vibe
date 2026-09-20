@@ -315,11 +315,13 @@ def can_source_fluid(fluid_key, cache=None):
     per fluid_key, otherwise repeated once per recipe that needs it.
     """
     if cache is not None and fluid_key in cache._fluid_results:
+        log.trace(f"can_source_fluid({fluid_key}): cache hit -> {cache._fluid_results[fluid_key]}")
         return cache._fluid_results[fluid_key]
 
     type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key)
     if not type_ids:
         result = True  # unrecognized fluid key -- don't block on something we don't model
+        log.debug(f"can_source_fluid({fluid_key}): unrecognized fluid key, not blocking")
     else:
         result = False
         network = _component("outpost_network")
@@ -330,6 +332,7 @@ def can_source_fluid(fluid_key, cache=None):
                         for building in outpost.buildings(type_id):
                             if fluid_building_is_viable(fluid_key, type_id, building):
                                 result = True
+                                log.debug(f"can_source_fluid({fluid_key}): viable source found -> {getattr(building, 'id', type_id)} ({type_id})")
                                 break
                         if result:
                             break
@@ -337,6 +340,8 @@ def can_source_fluid(fluid_key, cache=None):
                         break
             except Exception:
                 pass
+        if not result:
+            log.debug(f"can_source_fluid({fluid_key}): no viable source among {type_ids}")
 
     if cache is not None:
         cache._fluid_results[fluid_key] = result
@@ -466,6 +471,7 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs):
                 targets[item_id] = max(targets.get(item_id, 0), want)
             shortfall = max(0, want - total_stock(item_id))
             if shortfall <= 0:
+                log.trace(f"_cascade_fabricator_output_demand depth={depth}: {item_id} has no shortfall (want={want}), not cascading further")
                 continue
             inputs = _recipe_inputs_for(item_id)
             if not inputs:
@@ -474,7 +480,10 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs):
                 if input_id not in fabricator_outputs:
                     continue  # only cascade through other Fabricator-built intermediates
                 next_frontier[input_id] = next_frontier.get(input_id, 0) + (shortfall * ratio)
+                log.debug(f"_cascade_fabricator_output_demand depth={depth}: {item_id} shortfall={shortfall:.2f} cascades {ratio:.2f}x into {input_id} -> {next_frontier[input_id]:.2f}")
         frontier = next_frontier
+    if depth >= 6 and frontier:
+        log.debug(f"_cascade_fabricator_output_demand: hit depth bound (6) with frontier still non-empty: {list(frontier.keys())}")
     return targets
 
 
@@ -535,14 +544,18 @@ def _cascade_blueprint_demand():
             total_needed[item_id] = total_needed.get(item_id, 0) + want
             shortfall = max(0, want - total_stock(item_id))
             if shortfall <= 0:
+                log.trace(f"_cascade_blueprint_demand depth={depth}: {item_id} has no shortfall (want={want}), not cascading further")
                 continue
             inputs = _recipe_inputs_for(item_id)
             if not inputs:
                 continue
             for input_id, ratio in inputs.items():
                 next_frontier[input_id] = next_frontier.get(input_id, 0) + (shortfall * ratio)
+                log.debug(f"_cascade_blueprint_demand depth={depth}: {item_id} shortfall={shortfall:.2f} cascades {ratio:.2f}x into {input_id} -> {next_frontier[input_id]:.2f}")
         frontier = next_frontier
 
+    if depth >= 6 and frontier:
+        log.debug(f"_cascade_blueprint_demand: hit depth bound (6) with frontier still non-empty: {list(frontier.keys())}")
     return total_needed
 
 
@@ -603,6 +616,7 @@ def get_fabricator_targets():
     # proof the order is unfulfillable.
     for item_id, quantity in get_manual_orders().items():
         targets[item_id] = max(targets.get(item_id, 0), quantity)
+        log.debug(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
             log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which "
@@ -622,6 +636,7 @@ def get_fabricator_targets():
                     continue
                 remaining = required - shipped.get(item_id, 0)
                 targets[item_id] = max(targets.get(item_id, 0), remaining)
+                log.debug(f"get_fabricator_targets: dock order {getattr(order, 'id', '?')} raises target for {item_id} -> {targets[item_id]} (remaining={remaining})")
         except Exception:
             pass
 
@@ -640,6 +655,7 @@ def get_fabricator_targets():
     for item_id, count in _cascade_blueprint_demand().items():
         if item_id in fabricator_outputs:
             targets[item_id] = max(targets.get(item_id, 0), count)
+            log.debug(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
 
     # Cascade demand for a targeted Fabricator output down through its own
     # recipe inputs when those inputs are themselves Fabricator-built (e.g.
@@ -651,7 +667,9 @@ def get_fabricator_targets():
     # nothing produces.
     for item_id, count in _cascade_fabricator_output_demand(targets, fabricator_outputs).items():
         targets[item_id] = max(targets.get(item_id, 0), count)
+        log.debug(f"get_fabricator_targets: output-demand cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
 
+    log.trace(f"get_fabricator_targets: final targets={targets}")
     return targets
 
 
@@ -737,7 +755,10 @@ def get_fabricator_active_recipe(fabricator=None):
         crafts_remaining = -(-still_needed // output_count)  # ceil division
         worker_count = _fabricator_worker_count(current_recipe_id)
         if worker_count > 1:
+            pre_split = crafts_remaining
             crafts_remaining = -(-crafts_remaining // worker_count)  # ceil division -- an odd remainder goes to every worker equally rather than being dropped, converging (not undershooting) once demand nets back down on the next poll
+            log.debug(f"get_fabricator_active_recipe({getattr(fabricator, 'id', '?')}): recipe={current_recipe_id} split {pre_split} crafts across {worker_count} workers -> {crafts_remaining} each")
+        log.debug(f"get_fabricator_active_recipe({getattr(fabricator, 'id', '?')}): recipe={current_recipe_id} output={output_item} target={target} current={current} output_buffer={output_buffer} still_needed={still_needed} crafts_remaining={crafts_remaining}")
         return recipe, crafts_remaining
     except Exception:
         return None, 0
@@ -751,7 +772,10 @@ def get_material_demands():
     # may also be required by the active Supply Dock order.
     for item_id, target in get_fabricator_targets().items():
         current = total_stock(item_id)
-        _add_demand(demands, item_id, max(0, target - current))
+        deficit = max(0, target - current)
+        _add_demand(demands, item_id, deficit)
+        if deficit > 0:
+            log.debug(f"get_material_demands: {item_id} stock={current} target={target} -> deficit={deficit}")
 
     # Every Fabricator's own selected recipe is an explicit production
     # intention; scale by every remaining craft still needed to reach the
@@ -775,13 +799,17 @@ def get_material_demands():
             continue
         recipe, crafts_remaining = get_fabricator_active_recipe(fabricator)
         if not recipe or crafts_remaining <= 0:
+            log.trace(f"get_material_demands: {fabricator_id} has no active recipe/crafts remaining, skipping input demand")
             continue
         try:
             stockpile = fabricator.get_stockpile() or {}
             for item_id, required in (getattr(recipe, "inputs", {}) or {}).items():
                 missing = (required * crafts_remaining) - stockpile.get(item_id, 0)
                 missing -= total_stock(item_id)
-                _add_demand(demands, item_id, max(0, missing))
+                missing = max(0, missing)
+                _add_demand(demands, item_id, missing)
+                if missing > 0:
+                    log.debug(f"get_material_demands: {fabricator_id} recipe={getattr(recipe, 'id', '?')} needs {item_id} -> deficit={missing} (crafts_remaining={crafts_remaining})")
         except Exception:
             pass
 
@@ -796,10 +824,14 @@ def get_material_demands():
                 if hasattr(dock, "count"):
                     missing -= dock.count(item_id)
                 missing -= total_stock(item_id)
-                _add_demand(demands, item_id, max(0, missing))
+                missing = max(0, missing)
+                _add_demand(demands, item_id, missing)
+                if missing > 0:
+                    log.debug(f"get_material_demands: dock {getattr(dock, 'id', '?')} order {getattr(order, 'id', '?')} needs {item_id} -> deficit={missing}")
         except Exception:
             pass
 
+    log.trace(f"get_material_demands: final demands={demands}")
     return demands
 
 
@@ -813,7 +845,10 @@ def get_raw_material_demands(smelter=None):
     for item_id, quantity in demands.items():
         if item_id.endswith("_ore") or item_id in ["silicon", "rare_earth"]:
             current = total_stock(item_id)
-            _add_demand(raw_demands, item_id, max(0, quantity - current))
+            deficit = max(0, quantity - current)
+            _add_demand(raw_demands, item_id, deficit)
+            if deficit > 0:
+                log.debug(f"get_raw_material_demands: {item_id} mined directly, stock={current} demand={quantity} -> deficit={deficit}")
 
     # Expand Fabricator output demand into refined-material demand before
     # asking the Smelter to expand refined materials into raw ore.
@@ -829,7 +864,10 @@ def get_raw_material_demands(smelter=None):
                 for input_id, units_per_run in (getattr(recipe, "inputs", {}) or {}).items():
                     current = total_stock(input_id)
                     needed = (output_need * units_per_run + output_count - 1) // output_count
-                    _add_demand(refined_demands, input_id, max(0, needed - current))
+                    deficit = max(0, needed - current)
+                    _add_demand(refined_demands, input_id, deficit)
+                    if deficit > 0:
+                        log.debug(f"get_raw_material_demands: fabricator output {output_item} (need={output_need}) expands into refined {input_id} -> deficit={deficit}")
         except Exception:
             pass
 
@@ -846,7 +884,10 @@ def get_raw_material_demands(smelter=None):
                     continue
                 for raw_item, units_per_run in (getattr(recipe, "inputs", {}) or {}).items():
                     current = total_stock(raw_item)
-                    _add_demand(raw_demands, raw_item, max(0, output_need * units_per_run - current))
+                    deficit = max(0, output_need * units_per_run - current)
+                    _add_demand(raw_demands, raw_item, deficit)
+                    if deficit > 0:
+                        log.debug(f"get_raw_material_demands: smelter recipe {getattr(recipe, 'id', '?')} for {output_item} (need={output_need}) expands into raw {raw_item} -> deficit={deficit}")
         except Exception:
             pass
 
@@ -861,6 +902,7 @@ def get_raw_material_demands(smelter=None):
     for item_id in RAW_ORE_ITEM_IDS:
         buffer_deficit = max(0, stock_target_for(HOME_OUTPOST_ID, item_id) - total_stock(item_id))
         if buffer_deficit > raw_demands.get(item_id, 0):
+            log.debug(f"get_raw_material_demands: home buffer floor for {item_id} ({buffer_deficit}) exceeds production demand ({raw_demands.get(item_id, 0)}), using buffer floor")
             raw_demands[item_id] = buffer_deficit
 
     # Debit ore already promised by an in-flight home-demand mining trip
@@ -877,8 +919,11 @@ def get_raw_material_demands(smelter=None):
     reserved = mining_reservations.get_reserved_yield_totals(_current_tick())
     for item_id, units in reserved.items():
         if item_id in raw_demands:
+            before = raw_demands[item_id]
             raw_demands[item_id] = max(0, raw_demands[item_id] - units)
+            log.debug(f"get_raw_material_demands: {item_id} debited by {units} already-reserved yield ({before} -> {raw_demands[item_id]})")
 
+    log.trace(f"get_raw_material_demands: final raw_demands={raw_demands}")
     return raw_demands
 
 
@@ -919,6 +964,7 @@ class SourceCache:
         self._stock_map = None
 
     def _build_stock_map(self):
+        log.trace("SourceCache._build_stock_map: one-shot stock scan across Inventory + Warehouses starting")
         """One .stacks() call per Inventory/Warehouse -- each returns that
         building's ENTIRE contents in one shot -- summed by item id into a
         single {item_id: total_units} snapshot for the whole pass. Calling
@@ -940,6 +986,7 @@ class SourceCache:
                         totals[stack_item_id] = totals.get(stack_item_id, 0) + getattr(stack, "count", 0)
             except Exception:
                 pass
+        log.trace(f"SourceCache._build_stock_map: scanned {len(sources)} storage components, {len(totals)} distinct items")
         return totals
 
     def stock(self, item_id):
@@ -996,16 +1043,21 @@ def can_source_item(item_id, cache=None):
     """
     cache = SourceCache() if cache is None else cache
     if item_id in cache._item_results:
+        log.trace(f"can_source_item({item_id}): cache hit -> {cache._item_results[item_id]}")
         return cache._item_results[item_id]
     if cache.stock(item_id) > 0:
+        log.debug(f"can_source_item({item_id}): already in stock ({cache.stock(item_id)}) -> sourceable")
         cache._item_results[item_id] = True
         return True
     if item_id in cache._item_stack:
+        log.debug(f"can_source_item({item_id}): recipe cycle guard hit, treating as not-yet-sourceable")
         return False  # cycle guard -- not memoized, this item's own answer is still being computed higher up
     cache._item_stack.add(item_id)
 
     try:
         result = _has_surveyed_mineral(item_id, cache)
+        if result:
+            log.debug(f"can_source_item({item_id}): surveyed mineral site found -> sourceable")
         if not result:
             for recipes in (cache.smelter_recipes(), cache.fabricator_recipes()):
                 for recipe in recipes:
@@ -1015,9 +1067,12 @@ def can_source_item(item_id, cache=None):
                     fluid_inputs = getattr(recipe, "fluid_inputs", {}) or {}
                     if all(can_source_fluid(fk, cache) for fk in fluid_inputs) and all(can_source_item(input_id, cache) for input_id in inputs):
                         result = True
+                        log.debug(f"can_source_item({item_id}): sourceable via recipe {getattr(recipe, 'id', '?')} (inputs={list(inputs.keys())}, fluids={list(fluid_inputs.keys())})")
                         break
                 if result:
                     break
+            if not result:
+                log.debug(f"can_source_item({item_id}): no stock, no surveyed mineral, no sourceable recipe -> not sourceable")
     finally:
         cache._item_stack.discard(item_id)
 
@@ -1039,7 +1094,9 @@ def can_fulfill_order(order, cache=None):
     for item_id, required in order.requires.items():
         remaining = max(0, required - shipped.get(item_id, 0))
         if remaining > 0 and not can_source_item(item_id, cache):
+            log.debug(f"can_fulfill_order({getattr(order, 'id', '?')}): {item_id} (remaining={remaining}) has no known source -> order not fulfillable")
             return False
+    log.debug(f"can_fulfill_order({getattr(order, 'id', '?')}): all remaining requirements have a known source -> fulfillable")
     return True
 
 

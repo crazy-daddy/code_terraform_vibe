@@ -131,6 +131,7 @@ class HarvesterController:
     def store_held_if_any(self):
         """Ensures the single held item slot is empty by storing into Inventory."""
         held = self.harvester.get_held()
+        self.log.trace(f"[{self.name}] store_held_if_any: held slot={held!r}")
         if held and held != "":
             self.log.print(f"[{self.name}] Storing held item '{held}' into Inventory...")
             res = self.harvester.store()
@@ -254,11 +255,14 @@ class HarvesterController:
                     pass
 
         if not candidates:
+            self.log.debug(f"[{self.name}] find_best_target: no item/crop candidates found via cells() or scanner fallback")
             return None
 
         # Sort candidates by Manhattan grid distance from current position (O(1))
         candidates.sort(key=lambda cand: self.distance(curr_pos, cand["sector"]))
-        return candidates[0]
+        winner = candidates[0]
+        self.log.debug(f"[{self.name}] find_best_target: {len(candidates)} candidate(s), picked {winner['type']} at {winner['sector']} (distance={self.distance(curr_pos, winner['sector'])}) from {curr_pos}")
+        return winner
 
     def step(self):
         """Executes one harvest/collection cycle."""
@@ -271,9 +275,11 @@ class HarvesterController:
             curr_cell = self.harvester.cell(curr_pos)
             if curr_cell:
                 if curr_cell.status == "item":
+                    self.log.debug(f"[{self.name}] step: current cell {curr_pos} already has an item, collecting in place instead of routing elsewhere")
                     self.collect_at_current()
                     return
                 elif curr_cell.status == "mature":
+                    self.log.debug(f"[{self.name}] step: current cell {curr_pos} has a mature crop, harvesting in place instead of routing elsewhere")
                     self.harvest_at_current()
                     return
         except Exception:

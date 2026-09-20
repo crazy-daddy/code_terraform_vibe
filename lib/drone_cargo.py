@@ -57,13 +57,19 @@ class DroneCargoMixin:
         deferred TODO.
         """
         if not life_form_item_id or not self.home_biome:
+            self.log.debug(f"[{self.name}] is_home_biome_sample: missing item_id ({life_form_item_id!r}) or home_biome ({self.home_biome!r}); rejecting.")
             return False
         nocturna = get_component("nocturna")
         if not nocturna:
+            self.log.debug(f"[{self.name}] is_home_biome_sample: 'nocturna' component unavailable; rejecting '{life_form_item_id}'.")
             return False
         try:
-            return nocturna.life_form_biome(life_form_item_id) == self.home_biome
+            native_biome = nocturna.life_form_biome(life_form_item_id)
+            accepted = native_biome == self.home_biome
+            self.log.debug(f"[{self.name}] is_home_biome_sample: '{life_form_item_id}' native biome '{native_biome}' vs home_biome '{self.home_biome}' -> {'accepted' if accepted else 'rejected'}.")
+            return accepted
         except Exception:
+            self.log.debug(f"[{self.name}] is_home_biome_sample: life_form_biome() lookup failed for '{life_form_item_id}'; rejecting.")
             return False
 
     def unload_cargo_at_depot(self):
@@ -84,6 +90,7 @@ class DroneCargoMixin:
         except Exception:
             contents = {}
         if not contents:
+            self.log.debug(f"[{self.name}] unload_cargo_at_depot: no cargo aboard; nothing to unload.")
             return 0
 
         unloaded = 0
@@ -97,8 +104,10 @@ class DroneCargoMixin:
                 continue
             moved = getattr(res, "moved", 0) or 0
             unloaded += moved
+            self.log.debug(f"[{self.name}] unload_cargo_at_depot: {item_id} moved {moved}/{count} (status={res.status}).")
             if res.status in ("slots_full", "target_full") or moved < count:
                 depot_full = True
                 self.log.level("warn").print(f"[{self.name}] Drone Depot notice for {item_id}: {res.status} - {res.message}")
 
+        self.log.debug(f"[{self.name}] unload_cargo_at_depot: total unloaded={unloaded} unit(s) across {len(contents)} item type(s), depot_full={depot_full}.")
         return -1 if depot_full and unloaded == 0 else unloaded

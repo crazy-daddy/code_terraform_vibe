@@ -164,7 +164,9 @@ def plan_dock_assignments(clock=None):
     try:
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
-                candidates.append({"order": o, "priority": _score_campaign_order(o, reserved)})
+                priority = _score_campaign_order(o, reserved)
+                candidates.append({"order": o, "priority": priority})
+                log.debug(f"plan_dock_assignments: campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception:
         pass
     try:
@@ -175,9 +177,13 @@ def plan_dock_assignments(clock=None):
                 log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
-            candidates.append({"order": o, "priority": _score_weekly_order(o, reserved)})
+            priority = _score_weekly_order(o, reserved)
+            candidates.append({"order": o, "priority": priority})
+            log.debug(f"plan_dock_assignments: weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception:
         pass
+
+    log.debug(f"plan_dock_assignments: {len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
 
     plan = {}
     idle_dock_ids = []
@@ -190,8 +196,10 @@ def plan_dock_assignments(clock=None):
         if curr and can_fulfill_order(curr, cache):
             plan[dock_id] = curr.id
             assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
+            log.debug(f"plan_dock_assignments: {dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
         else:
             idle_dock_ids.append(dock_id)
+            log.debug(f"plan_dock_assignments: {dock_id} is idle/unfulfillable ({'no current order' if not curr else 'current order no longer fulfillable'}), needs a new assignment")
 
     if candidates:
         for dock_id in idle_dock_ids:
@@ -199,9 +207,11 @@ def plan_dock_assignments(clock=None):
             best = candidates[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
+            log.debug(f"plan_dock_assignments: assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, priority={candidates[0]['priority']})")
     else:
         for dock_id in idle_dock_ids:
             plan[dock_id] = None
+            log.debug(f"plan_dock_assignments: no fulfillable candidate orders at all, {dock_id} left unassigned")
 
     archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
     return plan
@@ -296,10 +306,13 @@ class SupplyDockController:
             pass
 
         if not candidates:
+            self.log.debug(f"[{self.name}] pick_best_order: no fulfillable candidate orders found")
             return None
 
         candidates.sort(key=lambda c: c["priority"], reverse=True)
-        return candidates[0]["order"]
+        winner = candidates[0]["order"]
+        self.log.debug(f"[{self.name}] pick_best_order: picked '{getattr(winner, 'name', winner.id)}' (priority={candidates[0]['priority']}) among {len(candidates)} candidate(s)")
+        return winner
 
     def desired_order_id(self):
         """Reads this dock's assignment from the central plan (see
@@ -307,8 +320,10 @@ class SupplyDockController:
         pick_best_order() if no plan has been computed yet (or ever)."""
         plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {}) or {}
         if self.name in plan:
+            self.log.debug(f"[{self.name}] desired_order_id: using central plan assignment -> {plan[self.name]!r}")
             return plan[self.name]
         best = self.pick_best_order()
+        self.log.debug(f"[{self.name}] desired_order_id: no central plan entry, fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
         return best.id if best else None
 
     def step(self):
@@ -384,6 +399,7 @@ class SupplyDockController:
                 avail = total_stock(item_id)
                 available_after_reservation = max(0, avail - reserved.get(item_id, 0))
                 to_take = min(available_after_reservation, needed, SUPPLY_DOCK_LOAD_CHUNK_SIZE)
+                self.log.debug(f"[{self.name}] {item_id}: needed={needed} avail={avail} reserved={reserved.get(item_id, 0)} available_after_reservation={available_after_reservation} -> to_take={to_take}")
                 if to_take > 0:
                     moved = take_item(self.dock.input, item_id, to_take)
                     if moved > 0:

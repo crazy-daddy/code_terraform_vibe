@@ -40,6 +40,8 @@ class DroneDepotController:
         if len(liquifiers) != 1:
             if len(liquifiers) > 1:
                 self.log.level("warn").print(f"[{self.name}] {len(liquifiers)} Essence Liquifiers found at this outpost; leaving output unwired for manual routing.")
+            else:
+                self.log.debug(f"[{self.name}] No Essence Liquifier found at this outpost; nothing to wire yet.")
             return None
         return get_component(liquifiers[0].id)
 
@@ -50,7 +52,10 @@ class DroneDepotController:
         (exactly one same-outpost Liquifier). Otherwise logs once and
         leaves it for manual wiring via the Control Panel.
         """
-        if self._wired or not hasattr(self.station, "output"):
+        if self._wired:
+            return
+        if not hasattr(self.station, "output"):
+            self.log.debug(f"[{self.name}] Station has no .output port; skipping wiring check.")
             return
         liquifier = self._find_local_liquifier()
         if liquifier is None:
@@ -59,8 +64,10 @@ class DroneDepotController:
         try:
             connected_to = self.station.output.connected_to() if hasattr(self.station.output, "connected_to") else None
             if connected_to == liquifier.id:
+                self.log.debug(f"[{self.name}] Output already wired to '{liquifier.id}'; marking wired without reconnecting.")
                 self._wired = True
                 return
+            self.log.debug(f"[{self.name}] Output not yet wired (currently connected_to={connected_to!r}); connecting to '{liquifier.id}'.")
             res = self.station.output.connect(liquifier.id)
             if getattr(res, "status", "") == "ok":
                 self.log.print(f"[{self.name}] Wired output -> Essence Liquifier '{liquifier.id}'.")
@@ -77,6 +84,7 @@ class DroneDepotController:
         bounded/compact style -- useful for dashboards and for miner/scout
         drones' own "is my depot full" decisions.
         """
+        self.log.trace(f"[{self.name}] publish_telemetry() entry.")
         try:
             docked = list(self.station.get_docked())
         except Exception:
@@ -102,6 +110,7 @@ class DroneDepotController:
             "is_full": slot_capacity > 0 and slots_used >= slot_capacity,
         }
         archive.set(f"{DEPOT_STATUS_KEY_PREFIX}{self.name}", telemetry)
+        self.log.trace(f"[{self.name}] publish_telemetry() exit: bays {bays_occupied}/{bay_count}, slots {slots_used}/{slot_capacity}.")
 
     def step(self):
         self.wire_output_to_liquifier()

@@ -98,13 +98,16 @@ class DroneNavigationMixin:
         out immediately, since only drone_service can recover from those.
         """
         target_coords = (float(target_x), float(target_y))
+        self.log.trace(f"[{self.name}] fly_to({target_x:.1f}, {target_y:.1f}) entry from {self.position()}.")
         if self.is_at(target_coords, precision=precision):
+            self.log.trace(f"[{self.name}] fly_to() exit: already at destination.")
             return True
 
         throttle = self.select_cruise_throttle(target_coords)
         distance = self.distance_to(target_x, target_y)
         if timeout_ticks is None:
             timeout_ticks = self.flight_timeout_ticks(distance, throttle)
+        self.log.debug(f"[{self.name}] fly_to() leg: distance={distance:.1f}m, throttle={throttle*100:.0f}%, timeout_ticks={timeout_ticks}.")
 
         nearest_service, _ = self.get_nearest_drone_service()
         is_flying_to_service = self.distance_between(target_coords, nearest_service) <= 3.0
@@ -113,6 +116,7 @@ class DroneNavigationMixin:
         res = self.drone.go_to(target_x, target_y)
         if res.status != "ok":
             self.log.level("warn").print(f"[{self.name}] go_to({target_x:.1f}, {target_y:.1f}) rejected: {res.status} - {res.message}")
+            self.log.trace(f"[{self.name}] fly_to() exit: go_to() rejected ({res.status}).")
             return False
 
         ticks = 0
@@ -122,13 +126,19 @@ class DroneNavigationMixin:
 
             if self.is_stranded():
                 self.log.level("warn").print(f"[{self.name}] Drone {self.status()} mid-flight; awaiting drone_service rescue.")
+                self.log.trace(f"[{self.name}] fly_to() exit: stranded ({self.status()}) after {ticks} ticks.")
                 return False
 
             if self.current_target_key:
                 self.refresh_biosite_claim(self.current_target_key)
 
             if self.is_at(target_coords, precision=precision):
+                self.log.trace(f"[{self.name}] fly_to() exit: arrived after {ticks} ticks.")
                 return True
+
+            if ticks % 100 == 0:
+                remaining = self.distance_to(target_x, target_y)
+                self.log.debug(f"[{self.name}] fly_to() arrival-poll retry: {remaining:.1f}m remaining after {ticks}/{timeout_ticks} ticks.")
 
             # Skipped when flying to the drone_service itself -- arriving
             # there IS the recovery, so this must never abort the very trip
@@ -139,9 +149,11 @@ class DroneNavigationMixin:
                 energy_needed = self.energy_needed_to_return_now()
                 if curr_wh <= energy_needed:
                     self.log.level("warn").print(f"[{self.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest drone_service). Aborting flight.")
+                    self.log.trace(f"[{self.name}] fly_to() exit: aborted on low battery after {ticks} ticks.")
                     return False
 
         self.log.level("warn").print(f"[{self.name}] Flight to ({target_x:.1f}, {target_y:.1f}) timed out after {timeout_ticks} ticks.")
+        self.log.trace(f"[{self.name}] fly_to() exit: timed out after {ticks} ticks.")
         return False
 
     def fly_to_station(self, name, timeout_ticks=1500):
@@ -153,9 +165,11 @@ class DroneNavigationMixin:
         """
         if not name:
             return False
+        self.log.trace(f"[{self.name}] fly_to_station('{name}') entry.")
         res = self.drone.go_to_station(name)
         if res.status != "ok":
             self.log.level("warn").print(f"[{self.name}] go_to_station('{name}') rejected: {res.status} - {res.message}")
+            self.log.trace(f"[{self.name}] fly_to_station('{name}') exit: rejected ({res.status}).")
             return False
 
         ticks = 0
@@ -163,20 +177,27 @@ class DroneNavigationMixin:
             sleep(1.0)
             ticks += 10
             if self.is_stranded():
+                self.log.trace(f"[{self.name}] fly_to_station('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
                 return False
             if self.current_station():
+                self.log.trace(f"[{self.name}] fly_to_station('{name}') exit: docked after {ticks} ticks.")
                 return True
+            if ticks % 100 == 0:
+                self.log.debug(f"[{self.name}] fly_to_station('{name}') arrival-poll retry: still not docked after {ticks}/{timeout_ticks} ticks.")
 
         self.log.level("warn").print(f"[{self.name}] go_to_station('{name}') timed out after {timeout_ticks} ticks.")
+        self.log.trace(f"[{self.name}] fly_to_station('{name}') exit: timed out after {ticks} ticks.")
         return False
 
     def fly_to_drill(self, name, timeout_ticks=1500):
         """Flies to a named field Mining Drill via go_to_drill(), for a future ore-hauler drone role (not used by scout/miner this pass)."""
         if not name:
             return False
+        self.log.trace(f"[{self.name}] fly_to_drill('{name}') entry.")
         res = self.drone.go_to_drill(name)
         if res.status != "ok":
             self.log.level("warn").print(f"[{self.name}] go_to_drill('{name}') rejected: {res.status} - {res.message}")
+            self.log.trace(f"[{self.name}] fly_to_drill('{name}') exit: rejected ({res.status}).")
             return False
 
         ticks = 0
@@ -184,9 +205,14 @@ class DroneNavigationMixin:
             sleep(1.0)
             ticks += 10
             if self.is_stranded():
+                self.log.trace(f"[{self.name}] fly_to_drill('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
                 return False
             if self.current_drill():
+                self.log.trace(f"[{self.name}] fly_to_drill('{name}') exit: arrived after {ticks} ticks.")
                 return True
+            if ticks % 100 == 0:
+                self.log.debug(f"[{self.name}] fly_to_drill('{name}') arrival-poll retry: still not arrived after {ticks}/{timeout_ticks} ticks.")
 
         self.log.level("warn").print(f"[{self.name}] go_to_drill('{name}') timed out after {timeout_ticks} ticks.")
+        self.log.trace(f"[{self.name}] fly_to_drill('{name}') exit: timed out after {ticks} ticks.")
         return False

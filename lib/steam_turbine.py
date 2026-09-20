@@ -165,8 +165,12 @@ class SteamTurbineController:
             # fixes (see RESCAN_INTERVAL_TICKS).
             if all_known_candidates:
                 self.log.debug(f"[{self.name}] Every known source is still within its blacklist window; waiting for one to expire.")
+                for sid, blacklisted_at in self.blacklist._blacklisted_at.items():
+                    remaining = max(0, self.blacklist.rescan_interval_ticks - (curr_tick - blacklisted_at))
+                    self.log.debug(f"[{self.name}] Blacklisted source '{sid}': {remaining} tick(s) remaining until retry-eligible.")
             return
 
+        self.log.debug(f"[{self.name}] Candidate sources this cycle (own-outpost-first ranked): {candidates}.")
         for source_id in candidates:
             try:
                 res = port.connect(source_id)
@@ -215,13 +219,16 @@ class SteamTurbineController:
         # pipe is exactly what produces is_stalled(), regardless of day/night
         # or grid demand.
         if fraction < STEAM_BUFFER_LOW_FRACTION:
+            self.log.debug(f"[{self.name}] Buffer {fraction*100:.0f}% < low threshold {STEAM_BUFFER_LOW_FRACTION*100:.0f}%; easing to {THROTTLE_LOW_BUFFER} to avoid a dry stall.")
             return THROTTLE_LOW_BUFFER
         if fraction < STEAM_BUFFER_HEALTHY_FRACTION:
+            self.log.debug(f"[{self.name}] Buffer {fraction*100:.0f}% below healthy threshold {STEAM_BUFFER_HEALTHY_FRACTION*100:.0f}%; moderate throttle {THROTTLE_MARGINAL_BUFFER} while rebuilding.")
             return THROTTLE_MARGINAL_BUFFER
 
         # Buffer is healthy: steam is the only generator at night, so run flat
         # out to carry the grid regardless of current battery/demand state.
         if self.is_night():
+            self.log.debug(f"[{self.name}] Buffer healthy ({fraction*100:.0f}%) and night -- full throttle 1.0 (only generation source overnight).")
             return 1.0
 
         # Daytime with a healthy buffer: ease off once the battery is full and
@@ -236,7 +243,9 @@ class SteamTurbineController:
             battery_full = capacity > 0 and stored >= (capacity * BATTERY_FULL_FRACTION)
             demand_met = generated >= consumed
             if battery_full and demand_met:
+                self.log.debug(f"[{self.name}] Buffer healthy ({fraction*100:.0f}%), daytime, battery full ({stored:.0f}/{capacity:.0f} Wh) and demand met ({generated:.0f} W >= {consumed:.0f} W); easing to {THROTTLE_DEMAND_MET} to save steam for night.")
                 return THROTTLE_DEMAND_MET
+            self.log.debug(f"[{self.name}] Buffer healthy ({fraction*100:.0f}%), daytime, but battery_full={battery_full} demand_met={demand_met} (stored={stored:.0f}/{capacity:.0f} Wh, gen={generated:.0f} W, con={consumed:.0f} W); full throttle 1.0.")
 
         return 1.0
 

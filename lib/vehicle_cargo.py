@@ -47,7 +47,9 @@ class VehicleCargoMixin:
             return 0
 
         cargo_count = self.vehicle.cargo.count()
+        self.log.trace(f"[{self.name}] unload_cargo() enter: outpost={outpost!r}, cargo_count={cargo_count}")
         if cargo_count == 0:
+            self.log.trace(f"[{self.name}] unload_cargo() exit: cargo empty, nothing to unload.")
             return 0
 
         target_outpost = outpost if outpost is not None else self.home_outpost
@@ -90,6 +92,7 @@ class VehicleCargoMixin:
             if target is None:
                 self.log.level("warn").print(f"[{self.name}] WARNING: no local storage at destination has room for {item_id}. Cargo remains aboard.")
                 return 0, True
+            self.log.debug(f"[{self.name}] best_unload_target({item_id}, {count}) -> '{target}' at outpost {target_outpost!r}.")
             if getattr(out_port, "connected_to", None) and out_port.connected_to() != target:
                 c_res = out_port.connect(target)
                 if c_res.status != "ok":
@@ -121,6 +124,7 @@ class VehicleCargoMixin:
         # If stacks are listed, transfer each stack (may span more than one
         # item id, so the destination is chosen per stack, not once overall)
         if stacks:
+            self.log.debug(f"[{self.name}] unload_cargo(): routing {len(stacks)} cargo stack(s) individually.")
             for stack in stacks:
                 item_id = getattr(stack, "id", None)
                 count = getattr(stack, "count", 0)
@@ -144,7 +148,9 @@ class VehicleCargoMixin:
                 if moved > 0:
                     break
 
-        return -1 if inventory_full else unloaded
+        result = -1 if inventory_full else unloaded
+        self.log.trace(f"[{self.name}] unload_cargo() exit: unloaded={unloaded}, inventory_full={inventory_full}, result={result}")
+        return result
 
     def _current_supply_items(self):
         """All item ids already loaded (e.g. resuming a mixed delivery after a reload), or [] if the hold is empty."""
@@ -176,7 +182,9 @@ class VehicleCargoMixin:
         """
         demands = _outpost_haul_demand(dest_outpost_id)
         if not demands:
+            self.log.debug(f"[{self.name}] _plan_haul_load(): no haul demand at destination '{dest_outpost_id}'.")
             return []
+        self.log.debug(f"[{self.name}] _plan_haul_load(): demand at '{dest_outpost_id}': {demands}")
         source_is_home = getattr(self.home_outpost, "is_home", True)
         ranked = []
         for item_id, unmet in demands.items():
@@ -206,6 +214,7 @@ class VehicleCargoMixin:
                 continue
             plan.append((item_id, amount))
             remaining -= amount
+        self.log.debug(f"[{self.name}] _plan_haul_load(): planned {plan} (capacity={capacity}).")
         return plan
 
     def _load_haul_plan(self, plan):

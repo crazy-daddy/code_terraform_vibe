@@ -20,9 +20,11 @@ class DroneScoutMixin:
         resolved is skipped too, not just ones this drone personally
         scanned.
         """
+        self.log.trace(f"[{self.name}] _scan_candidates() entry.")
         nocturna = get_component("nocturna")
         journal = get_component("journal")
         if not nocturna or not journal:
+            self.log.debug(f"[{self.name}] _scan_candidates(): missing nocturna or journal component; returning no candidates.")
             return []
 
         try:
@@ -32,17 +34,28 @@ class DroneScoutMixin:
 
         pos = self.position()
         candidates = []
+        skipped_scanned = 0
+        skipped_known_empty = 0
+        skipped_cached_empty = 0
         for poi in pois:
             if getattr(poi, "scanned", False):
+                skipped_scanned += 1
                 continue
             x, y = int(poi.x), int(poi.y)
             if journal.has_scanned(x, y) and journal.is_empty(x, y):
+                skipped_known_empty += 1
                 continue
             if self.is_poi_confirmed_empty(x, y):
+                skipped_cached_empty += 1
                 continue
             candidates.append((x, y))
 
         candidates.sort(key=lambda c: self.distance_between(pos, c))
+        self.log.debug(
+            f"[{self.name}] _scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s) "
+            f"(skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty)."
+        )
+        self.log.trace(f"[{self.name}] _scan_candidates() exit: {len(candidates)} candidate(s).")
         return candidates
 
     def run_scout_loop(self, poll_interval=5.0):
@@ -90,12 +103,16 @@ class DroneScoutMixin:
 
                 log.print(f"[{self.name}] Flying to POI {target} to scan.")
                 self.publish_telemetry("OUTBOUND", f"poi_{target[0]}_{target[1]}")
+                log.trace(f"[{self.name}] fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
                 if not self.fly_to(target[0], target[1], precision=1.0):
                     log.level("warn").print(f"[{self.name}] Could not safely reach POI {target}; will retry.")
                     sleep(poll_interval)
                     continue
+                log.trace(f"[{self.name}] fly_to({target[0]}, {target[1]}) exit: reached.")
 
+                log.trace(f"[{self.name}] bio_scanner.scan() entry at {target}.")
                 res = self.drone.bio_scanner.scan()
+                log.trace(f"[{self.name}] bio_scanner.scan() exit: status={res.status}.")
                 if res.status == "ok":
                     scan = res.scan
                     if scan is not None and getattr(scan, "is_empty", False):

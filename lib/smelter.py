@@ -107,17 +107,21 @@ class SmelterController:
                 # vehicle_claims.py uses for the same edge case.
                 if current_tick == 0 or age <= SMELTER_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
+                self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
             claims[recipe_id] = {"smelter": self.name, "tick": current_tick}
             return claims
 
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
         except Exception:
+            self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
             return True  # can't verify; don't block production over an archive hiccup
 
         claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
         owner = (claims.get(recipe_id) or {}).get("smelter")
-        return owner == self.name
+        won = owner == self.name
+        self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): {'won' if won else f'held by other smelter {owner!r}'}")
+        return won
 
     def release_recipe(self, recipe_id):
         if not recipe_id:
@@ -131,6 +135,7 @@ class SmelterController:
 
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
+            self.log.debug(f"[{self.name}] release_recipe({recipe_id}): released")
         except Exception:
             pass
 
@@ -295,6 +300,7 @@ class SmelterController:
             # shrank since ore was staged) never requests a negative take.
             prefill_cap = craft_prefill_units(recipe, ore_to_process)
             take_count = max(0, min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share - in_buf, prefill_cap - in_buf))
+            self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} worker_count={worker_count} share={share} max_ore_for_share={max_ore_for_share} prefill_cap={prefill_cap} -> take_count={take_count}")
             if take_count > 0:
                 self.ensure_connections()
                 moved = take_item(self.smelter.input, ore_to_process, take_count)
@@ -413,24 +419,29 @@ class SmelterController:
         for recipe in recipes.values():
             output_item = getattr(recipe, "output_item", None)
             if demands.get(output_item, 0) <= 0:
+                self.log.trace(f"[{self.name}] select_needed_ore: {getattr(recipe, 'id', '?')} (output={output_item}) has no active demand, skipping")
                 continue
             inputs = getattr(recipe, "inputs", {}) or {}
             for ore in inputs:
                 if ore in self.RECIPE_MAP and (ore in buffered_ore or total_stock(ore) > 0):
                     sourceable.append((recipe, ore))
+                    self.log.debug(f"[{self.name}] select_needed_ore: candidate {getattr(recipe, 'id', '?')} via {ore} (demand={demands.get(output_item, 0)}, {'already buffered' if ore in buffered_ore else 'in stock'})")
                     break  # one matching ore is enough to consider this recipe a candidate
 
         for recipe, ore in sourceable:
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
+                self.log.debug(f"[{self.name}] select_needed_ore: claimed '{recipe_id}' (ore={ore})")
                 return recipe, ore
             # another smelter already has a fresh claim on this one -- try
             # the next candidate first; joining is the fallback below.
+            self.log.debug(f"[{self.name}] select_needed_ore: '{recipe_id}' already claimed by another smelter, trying next candidate")
 
         if sourceable:
             recipe, ore = sourceable[0]
             self.log.print(f"[{self.name}] Joining '{getattr(recipe, 'id', '?')}' alongside another Smelter (no other demanded ore to refine instead).")
             return recipe, ore
+        self.log.debug(f"[{self.name}] select_needed_ore: no demanded+sourceable ore found at all -- returning None")
         return None, None
 
     def run(self, poll_interval=2.0):

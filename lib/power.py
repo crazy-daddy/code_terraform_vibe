@@ -189,6 +189,7 @@ class PowerGridManager:
         self.last_energy_sample_hour = current_hour
         archive.set("power.sunset_hour", self.sunset_hour)
         self.log.print(f"[POWER] Sunset detected on '{grid_id_str}' at day {current_day} (hour {current_hour:.1f}). Night mode active.")
+        self.log.debug(f"[POWER] Sunset calibration on '{grid_id_str}': elevation crossed 0 at hour {current_hour:.2f} (fixed sunset hour is {SUNSET_HOUR:.2f}); capacity={capacity_wh:.0f} Wh, consumed={consumed_w:.0f} W.")
 
         if self.has_observed_day and current_day != self.last_advisory_day:
             self.last_advisory_day = current_day
@@ -197,8 +198,10 @@ class PowerGridManager:
             hist_wh = archive.get(hist_key, archive.get("power.night_wh", None))
             if hist_wh is not None and hist_wh > 50.0:
                 baseline_wh = hist_wh * 1.05
+                self.log.debug(f"[POWER] Baseline night draw for '{grid_id_str}' derived from history: {hist_wh:.0f} Wh x1.05 = {baseline_wh:.0f} Wh.")
             else:
                 baseline_wh = max(consumed_w, 25.0) * self.night_duration
+                self.log.debug(f"[POWER] No usable history for '{grid_id_str}' (hist_wh={hist_wh}); baseline night draw estimated from current consumption: max({consumed_w:.0f}, 25.0) x {self.night_duration:.2f}h = {baseline_wh:.0f} Wh.")
 
             if capacity_wh < baseline_wh:
                 shortfall = baseline_wh - capacity_wh
@@ -229,8 +232,10 @@ class PowerGridManager:
             curr_hist = archive.get(hist_key, None)
             if curr_hist is not None:
                 new_hist = (curr_hist * 0.70) + (self.night_wh_accumulated * 0.30)
+                self.log.debug(f"[POWER] Night-Wh EMA update for '{grid_id_str}': (prev {curr_hist:.0f} x0.70) + (observed {self.night_wh_accumulated:.0f} x0.30) = {new_hist:.0f} Wh.")
             else:
                 new_hist = self.night_wh_accumulated
+                self.log.debug(f"[POWER] First night-Wh sample for '{grid_id_str}': seeding history at {new_hist:.0f} Wh.")
             self.historical_night_wh = new_hist
             archive.set(hist_key, round(new_hist, 1))
 
@@ -281,6 +286,15 @@ class PowerGridManager:
         elif deficit_detected or emergency_low:
             tier_to_shed = 1 if num_tiers == 1 else max(1, num_tiers - 1)
 
+        self.log.debug(
+            f"[POWER] Night eval '{grid_id_str}': stored={stored_wh:.0f} Wh ({battery_pct*100:.0f}%), "
+            f"capacity={capacity_wh:.0f} Wh, instant_rate={instant_rate:.0f} W, effective_rate={effective_rate:.0f} W "
+            f"(hist_rate={'n/a' if grid_hist_wh is None else f'{grid_hist_wh / self.night_duration:.0f} W'}), "
+            f"remaining_night={remaining_night:.2f}h, wh_needed={wh_needed:.0f} Wh -> "
+            f"deficit={deficit_detected}, emergency_low={emergency_low}, severe_deficit={severe_deficit}, "
+            f"tier_to_shed={tier_to_shed}/{num_tiers}."
+        )
+
         if tier_to_shed > 0:
             if self.last_night_battery_advisory_day != current_day:
                 self.last_night_battery_advisory_day = current_day
@@ -313,6 +327,12 @@ class PowerGridManager:
                                 self.shedded_machines.add(m_id)
                                 shed_changed = True
                                 self.log.print(f"[POWER GUARD] Marked {m_id} shedded (Tier {t_num}) on '{grid_id_str}' -- production paused, power stays on.")
+                            else:
+                                self.log.debug(f"[POWER GUARD] {m_id} (Tier {t_num}, soft-shed) already flagged shedded on '{grid_id_str}'; skipping.")
+                            continue
+
+                        if m_id in self.shedded_machines:
+                            self.log.debug(f"[POWER GUARD] {m_id} (Tier {t_num}, hard-shed) already shedded on '{grid_id_str}'; skipping breaker toggle.")
                             continue
 
                         try:
@@ -378,6 +398,8 @@ class PowerGridManager:
     def manage_day_recovery(self, grid_id_str, grid_machines, generated_w, consumed_w, stored_wh):
         """Restores shedded machinery progressively when surplus solar/generation is available."""
         if not (self.shedded_machines and generated_w > (consumed_w + 10.0) and stored_wh > 25.0):
+            if self.shedded_machines:
+                self.log.debug(f"[POWER] Day recovery skipped for '{grid_id_str}': generated={generated_w:.0f} W, consumed={consumed_w:.0f} W, stored={stored_wh:.0f} Wh -- surplus/reserve threshold not yet met for {len(self.shedded_machines)} shedded machine(s).")
             return
 
         tiers = self.get_shedding_tiers()
@@ -388,7 +410,9 @@ class PowerGridManager:
             gen_surplus_needed = 10.0 + ((num_tiers - t_num) * 5.0)
             stored_needed = 25.0 + ((num_tiers - t_num) * 25.0)
             if generated_w < (consumed_w + gen_surplus_needed) or stored_wh < stored_needed:
+                self.log.debug(f"[POWER] Day recovery: Tier {t_num}/{num_tiers} on '{grid_id_str}' not yet eligible (need gen>={consumed_w + gen_surplus_needed:.0f} W [have {generated_w:.0f}], stored>={stored_needed:.0f} Wh [have {stored_wh:.0f}]).")
                 continue
+            self.log.debug(f"[POWER] Day recovery: Tier {t_num}/{num_tiers} on '{grid_id_str}' eligible for restoration (gen={generated_w:.0f} W >= {consumed_w + gen_surplus_needed:.0f} W, stored={stored_wh:.0f} Wh >= {stored_needed:.0f} Wh).")
             patterns = tiers[t_idx]
             for pattern in patterns:
                 soft = pattern in SOFT_SHED_PATTERNS
@@ -416,6 +440,8 @@ class PowerGridManager:
 
     def supervise_grid(self, grid, elevation):
         """Core supervision cycle for this grid."""
+        entry_tick = self.clock.tick() if self.clock and hasattr(self.clock, "tick") else 0
+        self.log.trace(f"[POWER] supervise_grid() enter: anchor={self.grid_anchor}, elevation={elevation:.1f}, tick={entry_tick}.")
         if grid:
             self.grid_anchor = getattr(grid, "anchor_id", None)
 
@@ -439,7 +465,10 @@ class PowerGridManager:
         # covered, skip battery-less ones outright rather than guess at a
         # generation-vs-consumption strategy this class doesn't implement.
         if capacity_wh <= 0:
+            self.log.debug(f"[POWER] supervise_grid() skipping '{grid_id_str}': capacity_wh={capacity_wh:.0f} (no battery on this grid, nothing to shed/restore against).")
             return
+
+        self.log.debug(f"[POWER] Grid snapshot '{grid_id_str}': generated={generated_w:.0f} W, consumed={consumed_w:.0f} W, stored={stored_wh:.0f} Wh / {capacity_wh:.0f} Wh, elevation={elevation:.1f}.")
 
         grid_machines = None
         if grid:
@@ -465,3 +494,6 @@ class PowerGridManager:
             self.manage_night_loads(current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w)
         else:
             self.manage_day_recovery(grid_id_str, grid_machines, generated_w, consumed_w, stored_wh)
+
+        exit_tick = self.clock.tick() if self.clock and hasattr(self.clock, "tick") else 0
+        self.log.trace(f"[POWER] supervise_grid() exit: '{grid_id_str}', elapsed_ticks={exit_tick - entry_tick}, shedded_count={len(self.shedded_machines)}.")

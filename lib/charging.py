@@ -255,7 +255,9 @@ class ChargingStationController:
             # this is the backstop for that limbo state).
             is_stranded = v_status in ["stranded", "stalled_no_battery"]
             target_level = self.rescue_target_level(v_ref)
-            is_below_floor = v_wh <= self.return_floor_wh(v_ref)
+            return_floor = self.return_floor_wh(v_ref)
+            is_below_floor = v_wh <= return_floor
+            self.log.debug(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl*100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level*100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
                 if self.order_return_to_station(v_ref):
@@ -269,9 +271,10 @@ class ChargingStationController:
                 # or every station in range would dispatch its own drone to the
                 # same vehicle.
                 if not self.is_nearest_station_to(v_ref):
+                    self.log.debug(f"[{self.name}] {v_id} is in distress but a different station is nearer; deferring dispatch to it.")
                     continue
 
-                reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh, below {self.return_floor_wh(v_ref):.1f} Wh return floor)"
+                reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh, below {return_floor:.1f} Wh return floor)"
                 self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
 
                 try:
@@ -280,6 +283,7 @@ class ChargingStationController:
                     pass
 
                 # Dispatch rescue drone
+                self.log.debug(f"[{self.name}] {v_id} selected for rescue this cycle ({reason}); only one drone dispatch is attempted per step(), any other distressed vehicle waits for the next cycle.")
                 res = self.station.dispatch_rescue(v_id, target_level)
                 if res.status == "ok":
                     self.log.print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level*100:.0f}% for safe station return.")

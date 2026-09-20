@@ -26,6 +26,7 @@ class SolarController:
         elevation = self.clock.get_elevation() if self.clock else 0.0
         tilt = max(0, min(90, 90 - elevation))
         self.machine.set_tilt(tilt)
+        self.log.debug(f"[{self.name}] Sun elevation {elevation:.1f} deg -> tilt set to {tilt:.1f} deg.")
         return elevation
 
     def step(self):

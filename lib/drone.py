@@ -53,6 +53,14 @@ class DroneController(
         self.drone = drone
         self.name = getattr(drone, "id", getattr(drone, "name", "drone"))
 
+        # Created once here (not per-call) since TreeConsole.__init__ reads
+        # the console.log_levels archive dict -- see
+        # docs/AI_CHEATSHEET.md #0a. Constructed before the home_outpost
+        # resolution chain below (rather than after, as in the shape this
+        # was ported from) so get_nearest_drone_depot()/_service() -- called
+        # during this same __init__ -- can already log through self.log.
+        self.log = TreeConsole(module="drone")
+
         # No self.home_coords yet -- get_nearest_drone_depot()/_service()
         # fall back to (0.0, 0.0) via getattr(self, "home_coords", ...)
         # until it's assigned below (see drone_energy.py's fallback note).
@@ -65,28 +73,29 @@ class DroneController(
         # falling back to the nearest drone_service, then to the network's
         # home outpost if neither is deployed yet.
         self.home_outpost = depot_info.get("outpost")
+        home_outpost_source = "drone_depot" if self.home_outpost is not None else None
         if self.home_outpost is None:
             _, service_info = self.get_nearest_drone_service()
             self.home_outpost = service_info.get("outpost")
+            if self.home_outpost is not None:
+                home_outpost_source = "drone_service"
         if self.home_outpost is None:
             network = get_component("outpost_network")
             self.home_outpost = network.home() if network and hasattr(network, "home") else None
-            if self.home_outpost is not None and hasattr(self.home_outpost, "coords"):
-                try:
-                    coords = self.home_outpost.coords()
-                    if coords:
-                        self.home_coords = (float(coords[0]), float(coords[1]))
-                except Exception:
-                    pass
+            if self.home_outpost is not None:
+                home_outpost_source = "outpost_network.home() fallback"
+                if hasattr(self.home_outpost, "coords"):
+                    try:
+                        coords = self.home_outpost.coords()
+                        if coords:
+                            self.home_coords = (float(coords[0]), float(coords[1]))
+                    except Exception:
+                        pass
 
         self.home_biome = getattr(self.home_outpost, "biome", None)
+        self.log.debug(f"[{self.name}] home_outpost resolved via {home_outpost_source or 'none (no depot/service/network home found)'}; home_coords={self.home_coords}, home_biome={self.home_biome!r}.")
 
         self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
-
-        # Created once here (not per-call) since TreeConsole.__init__ reads
-        # the console.log_levels archive dict -- see
-        # docs/AI_CHEATSHEET.md #0a.
-        self.log = TreeConsole(module="drone")
 
         self.state = "INIT"
         self.current_target = None

@@ -90,7 +90,7 @@ class VehicleController(
         # Created once here (not per-call in vehicle_survey.py's scan_and_survey()/
         # unscanned_pois(), which both run every survey cycle) since TreeConsole.__init__
         # reads the console.log_levels archive dict -- see docs/AI_CHEATSHEET.md #0a.
-        self.log = TreeConsole(module="vehicle_survey")
+        self.log = TreeConsole(module="vehicle")
 
         # State tracking
         self.state = "INIT"
@@ -110,20 +110,29 @@ class VehicleController(
         resumed = self.load_mission()
         if resumed:
             self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+            self.log.debug(f"[{self.name}] Recovered mission record: target={resumed.get('target')!r}, saved_tick={resumed.get('tick')}, current_tick={self.get_current_tick()}.")
             if resumed.get("kind") == "mine":
                 self.restore_yield_reservation_flag()
+                self.log.debug(f"[{self.name}] Mission kind 'mine' -> restored yield reservation flag (current_target_reserved={self.current_target_reserved}).")
+        else:
+            self.log.debug(f"[{self.name}] No resumable mission found in archive; starting fresh from state 'INIT'.")
 
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""
+        self.log.trace(f"[{self.name}] get_vehicle_index() called on name={self.name!r}.")
         digits = ""
         for ch in str(self.name):
             if ch.isdigit():
                 digits += ch
         if digits:
             try:
-                return int(digits)
+                index = int(digits)
+                self.log.trace(f"[{self.name}] get_vehicle_index() -> {index} (parsed digits {digits!r}).")
+                return index
             except Exception:
+                self.log.trace(f"[{self.name}] get_vehicle_index() -> 1 (failed to parse digits {digits!r}).")
                 return 1
+        self.log.trace(f"[{self.name}] get_vehicle_index() -> 1 (no digits found in name).")
         return 1
 
     def get_rover_index(self):
@@ -157,6 +166,7 @@ class VehicleController(
 
     def publish_telemetry(self, state, target_desc=None):
         """Publishes live vehicle status to Data Archive under a dedicated key."""
+        self.log.trace(f"[{self.name}] publish_telemetry(state={state!r}, target_desc={target_desc!r}) called.")
         self.state = state
         curr_wh, cap_wh, lvl = self.get_battery()
         pos = self.get_position()
@@ -173,3 +183,4 @@ class VehicleController(
         archive.set(f"fleet.status.{self.name}", telemetry)
         if str(self.name).startswith("rover"):
             archive.set(f"rover.status.{self.name}", telemetry)
+        self.log.trace(f"[{self.name}] publish_telemetry() -> wrote fleet.status.{self.name}: {telemetry}.")

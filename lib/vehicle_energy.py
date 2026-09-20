@@ -365,6 +365,11 @@ class VehicleEnergyMixin:
         to test best-case feasibility at the speedmode throttle floor). Defaults to the
         cruise-throttle rate, computed separately per leg since cargo differs between them.
         """
+        self.log.trace(
+            f"[{self.name}] calculate_trip_energy(target={target_coords}, planned_drill_units={planned_drill_units}, "
+            f"planned_scans={planned_scans}, planned_construction_progress={planned_construction_progress}, "
+            f"wh_per_meter={wh_per_meter}, mine_item_id={mine_item_id}, mine_purity={mine_purity}) called."
+        )
         current_pos = self.get_position()
         dist_outbound = self.distance_between(current_pos, target_coords)
         nearest_cs_from_target, _ = self.get_nearest_charging_station(from_coords=target_coords)
@@ -390,8 +395,20 @@ class VehicleEnergyMixin:
         total_required_wh = buffered_expedition_wh + self.MIN_EMERGENCY_RESERVE_WH
 
         curr_wh, cap_wh, lvl = self.get_battery()
+        is_achievable = curr_wh >= total_required_wh
 
-        return {
+        self.log.debug(
+            f"[{self.name}] Trip budget: drive_out={drive_out_wh:.1f} Wh ({dist_outbound:.1f}m), "
+            f"drive_home={drive_home_wh:.1f} Wh ({dist_inbound:.1f}m to {nearest_cs_from_target}), "
+            f"sonar={sonar_wh:.1f} Wh, mining={mining_wh:.1f} Wh ({planned_drill_units} units @ {mine_rate:.2f} Wh/unit), "
+            f"construction={construction_wh:.1f} Wh -> net={net_expedition_wh:.1f} Wh, "
+            f"+{(self.SAFETY_MARGIN_MULTIPLIER - 1) * 100:.0f}% safety margin = {buffered_expedition_wh:.1f} Wh, "
+            f"+{self.MIN_EMERGENCY_RESERVE_WH:.1f} Wh emergency reserve = {total_required_wh:.1f} Wh required "
+            f"vs {curr_wh:.1f} Wh on board -> {'achievable' if is_achievable else 'NOT achievable'} "
+            f"({'surplus' if is_achievable else 'short by'} {abs(curr_wh - total_required_wh):.1f} Wh)."
+        )
+
+        result = {
             "dist_outbound": dist_outbound,
             "dist_inbound": dist_inbound,
             "nearest_cs_coords": nearest_cs_from_target,
@@ -403,8 +420,10 @@ class VehicleEnergyMixin:
             "net_expedition_wh": net_expedition_wh,
             "total_required_wh": total_required_wh,
             "current_wh": curr_wh,
-            "is_achievable": curr_wh >= total_required_wh
+            "is_achievable": is_achievable
         }
+        self.log.trace(f"[{self.name}] calculate_trip_energy() -> {result}.")
+        return result
 
     def max_mineable_units(self, target_coords, item_id, purity=None):
         """
@@ -442,11 +461,14 @@ class VehicleEnergyMixin:
         curr_wh, _, _ = self.get_battery()
         available_for_units = curr_wh - self.MIN_EMERGENCY_RESERVE_WH - (fixed_wh * self.SAFETY_MARGIN_MULTIPLIER)
         if available_for_units <= 0 or marginal_wh_per_unit <= 0:
+            self.log.debug(f"[{self.name}] max_mineable_units({item_id}, purity={purity}): 0 units affordable (available_for_units={available_for_units:.1f} Wh, marginal_wh_per_unit={marginal_wh_per_unit:.2f} Wh -- fixed_wh={fixed_wh:.1f}, curr_wh={curr_wh:.1f}, reserve={self.MIN_EMERGENCY_RESERVE_WH:.1f}).")
             return 0
 
         max_units = int(available_for_units // (marginal_wh_per_unit * self.SAFETY_MARGIN_MULTIPLIER))
         cargo_capacity = self.vehicle.cargo.capacity() if hasattr(self.vehicle, "cargo") else max_units
-        return max(0, min(max_units, cargo_capacity))
+        final_units = max(0, min(max_units, cargo_capacity))
+        self.log.debug(f"[{self.name}] max_mineable_units({item_id}, purity={purity}): energy-affordable={max_units} (available={available_for_units:.1f} Wh / {marginal_wh_per_unit:.2f} Wh/unit), cargo_capacity={cargo_capacity} -> {final_units} units.")
+        return final_units
 
     def energy_needed_to_reach(self, target_coords):
         """Calculates minimum energy required to reach target coordinates with safety buffer."""
@@ -552,16 +574,20 @@ class VehicleEnergyMixin:
         reserve_needed = (self.distance_between(target_coords, nearest_cs) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
+            self.log.debug(f"[{self.name}] max_safe_throttle_for_leg({target_coords}): 0.0 (no safe reserve -- {curr_wh:.1f} Wh on board < {reserve_needed:.1f} Wh needed to reach {nearest_cs} afterward).")
             return 0.0
 
         base_w = self.BASE_TRAVEL_POWER_W + (self.MODULE_TRAVEL_POWER_W * self.active_modules_count()) + (self.CARGO_UNIT_TRAVEL_POWER_W * self.cargo_units_count())
         coeff = (base_w * self.nav_power_multiplier()) / (self.DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE * self.nav_speed_multiplier())
         denom = distance * coeff * self.SAFETY_MARGIN_MULTIPLIER
         if denom <= 0:
+            self.log.debug(f"[{self.name}] max_safe_throttle_for_leg({target_coords}): {self.MAX_SPEEDMODE_THROTTLE} (zero-cost leg, denom={denom}).")
             return self.MAX_SPEEDMODE_THROTTLE
 
         sqrt_t_max = available_for_leg / denom
-        return max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, sqrt_t_max ** 2))
+        result = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, sqrt_t_max ** 2))
+        self.log.debug(f"[{self.name}] max_safe_throttle_for_leg({target_coords}): {result*100:.0f}% (available_for_leg={available_for_leg:.1f} Wh, distance={distance:.1f}m, reserve_needed={reserve_needed:.1f} Wh).")
+        return result
 
     def select_cruise_throttle(self, target_x, target_y):
         """
@@ -634,12 +660,14 @@ class VehicleEnergyMixin:
         ref_coords = from_coords if from_coords is not None else self.get_position()
         stations = self.get_all_charging_stations()
         if not stations:
+            self.log.debug(f"[{self.name}] get_nearest_charging_station({ref_coords}): no stations discovered network-wide, falling back to home slot {self.home_coords}.")
             return self.home_coords, {"id": "home_slot", "coords": self.home_coords, "component": self.home_charging_station}
 
         best_station = min(
             stations,
             key=lambda st: self.distance_between(ref_coords, st["coords"])
         )
+        self.log.debug(f"[{self.name}] get_nearest_charging_station({ref_coords}): chose '{best_station.get('id')}' at {best_station['coords']} ({self.distance_between(ref_coords, best_station['coords']):.1f}m), out of {len(stations)} candidate(s).")
         return best_station["coords"], best_station
 
     def get_outpost_ref(self, outpost_id=None):

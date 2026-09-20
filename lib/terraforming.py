@@ -26,6 +26,7 @@ class HeatController:
         current_state = self.machine.thermal_state()
 
         if current_day != self.last_day or current_state != self.last_state:
+            self.log.debug(f"[{self.name}] State change detected: day {self.last_day}->{current_day}, thermal_state '{self.last_state}'->'{current_state}'; re-evaluating power setpoint.")
             self.last_day = current_day
             self.last_state = current_state
 
@@ -36,13 +37,18 @@ class HeatController:
             else:
                 best_p = 5
                 best_eff = -1
+                self.log.debug(f"[{self.name}] No cached setpoint for '{current_state}'; sweeping 1-10 W to find peak efficiency.")
                 for p in range(1, 11):
                     self.machine.set_power(p)
                     eff = self.machine.efficiency()
                     if eff > best_eff:
+                        self.log.debug(f"[{self.name}] Sweep candidate {p} W -> {eff:.0f}% eff, new best (previous best {best_eff:.0f}% at {best_p} W).")
                         best_eff = eff
                         best_p = p
+                    else:
+                        self.log.debug(f"[{self.name}] Sweep candidate {p} W -> {eff:.0f}% eff, rejected (best remains {best_eff:.0f}% at {best_p} W).")
                     if eff >= 99.0:
+                        self.log.debug(f"[{self.name}] Sweep stopped early at {p} W: {eff:.0f}% eff already >= 99% threshold.")
                         break
                 self.machine.set_power(best_p)
                 self.learned_optimal[current_state] = best_p
@@ -78,12 +84,14 @@ class PressureController:
         # Gauge wrap detection (~100 to ~0) resets the sync flag for the new sweep
         if gauge < self.last_gauge and (self.last_gauge - gauge) > 20:
             self.synced_this_sweep = False
+            self.log.debug(f"[{self.name}] Gauge wrap detected ({self.last_gauge:.1f} -> {gauge:.1f}); resetting synced flag for new sweep, next window [{low:.1f}, {high:.1f}].")
 
         self.last_gauge = gauge
 
         in_window = (low <= gauge <= high) if low <= high else (gauge >= low or gauge <= high)
 
         if not self.synced_this_sweep and in_window:
+            self.log.debug(f"[{self.name}] Resonance window hit: gauge {gauge:.1f} within [{low:.1f}, {high:.1f}]; attempting sync().")
             res = self.machine.sync()
             if res.status == "ok":
                 self.synced_this_sweep = True
@@ -117,12 +125,15 @@ class OxygenController:
             co2 = self.atmo.get_co2()
             target_intake = co2 / 10.0
             self.machine.set_intake(target_intake)
+            self.log.debug(f"[{self.name}] CO2={co2:.2f} -> intake set to {target_intake:.2f} (sweet spot = CO2/10).")
 
         current_waste = self.machine.waste()
         if current_waste >= 50:
             res = self.machine.dump_waste()
             penalty = getattr(res, "penalty", 0.0)
             self.log.print(f"[{self.name}] Dumped waste at {current_waste:.1f}. Penalty: {penalty}")
+        else:
+            self.log.debug(f"[{self.name}] Waste at {current_waste:.1f}, below 50 dump threshold; no action.")
 
     def run(self, poll_interval=1.0):
         self.log.print(f"Oxygen Generator ({self.name}) online via Shared Library.")
