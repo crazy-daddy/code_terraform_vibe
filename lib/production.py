@@ -894,8 +894,8 @@ class SourceCache:
     candidate recipe) used to re-run every one of them from scratch per item,
     per recipe, and per order, which is what turned a single
     can_fulfill_order() call into several real seconds. That in turn was found
-    to wedge panel_1.py's Custom Panel rendering outright whenever this ran
-    inside its per-tick loop (not just slow it down) -- see panel_1.py's
+    to wedge panel_7.py's Custom Panel rendering outright whenever this ran
+    inside its per-tick loop (not just slow it down) -- see panel_7.py's
     module docstring for why that script is now a headless calculator with no
     panel.* calls of its own. Building one SourceCache per pass and threading
     it through means each underlying game call happens at most once per pass,

@@ -8,13 +8,13 @@
 # one worth doing, wasteful otherwise) or scanning the full Earth Order board
 # redundantly every cycle (the same N-times-redundant-per-cycle pattern bio.py's
 # Collector/Luminizer hit). `plan_dock_assignments()` is the central "decider" --
-# called once per cycle from panel_1.py's AUTOMATION section (this script's own
+# called once per cycle from panel_7.py's AUTOMATION section (this script's own
 # `set_order()`/`clear_order()`/`set_enabled()` are all `*(self only)*` hardware
 # calls per docs/components/supply_dock.md, so the plan itself has to be computed
 # somewhere else and handed to each dock via Archive; each dock's own
 # `SupplyDockController` then reads its assignment and performs the self-only
 # calls on itself). `desired_order_id()` falls back to this dock's own
-# `pick_best_order()` if no plan is available yet (panel_1 not running this
+# `pick_best_order()` if no plan is available yet (panel_7 not running this
 # cycle, or not running at all) so a dock never sits idle waiting on a planner
 # that may not be online.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, SourceCache
@@ -109,7 +109,7 @@ def _score_weekly_order(order, reserved):
 
 def plan_dock_assignments(clock=None):
     """
-    Central per-cycle decision, run once from panel_1.py's AUTOMATION section:
+    Central per-cycle decision, run once from panel_7.py's AUTOMATION section:
     which Earth Order (if any) each discovered Supply Dock should be working.
     Docks already holding a still-fulfillable order keep it (stability -- an
     order mid-shipment shouldn't get cleared over a marginal priority
@@ -150,10 +150,11 @@ def plan_dock_assignments(clock=None):
     # planning pass used to re-run Smelter/Fabricator discovery + list_recipes()
     # and the outpost.buildings() fluid scan from scratch per order/dock,
     # which is what made this function take ~10s -- even after SourceCache cut
-    # that to ~2s, a call this slow running inside panel_1.py's own per-tick
-    # loop was found to wedge that Custom Panel's rendering outright, which is
-    # why panel_1.py is now a headless calculator with its UI moved to
-    # panel_4.py (see panel_1.py's module docstring).
+    # that to ~2s, a call this slow running inside the Control Room script's
+    # own per-tick loop (at the time, panel_1.py) was found to wedge that
+    # Custom Panel's rendering outright, which is why the automation work is
+    # now a headless calculator (panel_7.py) with its UI moved to panel_1.py
+    # (see panel_7.py's module docstring).
     cache = SourceCache()
 
     candidates = []
@@ -252,7 +253,7 @@ class SupplyDockController:
     def pick_best_order(self):
         """
         Fallback order selection used only when no central plan is available
-        (see desired_order_id()) -- panel_1.py's plan_dock_assignments() is
+        (see desired_order_id()) -- panel_7.py's plan_dock_assignments() is
         the normal path and additionally spreads docks across candidates and
         skips weekly orders that can't finish before they expire. This
         per-instance fallback keeps a lone dock functional standalone:

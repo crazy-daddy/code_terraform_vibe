@@ -1,5 +1,5 @@
 # Control Room automation CALCULATOR -- headless, draws nothing. See
-# panel_4.py for the actual STATUS/AUTOMATION card UI, which reads this
+# panel_1.py for the actual STATUS/AUTOMATION card UI, which reads this
 # script's results back out of `archive`.
 #
 # Split out because this game has no true background/daemon script type -- a
@@ -14,13 +14,21 @@
 # (~100ms/iteration) the entire time the card stayed visually blank. There's
 # no known threshold under which an occasional multi-second stall is safe for
 # a script that also renders every tick, so the fix is structural: keep this
-# process entirely headless (no panel.* calls at all -- panel_1 is simply the
-# first Custom Panel that exists on any save, hence the natural home for the
-# "guaranteed to keep running" process the rest of the codebase already
-# depends on) and publish its results to `archive` for panel_4.py to display
-# instead of drawing them directly -- same Archive-as-decoupling-channel
-# pattern CLAUDE.md calls for when a result can't be produced by the
-# component that has to display it.
+# process entirely headless (no panel.* calls at all) and publish its results
+# to `archive` for panel_1.py to display instead of drawing them directly --
+# same Archive-as-decoupling-channel pattern CLAUDE.md calls for when a
+# result can't be produced by the component that has to display it.
+#
+# NOTE ON THE FILE NUMBER: this script started life as panel_1.py (the first
+# Custom Panel on any save, hence the natural original home for a
+# "guaranteed to keep running" process). It's now panel_7.py instead --
+# Custom Panel ids only ever increment (deleting one never frees its number)
+# and cards can't be drag-reordered in the Control Room UI, so getting the UI
+# card into the visually-first slot meant recreating it at panel_1 and moving
+# this (position-agnostic, since it draws nothing) calculator to whatever
+# number was free. See docs/AI_CHEATSHEET.md §7's panel-numbering-quirk note
+# for the current full mapping -- it WILL drift again if panels are
+# added/removed in-game, so verify against the operator before trusting it.
 #
 # Responsibilities (see docs/AI_CHEATSHEET.md):
 #   - Power Grid supervision (brownout load-shedding, day/night calibration)
@@ -39,7 +47,7 @@
 # longer do any of this themselves -- it's a hard dependency on this script
 # running (see legacy/README.md for pre-Control-Room saves). The manual
 # "Clean Archive"/"Sync Unsupported"/"Confirm New Version" buttons live on
-# panel_4.py instead -- they're rare, user-triggered one-offs, not the
+# panel_1.py instead -- they're rare, user-triggered one-offs, not the
 # chronic per-cycle cost that forced this script headless.
 
 from archive import archive
@@ -51,10 +59,10 @@ import supply_dock
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
-# Published each time the storage-tick automation runs; panel_4.py reads this
+# Published each time the storage-tick automation runs; panel_1.py reads this
 # to display the "ALWAYS-ON" line instead of computing it itself. Left
 # untouched (not overwritten) while version_mismatch() halts automation below,
-# same as the old combined script did -- panel_4.py shows its own fixed
+# same as the old combined script did -- panel_1.py shows its own fixed
 # "halted" message in that case rather than trusting a stale summary.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 

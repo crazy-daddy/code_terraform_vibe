@@ -7,6 +7,9 @@ thresholds, stale-tick counts, budgets, etc.), update it here in the same change
 (`CLAUDE.md`, `TODO.md`) should point at the constant/module name rather than restate its value —
 that way there is exactly one place to keep current.
 
+For the *why* behind a design (bug postmortems, rejected approaches, design-history narrative),
+see **[`DESIGN_HISTORY.md`](DESIGN_HISTORY.md)** — this file stays reference-only.
+
 ---
 
 ## 🗺️ Progression Walkthroughs & Speedrun Guides
@@ -26,7 +29,7 @@ For high-level operational workflows, progression roadmaps, and automation orche
 | Concern | Module(s) |
 | :--- | :--- |
 | Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`) |
-| Power grid & brownout | `power.py` (`PowerGridManager` — generic, works for solar/oil/reactor/turbine grids, owned centrally by `panel_1.py`, one instance per grid, no election — see §1a-1); `solar.py` (`SolarController` — pure sun tracking, no grid supervision of its own any more) |
+| Power grid & brownout | `power.py` (`PowerGridManager` — generic, works for solar/oil/reactor/turbine grids, owned centrally by `panel_7.py`, one instance per grid, no election — see §1a-1); `solar.py` (`SolarController` — pure sun tracking, no grid supervision of its own any more) |
 | Vehicles (Rover/Pioneer base) | `vehicle.py` (`VehicleController`, composes the mixins below) |
 | &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting / charging-station discovery | `vehicle_energy.py` |
@@ -69,48 +72,41 @@ For high-level operational workflows, progression roadmaps, and automation orche
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 
-Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_1.py`, etc.) should stay thin
+Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_7.py`, etc.) should stay thin
 entrypoints that import and run a controller from `lib/` — they should not contain their own
 copies of tier lists, thresholds, or budgeting formulas.
 
 **No real stdlib — only a short, specific allowlist of "executable built-in modules" exists**
 (`docs/guide/programming_language_reference.md`'s "Imports & Libraries" section is authoritative;
-re-check it before reaching for any import, don't assume from ordinary Python). This has bitten
-agent-written code repeatedly (e.g. `lib/production.py` reaching for `import math` for a plain
-`ceil()`) — `ModuleNotFoundError`/`ImportError` at runtime, not a Pyright-catchable error locally,
-since `pyrightconfig.json`'s stubs don't model the sandbox's restricted runtime import set. The
-**only** executable modules are `random` (`randint`/`rand`/`random()`, also callable as bare global
-helpers), `re` (regex — but see the `re.escape`-unavailable gap noted elsewhere in this doc),
-`functools` (`reduce`, `total_ordering`), and `dataclasses` (`dataclass`, `field`) — nothing else,
-and critically **none of these are real system libraries the way they are in ordinary Python**: this
-is a small in-game reimplementation exposing just those names, not CPython's actual `random`/`re`/
-`functools`/`dataclasses` modules, so don't assume any stdlib behavior beyond what the guide
-documents. `math`, `sys`, `os`, `json`, `time`, `itertools`, `collections` (the concrete module, not
-`collections.abc`), etc. do **not** exist at runtime. Separately, `typing`, `types`,
-`collections.abc`, and `user_stubs` exist ONLY for editor/Pyright type annotations — their names are
-erased at runtime (`typing.TYPE_CHECKING` is always `False` in-game), so they can be imported for
-annotation purposes but never for executable helpers. **When you need something stdlib would give
-you (ceiling division, etc.), write the few lines of plain arithmetic/Python by hand instead of
-importing** — see `lib/production.py`'s `_ceil()` for the pattern this project now follows instead of
+re-check it before reaching for any import, don't assume from ordinary Python). The **only**
+executable modules are `random` (`randint`/`rand`/`random()`, also callable as bare global
+helpers), `re` (regex — but `re.escape` is unavailable), `functools` (`reduce`, `total_ordering`),
+and `dataclasses` (`dataclass`, `field`) — nothing else, and none of these are real system
+libraries the way they are in ordinary Python: this is a small in-game reimplementation exposing
+just those names, not CPython's actual modules. `math`, `sys`, `os`, `json`, `time`, `itertools`,
+`collections` (the concrete module), etc. do **not** exist at runtime. `typing`, `types`,
+`collections.abc`, and `user_stubs` exist ONLY for editor/Pyright type annotations — erased at
+runtime (`typing.TYPE_CHECKING` is always `False` in-game). **When you need something stdlib would
+give you (ceiling division, etc.), write the few lines of plain arithmetic by hand instead of
+importing** — see `lib/production.py`'s `_ceil()` for the pattern this project uses instead of
 `math.ceil()`.
 
 **Import depth limit**: the interpreter caps the nested import-resolution stack at
 `maxImportDepth = 256` (`interpreter.maxImportDepth`, confirmed from the decompiled simworker —
 see `internals/` [gitignored, not authoritative game docs]), raising a `RecursionError` /
 `error.import_depth` if exceeded. Our current `lib/` chain (entrypoint → `vehicle.py` → its
-mixins, at most 2-3 levels deep) is nowhere close, so this is purely a "if you ever see
-`RecursionError: maximum import depth exceeded`, look for a real import cycle" note, not a design
-constraint to actively budget against.
+mixins, at most 2-3 levels deep) is nowhere close — if you ever see this error, look for a real
+import cycle.
 
 ### 0a. Structured Console Logging (`lib/tree_console.py` `TreeConsole`)
 
-Console output should work at two levels of detail, both tree-formatted the same way:
+Console output works at two levels of detail, both tree-formatted the same way:
 
-- **Overview (info, always visible)** — major blocks and outcomes, roughly what scripts print
-  today, kept beautified and skimmable at a glance without opting into anything.
+- **Overview (info, always visible)** — major blocks and outcomes, kept beautified and skimmable
+  at a glance without opting into anything.
 - **Reasoning trail (debug, opt-in)** — the *why* underneath: which branch a decision took, what
   candidates were considered/rejected, what a computed threshold or estimate came out to. Hidden
-  from the normal ALL view (`docs/components/console.md`'s `console.debug()`) so it doesn't spam
+  from the normal ALL view (`docs/components/console.md`'s `console.debug()`), so it doesn't spam
   players who haven't opted in, but reading it with debug output enabled should tell the whole
   story of a run without reaching for the in-game breakpoint/watch debugger (`§8`).
 
@@ -134,23 +130,18 @@ rc.level("warn").print("Battery below safety floor, aborting trip")  # one-off l
 ```
 
 - `start(msg)` / `end(msg)` open/close a block, printing a `┏━`/`┗━` line and indenting
-  (`┃   ` per level) everything logged in between — mirrors how the decision logic itself nests
-  (task creation → per-candidate evaluation → simulation → resolution). These default to **info**,
-  since a block's start/end is normally the kind of thing that belongs in the overview.
+  (`┃   ` per level) everything logged in between — default level is **info**.
 - `print(msg)` logs one line at the current indent depth, at `default_level` (info) unless
   overridden with `.level(...)`.
-- `debug(msg)` is shorthand for `.level("debug").print(msg)` — use it for the in-depth,
-  opt-in reasoning trail (per-candidate scores, rejected options, computed intermediate values)
-  nested under the info-level blocks that describe what actually happened.
+- `debug(msg)` is shorthand for `.level("debug").print(msg)` — the in-depth, opt-in reasoning
+  trail, nested under the info-level blocks that describe what actually happened.
 - `color(c)` / `level(lvl)` set a one-shot override (CSS color / `info`\|`warn`\|`error`\|`debug`\|
   custom) consumed by the *next* `print`/`start`/`end`/`debug` call only, then reset to the
-  instance default — use this to flag an unusual outcome (a failed block, an emergency fallback)
-  without changing the logger's default verbosity for everything else.
+  instance default.
 - Every line still goes through `console.print(..., timestamp=True)`, so it keeps the game
   time-of-day prefix and plays correctly with the Console's channel/level filters.
-- Reserve plain `warn`/`error` (via `.level("warn"|"error")`) for actual status changes and
-  problems a player should notice even without debug output; `debug()` is purely for detail, never
-  for something that needs attention.
+- Reserve plain `warn`/`error` for actual status changes a player should notice even without
+  debug output; `debug()` is purely for detail, never for something that needs attention.
 
 ---
 
@@ -172,340 +163,158 @@ rc.level("warn").print("Battery below safety floor, aborting trip")  # one-off l
     `bio_collector_*`, `bio_lab_*`, `bio_exchange_*`, `bio_luminizer_*`): shed **first**.
   - **Tier 2 — critical active production** (`smelter_*`, `fabricator_*`): shed only under
     severe deficit.
-  - This is deliberately inverted from a naive "protect terraforming" instinct: terraforming
-    machinery is treated as background/passive load, production the higher priority to keep alive.
+  - Deliberately inverted from a naive "protect terraforming" instinct — terraforming is treated
+    as background/passive load, production the higher priority to keep alive. See `DESIGN_HISTORY.md`
+    for why.
   - Vehicle Charging Stations (`vehicle_charging_station*` / `charging_station_*`) are
-    deliberately **never** in any tier — they're also what dispatches the fleet rescue drone
-    (`lib/charging.py` `manage_fleet_rescues()`); shedding them "only under severe deficit" would
-    lose rescue capability at exactly the moment a vehicle is most likely to be stranded and need
-    it (`dispatch_rescue()` returns `"station_offline"` if the station itself is unpowered).
-- Shed thresholds live as **inline literals in `manage_night_loads()`** (not named module
-  constants — check that function directly if retuning): Tier 1 sheds on deficit or
-  `battery_pct < 0.20`; Tier 2 additionally sheds on severe deficit (`stored_wh < wh_needed * 0.50`)
-  or `battery_pct < 0.15`.
+    deliberately **never** in any tier — they also dispatch the fleet rescue drone
+    (`lib/charging.py` `manage_fleet_rescues()`); losing power there would lose rescue capability
+    exactly when a vehicle is most likely to be stranded (`dispatch_rescue()` returns
+    `"station_offline"` if the station itself is unpowered).
+- Shed thresholds are **inline literals in `manage_night_loads()`** (not named module constants —
+  check that function directly if retuning): Tier 1 sheds on deficit or `battery_pct < 0.20`;
+  Tier 2 additionally sheds on severe deficit (`stored_wh < wh_needed * 0.50`) or
+  `battery_pct < 0.15`.
 - Recovery is the mirror image, in both `manage_night_loads()` (battery stabilizing) and
   `manage_day_recovery()` (solar surplus at dawn): Tier 2 (production/logistics) is restored
   first, requiring only a small surplus-watt / stored-Wh margin; Tier 1 (terraforming) is
   restored last, requiring a larger margin.
-- **Tier 2 (`smelter_*`/`fabricator_*`) is soft-shed — `SOFT_SHED_PATTERNS`, never actually
-  powered off.** A Smelter/Fabricator only draws its recipe's `power_draw` while a craft is
-  actively running — idle draw is already 0 W (`lib/smelter.py`'s `SmelterController` docstring)
-  — so cutting its breaker saves nothing beyond what simply not starting new work already saves,
-  while also needing external intervention to power it back on and restart its script. Soft-shed instead: Power Guard still
-  adds/removes the machine from `power.shedded` (so the signal exists and recovery timing is
-  unchanged), but never calls `set_powered()` on it. `SmelterController.is_shedded()` /
-  `FabricatorController.is_shedded()` check that same list each `step()` and, if shedded, return
-  right after draining output/ejecting excess — never starting or topping up production, but never
-  interrupting an already-running craft either, so draw winds down to 0 W on its own. Every other
-  Tier 1 pattern (`heater_*`, `pressure_*`, `bio_*`, etc.) is still hard-shed via `set_powered()`,
-  since those draw power continuously regardless of whether they're "producing" anything.
-  **No cooperative auto-wake exists on purpose** — `VehicleCargoMixin.wake_smelter()` and
-  `FabricatorController.wake_smelter()` (which used to power on / `run_control.start()` the
-  Smelter on fresh ore delivery or a missing-input stall) were removed entirely: if the operator
-  stopped or powered down the Smelter themselves, nothing should override that just because a
-  delivery arrived. The Smelter's own `step()` loop already polls for new ore on its normal cycle
-  whenever it IS running.
-- **Night duration is a fixed constant, not calibrated.** `NIGHT_DURATION_HOURS` (and
-  `SUNRISE_HOUR`/`SUNSET_HOUR`) are computed once at module load from the decompiled simworker's
-  exact day-cycle schedule (`DAY_CYCLE_DURATION_SECONDS = 600`, `DAYLIGHT_FRACTIONS` — `dawn_start`
-  through `dusk_end` as fractions of a full day, multiplied by 24 to land on
-  `clock.elapsed_game_hours()`'s scale): sunrise at `0.25 * 24 = 6.0h`, sunset at
-  `0.83 * 24 = 19.92h`, giving `NIGHT_DURATION_HOURS = 24 - 19.92 + 6.0 = 10.08` exactly, every
-  night. This replaced the old empirically-calibrated `power.night_duration` archive value
-  (measured `sunset_hour -> sunrise` gap, EMA-smoothed in `handle_sunrise()`) — the schedule never
-  actually varies day to day, so there was nothing to calibrate; the old approach was only ever
-  wrong immediately after a script restart while it re-converged toward this same constant.
-  `power.night_wh`/`power.night_wh:<grid_anchor>` (historical overnight Wh, used to blend with the
-  live instantaneous draw when sizing `manage_night_loads()`'s shed threshold) is unrelated and
-  still calibrated live — only the *duration* was ever exactly knowable in advance.
-- `ArchiveCleaner.clean_power_grid_state()` (`lib/archive_cleaner.py`) retires `power.night_duration`
-  and the dead legacy key `power.last_night_wh` outright, and purges `power.shedded:<anchor>` /
-  `power.night_wh:<anchor>` entries whose grid anchor no longer exists (e.g. two grids merged via a
-  new power line, orphaning one of the two old per-grid keys) — skipped entirely if grid
-  discovery itself comes back empty, same caution as `clean_telemetry()`'s active-vehicle check. This
-  is a manual-button-triggered sweep (see §7); `PowerGridManager.release_all()` (§1a-1) is the
-  automatic, immediate version of the same "a grid anchor just disappeared" cleanup for whatever it
-  still had shed, so a grid merge doesn't leave something stuck shed for however long until the
-  player next presses the button.
+- **Tier 2 (`smelter_*`/`fabricator_*`) is soft-shed via `SOFT_SHED_PATTERNS`, never powered off** —
+  idle Smelter/Fabricator draw is already 0 W (recipe power draw only applies while actively
+  crafting), so cutting the breaker saves nothing beyond what not-starting-new-work already saves.
+  Power Guard still adds/removes the machine from `power.shedded` (signal + recovery timing
+  unchanged) but never calls `set_powered()` on it; `SmelterController.is_shedded()` /
+  `FabricatorController.is_shedded()` check that list each `step()` and, if shedded, drain
+  output/eject excess but never start or top up production. Every other Tier 1 pattern
+  (`heater_*`, `pressure_*`, `bio_*`, etc.) is still hard-shed via `set_powered()`. **No cooperative
+  auto-wake exists on purpose** — if the operator stopped/powered down the Smelter themselves,
+  nothing overrides that on delivery; the Smelter's own `step()` already polls for new ore on its
+  normal cycle whenever it IS running.
+- **Night duration is a fixed constant, not calibrated.** `NIGHT_DURATION_HOURS`
+  (`SUNRISE_HOUR`/`SUNSET_HOUR`) are computed once at module load from the decompiled simworker's
+  exact day-cycle schedule (`DAY_CYCLE_DURATION_SECONDS = 600`, `DAYLIGHT_FRACTIONS`): sunrise at
+  `0.25 * 24 = 6.0h`, sunset at `0.83 * 24 = 19.92h`, giving `NIGHT_DURATION_HOURS = 24 - 19.92 +
+  6.0 = 10.08` exactly, every night. `power.night_wh`/`power.night_wh:<grid_anchor>` (historical
+  overnight Wh, blended with live instantaneous draw when sizing `manage_night_loads()`'s shed
+  threshold) is unrelated and still calibrated live — only the *duration* is exactly knowable in
+  advance.
+- `ArchiveCleaner.clean_power_grid_state()` (`lib/archive_cleaner.py`) retires the dead legacy keys
+  `power.night_duration`/`power.last_night_wh`, and purges `power.shedded:<anchor>` /
+  `power.night_wh:<anchor>` entries whose grid anchor no longer exists — skipped entirely if grid
+  discovery comes back empty. This is a manual-button-triggered sweep (§7);
+  `PowerGridManager.release_all()` (§1a-1) is the automatic, immediate version of the same
+  cleanup for whatever a vanished grid anchor still had shed.
 
-### 1a-1. Centralized Grid Ownership (`panel_1.py`, no Master/Follower election)
+### 1a-1. Centralized Grid Ownership (`panel_7.py`, no Master/Follower election)
 
-`PowerGridManager` used to be instantiated once **per solar generator** (`lib/solar.py`'s
-`SolarController`), with every instance independently re-electing the same single Master every tick
-(`check_master()`: sort every solar id on this generator's grid by numeric suffix, lowest one
-currently `run_control.is_running()` wins) purely so they could all agree on which ONE of them should
-actually call `supervise_grid()`. That election is gone — `panel_1.py`'s AUTOMATION section (§7) is a
-single always-running process, so it just owns grid supervision directly, one `PowerGridManager`
-instance per grid, with no election needed at all.
+`panel_7.py`'s AUTOMATION section (§7) is a single always-running process that owns grid
+supervision directly, one `PowerGridManager` instance per grid, with no election needed.
 
-- **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param any more
-  (it only ever existed so a specific generator could identify itself to `get_grid()`, which is also
-  gone — `panel_1.py` already has each grid from iterating `power_control.grids()` directly, once per
-  tick). `grid` (the initial snapshot) is required and binds `self.grid_anchor` immediately at
-  construction, rather than leaving it `None` until the first `supervise_grid()` call sets it as a
-  side effect — identity is fixed for this manager's lifetime, only the per-call snapshot (stored/
-  capacity/consumed) genuinely needs to be fresh every call.
-- **`resolve_pattern_machines()`'s outpost-buildings fallback removed** (it read
-  `self.machine.outpost`, impossible without a bound machine) — the fallback chain narrows to the
-  grid snapshot's own `.machine_ids`/`.members` (primary, always populated for a real grid) → the
-  numbered-guess `get_component(f"{prefix}{i}")` last resort. Deliberate narrowing, not an oversight.
-- **`release_all()`** (new) — called when a grid's `anchor_id` stops being reported by
-  `power_control.grids()` at all (two grids merged into one via a new power line). Since `panel_1.py`
-  keeps one manager alive per anchor across ticks (to preserve its day/night/shed state), a vanished
-  anchor's manager — and anything still in its `shedded_machines` — would otherwise just be dropped
-  and forgotten, permanently stranding a shed Smelter/Fabricator/Tier-1 machine, since the *merged*
-  grid's own manager starts fresh with an empty `shedded_machines` and has no way to know about it.
-  Restores anything still tracked (guarded exactly like `manage_day_recovery()` already does) and
-  clears the per-anchor `power.shedded:<anchor>` mirror.
-- **Battery-less grids are skipped, not mismanaged.** `supervise_grid()` now runs against *every* grid
-  `power_control.grids()` reports, not just ones a solar generator happened to be on — a strict
-  improvement for battery-backed grids, but it means a grid powered entirely by Steam Turbine with no
-  Battery built now reaches this code for the first time, and `battery_pct = stored_wh / capacity_wh`
-  would divide by a real zero there (this genuinely never came up before: a grid only got supervised
-  if a `SolarController` existed on it, and solar always implies a battery for night storage). Guard:
-  `if capacity_wh <= 0: return` near the top of `supervise_grid()`, before any day/night or shedding
-  logic runs. A generation-vs-consumption supervision strategy for battery-less grids is a real gap,
-  just out of scope for this pass — flagged as a follow-up, not silently guessed at.
-- **`lib/solar.py`'s `SolarController` is now pure sun-tracking** — `track_sun()`/`step()`/`run()`
-  only, no `PowerGridManager`, no `is_master`, no `check_master()`/`update_role()`, no `power`/
-  `run_ctrl` constructor params. **Hard dependency**: Solar Grid brownout supervision only happens
-  while `panel_1.py` is running — see `legacy/README.md` for the pre-Control-Room fallback snapshot
-  (a save that hasn't unlocked `research_custom_panels` yet has no panel scripts at all, so this
-  centralization doesn't help it; that's what the legacy zip is for).
-- **`lib/smelter.py`'s `SmelterController` lost the mirror-image Leader election** the same way —
-  `check_leader()`/`update_role()`/`is_leader`/`run_ctrl` all removed. The "inventory manager" sweep
-  (`storage.rebalance_inventory_to_warehouses()`) that used to run Leader-only now runs once, directly,
-  from `panel_1.py`'s AUTOMATION section instead — same hard dependency as Solar Grid supervision.
+- **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param.
+  `grid` (the initial snapshot) is required and binds `self.grid_anchor` immediately at
+  construction — identity is fixed for the manager's lifetime, only the per-call snapshot
+  (stored/capacity/consumed) needs to be fresh every call.
+- **`resolve_pattern_machines()`** fallback chain: grid snapshot's own `.machine_ids`/`.members`
+  (primary) → numbered-guess `get_component(f"{prefix}{i}")` last resort.
+- **`release_all()`** — called when a grid's `anchor_id` stops being reported by
+  `power_control.grids()` at all (two grids merged via a new power line). Restores anything still
+  tracked in that manager's `shedded_machines` (guarded exactly like `manage_day_recovery()`) and
+  clears the per-anchor `power.shedded:<anchor>` mirror, so a merge doesn't strand a shed machine.
+- **Battery-less grids are skipped, not mismanaged**: `if capacity_wh <= 0: return` near the top of
+  `supervise_grid()`, before any day/night or shedding logic — a Steam-Turbine-only grid with no
+  Battery would otherwise divide by zero computing `battery_pct`. A generation-vs-consumption
+  supervision strategy for battery-less grids remains a follow-up, not implemented here.
+- **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
+  only, no `PowerGridManager`, no master role, no `power`/`run_ctrl` constructor params. **Hard
+  dependency**: Solar Grid brownout supervision only happens while `panel_7.py` is running — see
+  `legacy/README.md` for the pre-Control-Room fallback (a save without `research_custom_panels`
+  has no panel scripts, so this centralization doesn't help it).
+- **`lib/smelter.py`'s `SmelterController`** likewise has no Leader election — the "inventory
+  manager" sweep (`storage.rebalance_inventory_to_warehouses()`) runs once, directly, from
+  `panel_7.py`'s AUTOMATION section, same hard dependency as Solar Grid supervision.
 
 ### 1b. Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine
 
 Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
 (`lib/steam_turbine.py` `SteamTurbineController`) are independent scripts — each only manages its
-own throttle, no shared coordination needed. A Gas Tank sitting between them is purely passive
-(no script; see `docs/components/gas_tank.md`) and just smooths supply gaps.
+own throttle, no shared coordination. A Gas Tank between them is purely passive (no script) and
+just smooths supply gaps.
 
-- **Pipe wiring**: a Gas Tank has no script of its own, so nothing ever calls `connect()` on *its*
-  side of a FluidPort — each neighbor must declare its own side instead. **A Thermal Cap has no
-  `.outpost` property at all** (`docs/components/thermal_cap.md` lists none — it's built directly on
-  a thermal vent out in the field, not necessarily inside a founded outpost, unlike Gas Tank/Steam
-  Turbine which both have one), so candidates can't be scoped to "this building's outpost"; all
-  three controllers instead call the shared `lib/fluid_routing.py` `discover_network_buildings(type_ids,
-  resolve=True)` (Cap/Pump use the default, resolved objects; Turbine passes `resolve=False` for
-  plain ids), which walks every outpost (`outpost_network.outposts()` → `outpost.buildings(type_id)`)
-  to gather candidates network-wide.
-  - **`connect()`'s `"ok"` status does NOT mean the target is physically reachable** — per
-    `docs/guide/infrastructure_and_pipes.md`, a remote pairing needs a *completed* Gas Pipe route,
-    which `connect()` never checks; `"ok"` only means the pairing was logically accepted. The one
-    live signal of an actually-broken route is `is_stalled()` (steam/throttle ready, nothing
-    transferred) — all three controllers blacklist a target that reports this and pick a different
-    candidate, rather than sitting stalled on the same unreachable target forever. Each blacklist
-    entry expires **individually** — shared machinery, `lib/fluid_routing.py`'s `PerEntryBlacklist`
-    (Cap/Pump reach it via `self._router.blacklist`, Turbine via `self.blacklist`), maps
-    `id -> the simulation tick it was blacklisted at` (`.is_blacklisted(id, curr_tick)`, real
-    `clock.tick()`, not step() calls), not a plain set with one shared "clear everything at once"
-    timer — `RESCAN_INTERVAL_TICKS` (300 Cap-ticks / 150 Turbine-ticks, passed in per-controller as
-    a constructor/constructor-forwarded argument) is each entry's own expiry
-    window, so a target that was unreachable becomes retryable again once the player builds a new
-    pipe to it, without disturbing a currently-*working* connection or any *other* entry's own timer.
-    **This distinction is load-bearing, not stylistic**: an earlier version used one shared counter
-    that wiped the *entire* blacklist at once on a fixed timer. With 2+ simultaneously-unreachable
-    candidates ranked ahead of the one genuinely-reachable target (by fill_pct/discovery-order ties —
-    e.g. two Gas Tanks at a far outpost sorting before the one actually pipe-connected to this Cap's
-    own outpost), eliminating all of them can take longer than that window; the shared timer would
-    then erase already-made elimination progress and restart the cycle from the first bad candidate
-    before ever reaching the real one — an infinite ping-pong between the same 1-2 unreachable
-    targets, observed in practice (a Thermal Cap repeatedly targeting two unreachable Gas Tanks at a
-    different outpost, never once trying the one actually reachable from its own). Fixed by tracking
-    each entry's own blacklist tick and expiring independently; verified by stub test asserting an
-    older entry expires while a newer one (blacklisted after it) stays blacklisted, and by a full
-    elimination-order test (two unreachable tanks → correctly settles on and stays on the third,
-    reachable one).
-    - **This fix alone did NOT resolve the reported ping-pong** — a second, more fundamental bug was
-      still there underneath it, found by the player debugging in-game and confirmed by inspecting
-      `_fill_pct_of_building()` (since folded into `lib/fluid_routing.py`'s `fill_pct_of()`):
-      `discover_network_buildings()` used to append the raw `BuildingRef` from
-      `outpost.buildings(type_id)` directly. Per `docs/components/outpost.md`, that's a
-      lightweight *snapshot* carrying only `.id`/`.name`/`.type_id`/`.outpost`/`.powered`/`.position` —
-      **not** the type-specific live methods (`fill_pct()`, etc.) that only exist on the full resolved
-      component (`get_component(ref.id)`). So `fill_pct_of()`'s `hasattr(building, "fill_pct")` check
-      failed for *every* tank, always hitting the "unreadable, treat as 1.0" fallback — degenerating
-      `sorted(tanks, key=fill_pct_of)` into a no-op tie broken purely by discovery order, **and**
-      defeating the fast path too (a healthy current tank also reads as `1.0 >=
-      GAS_TANK_REBALANCE_FILL_FRACTION`, so it never short-circuits, forcing a full rescan every
-      single step). The net effect: selection became "skip current, take the next one in a fixed
-      discovery-order list" every call — a stable alternation between whichever two candidates happen
-      to sit adjacent to each other in that order, never advancing to a third. This is exactly the
-      failure mode the per-entry blacklist fix above couldn't reach, since it operates one layer up
-      (which candidates are *eligible*), not on why selection *among* eligible candidates was broken.
-      Fixed by resolving each `BuildingRef` via `get_component(ref.id) or building` inside
-      `discover_network_buildings()` itself (now `lib/fluid_routing.py`'s shared
-      `discover_network_buildings(type_ids, resolve=True)`, used by all three controllers) — same
-      `get_component(id) or ref` pattern already used correctly in `storage.py`'s
-      `discover_storage_buildings()` and `vehicle_energy.py`'s `get_all_charging_stations()`; this was
-      the one discovery helper in the codebase that hadn't followed it. Verified by stub test using a
-      `BuildingRef`-shaped fake (deliberately no `fill_pct()`) distinct from its full component,
-      asserting the returned objects have `fill_pct` and that fill-based sorting reflects real values
-      instead of a universal `1.0` tie. **Lesson for any future `outpost.buildings()`/
-      `outpost_network`-based discovery helper**: always resolve to the full component before relying
-      on anything beyond the five BuildingRef-native fields, or silently degrade in exactly this way.
-  - **Cap → Gas Tank(s)** (`ensure_output_connection()`): `steam_out` only ever holds one destination
-    at a time, so with several reachable tanks it can't fan out simultaneously — instead it
-    rebalances: stays on the current tank while its `fill_pct()` is below
-    `GAS_TANK_REBALANCE_FILL_FRACTION=0.98` **and** it isn't stalled, otherwise switches to whichever
-    other known (non-blacklisted) tank is currently least full. Deliberately raised from an earlier
-    `0.85` — that threshold re-evaluated every `step()`, so with two-or-more tanks both hovering
-    above it, whichever read as "less full" that particular tick would flip every cycle, reconnecting
-    `steam_out` constantly and never giving flow a chance to actually establish on either one —
-    pressure climbed unchecked with nowhere actually receiving it, causing real overpressure
-    blowoffs. `0.98` (essentially "truly full, not just past a soft threshold") only ever abandons a
-    target once it genuinely can't take more, which guarantees no oscillation — "imperfect load
-    balancing" loses to "never interrupts flow." A single stalled tick is enough to blacklist —
-    `is_stalled()` on a Cap already requires chamber steam to be available and ready to send, so
-    dormancy (which stops *capture*, not release) can't be the cause — **except** for the first
-    `CONNECTION_GRACE_TICKS=2` ticks right after a (re)connect, since flow can take a tick to
-    register and treating that brief lag as proof of unreachability would blacklist a perfectly good
-    tank and immediately force another switch, compounding the exact same churn.
-  - **Turbine → source** (`ensure_input_connection()`): tries every known Gas Tank first (the
-    larger, shared buffer), then every known (non-blacklisted) Thermal Cap directly. Connecting
-    straight to a Cap is a deliberate, fully-supported fallback, not a hack — per
-    `docs/guide/infrastructure_and_pipes.md`'s Thermal Vents section, "additional consumers may
-    connect their own `steam_in` ports to this Cap," independent of whatever the Cap's own
-    `steam_out` currently points at. This is also why the Cap's own script never tries to connect to
-    a Turbine itself: the Turbine already handles that side on its own. Unlike the Cap, a Turbine's
-    `is_stalled()` ("throttle up, no steam arriving") is ambiguous on its own — it's equally true,
-    harmlessly, whenever the feeding vent is just dormant — so blacklisting requires
-    `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled ticks (dormancy is temporary; a
-    genuinely missing pipe route stalls forever) rather than a single tick.
+- **Pipe wiring**: a Gas Tank has no script, so each neighbor declares its own side of a
+  `FluidPort`. A Thermal Cap has no `.outpost` property, so all three controllers use the shared
+  `lib/fluid_routing.py` `discover_network_buildings(type_ids, resolve=True)` (Cap/Pump use the
+  default resolved objects; Turbine passes `resolve=False` for plain ids), which walks every
+  outpost (`outpost_network.outposts()` → `outpost.buildings(type_id)`) network-wide.
+  - **`connect()`'s `"ok"` status does not mean physically reachable** — a remote pairing needs a
+    *completed* Gas Pipe route, which `connect()` never checks. The live signal of a broken route
+    is `is_stalled()` (steam/throttle ready, nothing transferred) — all three controllers
+    blacklist a target that reports this. Blacklist entries expire **individually** —
+    `lib/fluid_routing.py`'s `PerEntryBlacklist` maps `id -> tick blacklisted` (real
+    `clock.tick()`), each with its own `RESCAN_INTERVAL_TICKS` expiry window (300 Cap-ticks / 150
+    Turbine-ticks, passed per-controller), not one shared "clear everything" timer — see
+    `DESIGN_HISTORY.md` for the ping-pong bug this fixed.
+  - **Cap → Gas Tank(s)** (`ensure_output_connection()`): `steam_out` holds one destination at a
+    time; stays on the current tank while its `fill_pct()` is below
+    `GAS_TANK_REBALANCE_FILL_FRACTION=0.98` **and** it isn't stalled, otherwise switches to
+    whichever other known (non-blacklisted) tank is currently least full. A single stalled tick is
+    enough to blacklist, except for the first `CONNECTION_GRACE_TICKS=2` ticks right after a
+    (re)connect (flow can take a tick to register).
+  - **Turbine → source** (`ensure_input_connection()`): tries every known Gas Tank first, then
+    every known (non-blacklisted) Thermal Cap directly — per
+    `docs/guide/infrastructure_and_pipes.md`, additional consumers may connect their own
+    `steam_in` straight to a Cap, independent of the Cap's own `steam_out`. `is_stalled()` on a
+    Turbine is ambiguous alone (equally true when the feeding vent is just dormant), so
+    blacklisting requires `STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* stalled ticks.
     - **Candidate ranking is same-outpost-first, not discovery order** —
-      `fluid_routing.discover_network_buildings(type_id, resolve=False)` returns `(id, outpost_id)`
-      pairs (not bare ids), and `_discover_candidates_cached()` sorts each of the two groups
-      (gas_tank ids, then thermal_cap ids) so any candidate sharing this Turbine's own `outpost.id`
-      comes before every other-outpost one. Found from a real case: turbine_5/
-      turbine_6 initially connecting to `gas_tank_2` at a *different* outpost with no completed pipe
-      route to either, instead of trying their own outpost's tank first — `connect()`'s `"ok"` status
-      doesn't catch this (see above), so the wrong pick still burns a full
-      `STALL_STREAK_BLACKLIST_THRESHOLD`-tick stall window (and, once blacklisted, an
-      `RESCAN_INTERVAL_TICKS` window before it's even retryable) before falling through to a reachable
-      candidate that was available the whole time. This is a ranking preference, not a same-outpost
-      *restriction* — a genuinely reachable cross-outpost tank (real completed Gas Pipe route) is
-      still tried and still succeeds, just after same-outpost candidates are exhausted.
-  - **Discovery cost**: `fluid_routing.discover_network_buildings()` walks every outpost's
-    `buildings(type_id)` — real work, and (per profiling — see §1d) the actual cost driver of every
-    controller's `step()`. All three are cheap once settled specifically because the network walk
-    itself is skipped, not just deferred, while a connection is healthy:
-    - **Cap/Pump**: the "keep current tank" decision needs only one `fill_pct()` read on the id
-      already connected — `FluidOutputRouter.ensure_connection()` checks that *before* touching
-      discovery at all, so the walk never runs in the steady-state case.
-    - **Turbine**: `ensure_input_connection()` returns immediately whenever `connected_input` is
-      True and `stall_streak < STALL_STREAK_BLACKLIST_THRESHOLD`, for the same reason.
-    - All three still need discovery sometimes (bootstrap, current target blacklisted/full, every
-      candidate blacklisted at once) — for those cases each controller (via `FluidOutputRouter` for
-      Cap/Pump, directly for Turbine) caches the discovered building list for
-      `DISCOVERY_CACHE_INTERVAL_STEPS=20` `step()` calls rather than re-walking on every one of
-      several reselection attempts in a short window. This is a ceiling, not the primary mechanism —
-      see the fast paths above for why the walk is rare in practice.
-  - **The real per-step cost was elsewhere, and profiling (§1d) is what found it**: with the walk
-    itself gone, Thermal Cap's `step()` still cost 2-3 sim ticks every single call (Steam Turbine's
-    cost ~0, matching its zero-external-lookup fast path) — no periodic spike at 20 or 300 steps,
-    ruling discovery back out entirely. The actual culprit: the Cap's fast path still resolved its
-    *currently connected* tank via a fresh `get_component(current_id)` round trip every step just to
-    read `fill_pct()`, since the id alone (from the port) isn't the object `outpost.buildings()` had
-    already handed discovery. `discover_network_buildings(resolve=True)` now returns the live building
-    objects themselves, and `FluidOutputRouter._target_lookup` (an id → object dict, populated from
-    every discovery batch and never wholesale-cleared — a building's identity is stable, only the
-    candidate *list* goes stale) makes `_resolve_target(id)` a plain dict read on every call after the
-    first time a given id is seen. Verified via a stub test asserting zero `get_component()` calls
-    across 20 consecutive healthy steps (previously: one per step). This is the general pattern for
-    any future "read a possibly-external object by remembered id every step" cost: keep the object
-    reference from whatever discovery/connect call first produced it, rather than re-resolving by id.
-  - **Third pass — still 2 sim ticks/step after the above.** Comparing structure against Turbine's
-    equivalent (which reads ~0) found the remaining asymmetry: `ensure_output_connection()` still
-    called a port method **unconditionally on every single call**, whereas Turbine's healthy fast
-    path calls no port method at all — it trusts its own `self.connected_input` boolean and only ever
-    queries the port (`connected_id()`) on the rare blacklist branch. Fixed the same way:
-    `FluidOutputRouter` now tracks `self._connected_id` locally, updated only by its own `connect()`
-    calls and blacklist decisions (nothing else ever repoints `steam_out`/`water_out` — a Gas/Liquid
-    Tank is passive, no other script touches this port), so the port is queried exactly **once,
-    ever** — a one-time sync on first `ensure_connection()` call so a script reload recovers an
-    already-working connection instead of assuming a fresh start — never again after that. **That
-    one-time sync originally called `port.connected_to()` (the renameable display name) while every
-    other lookup keys on the stable id via `connected_id()`/`.id` — a latent bug (a renamed Gas/Liquid
-    Tank would desync the cache right after a reload) fixed alongside the Cap/Pump/Turbine unification
-    into `lib/fluid_routing.py`; the one-time sync now calls `connected_id()` like everything else.**
-    Verified via a stub test asserting the port's id method is called exactly once total across
-    bootstrap + reselect + 20 healthy steps (previously: once per step). If the archived tick-delta
-    for `thermal_cap_*`/`water_pump_*` still doesn't read ~0 after this, the next place to look is
-    whichever `self.cap.*`/`self.pump.*` method call in `step()` itself isn't mirrored by an
-    equivalent Turbine call, since everything `ensure_connection()` itself does is now either a
-    boolean/dict read or fully gated.
-- **Thermal Cap** — the only job is keeping `pressure()` off the `1.0` overpressure ceiling (hitting
-  it blows the *entire* chamber to atmosphere, not just the surplus — see `.is_overpressured()`).
-  Proportional release-valve (`steam_out`, via `set_throttle()`) bands on `pressure()`:
-  `≥0.90→1.0`, `≥0.60→0.6`, `≥0.30→0.3`, else `THROTTLE_TRICKLE=0.1` (keeps the pipe/downstream
-  buffer topped up without needlessly draining banked steam while pressure is comfortable). The
-  relief valve (`set_relief()`, dumps straight to atmosphere) only engages once the release valve
-  is already wide open (`throttle==1.0`) and pressure still climbs past
-  `PRESSURE_RELIEF_THRESHOLD=0.95` — a downstream jam (full Gas Tank, stalled Turbine, disconnected
-  pipe) the release valve alone can't route around. A small relief bleed there is far cheaper than
-  a full overpressure blowoff.
+      `_discover_candidates_cached()` sorts each candidate group so one sharing this Turbine's own
+      `outpost.id` comes first; a genuinely reachable cross-outpost candidate is still tried and
+      still succeeds, just after same-outpost candidates are exhausted.
+  - **Discovery cost**: the network walk is skipped entirely while a connection is healthy — Cap/
+    Pump check one `fill_pct()` on the already-connected id before touching discovery at all;
+    Turbine returns immediately whenever `connected_input` is True and `stall_streak` is below
+    threshold. When discovery does run (bootstrap, blacklisted/full target), results are cached
+    for `DISCOVERY_CACHE_INTERVAL_STEPS=20` `step()` calls.
+- **Thermal Cap** — keeps `pressure()` off the `1.0` overpressure ceiling (hitting it blows the
+  *entire* chamber to atmosphere — `.is_overpressured()`). Proportional release-valve (`steam_out`,
+  via `set_throttle()`) bands on `pressure()`: `≥0.90→1.0`, `≥0.60→0.6`, `≥0.30→0.3`, else
+  `THROTTLE_TRICKLE=0.1`. The relief valve (`set_relief()`, dumps to atmosphere) only engages once
+  the release valve is already wide open (`throttle==1.0`) and pressure still climbs past
+  `PRESSURE_RELIEF_THRESHOLD=0.95`.
 - **Steam Turbine** — throttle picked by `choose_throttle()`, in priority order:
-  1. Buffer fraction (`steam_in.level()/capacity()`, this turbine's own 100 t buffer, not the Gas
-     Tank) `< STEAM_BUFFER_LOW_FRACTION=0.15` → `THROTTLE_LOW_BUFFER=0.15` regardless of day/night
-     or grid demand — a thin buffer running flat out is exactly what produces `is_stalled()`.
+  1. Buffer fraction (`steam_in.level()/capacity()`, this turbine's own 100 t buffer) `<
+     STEAM_BUFFER_LOW_FRACTION=0.15` → `THROTTLE_LOW_BUFFER=0.15` regardless of day/night/demand.
   2. `< STEAM_BUFFER_HEALTHY_FRACTION=0.40` → `THROTTLE_MARGINAL_BUFFER=0.5` (buffer rebuilding).
-  3. Healthy buffer + night (`clock.get_elevation() <= 0`) → `1.0` — steam is the only generator
-     while solar is out, so it always carries the grid regardless of battery/demand state.
+  3. Healthy buffer + night (`clock.get_elevation() <= 0`) → `1.0`.
   4. Healthy buffer + day + grid battery `≥ BATTERY_FULL_FRACTION=0.98` of capacity AND
-     `generated >= consumed` → `THROTTLE_DEMAND_MET=0.3` (ease off, save banked steam for the
-     coming night instead of burning it on power nobody currently needs).
-  5. Otherwise → `1.0` (healthy buffer, daytime, still useful to generate).
+     `generated >= consumed` → `THROTTLE_DEMAND_MET=0.3`.
+  5. Otherwise → `1.0`.
   Reads grid state the same way `lib/power.py`'s `PowerGridManager` does
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but runs no
-  shedding itself — that's `panel_1.py`'s AUTOMATION section's job now, centrally, for every grid
-  (§1a-1), not any individual generator's.
+  shedding itself — that's `panel_7.py`'s AUTOMATION section's job (§1a-1).
 
 ### 1c. Water Pump: Liquid Tank Routing (`lib/water_pump.py` `WaterPumpController`)
 
 Shares §1b's Thermal Cap → Gas Tank connection/load-balancing/blacklist machinery exactly — both
 build a `lib/fluid_routing.py` `FluidOutputRouter` (Pump's own `LIQUID_TANK_TYPE_IDS`,
 `LIQUID_TANK_REBALANCE_FILL_FRACTION`, `CONNECTION_GRACE_TICKS`, `RESCAN_INTERVAL_TICKS`,
-`DISCOVERY_CACHE_INTERVAL_STEPS` constants feed the same shared class Cap uses), not just similar
-code — but deliberately simpler in `step()` — a Water Pump has **no internal buffer to
-overpressure at all** (`docs/components/water_pump.md` defines no `pressure()`/`is_overpressured()`/
-`relief()`/`set_relief()` — the Pump is pure pass-through, storing nothing), so there is no
-proportional release-valve/relief-valve reactive control to do, unlike Thermal Cap's whole
-`release_throttle_for_pressure()` band logic. `step()` just calls `ensure_output_connection()` and
-unconditionally requests `set_throttle(1.0)` every cycle — actual delivery already self-limits to
-whatever a connected tank can accept (`pump_rate()` reads 0 with no reachable destination, per the
-docs), so there's no cost to always requesting full output and nothing to react to.
+`DISCOVERY_CACHE_INTERVAL_STEPS` constants feed the same shared class) — but simpler: a Water Pump
+has **no internal buffer to overpressure** (no `pressure()`/`relief()`, pure pass-through), so
+`step()` just calls `ensure_output_connection()` and unconditionally requests `set_throttle(1.0)`
+every cycle — delivery self-limits to whatever a connected tank can accept.
 
 - **Two target building types, not one**: `LIQUID_TANK_TYPE_IDS = ("liquid_tank",
-  "large_liquid_tank")` — a Water Pump can fill either, so `discover_network_buildings()` here takes
-  an iterable of type_ids (or a single string) and walks each outpost's `buildings(type_id)` for
-  every type, deduping by id — thermal_cap.py's version only ever needed one type_id (`"gas_tank"`),
-  so this is a small generalization, not a behavior change for the single-type case.
-- `water_out` (a `FluidPort`, identical shape to Thermal Cap's `steam_out`) only ever holds one
-  destination at a time, so serving several tanks means periodically re-pointing it, same as Thermal
-  Cap. Any other scripted consumer connecting its own `water_in` to this Pump is independent of
-  whatever `water_out` currently points at — no coordination needed here, mirroring the
-  Cap/Turbine relationship in §1b.
-- `is_stalled()` has the identical semantics to Thermal Cap's own (`"throttle open + water available
-  + nothing transferred"` = likely no completed Liquid Pipe route), so the same
+  "large_liquid_tank")` — `discover_network_buildings()` takes an iterable of type_ids (or a
+  single string) and walks each outpost for every type, deduping by id.
+- `water_out` (identical shape to Thermal Cap's `steam_out`) only ever holds one destination at a
+  time. `is_stalled()` has identical semantics to Thermal Cap's own, so the same
   blacklist-and-reselect reaction applies unchanged.
-- Verified via a stub test: `discover_network_buildings()` finds and resolves both tank types (not
-  just one) from raw `BuildingRef` snapshots to full components; connects to the least-full known
-  tank first; the fast path makes no further `connect()` calls while the current tank is healthy;
-  a stalled connection gets blacklisted and the Pump reconnects to the other known tank; per-entry
-  blacklist expiry (still blacklisted just before `RESCAN_INTERVAL_TICKS`, retryable just after);
-  `step()` always requests full throttle.
 
 ### 1d. Per-Script Tick-Cost Profiling (`lib/profiling.py`)
 
-The game exposes no per-script CPU/ms execution budget API. `docs/components/clock.md` documents
-the sanctioned stand-in: `clock.tick()` (deterministic simulation tick since save start, 10
-ticks/sec at normal speed) — *"Use tick deltas for profiling script timing instead of wall-clock
-milliseconds."* `lib/profiling.py` wraps that pattern so any controller's `run()` loop can measure
-its own `step()` with two calls, no local bookkeeping needed:
+The game exposes no per-script CPU/ms execution budget API. `clock.tick()` (deterministic
+simulation tick since save start, 10 ticks/sec at normal speed) is the sanctioned stand-in per
+`docs/components/clock.md`. `lib/profiling.py` wraps that pattern so any controller's `run()` loop
+can measure its own `step()` with two calls:
 
 ```python
 start = profiling.begin()
@@ -514,494 +323,157 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
 ```
 
 - Samples roll into `archive` as one fixed-size history list per script name
-  (`ARCHIVE_KEY_PREFIX="profiling."`, `HISTORY_LEN=50`) — **one archive entry per profiled script
-  name, not per sample**, since the Data Archive has a hard 512-entry cap shared by every script in
-  the save (`docs/guide/data_archive_guide.md`).
+  (`ARCHIVE_KEY_PREFIX="profiling."`, `HISTORY_LEN=50`) — one archive entry per profiled *script
+  name*, not per sample, respecting the Data Archive's hard 512-entry cap.
 - `profiling.report(names=None)` prints avg/max ticks-per-`step()` for every profiled name (or a
-  given subset) — call it ad hoc (e.g. from a one-off diagnostic script), not from a hot loop.
-- **Granularity limit — read this before trusting a `0`**: `clock.tick()` advances on a fixed
-  10/sec schedule *independent of how much work any script does* — per
-  `docs/guide/programming_language_reference.md`, "the interpreter automatically gives time back to
-  the game while loops run," i.e. scripts are cooperatively scheduled and interleaved within each
-  tick's processing window. A `step()` with no internal loop/`sleep()` runs to completion inside
-  whichever tick it started in regardless of whether its body did 5 operations or 5,000, so it can
-  only show a nonzero delta by landing on a tick-boundary by measurement luck. **A `0` does not mean
-  "cheap"; it means "didn't happen to span a tick boundary," which single-pass `step()` calls almost
-  never do no matter their real cost.** `SLOW_STEP_TICK_THRESHOLD=1` (lowered from an initial `3`
-  once this was understood) reflects that: on a non-looping `step()`, *any* nonzero delta is already
-  the interesting case, not just ones above some larger margin. This makes the profiler good at
-  catching genuinely heavy per-call work (a loop over many buildings/slots, e.g. `production.py`'s
-  demand cascade or `storage.py`'s rebalance sweep are more plausible candidates than a handful of
-  `if` checks) — full stop; there's no documented finer-grained (sub-tick/wall-clock) instrument for
-  scripts to fall back on, so below this floor, use code-level reasoning (algorithmic complexity,
-  what runs every cycle vs. gated) instead.
-- **Case study, Thermal Cap** (§1b): two profiling passes each found a real, *sustained* per-step
-  cost with no periodic spike at the discovery-cache/rescan intervals, which correctly pointed at
-  (1) a fresh `get_component(id)` round trip the fast path was still doing every single call, then
-  after fixing that, (2) an unconditional `port.connected_to()` call every step where Turbine's
-  equivalent touched no port method at all when healthy. Both were genuine, verified fixes (stub
-  tests confirmed the call counts dropped to zero/near-zero). A third pass still showed Thermal Cap
-  reading ~2-3 against Turbine's ~0 with nothing left in either script's own code to explain the
-  gap — at that point the signal had reached the noise floor described above (ambient cooperative-
-  scheduling jitter, or a fixed engine-side cost of that specific component's own methods, neither
-  fixable from script code) and further chasing it stopped being productive. That's the profiler's
-  actual working mode and its limit: it can't measure a single call's cost directly, and a
-  *sustained per-step* delta with no periodicity matching a known cache/interval constant is a
-  reliable signal worth grep-ing for exactly once or twice — not an oracle to keep re-running
-  against the same script once every explanation in its own code has been exhausted.
-- **Not currently wired into any script.** Instrumentation was added to `lib/thermal_cap.py` and
-  `lib/steam_turbine.py` for the investigation above, then deliberately removed again from both once
-  it stopped yielding actionable findings (see the case study) — `lib/profiling.py` itself, and
-  `lib/archive_cleaner.py`'s cleanup of it (next bullet), are kept since a future script suspected of
-  doing real bulk per-call work (see `SLOW_STEP_TICK_THRESHOLD` guidance above) is still a reasonable
-  candidate to wire this into temporarily. Not standardized across every controller — see the Phase 7
-  TODO item on an interrupt/event-driven pattern for where this is headed longer-term (`TODO.md`).
-- **Storage shape & cleanup**: each archive entry is `{"history": [...], "last_tick": N}`, not a bare
-  list — `last_tick` (the sim tick of the most recent `profiling.end()` call for that name) is what
-  lets `lib/archive_cleaner.py`'s `clean_profiling()` tell "still being actively profiled" apart from
-  "instrumentation was removed from this script and the entry is now dead clutter" — since profiling
-  is opt-in and can be added/removed from a script at any time, there's no live game-state signal
-  (unlike e.g. `clean_telemetry()`'s fleet-membership check) to cross-reference against, only
-  staleness. An entry whose `last_tick` hasn't advanced in `PROFILING_STALE_TICKS=6000` (10 sim
-  minutes) is purged as no-longer-written; a legacy bare-list entry (from before this shape existed)
-  has no `last_tick` to check at all and is always purged as a one-time migration. Runs as part of
-  `ArchiveCleaner.run()`'s normal sweep, no separate invocation needed.
+  given subset) — call it ad hoc, not from a hot loop.
+- **Granularity limit — read before trusting a `0`**: `clock.tick()` advances on a fixed 10/sec
+  schedule *independent of how much work a script does* (scripts are cooperatively scheduled and
+  interleaved within each tick's window). A `step()` with no internal loop runs to completion
+  inside whichever tick it started in regardless of real cost, so it only shows a nonzero delta by
+  landing on a tick boundary by measurement luck — **a `0` does not mean "cheap."**
+  `SLOW_STEP_TICK_THRESHOLD=1` reflects that: on a non-looping `step()`, any nonzero delta is
+  already the interesting case. There's no finer-grained (sub-tick/wall-clock) instrument
+  available — below this floor, fall back to code-level reasoning (algorithmic complexity, what
+  runs every cycle vs. gated).
+- **Not currently wired into any script.** `lib/profiling.py` itself, and `lib/archive_cleaner.py`'s
+  cleanup of it, are kept for any future script suspected of doing real bulk per-call work.
+- **Storage shape & cleanup**: each archive entry is `{"history": [...], "last_tick": N}`.
+  `lib/archive_cleaner.py`'s `clean_profiling()` purges an entry whose `last_tick` hasn't advanced
+  in `PROFILING_STALE_TICKS=6000` (10 sim minutes, "instrumentation removed"), and always purges a
+  legacy bare-list entry (pre-dating this shape) as a one-time migration. Runs as part of
+  `ArchiveCleaner.run()`'s normal sweep.
 
 ### 1e. Bio Luminizer Lamp-Mix Solve (`lib/bio_coastal.py` `BioLuminizerController`, `_solve_3x3()`)
 
-*(Moved out of `lib/bio.py` into its own `lib/bio_coastal.py` module when the bio pipeline was split
-per biome to add Volcanic/Deep/Geothermal processors — see §0's module map and §1g below. Shared
-pipeline helpers this section references (`_focus_local_order()`, formerly `_focus_coastal_order()`;
-`_snapshot_property_count()`, formerly `_glow_matching_count()`/`_snapshot_glow_count()`) now live in
-`lib/bio.py` and are biome-agnostic; the history below is kept as written for the Coastal-only
-reasoning that led to them.)*
+*(Moved out of `lib/bio.py` into its own `lib/bio_coastal.py` module when the bio pipeline was
+split per biome — see §0's module map and §1g. Shared pipeline helpers this section references
+(`_focus_local_order()`, `_snapshot_property_count()`) now live in `lib/bio.py` and are
+biome-agnostic.)*
 
 Tints a coastal fragment's glow to a `BioOrder.target_glow` via `docs/components/bio_luminizer.md`'s
 three lamps: `self.lamp_signature("red"/"green"/"blue")` each give a fixed per-unit `[r,g,b]`
 impurity, so setting lamp brightnesses `(r, g, b)` (each a whole number 0-40) produces
-`glow = base + r*red_sig + g*green_sig + b*blue_sig`, where `base = self.glow()` read with all lamps
-at 0 (the chamber's own starting color). Solving for `(r, g, b)` given a `target` is a 3×3 linear
-system, `M @ [r,g,b] = target - base` where `M`'s columns are `red_sig`/`green_sig`/`blue_sig` — no
-numpy in this sandboxed environment, so `_solve_3x3()` inverts it via a plain-Python closed-form
-Cramer's rule. The result is rounded to the nearest integer and clamped to `[0, 40]`, then verified
-against a live `self.glow()` read; if rounding landed one off, a bounded ±1-per-channel neighborhood
-search (≤27 `set_lamps()`/`glow()` round-trips) finds the exact integer match rather than either
-trusting the rounded solve blindly or brute-forcing the full 41³ space against the live game. A
-fragment with no active coastal order requiring it is passed through unchanged via `self.discard()`
-instead of being tinted.
+`glow = base + r*red_sig + g*green_sig + b*blue_sig`, where `base = self.glow()` read with all
+lamps at 0. Solving for `(r, g, b)` given a `target` is a 3×3 linear system, `M @ [r,g,b] = target -
+base` (`M`'s columns are `red_sig`/`green_sig`/`blue_sig`) — no numpy, so `_solve_3x3()` inverts it
+via a plain-Python closed-form Cramer's rule. Rounded to nearest integer, clamped to `[0, 40]`, then
+verified against a live `self.glow()` read; if rounding lands one off, a bounded ±1-per-channel
+neighborhood search (≤27 `set_lamps()`/`glow()` round-trips) finds the exact integer match. A
+fragment with no active coastal order requiring it passes through unchanged via `self.discard()`.
 
-**`active_order()` is shared, mutable, single-slot state — never use it to look up "which order needs
-this fragment."** Found live: multiple differently-glowing Luminous `sd_wing_membrane` stacks piling
-up unused in Warehouses. Root cause: `BioExchangeController.sweep_and_deliver()` reassigns
-`active_order` constantly, to whatever order it's currently delivering ANY matching sample to
-(coastal or not) as part of its own aggressive multi-order sweep — it's delivery-routing state, not a
-stable "current coastal target" signal. The Luminizer used to read `exchange.active_order()` directly
-for `target_glow`, so every time the Exchange's sweep briefly switched to deliver some unrelated
-order, the Luminizer tinted toward *that* order's target instead. Fixed with `_find_coastal_order(exchange,
-fragment_id=None)`: scans `exchange.orders()` directly for an incomplete, local, `target_glow`-bearing
-order (matching `fragment_id` if given), completely independent of `active_order()`.
+**Key rules, hard-won (see `DESIGN_HISTORY.md` for the postmortems)**:
+- **`exchange.active_order()` is shared, mutable, single-slot delivery-routing state — never use
+  it to look up "which order needs this fragment."** Use `_find_coastal_order()`/
+  `_focus_local_order()` (scans `exchange.orders()` directly) instead.
+- **`set_order()`/`clear_order()`/`deliver()` are `*(self only)*` hardware calls** — a script can
+  never drive a sibling machine. Any other controller comparing "does this stack match an order"
+  must compare the raw property directly (e.g. `list(stack.properties.get("glow", [])) ==
+  list(order.target_glow)`) instead of calling `matches_order()` remotely.
+- **A staged sample can itself already be finished, not just raw** — `_order_matching_glow()`
+  checks every staged stack individually and ejects (not reloads) one whose glow already exactly
+  matches a live order's target; only a stack matching no order's target is treated as raw and
+  loaded. `_find_raw_stack()` applies the same exact-glow exclusion when pulling from storage.
 
-(A live diagnostic run initially seemed to confirm this theory, but the actual mistinted-looking stock
-turned out to be something else entirely — see the next two notes.)
+### 1f. Raw-Specimen Backlog Control (`lib/bio.py`'s `BioCollectorController`/`BioLabController`, `lib/bio_coastal.py`'s `BioLuminizerController`)
 
-**`set_order()`/`clear_order()`/`deliver()` are `*(self only)*` hardware calls — a script can never
-drive a sibling machine, only read its state.** Confirmed live: calling `exchange.set_order(order.id)`
-from the Luminizer's own script raised `PermissionError: Cannot call set_order() on bio_exchange_4
-remotely`. This means `matches_order()` is unusable from any script other than the Exchange's own —
-there's no way to force which order it checks against, since setting that order is exactly the
-self-only call that fails. Any *other* controller that needs "does this stack match a specific
-order's requirement" has to compare the raw property directly instead: for coastal orders, that's
-`list(stack.properties.get("glow", [])) == list(order.target_glow)` — no hardware call needed at all,
-since `target_glow` and a stack's `properties` are both plain reads. `_glow_matching_count(item_id,
-outpost, target_glow)` in `lib/bio.py` is this direct comparison, used by both the Luminizer (below)
-and the Collector's raw-backlog throttle (below). `BioExchangeController.sweep_and_deliver()`'s own use
-of `self.machine.matches_order()`/`set_order()` is fine and unchanged — it's calling them on `self`,
-the machine its own script is attached to, which is exactly what's allowed.
+Current mechanism is a **structural idle-gate**, not a numeric backlog cap (several numeric
+throttles were tried first and replaced — see `DESIGN_HISTORY.md`): `BioLabController` refuses to
+pull its next specimen from the Collector, and refuses to drain its own extracted output, until the
+local biome processor is fully idle (chamber/input/output empty — `_processor_is_idle()`, §1g). At
+most one raw specimen is ever in flight ahead of the processor at a time, so no Warehouse pileup is
+structurally possible regardless of how broadly the Collector searches for "needed" fragments.
 
-**Don't tint more than the order still needs.** `_load_next_sample()` checks `needed - delivered -
-in_transit` against `_glow_matching_count()` (units already sitting in local storage with the exact
-target glow) before loading another raw sample — previously it loaded+tinted one every cycle the
-chamber was empty, with no cap.
-
-**The mistinted-looking Warehouse stock was actually just raw, never-tinted specimens — not a
-Luminizer bug at all.** `bio_luminizer_1.log` showed every real infuse exactly matching a live order
-target (`[202,192,182]` = `bio_order_50`, `[168,158,138]` = `bio_order_48`, 8 total). The stray
-`sd_wing_membrane` stacks (glow values 9-29, nowhere near any coastal order's 62-202 range across the
-entire save) were raw specimens still waiting for the Luminizer — every raw sample carries its own
-naturally-varying starting glow (same `ChamberSample.glow` concept as a tinted one), so `matches_order()`
-correctly said `False` for all of them. The real problem was a Collector/Lab extraction rate outpacing
-the Luminizer's throughput (~10-70s per infuse), and since raw specimens don't stack any better than
-mistinted ones do, the backlog exhausted Warehouse material slots and deadlocked the whole pipeline
-(nothing could drain anywhere, so the Lab couldn't extract, so the Collector couldn't hand off, etc).
-See §1f for the throttle that keeps this from recurring.
-
-**Even after that, `_find_coastal_order()` could still deadlock the machine outright — not just
-inefficiently.** Found live: with two coastal orders both incomplete, it always returned whichever
-sorted first in `exchange.orders()`, regardless of whether any material for it actually existed yet.
-If the *other* order's fragment happened to already be staged in `self.machine.input` (latched to
-that one item id until `load()`/`flush()` clears it, per `docs/components/bio_luminizer.md`), the
-Luminizer would fixate on the wrong order forever: it can't `load()` the staged item because the
-selected order doesn't need it, and it can't `take_item()` the order's own fragment because the
-input is already latched to something else. Fixed two ways: (1) `_find_coastal_order(fragment_id=None)`
-now prefers a candidate order with `local_stock(fragment_id) > 0` for one of its requirements over
-one needing fresh collection; (2) `_load_next_sample()` checks `self.machine.input.stacks()` FIRST,
-before consulting order priority at all — if something's already staged, it looks up an order for
-*that specific fragment* and loads it (or, if no current order needs it any more, ejects it back to
-storage via `best_unload_target()` rather than leaving the input stuck on dead material forever).
-
-**A staged sample can itself already be finished, not just raw.** Debugging live turned up the input
-holding two property-distinct `sd_wing_membrane` stacks simultaneously — one at `[202,192,182]`
-(`bio_order_50`'s exact target) and nine at `[168,158,138]` (`bio_order_48`'s exact target): both
-already correctly tinted by an earlier successful `infuse()`, just never drained out before something
-else got staged alongside them. Calling `self.machine.load(fragment_id)` with no `properties` was
-ambiguous across the two variants and failed `"not_in_input"`; worse, even loading one on purpose
-would be pointless (and, per live report, leaves the Luminizer unable to do anything useful with it —
-it's already at target, there's nothing left to solve for) since it doesn't need tinting at all, only
-delivering. `_glow_matching_count()` never catches this either, since it only scans Warehouses/
-Inventory (`_local_sources()`), never a machine's own ports — so this stock was invisible to every
-demand/overproduction calculation while stuck there. Fixed by checking every staged stack
-individually: `_order_matching_glow(exchange, fragment_id, glow)` finds a live order whose
-`target_glow` exactly equals the stack's own glow; if one exists, the stack is already finished and
-gets **ejected** (with its exact `properties`, not reloaded) so the Exchange can find and deliver it.
-Only a stack that matches no current order's target is treated as raw and actually loaded (also with
-exact `properties`, avoiding the same ambiguity). The "pull fresh raw material" path
-(`_find_raw_stack()`) applies the identical exact-glow-exclusion when picking a storage stack to pull
-in, replacing the property-blind `storage.take_item()` there — otherwise it could grab an
-already-tinted unit waiting for delivery instead of genuinely raw stock, the same failure mode from
-the other direction. **The Luminizer should never pick up an already-tinted sample at all**, in either
-the "what's already staged" or "what to pull from storage" path — both now enforce this.
-
-### 1f. Raw-Specimen Backlog Throttle → Structural Idle-Gate (`lib/bio.py`'s `BioCollectorController`/`BioLabController`, `lib/bio_coastal.py`'s `BioLuminizerController`)
-
-**Note:** the numeric throttle described first below (`RAW_BACKLOG_CAP_PER_FRAGMENT`,
-`FOCUS_ORDER_COUNT`, `_glow_throttled()`) was later replaced by a structural fix — see the "Still ~6
-seconds..." entry partway through this section for what actually ships today. What was
-`_luminizer_is_idle()` + `MAX_LOCAL_GLOW_ARTIFACTS` (Luminizer/glow-only) is now `_processor_is_idle()`
-+ `MAX_LOCAL_BIO_ARTIFACTS` (`lib/bio.py`), generalized to dispatch across whichever of the four biome
-processors is deployed and to count any currently-demanded fragment regardless of biome — see §1g. The
-numeric-throttle history is kept below because it's real "why we tried X and it wasn't enough" context,
-not because any of that code still exists.
-
-Caps how far `BioCollectorController` may collect a glow-requiring (coastal) fragment ahead of what
-the Luminizer has actually tinted, so raw specimens don't pile up and exhaust Warehouse material
-slots the way described in §1e. `_glow_throttled(exchange, fragment_id, outpost, my_biome)` — called
-from both of the Collector's demand-check branches (Signal Bus broadcast and the direct-exchange
-fallback) — finds every incomplete, local order requiring `fragment_id`; if none of them carry a
-`target_glow` (a plain fragment), throttling never applies at all, since a plain sample stacks
-normally and has no Luminizer bottleneck. Otherwise `_raw_backlog_count()` computes `local_stock() -
-sum(_glow_matching_count() per distinct target_glow)` — total stock minus whatever's already
-correctly tinted for one of those orders — and the Collector stops harvesting once that raw count
-reaches `RAW_BACKLOG_CAP_PER_FRAGMENT` (4 — raised from an initial 2, see below). Entirely read-only (`orders()`, `target_glow`,
-`stacks()`) — no `*(self only)*` hardware calls, so it's safe to call from the Collector's own script
-about a sibling Exchange.
-
-Note this only prevents the backlog from *recurring* — it doesn't retroactively free Warehouse slots
-already exhausted by a pre-existing pile of raw specimens. Clearing an existing deadlock still needs
-a one-time manual sell/eject in-game; there's no automated way to safely discard player inventory.
-
-**Per-fragment capping alone wasn't tight enough — the real fix is one-order-at-a-time focus.** Found
-live via the glow diagnostic: with ~8 simultaneously-incomplete coastal orders, each needing 2-4
-different fragments, `RAW_BACKLOG_CAP_PER_FRAGMENT` capped each individual TYPE to 2 but did nothing
-to limit how many DISTINCT types were in flight at once — the Collector was opportunistically
-gathering for every incomplete coastal order in parallel (`gm_folded_wing`, `vc_mandible_claw`,
-`hs_wing_membrane`, `ma_cuticle_molt`, `hc_shell_whorl`, `gw_caudal_fin`, `sd_wing_membrane`, all
-raw, all non-stacking, all at once), so the totals still blew past available Warehouse slots even
-with every individual type "capped." Fixed with `_focus_coastal_order(exchange, outpost, my_biome,
-fragment_id=None)`: the ONE order to concentrate on right now (same "prefer stock we already have"
-preference as before), shared by both `BioCollectorController` (`_glow_throttled()` now throttles a
-fragment completely — not just at the raw cap — if it doesn't belong to the current focus order) and
-`BioLuminizerController` (`_find_coastal_order()` is now a thin wrapper delegating here). Both
-controllers concentrating on the same order at the same time means the Collector no longer gathers
-raw material for an order the Luminizer isn't even working on yet — collection breadth is now bounded
-by one order's requirement list instead of every open coastal order's combined list. As focus
-naturally rotates to the next order (preferring ones with existing stock, i.e. exactly the leftover
-backlog from before this fix), previously-scattered raw specimens for other orders get worked off
-over time rather than needing a manual clear — but this is still not instant, and a warehouse already
-maxed out from before this fix still needs the same one-time manual sell/eject to actually unstick.
-
-**A single-order focus was too narrow and could starve the Collector entirely.** Found live: after a
-full manual Warehouse clear, every bio script went silent (zero log activity) with `cargo` confirmed
-empty on the Collector — not a deadlock, just nothing left it was allowed to harvest. If the one focus
-order's specific 2-4 fragments aren't cataloged/discoverable anywhere nearby yet, `_glow_throttled()`
-blocked every OTHER coastal order's fragments too, even ones sitting right there ready to harvest.
-Fixed with `FOCUS_ORDER_COUNT = 3` and `_focus_coastal_orders()` (plural): the Collector now
-concentrates on up to 3 coastal orders at once (same "existing stock first" ranking), giving it real
-alternatives while still keeping total distinct raw fragment types far below "every incomplete
-coastal order at once". `BioLuminizerController` still uses the singular `_focus_coastal_order()` for
-its own one-at-a-time tinting — only the Collector's gathering breadth needed loosening.
-
-**`comms.latest(channel)` returns the raw broadcast value directly, `-> Any` — never a status-wrapped
-object.** A genuinely pre-existing bug, not introduced by any of the above: `BioCollectorController`
-checked `b_res.status == "ok" and b_res.broadcast`, but `.latest()` (unlike `.receive()`, which
-correctly returns a `ReceiveResult` with `.status`/`.packet`) just hands back whatever was passed to
-`broadcast()` — a plain dict here — or `None` if nothing's been broadcast yet. `b_res.status` on a
-dict raised `AttributeError` every single call, silently swallowed by the surrounding `except
-Exception: pass`, so `demands` always stayed `None` and the Collector permanently fell back to its
-`elif exchange:` branch — deriving demand from a SINGLE `exchange.active_order()` instead of the
-properly-aggregated multi-order broadcast `broadcast_demands()` already computes. Since
-`active_order()` is the same volatile, sweep-reassigned pointer discussed throughout this section,
-that fallback's demand set could be for an order outside `_focus_coastal_orders()`'s top-3 entirely,
-throttling every fragment in it at once and looking identical to a fresh deadlock. Fixed: check
-`isinstance(broadcast, dict)` and read `.get("local_demands", {})` directly. With this fixed, the
-broadcast path should be the one actually running now, making the `elif exchange:` fallback rare.
-
-**`RAW_BACKLOG_CAP_PER_FRAGMENT = 2` over-corrected into full lockstep.** With the Collector's own
-one-slot cargo and the Lab's one-specimen chamber already forcing some serialization (both hardware,
-unrelated to this constant), a cap of 2 left almost no room for the Collector to work ahead of the
-Luminizer — reported live as "harvest one, wait for Lab+Luminizer+Exchange to fully finish it, only
-then harvest the next." Raised to 4: real pipelining slack, still far below the original
-unbounded-backlog problem this constant exists to prevent (see above).
-
-**Raising the cap "didn't do anything" — the real bottleneck was `exchange.orders()` being re-fetched
-per fragment, not the cap value.** Measured live: evaluating `BioCollectorController.step()`'s
-`demands.items()` loop (~20-30 glow fragments across all incomplete coastal orders) took **~20
-seconds**. Every fragment called `_glow_throttled()`, which called `exchange.orders()` itself AND
-called `_focus_coastal_orders()`, which called `exchange.orders()` again — two ~80-order fetches per
-fragment, 40-60+ redundant fetches per single `step()` cycle, dwarfing any effect of the backlog cap.
-Fixed by threading an already-fetched `orders` list through every order-scanning helper instead of
-each one fetching its own copy: `_focus_coastal_order()`, `_focus_coastal_orders()`, and
-`_glow_throttled()` now all take `orders` as a parameter; `BioCollectorController.step()` and
-`BioLuminizerController.step()` each fetch `exchange.orders()` exactly **once** per cycle and pass it
-down through every helper that needs it (`_find_coastal_order()`, `_order_matching_glow()`,
-`_find_raw_stack()`, `_load_next_sample()`, `_active_target_for()` all take `orders` now instead of
-`exchange`). The Luminizer had the identical anti-pattern (`_order_matching_glow()` re-fetching
-`orders()` once per staged/storage stack examined) even though it hadn't been reported yet — fixed
-the same way for consistency, since it would have hit the same wall as soon as more than a couple of
-stacks needed checking in one cycle.
-
-**Still ~8 seconds after caching `orders()` — the second bottleneck was re-walking local storage.**
-Caching `orders()` cut the cycle from ~20s to ~8s, not further, because every fragment/order check
-was still independently re-walking every Warehouse + home Inventory (`_local_sources(outpost)` →
-`.stacks()` per building) to compute stock counts and glow-matching counts — `local_stock()` and the
-old `_glow_matching_count()` each did this from scratch, once per fragment. Fixed the same way as the
-`orders()` fetch: one full storage walk per `step()` cycle via `_local_stock_snapshot(outpost)`,
-returning `(totals, by_glow)` dicts (`{item_id: count}` and `{(item_id, glow_tuple): count}`), read
-via `_snapshot_stock(snapshot, item_id)` / `_snapshot_glow_count(snapshot, item_id, target_glow)`.
-`_raw_backlog_count()`, `_focus_coastal_order()`, `_focus_coastal_orders()`, `_glow_throttled()`,
-`_fragment_remaining()` all take `snapshot` now instead of re-deriving stock from `outpost` per call;
-`BioCollectorController.step()` and `BioLuminizerController.step()` each build the snapshot exactly
-**once** per cycle, same pattern as the `orders` list. `_find_raw_stack()` is the one exception — it
-legitimately needs live `ItemStack` objects (not just counts) to actually load a specific stack, so it
-still does its own single storage walk, but only once per Luminizer `step()`, not per-fragment.
-
-**Still ~6 seconds after caching the storage walk too — the numeric per-fragment throttle itself was
-the remaining cost, and it was solving a problem with a much simpler structural fix.** Every fragment
-in `demands.items()` (~20-30 of them) still ran its own `_glow_throttled()` check even after both
-caching fixes above. But `RAW_BACKLOG_CAP_PER_FRAGMENT`/`FOCUS_ORDER_COUNT`/`_glow_throttled()`/
-`_raw_backlog_count()`/`_focus_coastal_orders()` (plural) were only ever needed because the Collector
-and Lab kept harvesting/extracting raw specimens faster than the Luminizer could tint them one at a
-time. Every stage already has single-slot hardware (`Collector.cargo`, `Lab.specimen`/`.output`,
-`Luminizer.chamber`/`.input`/`.output`) — if the **Lab** simply refuses to pull its next specimen from
-the Collector, and refuses to drain its own extracted output into the Warehouse, until the
-**Luminizer is fully idle** (chamber empty, input empty, output empty, `_luminizer_is_idle()`), then
-at most one raw specimen is ever in flight ahead of the Luminizer at a time. No Warehouse pileup is
-structurally possible regardless of how broadly the Collector searches for "needed" fragments, so the
-numeric per-fragment caps and per-order focus list (all removed) become unnecessary. All of
-`RAW_BACKLOG_CAP_PER_FRAGMENT`, `_raw_backlog_count()`, `FOCUS_ORDER_COUNT`, `_focus_coastal_orders()`
-(plural), and `_glow_throttled()` were deleted; the singular `_focus_coastal_order()` (shared "current
-order" selector for both Collector preference and Luminizer targeting), `_local_stock_snapshot()`,
-`_snapshot_stock()`, and `_snapshot_glow_count()` stay — they're still useful for demand-netting and
-order preference, and were already O(1)-per-cycle, not part of the perf problem.
-
-`BioLabController._luminizer_is_idle(luminizer)`-gated `step()`: the initial output drain and the
-collector-pull (`specimen is None` branch) both skip entirely when the local Luminizer isn't idle;
-the post-extract drain does the same. Analyze/extract of whatever's already in the Lab's own chamber
-keep running unconditionally either way — they're already self-limiting via the game's own
-`"output_full"` rejection if the Lab's output is still occupied, so there was no need to gate those
-too. `BioCollectorController.step()` correspondingly dropped every `_glow_throttled()` call — it
-still nets demand against `_snapshot_stock()` (unaffected), and now additionally prefers the shared
-`_focus_coastal_order()`'s own fragments over other incomplete orders' when picking a cataloged
-location to harvest (falling back to any other needed fragment if the preferred order's aren't
-discoverable nearby), instead of hard-blocking non-focus fragments outright.
-
-**No busy-polling `sleep()` for the gate either — the Luminizer broadcasts a heartbeat every cycle.**
-`BioLuminizerController._notify_heartbeat()` fires `comms.broadcast("luminizer_heartbeat", ...)`
-unconditionally at the top of every `step()`, regardless of what that cycle did.
-`BioLabController._wait_for_luminizer()` calls `comms.wait_broadcast("luminizer_heartbeat")` instead
-of `sleep(0.5)` whenever it's blocked on `_luminizer_is_idle()` being `False` with nothing else useful
-to do (no specimen to pull with, or an extracted sample it can't drain yet) — the script pauses
-efficiently until the Luminizer's next tick, then re-checks `_luminizer_is_idle()` from scratch,
-rather than re-checking on a fixed timer.
-
-**First version only broadcast on a successful load — found (before it ever shipped) that this could
-hang the Lab forever.** `wait_broadcast()` only satisfies on a broadcast published *after* the call
-(existing broadcasts don't count), so a signal that only fired on `self.machine.load(...)` succeeding
-would never fire again once the Luminizer drained its last item with nothing staged behind it to load
-next — including right at startup, before this Luminizer has ever loaded anything in this session at
-all. A Lab that reached `_wait_for_luminizer()` in that state would wait indefinitely even though the
-Luminizer had, in fact, gone idle. Fixed by making the broadcast an unconditional per-cycle heartbeat
-instead of a load-success event — the Lab always wakes up again within one Luminizer `step()`,
-whatever state it's actually in. Falls back to `sleep(0.5)` if `comms` is unavailable or the wait
-itself errors.
-
-**A coarse total-artifact safety net remains, on purpose, as insurance — not as the primary
-mechanism.** `MAX_LOCAL_GLOW_ARTIFACTS = 4`: if the sum of every glow-tagged item (raw + tinted, any
-fragment type) sitting in local storage right now (`_total_glow_artifacts(snapshot)`, a plain sum
-over the snapshot's `by_glow` dict — no extra scanning) reaches this, `BioCollectorController.step()`
-pauses harvesting entirely for that cycle. In a healthy pipeline this should stay at 0-2 and never
-actually trip — the Lab holds at most 1 raw sample before the Luminizer picks it up, and the
-Luminizer holds at most 1-2 before the Exchange sweeps them up — this cap only matters if that
-structural bound somehow doesn't hold (e.g. a sibling script isn't running).
-
-**The cap tripped at 5 with the Luminizer stuck picking up nothing — root cause was
-`_focus_coastal_order()` locking onto an already-satisfied order.** Reported live: 5 `cuticle_molt`
-sitting in storage, the Luminizer repeatedly identifying an order that lists `cuticle_molt` in
-`.requires`, doing nothing, and repeating the exact same no-op every tick. The bug: neither branch of
-`_focus_coastal_order()` checked whether a candidate order's need for a fragment was actually still
-outstanding — the `fragment_id` branch returned the first local incomplete order requiring it at all,
-and the no-`fragment_id` branch preferred any candidate with *any* nonzero local stock for *any*
-required fragment, regardless of whether that order's own deficit for it was already 0 (fully
-delivered/in-transit/already-tinted). If order A's `cuticle_molt` requirement was already covered but
-order B (also incomplete, also local, also wanting `cuticle_molt`) wasn't, `_focus_coastal_order()`
-could still lock onto order A — and every subsequent `_fragment_remaining()` check on order A
-correctly came back 0, so `_load_next_sample()` found nothing to load and exited, forever, despite
-real stock and real demand for the same fragment existing on order B. Fixed with new module-level
-`_order_fragment_remaining(order, fragment_id, snapshot)` (the same needed-minus-delivered-minus-
-in_transit-minus-already-tinted math `_fragment_remaining()` used to do inline, now shared): both
-branches of `_focus_coastal_order()` now require genuine remaining deficit, not just presence in
-`.requires` or nonzero stock, before treating an order as actionable.
-`BioLuminizerController._fragment_remaining()` is now a thin delegate to the module-level version.
-
-**The Lab extracted every analyzed specimen unconditionally, with no demand check at all --
-`_cuticle_molt`/`_arm_segment` recurred even after the focus-order fix above.** Reported live:
-`ma_cuticle_molt` and `fs_arm_segment` both sat at their `MAX_LOCAL_GLOW_ARTIFACTS` share, neither
-needed by any current order, permanently wedging `BioCollectorController` (which refuses to harvest
-ANYTHING once the total-artifact cap is hit, needed or not). Root cause was structurally different from
-the earlier `_focus_coastal_order()` bug: `BioCollectorController` already gates *harvesting* on demand
-(`needed_fragments`), but `BioLabController` never gated *extraction* on demand at all -- once a
-specimen reached `stage == "analyzed"`, it went straight to loading reagents and calling `extract()`
-regardless of whether anything still wanted the result. `BioCollectorController`'s own "uncataloged
-discovery" harvesting (Priority 2 in its `step()`) picks up a specimen purely to identify a new
-location/fragment, with zero demand behind it -- analysis alone satisfies that (it's what populates
-`journal.cataloged_fragments()`), but the old code extracted it anyway, spending reagents and storage
-on a sample nothing would ever collect. Fixed with `_bio_demand_totals(comms, exchange, my_biome)`
-(module-level, shared by both controllers): `BioLabController.step()` now checks it right after
-`analyze()`, before loading any reagents (`if not loaded:` guards against interrupting a load already
-in progress) -- if demand for `fragment_id` doesn't exceed current local stock, `self.machine.discard()`
-runs instead of `extract()`. `BioCollectorController.step()`'s own demand computation was refactored to
-call the same shared helper instead of its previous inlined duplicate, so both controllers now agree on
-exactly one definition of "needed."
-
-**Self-cleaning backstop for artifacts already stuck before this fix (or from any other future edge
-case): `BioExchangeController._cleanup_orphaned_artifacts()`.** The demand-gated extract() above only
-stops the pileup from *recurring* -- like the per-fragment raw-backlog cap earlier in this section, it
-does nothing for stock already sitting there. Runs every `sweep_and_deliver()` cycle after the normal
-per-order delivery loop: for every locally-staged glow-tagged stack whose item id isn't in
-`_required_fragment_ids(all_orders)` (genuinely still needed, remaining > 0, by ANY incomplete order
-anywhere -- local or foreign, matching what the delivery loop above already tries to ship to), it's
-taken into `self.machine.input` (exact properties) and destroyed with `input.flush()`. Deliberately
-matches on item id only, not exact glow -- a raw, not-yet-tinted sample never matches any order's
-`target_glow` (that's the Luminizer's whole job), so gating on exact glow would misclassify perfectly
-good raw stock awaiting tinting as orphaned and destroy it.
-
-**`best_unload_target()`'s fallback tried to connect a remote machine's output to a non-local
-destination.** When no local Warehouse had room, it unconditionally returned the literal id
-`"inventory"` — but `"inventory"` only exists/connects at the home outpost (per `lib/storage.py`'s own
-header comment). For a remote machine (the coastal Bio Luminizer, once its local Warehouses filled
-up) this meant `drain_port_to_storage()`/`BioLabController.drain_output()` would call
-`port.connect("inventory")` from a Warehouse-only outpost — a non-local target. Fixed: `outpost.is_home`
-(note: a plain `bool` attribute on `OutpostRef`, not a method — a genuine trap, since `Outpost`, the
-type returned by `get_component(outpost_id)`, has `is_home()` as a *method* with the same name; the
-type actually carried by `machine.outpost`/`_home_outpost()` throughout `lib/storage.py` is always
-`OutpostRef`) now gates the `"inventory"` fallback — only used when the resolved outpost actually is
-home, else `best_unload_target()` returns `None` and callers skip the stack (leave it staged, retry
-next cycle) instead of attempting a connection that can't work. `drain_port_to_storage()`,
-`BioLabController.drain_output()`, and `vehicle_cargo.py`'s `unload_one()` were the three call sites
-that weren't already wrapped in a blanket `try/except` around the `.connect()` call, so those three
-got an explicit `if target is None:` early-return/skip added.
+- `BioCollectorController.step()` nets demand against a per-cycle `_local_stock_snapshot()` and
+  prefers `_focus_local_order()`'s fragments over other incomplete orders' when picking a
+  cataloged location to harvest, falling back to any other needed fragment if the preferred
+  order's aren't discoverable nearby — a soft preference, not a hard block.
+- **No busy-polling**: `_processor_is_idle()`-gated consumers wait on a `"biome_processor_heartbeat"`
+  Signal Bus broadcast (every processor controller fires it unconditionally each cycle) via
+  `comms.wait_broadcast(...)` instead of `sleep()`, falling back to `sleep(0.5)` if `comms` is
+  unavailable or the wait errors.
+- **`BioLabController` gates *extraction* on demand too**, not just the idle-gate: once a specimen
+  reaches `stage == "analyzed"`, `_bio_demand_totals(comms, exchange, my_biome)` (module-level,
+  shared with the Collector's own demand computation) is checked before loading reagents — if
+  demand doesn't exceed current local stock, `self.machine.discard()` runs instead of `extract()`.
+  This lets "uncataloged discovery" harvesting (which only needs analysis, not extraction) avoid
+  spending reagents/storage on a sample nothing would ever collect.
+- **Self-cleaning backstop**: `BioExchangeController._cleanup_orphaned_artifacts()` runs every
+  `sweep_and_deliver()` cycle after the normal per-order delivery loop — any locally-staged
+  glow-tagged stack whose item id isn't required by any incomplete order anywhere is taken into
+  `self.machine.input` and destroyed via `input.flush()`. Matches on item id only (not exact glow),
+  since a not-yet-tinted raw sample never matches any order's `target_glow` and shouldn't be
+  misclassified as orphaned.
+- `MAX_LOCAL_BIO_ARTIFACTS = 4` (formerly `MAX_LOCAL_GLOW_ARTIFACTS`, Coastal-only) is a coarse
+  total-artifact safety net, on purpose, not the primary mechanism: if the sum of every
+  currently-demanded fragment's local stock (`_total_demanded_artifacts(snapshot, fragment_ids)`)
+  reaches this, `BioCollectorController.step()` pauses harvesting entirely that cycle. In a healthy
+  pipeline this should stay at 0-2 and never trip.
+- `best_unload_target()`'s Inventory fallback is gated by `outpost.is_home` (a plain `bool`
+  attribute on `OutpostRef`, not a method — the `Outpost` component returned by `get_component()`
+  has `is_home()` as a *method* with the same name; watch for this trap) — a remote (Warehouse-only)
+  outpost's drain calls skip the `"inventory"` target and return `None` (caller leaves the stack
+  staged, retries next cycle) rather than attempting a connection that can't work.
 
 ### 1g. Multi-Biome Bio Pipeline (`lib/bio.py` shared + `lib/bio_coastal.py`/`lib/bio_volcanic.py`/`lib/bio_deep.py`/`lib/bio_geothermal.py`)
 
-The Collector→Lab→(transform)→Exchange pipeline is biome-agnostic in `lib/bio.py`; only the transform
-step differs per biome, each in its own module (see §0's module map). `get_my_biome()` always reads
-`machine.outpost.biome` live — never hardcoded — and `local_biome_processor(outpost)` probes for
-whichever of `BIOME_PROCESSOR_TYPE_IDS = ["bio_luminizer", "bio_caster", "bio_conditioner",
-"dna_sequencer"]` is actually deployed there, returning `(None, None)` for Frozen (no transform step at
-all) or an outpost that hasn't had its processor deployed yet.
+The Collector→Lab→(transform)→Exchange pipeline is biome-agnostic in `lib/bio.py`; only the
+transform step differs per biome, each in its own module (see §0's module map). `get_my_biome()`
+always reads `machine.outpost.biome` live — never hardcoded — and `local_biome_processor(outpost)`
+probes for whichever of `BIOME_PROCESSOR_TYPE_IDS = ["bio_luminizer", "bio_caster",
+"bio_conditioner", "dna_sequencer"]` is actually deployed there, returning `(None, None)` for
+Frozen (no transform step) or an outpost without its processor yet.
 
-**Generic idle-gate across four differently-shaped machines.** `_processor_is_idle(processor,
-processor_type)` replaces the old Luminizer-only `_luminizer_is_idle()`. `bio_luminizer`/`dna_sequencer`
-expose `.chamber`; `bio_caster`/`bio_conditioner` instead expose `.fragment()` with no `.chamber` at
-all — the dispatch branches on `processor_type` to read the right one. `BioLabController` uses this
-(instead of a hardcoded Luminizer sibling lookup) to gate pulling its next specimen / draining its own
-output, waiting on a generic `"biome_processor_heartbeat"` Signal Bus broadcast (every processor
-controller fires it unconditionally each cycle, replacing the old Luminizer-only `"luminizer_heartbeat"`)
-instead of busy-polling.
+- **Generic idle-gate**: `_processor_is_idle(processor, processor_type)` dispatches on
+  `processor_type` — `bio_luminizer`/`dna_sequencer` expose `.chamber`; `bio_caster`/
+  `bio_conditioner` instead expose `.fragment()`.
+- **Generic property matching, not just glow**: `_local_stock_snapshot()`'s second return value is
+  `by_properties: {(item_id, properties_key): count}` (`_properties_key()` canonicalizes any
+  properties dict — sorted, list values tupled). `_order_target_properties(order, fragment_id)`
+  resolves what "already correctly processed for this order" means per biome: `{"glow":
+  order.target_glow}` (Coastal), `{"genes": order.required_genes[fragment_id]}` (Geothermal),
+  `None` for Volcanic/Deep (any correctly Forged/Conditioned unit satisfies any order needing it —
+  those two rely on `matches_order()` at delivery time instead).
+- `_focus_local_order()` additionally excludes Frozen orders outright (`order.biome == "frozen"`)
+  — Frozen has no single-slot processor bottleneck to coordinate around; the Exchange's blanket
+  sweep already delivers a plain fragment the moment it's extracted.
+- **Bio Caster (Volcanic, `lib/bio_volcanic.py` `BioCasterController`)**: bang-bang heat/cool
+  control toward `required_range()` — full `set_heat(100)`/`set_cool(100)` outside a
+  `CASTER_APPROACH_BAND_C = 50` °C band around the target range's edge, `CASTER_APPROACH_PCT = 25`
+  % near it, both to 0 once `temperature()` is inside the band. Casts once temperature is in range
+  AND `materials()` matches `required_materials()` exactly. **Unverified live**: assumes staging
+  material into `self.input` via `take()` is enough for `cast()` to auto-consume it, same as a
+  Fabricator/Smelter recipe — confirm with `debug()` output the first time a real recipe runs.
+- **DNA Sequencer (Geothermal, `lib/bio_geothermal.py` `DnaSequencerController`)**: fully spec'd,
+  no live-verification gap. `order.required_genes[fragment_id]` is the splice target, validated
+  against `gene_catalog()` before `splice()` (an unknown gene id risks a `"destroyed"` result).
+  `chamber.spliced == True` is never spliced again ("one splice per fragment").
+- **Bio Conditioner (Deep, `lib/bio_deep.py` `BioConditionerController`) — fully automated.** The
+  in-game docs never expose the pass/fail rule for the 10 QC properties, and a wrong `accept()`/
+  `reject()` call `"burned"`s (destroys) the specimen. The rulebook (`CONDITIONER_RULEBOOK` in
+  `lib/bio_deep.py`) was recovered from the decompiled game client and cross-checked against
+  logged outcomes — see `DESIGN_HISTORY.md` for provenance detail:
 
-**Generic property matching, not just glow.** `_local_stock_snapshot()`'s second return value is
-`by_properties: {(item_id, properties_key): count}` — `_properties_key()` canonicalizes an item's whole
-properties dict (sorted, list values tupled) so the same index covers Coastal's `glow` triples,
-Geothermal's `genes` lists, or any future marker uniformly. `_snapshot_property_count()` (replacing the
-old Coastal-only `_snapshot_glow_count()`) queries it. `_order_target_properties(order, fragment_id)`
-resolves what "already correctly processed for this order" means: `{"glow": order.target_glow}` for
-Coastal, `{"genes": order.required_genes[fragment_id]}` for Geothermal, `None` for Volcanic/Deep (forging/
-conditioning isn't order-specific — any correctly Forged/Conditioned unit satisfies any order needing
-it, so those two rely on `matches_order()` at delivery time instead). `_order_fragment_remaining()` nets
-against this uniformly for every biome now, not just Coastal.
+  | Property | Pass rule |
+  | --- | --- |
+  | `glow` | `blue`, `green`, or `purple` |
+  | `brightness` | 45–80 lm if `glow` is `blue`/`green`; 20–50 lm if `glow` is `purple`; fails otherwise (incl. `white`/`dark`) |
+  | `smell` | `salty` or `fishy` |
+  | `gunk` | 70–85% |
+  | `cracks` | `none` or `small` |
+  | `feel` | `hard` |
+  | `twitch` | `weak` or `still` |
+  | `bugs` | 1–3 |
+  | `weight` | 180–260 g, extended to 300 g if `gunk` ≥ 70 |
+  | `sound` | `ding`; or `thud` only if `cracks` is `none`/`small` |
 
-**Biome-agnostic overflow safety net.** `MAX_LOCAL_BIO_ARTIFACTS = 4` (was `MAX_LOCAL_GLOW_ARTIFACTS`) +
-`_total_demanded_artifacts(snapshot, fragment_ids)` (was `_total_glow_artifacts()`, glow-only) is a
-plain sum of local stock across every currently-demanded fragment id, regardless of which (if any)
-biome marker property applies — a real simplification, not just a rename: no per-property indexing
-needed for the cap itself, and it now actually protects Volcanic/Deep/Geothermal backlogs too, which the
-old glow-only version silently didn't. Still just insurance — the structural idle-gate above is the
-primary flow control, per §1f.
-
-**`_focus_local_order()`** (was `_focus_coastal_order()`) additionally excludes Frozen orders outright
-(`order.biome == "frozen"`): every other biome has its own single-slot processor bottleneck worth
-coordinating the whole pipeline's harvest/tint/forge/splice focus around; Frozen has none (the Exchange's
-own blanket sweep already delivers a plain fragment the moment it's extracted), so narrowing focus for
-it would only cost the Collector options for no benefit.
-
-**Bio Caster (Volcanic, `lib/bio_volcanic.py` `BioCasterController`).** Bang-bang heat/cool control
-toward `required_range()`: full `set_heat(100)`/`set_cool(100)` outside a `CASTER_APPROACH_BAND_C = 50`
-°C band around the target range's edge, a reduced `CASTER_APPROACH_PCT = 25` % near it, both knobs to 0
-once `temperature()` is inside the band. Casts once temperature is in range AND `materials()` matches
-`required_materials()` exactly. **Unverified live:** the docs never document a distinct "load material
-into crucible" call separate from `load(fragment_id)` — this assumes staging a material into `self.input`
-via `take()` is enough for `cast()` to auto-consume it up to `required_materials()`, the same way a
-Fabricator/Smelter recipe auto-consumes its stockpile. Flip on `debug()` console output
-(`required_materials()` vs `materials()` vs what's staged) the first time a real recipe is attempted to
-confirm or correct this.
-
-**DNA Sequencer (Geothermal, `lib/bio_geothermal.py` `DnaSequencerController`).** Fully spec'd by the
-API, no live-verification gap: `order.required_genes[fragment_id]` is the splice target, validated
-against `gene_catalog()` before ever calling `splice()` (an unknown gene id there would risk a
-`"destroyed"` result). `chamber.spliced == True` is never spliced again ("one splice per fragment," per
-`docs/components/dna_sequencer.md`) — just discarded through to delivery.
-
-**Bio Conditioner (Deep, `lib/bio_deep.py` `BioConditionerController`) — fully automated.** The in-game
-docs never expose the actual pass/fail rule for any of the 10 QC properties (only vague combo hints like
-"brightness reads glow"), and a wrong `accept()`/`reject()` call `"burned"`s (destroys) the specimen. The
-rulebook was instead recovered from the decompiled game client
-(`internals/terraform_decompiled/simworker/deobfuscated.js`, the `$q` predicate table) and cross-checked
-against real logged outcomes from the prior diagnostic-only phase (every observed green/red light matched
-these predicates) — it now lives as `CONDITIONER_RULEBOOK` in `lib/bio_deep.py`, one predicate per
-property, each given the full `report()` dict since some rules read a sibling property:
-
-| Property | Pass rule |
-| --- | --- |
-| `glow` | `blue`, `green`, or `purple` |
-| `brightness` | 45–80 lm if `glow` is `blue`/`green`; 20–50 lm if `glow` is `purple`; fails otherwise (incl. `white`/`dark`) |
-| `smell` | `salty` or `fishy` |
-| `gunk` | 70–85% |
-| `cracks` | `none` or `small` |
-| `feel` | `hard` |
-| `twitch` | `weak` or `still` |
-| `bugs` | 1–3 |
-| `weight` | 180–260 g, extended to 300 g if `gunk` ≥ 70 |
-| `sound` | `ding`; or `thud` only if `cracks` is `none`/`small` |
-
-Every stage still gets recorded to bounded `archive["bio.conditioner_observations"]` history
-(`CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200`) for auditing, and an unrecognized `current()` property
-(rulebook gone stale) halts rather than guessing blind.
-
-**Confirmed live: a Conditioned fragment's `.properties` carries `{'conditioned': True}`**, distinct from
-an untested raw fragment's `properties=None`. `_find_raw_stack()` and `_load_next_sample()`'s staged-stack
-scan both skip/recover any stack with `properties.get("conditioned")` truthy instead of treating it as raw
-QC input — mirrors the Coastal Luminizer's equivalent already-tinted-sample fix (§1g above). Without this,
-the Conditioner can pull an already-passed specimen back into `self.input`, where `load()` can never accept
-it and the chamber stalls with no eject path.
+  Every stage is recorded to bounded `archive["bio.conditioner_observations"]` history
+  (`CONDITIONER_OBSERVATION_HISTORY_LIMIT = 200`) for auditing; an unrecognized `current()`
+  property (rulebook gone stale) halts rather than guessing blind.
+- **Confirmed live**: a Conditioned fragment's `.properties` carries `{'conditioned': True}`,
+  distinct from an untested raw fragment's `properties=None` — `_find_raw_stack()`/
+  `_load_next_sample()` skip/recover any stack with `properties.get("conditioned")` truthy instead
+  of treating it as raw QC input.
 
 ---
 
@@ -1015,1230 +487,609 @@ it and the chamber stalls with no eject path.
 
 ### 2a. Vehicle Energy Budgeting Detail (`lib/vehicle_energy.py` `VehicleEnergyMixin`)
 
-- **Travel energy is a developer-confirmed exact model, not an empirically-calibrated Wh/meter —
-  but Pioneer and Rover use two DIFFERENT models, not one formula with the other's terms zeroed
-  out.** The archive-backed calibration system (`self.wh_per_meter`, per-vehicle `archive` keys,
-  `calibrate_wh_per_meter()`) was intentionally removed for both — treated as ground truth, so
-  there's nothing left to calibrate for travel. (Construction *progress* energy is a separate
-  concern with no confirmed formula, and still uses `wh_per_progress` calibration.) Leftover
-  archive clutter from before the removal comes in two historical shapes —
-  `"<vehicle>.wh_per_meter"` and an older colon-prefixed `"vehicle.wh_per_meter:<vehicle_id>"` — both
-  purged by `ArchiveCleaner.clean_calibration()`.
+- **Travel energy is a developer-confirmed exact model, not empirically calibrated — Pioneer and
+  Rover use two DIFFERENT models.** Archive-backed Wh/meter calibration was intentionally removed
+  for both (treated as ground truth). Construction *progress* energy is still calibrated
+  (`wh_per_progress`, no confirmed formula exists for it).
 
-  **Pioneer** (`VehicleEnergyMixin`'s own implementation, used as-is by `PioneerController`):
+  **Pioneer** (`VehicleEnergyMixin`, used as-is by `PioneerController`):
   ```
   power (W)   = (BASE_TRAVEL_POWER_W=3.0 + MODULE_TRAVEL_POWER_W=8.0 × active_modules
                  + CARGO_UNIT_TRAVEL_POWER_W=0.04 × cargo_units) × throttle^1.5 × nav_power_multiplier
   speed (m/h) = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE=100.0 × throttle × nav_speed_multiplier
   ```
   - `active_modules` — mounted functional modules that draw power while driving: Nav/Drill/Sonar/
-    Constructor family, including upgraded variants (`drill_module_heavy` etc. share the
-    `drill_module` prefix — see `ACTIVE_MODULE_ID_PREFIXES`). Passive containers (Battery Holder,
-    Cargo Rack) don't count. `active_modules_count()`.
-  - `cargo_units` — live `self.vehicle.cargo.count()`. `calculate_trip_energy()` computes the
-    outbound and return legs with *different* cargo loads (return = outbound + `planned_drill_units`),
-    so a full hold after mining correctly costs more Wh/m than the empty outbound leg.
+    Constructor family, including upgraded variants (`ACTIVE_MODULE_ID_PREFIXES`). Passive
+    containers (Battery Holder, Cargo Rack) don't count. `active_modules_count()`.
+  - `cargo_units` — live `self.vehicle.cargo.count()`. `calculate_trip_energy()` computes outbound
+    and return legs with *different* cargo loads (return = outbound + `planned_drill_units`).
     `cargo_units_count()`.
-  - `nav_speed_multiplier` / `nav_power_multiplier` — from mounted Sport Nav modules. Docs
-    (`docs/components/nav_module.md` `.speed_multiplier()`) confirm 1 Sport Nav = exactly 2x speed
-    / 2.6x power; `nav_power_multiplier()` linearly extrapolates the same +1.6x power per +1.0x
-    speed for additional Sport Navs (their exact scaling beyond "raises draw faster" isn't
-    documented). `speed_multiplier() == 1.0` (no Sport Nav) gives `power_multiplier() == 1.0`.
+  - `nav_speed_multiplier` / `nav_power_multiplier` — from mounted Sport Nav modules. 1 Sport Nav =
+    exactly 2x speed / 2.6x power (`docs/components/nav_module.md`); `nav_power_multiplier()`
+    linearly extrapolates +1.6x power per +1.0x speed for additional Sport Navs. No Sport Nav gives
+    both multipliers `1.0`.
 
-  **Rover** (`RoverController` overrides in `lib/rover.py`, not part of the base mixin):
+  **Rover** (`RoverController` override in `lib/rover.py`, not part of the base mixin):
   ```
   Wh/meter = ROVER_WH_PER_METER_PER_THROTTLE=0.2 × throttle
   ```
   Developer-confirmed (Spyros - CT Dev, in-game Discord #playtest-chat, 2026-08-28): "the rover is
-  very simple wh = distance x throttle x 0.2" — deliberately flat, with **no** `active_modules`,
-  `cargo_units`, or Sport Nav multiplier terms (unlike Pioneer), and linear in throttle rather than
-  Pioneer's `throttle^1.5` (implying Rover power scales as `throttle^2` at its fixed 100 m/h-per-
-  throttle speed). `RoverController.wh_per_meter_at_throttle()` overrides just that one method —
+  very simple wh = distance x throttle x 0.2" — flat, **no** `active_modules`, `cargo_units`, or
+  Sport Nav terms, linear in throttle (vs. Pioneer's `throttle^1.5`).
+  `RoverController.wh_per_meter_at_throttle()` overrides just that one method —
   `minimum_wh_per_meter()`, `calculate_trip_energy()`, `energy_needed_to_return_now()`/
-  `_comfortably()`, and `energy_wh_for_leg()` all call through it, so nothing else needs
-  overriding. `RoverController.max_safe_throttle_for_leg()` is re-solved for this model too: since
-  Wh/m is linear (not `sqrt(throttle)` like Pioneer's), the safe-throttle bound solves directly as
-  `t <= available_for_leg / (distance * ROVER_WH_PER_METER_PER_THROTTLE * SAFETY_MARGIN_MULTIPLIER)`
-  instead of Pioneer's squared form.
-  - Module-level standalone versions (`travel_wh_per_meter_for(vehicle, throttle, cargo_units=None)`
-    and friends, all suffixed `_for`) let non-`VehicleController` callers use the same formula
-    without a live instance, and dispatch to the Rover model via `is_rover_chassis_for(vehicle)`
-    (probes `vehicle.id`/`.name` for a `"rover"` prefix — the same convention already used for
-    telemetry keying in `VehicleController.publish_telemetry()` — since a raw `get_component()`
-    object has no chassis-type flag to read directly). `lib/charging.py`'s `rescue_target_level()`
-    doesn't import these directly, though — it calls `rescue_wh_per_meter_for(vehicle)`, a single
-    collapsed entry point that bakes in the rescue-specific choice (rate the leg at
-    `MIN_SPEEDMODE_THROTTLE`, the cheapest possible Wh/m) and the "vehicle unreachable → bare-module
-    Pioneer-shaped fallback" branch (chassis type is unknowable with no vehicle object to probe), so
-    a cross-script caller needs one import instead of five. Prefer adding a purpose-built `_for`-style
-    function like this over widening a caller's import list — see the parser note below on why that
-    matters here specifically. Single source of truth either way: the class attributes are aliases of
-    these same module-level constants.
-  - **Script-parser constraint**: the in-game sandboxed parser rejects multi-line parenthesized
-    `from X import (a, b, c)` — even though it's valid standard Python and passes local
-    `python -m py_compile` fine (`SyntaxError: expected Identifier in from-import, got (`). Always
-    write cross-module imports as a single line (`from X import a, b, c`), same category of gap as
-    `re.escape` being unavailable in the sandboxed `re` module.
-  - **Cross-script call limitation**: each script (e.g. `rover_2.py`, `charging_station_1.py`) runs
-    as an independent process. A script can never call a method on another script's live
-    `VehicleController` instance (there's no such thing as `rover_2.getWhPerM()`) — the only valid
-    cross-script channels are `get_component(id)` (raw game-engine API objects) and the Data
-    Archive / Signal Bus. This is *why* shared formulas needed to become standalone `_for(vehicle)`
-    functions (operating on the raw `get_component()` object) rather than instance methods: it's
-    the only way for e.g. a charging station's script to reuse a vehicle's own energy formula.
-  - **`lib/charging.py` fleet rescue** (`ChargingStationController.manage_fleet_rescues()`):
-    dispatch triggers on engine `"stranded"`/`"stalled_no_battery"` status, OR `return_floor_wh()`
-    — the Wh a vehicle needs on board *right now* to self-navigate to the nearest station,
-    computed with the same `rescue_wh_per_meter_for()` formula (at `MIN_SPEEDMODE_THROTTLE`) the
-    vehicle's own `energy_needed_to_return_now()` hard-abort uses. This replaced an earlier flat
-    `battery_level <= 0.05` threshold: a vehicle's own `drive_to()` never willingly drains below
-    its floor reserve, so it can brake forever in a self-parked limbo state well above 0% that the
-    engine never calls "stranded" — a flat percentage doesn't track that per-vehicle,
-    per-distance floor, so it could fire too late (heavy loadout) or too early (light one). A
-    fully-removed backstop isn't safe either: without it, nothing would ever come get a vehicle
-    stuck in that limbo.
-  - `RESCUE_EXTRA_RESERVE_WH = 8.0` is added on top of the floor only for sizing
-    `rescue_target_level()` (how much to charge *during* the rescue) — the trigger comparison
-    itself (`is_below_floor`) uses the bare floor, matching the vehicle's own hard-abort exactly.
-  - **Multi-station arbitration**: every deployed Vehicle Charging Station runs its own independent
-    copy of this script polling the same fleet snapshot, so `manage_fleet_rescues()` gates dispatch
-    on `is_nearest_station_to(vehicle_ref)` — otherwise every station within range would each send
-    its own rescue drone to the same stranded vehicle. Ties (solo station, unresolvable
-    coordinates) default to allowing dispatch rather than deadlocking silent.
-- Round-trip budget = outbound drive + sonar/scan budget + mining/drill budget + drive from
-  target to the *nearest* charging station, all multiplied by `SAFETY_MARGIN_MULTIPLIER = 1.05`
-  (5% — reduced from the old empirical 35% now that the model above is exact, not calibrated),
-  plus a hard `MIN_EMERGENCY_RESERVE_WH = 8.0` floor on top. See `calculate_trip_energy()`.
-- **Mining/drill budget is also a developer-confirmed exact model now, not a flat average.**
-  `mine_wh_per_unit(item_id, purity)` (and its standalone `mine_wh_per_unit_for(vehicle, item_id,
-  purity)` twin, same `_for` pattern as travel energy above) computes:
+  `_comfortably()`, `energy_wh_for_leg()` all call through it. `max_safe_throttle_for_leg()` solves
+  directly (linear): `t <= available_for_leg / (distance * ROVER_WH_PER_METER_PER_THROTTLE *
+  SAFETY_MARGIN_MULTIPLIER)`.
+  - Module-level standalone `_for`-suffixed versions (`travel_wh_per_meter_for(vehicle, throttle,
+    cargo_units=None)`, etc.) let non-`VehicleController` callers (e.g. a charging station's own
+    script — no cross-script instance calls exist, only `get_component(id)`/Archive/Signal Bus)
+    use the same formula without a live instance, dispatching to the Rover model via
+    `is_rover_chassis_for(vehicle)` (probes `vehicle.id`/`.name` for a `"rover"` prefix).
+    `lib/charging.py`'s `rescue_wh_per_meter_for(vehicle)` collapses this into one entry point for
+    rescue sizing (rates the leg at `MIN_SPEEDMODE_THROTTLE`, the cheapest Wh/m; falls back to a
+    bare-module Pioneer shape if unreachable).
+  - **Script-parser constraint**: the sandboxed parser rejects multi-line parenthesized `from X
+    import (a, b, c)` (valid standard Python, but `SyntaxError: expected Identifier in from-import,
+    got (` in-game) — always write cross-module imports on one line.
+  - **`lib/charging.py` fleet rescue** (`manage_fleet_rescues()`): dispatch triggers on engine
+    `"stranded"`/`"stalled_no_battery"` status, OR `return_floor_wh()` (the Wh needed on board
+    *right now* to self-navigate to the nearest station, via `rescue_wh_per_meter_for()` at
+    `MIN_SPEEDMODE_THROTTLE` — same formula the vehicle's own hard-abort uses).
+    `RESCUE_EXTRA_RESERVE_WH = 8.0` is added on top only when sizing `rescue_target_level()` (how
+    much to charge *during* rescue); the trigger comparison uses the bare floor.
+  - **Multi-station arbitration**: every deployed station gates dispatch on
+    `is_nearest_station_to(vehicle_ref)`, so only one rescues a given stranded vehicle. Ties default
+    to allowing dispatch.
+- Round-trip budget = outbound drive + sonar/scan budget + mining/drill budget + drive from target
+  to the *nearest* charging station, all × `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%), plus a hard
+  `MIN_EMERGENCY_RESERVE_WH = 8.0` floor on top. See `calculate_trip_energy()`.
+- **Mining/drill budget is also a developer-confirmed exact model, not a flat average.**
+  `mine_wh_per_unit(item_id, purity)` (and standalone `mine_wh_per_unit_for(...)`):
   ```
   time (h) = (ORE_DIG_MINUTES[item_id] / 60) × drill.speed_multiplier() / PURITY_DIVISOR[purity]
   Wh       = time (h) × DRILL_POWER_W_BY_HARDNESS_LIMIT[drill.hardness_limit()]
   ```
-  from `docs/components/drill_module.md`'s documented `.mine()` time formula
-  (`mineral_base_minutes × drill.speed_multiplier() / site_purity`) and per-tier Watts
-  (basic=10W/industrial=20W/heavy=30W, keyed by `drill.hardness_limit()` since there's no
-  `.power_draw()` method to query it live), `docs/database/items_minerals.md`'s per-ore dig
-  minutes (iron_ore/silicon=15, lead_ore=18, titanium/cobalt=20, rare_earth=25, neutronium=30),
-  and `docs/types/world_and_sites.md`'s `.purity` yield multiplier (`standard`=1×/`rich`=2×/`pure`=3×
-  — the same divisor the game's own time formula uses). `calculate_trip_energy()`'s
-  `mine_item_id`/`mine_purity` params feed this in; every real mining call site (`mining.py`'s
-  `select_best_mining_target()`/stationed-mining resume, `rover.py`/`pioneer.py`'s resumed-target
-  budgeting) passes the candidate's own `harvest_item`/`purity`, since both are already carried on
-  every mining candidate dict. `MINE_WH_PER_UNIT = 2.5` (the old flat constant) is now only a
-  fallback for a candidate with no `mine_item_id` at all (a non-mining candidate) — it happens to
-  equal the exact rate for the cheapest real case (basic drill, iron ore, standard purity), but was
-  under-reserving by up to **~3.6x** for a Heavy drill on Neutronium before this fix (`(30/60) × 0.6
-  × 30 W = 9.0` Wh vs. the flat `2.5` Wh) — a real latent risk independent of drive throttle, found
-  while validating whether Pioneers would stay safe running at higher speed. Verified via a stub
-  test covering the cheapest case (matches the flat constant exactly), the worst case (Heavy/
-  Neutronium ≈ 3.6x), purity dividing extraction time, and the no-drill/unknown-ore fallback.
+  Per-tier Watts: basic=10W/industrial=20W/heavy=30W (keyed by `drill.hardness_limit()`, no
+  `.power_draw()` method exists). Per-ore dig minutes (`docs/database/items_minerals.md`):
+  iron_ore/silicon=15, lead_ore=18, titanium/cobalt=20, rare_earth=25, neutronium=30. Purity yield
+  multiplier: `standard`=1×/`rich`=2×/`pure`=3× (same divisor the game's own time formula uses).
+  `calculate_trip_energy()`'s `mine_item_id`/`mine_purity` params feed this in; every real mining
+  call site passes the candidate's own `harvest_item`/`purity`. `MINE_WH_PER_UNIT = 2.5` (flat) is
+  now only a fallback for a candidate with no `mine_item_id` at all — it equals the cheapest real
+  case (basic drill, iron ore, standard) but under-reserves by up to **~3.6x** for Heavy/Neutronium
+  (`9.0` Wh vs. the flat `2.5` Wh).
 - Throttle is clamped to `[MIN_SPEEDMODE_THROTTLE=0.10, MAX_SPEEDMODE_THROTTLE=1.0]` and picked
-  per-leg by `select_cruise_throttle()` / `max_safe_throttle_for_leg()`, which always keeps enough
-  reserve to still reach a charging station afterward. Because power scales with `throttle^1.5`
-  while speed scales with `throttle`, Wh/m for a leg scales with `sqrt(throttle)` — **not** linear
-  in throttle — so `max_safe_throttle_for_leg()` solves for the throttle bound via
-  `t <= (available_Wh / (distance * coeff * SAFETY_MARGIN_MULTIPLIER)) ** 2`, not a linear ratio.
-  Verified against a brute-force numerical search.
+  per-leg by `select_cruise_throttle()` / `max_safe_throttle_for_leg()`. Because Pioneer power
+  scales with `throttle^1.5` while speed scales with `throttle`, Wh/m for a leg scales with
+  `sqrt(throttle)` — `max_safe_throttle_for_leg()` solves via `t <= (available_Wh / (distance *
+  coeff * SAFETY_MARGIN_MULTIPLIER)) ** 2`.
 - **Cruise throttle is one numeric default, not a binary conserve/highspeed flag.**
   `select_cruise_throttle()` picks `min(self.cruise_throttle, MAX_SPEEDMODE_THROTTLE)` as the
-  baseline for a leg, then caps it DOWN (never up) to whatever `max_safe_throttle_for_leg()` says is
-  safe. There used to be a separate `vehicle.speedmode` archive flag (`"conserve"`/`"highspeed"`)
-  with its own branch calling `max_safe_throttle_for_leg()` directly for `"highspeed"` — removed as
-  redundant once cruise_throttle became the single lever: setting `cruise_throttle = 1.0` makes the
-  one remaining formula produce *exactly* the old highspeed branch's result (baseline=1.0 capped
-  down only when unsafe), so keeping both was two code paths for one behavior.
-  `self.cruise_throttle` itself now resolves the same way as `wh_per_progress`
-  (`VehicleController.__init__`): a thin entrypoint script either passes an explicit value (the
-  demand-driven transporter role always passes `cruise_throttle=1.0`, since it recharges fully at
-  both ends of every leg — see §2f) or passes nothing/`None`, in which case it reads
-  `default_cruise_throttle()` — a single fleet-wide `vehicle.default_cruise_throttle` archive value
-  (clamped to `[MIN_SPEEDMODE_THROTTLE, MAX_SPEEDMODE_THROTTLE]`, falling back to
-  `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5` if never set) — settable via the Data Archive Notebook, or
-  live from `panel_2.py`'s FLEET card (a `panel.slider()`, same pure-intent-publish pattern as the
-  per-vehicle recall switch on the same card — the card only writes the archive value, each
-  vehicle's own script is what reads and acts on it), to speed up (or slow down) every such vehicle
-  at once, without editing each one's script. All of `rover_1-3.py`/`pioneer_1-4.py` now pass no
-  `cruise_throttle` at all for exactly this reason.
-- `minimum_wh_per_meter()` gives the best-case Wh/m at the throttle floor, via the general
-  `wh_per_meter_at_throttle(throttle, cargo_units=None)`. Any check that claims a target/job is
-  *permanently* unreachable (not just "not right now") must budget against this, not the typical
-  cruise-throttle rate — see the `wh_per_meter` override param on `calculate_trip_energy()` and its
-  use in `pioneer.py`'s `run_construction_loop()` hard-infeasibility checks.
-- Two different "how much reserve do I need" checks, deliberately kept separate:
-  - `energy_needed_to_return_now()` — the true floor, rated at `minimum_wh_per_meter()`. Used only
-    for the **hard mid-drive abort** inside `drive_to()`'s tick loop (a last-resort safety check).
-  - `energy_needed_to_return_comfortably()` — rated at `self.cruise_throttle` instead of the floor.
-    Used for every **proactive** "should I keep working or head back" decision (mining's
-    `MINE_WH_PER_UNIT` stop check, pioneer's construction "Field Battery Floor", survey's per-POI
-    and per-waypoint reserve checks). Stopping at the true floor leaves conserve mode nothing to
-    spend on the return but the slowest possible throttle, turning a routine trip home into a
-    multi-hour crawl; stopping a bit earlier — with enough reserve for a normal-speed return —
-    trades a small amount of extra work for a much shorter trip home. This is a simple heuristic,
-    not an exact time/output optimum (that would need weighing real-world wait time against
-    ore/progress value, which has no clean in-game unit).
+  baseline, then caps it DOWN (never up) to whatever `max_safe_throttle_for_leg()` allows.
+  `self.cruise_throttle` resolves the same way as `wh_per_progress`: an explicit constructor value
+  (the demand-driven transporter role always passes `cruise_throttle=1.0`, since it recharges fully
+  at both ends of every leg — §2f), else `default_cruise_throttle()` — a fleet-wide
+  `vehicle.default_cruise_throttle` archive value (clamped to `[MIN_SPEEDMODE_THROTTLE,
+  MAX_SPEEDMODE_THROTTLE]`, falling back to `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5`), settable via
+  the Data Archive Notebook or live from `panel_2.py`'s FLEET card slider.
+- `minimum_wh_per_meter()` gives the best-case Wh/m at the throttle floor. Any check claiming a
+  target/job is *permanently* unreachable (not just "not right now") must budget against this, not
+  the typical cruise-throttle rate.
+- Two different reserve checks, deliberately kept separate:
+  - `energy_needed_to_return_now()` — the true floor, at `minimum_wh_per_meter()`. Used only for
+    the **hard mid-drive abort** inside `drive_to()`'s tick loop.
+  - `energy_needed_to_return_comfortably()` — rated at `self.cruise_throttle`. Used for every
+    **proactive** "keep working or head back" decision (mining stop check, construction Field
+    Battery Floor, survey per-POI/per-waypoint reserve checks). A simple heuristic, not an exact
+    time/output optimum.
 - `drive_to()` computes `is_driving_to_station` once before its polling loop and skips the
-  return-reserve abort check entirely when the destination itself is the charging station/base
-  slot (or already within 3m of it) — arriving there *is* the recovery, so that check must never
-  abort the very trip meant to reach safety. Do not reintroduce a duplicate unconditional copy of
-  this check inside the loop; there was exactly this bug (fixed) where an unconditional check ran
-  before the guarded one and could self-abort a return-to-station trip.
-- Construction (Pioneer only): `calculate_trip_energy()`'s `planned_construction_progress` param adds
-  `progress * self.wh_per_progress` to the trip budget, mirroring `planned_scans`/`planned_drill_units`.
-  `wh_per_progress` is calibrated per-vehicle from real `constructor.execute()` calls
-  (`calibrate_wh_per_progress()` in `vehicle_energy.py`, called from `pioneer.py`'s
-  `execute_construction()`), falling back to `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh
-  (0%→100%) until enough samples exist. `pioneer.py`'s `planned_progress_for_job()` caps the
-  planned progress at `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` (or less if the job is
-  already further along), so a trip is only taken if it can also make *meaningful* on-site
-  progress — not just barely arrive and immediately pause for lack of power. This is a floor
-  on whether to depart, not a cap on-site: `execute_construction()` keeps recharging nearby
-  and resuming for as long as real progress keeps being made each cycle, and only reports
-  failure for a genuine rejection (e.g. `"blocked"`) or a no-progress stall — never merely
-  because the job needs more than one recharge round to finish.
-- **Construction job claims (Pioneer only, `run_construction_loop()`, exclusive)**: unlike mining
-  sites, a construction job is NOT shareable — two Constructor Pioneers both loading/building the
-  same blueprint would double-load materials and waste a trip. Uses `vehicle_claims.py`'s existing
-  exclusive claim mechanism as-is (key `f"build_{job_id}"` via `PioneerController.construction_claim_key()`,
-  distinct prefix from mining's `"site_"`/survey's `"poi_"` so all three coexist in the same shared
-  claims dict). `is_construction_job_free()` filters a peer's fresh claim out of both the
-  paused-constructions and pending-constructions lists before any job selection each cycle;
-  `claim_target()` is called at each of the three commit points (resuming a paused job, executing a
-  cargo-matching pending job, and committing to a job before the round trip home to fetch its
-  materials) — a lost claim race (peer grabbed it first) falls through to the next selection step
-  instead of executing nothing. `execute_construction()` heartbeats via `refresh_claim()` every
-  attempt (no-op if this Pioneer doesn't own the claim, so safe to call unconditionally). Released
-  on genuine completion (`get_construction_progress() >= 1.0`) or failure (materials unobtainable,
-  genuine rejection) — kept held across an incomplete "still paused, retry later" outcome so a peer
-  doesn't grab it mid-build; also released wholesale on an unhandled loop exception.
-- Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims
-  (mirrored to `rover.claims` / `survey.claims` for legacy compatibility), heartbeat-renewed via
-  `refresh_claim()`, expiring after `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral
-  mining sites are no longer exclusive** (the game now allows several Pioneers to mine the same
-  POI) — `lib/mining.py`'s candidate builders no longer filter out a peer-claimed site, and
-  `claim_target()`/`refresh_claim()`/`release_target_claim()` are still called for a mine-type
-  mission (bookkeeping: `current_target_key`, `save_mission()`/reload-resume) but never gate
-  candidate selection. Survey/POI targets (`vehicle_survey.py`) are still exclusive via the same
-  claim mechanism, unchanged. See `lib/mining_reservations.py` below for what replaced exclusivity
-  as the overmining guard.
+  return-reserve abort check entirely when the destination itself is the charging
+  station/base slot (or already within 3m of it) — arriving there *is* the recovery.
+- Construction (Pioneer only): `calculate_trip_energy()`'s `planned_construction_progress` param
+  adds `progress * self.wh_per_progress`. `wh_per_progress` is calibrated per-vehicle from real
+  `constructor.execute()` calls (`calibrate_wh_per_progress()`), falling back to
+  `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh (0%→100%) until enough samples exist.
+  `planned_progress_for_job()` caps planned progress at
+  `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` (or less if already further along) — a floor on
+  whether to depart, not a cap on-site.
+- **Construction job claims (Pioneer only, `run_construction_loop()`, exclusive)**: a construction
+  job is NOT shareable (two Constructor Pioneers on the same blueprint would double-load
+  materials). Uses `vehicle_claims.py`'s exclusive claim mechanism, key `f"build_{job_id}"`
+  (`PioneerController.construction_claim_key()`), distinct prefix from mining's `"site_"`/survey's
+  `"poi_"`. `claim_target()` is called at each of the three commit points (resuming a paused job,
+  executing a cargo-matching pending job, committing before the round trip home).
+  `execute_construction()` heartbeats via `refresh_claim()` every attempt (no-op if not owner).
+  Released on completion (`get_construction_progress() >= 1.0`) or genuine failure, kept held
+  across an incomplete "still paused" outcome, also released wholesale on an unhandled exception.
+- Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
+  `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expiring after
+  `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral mining sites are no longer exclusive**
+  (several Pioneers may mine the same POI) — claim calls still fire for bookkeeping
+  (`current_target_key`, mission resume) but never gate candidate selection. Survey/POI targets are
+  still exclusive via the same mechanism.
 - **In-flight mining yield reservation** (`lib/mining_reservations.py`, `mining.reserved_yield`
   archive key): non-exclusive, additive bookkeeping — several vehicles converging on one deficit no
-  longer collide via a claim, but would all still see the *same* undiminished demand without this.
-  When `MiningMixin.select_best_mining_target(candidates, reserve_demand=True)` claims a mine-type
-  candidate (home-demand path only — `build_mineral_site_candidates()`, called from `rover.py`'s
-  `run_expedition_cycle()` and `pioneer.py`'s `run_mining_loop()`), it estimates the trip's yield via
-  `VehicleEnergyMixin.max_mineable_units()` (energy-based — see below) and reserves it;
-  `get_raw_material_demands()` (`lib/production.py`) subtracts every non-stale reservation's units
-  from raw demand before returning, so a peer's search this cycle or later sees the deficit already
-  promised. Heartbeat-renewed (`refresh_yield()`, alongside `refresh_claim()` in
-  `mine_current_site()`/`mine_until_full_or_exhausted()`) and released (`release_yield()`) on trip
-  end/failure, same `CLAIM_STALE_TICKS`-equivalent expiry (`RESERVATION_STALE_TICKS = 36000`). The
-  **stockpile path** (`build_local_stockpile_candidates()`, outpost-stationed mining,
-  `reserve_demand=False`) deliberately skips this — it doesn't read `get_raw_material_demands()` at
-  all, and is already self-bounded by each outpost's own live `stock_target_for()` check, so a few
-  vehicles briefly converging on the same under-target ore just self-corrects once stock arrives.
-- **Energy-based mining trip sizing** (`VehicleEnergyMixin.max_mineable_units()`,
-  `lib/vehicle_energy.py`): replaces `cargo.capacity()` as the default yield estimate/`max_units` for
-  a mining trip. Solves the same budget `calculate_trip_energy()` checks, directly for units instead
-  of guess-and-check: outbound drive Wh + base return drive Wh are fixed, while mined-unit Wh
-  (`mine_wh_per_unit_for()`) and the marginal per-unit return-drive Wh (from the added cargo weight,
-  `CARGO_UNIT_TRAVEL_POWER_W`) are exactly linear in unit count, so the max affordable count follows
-  in one division after subtracting `MIN_EMERGENCY_RESERVE_WH` and applying
-  `SAFETY_MARGIN_MULTIPLIER`, then clamped to `cargo.capacity()`. Reflects that mining outposts now
-  stockpile ahead of demand, so a trip no longer needs to plan around repeated
-  mine-till-full/recharge/resume cycles (`mine_until_full_or_exhausted()` still exists as a safety
-  net for estimate drift, e.g. richer-than-expected purity).
-- Recall (`lib/vehicle_claims.py`): one shared `vehicle.recall` dict `{vehicle_name: True}` — **not**
-  one archive key per vehicle (the old `vehicle.recall:<name>` scheme, migrated off by
-  `ArchiveCleaner.clean_recall_flags()`) — since the Data Archive has a fixed shared key-count cap
-  that doesn't scale with fleet size for a single boolean flag. `is_vehicle_recalled()`/
-  `set_vehicle_recalled()` are the module-level read/write (a vehicle absent from the dict reads as
-  not-recalled, so only actively-recalled vehicles are ever stored); `VehicleClaimsMixin.is_recalled()`
-  is a thin wrapper. Toggled per-vehicle via `panel_2.py`'s Fleet card switch. On -> the vehicle
-  abandons its current target (`release_target_claim()`) and drives to base now
-  (`handle_recall_if_active()`, called at the top of every vehicle run loop); off -> resumes normal
-  operations. Also checked inside `drive_to()`'s own tick loop for an immediate mid-trip abort, and
-  inside `mine_current_site()`/`mine_until_full_or_exhausted()` so mining stops promptly — both
-  guarded with the same `is_driving_to_station` exemption as the return-reserve check, so recall can
-  never block the very trip home it's asking for.
-- Navigation timeout (`lib/vehicle_navigation.py` `drive_timeout_ticks()`): `drive_to()`'s
-  `timeout_ticks` defaults to `None` and is computed per-leg from expected travel time
-  (`distance / speed-at-chosen-throttle`), converted from world-clock hours to the tick-scale
-  budget via `Clock.real_seconds_per_hour()` — **not** a flat constant. `sleep()` and the tick
-  counter both run in real/simulation seconds (the same base), which the compressed day/night
-  cycle stretches relative to world-clock hours, so a fixed tick budget silently under-times
-  slow conserve-mode legs. Uses a `safety_multiplier = 2.0` margin and a `min_ticks = 3000`
-  floor (the old fixed default, still used for short/typical legs).
-- Navigation safety (`lib/vehicle_navigation.py`): stall detection re-issues the drive command
-  after repeated stuck cycles, dropping to `MIN_SPEEDMODE_THROTTLE` on each retry and giving up
-  (brake, return `False`) after 3 failed recoveries — applies **regardless** of
-  `is_driving_to_station`. Throttle stays engaged (drawing power per the speed/power model) the
-  whole time a vehicle is stalled even though it's making zero progress, and the low-battery abort
-  is deliberately skipped for station-bound legs (see above) — so an uncapped retry loop could
-  previously drain the battery to nothing over the full navigation timeout purely from being stuck,
-  with no safety net, on the one leg where that check doesn't apply. Base staging slots are
-  staggered per vehicle index to avoid parking/charging-pad collisions.
-- `is_at_base(threshold=3.0)` (`lib/vehicle_navigation.py`): `self.distance_to_home() <= threshold`.
-  Loops use this to gate one-time-per-visit actions (top-off charging before departing, restocking)
-  so they only fire when actually parked at base, not mid-trip in the field after a reload. Used by
-  `run_expedition_cycle()` (`rover.py`), `run_construction_loop()`/`run_mining_loop()` (`pioneer.py`),
-  and `run_survey_loop()` (`vehicle_survey.py`).
-- **Loop-top "cargo aboard but not at base" safety net vs. mission resume**: `run_expedition_cycle()`
-  (`rover.py`) and `run_mining_loop()` (`pioneer.py`) both compute `has_resumable_target =
-  bool(self.current_target_key and self.current_target and ...)` before their Step 2 cargo check, and
-  only force the return-to-base-and-unload detour when there is **no** resumable target. Without this
-  gate, a save reload mid-trip (cargo partially loaded, `current_target_key` restored from the saved
-  mission — see `load_mission()`) would see "cargo aboard, not at base" and force a full detour home
-  before ever resuming the drive back to the claimed site, undoing the very trip it just resumed —
-  even though the mission's own end-of-cycle Step 6/7 already returns and unloads once mining
-  actually finishes. Self-correcting either way: any path that abandons a resumed target (e.g.
-  `drive_with_recharge()` failing) calls `return_to_base()`, which unconditionally releases the
-  claim — and `release_target_claim()` clears `current_target_key`/`current_target` when the released
-  key matches, so `has_resumable_target` goes false next iteration and the safety net resumes normal
-  operation. No permanent unload-starvation risk.
-  - **Cargo/target material mismatch**: `cargo_matches_target(target)` (`lib/mining.py`
-    `MiningMixin`, shared by both) additionally downgrades `has_resumable_target` to `False` (for
-    that cycle only — `current_target_key` itself is untouched, so Step 3 still resumes the same
-    target right after) whenever cargo already holds a *different* material than the resumed
-    target's own `harvest_item`. Cargo isn't material-locked (`Cargo.stacks()` in
-    `docs/models/storage_and_items.md` lists property-distinct stacks — a vehicle can physically
-    carry a mix of ore types at once), so nothing would reject mining a different ore straight into
-    an already-occupied hold; it would just waste capacity and leave a confusing mixed load instead
-    of erroring. A target with no `harvest_item` (a Rover's POI survey target) always matches,
-    since there's no ore to mismatch against.
+  longer collide via a claim, but would still see the same undiminished demand without this.
+  `MiningMixin.select_best_mining_target(candidates, reserve_demand=True)` (home-demand path only)
+  estimates a trip's yield via `max_mineable_units()` and reserves it; `get_raw_material_demands()`
+  subtracts every non-stale reservation's units before returning. Heartbeat-renewed/released
+  (`refresh_yield()`/`release_yield()`), same expiry (`RESERVATION_STALE_TICKS = 36000`). The
+  **stockpile path** (`build_local_stockpile_candidates()`, `reserve_demand=False`) skips this —
+  already self-bounded by each outpost's own `stock_target_for()`.
+- **Energy-based mining trip sizing** (`VehicleEnergyMixin.max_mineable_units()`): replaces
+  `cargo.capacity()` as the default yield estimate. Solves the trip-energy budget directly for
+  units (outbound + base return Wh fixed, mined-unit Wh and marginal return-drive Wh linear in unit
+  count) after subtracting `MIN_EMERGENCY_RESERVE_WH` and applying `SAFETY_MARGIN_MULTIPLIER`,
+  clamped to `cargo.capacity()`. `mine_until_full_or_exhausted()` remains a safety net for estimate
+  drift (e.g. richer-than-expected purity).
+- Recall (`lib/vehicle_claims.py`): one shared `vehicle.recall` dict `{vehicle_name: True}` (not
+  one archive key per vehicle). `is_vehicle_recalled()`/`set_vehicle_recalled()` module-level
+  read/write. Toggled via `panel_2.py`'s Fleet card switch: on → abandons current target, drives to
+  base now; off → resumes. Checked inside `drive_to()`'s tick loop and mining loops, with the same
+  `is_driving_to_station` exemption as the return-reserve check.
+- Navigation timeout (`drive_timeout_ticks()`): defaults to `None`, computed per-leg from expected
+  travel time, converted via `Clock.real_seconds_per_hour()` (not a flat constant — the compressed
+  day/night cycle stretches game-hours relative to world-clock hours). `safety_multiplier = 2.0`,
+  `min_ticks = 3000` floor.
+- Navigation safety: stall detection re-issues the drive command after repeated stuck cycles,
+  dropping to `MIN_SPEEDMODE_THROTTLE` each retry, giving up after 3 failed recoveries — applies
+  regardless of `is_driving_to_station`. Base staging slots are staggered per vehicle index.
+- `is_at_base(threshold=3.0)`: `self.distance_to_home() <= threshold`. Gates one-time-per-visit
+  actions (top-off charging, restocking) so they only fire when actually parked at base.
+- **Loop-top "cargo aboard but not at base" safety net vs. mission resume**:
+  `run_expedition_cycle()`/`run_mining_loop()` compute `has_resumable_target` before forcing a
+  return-to-base-and-unload detour, so a save reload mid-trip doesn't undo an already-resumed
+  drive. `cargo_matches_target(target)` additionally downgrades `has_resumable_target` to `False`
+  for that cycle only when cargo already holds a *different* material than the resumed target's
+  `harvest_item` (cargo isn't material-locked). A target with no `harvest_item` (survey POI)
+  always matches.
 
 ### 2a-0. Supply Dock cargo draining (`lib/supply_dock.py` `SupplyDockController`)
 
-`set_order()` rejects with `"cargo_present"` while *any* cargo is still physically loaded in the
-dock's 5 slots — and `clear_order()` deliberately does **not** drain cargo, it only releases the
-order assignment (per `docs/components/supply_dock.md`). So a cleared, completed, or expired
-order's leftover materials sit in the dock forever unless something actively calls
-`self.dock.input.eject("inventory", item_id, count)`. `drain_dock_cargo()` does this for every
-non-empty slot; `step()` calls it (and returns, retrying next cycle) whenever `curr_order` is
-`None` but `dock.total() > 0`, before ever attempting `set_order()` — otherwise every future order
-assignment fails with `"cargo_present"` indefinitely, with no automatic recovery.
+`set_order()` rejects with `"cargo_present"` while any cargo is still loaded in the dock's 5 slots
+— and `clear_order()` deliberately does **not** drain cargo, only releases the order assignment.
+`drain_dock_cargo()` ejects every non-empty slot to Inventory; `step()` calls it (and retries next
+cycle) whenever `curr_order` is `None` but `dock.total() > 0`, before attempting `set_order()`.
 
 ### 2a-0-1. Construction material demand cascade (`lib/production.py`)
 
-`_cascade_blueprint_demand()` is the single source of truth for "how much of *any* item — finished
-or intermediate — does active construction ultimately need," and the base both of the following
-build on:
+`_cascade_blueprint_demand()` is the single source of truth for "how much of any item — finished
+or intermediate — does active construction ultimately need":
 
 - Seeded from `required_item`/`required_count` across every pending/paused Construction Blueprint
-  job (summed, deduped by job id) — e.g. a Thermal Cap build seeds `thermal_cap_kit` demand.
-- Breadth-first propagated down through Fabricator/Smelter recipe `inputs` (`recipe_inputs_for()`):
-  `thermal_cap_kit` demand cascades into `titanium_ingot` + `gas_pipe_segment` demand, which for
-  `titanium_ingot` cascades further into `titanium_ore` demand.
-- **Only each tier's shortfall propagates further down** — demand beyond that item's own current
-  `inventory.count()`, not the full demand — so stock already sitting at any tier is counted once
-  and doesn't inflate demand for the tiers beneath it. Example: 10 `power_line_segment` needed, 3
-  already in Inventory → 7 still to build → 7 `titanium_ingot` needed, 5 already in Inventory → only
-  the remaining 2 propagate → 4 `titanium_ore` needed (at a 2:1 smelt ratio), not 20. Verified by
-  stub test against exactly this scenario.
-- Known limitation: an item reachable via more than one distinct path nets its shortfall against the
-  same Inventory snapshot independently at each occurrence, which can slightly overstate demand for
-  a shared intermediate under a diamond-shaped recipe dependency — not worth a full MRP-style
-  low-level-code solve for this game's shallow (2-3 tier) recipe chains.
+  job (summed, deduped by job id).
+- Breadth-first propagated down through Fabricator/Smelter recipe `inputs` (`recipe_inputs_for()`).
+- **Only each tier's shortfall propagates further down** — demand beyond that item's current
+  `inventory.count()`, so stock already on hand is counted once. Example: 10
+  `power_line_segment` needed, 3 in Inventory → 7 to build → 7 `titanium_ingot` needed, 5 in
+  Inventory → only 2 propagate → 4 `titanium_ore` needed (2:1 smelt ratio), not 20.
+- Known limitation: an item reachable via more than one path nets its shortfall against the same
+  Inventory snapshot independently at each occurrence, slightly overstating demand under a
+  diamond-shaped recipe dependency — not worth a full MRP-style solve for this game's shallow
+  (2-3 tier) chains.
 
 Two consumers read this cascade differently:
-
-1. `get_fabricator_targets()` (§2a-1) uses the **raw, uncapped demand** for items the Fabricator can
-   build — a target must reflect how much still needs to *exist*, not how much can currently be
-   reserved.
+1. `get_fabricator_targets()` (§2a-1) uses the **raw, uncapped demand** for items the Fabricator
+   can build.
 2. `get_construction_material_reservations()` nets it against current stock
-   (`min(inventory.count(item_id), demand)`) — a *protect-from-shipping* amount, capped at both what's
-   actually on hand and what's actually still needed. `supply_dock.py`'s `step()` and
-   `pick_best_order()` subtract this from `inventory.count(item_id)` before deciding how much to
-   `take()` into the dock or how "ready" an order looks — otherwise the Supply Dock would freely ship
-   away Inventory stock the moment it landed, even material (at *any* tier — finished component,
-   intermediate ingot, or raw ore) an active Pioneer build's production chain was already waiting on.
+   (`min(inventory.count(item_id), demand)`) — a protect-from-shipping amount.
+   `supply_dock.py`'s `step()`/`pick_best_order()` subtract this before deciding how much to
+   `take()` or how "ready" an order looks.
 
-Deliberately conservative in one respect: a job's full cascaded demand stays reserved for as long as
-the job remains pending/paused, even after a Pioneer has already loaded some of the finished item
-into cargo (cargo isn't tracked here, only standing Inventory stock) — better to have the dock hold
-back briefly on stock that's no longer actually contested than to let it snack away material a build
-still needs.
+Deliberately conservative: a job's full cascaded demand stays reserved for as long as it remains
+pending/paused, even after cargo has already been loaded (cargo isn't tracked here).
 
 ### 2a-0-2. Multi-Fabricator Support (`lib/production.py`, `lib/fabricator.py`)
 
-Same two problems as the Multi-Smelter section above, fixed the same way, for the Fabricator:
 `production.discover_fabricator_ids()`/`_default_fabricator()` replace every hardcoded
-`"fabricator_1"` fallback across `production.py`'s demand-cascade functions (recipe *availability* is
-tech-gated and identical across same-type buildings, so any one discovered Fabricator is a
-representative stand-in). No leader election was added on the Fabricator side — unlike Smelter,
-nothing in `FabricatorController` runs a shared per-cycle task that would need gating to a single
-instance (the Inventory→Warehouse rebalance sweep lives on the Smelter, not here), so there's nothing
-for a Leader to do yet. What *does* need coordination: `choose_recipe()` picks strictly by
-biggest-shortfall, so with several Fabricators every one of them would converge on the exact same
-top-shortfall recipe while other demanded outputs went unbuilt. Fixed with a `claim_recipe()`/
-`release_recipe()` pair in `lib/fabricator.py` — same shape and `STALE_TICKS=600` reasoning as
-`smelter.py`'s, separate archive key (`"fabricator.recipe_claims"`) so the two claim pools don't
-collide. `choose_recipe()`'s candidate loop now claims each sourceable candidate in turn (biggest
-shortfall first) and moves to the next if the claim fails (another Fabricator already holds it);
-`step()` releases the prior recipe's claim whenever it clears or switches away from it. Verified via
-a stub test: two Fabricators facing two equal-shortfall candidates correctly split onto different
-recipes, and a Fabricator re-picking its own already-claimed recipe refreshes rather than triggers a
-switch.
+`"fabricator_1"` fallback. `claim_recipe()`/`release_recipe()` (`lib/fabricator.py`,
+`STALE_TICKS=600`, archive key `"fabricator.recipe_claims"`) prevent several Fabricators
+converging on the same recipe: `choose_recipe()`'s candidate loop claims each sourceable candidate
+in shortfall order, moving to the next if the claim fails.
 
-**Pile-on fallback + even split** (found from real play: "fabricator_1 sits idle while fabricator_2
-slaves away producing 100 circuit boards" — with only ONE recipe ever demanded, the claim's
-"spread across distinct recipes" logic left every Fabricator past the first idle forever, since
-there was never a second demanded recipe to fall back to). Same shape as the Smelter fix above:
-`choose_recipe()` collects every sourceable candidate in shortfall order, tries to claim each, and
-if NONE can be exclusively claimed, joins the biggest-shortfall one anyway rather than returning
-`None`. Unlike Smelter, this one DOES need an explicit even split: `load_inputs()` pre-loads a whole
-`required_per_craft * crafts_remaining` stockpile batch up front (not a small per-cycle pull the way
-Smelter's ore intake is), so several Fabricators each independently loading the FULL remaining
-shortfall would overshoot the target well before `total_stock()` catches up on the next poll.
-`_fabricator_worker_count(recipe_id)` — a live headcount (not archive-tracked, so it counts joiners
-too) of every discovered Fabricator whose `get_recipe()` currently matches — divides
-`get_fabricator_active_recipe()`'s `crafts_remaining` by that count (ceil division, floored at 1
-worker so a lone Fabricator's math is unchanged). Verified via stub tests: a sole demanded recipe is
-claimed exclusively by the first Fabricator and joined (not idled on) by the second/third; `crafts_remaining`
-for 100 needed units split across 2 workers on the same recipe comes out to 50 each, not 100 each;
-worker-counting correctly isolates Fabricators on a different recipe and floors at 1 when nobody
-matches at all.
-
-**Load chunking** (found from a screenshot: two Fabricators both needing Glass, one showed 44/1
-staged while the other sat at 0/2 — one had grabbed the ENTIRE available Glass stock in a single
-`take_item()` call before the other's own poll ever got a turn). `load_inputs()` used to request its
-whole remaining batch (`required_per_craft * crafts_remaining`, up to several dozen units) in one
-call; capped now to `FABRICATOR_LOAD_CHUNK_SIZE = 10` units per call, so a heavy batch spreads across
-several `step()` cycles instead of one Fabricator monopolizing a contested item in a single grab —
-a peer's own poll gets a chance to interleave and take its own chunk in between. `lib/smelter.py`'s
-ore top-up (Step 3 of `step()`) had the identical problem (up to a full 50-unit top-up in one call)
-and got the same fix, `SMELTER_LOAD_CHUNK_SIZE = 10`. Supply Dock's own material loading
-(`lib/supply_dock.py`) used to deliberately skip this — at the time only one dock could ever exist
-per order, so there was no sibling to share fairly with. That's no longer true (§2a-0-5): several
-docks can now share one order, and `SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10` was added for the same reason.
-Verified via stub tests: a single `load_inputs()`/ore
-top-up call never exceeds its chunk size even with far more needed and available; two Fabricators
-alternating turns against a shared, contested 44-unit Glass pool end up with a fair nonzero split on
-both sides instead of 44/0; repeated Smelter `step()` calls keep topping up in the same chunk size
-across cycles. **Supply Dock's own material loading now needs this too** (see §2a-0-5) — it did NOT
-when this section was first written, back when only one dock could ever exist per order; that's no
-longer true.
-
-**Chunking alone wasn't enough — it shrank the race, it didn't fix it** (found from continued live
-reports after the chunking fix above shipped: "smelter_1 grabs 50 silicon in 5 stacks of 10 each,
-smelter_2 never gets any"). Each `take_item()`/Auto Feeder transfer locks the source Warehouse for
-the whole transfer duration (`docs/guide/input_and_output_ports.md`: "Both physical endpoints remain
-occupied for the resulting transfer duration"), so a smaller per-call chunk still lets whichever
-consumer's `step()` happens to poll first win it — and if one consumer consistently polls first
-(script start order, poll-interval phase), it wins every single chunk in a row, every cycle, forever.
-Chunking only bounded how much it could win in one grab, not how often it wins.
-
-An archive-based cooperative turn-taking scheme (`storage.take_item_fair()`, tracking per-item
-`"last winner"`/`"seen consumers"` state under a `storage.load_turn.<item_id>` key) was tried first and
-then deliberately reverted: it doesn't scale to multiple production outposts (an item id is global, but
-"who's contesting it" is really per-outpost — a second outpost's Smelter would needlessly defer to a
-first outpost's, or worse, collide on the same key for an unrelated pool of stock), and it grows the
-Data Archive by one entry per *distinct contested item id ever seen*, against the archive's hard
-512-entry save-wide cap (`docs/guide/data_archive_guide.md`) — an unbounded-by-design cost for what
-should be transient, in-memory coordination. Replaced with **`production.craft_prefill_units(recipe,
-item_id, prefill_seconds=INPUT_PREFILL_SECONDS)`** (`INPUT_PREFILL_SECONDS = 30`) — no archive state at
-all. Instead of asking "how much is left to load" (which naturally races toward a big number), it asks
-"how much do I need staged to keep crafting for the next ~30 real seconds" — `ceil(prefill_seconds /
-craft_seconds(recipe))` crafts' worth, floored at one craft's own requirement, where `craft_seconds()`
-converts `recipe.duration_game_hours` to real seconds via the fixed day-cycle schedule
-(`SECONDS_PER_GAME_HOUR = lib/power.py's DAY_CYCLE_DURATION_SECONDS / 24.0` — reused, not redefined, so
-there's exactly one place that conversion lives). This fixes the race as a side effect rather than
-coordinating around it: every consumer's total ask shrinks to a short, recipe-scaled window instead of
-the full remaining shortfall, so it tops up and stops far sooner, leaving much more frequent openings
-for a peer to get its own share in between — a probabilistic, self-limiting fix instead of a
-deterministic one, but stateless and correctly local-to-whatever-outpost-actually-has-the-contention
-(each Smelter/Fabricator's own `recipe` already came from its own outpost's building). Also directly
-fixes a second, independent bug — see below. `lib/smelter.py`'s ore top-up and `lib/fabricator.py`'s
-`load_inputs()` both cap their take amount with this now, alongside `SMELTER_LOAD_CHUNK_SIZE`/
-`FABRICATOR_LOAD_CHUNK_SIZE` (kept as a simple per-call ceiling on top, not the primary fairness
-mechanism any more). Supply Dock's material loading doesn't use `craft_prefill_units()` — it isn't
-crafting anything, so there's no recipe/duration to derive a prefill window from — and stays on
-`SUPPLY_DOCK_LOAD_CHUNK_SIZE` alone; acceptable since a dock's per-item shortfall is typically much
-smaller and shorter-lived than a Fabricator's up-front stockpile batch.
-
-**Ore intake ignored demand SIZE entirely — a much bigger overproduction bug than the fairness race**
-(found live: ~80 excess Glass sitting in storage with no active demand for it). `lib/smelter.py`'s
-Step 3 buffer top-up used to gate purely on `demands.get(output_item, 0) > 0` (via `select_needed_ore()`)
-and then always fill the ore buffer toward the full 50-unit cap regardless of how large that demand
-actually was — a demand of 5 finished units still triggered filling a 50-unit ore buffer, because
-nothing ever compared the buffer top-up *amount* against the demand *quantity*, only checked it was
-nonzero. `lib/fabricator.py`'s `load_inputs()` never had this bug (it was always bounded by
-`required_per_craft * crafts_remaining`, itself netted against target/current stock), which is why
-this was Smelter-specific. Worse with 2+ Smelters "joined" on the same recipe (`select_needed_ore()`'s
-pile-on fallback, used whenever only one ore is currently demanded): each Smelter independently filled
-its own buffer toward the SAME undivided demand figure, so two Smelters could together refine roughly
-double the actual demand before `total_stock()` ever caught up enough to zero it out — matches the
-observed "smelter_1 and smelter_2 each grab their own full share, ~80 Glass more than needed" report
-exactly, and would have applied even to a single Smelter alone (no second consumer needed to
-overproduce, just needed to fill past a small demand). `craft_prefill_units()` above (the fairness fix)
-independently tightens this too — a slow-crafting recipe's window caps out at one craft's worth
-regardless of demand size — but the actual demand-size fix is two further additions to Step 3, both
-cast in ore units via `(qty * units_per_run + output_count - 1) // output_count` (same ceiling-division
-shape `get_raw_material_demands()` already uses for the identical unit conversion):
-`production.get_smelter_worker_count(recipe_id)` (mirrors `lib/fabricator.py`'s private
-`_fabricator_worker_count()`, made public since Smelter needs it directly) gives this Smelter's live
-headcount of peers on the same recipe; `share = ceil(demand_qty / worker_count)` is this Smelter's fair
-slice of the CURRENT total demand (re-read fresh every `step()`, so it naturally shrinks as any
-Smelter's output gets drained to Inventory/a Warehouse); `max_ore_for_share` converts that output-unit
-share into an ore-unit ceiling. The take amount is `max(0, min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE,
-max_ore_for_share - in_buf, craft_prefill_units(recipe, ore) - in_buf))` — floored at 0 so a demand or
-prefill target that shrank since ore was already staged never requests a negative amount (already-staged
-ore still finishes its craft normally, it just isn't topped up further). A single Smelter with a small
-demand now loads only that much ore, not a reflexive full 50; several Smelters on one recipe now split
-the demand instead of each independently re-filling to its entirety.
+- **Pile-on fallback + even split**: if NONE of the candidates can be exclusively claimed (only one
+  recipe demanded), `choose_recipe()` joins the biggest-shortfall one anyway rather than idling.
+  `_fabricator_worker_count(recipe_id)` (live headcount of Fabricators currently matching that
+  recipe) divides `crafts_remaining` by that count (ceil, floored at 1).
+- **Load chunking**: `load_inputs()` is capped to `FABRICATOR_LOAD_CHUNK_SIZE = 10` units per call
+  (was: the entire remaining batch in one grab). `lib/smelter.py`'s ore top-up has the matching
+  `SMELTER_LOAD_CHUNK_SIZE = 10`; Supply Dock's own loading has `SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10`.
+- **`production.craft_prefill_units(recipe, item_id, prefill_seconds=INPUT_PREFILL_SECONDS)`**
+  (`INPUT_PREFILL_SECONDS = 30`, no archive state) is the actual fairness mechanism — asks "how
+  much do I need staged to keep crafting for the next ~30 real seconds" instead of "how much is
+  left to load": `ceil(prefill_seconds / craft_seconds(recipe))` crafts' worth, floored at one
+  craft's requirement. `craft_seconds()` converts `recipe.duration_game_hours` via
+  `SECONDS_PER_GAME_HOUR = lib/power.py's DAY_CYCLE_DURATION_SECONDS / 24.0` (reused, not
+  redefined). `lib/smelter.py`'s ore top-up and `lib/fabricator.py`'s `load_inputs()` both cap
+  their take amount with this, alongside the chunk-size ceilings above (kept as a simple per-call
+  cap, not the primary fairness mechanism). Supply Dock stays on `SUPPLY_DOCK_LOAD_CHUNK_SIZE`
+  alone (no recipe/duration to derive a prefill window from).
+- **Ore intake demand-size gating** (Smelter Step 3, `lib/smelter.py`): the take amount is
+  `max(0, min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share - in_buf,
+  craft_prefill_units(recipe, ore) - in_buf))`, where `share = ceil(demand_qty /
+  get_smelter_worker_count(recipe_id))` is this Smelter's fair slice of current total demand
+  (re-read fresh every `step()`) and `max_ore_for_share` converts that output-unit share into an
+  ore-unit ceiling via `(qty * units_per_run + output_count - 1) // output_count`. A single Smelter
+  with a small demand now loads only that much ore, not a reflexive full 50-unit buffer fill;
+  several Smelters on one recipe split the demand instead of each independently re-filling to its
+  entirety.
 
 ### 2a-0-3. Multi-Dock Support (`lib/production.py`, `lib/fabricator.py`)
 
-Same hardcoded-id bug class as Multi-Smelter/Multi-Fabricator above, just not caught for Supply Dock
-at the time — found while making `panel_3.py` (PRODUCTION card) dock-aware. `get_fabricator_targets()`,
-`get_material_demands()`, and `get_raw_material_reason()` all used to read a single
-`_component("supply_dock_1")` directly, so a second Supply Dock's own active order was invisible to
-every demand-cascade function: its required items would never register as Fabricator targets, raw
-material demand, or mining priority — a second dock could sit there indefinitely with no ore/ingots
-ever routed toward its order. Fixed with `discover_supply_dock_ids()` (same shape as the other two
-discovery functions) and `_all_dock_orders()` (`[(dock, order), ...]` for every dock currently holding
-one), which every demand-cascade function now loops instead of reading one hardcoded dock. No claim
-coordination was needed here (unlike Fabricator recipes) — order fulfillment is inherently per-dock,
-so there's no "two docks converge on the same order" race to guard against
-(docs/components/supply_dock.md: "Several docks may serve the same order and share shipped
-progress" — sharing is explicitly fine, not a bug to prevent). §2a-0-5 below covers the separate
-question of which order each dock should even be assigned to. `find_dock_order_requiring(item_id)`
-consolidates "which dock's order wants this item" into one function, shared by
-`get_raw_material_reason()` and `lib/fabricator.py`'s `target_reason()` (previously its own separate
-`_component("supply_dock_1")` read). Verified via a stub test: two docks with two different
-single-item orders both correctly register demand (the actual bug — previously only the first
-dock's order counted at all), and `find_dock_order_requiring()`/`get_raw_material_reason()` correctly
-attribute an item to whichever dock's order actually wants it.
+`discover_supply_dock_ids()` + `_all_dock_orders()` (`[(dock, order), ...]`) replace a single
+hardcoded `_component("supply_dock_1")` read in `get_fabricator_targets()`,
+`get_material_demands()`, and `get_raw_material_reason()`, so a second dock's active order isn't
+invisible to demand tracking. No claim coordination needed here (unlike Fabricator recipes) —
+order fulfillment is inherently per-dock; several docks may serve the same order and share shipped
+progress (`docs/components/supply_dock.md`), which is explicitly fine. `find_dock_order_requiring(item_id)`
+consolidates "which dock's order wants this item," shared by `get_raw_material_reason()` and
+`lib/fabricator.py`'s `target_reason()`. §2a-0-5 covers which order each dock should be assigned.
 
 ### 2a-0-4. Multi-Fabricator active-recipe input demand (`lib/production.py` `get_material_demands()`)
 
-Same hardcoded-single-instance bug class again, this time in `get_material_demands()`'s "a selected
-Fabricator recipe is an explicit production intention" block, which used to call
-`get_fabricator_active_recipe(_default_fabricator())` -- always the *first* discovered Fabricator --
-rather than looping every one. With two Fabricators each holding a different claimed recipe (see
-§2a-0-2's `claim_recipe()`), the second Fabricator's own active recipe and its inputs were entirely
-invisible to demand tracking: found live with `fabricator_1` running `craft_turbine_rotor` and
-`fabricator_2` running `craft_gas_pipe_segment` (needs `iron_ingot`) -- `fabricator_2`'s `iron_ingot`
-requirement never registered as demand at all, so `lib/smelter.py`'s `select_needed_ore()` (which
-reads `get_material_demands()`) saw zero demand for `iron_ingot` and refused to refine it even with
-raw `iron_ore` sitting in a Warehouse -- production silently stalled with no error anywhere. Fixed by
-looping `discover_fabricator_ids()` (falling back to `["fabricator_1"]` if discovery finds nothing,
-same convention as `_default_fabricator()`) and summing each Fabricator's own
-`get_fabricator_active_recipe()` input demand. Safe to sum rather than double-count: when several
-Fabricators share the same claimed recipe, `get_fabricator_active_recipe()` already divides
-`crafts_remaining` by the worker count (§2a-0-2), so each contributes only its fair share and the sum
-reconstructs the correct total.
+The "a selected Fabricator recipe is an explicit production intention" block loops
+`discover_fabricator_ids()` (falling back to `["fabricator_1"]`) and sums each Fabricator's own
+`get_fabricator_active_recipe()` input demand, rather than only ever reading the first discovered
+Fabricator. Safe to sum: when several Fabricators share a claimed recipe,
+`get_fabricator_active_recipe()` already divides `crafts_remaining` by worker count (§2a-0-2), so
+each contributes only its fair share.
 
 ### 2a-0-5. Multi-Dock order planning & weekly-deadline feasibility (`lib/supply_dock.py`)
 
-A single dock could keep up with order throughput when there was only ever one; with larger orders
-and multiple docks, per-instance decision-making (each dock independently running its own
-`pick_best_order()` every cycle) has two problems: every dock redundantly re-scans the full Earth
-Order board (`list_orders()`/`list_weekly_orders()`, `can_fulfill_order()` per candidate) — the same
-N-times-redundant-per-cycle cost bio.py's Collector/Luminizer hit before their single-snapshot fix —
-and nothing coordinates *which* order each dock should work, so idle docks could all pile onto the
-same top-priority order even when a second, third, etc. order also genuinely needs shipping.
+A central planner, `plan_dock_assignments(clock=None)`, runs **once** per cycle from
+`panel_7.py`'s AUTOMATION section (throttled to `STORAGE_TICK_INTERVAL`) instead of each dock
+independently re-scanning the full Earth Order board every cycle. `set_order()`/`clear_order()`/
+`set_enabled()` are all `*(self only)*` hardware calls, so the planner only decides — it writes
+`{dock_id: order_id or None}` to the `"supply_dock.order_plan"` archive key
+(`ORDER_PLAN_ARCHIVE_KEY`), and each dock's own `SupplyDockController.step()` reads its entry via
+`desired_order_id()` and performs the actual `set_order()` call itself.
 
-Fixed with a central planner, `plan_dock_assignments(clock=None)`, run **once** per cycle from
-`panel_1.py`'s AUTOMATION section (throttled to `STORAGE_TICK_INTERVAL`, alongside the rebalance
-sweep) — not inside any one dock's own script, since `set_order()`/`clear_order()`/`set_enabled()`
-are all `*(self only)*` hardware calls (docs/components/supply_dock.md) that only the dock's own
-running script can issue. The planner only decides; it writes `{dock_id: order_id or None}` to the
-`"supply_dock.order_plan"` archive key (`ORDER_PLAN_ARCHIVE_KEY`), and each dock's own
-`SupplyDockController.step()` reads its own entry via `desired_order_id()` and performs the actual
-self-only `set_order()` call itself — same Archive-as-decoupling-channel pattern CLAUDE.md calls for
-when a decision can't be made by the component that has to act on it.
-
-- **Stability**: a dock already holding a still-`can_fulfill_order()`-true order keeps it in the plan
-  regardless of ranking — an order mid-shipment shouldn't get cleared over a marginal priority
-  difference elsewhere; clearing costs a drain-then-reassign cycle for zero benefit since docks can
-  already share one order (§2a-0-3).
+- **Stability**: a dock already holding a still-`can_fulfill_order()`-true order keeps it
+  regardless of ranking — an order mid-shipment isn't cleared over a marginal priority difference.
 - **Spread-then-join for idle docks**: candidates are re-sorted before each idle-dock assignment by
-  `(docks_already_on_this_order ascending, priority descending)` — an idle dock joins whichever
-  qualifying candidate currently has the FEWEST docks on it, so several idle docks naturally spread
-  across several needed orders, but still all join the same one if it's the only good candidate (same
-  spread-then-join shape as `production._fabricator_worker_count()`'s Fabricator recipe split,
-  §2a-0-2).
-- **Weekly-deadline feasibility (the actual CLAUDE.md-flagged ask)**: `_weekly_infeasible(order,
-  current_day, dispatch_capacity_per_hour)` skips a Weekly Earth Order from the candidate list
-  entirely when `remaining_units > dispatch_capacity_per_hour * hours_remaining` (`hours_remaining =
-  (order.expires_day - current_day) * 24`) — i.e. even shipping flat-out with every currently known
-  dock's combined `dispatch_rate()` (already includes throughput research, per
-  docs/components/supply_dock.md), the remaining amount can't leave before `expires_day`. Deliberately
-  a dispatch-capacity ceiling only, not a production-rate forecast — knowing whether upstream
-  mining/smelting/fabrication can actually *produce* enough in time needs recipe throughput, active
-  worker counts (§2a-0-2, §2a-0-4), and upstream deficits all folded together, explicitly punted as a
-  "much later" TODO rather than attempted here. Returns `False` (don't block) whenever a needed input
-  is missing (`current_day`, `expires_day`, or capacity all unavailable) — never blocks an order on
-  missing data, only on a genuinely-computed shortfall. Applied to weekly orders only (campaign orders
-  have no `expires_day`, per docs/types/orders_and_comms.md).
+  `(docks_already_on_this_order ascending, priority descending)` — idle docks spread across several
+  needed orders, but all join the same one if it's the only good candidate.
+- **Weekly-deadline feasibility**: `_weekly_infeasible(order, current_day, dispatch_capacity_per_hour)`
+  skips a Weekly Earth Order entirely when `remaining_units > dispatch_capacity_per_hour *
+  hours_remaining` (`hours_remaining = (order.expires_day - current_day) * 24`) — i.e. even
+  shipping flat-out with every known dock's combined `dispatch_rate()`, the remainder can't leave
+  before `expires_day`. A dispatch-capacity ceiling only (not a production-rate forecast — folding
+  in upstream recipe throughput/worker counts/deficits is a later TODO). Returns `False` (don't
+  block) whenever a needed input is missing. Campaign orders (no `expires_day`) are unaffected.
 - **Fallback**: `SupplyDockController.desired_order_id()` uses the archive plan when this dock's id
-  is present in it, else falls back to this dock's own (now weekly-feasibility-aware too)
-  `pick_best_order()` — a lone dock, or any dock on a cycle panel_1 hasn't run yet, still assigns
-  itself an order rather than sitting idle waiting on a planner that may not be online. Unlike the
-  Solar/Smelter leader-election removal (§1a-1), this is a soft fallback, not a hard dependency —
-  the planner only adds cross-dock coordination and the weekly-deadline check on top of behavior a
-  single dock can still reproduce alone.
+  is present, else falls back to its own weekly-feasibility-aware `pick_best_order()` — a soft
+  fallback (unlike the Solar/Smelter hard dependency in §1a-1).
 - **Shared scoring**: `_score_campaign_order()`/`_score_weekly_order()`/`_order_readiness()` are
-  module-level functions used by both the central planner and the per-instance fallback, so ranking
-  is identical whichever path computed it — no drift between the two.
+  module-level, used by both the planner and the per-instance fallback — no ranking drift.
 
 ### 2a-1. Fabricator demand tracking (`lib/production.py` `get_fabricator_targets()`)
 
-`get_fabricator_targets()` is the single source of truth for what the Fabricator should be
-building, and feeds `get_material_demands()` → `get_raw_material_demands()` (mining priority) too.
-Four demand sources are folded together into one `{item_id: quantity}` dict:
+Single source of truth for what the Fabricator should build, feeding `get_material_demands()` →
+`get_raw_material_demands()`. Four demand sources folded into one `{item_id: quantity}` dict:
 
 1. `fabricator.stock_targets` archive key (defaults in `DEFAULT_FABRICATOR_STOCK_TARGETS`:
    `gas_pipe_segment`/`power_line_segment`/`liquid_pipe_segment` = 10 each) — edit the archived key
-   directly (Data Archive Notebook) to retune without touching code.
-2. The active Supply Dock order's `requires`, for items the Fabricator can actually build
-   (`max()`'d against the stock target, not summed — an order doesn't add to the standing stock
-   goal, it's the same "how many do I want on hand" question with a possibly higher floor).
-3. **Pending/paused Construction Blueprints**, via `_cascade_blueprint_demand()` (§2a-0-1) filtered
-   to items the Fabricator can build, `max()`'d against the existing target — **not summed**: targets
-   are a steady-state "keep at least N in Inventory" floor, not additive per demand source (the
-   standing stock buffer IS what a blueprint or order draws from, and `choose_recipe()`'s own
-   `target - current` netting already rebuilds it after that draw — adding would just over-target
-   and waste materials/time; caught by a stub test that would otherwise have asked the Fabricator
-   for 20 `power_line_segment` instead of 10). Before this existed, a queued build's Inventory-sourced
-   material (e.g. `thermal_cap_kit`, crafted from Titanium + Gas Pipe Segments — see
-   `docs/database/recipes_fabricator.md`) was invisible to the Fabricator: it would never get crafted
-   even with titanium ingots sitting in Inventory and an active build order for it, and
-   `load_construction_materials()` would just keep failing the job forever (deferred to
-   `failed_jobs`, retried, deferred again). This is the concrete case of CLAUDE.md's "Plan ahead for
-   future production needs based on... placed blueprints" rule.
+   directly to retune.
+2. The active Supply Dock order's `requires`, for items the Fabricator can build (`max()`'d against
+   the stock target, not summed).
+3. **Pending/paused Construction Blueprints**, via `_cascade_blueprint_demand()` (§2a-0-1), `max()`'d
+   against the existing target — not summed (targets are a steady-state floor, not additive per
+   demand source).
 4. **`fabricator.manual_orders`** archive key (`{item_id: quantity}`, e.g. `{"drone_small": 2}`) —
-   ad-hoc one-off build requests, added by editing the key directly in the Data Archive Notebook (no
-   default seeded; empty is normal). `max()`'d into the target like every other source above, but
-   ALSO given queue priority in `lib/fabricator.py`'s `choose_recipe()`: a manually-ordered recipe is
-   picked ahead of every other demanded recipe regardless of shortfall size, so an operator's request
-   doesn't sit waiting behind whichever recipe happens to have the biggest shortfall this poll.
-   Counted down (and the entry dropped once it hits 0) by `production.consume_manual_order()`, called
-   from `drain_output()` with the quantity actually delivered to Inventory each step — not inferred
-   from a stock-target/baseline comparison, so it counts down correctly even if some of the finished
-   units get shipped or consumed elsewhere afterward.
-   The key must be the exact `item_id` a recipe's `output_item` uses (e.g. `drone_small`, not
-   `small_drone`) — it's hand-typed with no validation on write, and a mismatched key still gets
-   folded into the target (so nothing looks "wrong" in `fabricator.stock_targets`) but never matches
-   any recipe, leaving every Fabricator silently idle with no log output at all. `get_fabricator_targets()`
-   in `lib/production.py` now prints a one-time `[production] Warning: fabricator.manual_orders has
-   '<item_id>'... doesn't match any known Fabricator recipe output` when a key doesn't match the
-   default Fabricator's currently unlocked recipe outputs (per-script-run, via an in-memory
-   `_WARNED_UNKNOWN_MANUAL_ITEMS` set) — this is a heads-up, not proof the order is unfulfillable,
-   since it only checks the *default* Fabricator's *currently unlocked* recipes, so it can
-   false-positive for an item only a different Fabricator (or a not-yet-unlocked recipe) can build.
+   ad-hoc build requests, edited directly (no default seeded). `max()`'d into the target like every
+   other source, but ALSO given queue priority in `choose_recipe()`: picked ahead of any other
+   demanded recipe regardless of shortfall size. Counted down (dropped at 0) by
+   `production.consume_manual_order()`, called from `drain_output()` with the quantity actually
+   delivered. The key must exactly match a recipe's `output_item` (hand-typed, no validation on
+   write) — `get_fabricator_targets()` prints a one-time warning (per-script-run,
+   `_WARNED_UNKNOWN_MANUAL_ITEMS`) when a key doesn't match the default Fabricator's currently
+   unlocked recipe outputs (heads-up only, can false-positive for a different Fabricator or a
+   not-yet-unlocked recipe).
 
 ### 2a-1b. Sourceability caching across a pass (`lib/production.py` `SourceCache`)
 
 `can_source_item()`, `can_source_fluid()`, and `can_fulfill_order()` (§2a-0-5) each walk real
-game-API calls — Smelter/Fabricator discovery + `list_recipes()`, `outpost.buildings()` for fluid
-sources, `journal.surveyed_sites()`, and `total_stock()`'s own per-Warehouse discovery + `count()`
-calls — not free local computation. Found live: `panel_1.py` (then still a combined UI+automation
-script — see §7's note on the later panel_1/panel_4 split) taking ~10s per call inside
-`plan_dock_assignments()`, and Fabricator scripts sitting at "running — busy" for tens of ticks
-inside `choose_recipe()`. Root cause was two compounding bugs:
+game-API calls (Smelter/Fabricator discovery + `list_recipes()`, `outpost.buildings()`,
+`journal.surveyed_sites()`, per-Warehouse `count()`), not free local computation.
 
-1. **No caching across sibling recursion branches.** `can_source_item()`'s old recursive walk passed
-   `seen.copy()` to each recipe input, so two inputs sharing a common sub-item (e.g. Steel under both
-   Circuit Panel and Iron Ingot) each independently re-walked that sub-item's own recipe chain from
-   scratch instead of sharing one answer — exponential blowup on any recipe DAG with shared
-   ancestors, not just linear replay.
-2. **No caching across sibling *calls*.** Every one of `plan_dock_assignments()`'s
-   `can_fulfill_order()` checks (once per candidate order, once per dock's current order) and every
-   one of `choose_recipe()`'s `recipe_unsourceable_reason()` checks (once per candidate recipe)
-   independently re-ran Smelter/Fabricator discovery, `list_recipes()`, and the fluid
-   `outpost.buildings()` scan from zero, even though none of that changes mid-pass.
+`SourceCache` (instantiate once per pass, thread it through every call) memoizes:
+- `smelter_recipes()`/`fabricator_recipes()`/`surveyed_sites()` — each underlying game call fires
+  at most once per cache instance.
+- `can_source_item()`/`can_source_fluid()` results per item/fluid-key — a shared sub-item (e.g.
+  Steel under both Circuit Panel and Iron Ingot) resolves once, not once per branch that needs it.
+  A separate `_item_stack` set handles cycle detection so it never poisons the memo with an
+  in-progress answer.
+- The stock snapshot: `_build_stock_map()` calls `.stacks()` once per Inventory/Warehouse (returns
+  every `ItemStack` in one call) and sums by `.id` into one `{item_id: total_units}` dict;
+  `stock(item_id)` becomes a plain dict lookup. Total cost `1+W` calls for the whole pass,
+  regardless of distinct items checked — strictly better than a `.count()`-per-item `total_stock()`
+  approach (`D*(1+W)`).
 
-`SourceCache` (instantiate once per pass, thread it through) fixes both: it memoizes
-`smelter_recipes()`/`fabricator_recipes()`/`surveyed_sites()`/the stock snapshot (§ below) lazily
-(each underlying game call fires at most once per cache instance), memoizes `can_source_item()`/
-`can_source_fluid()` results per item/fluid-key (a shared sub-item resolves once, not once per
-branch that needs it — e.g. two orders that both bottom out at Steel only ever resolve Steel's own
-recipe chain the first time either one asks), and uses a separate `_item_stack` set purely for cycle
-detection so it never poisons the memo with an in-progress answer. `can_fulfill_order()` and the
-`all(...)` generator checks inside `can_source_item()`/`recipe_unsourceable_reason()` already
-short-circuit on the first unsourceable item/input — no further reason to keep checking once one
-requirement fails.
-
-A third, initially-missed cost: `stock(item_id)` originally called `storage.total_stock()` per item,
-which discovers Inventory + every Warehouse AND calls `.count(item_id)` on each — so D distinct
-items across W warehouses cost `D*(1+W)` real game calls for storage alone even after the
-recipe-side caching above. Fixed by dropping `total_stock()` entirely inside `SourceCache` in favor
-of `.stacks()` (`docs/models/storage_and_items.md`'s `Inventory`/`Warehouse` — returns EVERY
-`ItemStack` a building holds in one call, not just one item's count): `_build_stock_map()` calls
-`.stacks()` once per Inventory/Warehouse, sums each stack's `.count` by `.id` into one
-`{item_id: total_units}` snapshot, and `stock(item_id)` is then a plain dict lookup against it. Total
-cost drops to `1+W` calls **for the whole pass**, regardless of how many distinct items get checked —
-strictly better than the `D*(1+W)` `.count()`-per-item shape, since `.stacks()` already had to read
-every slot to answer even one `.count()` call.
-
-All three call sites (`can_source_item()`, `can_source_fluid()`, `can_fulfill_order()`) default
-`cache=None` (falls back to a private one-off `SourceCache()`, preserving old single-call behavior)
-but the hot paths build and share one explicitly: `plan_dock_assignments()` builds one cache and
-passes it to every `can_fulfill_order()` call in that pass, and `FabricatorController.choose_recipe()`
-builds one and passes it to every `recipe_unsourceable_reason()` call over its candidate list. A
-cache instance is a snapshot of build/tech state for one pass only — never held across ticks or
-reused between passes.
+All three call sites default `cache=None` (private one-off `SourceCache()`), but hot paths build
+and share one explicitly: `plan_dock_assignments()` builds one for its whole pass;
+`FabricatorController.choose_recipe()` builds one for its candidate list. A cache instance is a
+snapshot for one pass only — never held across ticks or reused between passes.
 
 ### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
 
-`set_recipe()`/`clear_recipe()` both explicitly preserve the input stockpile untouched
-(`docs/components/fabricator.md`) — the only built-in way to clear it is `InputSlot.flush()`, which
-**permanently discards** the material rather than returning it. Without an active counter-measure,
-staged material for a recipe that's no longer active (switched away from, or cleared entirely) sits
-stranded inside the Fabricator — up to its combined 200-unit stockpile cap — invisible and unusable
-to every other consumer on the network (another Fabricator, the Smelter, a Supply Dock order) that
-could otherwise use it. This was visible in-game as a Fabricator idling at e.g. 145/200 stockpile
-used, most of it materials the active recipe needed only a fraction of.
+`set_recipe()`/`clear_recipe()` both preserve the input stockpile untouched — the only built-in way
+to clear it is `InputSlot.flush()`, which **permanently discards** material. `eject_excess_inputs()`
+runs every `step()`, before recipe selection, and recovers stranded/excess staged material via
+`InputSlot.eject(destination, item_id, count)` (routes to the least-full Warehouse with room via
+`storage.best_unload_target()`, or Inventory — never `flush()`) in two cases (both computed off the
+currently-set recipe via `production.get_fabricator_active_recipe()`):
 
-`eject_excess_inputs()` runs every `step()`, before recipe selection, and recovers stranded/excess
-staged material via `InputSlot.eject(destination, item_id, count)` (routes to the least-full
-Warehouse with room, via `storage.best_unload_target()`, or falls back to Inventory — never
-`flush()`) in two cases, both computed off the recipe currently set on the machine (via
-`production.get_fabricator_active_recipe()`, same call `load_inputs()` already uses):
+1. Staged material the active recipe doesn't need at all (leftover from a prior recipe, or no
+   recipe set) — ejects all of it.
+2. Staged material the active recipe DOES need, beyond `required_per_craft * crafts_remaining` (the
+   same cap `load_inputs()` loads up to) — ejects just the excess.
 
-1. **Staged material the active recipe doesn't need at all** (leftover from a prior recipe, or no
-   recipe set right now) — ejects all of it.
-2. **Staged material the active recipe DOES need, beyond `required_per_craft * crafts_remaining`**
-   — the identical cap `load_inputs()` itself loads up to — e.g. `crafts_remaining` dropped since
-   this batch was staged (the stock target was lowered, or another Fabricator/the Supply Dock
-   already covered part of the shortfall) — ejects just the excess, keeping enough staged for the
-   batch still in flight.
-
-`eject()` is documented as transactional and safely rejects (no-ops, moves nothing) on any portion
-still reserved for an in-progress craft, so calling this unconditionally every step — even mid-craft
-— is harmless; a rejected attempt just retries next cycle once the reservation clears. Verified via
-a stub test covering all four cases: a fully-orphaned leftover item ejected in full, excess above
-`required * crafts_remaining` ejected while the needed amount is kept, every staged item ejected when
-no recipe is set at all, and an exactly-at-target staged amount left untouched (no eject call at all).
+`eject()` is transactional and safely no-ops on any portion reserved for an in-progress craft, so
+calling this unconditionally every step is harmless.
 
 ### 2a-3. Fabricator fluid-input connections (`lib/fabricator.py` `ensure_fluid_connections()`)
 
 A recipe's `fluid_inputs` (e.g. `{"water_in": 1.0}`) is delivered via a `FluidPort` connection, not
-an Inventory/Warehouse take — `can_source_fluid()`/`recipe_is_sourceable()` (§2a-1) only ever
-confirmed a matching source building *exists somewhere on the network* before selecting such a
-recipe; nothing actually connected `.water_in`/`.steam_in`/`.oil_in` to one. A Liquid/Gas Tank or
-Water Pump has no script of its own (purely passive), so nothing on the other side of the pipe ever
-calls `connect()` either — this was a real gap, not just a monitoring one: a fluid-needing recipe
-could get set and then sit stalled forever with an unconnected port.
-
-`ensure_fluid_connections(recipe)` runs every `step()` and mirrors `lib/steam_turbine.py`'s
-`ensure_input_connection()` almost exactly — both declare an INPUT port's own upstream source,
-discovered network-wide and blacklisted on stall, same shape as `lib/thermal_cap.py`'s
-output-side connection logic (§1b/§1c) just facing the other direction:
+an Inventory/Warehouse take. `ensure_fluid_connections(recipe)` runs every `step()`, mirroring
+`lib/steam_turbine.py`'s `ensure_input_connection()`:
 
 - For each `fluid_key` the active recipe declares, `production.FLUID_SOURCE_TYPE_IDS[fluid_key]`
   names every building type that can feed it (e.g. `water_in` accepts `water_pump`,
-  `steam_condenser`, `liquid_tank`, or `large_liquid_tank`) — the same mapping `can_source_fluid()`
-  already uses, so "which buildings satisfy this fluid" has one source of truth.
-- **A `liquid_tank`/`large_liquid_tank`/`gas_tank` existing on the network is not by itself proof
-  it can supply a given fluid** — these are generic multi-fluid buffers that latch onto whichever
-  exact fluid is piped into them *first* and hold only that until drained to `0`
-  (`docs/components/liquid_tank.md`, `docs/components/gas_tank.md`). An empty tank exposes a
-  neutral port that `connect()`s "ok" to anything, then just never receives the fluid (e.g. Oil,
-  with no Oil Pump/surveyed oil well anywhere) — `production.BUFFER_FLUID_TYPE_IDS` +
-  `fluid_building_is_viable(fluid_key, type_id, building)` gate both `can_source_fluid()` and this
-  discovery loop identically: a dedicated producer (`oil_pump`/`water_pump`/`steam_condenser`/
-  `thermal_cap`) always counts since it only ever emits its one fixed fluid, but a buffer only
-  counts once its own `.fluid()` is already latched to the exact fluid needed
-  (`production.FLUID_LATCH_IDS`). Without this, a Fabricator would set (and get stuck claiming) a
-  recipe needing Oil off a wrong-fluid or empty tank's existence alone, connect "successfully" to
-  it, then stall/blacklist/rescan/reconnect forever instead of ever falling back to a different
-  demanded recipe. `fluid_building_is_viable()`'s `building` arg is normally a bare `BuildingRef`
-  from `outpost.buildings(type_id)` (`.id`/`.name`/`.type_id`/`.outpost`/`.powered`/`.position`
-  only, per `docs/components/outpost.md` — no `.fluid()`), so it resolves the live component via
-  `get_component(ref.id)` first whenever the passed-in object has no `.fluid()` of its own; a
-  bug here silently made every buffer tank look permanently non-viable regardless of what it
-  actually held, since the raised `AttributeError` was swallowed by the surrounding `except`.
-- **No `is_stalled()` exists on the Fabricator itself** (unlike Steam Turbine/Thermal Cap/Water
-  Pump), so reachability is inferred instead from the port's own `flow_rate()` staying `0` for
-  `FLUID_STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* ticks while it still has room to receive
-  (`level() < capacity()`) — a legitimately full port also reads `flow_rate()==0`, and that must NOT
-  be mistaken for a stall (verified explicitly by a stub test). Same per-entry (not shared-clock)
-  blacklist expiry as every other discover/connect/blacklist controller in this project
-  (`FLUID_RESCAN_INTERVAL_TICKS=150`, matching Steam Turbine's value).
-- State (`_fluid_connected`/`_fluid_stall_streak`/`_fluid_unreachable`/discovery cache) is keyed per
-  `fluid_key`, not a single shared value — a recipe can need more than one fluid at once (an
-  oil-refining recipe needs both `oil_in` and `water_in`), and each port's own source is entirely
-  independent of the others.
-- Verified via a stub test: a recipe with no `fluid_inputs` is a no-op; first connection discovers
-  and connects to the only known source; healthy flow makes no further `connect()` calls; a full
-  port reading zero flow is correctly NOT treated as starved even for many consecutive ticks;
-  genuine starvation (room to receive, zero flow, sustained past the streak threshold) blacklists
-  the source and reconnects to a different one; per-entry blacklist expiry.
+  `steam_condenser`, `liquid_tank`, `large_liquid_tank`) — the same mapping `can_source_fluid()`
+  uses.
+- **A generic Liquid/Gas Tank existing is not by itself proof it can supply a given fluid** — these
+  buffers latch onto whichever fluid is piped in *first* and hold only that until drained to `0`.
+  `production.BUFFER_FLUID_TYPE_IDS` + `fluid_building_is_viable(fluid_key, type_id, building)`
+  gate both `can_source_fluid()` and this discovery loop identically: a dedicated producer always
+  counts (fixed one fluid); a buffer only counts once its own `.fluid()` is already latched to the
+  needed fluid (`production.FLUID_LATCH_IDS`). Resolves a bare `BuildingRef` to the live component
+  via `get_component(ref.id)` first when the passed-in object has no `.fluid()`.
+- **No `is_stalled()` exists on the Fabricator itself** — reachability is inferred from the port's
+  own `flow_rate()` staying `0` for `FLUID_STALL_STREAK_BLACKLIST_THRESHOLD=5` *consecutive* ticks
+  while it still has room to receive (`level() < capacity()`) — a legitimately full port also reads
+  `flow_rate()==0` and must NOT be mistaken for a stall. Same per-entry blacklist expiry as every
+  other connect/blacklist controller (`FLUID_RESCAN_INTERVAL_TICKS=150`).
+- State (`_fluid_connected`/`_fluid_stall_streak`/`_fluid_unreachable`/discovery cache) is keyed
+  per `fluid_key` — a recipe can need more than one fluid at once (oil-refining needs both
+  `oil_in` and `water_in`), independent sources.
 
 ### 2b. Mining (`lib/mining.py` `MiningMixin`)
 
-Mineral-site discovery and drill execution live in one place, shared by both Rover and Pioneer
-(mixed into `VehicleController`) so capability-aware job routing doesn't need to be duplicated.
+Mineral-site discovery and drill execution live in one place, shared by Rover and Pioneer (mixed
+into `VehicleController`).
 
 - Capability is always read live via `self.vehicle.drill.hardness_limit()` — never assumed from
-  vehicle type. In practice a Rover's fixed Drill slot only ever carries the basic drill
-  (`hardness_limit = 1`, iron_ore/silicon); Industrial (`hardness_limit = 3`) and Heavy
-  (`hardness_limit = 4`) Drills are Pioneer-universal-slot items for higher-hardness sites
-  (titanium/cobalt/rare_earth/neutronium-tier) a Rover can never reach.
-- `build_mineral_site_candidates(deprioritize_hardness_at_or_below=None)`: candidate sites
-  matching `get_raw_material_demands()` and the vehicle's own hardness limit. Passing
-  `ROVER_PREFERRED_MAX_HARDNESS = 1.0` (Pioneer's mining role does this) sets `priority=3` instead
-  of `2` on hardness ≤ 1 sites — a **soft** preference, not exclusion: a capable Pioneer still
-  claims an easy site if nothing harder is currently pending, rather than idling.
-- Neither candidate builder filters out a site already claimed by a peer (mineral sites are no
-  longer exclusive — several Pioneers can mine the same POI); see this file's fleet-coordination
-  and in-flight yield reservation entries above (`lib/mining_reservations.py`) for what guards
-  against overmining now instead.
-- `select_best_mining_target(candidates, reserve_demand=False)`: sorts by `(priority, -PURITY_RANK, distance)` — lower
-  priority number wins first; within the same priority tier, a richer vein wins over a merely-closer
-  one (`PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}`, from `MiningSite.purity` — a 1x/2x/3x
-  extraction-rate multiplier per `docs/types/world_and_sites.md`); distance only breaks ties between
-  equally-rich candidates. Same lexicographic-tiering style priority itself already used (a
-  priority=2 candidate always beat priority=3 regardless of distance; richness now works the same way
-  one level down) — a soft preference, not a hard filter, since the `calculate_trip_energy()`
-  achievability check and atomic `claim_target()` still run after sorting either way, so an
-  unreachable-on-budget rich site still loses to a reachable standard one. Both candidate builders
-  (`build_mineral_site_candidates()`, `build_local_stockpile_candidates()`) attach each site's
-  `"purity"` from `getattr(site, "purity", None)`; POI candidates (no purity) rank as `"standard"`'s
-  `0` by default, a no-op since they only ever compete against other POIs at `priority=1`. Verified by
-  stub test: a `"rich"` site 1.5x farther than a `"standard"` one in the same tier still wins; priority
-  tier still outranks purity across tiers; equal-purity candidates fall back to plain distance. Also
-  used for Rover's combined POI+mineral candidate list (POIs are `priority=1`, mineral sites
-  `priority=2`/`3`).
-- `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (read live, not
-  hardcoded `10`) when no `max_units` is given — Pioneer's cargo capacity varies with storage
-  modules. The home-demand mining loops (`rover.py`/`pioneer.py`) now always pass an explicit
-  `max_units` from `select_best_mining_target()`'s `estimated_units` (see
-  `VehicleEnergyMixin.max_mineable_units()` above), an energy-based trip size, so the
-  cargo-capacity default is now mainly a fallback (e.g. `_stationed_mining_cycle()`'s own
-  stock-headroom-based cap, computed independently).
-  `mine_until_full_or_exhausted(target_coords)` wraps it with the recharge-and-resume-in-place loop
-  (mirrors `execute_construction()`'s pattern in `pioneer.py`). The battery-interruption recharge
-  stop can land at the *home base* station itself (not just a remote field station) — when it does
-  (`is_at_base()`) and cargo is already carrying ore, it unloads there via `unload_cargo()` **before**
-  calling `recharge_at_station()`, not after: a full recharge from a low state can take several real
-  minutes, and ore sitting in cargo that whole time is ore the Smelter can't touch — unloading first
-  gets it into circulation immediately instead of stranding it for the entire charge. Also means the
-  resumed `mine_current_site()` call gets the *full* cargo capacity as `max_units` instead of just the
-  small amount freed by the interruption, so the vehicle can fill up further before the next
-  interruption rather than immediately needing another trip.
-- Pioneer's mining role (`run_stationed_mining_loop(outpost_id)`, e.g. entrypoint `pioneer_3.py`)
-  requires the operator to have already mounted a drill (`mount_hardware()` / Control Panel) — it
-  only checks `hasattr(self.vehicle, "drill")` and idles with an advisory if absent; it never
-  auto-mounts one.
+  vehicle type. A Rover's fixed Drill only ever carries the basic drill (`hardness_limit = 1`,
+  iron_ore/silicon); Industrial (`hardness_limit = 3`) and Heavy (`hardness_limit = 4`) Drills are
+  Pioneer-universal-slot items for higher-hardness sites.
+- `build_mineral_site_candidates(deprioritize_hardness_at_or_below=None)`: candidate sites matching
+  `get_raw_material_demands()` and the vehicle's hardness limit. Passing
+  `ROVER_PREFERRED_MAX_HARDNESS = 1.0` sets `priority=3` instead of `2` on hardness ≤ 1 sites — a
+  **soft** preference (a capable Pioneer still claims an easy site if nothing harder is pending).
+- Neither candidate builder filters out a peer-claimed site (mineral sites are no longer
+  exclusive) — see `lib/mining_reservations.py` for what guards against overmining instead.
+- `select_best_mining_target(candidates, reserve_demand=False)`: sorts by `(priority, -PURITY_RANK,
+  distance)` — priority wins first; within a tier, richer wins over closer
+  (`PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}`); distance only breaks ties between
+  equally-rich candidates. A soft preference — `calculate_trip_energy()`'s achievability check and
+  `claim_target()` still run after sorting. Both candidate builders attach each site's `"purity"`
+  from `getattr(site, "purity", None)`; POI candidates rank as `"standard"`'s `0` by default.
+- `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (read live) when
+  no `max_units` given. Home-demand mining loops now always pass an explicit `max_units` from
+  `select_best_mining_target()`'s `estimated_units` (energy-based, `max_mineable_units()`).
+  `mine_until_full_or_exhausted(target_coords)` wraps it with a recharge-and-resume-in-place loop.
+  A battery-interruption recharge stop that lands at the *home base* station itself, with cargo
+  already loaded, unloads there via `unload_cargo()` **before** `recharge_at_station()` — so ore
+  isn't stranded in cargo for the whole (possibly several-minute) recharge, and the resumed
+  `mine_current_site()` call gets the full cargo capacity as `max_units`.
+- Pioneer's mining role (`run_stationed_mining_loop(outpost_id)`) requires the operator to have
+  already mounted a drill — only checks `hasattr(self.vehicle, "drill")` and idles with an
+  advisory if absent; never auto-mounts one.
 - **Unified role entrypoint (`PioneerController.run()`/`detect_role()`, `lib/pioneer.py`)**: every
-  `pioneer_N.py` script now just constructs a `PioneerController` and calls `run()` instead of
-  naming a role's loop method by hand. `detect_role()` maps `ROLE_MODULES` (`{"constructor":
-  "constructor", "scout": "sonar", "miner": "drill"}`) via `hasattr(self.vehicle, <attr>)` — exactly
-  one mounted module picks that role; none mounted falls back to `"hauler"`; more than one mounted
-  is treated as a misconfigured loadout (`TreeConsole` warn + no-op, per §0a) unless the caller
-  passes `role_override=` to force one explicitly. `run()` then dispatches: constructor ->
-  `run_construction_loop()`, scout -> `run_survey_loop()`, miner -> `run_stationed_mining_loop(self.home_base)`
-  (never the home-demand-driven `run_mining_loop()`), hauler -> `run_haul_loop(dest_outpost_id=...)`
-  — `dest_outpost_id` is `run()`'s only argument besides `role_override`, since hauler is the one
-  role with no module to detect it by. Equipment is genuinely swappable at runtime (`mount()`/
-  `unmount()`, while docked) so this re-probes fresh on every script run rather than caching a role.
+  `pioneer_N.py` script constructs a `PioneerController` and calls `run()`. `detect_role()` maps
+  `ROLE_MODULES` (`{"constructor": "constructor", "scout": "sonar", "miner": "drill"}`) via
+  `hasattr(self.vehicle, <attr>)` — exactly one mounted module picks that role; none → `"hauler"`;
+  more than one is a misconfigured loadout (`TreeConsole` warn + no-op) unless `role_override=` is
+  passed. `run()` dispatches: constructor → `run_construction_loop()`, scout → `run_survey_loop()`,
+  miner → `run_stationed_mining_loop(self.home_base)` (never the home-demand
+  `run_mining_loop()`), hauler → `run_haul_loop(dest_outpost_id=...)`. Equipment is swappable at
+  runtime, so this re-probes fresh on every script run rather than caching a role.
 
 ### 2c. Storage Management (`lib/storage.py`)
 
-Makes the whole production chain (vehicle unloading, Smelter/Fabricator/Supply Dock/Pioneer
-construction input sourcing, and `production.py`'s demand tracking) aware of Warehouse/Large
-Warehouse buildings, not just the central home `"inventory"` freight endpoint. Scope: Warehouse +
-Large Warehouse only for now (`STORAGE_TYPE_IDS`) — Storage Bin uses a different, single-material
-API shape (`docs/components/storage_bin.md`) and isn't included, though
-`discover_storage_buildings()`'s `type_ids` param leaves room to add it later without changing any
-caller. Everything defaults to the home outpost, matching how Inventory itself only participates at
-Nocturna Base.
+Makes the whole production chain aware of Warehouse/Large Warehouse buildings, not just the central
+home `"inventory"` endpoint. Scope: Warehouse + Large Warehouse only (`STORAGE_TYPE_IDS`) — Storage
+Bin uses a different, single-material API and isn't included yet. Everything defaults to the home
+outpost, matching how Inventory only participates at Nocturna Base.
 
-- `total_stock(item_id)` = `inventory.count(item_id)` + every discovered Warehouse's `count(item_id)`.
-  This is what `production.py`'s `_cascade_blueprint_demand()`, `get_construction_material_reservations()`,
-  `get_material_demands()`, `get_raw_material_demands()`, and `can_source_item()` all net against now
-  (previously Inventory-only) — so demand/mining priority correctly accounts for stock sitting in a
-  Warehouse instead of ignoring it.
-- `best_unload_target(item_id, min_amount=1)`: among every discovered Warehouse at `outpost` with
-  `space_for(item_id) >= min_amount`, prefers one that **already holds `item_id`** (`count(item_id) >
-  0`) -- consolidating onto an existing stack -- and only falls back to ranking by least-full
-  (`fill_percent()`) when none already stocks it; `"inventory"` if no Warehouse qualifies at all.
-  Ranking purely by least-full (the old behavior, before this preference was added) ignores which
-  Warehouse already has the item, so alternating "least full" picks across separate deliveries could
-  spread the same item across every Warehouse at the outpost one partial stack at a time -- found
-  from a real case where a 100-unit reagent target ended up 50 in one Warehouse + 50 in another,
-  each its own single-slot partial stack, even though one Warehouse had room for the full 100 the
-  whole time. `vehicle_cargo.py`'s `unload_cargo()` picks a destination **per stack** (cargo can hold
-  more than one item id) rather than connecting once to `"inventory"` up front.
+- `total_stock(item_id)` = `inventory.count(item_id)` + every discovered Warehouse's
+  `count(item_id)` — what every demand/mining-priority function nets against.
+- `best_unload_target(item_id, min_amount=1)`: among Warehouses at `outpost` with
+  `space_for(item_id) >= min_amount`, prefers one that **already holds `item_id`** (consolidating
+  onto an existing stack), falling back to least-full (`fill_percent()`) only when none already
+  stocks it; `"inventory"` if no Warehouse qualifies. `vehicle_cargo.py`'s `unload_cargo()` picks a
+  destination **per stack**.
 - `consolidate_cross_warehouse_stock(outpost=None)`: calls `.compact()` on every discovered
   Warehouse/Large Warehouse at `outpost` to pull a same-item stock split across more than one of
-  them back together. `.compact()` reads at a glance like a purely intra-building operation
-  ("fewest Warehouse slots"), but it isn't: its outcome table shares `transfer_to()`'s exact
-  vocabulary (`source_under_construction`/`source_changed`/`slots_full`/`target_full`), which only
-  makes sense if it pulls from *other* storage endpoints (a "source") into the one it's called on.
-  That also matches why the game would expose it at all -- with Auto Feeders, a single Warehouse
-  already adds to / draws from its lowest-numbered occupied slot for a given item on its own, so a
-  purely intra-building `.compact()` would have nothing to ever actually do; confirmed by observing
-  it consolidate stock split across separate Warehouse buildings in-game, and by `.compact()`
-  locking its Warehouse as a material endpoint for the whole cycle -- exactly the "busy while a
-  transfer between buildings is in flight" cost a same-building-only operation would have no reason
-  to pay. Complements `best_unload_target()`'s now-consolidation-aware routing for stock that was
-  already split before that fix landed (or split for any other reason, e.g. a manual move). Runs
-  once per `STORAGE_TICK_INTERVAL` cycle from `panel_1.py`'s AUTOMATION section (§7) for **every**
-  outpost (`network.outposts()`), not just home -- unlike `rebalance_inventory_to_warehouses()`
-  (Inventory-only, so home-scoped), this fragmentation happens across Warehouses themselves and
-  affects remote outposts (e.g. the reagent-hauler's destination) too. `STORAGE_TICK_INTERVAL` is
-  deliberately much coarser than the grid-supervision cadence -- see §7's note on why the AUTOMATION
-  card runs storage work and grid supervision on two separate timers, not one shared one.
-- `take_item(port, item_id, amount)`: the one function behind every
-  `machine.input.take(item_id, amount)` call site (Smelter ore loading, Fabricator input loading,
-  Supply Dock material loading, Pioneer's `load_construction_materials()`). Tries whatever `port` is
-  *currently* connected to first (usually Inventory, the existing default), and only reconnects to a
-  Warehouse if that falls short — ports hold one source at a time (same single-destination
-  constraint as `FluidPort`, see `lib/thermal_cap.py`), so this reconnects on demand rather than
-  fanning out simultaneously.
-- **Multi-Smelter Coordination** (`SmelterController` in `lib/smelter.py`) — with several
-  Smelters at home, `production.discover_smelter_ids()` replaces every place that used to hardcode
-  the literal id `"smelter_1"` (a correctness bug, not just inefficiency: demand/recipe lookups would
-  silently only ever consult one specific smelter's recipe set). **No Leader/Follower election any
-  more** — the "inventory manager" sweep (see below) that used to need exactly one smelter to run it
-  is now run centrally, once, by `panel_1.py`'s AUTOMATION section (`storage.rebalance_inventory_to_warehouses()`,
-  no args = home outpost) instead of by whichever `SmelterController` instance won an election every
-  `step()`. `SmelterController` no longer has `check_leader()`/`update_role()`/`is_leader` at all — see
-  §1a-1 for why moving this to the one always-running Control Room process removed the election
-  entirely instead of just relocating it, and for the hard dependency this creates on `panel_1.py`
-  running. Every smelter still independently runs its own
-  `select_needed_ore()`/craft loop against the same shared `get_material_demands()` numbers, but each
-  candidate recipe is `claim_recipe()`d (`archive.transaction("smelter.recipe_claims", ...)`,
-  `SMELTER_RECIPE_CLAIM_STALE_TICKS = 600`, mirroring `vehicle_claims.py`'s claim/release shape) before
-  being returned, so two smelters don't both start the same recipe while a second simultaneously-
-  demanded ore sits untouched — a smelter whose claim attempt fails (another smelter holds a fresh
-  claim on that recipe) tries the next demanded/available candidate instead. Released via
-  `release_recipe()` whenever a smelter clears its own recipe (locked-recipe cleanup or no-demand
-  cleanup in `step()`).
-  - **Pile-on fallback**: the claim's whole point is spreading *distinct* demanded ores across
-    *distinct* smelters — but when only ONE ore is demanded at all (a single large order), every
-    smelter past the first used to just find it already claimed and idle forever, with no second
-    demanded ore to fall back to. `select_needed_ore()` now collects every sourceable/demanded
-    candidate first, tries to claim each in turn same as before, but if NONE can be exclusively
-    claimed (every one is already fresh-claimed by a different smelter), joins the first one anyway
-    instead of returning idle — splitting one large order's workload across every smelter instead of
-    running it through a single one serially. No explicit even split was needed here (unlike the
-    matching Fabricator fix below): `get_material_demands()` already nets against `total_stock()`
-    (which includes what every joined smelter has already produced), so several smelters pulling the
-    same ore in parallel each cycle self-throttle down to 0 together as the target is met, rather
-    than each independently re-committing to the full remaining shortfall.
+  them back together — genuinely pulls from *other* storage endpoints, not purely intra-building
+  (confirmed live; `.compact()` locks its Warehouse as a material endpoint for the whole cycle).
+  Runs once per `STORAGE_TICK_INTERVAL` cycle from `panel_7.py`'s AUTOMATION section for **every**
+  outpost (unlike the Inventory-only, home-scoped rebalance sweep below).
+- `take_item(port, item_id, amount)`: the one function behind every `machine.input.take(item_id,
+  amount)` call site. Tries whatever `port` is currently connected to first, only reconnects to a
+  Warehouse if that falls short.
+- **Multi-Smelter Coordination** (`SmelterController`) — `production.discover_smelter_ids()`
+  replaces hardcoded `"smelter_1"`. No Leader/Follower election — the inventory-manager sweep runs
+  centrally from `panel_7.py`'s AUTOMATION section (§1a-1). Each smelter's `select_needed_ore()`
+  claims its recipe (`claim_recipe()`/`release_recipe()`, `archive.transaction("smelter.recipe_claims",
+  ...)`, `SMELTER_RECIPE_CLAIM_STALE_TICKS = 600`) before crafting, so two smelters don't start the
+  same recipe while another demanded ore sits untouched.
+  - **Pile-on fallback**: if only ONE ore is demanded, `select_needed_ore()` collects every
+    sourceable/demanded candidate, tries to claim each, and if none can be claimed exclusively,
+    joins the first anyway rather than idling. No explicit even split needed — `get_material_demands()`
+    already nets against `total_stock()`, so joined smelters self-throttle together as the target
+    is met.
 - **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per cycle from
-  `panel_1.py`'s AUTOMATION section (§1a-1; confirmed always-running at home base): any **propertyless**
-  (`slot.properties is None` — non-stackable/unique items like worn equipment are left alone)
-  Inventory item gets moved to a Warehouse **entirely**, not partially — there's no real "quick
-  access" cost to reading from a Warehouse instead of Inventory, so nothing is deliberately left
-  behind — when either:
-  - **Exception**: items whose `item_catalog.lookup(item_id).category` is `"equipment"`,
-    `"module"`, or `"portable"` (`NON_WAREHOUSABLE_CATEGORIES` in `lib/storage.py`,
-    `_must_stay_in_inventory()`) are never swept at all, regardless of slot count or split state:
-    - `"equipment"` deploys straight into a building/machine from Inventory only (a Gas Tank or
-      Solar Generator bought/produced as itself) — a Warehouse has no way to deploy it, so moving
-      one there would just strand it. `"construction_kit"` (e.g. `mining_drill_kit`) is
-      deliberately *not* in this set — those are placed by a Pioneer via blueprint construction,
-      which doesn't need the kit sitting in Inventory, so it's fine to warehouse.
-    - `"module"`/`"portable"` (battery holders, cargo racks, portable batteries/bins/scanners) has
-      to be in Inventory to equip a newly-built or refitted Pioneer/Rover.
-  1. It spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots on its own (the original rule), or
-  2. **It's already split**: some units sit in Inventory while a Warehouse already holds some of the
-     same item too, regardless of Inventory slot count (`_warehouse_item_ids()`) — added after a real
-     case: `gas_pipe_segment` (stock target `10`) ended up 10 in Inventory + 10 already in a
-     Warehouse, double the intended target, split across both locations. Once an item already has a
-     home in a Warehouse, a further remainder in Inventory serves no purpose (every consumer already
-     reads combined stock via `total_stock()`, not by physical location) — it just fragments the same
-     material. Verified via a stub test: the original bulk-threshold rule still fires unchanged; a
-     single-slot item with no Warehouse presence is still left alone; a single-slot item ALREADY
-     split with a Warehouse gets fully consolidated into it; a property-bearing item is never
-     touched either way.
-  - **Direct move**: if any Warehouse has `space_for(item_id) > 0`, move as much as fits there
-    (`inventory.transfer_to(warehouse_id, item_id, amount)` — Inventory exposes `transfer_to()`
-    directly, no port/connection needed), splitting across more than one Warehouse if needed.
-  - **Swap fallback**: if *no* Warehouse has any room at all (every one of its 5 material-locked
-    slots already holds a different material), evicts whichever Warehouse occupant is cheapest to
-    bring back to Inventory (smallest quantity) — but **only** when `slots_freed > slots_reclaimed`
-    (`slots_reclaimed = ceil(evicted_qty / inventory_stack_size())`), a genuine net reduction in
-    Inventory slots used, never a wash or a net loss. Verified by stub test against the exact
-    scenario that prompted this: Warehouse full except a 5-unit Titanium Ingot slot, 60 Iron Ingot
-    spanning 6 Inventory slots in Inventory — evicts the 5 titanium (costs 1 slot back), frees 6, a
-    clear net win. `slots_freed` is computed from `remaining` (units still stuck in Inventory *at
-    swap-fallback time*), not the item's original slot count captured at the top of the loop — the
-    direct-move step above can already have moved part of the item out before the swap is even
-    considered, and using the stale original count there overstated the net win. In practice, because
-    `slots_reclaimed` divides by the small Inventory `stack_size` (10/20) while `evicted_qty` can be
-    up to a full 2,000-unit Warehouse slot, a swap is only ever a net win for a *small*-quantity
-    occupant (roughly `slots_freed * stack_size` units or fewer) — once every Warehouse slot
-    everywhere holds a large quantity of something, the swap fallback will keep declining (logged as
-    `[storage] Skipping swap for <item>: ...`) and an item with no Warehouse slot of its own stays
-    split in Inventory until more Warehouse capacity is built. Every previously-silent failure path
-    here (`_cheapest_warehouse_occupant()` finding nothing at all, an eviction transfer moving 0
-    units, or the freed slot still reporting no room) now logs a `[storage] Could not clear...` /
-    `[storage] Swap for <item> did not go through...` / `[storage] Freed a slot... but it still
-    reports no room...` line instead of silently continuing, so a persistently-fragmented item is
-    diagnosable from the console instead of just never resolving with no explanation.
+  `panel_7.py`'s AUTOMATION section: any **propertyless** Inventory item gets moved to a Warehouse
+  **entirely** when either it spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots, or
+  it's already split (some units in Inventory, some already in a Warehouse — `_warehouse_item_ids()`).
+  - **Exception**: `item_catalog.lookup(item_id).category` of `"equipment"`, `"module"`, or
+    `"portable"` (`NON_WAREHOUSABLE_CATEGORIES`, `_must_stay_in_inventory()`) are never swept —
+    equipment deploys from Inventory only; modules/portables must be in Inventory to equip a
+    vehicle. `"construction_kit"` is NOT in this set (placed via blueprint construction, fine to
+    warehouse).
+  - **Direct move**: if any Warehouse has `space_for(item_id) > 0`, `inventory.transfer_to()` as
+    much as fits, splitting across more than one Warehouse if needed.
+  - **Swap fallback**: if no Warehouse has any room, evicts whichever Warehouse occupant is
+    cheapest to bring back (smallest quantity) — only when `slots_freed > slots_reclaimed`
+    (`slots_reclaimed = ceil(evicted_qty / inventory_stack_size())`), a genuine net reduction.
+    `slots_freed` is computed from `remaining` (units still stuck *at swap-fallback time*, after
+    any direct-move already ran), not a stale original count. In practice a swap is only a net win
+    for a small-quantity occupant (roughly `slots_freed * stack_size` units or fewer); a
+    persistently-fragmented item logs `[storage] Skipping swap for <item>: ...` /
+    `[storage] Could not clear...` / `[storage] Swap for <item> did not go through...` /
+    `[storage] Freed a slot... but it still reports no room...` instead of silently continuing.
 - `inventory_stack_size()`: `10`, or `20` once `research.is_unlocked("research_high_density_storage")`
-  ("Bigger Stacks") — reuses the existing `research.is_unlocked(tech_id)` pattern already used in
-  `lib/vehicle_claims.py`, not inferred from current slot contents.
+  ("Bigger Stacks").
 
 ### 2d. Outpost Ore-Assignment & Stock-Target Scaffolding (`lib/outpost_mining.py`)
 
 Phase B of the Multi-Outpost Production Network (`TODO.md` Phase 3). Answers "which ores should a
-vehicle stationed at outpost X mine?" and "how much should it stockpile before stopping?" — consumed
-by Phase C's stationed-mining role (§2e). "Which ores" is answered **live from the Planet Map**, not
-an archive list — every surveyed mineral site gets a `"resource.poi_X_Y"` marker whose `.note` names
-the responsible outpost, so the assignment is always exactly what the map shows and a player can
-reassign a site just by editing the marker.
+vehicle stationed at outpost X mine?" and "how much before stopping?" — consumed by Phase C's
+stationed-mining role (§2e). "Which ores" is answered **live from the Planet Map**, not an archive
+list — every surveyed mineral site gets a `"resource.poi_X_Y"` marker whose `.note` names the
+responsible outpost.
 
-- **Marker convention**: `RESOURCE_MARKER_PREFIX = "resource."`, id `resource.poi_{x:.0f}_{y:.0f}`
-  (mirrors `mark_unsupported_targets.py`'s id/style conventions), `icon="resource"`, `color="neutral"`,
-  `label="{Item Name} - {Purity}"` (e.g. `"Iron Ore - Rich"` — `_item_display_name()`/
-  `RESOURCE_PURITY_LABELS` build it, `_item_id_from_label()` is its exact inverse, so no separate
-  item-name lookup table is needed to read it back), `.note` = the responsible outpost id, or `""`
-  when unassigned.
+- **Marker convention**: `RESOURCE_MARKER_PREFIX = "resource."`, id `resource.poi_{x:.0f}_{y:.0f}`,
+  `icon="resource"`, `color="neutral"`, `label="{Item Name} - {Purity}"` (`_item_display_name()`/
+  `RESOURCE_PURITY_LABELS` build it, `_item_id_from_label()` is its exact inverse). `.note` =
+  responsible outpost id, or `""` when unassigned.
 - **`sync_resource_marker(site, outpost_id=None)`** — places/updates one site's marker.
-  `outpost_id=None` preserves whatever the marker already names (read back via `markers.get()`) —
-  a style-only refresh; pass an explicit id (including `""`) to actually change the assignment.
+  `outpost_id=None` preserves the current assignment (style-only refresh); pass an explicit id
+  (including `""`) to change it.
 - **`auto_assign_new_site(site, range_m=None)`** — call once per freshly-surveyed mineral site
-  (`vehicle_survey.py`'s `scan_and_survey()` calls this automatically for every `kind() == "mineral"`
-  site it just surveyed). Refreshes the marker and, **only if it isn't already assigned**, hands it to
-  the closest owned outpost within `range_m` (`resource_assignment_range_m()` by default — archive key
-  `RESOURCE_ASSIGNMENT_RANGE_KEY = "outposts.resource_assignment_range_m"`, default `200.0`m). Never
-  reassigns an already-assigned site, even to a now-closer outpost — moving supply away from an
-  outpost whose transport/miner already depends on it risks a shortage there.
-- **`reevaluate_unassigned_near_outpost(outpost_id, range_m=None)`** — explicit, **never auto-called**
-  sweep: hand any still-**unassigned** `"resource."` marker within range to `outpost_id`. Meant to be
-  re-run (via `sync_resource_markers.py`, see below) after founding a new outpost — CLAUDE.md's Outpost
-  Construction Safety Rule means there's no automatic "an outpost just appeared" hook, so this is the
-  player-triggered catch-up instead. Leaves already-assigned markers untouched, same reasoning as above.
+  (`vehicle_survey.py`'s `scan_and_survey()` does this automatically). Only assigns if not already
+  assigned, to the closest owned outpost within `range_m` (default `resource_assignment_range_m()`,
+  archive key `RESOURCE_ASSIGNMENT_RANGE_KEY = "outposts.resource_assignment_range_m"`, default
+  `200.0`m). Never reassigns an already-assigned site.
+- **`reevaluate_unassigned_near_outpost(outpost_id, range_m=None)`** — explicit, **never
+  auto-called** sweep: hands any still-unassigned marker within range to `outpost_id`. Re-run (via
+  `sync_resource_markers.py`) after founding a new outpost, since CLAUDE.md's Outpost Construction
+  Safety Rule means there's no automatic "an outpost just appeared" hook.
 - **`assigned_ores_for(outpost_id)` → `[item_id, ...]`** — the read path, called every cycle by the
-  stationed-mining candidate builder (§2e). Scans `markers.list(RESOURCE_MARKER_PREFIX)` for notes
-  matching `outpost_id` and recovers each item id from its own label (`_item_id_from_label()`) — no
-  archive/journal cross-reference needed at read time.
-- **`sync_resource_markers.py`** (project root) — run manually to backfill markers for sites surveyed
-  before this system existed, catch up after a batch of new POIs, or reassign unclaimed markers after
-  founding a new outpost: syncs every `journal.surveyed_sites()` mineral site
-  (`auto_assign_new_site()`) then sweeps `reevaluate_unassigned_near_outpost()` for every owned outpost.
-- **`stock_target_for(outpost_id, item_id)` → units** — unchanged seed-once-then-editable shape,
-  default `WAREHOUSE_SLOT_CAPACITY = 2000` (one Warehouse slot) the first time a given
-  `(outpost_id, item_id)` pair is looked up.
-- **`nearest_outpost_id(x, y)`** / **`outpost_by_id(outpost_id)`** — thin wrappers around
-  `outpost_network.nearest()` / iterating `outpost_network.outposts()`, reused by both the
-  auto-assignment logic above and Phase C's per-site candidate filtering (§2e).
+  stationed-mining candidate builder (§2e).
+- **`sync_resource_markers.py`** (project root) — run manually to backfill pre-existing surveys or
+  reassign unclaimed markers after founding a new outpost.
+- **`stock_target_for(outpost_id, item_id)` → units** — seed-once-then-editable, default
+  `WAREHOUSE_SLOT_CAPACITY = 2000` (one Warehouse slot) the first time a pair is looked up.
 - **`RAW_ORE_ITEM_IDS`** — the 7 mineable ore item ids (`iron_ore`, `silicon`, `titanium`, `cobalt`,
-  `rare_earth`, `neutronium`, `lead_ore`), and **`HOME_OUTPOST_ID = "outpost_home"`** — shared constants
-  so `production.py`'s home ore buffer (below) and this module's own mining-outpost stock targets
-  iterate the identical ore set/home id rather than each keeping its own copy.
+  `rare_earth`, `neutronium`, `lead_ore`); **`HOME_OUTPOST_ID = "outpost_home"`**.
 - **Standing home ore buffer** (`production.py`'s `get_raw_material_demands()`): every raw ore also
-  gets a floor demand of `max(0, stock_target_for(HOME_OUTPOST_ID, item_id) - total_stock(item_id))` —
-  the same "1 Warehouse slot" default as a mining outpost's own stockpile, just applied to home too, so
-  home always keeps roughly one Warehouse slot of each ore in reserve even with zero active
-  production/order demand. Taken as a **max** with (never additive to) the production-driven deficit
-  computed earlier in the same function, since both want the same ore delivered home. **Not a reserved
-  stockpile** — Smelter/Supply Dock draw on it freely like any other stock; it's purely a floor that
-  creates replenishment demand once dipped into. Both home-based miners (`lib/mining.py`'s
-  `select_best_mining_target()`) and mining-outpost transporters (`lib/vehicle_cargo.py`'s
-  `run_haul_loop()`, home-bound leg only) read this same demand function, so both roles automatically
-  work toward the buffer without any outpost-specific code. **Overfill avoidance across concurrent
-  haulers**: a hauler debits what it just loaded from this same demand via
-  `mining_reservations.reserve_yield()` (`VehicleCargoMixin._reserve_home_haul()`, keyed
-  `"haul:{vehicle_name}:{item_id}"`, released via `_release_home_haul()` right after a successful
-  delivery lands) — the identical in-flight-debit mechanism `lib/mining.py` already used for concurrent
-  mining trips (see this file's Multi-Rover note), just reused for the haul leg too. This is what keeps
-  two haulers stationed at different mining outposts from each independently seeing the same uncovered
-  buffer deficit and both loading toward it — e.g. only 380 units of room left at home, the first hauler
-  to commit reserves all 380, so the second hauler's next demand read already shows 0 remaining, rather
-  than both loading 400 each and overshooting.
+  gets a floor demand of `max(0, stock_target_for(HOME_OUTPOST_ID, item_id) - total_stock(item_id))`
+  — taken as a **max** with (never additive to) the production-driven deficit. Not a reserved
+  stockpile — Smelter/Supply Dock draw on it freely. Both home-based miners and mining-outpost
+  transporters read this same demand function. **Overfill avoidance across concurrent haulers**: a
+  hauler debits what it just loaded via `mining_reservations.reserve_yield()`
+  (`VehicleCargoMixin._reserve_home_haul()`, keyed `"haul:{vehicle_name}:{item_id}"`, released via
+  `_release_home_haul()` right after delivery) — same in-flight-debit mechanism as concurrent mining
+  trips.
 
 ### 2e. Stationed Mining Role (`lib/vehicle.py`, `lib/vehicle_energy.py`, `lib/mining.py`)
 
-Phase C of the Multi-Outpost Production Network. Lets a Rover/Pioneer instance treat **any** outpost
-— not just home — as its base, so it can mine that outpost's assigned ores (§2d) into its own local
-Warehouse, independent of home's live demand.
+Phase C of the Multi-Outpost Production Network. Lets a Rover/Pioneer instance treat **any**
+outpost — not just home — as its base.
 
-- **`VehicleController.__init__`'s `home_base` param** (replaces the old fixed-tuple `home_coords`)
-  — an outpost id, or `None` for the production/home outpost. Resolved to **live objects exactly once
-  at construction**, cached as `self.home_outpost` (`get_outpost_ref(home_base)`) and
-  `self.home_charging_station` (`find_charging_station(self.home_outpost)`), rather than re-walking
-  `outpost_network.outposts()` by id on every subsequent lookup — the same redundant-network-walk
-  class of cost the Thermal Cap/Turbine profiling work (§1b/§1d) already fixed once this session, now
-  avoided here from the start. `get_home_slot_coords()` reads only these two cached fields: the
-  charging station's position if one was found, else the outpost's own `.coords()`, else a literal
-  `(0, 0)` only if `outpost_network` was unavailable at construction time. `self.home_base` itself is
-  kept only for identity checks (e.g. `vehicle_cargo.py`'s "am I home-based at all?" gate); anything
-  needing the outpost/station object reads the cached fields, not `home_base` re-resolved. Trade-off:
-  a charging station built at this outpost *after* construction isn't picked up until the next script
-  reload — acceptable since actual recharge routing (`get_nearest_charging_station()`) still does its
-  own fresh network-wide walk every call regardless (that one's supposed to stay live, it's finding
-  *any* station fleet-wide, not resolving this vehicle's own fixed home). Verified by stub test:
-  default resolves to home's charging station; a stationed outpost with no charging station yet falls
-  back to the outpost's own coords; adding a charging station later is picked up by a fresh instance
-  (next reload); 10 repeated `get_home_slot_coords()` calls make zero additional `outposts()` walks.
-- **`unload_cargo(outpost=None)`** (`lib/vehicle_cargo.py`) — `outpost` defaults to `self.home_outpost`
-  (cached, no lookup), so a stationed vehicle unloads into **its own** outpost's Warehouse by default,
-  not home's; the explicit override exists for Phase D's transporter (§2f), whose own `home_outpost`
-  is its stationed mining outpost even though its delivery leg specifically targets home.
-- **`MiningMixin.build_local_stockpile_candidates(outpost_id)`** (`lib/mining.py`) — for each ore in
-  `outpost_mining.assigned_ores_for(outpost_id)` still under its `stock_target_for()`, builds mineral
-  site candidates the same way `build_mineral_site_candidates()` does (same hardness/claim/blacklist
-  filtering) but additionally requires `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`
-  — a site nearer some other outpost is that outpost's job, not this vehicle's, even if reachable.
-  Independent of home's live demand entirely (no `get_raw_material_demands()` call), since the point
-  is stockpiling ahead of it. Verified by stub test: a site near home is excluded from an outpost_3
-  candidate list; candidates disappear once that ore's stock target is met.
-- **`MiningMixin.run_stationed_mining_loop(outpost_id)`** — thin `while True` + recall-check +
-  exception-guard wrapper (same shape as `run_mining_loop()`/`run_haul_loop()`) around
-  `_stationed_mining_cycle(outpost_id)`, which does the actual work: same overall shape as
-  `run_expedition_cycle()`/`run_mining_loop()`'s cycle body (reload-resume safety net, cargo/target
-  mismatch detour, claim + drive + mine + return + unload + recharge — releasing the claim right
-  after a successful return, regardless of outcome, so the next cycle always re-evaluates fresh
-  instead of blindly resuming the same site), with target selection swapped for
-  `build_local_stockpile_candidates()` and "return to base" already meaning "return to this outpost"
-  via the `home_base` resolution above — no separate return-path logic needed.
+- **`VehicleController.__init__`'s `home_base` param** (an outpost id, or `None` for the
+  production/home outpost). Resolved to **live objects exactly once at construction**, cached as
+  `self.home_outpost` (`get_outpost_ref(home_base)`) and `self.home_charging_station`
+  (`find_charging_station(self.home_outpost)`), rather than re-walking `outpost_network.outposts()`
+  by id on every lookup. `get_home_slot_coords()` reads only these two cached fields: the station's
+  position if found, else the outpost's own `.coords()`, else `(0, 0)` only if `outpost_network`
+  was unavailable at construction. `self.home_base` itself is kept only for identity checks.
+  Trade-off: a charging station built at this outpost *after* construction isn't picked up until
+  the next script reload.
+- **`unload_cargo(outpost=None)`** — defaults to `self.home_outpost` (cached), so a stationed
+  vehicle unloads into its own outpost's Warehouse by default; the explicit override exists for
+  Phase D's transporter (§2f).
+- **`MiningMixin.build_local_stockpile_candidates(outpost_id)`** — for each ore in
+  `outpost_mining.assigned_ores_for(outpost_id)` still under its `stock_target_for()`, builds
+  mineral site candidates (same hardness/claim/blacklist filtering as `build_mineral_site_candidates()`)
+  additionally requiring `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`.
+  Independent of home's live demand entirely.
+- **`MiningMixin.run_stationed_mining_loop(outpost_id)`** — thin wrapper around
+  `_stationed_mining_cycle(outpost_id)`: same overall cycle shape as `run_mining_loop()` (reload
+  resume, cargo/target mismatch detour, claim + drive + mine + return + unload + recharge, release
+  claim right after return), target selection swapped for `build_local_stockpile_candidates()`.
 
 ### 2f. Demand-Driven Transporter Role (`lib/vehicle_cargo.py` `run_supply_run_loop()`)
 
-Phase D of the Multi-Outpost Production Network — the piece that actually moves ore Phase C's
-stationed miners stockpiled back to **the production outpost** (Nocturna Base). Replaces
-`lib/pioneer.py`'s old single-route, manually-configured `transport_once()`/`run_transport_loop()`/
-`find_outpost_coords()`/`find_local_store()` (deleted — no thin entrypoint script referenced them)
-with a fully automatic, demand-driven loop shared by Rover and Pioneer (lives on `VehicleCargoMixin`,
-not `mining.py` — a dedicated hauler needs neither a drill nor construction slots).
+Phase D of the Multi-Outpost Production Network — moves ore Phase C's stationed miners stockpiled
+back to **the production outpost** (Nocturna Base). Lives on `VehicleCargoMixin`, shared by Rover
+and Pioneer.
 
-**Terminology note (read this before "home" trips you up elsewhere in this codebase)**: for every
-*other* vehicle, "home"/"base" always means the production outpost, since that's the only outpost a
-regular vehicle ever calls home. A transporter breaks that assumption on purpose — it's constructed
-with `home_base=<mining outpost id>` (§2e), so **its own `self.home_base`/`self.home_outpost` point at
-the *stationed mining outpost*, not the production outpost** — only its delivery leg ever touches the
-production outpost, and it does so via a separately-resolved reference
-(`self.get_outpost_ref(None)`, kept in a variable literally named `production_outpost` in the code,
-never called `home_outpost`) rather than via `self.home_base`. Below, "the production outpost" always
-means Nocturna Base specifically; "its stationed outpost" always means wherever this transporter's own
-`home_base` points.
+**Terminology note**: for every other vehicle, "home"/"base" always means the production outpost.
+A transporter breaks that assumption on purpose — constructed with `home_base=<mining outpost id>`
+(§2e), so **its own `self.home_base`/`self.home_outpost` point at the stationed mining outpost, not
+the production outpost** — only its delivery leg touches the production outpost, via a separately
+resolved reference (`self.get_outpost_ref(None)`, held in a variable literally named
+`production_outpost`, never `home_outpost`).
 
-- **Construction**: `PioneerController(vehicle, home_base=<mining outpost id>)` — same mechanism as
-  Phase C's stationed miners, reusing all of its caching (§2e) with zero new code. It idles and
-  recharges at its stationed outpost between runs (via the existing `is_at_base()`/`return_to_base()`),
-  driving to the production outpost explicitly only for the delivery leg. **Pioneer, not Rover, for
-  this role** — Rover's integrated hold is a fixed `capacity() == 10` (`docs/components/rover.md`),
-  far too small for bulk ore hauling; Pioneer's cargo comes from Portable Bins across its Cargo Racks,
-  scaling with loadout, and exposes the identical `Cargo`/`VehicleInputSlot`/`OutputSlot` interface
-  `run_supply_run_loop()` already uses — no code changes needed to place this role on either vehicle
-  type, it's purely a hardware/entrypoint-script choice. (A working example lives in a thin
-  entrypoint script in the project root — those get renumbered/edited often enough not to name one
-  here; search for `run_haul_loop` to find the current one — see §2g, this role's original
-  `run_supply_run_loop()` wrapper was later removed.)
-- **`run_supply_run_loop(poll_interval=10.0)`** — takes no `item_id` at all: **the load can mix
-  several different assigned ores in one trip** (e.g. 50 titanium + 30 silicon), decided fresh every
-  cycle, not fixed at construction. An outpost can have several assigned ores at once (Phase B's
-  `assigned_ores_for()`), so limiting one transporter to a single item per run would leave the others
-  piling up unused, or waste capacity hauling a small amount of one ore while room to spare sits empty.
-  Each cycle:
-  1. `_current_supply_items()` — if cargo is already aboard (resuming after a reload mid-delivery),
-     reads every item straight off `self.vehicle.cargo.stacks()` instead of re-planning, so an
-     in-progress mixed delivery is never abandoned partway for a newly-more-urgent item.
-  2. Otherwise `_plan_supply_load(capacity)` — ranks this (stationed) outpost's
-     `outpost_mining.assigned_ores_for()` by the production outpost's unmet demand
-     (`get_raw_material_demands()`) descending, keeping only those that actually have stock sitting at
-     this stationed outpost right now (an ore with huge demand but nothing on hand yet loses its
-     ranking entirely, not just its priority), then greedily takes
-     `min(unmet demand, stock on hand, remaining capacity)` from each in that order until capacity
-     runs out or no more qualifying ore remains. Returns `[(item_id, amount), ...]`, possibly
-     spanning several ores; empty (idle at the stationed outpost, no preemptive/opportunistic
-     top-off — confirmed with the user, matching CLAUDE.md's Demand-Driven Production rule) if
-     nothing qualifies at all.
-  3. **`is_at_base()` check before loading**: `take_item()`'s Warehouse connection needs the vehicle
-     physically within the stationed outpost's service area, so if it isn't there yet — left parked at
-     the production outpost after its last delivery, or a fresh script start elsewhere — it drives
-     there via `return_to_base()` first. Without this the loop used to jump straight to loading
-     wherever the vehicle happened to be, fail every take (wrong/no local source), and just sit there
-     printing "Could not load any planned item" forever instead of ever returning to the stationed
-     outpost — caught from real in-game output showing exactly that.
-  4. Loads each `(item_id, amount)` in the plan via
-     `storage.take_item(self.vehicle.input, item_id, amount, outpost=self.home_outpost)` — note
-     `self.home_outpost` here correctly means the stationed outpost, where the ore actually is.
-  5. Drives explicitly to `self.get_outpost_ref(None)` (the production outpost, resolved once at loop
-     start into the `production_outpost` variable) — **not** `return_to_base()`, which would go to its
-     own stationed outpost instead.
-  6. `unload_cargo(outpost=production_outpost)` — the explicit override from §2e (this vehicle's own
-     `home_outpost` is the stationed outpost, not the production one); already sends each cargo stack
-     to its own destination independently, so a mixed load needed no changes on the delivery side at
-     all.
+- **Construction**: `PioneerController(vehicle, home_base=<mining outpost id>)` — Pioneer, not
+  Rover, for this role (Rover's integrated hold is a fixed `capacity() == 10`; Pioneer's cargo
+  scales with Cargo Rack loadout).
+- **`run_supply_run_loop(poll_interval=10.0)`** — takes no `item_id`: **a load can mix several
+  different assigned ores in one trip**, decided fresh every cycle. Each cycle:
+  1. `_current_supply_items()` — if cargo is already aboard (resuming after a reload), reads every
+     item off `self.vehicle.cargo.stacks()` instead of re-planning.
+  2. Otherwise `_plan_supply_load(capacity)` — ranks this outpost's `assigned_ores_for()` by the
+     production outpost's unmet demand descending, keeping only ores with stock on hand right now,
+     greedily takes `min(unmet demand, stock on hand, remaining capacity)` from each until capacity
+     runs out. Empty plan → idle (no preemptive/opportunistic top-off, per CLAUDE.md's
+     Demand-Driven Production rule).
+  3. **`is_at_base()` check before loading** — drives to the stationed outpost first via
+     `return_to_base()` if not already there (`take_item()` needs physical presence).
+  4. Loads each `(item_id, amount)` via `storage.take_item(self.vehicle.input, item_id, amount,
+     outpost=self.home_outpost)`.
+  5. Drives explicitly to `self.get_outpost_ref(None)` (the production outpost) — **not**
+     `return_to_base()`.
+  6. `unload_cargo(outpost=production_outpost)` — already sends each cargo stack to its own
+     destination independently.
   7. **Recharges fully at the production outpost** (`recharge_at_station(target_level=1.0)`) before
-     heading back — `get_nearest_charging_station()` (used internally when no station is given)
-     resolves by current *position*, not `self.home_base`, so this correctly finds the production
-     outpost's own station even though this vehicle's `home_base`/`home_outpost` point elsewhere.
-     Starting the return leg fully charged lets it run at full throttle (a transporter script can set
-     `cruise_throttle=1.0`) without `drive_with_recharge()` needing to plan an intermediate stop for
-     it — faster round trips than only recharging back at the stationed outpost.
-  8. `return_to_base()` back to its stationed outpost and recharges there too, ready for the next cycle.
-- Verified by stub test: load planning — a mixed plan correctly spans two qualifying ores in one trip
-  when capacity allows (50 titanium + 30 silicon), correctly excludes a much-higher-demand ore that
-  has zero stock on hand, and correctly fills the higher-ranked ore first then gives the remainder to
-  the next when capacity is tight; `_current_supply_items()` reflects every stack in a full mixed
-  cargo, not just the first. Full loop — idles with zero drive calls when the stationed outpost has no
-  stock; performs repeated hauling trips (each correctly capped by cargo capacity, not the larger
-  demand figure) until the stationed outpost's stock is fully drained; makes zero drive calls when the
-  production outpost's demand is `0` even with plenty of stock sitting at the stationed outpost
-  (confirms no preemptive top-off); recharges exactly
-  twice per completed trip (once at the production outpost before the return leg, once at the
-  stationed outpost after returning); drives back to the stationed outpost via `return_to_base()`
-  before loading when not already there, instead of failing to load and idling in place indefinitely.
+     heading back — lets the return leg run at full throttle (`cruise_throttle=1.0`) without
+     `drive_with_recharge()` needing an intermediate stop.
+  8. `return_to_base()` to its stationed outpost, recharges there too.
 
-  **Since generalized into `run_haul_loop()` (§2g), every thin entrypoint script reaches it via the
-  unified `PioneerController.run(dest_outpost_id=...)` entrypoint (§2b) — see §2g for why the old
-  `run_supply_run_loop()`/`run_reagent_delivery_loop()` wrapper methods were removed.**
+  **Since generalized into `run_haul_loop()` (§2g)** — every thin entrypoint script reaches it via
+  the unified `PioneerController.run(dest_outpost_id=...)` entrypoint (§2b).
 
 ### 2g. Generalized Hauler + Reagent Resupply (`lib/vehicle_cargo.py` `run_haul_loop()`, `lib/outpost_reagents.py`)
 
-§2f's ore-hauler and the Bio Lab reagent-hauler turned out to be the same shape once you notice: **a
-transporter is always stationed at `self.home_base` (the SOURCE) and delivers to an explicit DEST**.
-For the ore-hauler, source = the mining outpost, dest = home (`None`). For the reagent-hauler, source
-= home (`home_base=None`, the default), dest = the coastal outpost. `run_supply_run_loop()` and
-`run_reagent_delivery_loop()` used to be one-line role-specific wrappers over a shared core; they're
-now **removed** — every thin entrypoint script (`pioneer_5.py`/`pioneer_6.py`/`pioneer_7.py`) calls
-`PioneerController.run(dest_outpost_id=...)` (§2b), which detects the hauler role (no
-constructor/sonar/drill mounted) and forwards to `run_haul_loop(dest_outpost_id, poll_interval=10.0)`,
-since `dest_outpost_id` alone already disambiguates the role (`None` = production outpost =
-ore-hauler; any other id = a remote outpost's Bio Lab = reagent-hauler). The two params that used to be passed in at construction time —
-`candidate_items_fn` and `demand_fn` — are both gone:
+§2f's ore-hauler and the Bio Lab reagent-hauler are the same shape: **a transporter is always
+stationed at `self.home_base` (the SOURCE) and delivers to an explicit DEST**. Ore-hauler:
+source = mining outpost, dest = home (`None`). Reagent-hauler: source = home (`home_base=None`),
+dest = the coastal outpost. Every thin entrypoint calls `PioneerController.run(dest_outpost_id=...)`
+(§2b), which detects the hauler role (no constructor/sonar/drill mounted) and forwards to
+`run_haul_loop(dest_outpost_id, poll_interval=10.0)` — `dest_outpost_id` alone disambiguates the
+role (`None` = ore-hauler; any other id = a remote outpost's Bio Lab = reagent-hauler).
 
-- **`demand_fn` is gone**: there's no reason to decide "what's needed" before a haul cycle actually
-  runs it, so `_outpost_haul_demand(dest_outpost_id)` (module-level in `vehicle_cargo.py`) is now
-  called fresh every cycle instead of injected at construction — `None`/home →
-  `production.get_raw_material_demands()`, any other outpost id →
+- **`_outpost_haul_demand(dest_outpost_id)`** (module-level) is computed fresh every cycle: `None`/
+  home → `production.get_raw_material_demands()`; any other outpost id →
   `outpost_reagents.get_outpost_reagent_demand(dest_outpost_id)`.
-- **`candidate_items_fn` is gone entirely**, not just moved: it turned out to be redundant.
-  `_plan_haul_load()` already rejects any item with zero real stock at a non-home source
-  (`available <= 0: continue`), so iterating `_outpost_haul_demand()`'s full item set directly —
-  instead of first narrowing it to `outpost_mining.assigned_ores_for(source_id)` — produces the exact
-  same plan; the only cost is ranking a few zero-availability items every cycle, which is cheap (at
-  most 7 raw materials). For the reagent role, `demand_fn` was already restricted to
-  `outpost_reagents.assigned_reagents_for(dest_id)` internally, so its candidate list was always
-  redundant with its own demand dict.
-
-`_plan_haul_load(capacity, dest_outpost_id)` and the loading step are the only pieces that otherwise
-changed shape from §2f:
-
-- **`_plan_haul_load()`**: when the source is home (`self.home_outpost.is_home`, a plain bool
-  property on the `OutpostRef` `get_outpost_ref()`/`network.home()` return -- **not** a method call,
-  unlike the same-named method on the full `Outpost` component returned by `get_component()`), a candidate's
-  "available" amount is treated as its full deficit regardless of stock currently on hand, since a
-  home shortfall can always be bought at the Shop — everywhere else (never home for the ore role),
-  real stock on hand is still the hard ceiling, exactly as before.
+- **`_plan_haul_load(capacity, dest_outpost_id)`**: when the source is home
+  (`self.home_outpost.is_home`, a plain `bool` property on `OutpostRef` — **not** a method, unlike
+  the same-named method on the full `Outpost` component from `get_component()`), a candidate's
+  "available" amount is its full deficit regardless of stock on hand (a home shortfall can always
+  be bought at the Shop); everywhere else, real stock on hand is the hard ceiling.
 - **`_load_haul_plan()`**: buys any shortfall **one Inventory-stack at a time**
-  (`storage.inventory_stack_size()` — 10, or 20 with Bigger Stacks unlocked), immediately
-  `take_item()`-ing each bought stack into cargo before buying the next, rather than one
-  `shop.buy(item_id, full_shortfall)` call. Total planned volume was never the risk — capacity already
-  caps every plan — this is about the *transient* Inventory footprint: buying a large shortfall (a
-  reagent Inventory has never stocked before, bounded only by cargo capacity, which for a loaded
-  Pioneer can still be a few hundred units) in one call could stall on a full Inventory before the
-  vehicle ever gets a chance to pull any of it back out. Only triggers when the source is home; the
-  ore role never buys anything.
+  (`storage.inventory_stack_size()`), immediately `take_item()`-ing each bought stack into cargo
+  before buying the next — bounds the *transient* Inventory footprint, not the total planned
+  volume (already capped by cargo capacity). Only triggers when the source is home.
 
 **`outpost_reagents.py`** mirrors `outpost_mining.py`'s seed-once-then-editable convention
 (`assigned_reagents_for(outpost_id)`, `reagent_stock_target_for(outpost_id, item_id)`,
-`get_outpost_reagent_demand(outpost_id)`), but per-reagent rather than one flat constant — reagent
-prices vary hugely (`docs/database/items_lab_reagents.md`: 1cr to 1,000cr), so a single flat target
-would either starve the cheap ones or bankrupt the expensive ones early in a save:
+`get_outpost_reagent_demand(outpost_id)`), but per-reagent rather than one flat constant (reagent
+prices span 1cr to 1,000cr):
 
 ```python
 DEFAULT_REAGENT_STOCK_TARGETS = {
@@ -2248,119 +1099,84 @@ DEFAULT_REAGENT_STOCK_TARGETS = {
    # reagent id not yet in this dict (e.g. a future game update)
 ```
 
-Deficit math uses `storage.warehouse_stock(item_id, outpost)` (added alongside this work), **never**
-`storage.total_stock()` — `total_stock()` unconditionally adds home Inventory's count regardless of
-the `outpost` argument, which is harmless for ore (raw ore doesn't pile up in home Inventory) but
-actively wrong for reagents, which routinely sit in home Inventory (that's where the Shop delivers
-them): using `total_stock()` for "how much does the coastal Warehouse have" would over-report by
-whatever's sitting untouched at home, masking a real deficit. `lib/bio.py`'s `local_stock(item_id,
-outpost)` picks between the two based on `is_home_outpost(outpost)` (reads the `OutpostRef.is_home`
-bool property, **not** a method call — see the `_plan_haul_load()` note above for the same
-method-vs-property distinction) for the same reason, used throughout the relocated Bio Lab/Collector/
-Exchange instead of the old hardcoded `get_component("inventory")`.
+Deficit math uses `storage.warehouse_stock(item_id, outpost)`, **never** `storage.total_stock()` —
+`total_stock()` unconditionally adds home Inventory's count regardless of `outpost`, which would
+over-report a remote outpost's reagent stock by whatever's sitting untouched at home (where the
+Shop delivers). `lib/bio.py`'s `local_stock(item_id, outpost)` picks between the two based on
+`is_home_outpost(outpost)` (reads `OutpostRef.is_home`, the same property-not-method distinction).
 
-`lib/bio.py`'s `local_sibling(outpost, type_id)` replaces hardcoded same-pipeline instance ids
-(`get_component("bio_collector_1")`, `"bio_exchange_1"`, `"bio_lab_1")`) with a live
-`outpost.buildings(type_id)` lookup (first match, `get_component()`'d) -- needed because a Bio Lab's
-`take_from()` requires its Collector to be at the *same* outpost, and a hardcoded home-outpost id
-would silently reach across outposts (or reach nothing) once a second Bio pipeline exists at a remote
-outpost. `BioLabController` uses it for its Collector; `BioCollectorController` for its Exchange and
-Lab; `BioLuminizerController` for its Exchange. No caching -- resolved fresh per call, matching
-`storage.discover_storage_buildings()`'s convention, since a sibling building isn't guaranteed to
-exist yet at controller-construction time.
+`lib/bio.py`'s `local_sibling(outpost, type_id)` replaces hardcoded same-pipeline instance ids with
+a live `outpost.buildings(type_id)` lookup (first match, resolved) — needed because a Bio Lab's
+`take_from()` requires its Collector to be at the *same* outpost. No caching — resolved fresh per
+call, since a sibling building isn't guaranteed to exist yet at controller-construction time.
 
 ### 2h. Drone Energy Budgeting Detail (`lib/drone_energy.py` `DroneEnergyMixin`)
 
-First working slice of drone automation (Phase 4 prerequisite): a `DroneController` base
-(`lib/drone.py`) with scout (`lib/drone_scout.py`) and miner (`lib/drone_mining.py`) roles, plus
-`lib/drone_service.py` (charging/rescue station) and `lib/drone_depot.py` (Drone Depot cargo
-station). Drones are a **fresh hierarchy, not a `VehicleController` subclass** — no `.drive`/`.nav`,
-no terrain/stall handling, route-based `go_to(x, y)`/`go_to_station(name)`/`go_to_drill(name)` rather
-than a blocking drive loop, and a different (simpler, linear) power/speed model — but
-`DroneController` follows the same mixin-composition philosophy as `lib/vehicle.py`. Electric drones
-only this pass; heli support (`oil_tank` instead of `battery`, `refuel()` instead of `charge()`) can
-follow the same pattern later without disrupting this design.
+A `DroneController` base (`lib/drone.py`) with scout (`lib/drone_scout.py`) and miner
+(`lib/drone_mining.py`) roles, plus `lib/drone_service.py` (charging/rescue) and
+`lib/drone_depot.py` (cargo station). Drones are a **fresh hierarchy, not a `VehicleController`
+subclass** — no `.drive`/`.nav`, no terrain/stall handling, route-based `go_to(x, y)`/
+`go_to_station(name)`/`go_to_drill(name)` rather than a blocking drive loop, and a simpler linear
+power/speed model — but `DroneController` follows the same mixin-composition philosophy as
+`lib/vehicle.py`. Electric drones only this pass; heli support (`oil_tank`/`refuel()`) can follow
+the same pattern later.
 
-- **Linear travel model** (`docs/components/drone.md`): full throttle = **5 Wh/h** burn at **300
-  m/h**; both scale with throttle (speed linear, burn quadratic), collapsing to a flat
-  `Wh/meter = DRONE_WH_PER_METER_PER_THROTTLE (=5.0/300.0 ≈ 0.01667) × throttle` — structurally like
-  Rover's own flat model (§2a), just a different constant and with **no** per-drone/cargo/module term
-  at all (unlike Pioneer's formula). Standalone `drone_wh_per_meter_at_throttle(throttle)` /
-  `drone_rescue_wh_per_meter()` module-level functions (no drone object needed, since the model has
-  no vehicle-specific terms) let `lib/drone_service.py` reuse the same rate cross-script, mirroring
-  `vehicle_energy.py`'s `_for(vehicle)` pattern. `max_safe_throttle_for_leg()` solves the safe-throttle
-  bound **directly linear** (`t <= available_for_leg / (distance × rate × SAFETY_MARGIN_MULTIPLIER)`),
-  not Pioneer's `sqrt(throttle)` form, since Wh/m is linear in throttle here. Treat the drone's own
-  `range_remaining()` as ground truth; this formula is for planning only (trip feasibility, throttle
-  selection), verified against the live battery before committing.
-- **`MIN_EMERGENCY_RESERVE_WH = 4.0`** (vs. `VehicleEnergyMixin`'s `8.0`) — electric drone batteries
-  are much smaller than a Rover/Pioneer's, so the same flat 8 Wh floor would eat a large fraction of
-  total capacity. `SAFETY_MARGIN_MULTIPLIER = 1.05` is unchanged from the vehicle model.
-- **Two distinct "home" endpoints**, unlike ground vehicles' single combined base/charging-station
-  pair: `get_nearest_drone_service()` (the **power** home — `calculate_trip_energy()`/
-  `return_floor_wh()` always budget the return leg against this one) and `get_nearest_drone_depot()`
-  (the **cargo** home — where a miner drone unloads). Both are separate `discover_drone_buildings()`
-  network-wide discovery calls (mirrors `vehicle_energy.py`'s `get_all_charging_stations()` shape),
-  each returning `{"id", "coords", "outpost"}` dicts — the `"outpost"` field (a `BuildingRef.outpost`)
-  is how `DroneController.__init__` resolves `self.home_outpost`/`self.home_biome`, since **a drone
-  has no `.outpost` property of its own** (unlike a Rover/Pioneer/building — confirmed against
-  `docs/models/vehicles_and_modules.md`'s `DroneSmall`/`DroneMedium`/`DroneLarge` class definitions):
-  it resolves from the nearest Drone Depot's outpost first, falling back to the nearest
-  drone_service's outpost, then to the network's home outpost if neither is deployed yet.
-- **No "biosphere region."** It's per-outpost + per-biome: a sample can only be locally processed
-  (Essence Liquifier) at the outpost it's dropped off at, and only if native to that outpost's biome
-  (`nocturna.life_form_biome(item_id) == outpost.biome`, `docs/components/essence_liquifier.md`). A
-  miner drone filters `journal.biomass_coords()` candidates to samples native to its **home outpost's
-  biome** (`lib/drone_cargo.py`'s `is_home_biome_sample()`), not a spatial "biosphere." A biosite whose
-  tile carries a **mixed** biome sample set (some home-biome, some not) is skipped entirely in v1 —
-  `PortableBioExtractor.extract()` takes **no species argument** at all
-  (`docs/types/biosphere.md`), confirming it can't be told to pull only the home-biome sample, so
-  correct-by-construction (skip the whole tile) beats risking a foreign species landing in a chamber
-  that can't be processed locally. Cross-outpost drone ferrying of foreign samples is a deferred
-  TODO.md Phase 4 bullet, not implemented this pass.
-- **Exclusive biosite claims, not shared yield-debit reservations.** Biosite extraction is
-  exclusive-WITH-COOLDOWN: only one drone may extract a given biosite at a time
-  (`journal.is_ready(x, y)`/`next_ready_at(x, y)`, `BioExtractionResult.status == "cooling"` only
-  after full depletion) — this is a fundamentally different mechanic from mineral mining's
-  now-shareable sites (§2b), which use `mining_reservations.py`'s **additive, non-exclusive**
-  yield-debit bookkeeping instead. `lib/drone_claims.py`'s `claim_biosite()`/`refresh_biosite_claim()`/
-  `release_biosite_claim()` reuse `vehicle_claims.py`'s claim/heartbeat/staleness **shape** verbatim
-  (same `CLAIM_STALE_TICKS = 36,000`), but on their own archive key (`biosite.claims`) so they never
-  collide with ground-vehicle claims — **do not** route biosite selection through
-  `mining_reservations.py`; that module solves shared-site partial-yield accounting, which does not
-  apply here. Miner target selection order: (1) `journal.is_ready(x, y)` cooldown gate, read-only,
-  checked **before** even attempting a claim; (2) exclusive claim attempt; (3) the scout's separate
-  bounded "confirmed-empty POI" cache (`SCOUTED_EMPTY_POI_KEY`, coord -> tick scanned, capped at
-  `SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000`) — a fixed fact about that coordinate once a bio scanner
-  confirms it empty, unlike `blacklist_target()`'s wrong-scanner case which can be revisited on
-  upgrade; kept as a **separate** small archive-key wrapper from `biosite.claims`, not the same table.
-- **Resumability**: `drone.mission:<name>` (own key prefix, mirrors `vehicle.mission:<name>`) persists
-  the in-progress target. Key difference from ground vehicles: a drone's `go_to()` is fire-and-forget
-  and **is cancelled by a script restart** (`drone.md`: "completing the script... cancels this
-  route"), unlike a rover's `drive_to()` loop where the underlying command can persist — so on resume,
-  `run_miner_loop()` re-validates the claim, checks `position()`/`current_station()` for actual
-  physical state, and **re-issues** `go_to()` rather than assuming the flight continued.
-  `extract()`/`scan()` themselves *do* survive a restart transparently per their own docs ("stays
-  occupied... including across a script stop and restart") — only the flight leg needs re-issuing.
-  The scout has no mission to persist beyond its empty-POI cache (repeat scans are free).
-- **`lib/drone_service.py`** structurally mirrors `lib/charging.py`: docked charge queue, fleet-wide
-  stranded/scrambled detection via `fleet.drones()` (stranded predicate additionally includes
-  `"scrambled"`, a state ground vehicles don't have), nearest-station coordination
-  (`is_nearest_station_to()`), and a proactive same-outpost nudge for a low-battery field drone
-  (`order_return_to_service()`) before it needs a full rescue. **Resolved open question**: whether a
-  station script's cross-script `drone.go_to()` call works despite `drone.md`'s `(self only)` tag —
-  yes, by direct precedent already relied on in this codebase: `nav_module.md` tags
-  `NavModule.set_target()`/`set_throttle()` `(self only)` too, yet `lib/charging.py`'s
-  `order_return_to_station()` already calls `get_component(vehicle_ref.id).nav.set_target(...)`
-  successfully from a *different* script (the charging station's) in production code. `(self only)`
-  documents the method's intended caller convention, not an engine-enforced same-script restriction.
-- **`lib/drone_depot.py`** is mostly passive — no active drain/rescue-style verb exists for a Depot;
-  cargo moves via the drone's own `cargo.load()`/`cargo.unload()` while docked, and ports drain
-  passively once connected (same pattern as Warehouse Auto Feeders). Its controller's only jobs are
-  (1) one-time idempotent `self.output.connect(...)` wiring to the outpost's Essence Liquifier, **only
-  when unambiguous** (exactly one same-outpost Liquifier — otherwise logged and left for manual
-  wiring, never guessed), and (2) a lightweight periodic telemetry publish (`drone_depot.status.<id>`)
-  for dashboards and for miner/scout drones' own "is my depot full" decisions.
+- **Linear travel model**: full throttle = **5 Wh/h** at **300 m/h**; both scale with throttle
+  (speed linear, burn quadratic), collapsing to `Wh/meter = DRONE_WH_PER_METER_PER_THROTTLE
+  (=5.0/300.0 ≈ 0.01667) × throttle` — structurally like Rover's flat model, different constant,
+  with **no** per-drone/cargo/module term at all. Standalone `drone_wh_per_meter_at_throttle(throttle)`
+  / `drone_rescue_wh_per_meter()` module-level functions let `lib/drone_service.py` reuse the same
+  rate cross-script. `max_safe_throttle_for_leg()` solves the safe-throttle bound **directly
+  linear** (`t <= available_for_leg / (distance × rate × SAFETY_MARGIN_MULTIPLIER)`). Treat the
+  drone's own `range_remaining()` as ground truth; this formula is for planning only.
+- **`MIN_EMERGENCY_RESERVE_WH = 4.0`** (vs. `VehicleEnergyMixin`'s `8.0`) — electric drone
+  batteries are much smaller. `SAFETY_MARGIN_MULTIPLIER = 1.05` is unchanged.
+- **Two distinct "home" endpoints**: `get_nearest_drone_service()` (**power** home —
+  `calculate_trip_energy()`/`return_floor_wh()` always budget the return leg against this) and
+  `get_nearest_drone_depot()` (**cargo** home). Both are separate `discover_drone_buildings()`
+  network-wide calls, each returning `{"id", "coords", "outpost"}` dicts — the `"outpost"` field is
+  how `DroneController.__init__` resolves `self.home_outpost`/`self.home_biome`, since **a drone
+  has no `.outpost` property of its own** (confirmed against `docs/models/vehicles_and_modules.md`):
+  nearest Drone Depot's outpost first, falling back to nearest drone_service's outpost, then the
+  network's home outpost.
+- **No "biosphere region"** — per-outpost + per-biome: a sample can only be locally processed
+  (Essence Liquifier) at the outpost it's dropped off at, and only if native to that outpost's
+  biome (`nocturna.life_form_biome(item_id) == outpost.biome`). A miner drone filters
+  `journal.biomass_coords()` candidates to samples native to its home outpost's biome
+  (`is_home_biome_sample()`). A biosite whose tile carries a **mixed** biome sample set is skipped
+  entirely (`PortableBioExtractor.extract()` takes no species argument, so it can't be told to pull
+  only the home-biome sample). Cross-outpost ferrying of foreign samples is a deferred TODO.md
+  Phase 4 item.
+- **Exclusive biosite claims, not shared yield-debit reservations** — biosite extraction is
+  exclusive-WITH-COOLDOWN (`journal.is_ready(x, y)`/`next_ready_at(x, y)`,
+  `BioExtractionResult.status == "cooling"` only after full depletion), a fundamentally different
+  mechanic from mineral mining's shareable sites (§2b). `lib/drone_claims.py`'s `claim_biosite()`/
+  `refresh_biosite_claim()`/`release_biosite_claim()` reuse `vehicle_claims.py`'s claim/heartbeat/
+  staleness shape (`CLAIM_STALE_TICKS = 36,000`) but on their own archive key (`biosite.claims`) —
+  **do not** route biosite selection through `mining_reservations.py`. Miner target order: (1)
+  `journal.is_ready(x, y)` cooldown gate (read-only, before any claim attempt); (2) exclusive claim
+  attempt; (3) the scout's separate bounded "confirmed-empty POI" cache (`SCOUTED_EMPTY_POI_KEY`,
+  coord → tick scanned, capped at `SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000`), kept as a separate
+  small archive-key wrapper from `biosite.claims`.
+- **Resumability**: `drone.mission:<name>` persists the in-progress target (mirrors
+  `vehicle.mission:<name>`). A drone's `go_to()` is fire-and-forget and **is cancelled by a script
+  restart** (unlike a rover's persistent `drive_to()` command) — on resume, `run_miner_loop()`
+  re-validates the claim, checks `position()`/`current_station()`, and **re-issues** `go_to()`.
+  `extract()`/`scan()` themselves do survive a restart transparently — only the flight leg needs
+  re-issuing.
+- **`lib/drone_service.py`** structurally mirrors `lib/charging.py`: docked charge queue,
+  fleet-wide stranded/scrambled detection via `fleet.drones()` (stranded predicate additionally
+  includes `"scrambled"`), nearest-station coordination (`is_nearest_station_to()`), and a
+  proactive same-outpost nudge for a low-battery field drone (`order_return_to_service()`). A
+  station script's cross-script `drone.go_to()` call works despite `drone.md`'s `(self only)` tag
+  — `(self only)` documents the intended caller convention, not an engine-enforced restriction (see
+  `lib/charging.py`'s `order_return_to_station()` for the same already-relied-upon pattern with
+  `nav_module.md`).
+- **`lib/drone_depot.py`** is mostly passive — cargo moves via the drone's own `cargo.load()`/
+  `cargo.unload()` while docked, ports drain passively once connected. Its controller's jobs: (1)
+  one-time idempotent `self.output.connect(...)` wiring to the outpost's Essence Liquifier, only
+  when unambiguous (exactly one same-outpost Liquifier — otherwise logged, left for manual wiring);
+  (2) periodic telemetry publish (`drone_depot.status.<id>`).
 
 ---
 
@@ -2383,20 +1199,21 @@ follow the same pattern later without disrupting this design.
   - Payload: `{"order_id": str, "specimen_id": str, "biome": str, "target_fragment": str, "count": int}`
 - **Channel `sample_ready`**: Lab notifies Exchange immediately upon sample extraction.
   - Payload: `{"order_id": str, "sample_id": str, "sample_type": str, "lab_id": str}`
-- **Channel `system.version_confirmed`**: `panel_4.py`'s "Confirm New Version" button broadcasts the
+- **Channel `system.version_confirmed`**: `panel_1.py`'s "Confirm New Version" button broadcasts the
   newly-confirmed build hash so every script parked in `validate_game_version()` wakes immediately
   instead of polling — see `lib/version_guard.py` and the Data Archive entry below.
+- **Channel `luminizer_heartbeat` (retired) / `biome_processor_heartbeat`**: every biome processor
+  controller fires this unconditionally each cycle so `BioLabController._wait_for_luminizer()`-style
+  waits use `comms.wait_broadcast()` instead of polling — see §1f/§1g.
 
 ### Data Archive (`get_component("notebook")` / `lib/archive.py`)
 - `power.shedding_tiers`: Custom shedding tiers list-of-lists `[[tier1_machines...], [tier2_machines...], ...]` (or `power.shedding_tiers:<grid_anchor>`). Defaults to `DEFAULT_SHEDDING_TIERS` in `lib/power.py` — see §1a.
 - `power.shedded`: Active list of machines Power Guard currently has shedded — hard-shed (breaker
   off) for most Tier 1 patterns, soft-shed (production paused, power stays on) for Tier 2's
   `smelter_*`/`fabricator_*` — see §1a. Checked by `SmelterController`/`FabricatorController`'s own
-  `is_shedded()` to pause production. No cooperative wake call reads it any more — see §1a's note
-  on `wake_smelter()`'s removal. (`power.shedded_machines` used to be written as an exact duplicate
-  nothing ever read — retired.)
+  `is_shedded()` to pause production.
 - `fleet.status.<id>` / `rover.status.<id>`: Telemetry `{name, state, x, y, wh, level, target, tick}`
-- `rover.claims` / `survey.claims` (mirrored, legacy + current key): Atomic target reservation dict `{target_key: {"vehicle": id, "tick": tick}}`. Stale after `CLAIM_STALE_TICKS = 36,000` ticks (1 hr) — see `lib/vehicle_claims.py`. No longer exclusivity-gates mineral mining sites (see `mining.reserved_yield` below); still exclusive for survey/POI targets (key prefix `"poi_"`) and construction jobs (key prefix `"build_"`, `PioneerController.construction_claim_key()`, see §1a's construction-job-claims entry).
+- `rover.claims` / `survey.claims` (mirrored, legacy + current key): Atomic target reservation dict `{target_key: {"vehicle": id, "tick": tick}}`. Stale after `CLAIM_STALE_TICKS = 36,000` ticks (1 hr) — see `lib/vehicle_claims.py`. No longer exclusivity-gates mineral mining sites (see `mining.reserved_yield` below); still exclusive for survey/POI targets (key prefix `"poi_"`) and construction jobs (key prefix `"build_"`, `PioneerController.construction_claim_key()`, see §2a's construction-job-claims entry).
 - `mining.reserved_yield`: Non-exclusive in-flight mining yield dict `{reservation_key: {"vehicle": id, "item_id": str, "units": int, "tick": tick}}`, home-demand mine-type missions only. Stale after `RESERVATION_STALE_TICKS = 36,000` ticks (same window as claims) — see `lib/mining_reservations.py`.
 - `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`.
 - `heat.optimal_setpoints`: Caching `{thermal_state: best_power}`
@@ -2404,12 +1221,12 @@ follow the same pattern later without disrupting this design.
 - `fabricator.manual_orders`: `{item_id: quantity}` ad-hoc Fabricator build requests, edited directly
   in the Notebook (e.g. `{"drone_small": 2}`) — see §2a-1 item 4. Prioritized over other demanded
   recipes and counted down to 0 (then dropped) as units are actually delivered.
-- `outposts.known_ids`: List of outpost ids `panel_1.py`'s AUTOMATION section has already seen —
+- `outposts.known_ids`: List of outpost ids `panel_7.py`'s AUTOMATION section has already seen —
   diffed each throttled tick against `outpost_network.outposts()` to detect a newly-founded outpost
   and auto-trigger `outpost_mining.reevaluate_unassigned_near_outpost()` for it. See §7.
-- `control_room.automation_summary`: `panel_1.py`'s one-line automation result string (grids
-  supervised, new outposts, docks assigned), published each storage tick for `panel_4.py`'s
-  ALWAYS-ON line to display — see §7's panel_1/panel_4 split.
+- `control_room.automation_summary`: `panel_7.py`'s one-line automation result string (grids
+  supervised, new outposts, docks assigned), published each storage tick for `panel_1.py`'s
+  ALWAYS-ON line to display — see §7's headless-calculator/UI-card split.
 - `biosite.claims`: Exclusive biosite extraction claims dict `{target_key: {"drone": id, "coords", "name", "tick"}}` — own key, distinct from `rover.claims`/`survey.claims`, so ground-vehicle and drone claims never collide. Stale after `CLAIM_STALE_TICKS = 36,000` ticks — see `lib/drone_claims.py` and §2h. **Exclusive**, not the shared yield-debit pattern `mining.reserved_yield` uses — see §2h's note distinguishing the two.
 - `scout.empty_pois`: Scout's bounded "confirmed-empty POI" cache `{"<x>_<y>": tick_scanned}`, capped at `SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000` (oldest entries dropped first). A fixed fact about that coordinate, not a hardware-capability blacklist like `survey.unsupported_targets` — see `lib/drone_claims.py` and §2h.
 - `drone.mission:<name>`: Per-drone resumable mission record `{"target_key", "target", "kind", "tick"}`, mirrors `vehicle.mission:<name>`'s shape but on its own prefix. See `lib/drone_claims.py` and §2h's resumability note (a drone's `go_to()` is cancelled by a script restart, unlike a rover's persistent drive command, so only the flight leg needs re-issuing on resume).
@@ -2420,7 +1237,7 @@ follow the same pattern later without disrupting this design.
   `run()` calls `validate_game_version()` once at startup, before entering its loop (not every tick — a
   build change only takes effect on the next script restart, same as the game itself); if the running
   build no longer matches this key, that script blocks until the operator clicks "Confirm New Version"
-  on `panel_4.py` (which updates this key and broadcasts `system.version_confirmed`, see §7). Build
+  on `panel_1.py` (which updates this key and broadcasts `system.version_confirmed`, see §7). Build
   hashes only support equality checks, never "newer/older" comparisons.
 
 ---
@@ -2471,33 +1288,37 @@ controller.run()
 
 ---
 
-## 🖥️ 7. Control Room Panel Cards (`panel_1.py`, `panel_2.py`, `panel_3.py`, `panel_4.py`)
+## 🖥️ 7. Control Room Panel Cards (`panel_1.py`, `panel_2.py`, `panel_3.py`, `panel_7.py`)
 
-**`panel_1.py`/`panel_4.py` split (headless calculator + UI card).** `panel_1.py` used to be both:
-draw the STATUS/AUTOMATION card *and* run all the automation itself (grid supervision, rebalance
-sweep, outpost sync, `supply_dock.plan_dock_assignments()`). Found live: `plan_dock_assignments()`
-running inside that same per-tick loop (even after §2a-1b's `SourceCache` fix cut its cost to ~2s)
-wedged the card's own rendering outright — confirmed via temporary debug prints that the script kept
-looping and completing fine underneath (~100ms/iteration) the entire time the card stayed visually
-blank, with no exception anywhere. There's no known threshold under which an occasional
-multi-second stall is safe for a script that also renders every tick, and this game has no true
-background/daemon script type — a Custom Panel is the only slot that can host an "always-on, not
-tied to one building" process — so the fix is structural, not a further speedup: `panel_1.py` is now
-**headless** (no `panel.*` calls at all, `sleep(1.0)`-paced like every other controller's `run()`)
-and does nothing but the automation work, publishing its result summary to `archive`
-(`AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"`); `panel_4.py` is the actual STATUS/
-AUTOMATION card UI, reading that summary back out instead of computing it. `panel_1.py` keeps the
-name/slot specifically because it's the first Custom Panel that exists on any save — the natural
-home for a process everything else has a hard dependency on already being alive. Everything
-`panel_4.py` draws (STATUS's clock/power/storage/alerts, the version gate, the manual buttons) is
-either a cheap single-call component read or a rare user-triggered one-off, not the chronic
-per-cycle cost that forced `panel_1.py` headless, so it stays inline in that UI script rather than
-also being routed through archive.
+**Headless calculator + UI card split (currently `panel_7.py` + `panel_1.py`).** The automation
+calculator (grid supervision, rebalance sweep, outpost sync,
+`supply_dock.plan_dock_assignments()`) is **headless** (no `panel.*` calls,
+`sleep(1.0)`-paced) and publishes its result summary to `archive`
+(`AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"`); the STATUS/AUTOMATION UI card reads
+that summary back out instead of computing it — a multi-second automation stall must never also
+block a script that renders every tick, and a Custom Panel is the only slot that can host an
+"always-on, not tied to one building" process. See `DESIGN_HISTORY.md` for the incident that forced
+this split.
 
-Card size is set from the Control Room UI (drag-resize or the size picker next to a card's
-`Manage` button), **not** from the script — `panel.width()`/`panel.height()` just report whatever
-size the operator picked (`docs/types/system_and_panels.md` `Panel.width()`/`height()`). The size
-is discrete, not continuous:
+**⚠️ Panel-numbering quirk — this pairing's `panel_N.py` filenames drift, keep this note current.**
+Custom Panel ids are assigned by the game on creation and **only ever increment** — deleting a
+panel does not free its number, and cards **cannot be drag-reordered** once placed. Current mapping
+(verified live):
+
+| Role | Current file | Notes |
+| :--- | :--- | :--- |
+| STATUS + AUTOMATION UI | `panel_1.py` | wanted at the top of the Control Room; kept in the original slot 1 |
+| FLEET | `panel_2.py` | unchanged |
+| PRODUCTION | `panel_3.py` | unchanged |
+| *(retired — do not recreate)* | `panel_4.py`, `panel_5.py`, `panel_6.py`, `panel_8.py` | deleted during testing; these numbers are gone for good, next new panel will be `panel_9.py` |
+| Automation calculator (headless) | `panel_7.py` | moved here from `panel_1.py`; position doesn't matter since it draws nothing |
+
+**Whenever a panel is added or removed in-game, re-verify this table (ask the operator for the
+current mapping) and update every `panel_N.py` cross-reference in this file and in the scripts'
+own module docstrings** — a stale filename here is actively misleading.
+
+Card size is set from the Control Room UI (drag-resize / size picker), **not** the script —
+`panel.width()`/`panel.height()` just report the operator's chosen size. Discrete, not continuous:
 
 | Label shown in the UI | Meaning | `panel.width()` | `panel.height()` |
 | :--- | :--- | :--- | :--- |
@@ -2506,127 +1327,62 @@ is discrete, not continuous:
 | `2 x 1` | **2 columns**, 1 row | 1000 | 200 |
 | `2 x 2` | 2 columns, 2 rows | 1000 | 400 |
 
-The first number is **columns** (width), the second is **rows** (height) — going from `1x1` to
-`1x2` only adds height, not width. A card whose layout assumes a wide canvas (multiple side-by-side
-sections, a right-anchored control) will clip/overflow on a `1x2` card because it's still only
-500px wide despite looking "bigger." This bit the Fleet card (`panel_2.py`) directly: it was set to
-`1x2`, and the per-vehicle recall switch (anchored from the right edge assuming ~1000px) ran off
-the card.
+First number = columns (width), second = rows (height) — `1x1` to `1x2` only adds height, not
+width. A wide-canvas layout (side-by-side sections, a right-anchored control) will clip on a `1x2`
+card since it's still only 500px wide.
 
-**Sizing recommendations for these cards** (each has a multi-column row layout that wants width,
-not height; `panel_1.py` itself draws nothing and has no card/size to set — see the split above):
-- `panel_4.py` (STATUS + AUTOMATION): **`2 x 2`** (1000x400) — STATUS alone only ever needed `2 x 1`,
-  but the AUTOMATION card added below it (see below) needs its own vertical room; the script splits
-  `panel.height()` ~55/45 between the two rather than assuming a fixed pixel split, so it still
-  degrades reasonably at `2 x 1` (just cramped) rather than clipping outright.
-- `panel_2.py` (FLEET) and `panel_3.py` (PRODUCTION) share the same one-row-per-item, scrollable-list
-  shape: **`2 x 1`** for a handful of rows, **`2 x 2`** once you have more — each row shows as many
-  as fit (`max_rows = (height - top - 16) // row_height`) at once. Beyond that, a `panel.slider()`
-  (there's no vertical slider/scroll widget in the panel API, so a horizontal one is repurposed: its
-  0-1 value maps to a row offset into the list, `round(value * (len(rows) - max_rows))`) lets the
-  player scroll through the rest, with a live `"X-Y of N"` indicator folded into its own label text.
-  The slider is only drawn (and its row's space only meaningfully used) once the list actually
-  exceeds `max_rows` — reserved unconditionally either way so the row grid below never jumps as the
-  count crosses that threshold from one tick to the next.
-  - `panel_2.py` (FLEET): one row per vehicle.
-  - `panel_3.py` (PRODUCTION): one row per Smelter + Fabricator + Supply Dock, in that order —
-    discovered live via `production.discover_smelter_ids()`/`discover_fabricator_ids()`/
-    `discover_supply_dock_ids()` rather than assuming a single `"smelter_1"`/`"fabricator_1"`/
-    `"supply_dock_1"` each (a second instance of any of the three used to be entirely invisible to
-    this card — the same hardcoded-id bug class Phase A fixed in `production.py` itself, just not
-    caught for Supply Dock at the time; see the Multi-Dock note below). Each row shows a role pill
-    (SMELTER/FABRICATOR/DOCK), the machine's current recipe (or the dock's order name + first
-    pending item, `"+N more"` if several), and a status pill (RUNNING/IDLE for a machine,
-    ACTIVE/READY/IDLE for a dock: pending items / fully shipped / no order at all). Inventory was
-    removed from this card entirely — a dedicated storage card with history graphs is a planned
-    follow-up, not rebuilt here.
+**Sizing recommendations** (`panel_7.py` draws nothing, no card/size to set): `panel_1.py` (STATUS
++ AUTOMATION) → **`2 x 2`** (1000x400), splitting `panel.height()` ~55/45 between its two sub-cards
+(not a fixed pixel split, so it degrades reasonably at `2 x 1`). `panel_2.py` (FLEET, one row per
+vehicle) / `panel_3.py` (PRODUCTION, one row per Smelter + Fabricator + Supply Dock — discovered
+live via `discover_smelter_ids()`/`discover_fabricator_ids()`/`discover_supply_dock_ids()`, each
+row a role pill + current recipe/order + status pill) share the same one-row-per-item scrollable
+shape → **`2 x 1`** for a handful of rows, **`2 x 2`** once you have more. Each shows as many rows
+as fit (`max_rows = (height - top - 16) // row_height`); a `panel.slider()` repurposed as a scroll
+bar (0-1 value → row offset, `round(value * (len(rows) - max_rows))`) covers the rest, only drawn
+once the list exceeds `max_rows`. Both degrade at 1-column widths (`wide = width >= 900` branches
+to a shorter row height, and `panel_2.py` hides the location column).
 
-Both also degrade gracefully at 1-column widths (`wide = width >= 900` branches to a shorter row
-height and, for `panel_2.py` specifically, hides the location column) so neither overflows even if
-resized narrow — but the recommended sizes above give the intended one-line-per-row layout.
-
-**`panel_1.py`'s automation work, displayed on `panel_4.py`'s AUTOMATION card** — everything from
-§1a-1's centralized Power Grid supervision + Smelter rebalance sweep, plus:
+**`panel_7.py`'s automation work, displayed on `panel_1.py`'s AUTOMATION card** — §1a-1's
+centralized Power Grid supervision + Smelter rebalance sweep, plus:
 - **Outpost-founding → resource marker auto-reassignment**: diffs `outpost_network.outposts()`'
-  current id set against the stored `outposts.known_ids` (archive, list — the only archive key
-  `panel_1.py` adds for this) each throttled storage tick; any **new** id gets
-  `outpost_mining.reevaluate_unassigned_near_outpost(new_id)` (§2d) called on it automatically.
-  `sync_resource_markers.py` remains for manual backfill/batch catch-up.
-- **Two independent throttle timers, not one shared `AUTOMATION_TICK_INTERVAL`** (an earlier version
-  had a single combined interval): `SOLAR_TICK_INTERVAL = 10` ticks (~1s at 10 ticks/sec) gates grid
-  supervision (`PowerGridManager.supervise_grid()` per grid — cheap, no Auto Feeder transfers
-  involved, safe to run often); `STORAGE_TICK_INTERVAL = 100` ticks (~10s) separately gates
-  `rebalance_inventory_to_warehouses()` + the outpost-diff/`consolidate_cross_warehouse_stock()` sweep.
-  Splitting them out fixes a real contention risk a single fast shared interval would create: both
-  `.transfer_to()` (rebalance) and `.compact()` (consolidation) lock their Warehouse as a material
-  endpoint for the whole transfer duration (`docs/guide/input_and_output_ports.md`, and see
-  `consolidate_cross_warehouse_stock()`'s own note above) — sweeping every Warehouse at every outpost
-  on a ~1s cadence would mean a Warehouse could plausibly still be mid-transfer from the *previous*
-  sweep when the *next* one starts, and would also cost a Smelter/Fabricator `take_item()` call a
-  `"busy"` rejection (see `craft_prefill_units()` above) far more often than a slower cadence would.
-  Grid supervision has no such cost, so it keeps the fast interval on its own timer instead of being
-  held back by storage's slower one. `panel_1.py`'s own loop is `sleep(1.0)`-paced (see the split
-  above) — both intervals still gate via `clock.tick()` rather than assuming 1 real second is exactly
-  10 game ticks, so this stays correct under time acceleration. `panel_4.py`'s render loop, by
-  contrast, has no `sleep()` and redraws every render tick as usual — it isn't doing any of this
-  throttled work itself, just reading the published summary each frame.
-- **`panel.button("run_archive_cleaner", ...)`** on `panel_4.py` — `ArchiveCleaner(dry_run=False,
-  verbose=True).run()` (§4), live-commit, human-triggered only, executed directly in that UI script
-  (not delegated to `panel_1.py`) since it's a rare one-off, not chronic per-cycle work.
-- **`panel.button("run_unsupported_markers", ...)`** on `panel_4.py` — `lib/unsupported_markers.py`'s
-  `update_unsupported_markers(clear_previous=True)` (promoted from `playground/mark_unsupported_targets.py`,
-  which never actually ran in the live game since `playground/` isn't synced — also available as the
-  thin root entrypoint `mark_unsupported_targets.py` for a manual standalone run). Also
-  human-triggered only, executed directly in `panel_4.py`.
-- **Version safety gate widget** (`lib/version_guard.py`, §4), drawn on `panel_4.py`: a `VERSION`
+  current id set against the stored `outposts.known_ids` (archive list) each throttled storage
+  tick; any **new** id gets `outpost_mining.reevaluate_unassigned_near_outpost(new_id)` (§2d)
+  called automatically. `sync_resource_markers.py` remains for manual backfill/batch catch-up.
+- **Two independent throttle timers**: `SOLAR_TICK_INTERVAL = 10` ticks (~1s) gates grid
+  supervision (cheap, no Auto Feeder transfers); `STORAGE_TICK_INTERVAL = 100` ticks (~10s)
+  separately gates `rebalance_inventory_to_warehouses()` + the outpost-diff/
+  `consolidate_cross_warehouse_stock()` sweep — both `.transfer_to()` and `.compact()` lock their
+  Warehouse as a material endpoint for the whole transfer, so a faster shared cadence risks
+  contention (a `"busy"` rejection on a Smelter/Fabricator `take_item()` call) that grid
+  supervision has no equivalent cost for. Both intervals gate via `clock.tick()` (not wall-clock),
+  correct under time acceleration.
+- **`panel.button("run_archive_cleaner", ...)`** on `panel_1.py` — `ArchiveCleaner(dry_run=False,
+  verbose=True).run()` (§4), live-commit, human-triggered only, executed directly in that UI
+  script (rare one-off, not chronic per-cycle work).
+- **`panel.button("run_unsupported_markers", ...)`** on `panel_1.py` — `lib/unsupported_markers.py`'s
+  `update_unsupported_markers(clear_previous=True)`, also human-triggered only, executed directly
+  in `panel_1.py`. Also runnable standalone as the root entrypoint `mark_unsupported_targets.py`.
+- **Version safety gate widget** (`lib/version_guard.py`, §4), drawn on `panel_1.py`: a `VERSION`
   pill anchored `width - 190` from the right edge (always drawn, success/error colored) plus, only
   while `version_mismatch()` is true, a `was <old> -- new scripts halt on startup` note and a
-  `panel.button("confirm_new_version", ...)` — the button only exists in the tree on a mismatch tick,
-  matching the general `if panel.button(...):`-wrapped conditional-visibility idiom used for every
-  other button on this card (there's no widget-level `visible` param). Neither `panel_1.py` nor
-  `panel_4.py` calls `validate_game_version()` itself — both independently check
-  `version_mismatch()` instead and gate their own mutating work behind `if not mismatch:` (`panel_1.py`
-  for its automation, `panel_4.py` for its two manual buttons), so `panel_4.py` keeps rendering and
-  stays clickable during a mismatch but neither script makes changes of its own until confirmed — the
-  same rule `validate_game_version()` enforces for every other controller, just applied per-action
-  here since a Custom Panel script can't block itself the way a one-shot controller can. The
-  ALWAYS-ON status dot/summary line on `panel_4.py` reflects this too (`"paused"` /
-  `"halted -- confirm new version above"` while mismatched, reading `panel_1.py`'s published summary
-  only when not mismatched).
+  `panel.button("confirm_new_version", ...)`. Neither `panel_7.py` nor `panel_1.py` calls
+  `validate_game_version()` itself — both independently check `version_mismatch()` and gate their
+  own mutating work behind `if not mismatch:` — `panel_1.py` keeps rendering and stays clickable
+  during a mismatch but neither script makes changes until confirmed.
 
-**Two real overlap bugs found and fixed across all three cards** (screenshot-driven — text was
-visibly stacked on top of other text in-game):
-1. `card(x, y, w, h, title)` already renders its own title bar text (`docs/types/system_and_panels.md`:
-   "Bordered subsection with **optional title bar**"). All three cards additionally called
-   `panel.label(24, 34, TITLE, "caption")` right after — a second, independently-positioned render of
-   the exact same title text, landing almost on top of the card's own title bar. Removed the redundant
-   `label()` call in all three; `card()`'s title is the only title render now.
-2. `slider(key, x, y, w, default, label)` draws its own `label` text at a position this script doesn't
-   control — pairing it with a separately-positioned `panel.draw_text()` right after it (e.g. to show
-   the slider's live numeric value) visibly collided with the widget's own label text. Fixed by folding
-   the live value INTO the label string itself (`f"cruise throttle {value*100:.0f}%"`) instead of a
-   second draw call — one single text render, so there's nothing to collide with. The scroll slider
-   does the same, but the range text it wants to show (`"X-Y of N"`) can only be computed *after*
-   `slider()` returns a value for this tick, so it's built from the return of the *previous* tick's
-   call (a plain script-level variable initialized once before the `while True:` loop and updated each
-   iteration — the script is one continuous process, not re-invoked per tick, so this persists exactly
-   like `self.wh_per_progress` persists across a controller's own loop iterations) — a one-tick lag,
-   invisible since the panel repaints every tick regardless. **General rule: never place a second,
-   independently-coordinated text element directly beside a named widget that already draws its own
-   label** (`slider`, and likely `switch`/`button` too) — fold the value into that widget's own label
-   parameter instead, even if it costs a tick of staleness.
-3. `panel_2.py`'s narrow-mode (`wide == False`) per-vehicle row placed the location text
-   (`draw_text(40, y+38, ...)`) almost directly under the role pill (`pill(40, y+22, ...)`) — the pill
-   renders taller than the assumed 16px gap allows, so the two visibly overlapped. Fixed by moving the
-   location text down to `y+46` and widening narrow-mode `row_height` from `54` to `64` to keep
-   adequate clearance to the next row. **General rule: a `pill()` needs more vertical clearance below
-   it than a plain text line does** — leave at least ~24px, not ~16px, before placing anything under one.
-
-General layout rule for any new card: prefer anchoring right-side elements from the right edge
-(`width - <fixed px>`) over a width fraction (`width * 0.86`) when the element has a roughly
-fixed pixel footprint (a `switch`, a `button`, a short `pill`) — fractions of a 500px vs 1000px
-canvas land in very different places, but a fixed-from-the-right offset stays a constant, safe
-distance from the border at either size.
+**General layout rules for any new card** (see `DESIGN_HISTORY.md` for the overlap bugs that
+produced these):
+- `card(x, y, w, h, title)` already renders its own title bar text — never add a second
+  `panel.label()` re-rendering the same title.
+- A named widget that draws its own label (`slider`, likely `switch`/`button` too) should have any
+  live value folded INTO that label string, not drawn as a second, separately-positioned text
+  element beside it.
+- A `pill()` needs more vertical clearance below it than a plain text line — leave at least ~24px,
+  not ~16px, before placing anything under one.
+- Prefer anchoring right-side elements from the right edge (`width - <fixed px>`) over a width
+  fraction (`width * 0.86`) for anything with a roughly fixed pixel footprint (`switch`, `button`,
+  short `pill`) — fractions of a 500px vs 1000px canvas land in very different places.
 
 ---
 
@@ -2664,9 +1420,7 @@ running game interpreter, not a simulation. Setup and full details:
   <file.py>:<line> [--mode attach|launch]` — prints the stack trace and top-frame locals at the
   first hit, then resumes and disconnects. Verified live against `rover_1.py`/`lib/vehicle.py`: a
   breakpoint inside `publish_telemetry()` correctly paused execution, reported the true call stack
-  (`publish_telemetry` ← `run_expedition_cycle` ← `run` ← the script's module scope) and real
-  locals (`state='IDLE_AT_BASE'`, the live `RoverController` instance), then resumed cleanly leaving
-  the script running.
+  and real locals, then resumed cleanly leaving the script running.
   - **`launch` starts idle scripts without breakpoints**: `dap_client.launch_script(workspace, script)`
     (or CLI `python tools/dap_client.py --workspace <dir> --script <path> --launch`) sends `initialize` →
     `launch` → `configurationDone` with no breakpoints set, triggering `{ action: "start", runIfIdle: true }`
@@ -2687,15 +1441,13 @@ running game interpreter, not a simulation. Setup and full details:
     - `python tools/auto_deploy.py --daemon`: Continuous background watcher loop.
     - `python tools/auto_deploy.py --deploy <machine_id> [--template <name>] [--param KEY=VALUE ...]`: Targeted single-machine deployment.
 
-**Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**: 
-If we're runnign the users main save (save_mtzkzly3_4ww80o): ask the user first, every time — 
+**Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**:
+If we're running the user's main save (save_mtzkzly3_4ww80o): ask the user first, every time —
 never assume standing permission from a prior yes.** A debug session runs
 against the live save with real effects (a script that spends credits, moves a vehicle, fires a
 drill, etc. does so for real, not in a sandbox) — pausing at a breakpoint can also leave a machine
 mid-action in a state the player didn't intend. Treat this the same as any other action with
 real-world (real-save) side effects per this project's risk-awareness rules, not as a routine
 read-only inspection step.
-In other - throwaway - saves you can be more liberal. Especially when we're developing the auto-play tools like 
-tools/auto_deply.py
-tools/early_game.py
-etc.
+In other — throwaway — saves you can be more liberal, especially when developing the auto-play
+tools like `tools/auto_deploy.py`, `tools/early_game.py`, etc.

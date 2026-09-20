@@ -1,8 +1,8 @@
 # Control Room status + automation card: clock, power, storage, actionable
-# warnings (STATUS), plus a live view of panel_1.py's automation results
-# (AUTOMATION) -- see docs/AI_CHEATSHEET.md.
+# warnings (STATUS), plus a live view of panel_7.py's automation results
+# (AUTOMATION) -- see docs/AI_CHEATSHEET.md §7.
 #
-# panel_1.py is the actual "always-on" worker (grid supervision, rebalance
+# panel_7.py is the actual "always-on" worker (grid supervision, rebalance
 # sweep, outpost sync, Supply Dock planning) -- it runs headless, with no
 # panel.* calls of its own. Split out this way because mixing a per-tick
 # UI-rendering loop with a multi-second synchronous call
@@ -10,7 +10,7 @@
 # found live to wedge THIS card's own rendering permanently: the script kept
 # running fine underneath (confirmed via temporary debug prints -- iterations
 # kept completing every ~100ms) but the Custom Panel canvas stayed blank from
-# the first stall onward, with no error anywhere. panel_1.py publishes its
+# the first stall onward, with no error anywhere. panel_7.py publishes its
 # result summary to `archive` (AUTOMATION_SUMMARY_KEY below) for this card to
 # read and display instead -- same Archive-as-decoupling-channel pattern
 # CLAUDE.md calls for when a result can't be produced by the component that
@@ -19,8 +19,18 @@
 # Everything drawn here (STATUS's clock/power/storage/alerts, the version
 # gate, and the manual buttons) is either a cheap single-call component read
 # or a rare user-triggered one-off -- none of it is the chronic per-cycle
-# cost that forced panel_1.py to go headless, so it stays inline in this UI
+# cost that forced panel_7.py to go headless, so it stays inline in this UI
 # script rather than being routed through archive too.
+#
+# NOTE ON THE FILE NUMBER: this UI card was originally panel_4.py and the
+# calculator was panel_1.py -- they're swapped from that because Custom Panel
+# ids only ever increment (deleting one never frees its number) and cards
+# can't be drag-reordered in the Control Room UI, so getting this UI card
+# into the visually-first slot meant recreating it at panel_1 and moving the
+# (position-agnostic, since it draws nothing) calculator to whatever number
+# was free instead. See docs/AI_CHEATSHEET.md §7's panel-numbering-quirk note
+# for the current full mapping -- it WILL drift again if panels are
+# added/removed in-game, so verify against the operator before trusting it.
 # Recommended card size: 2 columns x 2 rows -- see docs/AI_CHEATSHEET.md.
 
 from archive import archive
@@ -28,7 +38,7 @@ from archive_cleaner import ArchiveCleaner
 from unsupported_markers import update_unsupported_markers
 from version_guard import version_mismatch, good_version, confirm_new_version
 
-# Must match panel_1.py's own AUTOMATION_SUMMARY_KEY.
+# Must match panel_7.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 
 # Loop-scoped state, created once and persisting across iterations (this
@@ -102,7 +112,7 @@ while True:
             panel.draw_text(col4 + 18, y + 5, alert, 10, "text-secondary", width * 0.18)
 
     # ------------------------------------------------------------------
-    # AUTOMATION -- a live view of panel_1.py's headless worker (see module
+    # AUTOMATION -- a live view of panel_7.py's headless worker (see module
     # docstring). This card does not itself run any of that automation; the
     # buttons below are the one exception (rare, user-triggered one-offs).
     # ------------------------------------------------------------------
@@ -110,7 +120,7 @@ while True:
     panel.card(8, auto_y, width - 16, height - auto_y - 8, "AUTOMATION")
 
     # ------------------------------------------------------------------
-    # VERSION SAFETY GATE -- see lib/version_guard.py. panel_1.py's own
+    # VERSION SAFETY GATE -- see lib/version_guard.py. panel_7.py's own
     # automation loop checks version_mismatch() independently and halts its
     # own mutating work; this card just surfaces the same gate and the
     # confirm button so the operator can always reach it.
