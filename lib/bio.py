@@ -493,6 +493,7 @@ def _bio_demand_totals(comms, exchange, my_biome):
         except Exception:
             log.trace("_bio_demand_totals: comms.latest('bio_orders') raised -- falling back to active_order().")
     demands = {}
+    active = None
     if exchange:
         try:
             active = exchange.active_order()
@@ -763,8 +764,9 @@ class BioExchangeController:
                 try:
                     # Non-blocking check for instant delivery trigger
                     msg = self.comms.receive("sample_ready")
-                    if msg.status == "ok":
-                        self.log.print(f"[EXCHANGE] Received sample_ready event ({msg.packet.get('sample_id')}), triggering immediate sweep!")
+                    if msg.status == "ok" and msg.packet:
+                        sample_id = (msg.packet.value or {}).get("sample_id")
+                        self.log.print(f"[EXCHANGE] Received sample_ready event ({sample_id}), triggering immediate sweep!")
                         continue
                 except Exception:
                     pass

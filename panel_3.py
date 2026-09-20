@@ -131,7 +131,7 @@ while True:
         if max_start > 0:
             scroll_w = min(140, max(60, width - 300))
             scroll_value = panel.slider("production_scroll", 24, 54, scroll_w, 0.0, scroll_label)
-            start_index = max(0, min(max_start, round(scroll_value * max_start)))
+            start_index = int(max(0, min(max_start, round(scroll_value * max_start))))
             shown_last = min(start_index + max_rows, len(rows))
             scroll_label = f"scroll {start_index + 1}-{shown_last}/{len(rows)}"
 

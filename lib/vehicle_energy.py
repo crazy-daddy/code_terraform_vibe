@@ -199,7 +199,7 @@ def mine_wh_per_unit_for(vehicle, item_id, purity=None):
             except Exception:
                 pass
     power_w = DRILL_POWER_W_BY_HARDNESS_LIMIT.get(hardness_limit, DEFAULT_DRILL_POWER_W)
-    purity_divisor = PURITY_DIVISOR.get(purity, 1.0)
+    purity_divisor = PURITY_DIVISOR.get(str(purity or "standard"), 1.0)
     time_hours = (base_minutes / 60.0) * speed_mult / purity_divisor
     return time_hours * power_w
 
@@ -363,7 +363,7 @@ class VehicleEnergyMixin:
            and the module-level ORE_DIG_MINUTES/DRILL_POWER_W_BY_HARDNESS_LIMIT/PURITY_DIVISOR
            comment). Falls back to the flat MINE_WH_PER_UNIT average when mine_item_id isn't
            given at all (e.g. a non-mining candidate) -- callers that DO know the target ore
-           (mining.py/pioneer.py/rover.py's mining candidates always carry harvest_item/purity)
+           (vehicle_mining.py/pioneer.py/rover.py's mining candidates always carry harvest_item/purity)
            should always pass it, since the exact rate can run up to ~3.6x the flat average
            for a heavy drill on neutronium vs. a basic drill on iron ore.
         4. Energy to build: planned_construction_progress * wh_per_progress

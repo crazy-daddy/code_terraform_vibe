@@ -73,6 +73,7 @@ STORAGE_TICK_INTERVAL = 100
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
+grid_count = 0              # last solar-sync grid census; carries over on ticks solar_due is False
 
 while True:
     clock = get_component("clock")

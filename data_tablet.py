@@ -28,6 +28,9 @@ message = "".join(item[2] for item in message_cells)
 print(f"Decoded message ({len(message)} chars): '{message}'")
 
 transmitter = get_component("transmitter")
-transmitter.connect("earth")
-t_res = transmitter.transmit(c.id, message)
-print("Transmission status:", t_res.status, "-", t_res.message)
+if not transmitter:
+    print("[DATA_TABLET] No Transmitter found!")
+else:
+    transmitter.connect("earth")
+    t_res = transmitter.transmit(c.id, message)
+    print("Transmission status:", t_res.status, "-", t_res.message)

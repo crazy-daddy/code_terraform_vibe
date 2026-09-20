@@ -56,9 +56,12 @@ if curr.row == size - 1 and curr.col == size - 1 or found:
         key = esc_res.key
         print("Vault opened successfully! Extracted key:", key)
         transmitter = get_component("transmitter")
-        transmitter.connect("earth")
-        t_res = transmitter.transmit(c.id, key)
-        print("Transmission status:", t_res.status, "-", t_res.message)
+        if not transmitter:
+            print("[SEALED_VAULT] No Transmitter found!")
+        else:
+            transmitter.connect("earth")
+            t_res = transmitter.transmit(c.id, key)
+            print("Transmission status:", t_res.status, "-", t_res.message)
     else:
         print("Escape error:", esc_res.status, "-", esc_res.message)
 else:

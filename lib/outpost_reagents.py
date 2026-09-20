@@ -65,12 +65,14 @@ def reagent_stock_target_for(outpost_id, item_id):
     archive = _archive()
     targets = archive.get(OUTPOST_REAGENT_STOCK_TARGETS_KEY, {}) or {}
     outpost_targets = targets.get(outpost_id)
-    if isinstance(outpost_targets, dict) and item_id in outpost_targets:
+    if not isinstance(outpost_targets, dict):
+        outpost_targets = None
+    if outpost_targets is not None and item_id in outpost_targets:
         return outpost_targets[item_id]
 
     default = DEFAULT_REAGENT_STOCK_TARGETS.get(item_id, FALLBACK_REAGENT_STOCK_TARGET)
     targets = dict(targets)
-    outpost_targets = dict(outpost_targets) if isinstance(outpost_targets, dict) else {}
+    outpost_targets = dict(outpost_targets) if outpost_targets is not None else {}
     outpost_targets[item_id] = default
     targets[outpost_id] = outpost_targets
     archive.set(OUTPOST_REAGENT_STOCK_TARGETS_KEY, targets)

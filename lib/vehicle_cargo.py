@@ -278,7 +278,7 @@ class VehicleCargoMixin:
     def _reserve_home_haul(self, loaded_amounts):
         """
         Debits loaded_amounts from home's raw-ore deficit
-        (mining_reservations, shared with lib/mining.py's in-flight-mining
+        (mining_reservations, shared with lib/vehicle_mining.py's in-flight-mining
         debit) for the duration of the delivery leg -- otherwise a second
         transporter stationed at a different mining outpost would see the
         same still-uncovered home buffer/production deficit on its own next

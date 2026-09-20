@@ -1,6 +1,6 @@
 # Non-exclusive in-flight mining yield reservations. Several Pioneers can now
 # mine the same POI (game update), so lib/vehicle_claims.py's exclusivity lock
-# is no longer used to gate mineral sites (see lib/mining.py). Without some
+# is no longer used to gate mineral sites (see lib/vehicle_mining.py). Without some
 # bookkeeping though, several vehicles dispatched in the same demand-driven
 # cycle would each see the full home-base deficit and all launch, overshooting
 # it -- this module lets a vehicle debit its own projected yield from that

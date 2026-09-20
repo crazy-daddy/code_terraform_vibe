@@ -56,6 +56,9 @@ if current_correct < length:
 print(f"Final cracked passcode: {code}")
 
 transmitter = get_component("transmitter")
-transmitter.connect("earth")
-t_res = transmitter.transmit(c.id, code)
-print("Transmission status:", t_res.status, "-", t_res.message)
+if not transmitter:
+    print("[TERMINAL_BREACH] No Transmitter found!")
+else:
+    transmitter.connect("earth")
+    t_res = transmitter.transmit(c.id, code)
+    print("Transmission status:", t_res.status, "-", t_res.message)

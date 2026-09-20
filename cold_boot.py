@@ -60,6 +60,9 @@ print(f"Raw outputs: {outputs}")
 print(f"Decoded message: {message}")
 
 transmitter = get_component("transmitter")
-transmitter.connect("earth")
-t_res = transmitter.transmit(c.id, message)
-print("Transmission status:", t_res.status, "-", t_res.message)
+if not transmitter:
+    print("[COLD_BOOT] No Transmitter found!")
+else:
+    transmitter.connect("earth")
+    t_res = transmitter.transmit(c.id, message)
+    print("Transmission status:", t_res.status, "-", t_res.message)

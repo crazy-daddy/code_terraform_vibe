@@ -14,5 +14,8 @@ for letter in broadcast.freq_a:
         continue
 print(subject)
 transmitter = get_component("transmitter")
-transmitter.connect("earth")
-transmitter.transmit(self.contract.id, "".join(subject))
+if not transmitter:
+    print("[THREE_ECHOES] No Transmitter found!")
+else:
+    transmitter.connect("earth")
+    transmitter.transmit(self.contract.id, "".join(subject))

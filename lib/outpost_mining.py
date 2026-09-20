@@ -312,11 +312,13 @@ def stock_target_for(outpost_id, item_id):
     archive = _archive()
     targets = archive.get(OUTPOST_ORE_STOCK_TARGETS_KEY, {}) or {}
     outpost_targets = targets.get(outpost_id)
-    if isinstance(outpost_targets, dict) and item_id in outpost_targets:
+    if not isinstance(outpost_targets, dict):
+        outpost_targets = None
+    if outpost_targets is not None and item_id in outpost_targets:
         return outpost_targets[item_id]
 
     targets = dict(targets)
-    outpost_targets = dict(outpost_targets) if isinstance(outpost_targets, dict) else {}
+    outpost_targets = dict(outpost_targets) if outpost_targets is not None else {}
     outpost_targets[item_id] = WAREHOUSE_SLOT_CAPACITY
     targets[outpost_id] = outpost_targets
     archive.set(OUTPOST_ORE_STOCK_TARGETS_KEY, targets)

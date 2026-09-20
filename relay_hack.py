@@ -22,7 +22,10 @@ for t in range(lock.tumblers):
 print(f"Cracked code: {code}")
 
 transmitter = get_component("transmitter")
-transmitter.connect("earth")
-tx_res = transmitter.transmit(c.id, code)
-print("Transmit result:", tx_res.status, "-", tx_res.message)
+if not transmitter:
+    print("[RELAY_HACK] No Transmitter found!")
+else:
+    transmitter.connect("earth")
+    tx_res = transmitter.transmit(c.id, code)
+    print("Transmit result:", tx_res.status, "-", tx_res.message)
 

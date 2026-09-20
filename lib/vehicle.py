@@ -10,7 +10,7 @@
 #   - vehicle_claims.py: fleet-wide target claims and hardware-capability blacklist
 #   - vehicle_cargo.py: cargo offload into Base Inventory
 #   - vehicle_survey.py: sonar field work and the autonomous survey loop
-#   - mining.py: mineral-site discovery and drill execution, capability-aware
+#   - vehicle_mining.py: mineral-site discovery and drill execution, capability-aware
 #     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
 #     rather than duplicated between rover.py and pioneer.py
 
@@ -21,7 +21,7 @@ from vehicle_energy import VehicleEnergyMixin
 from vehicle_claims import VehicleClaimsMixin
 from vehicle_cargo import VehicleCargoMixin
 from vehicle_survey import VehicleSurveyMixin
-from mining import MiningMixin
+from vehicle_mining import VehicleMiningMixin
 from outpost_mining import HOME_OUTPOST_ID
 
 
@@ -31,7 +31,7 @@ class VehicleController(
     VehicleClaimsMixin,
     VehicleCargoMixin,
     VehicleSurveyMixin,
-    MiningMixin,
+    VehicleMiningMixin,
 ):
     """
     Unified base controller for autonomous surface vehicles (Rover, Pioneer).
@@ -98,8 +98,8 @@ class VehicleController(
         self.current_target_key = None
         # True only while current_target_key holds a home-demand mine-type
         # mission with a live mining_reservations entry (see
-        # MiningMixin.select_best_mining_target()) -- gates the refresh_yield()/
-        # release_yield() calls in lib/mining.py so they never fire for a
+        # VehicleMiningMixin.select_best_mining_target()) -- gates the refresh_yield()/
+        # release_yield() calls in lib/vehicle_mining.py so they never fire for a
         # stockpile-path or survey/POI mission, which never reserve yield.
         self.current_target_reserved = False
         self.assigned_slot_coords = self.get_home_slot_coords()

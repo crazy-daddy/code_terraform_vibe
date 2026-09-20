@@ -135,9 +135,8 @@ class DroneMiningMixin:
                 # transparently once physically there again (its own docs:
                 # "stays occupied... including across a script stop and
                 # restart").
-                has_resumable_target = bool(self.current_target_key and self.current_target)
-                if has_resumable_target:
-                    coords = tuple(self.current_target.get("coords"))
+                if self.current_target_key and self.current_target:
+                    coords = tuple(self.current_target.get("coords", (0, 0)))
                     log.debug(f"[{self._host.name}] Resuming claimed target '{self.current_target_key}' after reload; re-validating position.")
                     if not self._host.is_at(coords, precision=1.0):
                         if not self._host.fly_to(coords[0], coords[1], precision=1.0):
@@ -172,7 +171,7 @@ class DroneMiningMixin:
                     continue
 
                 target, budget = self.select_biosite_target(candidates)
-                if not target:
+                if not target or not budget:
                     log.debug(f"[{self._host.name}] {len(candidates)} candidate(s) found but none both reachable and claimable.")
                     self._host.publish_telemetry("IDLE_OUT_OF_RANGE")
                     sleep(15.0)

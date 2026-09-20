@@ -205,7 +205,7 @@ def _all_dock_orders():
         if not dock or not hasattr(dock, "current_order"):
             continue
         try:
-            order = dock.current_order()
+            order = getattr(dock, "current_order")()
         except Exception:
             continue
         if order:
@@ -292,7 +292,7 @@ def fluid_building_is_viable(fluid_key, type_id, building):
         if not building:
             return False
     try:
-        return building.fluid() == expected
+        return getattr(building, "fluid")() == expected
     except Exception:
         return False
 
@@ -407,7 +407,9 @@ def consume_manual_order(item_id, quantity):
     def updater(stored):
         stored = dict(stored or {})
         remaining = stored.get(item_id)
-        if not isinstance(remaining, (int, float)) or remaining <= 0:
+        if not isinstance(remaining, (int, float)):
+            remaining = None
+        if remaining is None or remaining <= 0:
             return stored
         remaining -= quantity
         if remaining <= 0:
@@ -906,7 +908,7 @@ def get_raw_material_demands(smelter=None):
             raw_demands[item_id] = buffer_deficit
 
     # Debit ore already promised by an in-flight home-demand mining trip
-    # (lib/mining.py's select_best_mining_target(reserve_demand=True)) or
+    # (lib/vehicle_mining.py's select_best_mining_target(reserve_demand=True)) or
     # haul delivery (lib/vehicle_cargo.py's run_haul_loop()) so a peer's
     # candidate search this cycle or later doesn't also chase a deficit
     # that's already being fetched -- now that several Pioneers can mine the

@@ -529,7 +529,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
                 continue
             amount = min(remaining, space)
             try:
-                res = inventory.transfer_to(building["id"], item_id, amount)
+                res = inventory.transfer_to(building["id"], item_id, int(amount))
             except Exception:
                 continue
             moved = getattr(res, "moved", 0) or 0
@@ -582,7 +582,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
             log.level("warn").print(f"[storage] Freed a slot in Warehouse '{warehouse_id}' but it still reports no room for {item_id} -- skipping this cycle.")
             continue
         try:
-            res = inventory.transfer_to(warehouse_id, item_id, amount)
+            res = inventory.transfer_to(warehouse_id, item_id, int(amount))
         except Exception:
             continue
         moved = getattr(res, "moved", 0) or 0

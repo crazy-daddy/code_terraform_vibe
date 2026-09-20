@@ -67,7 +67,7 @@ class RoverController(VehicleController):
         Finds the closest reachable unscanned POI or high-value surveyed mining site.
         Evaluates round-trip energy requirements and atomically reserves the target
         in Data Archive so other rovers do not compete for it. Mineral-site discovery
-        and priority-sorted claiming come from MiningMixin (lib/mining.py), shared
+        and priority-sorted claiming come from VehicleMiningMixin (lib/vehicle_mining.py), shared
         with Pioneer's mining role rather than duplicated here.
         Re-evaluates previously unsupported targets if upgraded technology or research is detected.
         """
@@ -147,12 +147,12 @@ class RoverController(VehicleController):
         # A mismatch between cargo already aboard and the resumed target's
         # own ore means blindly continuing would mine a *different* material
         # straight into the same hold -- cargo isn't material-locked (see
-        # cargo_matches_target() in mining.py), so nothing would reject it,
+        # cargo_matches_target() in vehicle_mining.py), so nothing would reject it,
         # it would just waste capacity and leave a confusing mixed load. Fall
         # through to the normal Step 2 unload-first path instead; the
         # resumed target itself is untouched (current_target_key stays set),
         # so Step 3 still resumes it right after, just with clean cargo.
-        if has_resumable_target and not self.cargo_matches_target(self.current_target):
+        if has_resumable_target and self.current_target and not self.cargo_matches_target(self.current_target):
             self.log.print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
             has_resumable_target = False
 

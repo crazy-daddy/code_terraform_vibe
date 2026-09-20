@@ -84,7 +84,9 @@ class FabricatorController:
         def updater(claims):
             claims = dict(claims or {})
             existing = claims.get(recipe_id)
-            if isinstance(existing, dict) and existing.get("fabricator") != self.name:
+            if not isinstance(existing, dict):
+                existing = None
+            if existing is not None and existing.get("fabricator") != self.name:
                 age = current_tick - existing.get("tick", 0)
                 if current_tick == 0 or age <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched

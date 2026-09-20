@@ -446,7 +446,7 @@ class PowerGridManager:
             self.grid_anchor = getattr(grid, "anchor_id", None)
 
         grid_id_str = self.grid_anchor or "unknown_grid"
-        current_hour = self.clock.elapsed_game_hours() if hasattr(self.clock, "elapsed_game_hours") else 0.0
+        current_hour = self.clock.elapsed_game_hours() if self.clock and hasattr(self.clock, "elapsed_game_hours") else 0.0
         current_day = self.clock.get_day() if self.clock else 1
 
         # Use PowerGrid's native stored and capacity fields directly

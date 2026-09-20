@@ -6,7 +6,7 @@
 
 from archive import archive
 from vehicle import VehicleController
-from mining import ROVER_PREFERRED_MAX_HARDNESS
+from vehicle_mining import ROVER_PREFERRED_MAX_HARDNESS
 from storage import take_item
 from version_guard import validate_game_version
 import mining_reservations
@@ -629,7 +629,7 @@ class PioneerController(VehicleController):
         operator action (mount_hardware() or the Control Panel) -- this loop
         only checks for one, it never mounts one itself. Handles the hardness
         tiers a Rover's basic drill can't reach, deprioritizing hardness <=
-        ROVER_PREFERRED_MAX_HARDNESS sites (mining.py) so Rovers get first
+        ROVER_PREFERRED_MAX_HARDNESS sites (vehicle_mining.py) so Rovers get first
         pick of easy ore while this Pioneer still falls back to it if nothing
         harder is currently pending.
         """
@@ -669,12 +669,12 @@ class PioneerController(VehicleController):
                 # target's own ore means blindly continuing would mine a
                 # *different* material straight into the same hold -- cargo
                 # isn't material-locked (see cargo_matches_target() in
-                # mining.py), so nothing would reject it, it would just waste
+                # vehicle_mining.py), so nothing would reject it, it would just waste
                 # capacity and leave a confusing mixed load. Fall through to
                 # the normal Step 2 unload-first path instead; the resumed
                 # target itself is untouched (current_target_key stays set),
                 # so Step 3 still resumes it right after, just with clean cargo.
-                if has_resumable_target and not self.cargo_matches_target(self.current_target):
+                if has_resumable_target and self.current_target and not self.cargo_matches_target(self.current_target):
                     self.log.print(f"[{self.name}] Cargo holds a different material than the resumed target's {self.current_target.get('harvest_item')}; unloading before resuming.")
                     has_resumable_target = False
 
@@ -699,7 +699,7 @@ class PioneerController(VehicleController):
 
                 # Step 3: Select safe target with exclusive claim, preferring
                 # sites only this Pioneer's drill can reach.
-                if has_resumable_target:
+                if has_resumable_target and self.current_target:
                     self.log.print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
                     target = self.current_target
                     budget = self.calculate_trip_energy(

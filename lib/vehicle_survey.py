@@ -1,7 +1,7 @@
 # Vehicle mixin: sonar scanning/surveying, POI discovery, and the autonomous
 # survey loop (known POIs first, optional outward spiral fallback). Shared by
 # Rover and Pioneer via VehicleController (lib/vehicle.py). Drilling lives in
-# lib/mining.py's MiningMixin.
+# lib/vehicle_mining.py's VehicleMiningMixin.
 
 from archive import archive
 from version_guard import validate_game_version

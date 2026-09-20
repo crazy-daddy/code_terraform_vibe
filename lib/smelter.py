@@ -99,7 +99,9 @@ class SmelterController:
         def updater(claims):
             claims = dict(claims or {})
             existing = claims.get(recipe_id)
-            if isinstance(existing, dict) and existing.get("smelter") != self.name:
+            if not isinstance(existing, dict):
+                existing = None
+            if existing is not None and existing.get("smelter") != self.name:
                 age = current_tick - existing.get("tick", 0)
                 # current_tick == 0 means the clock wasn't available to
                 # measure real age -- treat that as "still held" (blocking),

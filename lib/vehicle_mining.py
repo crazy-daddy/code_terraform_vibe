@@ -42,7 +42,7 @@ ROVER_PREFERRED_MAX_HARDNESS = 1.0
 PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}
 
 
-class MiningMixin:
+class VehicleMiningMixin:
     """Mineral-site discovery, priority-sorted claiming, and drill execution."""
 
     @property
@@ -319,7 +319,9 @@ class MiningMixin:
         if not isinstance(reservations, dict):
             return
         entry = reservations.get(self.current_target_key)
-        if isinstance(entry, dict) and entry.get("vehicle") == self._host.name:
+        if not isinstance(entry, dict):
+            entry = None
+        if entry is not None and entry.get("vehicle") == self._host.name:
             self.current_target_reserved = True
 
     def mine_current_site(self, max_units=None):

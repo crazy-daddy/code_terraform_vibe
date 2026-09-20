@@ -25,6 +25,9 @@ print(f"Collected {len(pairs)} matching pairs.")
 
 # Transmit pairs to Earth
 transmitter = get_component("transmitter")
-transmitter.connect("earth")
-res = transmitter.transmit(c.id, pairs)
-print("Transmit result:", res.status, "-", res.message)
+if not transmitter:
+    print("[CORRUPTED_ARCHIVE] No Transmitter found!")
+else:
+    transmitter.connect("earth")
+    res = transmitter.transmit(c.id, pairs)
+    print("Transmit result:", res.status, "-", res.message)

@@ -11,6 +11,9 @@ print(f"Total samples: {len(c.samples)}, Earth refs: {len(earth_set)}, Alien sam
 
 # 3. Transmit the alien_list to Earth
 transmitter = get_component("transmitter")
-transmitter.connect("earth")
-res = transmitter.transmit(c.id, alien_list)
-print("Transmit result:", res.status, "-", res.message)
+if not transmitter:
+    print("[XENOGENETICS] No Transmitter found!")
+else:
+    transmitter.connect("earth")
+    res = transmitter.transmit(c.id, alien_list)
+    print("Transmit result:", res.status, "-", res.message)

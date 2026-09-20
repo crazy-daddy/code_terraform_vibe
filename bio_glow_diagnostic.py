@@ -20,7 +20,7 @@ from storage import discover_storage_buildings
 # alongside bio_exchange_1), and the one actually paired with the Luminizer at
 # the coastal outpost isn't necessarily the "_1" instance.
 luminizer = get_component("bio_luminizer_1")
-exchange = local_sibling(luminizer.outpost, "bio_exchange") if luminizer else None
+exchange = local_sibling(getattr(luminizer, "outpost", None), "bio_exchange") if luminizer else None
 if not exchange:
     print("[DIAGNOSTIC] Could not resolve bio_luminizer_1's local Bio Exchange.")
 else:

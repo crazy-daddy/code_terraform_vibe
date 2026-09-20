@@ -36,7 +36,7 @@ For high-level operational workflows, progression roadmaps, and automation orche
 | &nbsp;&nbsp;↳ fleet-wide target claims & hardware blacklist | `vehicle_claims.py` |
 | &nbsp;&nbsp;↳ cargo offload into Inventory / Warehouse | `vehicle_cargo.py` |
 | &nbsp;&nbsp;↳ sonar survey loop (POI discovery) | `vehicle_survey.py` |
-| &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `mining.py` — shared by Rover and Pioneer; see §2b |
+| &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `vehicle_mining.py` — shared by Rover and Pioneer; see §2b |
 | &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; do **not** put shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
@@ -642,7 +642,7 @@ Frozen (no transform step) or an outpost without its processor yet.
 - **In-flight mining yield reservation** (`lib/mining_reservations.py`, `mining.reserved_yield`
   archive key): non-exclusive, additive bookkeeping — several vehicles converging on one deficit no
   longer collide via a claim, but would still see the same undiminished demand without this.
-  `MiningMixin.select_best_mining_target(candidates, reserve_demand=True)` (home-demand path only)
+  `VehicleMiningMixin.select_best_mining_target(candidates, reserve_demand=True)` (home-demand path only)
   estimates a trip's yield via `max_mineable_units()` and reserves it; `get_raw_material_demands()`
   subtracts every non-stale reservation's units before returning. Heartbeat-renewed/released
   (`refresh_yield()`/`release_yield()`), same expiry (`RESERVATION_STALE_TICKS = 36000`). The
@@ -885,7 +885,7 @@ an Inventory/Warehouse take. `ensure_fluid_connections(recipe)` runs every `step
   per `fluid_key` — a recipe can need more than one fluid at once (oil-refining needs both
   `oil_in` and `water_in`), independent sources.
 
-### 2b. Mining (`lib/mining.py` `MiningMixin`)
+### 2b. Mining (`lib/vehicle_mining.py` `VehicleMiningMixin`)
 
 Mineral-site discovery and drill execution live in one place, shared by Rover and Pioneer (mixed
 into `VehicleController`).
@@ -1026,7 +1026,7 @@ responsible outpost.
   `_release_home_haul()` right after delivery) — same in-flight-debit mechanism as concurrent mining
   trips.
 
-### 2e. Stationed Mining Role (`lib/vehicle.py`, `lib/vehicle_energy.py`, `lib/mining.py`)
+### 2e. Stationed Mining Role (`lib/vehicle.py`, `lib/vehicle_energy.py`, `lib/vehicle_mining.py`)
 
 Phase C of the Multi-Outpost Production Network. Lets a Rover/Pioneer instance treat **any**
 outpost — not just home — as its base.
@@ -1043,12 +1043,12 @@ outpost — not just home — as its base.
 - **`unload_cargo(outpost=None)`** — defaults to `self.home_outpost` (cached), so a stationed
   vehicle unloads into its own outpost's Warehouse by default; the explicit override exists for
   Phase D's transporter (§2f).
-- **`MiningMixin.build_local_stockpile_candidates(outpost_id)`** — for each ore in
+- **`VehicleMiningMixin.build_local_stockpile_candidates(outpost_id)`** — for each ore in
   `outpost_mining.assigned_ores_for(outpost_id)` still under its `stock_target_for()`, builds
   mineral site candidates (same hardness/claim/blacklist filtering as `build_mineral_site_candidates()`)
   additionally requiring `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`.
   Independent of home's live demand entirely.
-- **`MiningMixin.run_stationed_mining_loop(outpost_id)`** — thin wrapper around
+- **`VehicleMiningMixin.run_stationed_mining_loop(outpost_id)`** — thin wrapper around
   `_stationed_mining_cycle(outpost_id)`: same overall cycle shape as `run_mining_loop()` (reload
   resume, cargo/target mismatch detour, claim + drive + mine + return + unload + recharge, release
   claim right after return), target selection swapped for `build_local_stockpile_candidates()`.

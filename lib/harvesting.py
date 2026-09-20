@@ -54,7 +54,7 @@ class HarvesterController:
         """Calculates Manhattan grid distance (O(1)) between two sectors."""
         r1, c1 = cls.sector_to_rc(sec1)
         r2, c2 = cls.sector_to_rc(sec2)
-        if r1 is None or r2 is None:
+        if r1 is None or r2 is None or c1 is None or c2 is None:
             return 999
         return abs(r1 - r2) + abs(c1 - c2)
 
@@ -68,7 +68,7 @@ class HarvesterController:
             return []
         r1, c1 = cls.sector_to_rc(start_sec)
         r2, c2 = cls.sector_to_rc(target_sec)
-        if r1 is None or r2 is None:
+        if r1 is None or r2 is None or c1 is None or c2 is None:
             return []
 
         path = []
