@@ -1,7 +1,7 @@
 {
   "pythonVersion": "3.12",
   "exclude": [
-    "tools", "inspirations", "**/node_modules", "**/__pycache__", "**/.*"
+    "tools", "inspirations", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
   ],
   "executionEnvironments": [
     {
