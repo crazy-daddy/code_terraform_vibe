@@ -9,6 +9,7 @@
 
 from tree_console import TreeConsole
 from typing import TYPE_CHECKING
+from unsupported_markers import clear_wrong_scanner_marker
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -85,7 +86,7 @@ class DroneScoutMixin:
                         log.debug(f"[{self._host.name}] Battery low ({curr_wh:.1f} Wh); returning to drone_service.")
                         self._host.publish_telemetry("RETURNING_TO_SERVICE")
                         service_id = service_info.get("id")
-                        if not (service_id and self._host.fly_to_station(service_id)):
+                        if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
                             self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
                     sleep(poll_interval)
                     continue
@@ -100,7 +101,7 @@ class DroneScoutMixin:
                 target = None
                 for candidate in candidates:
                     budget = self._host.calculate_trip_energy(candidate)
-                    log.debug(f"POI {candidate}: {budget['total_required_wh']:.1f} Wh required, achievable={budget['is_achievable']}.")
+                    log.trace(f"POI {candidate}: {budget['total_required_wh']:.1f} Wh required, achievable={budget['is_achievable']}.")
                     if budget["is_achievable"]:
                         target = candidate
                         break
@@ -123,6 +124,16 @@ class DroneScoutMixin:
                 res = self._host.drone.bio_scanner.scan()
                 log.trace(f"[{self._host.name}] bio_scanner.scan() exit: status={res.status}.")
                 if res.status == "ok":
+                    # A rover/pioneer's sonar may have already flagged this
+                    # coordinate "wrong_scanner" and planted a "Bio Contact"
+                    # marker for it -- now that a bio_scanner has actually
+                    # resolved it, that marker is stale. The blacklist entry
+                    # itself stays (ground vehicles can never carry a
+                    # bio_scanner, so it must keep blocking their sonar sweeps
+                    # from re-attempting this contact); see
+                    # unsupported_markers.clear_wrong_scanner_marker().
+                    if clear_wrong_scanner_marker(target[0], target[1]):
+                        log.debug(f"[{self._host.name}] Cleared stale 'Bio Contact' marker at {target}; bio_scanner resolved it.")
                     scan = res.scan
                     if scan is not None and getattr(scan, "is_empty", False):
                         self._host.mark_poi_empty(target[0], target[1])

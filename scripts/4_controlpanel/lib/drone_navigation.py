@@ -127,6 +127,10 @@ class DroneNavigationMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] go_to({target_x:.1f}, {target_y:.1f}) rejected: {res.status} - {res.message}")
             self._host.log.trace(f"[{self._host.name}] fly_to() exit: go_to() rejected ({res.status}).")
             return False
+        # go_to() only sets the route -- throttle is a separate axis that
+        # resets to 0 on the prior stop/completion/error, so it must be
+        # (re)issued here or the drone will sit at the waypoint forever.
+        self._host.drone.set_throttle(throttle)
 
         ticks = 0
         while ticks < timeout_ticks:
@@ -165,12 +169,19 @@ class DroneNavigationMixin:
         self._host.log.trace(f"[{self._host.name}] fly_to() exit: timed out after {ticks} ticks.")
         return False
 
-    def fly_to_station(self, name, timeout_ticks=1500):
+    def fly_to_station(self, name, target_coords=None, timeout_ticks=1500):
         """
         Flies to a named Drone Depot/Drone Service Station via
         go_to_station(), confirming arrival via current_station() equal to
         the destination id (drone.md: the authoritative arrival check, even
         when go_to_station() was called with a display name).
+
+        target_coords, when the caller already resolved them (e.g. from
+        get_nearest_drone_service()/get_nearest_drone_depot()), feeds
+        select_cruise_throttle()'s energy-safe cap -- a depot run isn't
+        necessarily a power-safe "coming home" leg, so it still deserves the
+        same reserve check as any other fly_to(). Falls back to the plain
+        cruise_throttle baseline when coords aren't known.
         """
         if not name:
             return False
@@ -180,6 +191,11 @@ class DroneNavigationMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] go_to_station('{name}') rejected: {res.status} - {res.message}")
             self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') exit: rejected ({res.status}).")
             return False
+        if target_coords is not None:
+            throttle = self._host.select_cruise_throttle(target_coords)
+        else:
+            throttle = min(self._host.cruise_throttle, self._host.MAX_SPEEDMODE_THROTTLE)
+        self._host.drone.set_throttle(throttle)
 
         ticks = 0
         while ticks < timeout_ticks:
@@ -198,8 +214,12 @@ class DroneNavigationMixin:
         self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') exit: timed out after {ticks} ticks.")
         return False
 
-    def fly_to_drill(self, name, timeout_ticks=1500):
-        """Flies to a named field Mining Drill via go_to_drill(), for a future ore-hauler drone role (not used by scout/miner this pass)."""
+    def fly_to_drill(self, name, target_coords=None, timeout_ticks=1500):
+        """
+        Flies to a named field Mining Drill via go_to_drill(), for a future
+        ore-hauler drone role (not used by scout/miner this pass). Same
+        target_coords/select_cruise_throttle() contract as fly_to_station().
+        """
         if not name:
             return False
         self._host.log.trace(f"[{self._host.name}] fly_to_drill('{name}') entry.")
@@ -208,6 +228,11 @@ class DroneNavigationMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] go_to_drill('{name}') rejected: {res.status} - {res.message}")
             self._host.log.trace(f"[{self._host.name}] fly_to_drill('{name}') exit: rejected ({res.status}).")
             return False
+        if target_coords is not None:
+            throttle = self._host.select_cruise_throttle(target_coords)
+        else:
+            throttle = min(self._host.cruise_throttle, self._host.MAX_SPEEDMODE_THROTTLE)
+        self._host.drone.set_throttle(throttle)
 
         ticks = 0
         while ticks < timeout_ticks:

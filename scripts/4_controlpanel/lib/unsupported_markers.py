@@ -118,6 +118,46 @@ def get_marker_style(reason, entry):
     return icon, color, label, note
 
 
+def clear_wrong_scanner_marker(x, y):
+    """
+    Called by a drone (drone_scout.py) right after a successful bio_scanner
+    scan at whole-number (x, y). Removes any "Bio Contact" marker a rover/
+    pioneer's sonar previously placed for that coordinate, without touching
+    the underlying survey.unsupported_targets entry -- ground vehicles never
+    carry a bio_scanner (drone-only module, see docs/database/
+    equipment_biosphere.md), so the "wrong_scanner" blacklist entry must stay
+    forever to stop their sonar sweeps from re-attempting and re-blacklisting
+    the same contact. Only the marker is stale here, not the block itself.
+    Safe to call for every scan; it is a no-op when nothing matches.
+    """
+    markers = _component("markers")
+    if not markers or not archive or not archive.available:
+        return False
+
+    unsupported = archive.get("survey.unsupported_targets", {}) or {}
+    if not isinstance(unsupported, dict):
+        return False
+
+    target_x, target_y = int(x), int(y)
+    cleared = False
+    for key, entry in unsupported.items():
+        if not isinstance(entry, dict) or entry.get("reason") != "wrong_scanner":
+            continue
+        coords = resolve_coordinates(key, entry)
+        if not coords:
+            continue
+        if int(coords[0]) == target_x and int(coords[1]) == target_y:
+            marker_id = f"{MARKER_PREFIX}{key}"[:64]
+            try:
+                res = markers.remove(marker_id)
+                if getattr(res, "status", "") == "ok":
+                    log.debug(f"clear_wrong_scanner_marker({target_x}, {target_y}): removed marker '{marker_id}' for resolved bio contact '{key}'.")
+                    cleared = True
+            except Exception:
+                pass
+    return cleared
+
+
 def update_unsupported_markers(clear_previous=True):
     """
     Places map markers for all unsupported targets stored in the archive.
@@ -176,6 +216,26 @@ def update_unsupported_markers(clear_previous=True):
             continue
 
         reason = entry.get("reason", entry.get("status", "unknown"))
+
+        # "wrong_scanner" (bio contact) is a permanent hardware mismatch for
+        # ground vehicles -- only a drone's bio_scanner can ever resolve it,
+        # and that happens outside this blacklist entirely (drone_scout.py's
+        # bio_scanner.scan() writes straight to the Journal, see
+        # docs/components/journal.md .has_scanned()). Once the Journal shows
+        # the coordinate scanned, the site is already handled: keep the
+        # archive entry (so a ground vehicle's own sonar sweep never
+        # re-attempts it) but stop replanting its "Bio Contact" marker, which
+        # drone_scout.py already removes directly on the resolving scan --
+        # this is just the sync button's path staying in agreement with that.
+        if reason == "wrong_scanner" and journal and hasattr(journal, "has_scanned") and coords:
+            try:
+                if journal.has_scanned(int(coords[0]), int(coords[1])):
+                    log.debug(f"  Skipping '{key}': Journal shows ({coords[0]}, {coords[1]}) already bio-scanned; no marker needed.")
+                    skipped_count += 1
+                    continue
+            except Exception:
+                pass
+
         icon, color, label, note = get_marker_style(reason, entry)
 
         marker_id = f"{MARKER_PREFIX}{key}"[:64]

@@ -141,18 +141,18 @@ class VehicleSurveyMixin:
                 target_entry = unsupported_targets.get(key) or unsupported_targets.get(legacy_key)
                 if target_entry:
                     can_attempt, attempt_reason = self._host.can_attempt_target(key, target_entry)
-                    log.debug(f"[{self._host.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
+                    log.trace(f"[{self._host.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
                     if not can_attempt:
                         continue
                 else:
-                    log.debug(f"[{self._host.name}] {key}: no unsupported entry on record.")
+                    log.trace(f"[{self._host.name}] {key}: no unsupported entry on record.")
 
                 # Check if claimed by another active vehicle (Rover, Pioneer, or peer)
                 claim = existing_claims.get(key)
                 if claim and (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
                     claim_age = curr_tick - claim.get("tick", 0)
                     if curr_tick == 0 or claim_age < self._host.CLAIM_STALE_TICKS:
-                        log.debug(f"[{self._host.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
+                        log.trace(f"[{self._host.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
                         continue
 
                 points.append(point)
@@ -194,17 +194,17 @@ class VehicleSurveyMixin:
                 target_entry = unsupported_targets.get(key)
                 if target_entry:
                     can_attempt, attempt_reason = self._host.can_attempt_target(key, target_entry)
-                    log.debug(f"[{self._host.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
+                    log.trace(f"[{self._host.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
                     if not can_attempt:
                         continue
                 else:
-                    log.debug(f"[{self._host.name}] {key}: no unsupported entry on record.")
+                    log.trace(f"[{self._host.name}] {key}: no unsupported entry on record.")
 
                 claim = existing_claims.get(key)
                 if claim and (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
                     claim_age = curr_tick - claim.get("tick", 0)
                     if curr_tick == 0 or claim_age < self._host.CLAIM_STALE_TICKS:
-                        log.debug(f"[{self._host.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
+                        log.trace(f"[{self._host.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
                         continue
 
                 sites.append(site)

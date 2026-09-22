@@ -5,6 +5,7 @@
 
 from archive import archive
 from typing import TYPE_CHECKING
+from unsupported_markers import MARKER_PREFIX
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -394,6 +395,19 @@ class VehicleClaimsMixin:
                             del records[leg_key]
             return records
         archive.transaction("pioneer.sonar_retries", {}, p_updater)
+
+        # Keep the Planet Map marker (placed by unsupported_markers.py under
+        # the same target_key) in step, instead of leaving a stale marker
+        # until someone clicks the Control Panel's "Sync Unsupported" button.
+        try:
+            markers = get_component("markers")
+        except Exception:
+            markers = None
+        if markers:
+            try:
+                markers.remove(f"{MARKER_PREFIX}{target_key}"[:64])
+            except Exception:
+                pass
 
     def get_unsupported_targets(self):
         """Returns the unified map of unsupported/blacklisted targets across the fleet."""

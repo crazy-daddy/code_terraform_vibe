@@ -85,6 +85,14 @@ GAME_DIR = "io.codeterraform.game"
 
 LIB_CATEGORY = "lib"
 
+# launch_in_game()'s retry cushion for the game's own disk-poll lag: a script
+# slot we just wrote to isn't necessarily registered in the game's workspace
+# snapshot yet by the time we try to launch it (confirmed live -- an
+# immediate launch right after a fresh fill failed with "not registered",
+# succeeded on retry after a short wait). Total extra wait if every attempt
+# needs it: 0.5 + 1.0 + 2.0 = 3.5s, on top of the immediate first try.
+LAUNCH_RETRY_DELAYS_S = (0.5, 1.0, 2.0)
+
 # Machine types where each numbered instance is a genuinely distinct,
 # hand-authored script (see module docstring) - matched by exact stem,
 # never collapsed to a shared base name or renumbered.
@@ -109,7 +117,16 @@ TRAILING_INDEX = re.compile(r"_\d+$")
 DEFAULT_MAGIC = "synctool-fill"     # game file -> filled from scripts/
 DEFAULT_PULL = "synctool-pull"      # game file -> copied back into scripts/
 
-app = typer.Typer(add_completion=False, help=__doc__)
+SHORT_HELP = (
+    "Sync the tiered scripts/ tree into a Code: Terraform save's script directory.\n\n"
+    "Commands: status | once | watch | resolve-preview. Run `<command> --help` for its "
+    "options, or see the module docstring in devtools/scripts_sync.py for the full "
+    "tiering/matching rules.\n\n"
+    "--auto (once/watch) launches filled/updated slots in-game via DAP - off by default, "
+    "opt in per run."
+)
+
+app = typer.Typer(add_completion=False, help=SHORT_HELP)
 
 
 @dataclass
@@ -124,6 +141,7 @@ class Options:
     pull: str = DEFAULT_PULL
     force_tier: Optional[str] = None
     auto: bool = False
+    auto_debounce: float = 30.0
     active_tier: str = field(default="", init=False)
 
     @property
@@ -551,9 +569,9 @@ def has_magic(text: str, magic: str) -> bool:
 
 
 def strip_magic(text: str, magic: str) -> str:
-    if not has_magic(text, magic):
-        return text
     i, _ = _first_real_line(text)
+    if i is None or not has_magic(text, magic):
+        return text
     lines = text.splitlines(keepends=True)
     return "".join(lines[:i] + lines[i + 1:])
 
@@ -592,17 +610,37 @@ def launch_in_game(save_dir: Path, script_stem: str) -> None:
     confirmation that governs the assistant's own actions - see CLAUDE.md's
     live-debugging rule and the plan this tool came from.
     """
-    sys.path.insert(0, str(REPO / "tools"))
+    sys.path.insert(0, str(REPO / "devtools"))
     try:
         from dap_client import launch_script  # type: ignore
     except ImportError:
-        warn("  --auto requested but tools/dap_client.py is unavailable (submodule initialized?)")
+        warn("  --auto requested but devtools/dap_client.py is unavailable")
         return
+    # launch_script()'s "script" argument is matched against the workspace's
+    # registered document paths (debug-adapter.cjs's Workspace.document()) --
+    # a bare stem is not a registered path and is always rejected ("This file
+    # is not registered to a game script"). Confirmed live: every --auto call
+    # site here was passing script_stem straight through and silently failing
+    # every single launch until this fix.
+    script_path = str(save_dir / f"{script_stem}.py")
     try:
-        if launch_script(str(save_dir), script_stem):
-            ok("  auto  %-28s launched in game" % script_stem)
+        for attempt, delay in enumerate((0.0,) + LAUNCH_RETRY_DELAYS_S):
+            if delay:
+                time.sleep(delay)
+            if launch_script(str(save_dir), script_path):
+                ok("  auto  %-28s launched in game%s" % (script_stem, " (retry %d)" % attempt if attempt else ""))
+                break
         else:
-            warn("  auto  %-28s launch failed (see DAP output above)" % script_stem)
+            # Most common cause: we just wrote this file ourselves a moment
+            # ago, but the game polls disk on its own cadence rather than
+            # reacting instantly, so "This file is not registered to a game
+            # script" is expected for the first attempt or two right after a
+            # fresh fill -- confirmed live (a freshly-cleared, re-filled
+            # drone_2.py failed to launch immediately, succeeded once retried
+            # after a short wait). The retries above are a best-effort cushion
+            # for that race, not a fix for a genuinely broken launch.
+            warn("  auto  %-28s launch failed after %d attempt(s) (see DAP output above -- "
+                 "the game may not have polled this file yet)" % (script_stem, len(LAUNCH_RETRY_DELAYS_S) + 1))
     except Exception as exc:  # pragma: no cover - best-effort, never fatal
         warn("  auto  %-28s launch error: %s" % (script_stem, exc))
 
@@ -749,15 +787,24 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
     return True
 
 
-def sync_lib(lib_index: dict, opts: Options) -> int:
+def sync_lib(lib_index: dict, opts: Options) -> set:
     """Unconditional mirror of the resolved lib/ into the save's lib/.
 
     Unlike machine scripts, lib modules aren't slots the game creates - we own
     the whole directory. Every resolved module is copied in if its content
     differs from what's already deployed (backing up the old copy first).
+
+    Returns the set of lib_index keys actually (re)written -- including under
+    --dry-run, as a preview of what would change -- so the caller can decide
+    which currently-deployed scripts need relaunching (see
+    relaunch_lib_dependents()): unlike a machine script slot, a lib module has
+    no slot of its own whose text changing would trigger sync_file()'s own
+    --auto launch, so without this a lib-only fix silently never reaches any
+    already-running script - it sits on disk correct but unread until
+    something restarts the scripts that import it.
     """
     dest_dir = opts.save_dir / "lib"
-    written = 0
+    changed: set = set()
     for key, source in sorted(lib_index.items()):
         dest = dest_dir / f"{key}.py"
         body = read(source)
@@ -769,22 +816,147 @@ def sync_lib(lib_index: dict, opts: Options) -> int:
             continue
         if opts.dry_run:
             ok("  would sync-lib %-19s <- %s" % (dest.name, show(source)))
-            written += 1
+            changed.add(key)
             continue
         if prior is not None and prior.strip():
             backup(dest)
         dest_dir.mkdir(parents=True, exist_ok=True)
         if write_atomic(dest, body):
             ok("  lib   %-28s <- %s" % (dest.name, show(source)))
-            written += 1
-    return written
+            changed.add(key)
+    return changed
 
 
-def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
-    written = sync_lib(lib_index, opts)
+def parse_module_imports(text: str) -> set:
+    """Top-level module names this text `import`s or `from`-imports, e.g.
+    `from vehicle_mining import VehicleMiningMixin` -> {"vehicle_mining"}.
+    Matches this project's own flat, no-package import style (game scripts
+    can't use relative imports or dotted packages) -- good enough to build a
+    lib dependency graph, not a general-purpose import resolver. Returns an
+    empty set on unparseable text rather than raising."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    names: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.level == 0:
+                names.add(node.module.split(".")[0])
+    return names
+
+
+def lib_dependency_closure(lib_index: dict) -> dict:
+    """key -> every OTHER lib_index key it transitively imports, e.g. "rover"
+    (which imports "vehicle") includes "vehicle_mining" too, since "vehicle"
+    itself imports that. Used to tell whether a changed lib module reaches a
+    given deployed script indirectly (rover_1.py -> "rover" -> "vehicle" ->
+    "vehicle_mining"), not just through its own direct imports."""
+    direct = {
+        key: {n for n in parse_module_imports(read(path) or "") if n in lib_index and n != key}
+        for key, path in lib_index.items()
+    }
+    closure: dict = {}
+
+    def expand(key: str, seen: frozenset) -> set:
+        if key in closure:
+            return closure[key]
+        if key in seen:
+            return set()  # import cycle guard -- not memoized, this key's own answer is still being computed higher up
+        result: set = set()
+        for dep in direct.get(key, ()):
+            result.add(dep)
+            result |= expand(dep, seen | {key})
+        closure[key] = result
+        return result
+
+    for key in lib_index:
+        expand(key, frozenset())
+    return closure
+
+
+def relaunch_lib_dependents(changed_keys: set, lib_index: dict, opts: Options, skip_stems: set) -> None:
+    """Reports every currently-deployed script whose import closure reaches a
+    lib module sync_lib() just changed -- it deliberately does NOT attempt to
+    relaunch them (despite the name -- kept for now to avoid touching every
+    call site again; see TODO.md to rename). skip_stems are slots sync_file()
+    already relaunched this same pass for their OWN changed body text, so
+    they're excluded from the report (though see the caveat below -- that
+    relaunch has the same unsolved problem for anything they import).
+
+    CONFIRMED LIVE (2026-09-22, this save) that no automatable path actually
+    applies a lib/ change to an already-running script:
+    - DAP `launch` (what launch_in_game() calls) never restarts a script
+      that's already running -- runIfIdle=True in debug-adapter.cjs means an
+      already-running target just gets attached to, old code untouched.
+    - The general external-command channel's "action":"run" (same one "Run
+      Script in Game" uses) DOES force a genuine restart with fresh top-level
+      code -- confirmed on rover_1.py -- but the restarted script still ran
+      the STALE cached copy of the changed library, not the freshly-synced
+      file on disk. The game caches an imported library module independently
+      of restarting the script that imports it.
+    - Every relevant VS Code command was tried directly against this exact
+      changed file (Run Script/Create Library/Import File as Library/Rename
+      Library) and each failed for an unrelated, semantically-correct reason
+      (wrong file kind, already exists, no-op rename, ...), not "not found" --
+      there is no hidden "apply library" command sitting in the palette.
+    - `debug-adapter.cjs` was read in full: no restart/reload-library
+      capability is advertised or implemented there either.
+
+    Only the native in-game Script Editor's "Apply & restart all" button
+    actually invalidates that cache, and it has no external hook in the
+    currently shipped tooling. So rather than call launch_in_game() and print
+    a misleading "launched in game" while the script silently keeps running
+    stale library code, this only tells the operator which scripts need a
+    manual Apply in-game.
+    """
+    if not changed_keys or not opts.auto or opts.dry_run:
+        return
+    closure = lib_dependency_closure(lib_index)
+    hit_stems = []
     for path in sorted(opts.save_dir.glob("*.py")):
-        written += sync_file(path, script_index, opts, quiet_skips=not opts.verbose)
+        if path.stem in skip_stems or not is_candidate(path, opts.save_dir):
+            continue
+        text = read(path)
+        if text is None:
+            continue
+        direct = {n for n in parse_module_imports(text) if n in lib_index}
+        reaches = set(direct)
+        for dep in direct:
+            reaches |= closure.get(dep, set())
+        if reaches & changed_keys:
+            hit_stems.append(path.stem)
+    if hit_stems:
+        warn("  auto  lib changed (%s) -- %d running script(s) need a manual Apply & restart all in-game: %s" %
+             (", ".join(sorted(changed_keys)), len(hit_stems), ", ".join(hit_stems)))
+
+
+def sync_all(script_index: dict, lib_index: dict, opts: Options, on_lib_changed=None) -> int:
+    """Full pass: mirror lib/, fill matched script slots, stage the rest.
+
+    on_lib_changed, when given, replaces the immediate relaunch_lib_dependents()
+    call with on_lib_changed(changed_lib_keys, launched_stems) -- used by
+    Watcher to debounce a burst of lib/ edits into one relaunch instead of one
+    per file (see Watcher._note_lib_changed()). `once` (no callback) keeps the
+    immediate relaunch: a single one-shot run has no "still mid-edit" risk to
+    wait out.
+    """
+    changed_lib_keys = sync_lib(lib_index, opts)
+    written = len(changed_lib_keys)
+    launched_stems: set = set()
+    for path in sorted(opts.save_dir.glob("*.py")):
+        if sync_file(path, script_index, opts, quiet_skips=not opts.verbose):
+            written += 1
+            if opts.auto:
+                launched_stems.add(path.stem)
     tidy_unmatched(script_index, opts)
+    if changed_lib_keys and on_lib_changed is not None:
+        on_lib_changed(changed_lib_keys, launched_stems)
+    else:
+        relaunch_lib_dependents(changed_lib_keys, lib_index, opts, launched_stems)
     return written
 
 
@@ -856,15 +1028,20 @@ ForceTierOpt = typer.Option(None, "--force-tier",
 AutoOpt = typer.Option(False, "--auto",
                         help="Also launch filled/updated slots in-game via DAP. "
                              "User-invoked automation, not on by default.")
+AutoDebounceOpt = typer.Option(30.0, "--auto-debounce",
+                                help="watch --auto only: seconds of lib/ quiet time to wait before "
+                                     "relaunching dependent scripts, re-extended by every further lib/ "
+                                     "edit seen in that window - avoids pushing a still-mid-edit, "
+                                     "inconsistent set of lib/ files into a live restart.")
 
 
 def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, magic,
-              pull=DEFAULT_PULL, force_tier=None, auto=False) -> Options:
+              pull=DEFAULT_PULL, force_tier=None, auto=False, auto_debounce=30.0) -> Options:
     save = resolve_save(save_dir)
     if not scripts_dir.is_dir():
         err("Not a directory: %s" % scripts_dir)
         raise typer.Exit(2)
-    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, magic, pull, force_tier, auto)
+    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, magic, pull, force_tier, auto, auto_debounce)
     opts.active_tier = resolve_active_tier(scripts_dir, save, force_tier)
     return opts
 
@@ -947,6 +1124,16 @@ class Watcher:
         self.pending: dict = {}
         self.repo_due = None
         self.last_tier_check = time.monotonic()
+        # Debounced --auto relaunch state (see _note_lib_changed()/drain()):
+        # a lib/ edit doesn't fire relaunch_lib_dependents() immediately --
+        # it accumulates here and pushes auto_launch_due out by
+        # opts.auto_debounce seconds, so a burst of related lib/ edits (e.g.
+        # touching both vehicle_mining.py and production.py for one fix)
+        # settles into a single relaunch of a CONSISTENT set of files instead
+        # of restarting dependent scripts once per file mid-edit.
+        self.pending_lib_changes: set = set()
+        self.pending_lib_skip_stems: set = set()
+        self.auto_launch_due = None
 
     def note_save(self, raw_path):
         path = Path(str(raw_path))
@@ -973,12 +1160,26 @@ class Watcher:
         self.sweep()
 
     def sweep(self):
-        sync_all(self.script_index, self.lib_index, self.opts)
+        on_lib_changed = self._note_lib_changed if (self.opts.auto and not self.opts.dry_run) else None
+        sync_all(self.script_index, self.lib_index, self.opts, on_lib_changed=on_lib_changed)
         if not self.opts.dry_run:
             write_resolved_preview(self.opts.scripts_dir, self.opts.active_tier, self.opts.save_dir)
 
+    def _note_lib_changed(self, changed_keys: set, launched_stems: set) -> None:
+        """sync_all()'s on_lib_changed callback: defer the relaunch instead of
+        firing it inline (see Watcher.__init__'s docstring comment)."""
+        self.pending_lib_changes |= changed_keys
+        self.pending_lib_skip_stems |= launched_stems
+        self.auto_launch_due = time.monotonic() + self.opts.auto_debounce
+        ok("  auto  lib changed (%s); relaunching dependents in %.0fs unless more lib/ edits arrive" %
+           (", ".join(sorted(changed_keys)), self.opts.auto_debounce))
+
     def drain(self):
         now = time.monotonic()
+        if self.auto_launch_due is not None and self.auto_launch_due <= now:
+            changed_keys, skip_stems = self.pending_lib_changes, self.pending_lib_skip_stems
+            self.pending_lib_changes, self.pending_lib_skip_stems, self.auto_launch_due = set(), set(), None
+            relaunch_lib_dependents(changed_keys, self.lib_index, self.opts, skip_stems)
         # Cheap periodic re-check so a tier advance (new tech unlocked
         # mid-session) is picked up even with no repo-side file change.
         if now - self.last_tier_check > 5.0:
@@ -1026,9 +1227,10 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
           strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
           no_renumber: bool = NoRenumberOpt, magic: str = MagicOpt, pull: str = PullOpt,
           force_tier: Optional[str] = ForceTierOpt, auto: bool = AutoOpt,
+          auto_debounce: float = AutoDebounceOpt,
           poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events.")):
     """Watch the save directory and scripts/, filling and re-tiering as things change."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, magic, pull, force_tier, auto)
+    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, magic, pull, force_tier, auto, auto_debounce)
     watcher = Watcher(opts)
 
     typer.echo("Save     %s" % opts.save_dir)
@@ -1039,6 +1241,7 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     if pull:
         typer.echo("Marker   %r at the top of a game file copies it back into scripts/" % pull)
     if auto:
+        typer.echo("Auto     lib/ relaunch debounced %.0fs (resets on every further lib/ edit)" % auto_debounce)
         warn("Auto-launch enabled: filled/updated slots will be started in-game via DAP.")
     if dry_run:
         warn("Dry run: nothing will be written.")
@@ -1052,7 +1255,20 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     try:
         while True:
             time.sleep(0.2)
-            watcher.drain()
+            # A transient error here (a file briefly locked mid-write by the
+            # game, a momentarily-unreadable workspace snapshot, ...) used to
+            # propagate straight out of this loop and kill the whole watcher
+            # permanently -- it would then sit in a scrolled-away terminal
+            # looking normal while silently doing nothing, forever, until
+            # manually noticed and restarted (this is suspected to be exactly
+            # what happened to a live session this session: newly-deployed
+            # machines' blank slots went unfilled with no visible error).
+            # Log and keep looping instead -- only Ctrl-C should ever stop
+            # a long-running watch session.
+            try:
+                watcher.drain()
+            except Exception as exc:
+                err("  drain error (watcher still running): %s" % exc)
     except KeyboardInterrupt:
         typer.echo("\nStopped.")
     finally:

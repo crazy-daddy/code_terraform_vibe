@@ -48,6 +48,13 @@ class DroneController(
         "scout": "bio_scanner",
         "miner": "bio_extractor",
     }
+    # detect_role() probes by calling this method once per candidate module
+    # and reading the result's .status -- see detect_role()'s docstring for
+    # why a live call, not hasattr(), is the only available detection here.
+    ROLE_PROBE_METHOD = {
+        "bio_scanner": "scan",
+        "bio_extractor": "extract",
+    }
 
     def __init__(self, drone, cruise_throttle=None):
         self.drone = drone
@@ -140,20 +147,51 @@ class DroneController(
 
     def detect_role(self, role_override=None):
         """
-        Inspects mounted field modules (ROLE_MODULES) and returns "scout"/
-        "miner", mirroring PioneerController.detect_role()'s
-        hasattr(...)-based equipment probe. Returns None when neither or
-        both modules are mounted -- caller must treat that as "cannot
-        start".
+        Probes mounted field modules (ROLE_MODULES) and returns "scout"/
+        "miner". Returns None when neither or both modules are mounted --
+        caller must treat that as "cannot start".
+
+        NOT a hasattr()-based probe, unlike PioneerController.detect_role().
+        Confirmed live (2026-09-22): self.drone always exposes .bio_scanner
+        AND .bio_extractor as attributes regardless of which (if either) is
+        actually mounted -- hasattr(self.drone, "bio_scanner") and
+        hasattr(self.drone, "bio_extractor") both returned True on a drone
+        carrying only a Bio Scanner, so hasattr can never tell "mounted"
+        from "not mounted" for these two. Drone also has no .modules() to
+        enumerate equipment generically (unlike Rover/Pioneer). The only
+        available signal is to actually call the module's own method once
+        and read whether the result's .status comes back "not_mounted" --
+        a real Literal value both PortableBioScanner.scan() and
+        PortableBioExtractor.extract() document (docs/models/
+        biology_models.md) -- or something else ("ok"/"busy"/"scrambled"/
+        "not_at_location"/... all mean the module IS present).
+
+        scan() is documented as a free, repeatable no-cost probe ("Repeat
+        scans are free"), so calling it here is harmless. extract() has no
+        such guarantee: if this drone happens to be hovering over a live
+        biosite the moment this runs (e.g. resuming right where a miner
+        left off after a reload), calling it as a probe genuinely extracts
+        for real -- accepted as the only available detection mechanism
+        (see TODO.md); a resumed miner extracting again at its own resumed
+        site is the same outcome run_miner_loop() would produce anyway, not
+        a new side effect.
         """
         if role_override is not None:
             self.log.debug(f"[{self.name}] Role override supplied: '{role_override}'; skipping equipment probe.")
             return role_override
 
-        self.log.start(f"[{self.name}] Detecting role from mounted equipment")
+        self.log.start(f"[{self.name}] Detecting role from mounted equipment (live scan()/extract() probe)")
         present = []
         for role, attr in self.ROLE_MODULES.items():
-            mounted = hasattr(self.drone, attr)
+            module = getattr(self.drone, attr, None)
+            probe_method = self.ROLE_PROBE_METHOD.get(attr)
+            mounted = False
+            if module is not None and probe_method:
+                try:
+                    result = getattr(module, probe_method)()
+                    mounted = getattr(result, "status", None) != "not_mounted"
+                except Exception as exc:
+                    self.log.debug(f"{attr}.{probe_method}() probe raised: {exc}")
             self.log.debug(f"{attr} module mounted: {mounted}")
             if mounted:
                 present.append(role)

@@ -66,19 +66,19 @@ class DroneCargoMixin:
         deferred TODO.
         """
         if not life_form_item_id or not self._host.home_biome:
-            self._host.log.debug(f"[{self._host.name}] is_home_biome_sample: missing item_id ({life_form_item_id!r}) or home_biome ({self._host.home_biome!r}); rejecting.")
+            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: missing item_id ({life_form_item_id!r}) or home_biome ({self._host.home_biome!r}); rejecting.")
             return False
         nocturna = get_component("nocturna")
         if not nocturna:
-            self._host.log.debug(f"[{self._host.name}] is_home_biome_sample: 'nocturna' component unavailable; rejecting '{life_form_item_id}'.")
+            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: 'nocturna' component unavailable; rejecting '{life_form_item_id}'.")
             return False
         try:
             native_biome = nocturna.life_form_biome(life_form_item_id)
             accepted = native_biome == self._host.home_biome
-            self._host.log.debug(f"[{self._host.name}] is_home_biome_sample: '{life_form_item_id}' native biome '{native_biome}' vs home_biome '{self._host.home_biome}' -> {'accepted' if accepted else 'rejected'}.")
+            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: '{life_form_item_id}' native biome '{native_biome}' vs home_biome '{self._host.home_biome}' -> {'accepted' if accepted else 'rejected'}.")
             return accepted
         except Exception:
-            self._host.log.debug(f"[{self._host.name}] is_home_biome_sample: life_form_biome() lookup failed for '{life_form_item_id}'; rejecting.")
+            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: life_form_biome() lookup failed for '{life_form_item_id}'; rejecting.")
             return False
 
     def unload_cargo_at_depot(self):

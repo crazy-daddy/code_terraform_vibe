@@ -252,6 +252,15 @@ class VehicleMiningMixin:
         estimate is stashed on the candidate as "estimated_units" so callers
         can size the actual mining call instead of defaulting to cargo
         capacity.
+
+        Feasibility is first checked at a full 10-unit haul; if that doesn't
+        fit the round-trip budget, retries at whatever max_mineable_units()
+        says IS affordable instead of rejecting the site outright -- a
+        vehicle whose battery can never fit a full 10-unit trip (e.g. a
+        Rover with no bigger battery available, or a Pioneer eyeing
+        expensive-per-unit ore like Neutronium) would otherwise stand by at
+        base forever despite live demand and a perfectly reachable smaller
+        load. Only 0 affordable units is a genuine rejection.
         """
         pos = self._host.get_position()
         candidates = sorted(
@@ -276,6 +285,31 @@ class VehicleMiningMixin:
                 mine_purity=cand.get("purity"),
             )
 
+            # A full 10-unit haul is only ever a planning assumption for the
+            # feasibility check, not a hard requirement -- a vehicle whose
+            # battery can never fit 10 units' worth of round trip (e.g. a
+            # Rover with no bigger battery available) would otherwise reject
+            # every site and sit at base forever despite live demand and a
+            # perfectly reachable partial load. If the full haul doesn't fit,
+            # fall back to whatever IS affordable (max_mineable_units() --
+            # same estimator already used below to size the real mining call)
+            # and retry the budget check with that instead. Only 0 affordable
+            # units is a genuine rejection.
+            partial_load = False
+            if not budget["is_achievable"] and cand["type"] == "mine":
+                affordable = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
+                if affordable > 0:
+                    self._host.log.debug(f"[{self._host.name}] {cand['key']}: full {planned_mine}-unit load needs {budget['total_required_wh']:.1f} Wh, not affordable; retrying at {affordable} units.")
+                    planned_mine = affordable
+                    budget = self._host.calculate_trip_energy(
+                        cand["coords"],
+                        planned_drill_units=planned_mine,
+                        planned_scans=planned_scan,
+                        mine_item_id=cand.get("harvest_item"),
+                        mine_purity=cand.get("purity"),
+                    )
+                    partial_load = budget["is_achievable"]
+
             if budget["is_achievable"]:
                 budget_candidates += 1
                 claimed = self._host.claim_target(cand["key"], cand)
@@ -286,6 +320,8 @@ class VehicleMiningMixin:
                     f"[{self._host.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, "
                     f"purity={cand.get('purity')}) at {cand['coords']}, budget={budget['total_required_wh']:.1f} Wh."
                 )
+                if partial_load:
+                    self._host.log.print(f"[{self._host.name}] {cand['key']}: battery can't afford a full load -- heading out for a partial ~{planned_mine}-unit load instead of standing by.")
                 self.current_target_reserved = False
                 if cand["type"] == "mine":
                     estimated_units = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))

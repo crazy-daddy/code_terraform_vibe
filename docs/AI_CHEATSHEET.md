@@ -606,7 +606,10 @@ Frozen (no transform step) or an outpost without its processor yet.
   at both ends of every leg — §2f), else `default_cruise_throttle()` — a fleet-wide
   `vehicle.default_cruise_throttle` archive value (clamped to `[MIN_SPEEDMODE_THROTTLE,
   MAX_SPEEDMODE_THROTTLE]`, falling back to `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5`), settable via
-  the Data Archive Notebook or live from `panel_2.py`'s FLEET card slider.
+  the Data Archive Notebook or live from `panel_2.py`'s FLEET card slider. `lib/drone_energy.py`
+  mirrors this exactly for drones — its own `drone.default_cruise_throttle` archive key (distinct
+  from the vehicle key so the two fleets tune independently), same clamp/fallback logic, settable
+  from `panel_5.py`'s DRONE FLEET card slider (§7).
 - `minimum_wh_per_meter()` gives the best-case Wh/m at the throttle floor. Any check claiming a
   target/job is *permanently* unreachable (not just "not right now") must budget against this, not
   the typical cruise-throttle rate.
@@ -909,6 +912,13 @@ into `VehicleController`).
   equally-rich candidates. A soft preference — `calculate_trip_energy()`'s achievability check and
   `claim_target()` still run after sorting. Both candidate builders attach each site's `"purity"`
   from `getattr(site, "purity", None)`; POI candidates rank as `"standard"`'s `0` by default.
+  Achievability is checked at a full 10-unit haul first; if that doesn't fit the round-trip
+  budget, retries once at whatever `max_mineable_units()` says IS affordable instead of rejecting
+  the site outright (only 0 affordable units is a real rejection) — otherwise a vehicle whose
+  battery can never fit a full 10-unit trip (undersized battery, or an expensive-per-unit ore like
+  Neutronium) would stand by at base forever despite reachable demand. Logged at `print()` level
+  (`"battery can't afford a full load -- heading out for a partial ~N-unit load"`) when this
+  fallback fires, since it's a normal-operation outcome worth surfacing, not just a debug detail.
 - `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (read live) when
   no `max_units` given. Home-demand mining loops now always pass an explicit `max_units` from
   `select_best_mining_target()`'s `estimated_units` (energy-based, `max_mineable_units()`).
@@ -1299,7 +1309,7 @@ the same pattern later.
 - `fleet.status.<id>` / `rover.status.<id>`: Telemetry `{name, state, x, y, wh, level, target, tick}`
 - `rover.claims` / `survey.claims` (mirrored, legacy + current key): Atomic target reservation dict `{target_key: {"vehicle": id, "tick": tick}}`. Stale after `CLAIM_STALE_TICKS = 36,000` ticks (1 hr) — see `lib/vehicle_claims.py`. No longer exclusivity-gates mineral mining sites (see `mining.reserved_yield` below); still exclusive for survey/POI targets (key prefix `"poi_"`) and construction jobs (key prefix `"build_"`, `PioneerController.construction_claim_key()`, see §2a's construction-job-claims entry).
 - `mining.reserved_yield`: Non-exclusive in-flight mining yield dict `{reservation_key: {"vehicle": id, "item_id": str, "units": int, "tick": tick}}`, home-demand mine-type missions only. Stale after `RESERVATION_STALE_TICKS = 36,000` ticks (same window as claims) — see `lib/mining_reservations.py`.
-- `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`. Populated per-contact from `SonarScanResult.blocked` (`docs/types/fleet_and_vehicles.md` `BlockedContact`: `.x`/`.y`/`.reason`/`.message`), not from `scan()`'s own top-level `.status` — a wide/deep sonar sweep covers several "?" contacts at once, and `.status` is one verdict for the WHOLE sweep (`"ok"` as soon as any contact in range resolves, even if others in the same sweep stayed blocked), so reading only `.status` silently drops every blocked contact except when nothing at all resolved. `scan_and_survey()` (`lib/vehicle_survey.py`) iterates `res.blocked` and blacklists each contact by its own coordinates instead.
+- `survey.unsupported_targets` / `rover.unsupported_targets` (mirrored): Hardware-capability blacklist entries (`reason`, `scanner_type`, `scanner_tier`, `hardness_limit`, unlocked researches) — see `lib/vehicle_claims.py`. Populated per-contact from `SonarScanResult.blocked` (`docs/types/fleet_and_vehicles.md` `BlockedContact`: `.x`/`.y`/`.reason`/`.message`), not from `scan()`'s own top-level `.status` — a wide/deep sonar sweep covers several "?" contacts at once, and `.status` is one verdict for the WHOLE sweep (`"ok"` as soon as any contact in range resolves, even if others in the same sweep stayed blocked), so reading only `.status` silently drops every blocked contact except when nothing at all resolved. `scan_and_survey()` (`lib/vehicle_survey.py`) iterates `res.blocked` and blacklists each contact by its own coordinates instead. `VehicleClaimsMixin.clear_unsupported_target()` (called by `vehicle_survey.py`/`vehicle_mining.py` on successful resolution) removes the archive entries *and* the matching `"unsupported.<target_key>"` Planet Map marker directly via `markers.remove()`, so the visual marker disappears immediately instead of lingering until the Control Panel's "Sync Unsupported" button (`lib/unsupported_markers.py`) is next clicked. **`reason == "wrong_scanner"` (bio contact) is special-cased**: it's a permanent hardware mismatch, not a research/tier gap — ground vehicles never carry a `bio_scanner` (drone-only module, `docs/database/equipment_biosphere.md`), so `can_attempt_target()` can never return true for one and neither `vehicle_survey.py` nor `vehicle_mining.py` ever calls `clear_unsupported_target()` for it. Deleting the entry once a drone resolves it would just invite the next rover/pioneer sonar sweep over that coordinate to re-`blacklist_target()` it (sonar re-reports the same "?" contact as blocked every sweep it's in range, regardless of archive state) — so the entry is deliberately kept forever once written. Instead, `unsupported_markers.clear_wrong_scanner_marker(x, y)` (called by `drone_scout.py` right after a successful `bio_scanner.scan()`) removes only the stale `"Bio Contact"` marker via `markers.remove()`, leaving the blacklist entry intact; `update_unsupported_markers()`'s sync-button path independently skips (re-)placing a marker for any `wrong_scanner` entry whose coordinate `journal.has_scanned()` already reports true, so a later button press can't replant it either. Drones otherwise don't participate in this blacklist/marker family — non-bio-contact resolution still uses the unrelated `scout.empty_pois` fact cache below, which never places map markers.
 - `heat.optimal_setpoints`: Caching `{thermal_state: best_power}`
 - `pressure.optimal_resonance`: Caching `{resonance_state: best_window}`
 - `fabricator.manual_orders`: `{item_id: quantity}` ad-hoc Fabricator build requests, edited directly
@@ -1372,7 +1382,7 @@ controller.run()
 
 ---
 
-## 🖥️ 7. Control Room Panel Cards (`panel_1.py`..`panel_4.py`)
+## 🖥️ 7. Control Room Panel Cards (`panel_1.py`..`panel_5.py`)
 
 **Headless calculator + UI card split (currently `panel_4.py` + `panel_1.py`).** The automation
 calculator (grid supervision, rebalance sweep, outpost sync,
@@ -1386,20 +1396,22 @@ this split.
 
 **⚠️ Two separate numbering schemes, do not conflate them.** The game's own Custom Panel ids are
 assigned on creation and **only ever increment** — deleting a panel does not free its number, and
-cards **cannot be drag-reordered** once placed. `panel_4.py`/`panel_5.py`/`panel_6.py`/`panel_8.py`
-are **dead in that live-slot numbering** (deleted during testing, gone for good; the next new panel
-in-game will be `panel_9.py`). Separately, since the [tiered `scripts/` restructuring](#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy),
+cards **cannot be drag-reordered** once placed. `panel_4.py` (old numbering)/`panel_6.py`/`panel_8.py`
+are **dead in that live-slot numbering** (deleted during testing, gone for good). Separately, since
+the [tiered `scripts/` restructuring](#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy),
 the *source-tree* files under `scripts/4_controlpanel/control_panel/` were cosmetically renumbered
-`panel_1.py`..`panel_4.py` (four panels total, in role order) — this is a dev-side naming choice
-only, decoupled on purpose from the live-slot numbers above, and does **not** mean live slot 4 is
-back in use. Current mapping (verified live, live-slot column is authoritative for the actual save):
+`panel_1.py`..`panel_4.py` (four panels, in role order) — this is a dev-side naming choice only,
+decoupled on purpose from the live-slot numbers above. `panel_5.py` (DRONE FLEET) was added later
+as a genuinely new card, not yet placed in the live Control Room — see its module docstring.
+Current mapping (verified live, live-slot column is authoritative for the actual save):
 
 | Role | Source-tree file | Live save slot | Notes |
 | :--- | :--- | :--- | :--- |
 | STATUS + AUTOMATION UI | `panel_1.py` | `panel_1.py` | wanted at the top of the Control Room; kept in the original slot 1 |
-| FLEET | `panel_2.py` | `panel_2.py` | unchanged |
+| FLEET (ground vehicles) | `panel_2.py` | `panel_2.py` | unchanged |
 | PRODUCTION | `panel_3.py` | `panel_3.py` | unchanged |
 | Automation calculator (headless) | `panel_4.py` | `panel_7.py` | moved here from `panel_1.py`; position doesn't matter since it draws nothing. Source-tree name and live slot name **differ** — see TODO.md's "Panel dev-side numbering vs. save-side slot numbers" for the known sync-tool gap this creates |
+| DRONE FLEET | `panel_5.py` | *(not yet created)* | new card, cruise-throttle slider + drone roster; operator must create a new Custom Panel in-game and use `devtools/scripts_sync.py`'s unmatched-file synctool-fill marker to point that empty slot at this source file, then this row gets its real live-slot name |
 
 **Whenever a panel is added or removed in-game, re-verify this table (ask the operator for the
 current mapping) and update every `panel_N.py` cross-reference in this file and in the scripts'
@@ -1424,7 +1436,8 @@ card since it's still only 500px wide.
 (not a fixed pixel split, so it degrades reasonably at `2 x 1`). `panel_2.py` (FLEET, one row per
 vehicle) / `panel_3.py` (PRODUCTION, one row per Smelter + Fabricator + Supply Dock — discovered
 live via `discover_smelter_ids()`/`discover_fabricator_ids()`/`discover_supply_dock_ids()`, each
-row a role pill + current recipe/order + status pill) share the same one-row-per-item scrollable
+row a role pill + current recipe/order + status pill) / `panel_5.py` (DRONE FLEET, one row per
+drone via `fleet.drones()`) share the same one-row-per-item scrollable
 shape → **`2 x 1`** for a handful of rows, **`2 x 2`** once you have more. Each shows as many rows
 as fit (`max_rows = (height - top - 16) // row_height`); a `panel.slider()` repurposed as a scroll
 bar (0-1 value → row offset, `round(value * (len(rows) - max_rows))`) covers the rest, only drawn
@@ -1496,24 +1509,61 @@ running game interpreter, not a simulation. Setup and full details:
   plugin, since its own Python checker doesn't know the game's owner globals/runtime rules.
 - Console output mirrors to `external-ide\logs\all.log` (plus one file per script) — useful to tail
   even without attaching a debugger at all.
-- **`tools/dap_client.py`** — a minimal DAP client for driving a debug session directly from a
+- **`devtools/dap_client.py`** — a minimal DAP client for driving a debug session directly from a
   script instead of VS Code (Node.js 20+ required; this save's copy lives at
   `C:\Program Files\nodejs\node.exe`, not on the default shell `PATH` — invoke by full path, or
   `export PATH="/c/Program Files/nodejs:$PATH"` for the current shell session only, since shell
-  state doesn't persist between tool calls here). `DapClient` is the low-level stdio transport
+  state doesn't persist between tool calls here). Vendored into `devtools/` (not imported from
+  `early_game_runner/`, which is a separate, standalone project this repo doesn't reach into) —
+  `devtools/scripts_sync.py` is its only consumer. `DapClient` is the low-level stdio transport
   (Content-Length framing, background reader thread); `run_session(workspace, script, breakpoints,
   mode, on_stopped, wait_timeout)` wraps the full initialize → attach/launch → setBreakpoints →
   configurationDone → wait-for-`stopped` → callback → continue → disconnect sequence in one call.
-  Also runnable directly: `python tools/dap_client.py --workspace <dir> --script <path> --break
+  Also runnable directly: `python devtools/dap_client.py --workspace <dir> --script <path> --break
   <file.py>:<line> [--mode attach|launch]` — prints the stack trace and top-frame locals at the
   first hit, then resumes and disconnects. Verified live against `rover_1.py`/`lib/vehicle.py`: a
   breakpoint inside `publish_telemetry()` correctly paused execution, reported the true call stack
   and real locals, then resumed cleanly leaving the script running.
   - **`launch` starts idle scripts without breakpoints**: `dap_client.launch_script(workspace, script)`
-    (or CLI `python tools/dap_client.py --workspace <dir> --script <path> --launch`) sends `initialize` →
+    (or CLI `python devtools/dap_client.py --workspace <dir> --script <path> --launch`) sends `initialize` →
     `launch` → `configurationDone` with no breakpoints set, triggering `{ action: "start", runIfIdle: true }`
     in `debug-adapter.cjs`. It then cleanly disconnects with `terminateDebuggee=False`, leaving the freshly-started
     script running in the live game.
+  - **This does NOT force-restart an already-running script** — `runIfIdle: true` is exactly that:
+    a script already running just gets attached-to (per `debug-adapter.cjs`'s own `configurationDoneRequest`),
+    its old in-memory code untouched. There is no `supportsRestartRequest` capability advertised by
+    `initialize`, and the base `DebugSession`'s `restartRequest`/DAP `restart` is an unimplemented no-op
+    stub in the concrete session class too.
+  - **The general external-command channel** (`.codeterraform/command.json`/`command-result.json`/
+    `command.lock`, distinct from the debug bridge's own `debug-command.json`/`debug-result.json`) is what
+    "Run Script in Game"/"Create Library in Game"/etc. (VS Code commands implemented in `extension.cjs`,
+    not `debug-adapter.cjs`) actually use. Confirmed live (2026-09-22) by finding a real stale request
+    already sitting in `command.json` from earlier tool usage — not reverse-engineered blind:
+    `{"version":1,"requestId":"<uuid>","issuedAt":<epoch_ms>,"session":{"id":..., "generation":1} (read
+    live from codeterraform-workspace.json),"action":"run","scriptId":"<script id>","source":"<full
+    script text>"}`, written via the exact same atomic-write + `command.lock` (staleness >30s, `wx`-create,
+    35s acquire budget) protocol as the debug bridge's own `H.send()`, then polled from `command-result.json`
+    for `{"requestId":..., "ok": bool}` (10s timeout). Sending this for `rover_1.py` **did** force a genuine
+    restart of an already-running script (confirmed: fresh startup, tick counter reset) — the first
+    confirmed working "force a running script to pick up its own new code" path found.
+  - **But that still does NOT apply a changed `lib/` module** — confirmed live the same session: after
+    restarting `rover_1.py` via `"action":"run"` (with `lib/vehicle_mining.py` freshly synced to disk),
+    it kept executing the **stale cached** copy of `vehicle_mining`, not the new one. The game caches an
+    imported library module independently of restarting the script that imports it — restarting the
+    importer alone doesn't invalidate it. Every relevant VS Code command was then tried directly against
+    the changed library file itself (**Run Script in Game**, **Create Library in Game**, **Import File as
+    Game Library**, **Rename Library and Update Imports**) and each failed for an unrelated,
+    semantically-correct reason (`context` — wrong file kind for Run; `file_exists` — Create is for a
+    genuinely new library; `duplicate_name` — Import likewise; `no_change` — Rename needs an actual new
+    name), never "not found" — ruling out a hidden "apply library" command in that palette. The in-game
+    Script Editor's own **"Apply & restart all"** button (what actually invalidates that cache) is a
+    **native in-game UI action with no external hook** in any of `debug-adapter.cjs`, `extension.cjs`'s
+    known commands, or the general command channel — confirmed by exhaustive negative testing, not
+    just an unread code path. **Net effect**: `devtools/scripts_sync.py --auto` can start an idle script,
+    and can force-restart an already-running one with its OWN new code, but **cannot** currently make any
+    running script pick up a changed `lib/` module — `relaunch_lib_dependents()` deliberately does not
+    attempt this (see its docstring and TODO.md); it only warns which deployed scripts need a manual
+    in-game Apply.
 - **Automated Script Deployment (`tools/auto_deploy.py`)**:
   - Automatically bridges newly placed/deployed hardware (via in-game `computer.deploy(...)`) to their host-side Python controller scripts.
   - **Dual-Channel Monitoring**:
@@ -1569,4 +1619,6 @@ This repo (`C:\Users\Adrian\Code_Terraform`) is a dev root, separate from any li
 
 **Pyright/IntelliSense**: `pyrightconfig.json`'s `extraPaths` point at `.pyright-resolved/lib` (regenerate with `python devtools/scripts_sync.py resolve-preview`, gitignored) plus the live save folder for game-API stubs. This is a real, accepted limitation, not fully solved: a module referenced by a higher tier that hasn't been reached in the actual playthrough won't resolve until you `resolve-preview --force-tier <name>`, and the game's own in-editor syntax highlighting/autocomplete (tied to `codeterraform-workspace.json`) doesn't apply to source living outside a save folder at all — check the deployed copy in the save folder when that's needed.
 
-**`--auto`** (off by default) additionally calls `tools/dap_client.py`'s `launch_script()` after filling a slot. This is automation the operator explicitly opts into per invocation, not Claude starting a live-debug session on its own — see CLAUDE.md's Live Debugging rule, which binds Claude's own actions, not a flag on a tool the user runs themselves.
+**`--auto`** (off by default) additionally calls `devtools/dap_client.py`'s `launch_script()` after filling a matched machine-script slot. `launch_in_game()` retries with backoff (`LAUNCH_RETRY_DELAYS_S = (0.5, 1.0, 2.0)`, ~3.5s max) if the first attempt fails — the game polls disk on its own cadence, so a freshly-written slot isn't necessarily registered in its workspace snapshot yet by the time we try to launch it; confirmed live (a freshly-cleared, re-filled `drone_2.py` failed to launch immediately, succeeded once retried after a short wait). Since `sync_lib()` mirrors changed `lib/` files unconditionally regardless of `--auto` (unlike a matched machine-script slot, a `lib/` module has no slot of its own for `--auto` to key off), `relaunch_lib_dependents()` separately walks every deployed script's import closure (`lib_dependency_closure()`, built via `ast`-parsed `import`/`from` statements) to find which ones actually import a changed `lib/` module. **As of the confirmed-live finding above, it does NOT relaunch them** — despite the name (kept for now, see TODO.md) — it only prints which deployed scripts need a manual in-game Apply. No automatable path was found that actually flushes the game's cached library module, so pretending to relaunch would be worse than not trying (false confidence while the script silently keeps running stale code). This warn-only behavior is still automation the operator explicitly opts into per invocation (`--auto`), not Claude starting a live-debug session on its own — see CLAUDE.md's Live Debugging rule, which binds Claude's own actions, not a flag on a tool the user runs themselves.
+
+**`watch --auto`'s lib/ warning is debounced** (`--auto-debounce SECONDS`, default `30.0`): a `lib/` edit doesn't fire `relaunch_lib_dependents()` immediately — `Watcher._note_lib_changed()` accumulates the changed keys and pushes `auto_launch_due` out by `auto_debounce` seconds, re-extended by every further `lib/` edit seen before it fires (`Watcher.drain()`). This avoids warning about a still-mid-edit, inconsistent set of `lib/` files when touching several related modules for one fix (e.g. this session's `vehicle_mining.py` + `production.py` change) — one consolidated warning naming every affected script, instead of one per file touched. `once` (a single one-shot pass) skips the debounce and reports immediately — there's no "still editing" risk to wait out for a one-shot run.

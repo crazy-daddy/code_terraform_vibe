@@ -214,7 +214,7 @@ class DroneClaimsMixin:
         if not isinstance(cache, dict):
             return False
         hit = f"{int(x)}_{int(y)}" in cache
-        self._host.log.debug(f"[{self._host.name}] is_poi_confirmed_empty({int(x)}, {int(y)}): cache {'hit' if hit else 'miss'} ({len(cache)} entries cached).")
+        self._host.log.trace(f"[{self._host.name}] is_poi_confirmed_empty({int(x)}, {int(y)}): cache {'hit' if hit else 'miss'} ({len(cache)} entries cached).")
         return hit
 
     def mark_poi_empty(self, x, y):

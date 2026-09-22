@@ -70,7 +70,7 @@ class DroneMiningMixin:
                 # module docstring), so v1 skips this site entirely rather
                 # than risk pulling the wrong species.
                 skipped_mixed_biome += 1
-                self._host.log.debug(f"[{self._host.name}] Biosite ({x}, {y}) skipped: mixed-biome tile ({len(home_forms)}/{len(life_forms)} home-biome samples).")
+                self._host.log.trace(f"[{self._host.name}] Biosite ({x}, {y}) skipped: mixed-biome tile ({len(home_forms)}/{len(life_forms)} home-biome samples).")
                 continue
             if not journal.is_ready(x, y):
                 skipped_cooling += 1
@@ -105,7 +105,7 @@ class DroneMiningMixin:
         for candidate in candidates:
             budget = self._host.calculate_trip_energy(candidate["coords"])
             if not budget["is_achievable"]:
-                self._host.log.debug(f"[{self._host.name}] Biosite {candidate['target_key']}: {budget['total_required_wh']:.1f} Wh required, not achievable on current battery; skipping.")
+                self._host.log.trace(f"[{self._host.name}] Biosite {candidate['target_key']}: {budget['total_required_wh']:.1f} Wh required, not achievable on current battery; skipping.")
                 continue
             if self._host.claim_biosite(candidate["target_key"], {"coords": candidate["coords"], "name": candidate["target_key"]}):
                 self._host.log.trace(f"[{self._host.name}] select_biosite_target() exit: claimed {candidate['target_key']}.")
@@ -154,7 +154,7 @@ class DroneMiningMixin:
                         log.debug(f"[{self._host.name}] Battery low ({curr_wh:.1f} Wh); returning to drone_service.")
                         self._host.publish_telemetry("RETURNING_TO_SERVICE")
                         service_id = service_info.get("id")
-                        if not (service_id and self._host.fly_to_station(service_id)):
+                        if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
                             self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
                     sleep(poll_interval)
                     continue
@@ -240,7 +240,7 @@ class DroneMiningMixin:
         depot_id = depot_info.get("id")
         self._host.publish_telemetry("RETURNING_TO_DEPOT")
 
-        reached = bool(depot_id) and self._host.fly_to_station(depot_id)
+        reached = bool(depot_id) and self._host.fly_to_station(depot_id, target_coords=depot_coords)
         if not reached:
             self._host.log.debug(f"[{self._host.name}] fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
             reached = self._host.fly_to(depot_coords[0], depot_coords[1], precision=1.5)

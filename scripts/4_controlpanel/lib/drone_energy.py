@@ -193,10 +193,10 @@ class DroneEnergyMixin:
         stations = self.get_all_drone_services()
         if not stations:
             fallback = getattr(self, "home_coords", (0.0, 0.0))
-            self._host.log.debug(f"[{self._host.name}] get_nearest_drone_service: no drone_service_station deployed yet; falling back to home_coords {fallback}.")
+            self._host.log.trace(f"[{self._host.name}] get_nearest_drone_service: no drone_service_station deployed yet; falling back to home_coords {fallback}.")
             return fallback, {"id": "", "coords": fallback}
         best = min(stations, key=lambda st: self._host.distance_between(ref_coords, st["coords"]))
-        self._host.log.debug(f"[{self._host.name}] get_nearest_drone_service: {len(stations)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
+        self._host.log.trace(f"[{self._host.name}] get_nearest_drone_service: {len(stations)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
         return best["coords"], best
 
     def get_nearest_drone_depot(self, from_coords=None):
@@ -209,10 +209,10 @@ class DroneEnergyMixin:
         depots = self.get_all_drone_depots()
         if not depots:
             fallback = getattr(self, "home_coords", (0.0, 0.0))
-            self._host.log.debug(f"[{self._host.name}] get_nearest_drone_depot: no drone_depot deployed yet; falling back to home_coords {fallback}.")
+            self._host.log.trace(f"[{self._host.name}] get_nearest_drone_depot: no drone_depot deployed yet; falling back to home_coords {fallback}.")
             return fallback, {"id": "", "coords": fallback}
         best = min(depots, key=lambda d: self._host.distance_between(ref_coords, d["coords"]))
-        self._host.log.debug(f"[{self._host.name}] get_nearest_drone_depot: {len(depots)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
+        self._host.log.trace(f"[{self._host.name}] get_nearest_drone_depot: {len(depots)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
         return best["coords"], best
 
     def return_floor_wh(self, from_coords=None):
@@ -266,7 +266,7 @@ class DroneEnergyMixin:
 
         curr_wh, cap_wh, lvl = self.get_battery()
         is_achievable = curr_wh >= total_required_wh
-        self._host.log.debug(
+        self._host.log.trace(
             f"[{self._host.name}] calculate_trip_energy to {target_coords}: "
             f"out={drive_out_wh:.2f}Wh ({dist_outbound:.1f}m), home={drive_home_wh:.2f}Wh ({dist_inbound:.1f}m to '{nearest_service}'), "
             f"buffered={buffered_wh:.2f}Wh (x{self.SAFETY_MARGIN_MULTIPLIER}), reserve={self.MIN_EMERGENCY_RESERVE_WH:.1f}Wh, "

@@ -10,6 +10,6 @@
 [submodule "inspirations/torinad2"]
 	path = inspirations/torinad2
 	url = https://github.com/Torinad2/Code_Terraform.git
-[submodule "tools"]
-	path = tools
+[submodule "early_game_runner"]
+	path = early_game_runner
 	url = https://github.com/crazy-daddy/code-terraform-earlygame-automation.git
