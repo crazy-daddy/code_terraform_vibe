@@ -1,6 +1,7 @@
 # =============================================================================
 #  ROVER  —  paste into the script slot of  rover_1
 #  Explore every "?" contact with sonar, then mine the best surveyed site.
+#  Adapted with attribution from: vakermit (https://github.com/vakermit/code-terraform-scripts)
 # =============================================================================
 #
 #  The Rover is a chassis with three modules: Nav drives, Sonar finds and

@@ -1,6 +1,8 @@
 # =============================================================================
 # Early Game Self-Contained Smelter Controller (no external lib imports)
 # Smelts ore into ingots with default stock floors, supporting degraded mode
+# Recipe-selection concept & channel contract adapted with attribution from:
+# vakermit (https://github.com/vakermit/code-terraform-scripts)
 # =============================================================================
 def ceil(val):
     ival = int(val)

@@ -1,6 +1,7 @@
 # =============================================================================
 #  VEHICLE CHARGING STATION  —  paste into the script slot of  charging_station_1
 #  Charge whatever docks; rescue anything stranded.
+#  Copied with attribution from: vakermit (https://github.com/vakermit/code-terraform-scripts)
 # =============================================================================
 #
 #  Charging jobs belong to the station, not the vehicle: a rover can drive
