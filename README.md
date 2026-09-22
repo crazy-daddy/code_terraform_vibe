@@ -10,17 +10,17 @@ files.
 ## Structure
 
 ```
-scripts/                   # source of truth for every deployable script and lib/ module
-  0_cold_boot/              # baseline tier - always active, no unlocks required
-  1_early/                  # unlocked once research_computer is researched
-  2_libunlock/               # unlocked once the Shared Library is researched
-  3_archiveunlock/           # unlocked once the Data Archive is researched
-  4_controlpanel/            # unlocked once the Control Room is researched
+scripts/                    # source of truth for every deployable script and lib/ module
+  0_cold_boot/               # baseline tier - always active, no unlocks required
+  1_early/                   # unlocked once research_computer is researched
+  2_libunlock/                # unlocked once the Shared Library is researched
+  3_archiveunlock/            # unlocked once the Data Archive is researched
+  4_controlpanel/             # unlocked once the Control Room is researched
   5_uprising/                 # placeholder future tier
-    <category>/<name>.py     # one script per machine type, e.g. power/solar.py
+    <category>/<name>.py      # one script per machine type, e.g. power/solar.py
     lib/<module>.py           # shared library modules for that tier
     control_panel/            # Control Room panel cards (see docs/AI_CHEATSHEET.md §7)
-    contract/                  # Earth Clearance contract puzzle solvers
+  contract/                   # Earth Clearance contract puzzle solvers - untiered, see below
   _unmatched/                 # gitignored staging area, see devtools/scripts_sync.py
 
 devtools/
@@ -47,6 +47,19 @@ a save's own state file to figure out the highest tier whose criteria (and all i
 satisfied, automatically, per save — no manual bookkeeping. A script or `lib/` module only needs to
 exist at the lowest tier where its behavior is actually correct; higher tiers fall back to a lower
 tier's file when they don't define their own. See `docs/AI_CHEATSHEET.md` §9 for the full scheme.
+
+Tiers aren't a hardcoded list — `scripts_sync.py` discovers them by scanning `scripts/` for
+`<N>_<anything>` dirs and sorting by `N` numerically (`10_x` sorts after `9_x`, never between
+`1_x`/`2_x`), so the text after the number is free-form and numbers can skip (add
+`scripts/3_inbetween/` later between two existing tiers and it's picked up automatically, no code
+change). A dir that starts with a digit but isn't a clean `<int>_...` (`1N3_DERP`), or two dirs
+claiming the same number (`10_hi`/`10_ho`), is treated as a naming mistake and errors out rather
+than being guessed past.
+
+A category dir sitting directly under `scripts/` (a sibling of the tier dirs, not nested inside
+one) is a **global category** — not gated by any `.criteria`, always included regardless of which
+tier is active. `scripts/contract/` is the current example: Earth Clearance contracts are genuinely
+tech-independent, self-contained scripts, not something that belongs to one progression tier.
 
 ## Basic usage
 
