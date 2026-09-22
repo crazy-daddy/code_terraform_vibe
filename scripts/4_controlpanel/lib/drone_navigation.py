@@ -214,6 +214,34 @@ class DroneNavigationMixin:
         self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') exit: timed out after {ticks} ticks.")
         return False
 
+    def leave_station(self):
+        """
+        Releases the current station berth via undock() -- keeps exact
+        position/cargo/modules and costs no flight energy (drone.md), unlike
+        re-issuing a fly_to() to the same coordinates. Call this once a
+        Drone Depot visit's unload is done, even with no follow-up task
+        queued yet, so the bay frees up immediately for another drone
+        waiting in "waiting_bay" rather than sitting occupied until this
+        drone's next fly_to()/go_to_station() call happens to move it.
+        No-op (and silent) if already undocked ("not_docked") or if an
+        active Drone Service Station charge/rescue job still holds control
+        ("busy") -- undock() must not interrupt those (drone.md).
+        """
+        station_id = self.current_station()
+        if not station_id:
+            return False
+        try:
+            res = self._host.drone.undock()
+        except Exception as e:
+            self._host.log.debug(f"[{self._host.name}] leave_station(): undock() call failed: {e}")
+            return False
+        if res.status == "ok":
+            self._host.log.debug(f"[{self._host.name}] Left station berth '{station_id}' to free the bay.")
+            return True
+        if res.status not in ("not_docked", "busy"):
+            self._host.log.level("warn").print(f"[{self._host.name}] undock() notice: {res.status} - {res.message}")
+        return False
+
     def fly_to_drill(self, name, target_coords=None, timeout_ticks=1500):
         """
         Flies to a named field Mining Drill via go_to_drill(), for a future

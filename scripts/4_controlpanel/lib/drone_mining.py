@@ -125,6 +125,10 @@ class DroneMiningMixin:
                     sleep(poll_interval)
                     continue
 
+                if self._host.handle_recall_if_active():
+                    sleep(poll_interval)
+                    continue
+
                 self._host.cleanup_stale_biosite_claims()
 
                 # Resume an in-progress mission after a script reload. A
@@ -149,13 +153,7 @@ class DroneMiningMixin:
 
                 curr_wh, _, _ = self._host.get_battery()
                 if curr_wh <= self._host.energy_needed_to_return_comfortably():
-                    service_coords, service_info = self._host.get_nearest_drone_service()
-                    if not self._host.is_at(service_coords, precision=3.0):
-                        log.debug(f"[{self._host.name}] Battery low ({curr_wh:.1f} Wh); returning to drone_service.")
-                        self._host.publish_telemetry("RETURNING_TO_SERVICE")
-                        service_id = service_info.get("id")
-                        if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
-                            self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
+                    self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} Wh)")
                     sleep(poll_interval)
                     continue
 
@@ -174,6 +172,13 @@ class DroneMiningMixin:
                 if not target or not budget:
                     log.debug(f"[{self._host.name}] {len(candidates)} candidate(s) found but none both reachable and claimable.")
                     self._host.publish_telemetry("IDLE_OUT_OF_RANGE")
+                    _, _, lvl = self._host.get_battery()
+                    if lvl < 0.98:
+                        # See drone_scout.py's run_scout_loop() for why this is
+                        # needed: without it, a drone too low on charge for any
+                        # trip (but not low enough to trip the proactive-return
+                        # check above) idles here forever instead of topping up.
+                        self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl*100:.0f}% charge")
                     sleep(15.0)
                     continue
 
@@ -256,5 +261,13 @@ class DroneMiningMixin:
             self._host.log.print(f"[{self._host.name}] Unloaded {unloaded} units at Drone Depot.")
 
         self._host.release_biosite_claim()
+        # Leave the berth now, even with no next mining target picked yet --
+        # a miner otherwise sits docked here between trips, occupying a bay
+        # a peer drone (or this one, on a later retry) may be waiting in
+        # line for. Also releases the bay when the Depot is full (unloaded
+        # < 0): staying docked wouldn't make its stuck cargo unloadable any
+        # sooner, but it would keep the bay from a drone unloading a
+        # different item that DOES have space.
+        self._host.leave_station()
         self._host.publish_telemetry("READY_AT_DEPOT")
         self._host.log.trace(f"[{self._host.name}] _return_and_unload() exit: unloaded={unloaded}.")

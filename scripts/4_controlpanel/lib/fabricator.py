@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
+from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
 from archive import archive
 from storage import take_item, total_stock, best_unload_target
 from version_guard import validate_game_version
@@ -301,6 +301,12 @@ class FabricatorController:
 
     def target_reason(self, item_id):
         """Describes the active demand driving a target quantity for item_id."""
+        try:
+            fabricator_outputs = {getattr(r, "output_item", None) for r in self.machine.list_recipes()} - {None}
+            if item_id in get_manual_order_blocking_items(fabricator_outputs):
+                return "blocking a manual order's own input"
+        except Exception:
+            pass
         if item_id in get_manual_orders():
             return "manual build order"
         _, order = find_dock_order_requiring(item_id)
@@ -315,6 +321,9 @@ class FabricatorController:
             recipes = self.machine.list_recipes()
         except Exception:
             return None
+
+        fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
+        blocking_items = get_manual_order_blocking_items(fabricator_outputs)
 
         candidates = []
         for recipe in recipes:
@@ -333,16 +342,36 @@ class FabricatorController:
                 candidates.append((missing, recipe))
                 self.log.debug(f"[{self.name}] choose_recipe: candidate {recipe.output_item} target={target} current={current} output_buffer={output_buffer} -> missing={missing}")
 
-        # Prefer a manual build order (get_manual_orders()) over every other demanded recipe
-        # regardless of shortfall size -- an operator asking for "2x drone (small)" right now
-        # shouldn't wait behind whichever recipe happens to have the biggest shortfall this poll.
-        # Within each group (manual vs. not), prefer the biggest shortfall, but skip anything
-        # currently blocked on an unavailable input (e.g. unsurveyed titanium) so the Fabricator
-        # keeps building whatever else it actually can. Also skip a recipe another Fabricator
-        # already holds a fresh claim on (see claim_recipe()) -- otherwise, with several
-        # Fabricators, all of them would converge on the same single biggest-shortfall recipe
-        # while every other demanded output goes unbuilt.
-        candidates.sort(key=lambda pair: (getattr(pair[1], "output_item", None) not in manual_items, -pair[0]))
+        # Three priority tiers, biggest shortfall first within each:
+        #   0. An item a manual order transitively needs as an INPUT (e.g.
+        #      machine_frame under a manual drone_service_station_kit order) --
+        #      see production.get_manual_order_blocking_items(). The manual
+        #      order literally cannot be built without this first, so it
+        #      outranks even the manual order itself -- otherwise the
+        #      Fabricator holding that manual order just keeps re-selecting
+        #      it (can_source_item() says a recipe path for the missing
+        #      input exists, so it never looks "blocked") and sits idle
+        #      forever waiting on an input nothing is ever producing.
+        #   1. A manual build order (get_manual_orders()) itself -- an
+        #      operator asking for "2x drone (small)" right now shouldn't
+        #      wait behind whichever recipe happens to have the biggest
+        #      shortfall this poll.
+        #   2. Everything else, biggest shortfall first.
+        # Skip anything currently blocked on an unavailable input (e.g.
+        # unsurveyed titanium) so the Fabricator keeps building whatever else
+        # it actually can. Also skip a recipe another Fabricator already
+        # holds a fresh claim on (see claim_recipe()) -- otherwise, with
+        # several Fabricators, all of them would converge on the same single
+        # biggest-shortfall recipe while every other demanded output goes
+        # unbuilt.
+        def _priority_tier(recipe):
+            output_item = getattr(recipe, "output_item", None)
+            if output_item in blocking_items:
+                return 0
+            if output_item in manual_items:
+                return 1
+            return 2
+        candidates.sort(key=lambda pair: (_priority_tier(pair[1]), -pair[0]))
         blocked = []
         sourceable = []
         cache = SourceCache()  # shared across every candidate below -- see recipe_unsourceable_reason()
@@ -355,7 +384,9 @@ class FabricatorController:
             sourceable.append(recipe)
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
-                self.log.debug(f"[{self.name}] choose_recipe: claimed '{recipe_id}' (missing={missing}, {'manual order' if getattr(recipe, 'output_item', None) in manual_items else 'biggest sourceable shortfall'})")
+                output_item = getattr(recipe, "output_item", None)
+                tier_reason = "blocking a manual order's own input" if output_item in blocking_items else ("manual order" if output_item in manual_items else "biggest sourceable shortfall")
+                self.log.debug(f"[{self.name}] choose_recipe: claimed '{recipe_id}' (missing={missing}, {tier_reason})")
                 return recipe
             # another Fabricator already has a fresh claim on this one -- try
             # the next candidate first, rather than piling on immediately;

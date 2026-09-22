@@ -24,7 +24,17 @@ if TYPE_CHECKING:
     from drone import DroneController
 
 DRONE_SERVICE_TYPE_ID = "drone_service_station"
-DRONE_DEPOT_TYPE_ID = "drone_depot"
+# The in-game building's typeId is "drone_station", NOT "drone_depot" --
+# "Drone Depot" is only the display name (docs/components/drone_depot.md's
+# own item/recipe ids confirm the real scheme: "drone_station_kit",
+# ship_computer.md's "missing_drone_station"/"drone_station_full"). Verified
+# against a live save's building record: {"typeId":"drone_station", ...}
+# under a "drone_station_2" instance id. Using "drone_depot" here silently
+# made outpost.buildings() match nothing, so get_all_drone_depots() was
+# always empty and every caller (home_coords/home_outpost resolution,
+# _return_and_unload(), recall) fell back to (0.0, 0.0) with no depot id at
+# all (bug found 2026-09-22 via a drone recall flying toward world origin).
+DRONE_DEPOT_TYPE_ID = "drone_station"
 
 # 5.0 Wh/h at 300 m/h full-throttle burn -> flat Wh/meter-per-throttle rate.
 DRONE_WH_PER_METER_PER_THROTTLE = 5.0 / 300.0  # ~0.01667 Wh/m at throttle 1.0
@@ -242,6 +252,28 @@ class DroneEnergyMixin:
         dist = self._host.distance_between(pos, nearest)
         drive_wh = dist * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+
+    def return_to_service_for_charge(self, log, reason):
+        """
+        Flies to (and docks at) the nearest drone_service, unless already
+        there. Shared by both the proactive low-battery return AND the
+        "candidates exist but none reachable on current battery" idle
+        fallback in run_scout_loop()/run_miner_loop() -- without the latter,
+        a drone whose battery is too low for ANY trip but still above
+        energy_needed_to_return_comfortably() (i.e. it's in no danger where
+        it's parked) would sit idling forever, since nothing else in the
+        loop ever sends it home to top up. Returns True if a return was
+        issued, False if already at the service.
+        """
+        service_coords, service_info = self.get_nearest_drone_service()
+        if self._host.is_at(service_coords, precision=3.0):
+            return False
+        log.debug(f"[{self._host.name}] {reason}; returning to drone_service.")
+        self._host.publish_telemetry("RETURNING_TO_SERVICE")
+        service_id = service_info.get("id")
+        if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
+            self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
+        return True
 
     def calculate_trip_energy(self, target_coords, wh_per_meter=None):
         """

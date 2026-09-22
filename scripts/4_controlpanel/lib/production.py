@@ -268,7 +268,11 @@ def fluid_building_is_viable(fluid_key, type_id, building):
     Shared by can_source_fluid() below and lib/fabricator.py's connection
     candidate discovery, so both apply the exact same buffer-latch rule --
     see BUFFER_FLUID_TYPE_IDS' comment for why existence alone isn't enough
-    for a tank.
+    for a tank. Deliberately does NOT consult fluid_routing.tank_assignments
+    -- that registry only gates which tank a producer may establish a NEW
+    connection to (see fluid_routing.tank_is_eligible_target()); a tank's
+    own .fluid() latch is already the complete, authoritative answer to "can
+    it deliver fluid_key right now" regardless of the registry's state.
     """
     if type_id not in BUFFER_FLUID_TYPE_IDS:
         return True
@@ -487,6 +491,53 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs):
     if depth >= 6 and frontier:
         log.debug(f"_cascade_fabricator_output_demand: hit depth bound (6) with frontier still non-empty: {list(frontier.keys())}")
     return targets
+
+
+def get_manual_order_blocking_items(fabricator_outputs):
+    """
+    Set of Fabricator-output item_ids that an active manual build order
+    (get_manual_orders()) transitively needs as an INPUT -- e.g. machine_frame
+    when a manual order asks for drone_service_station_kit -- excluding the
+    manually-ordered item itself. Same shortfall-only breadth-first walk as
+    _cascade_fabricator_output_demand(), just seeded from manual orders only
+    and returning the reached item_ids rather than their quantities.
+
+    A manual order jumps every other demanded recipe in choose_recipe()
+    regardless of shortfall size (see get_fabricator_targets()'s docstring),
+    but a manual order for e.g. drone_service_station_kit can't itself be
+    built while machine_frame stock is 0 and nothing is producing it --
+    can_source_item() only checks that SOME recipe path exists, not that
+    anything is actually in flight, so a Fabricator holding that manual
+    order kept re-selecting it forever instead of ever pivoting to build the
+    missing intermediate. Items in this set outrank even the manual orders
+    themselves in choose_recipe()'s priority order, since the manual order
+    is provably stuck without them first.
+    """
+    manual_items = get_manual_orders()
+    frontier = {item_id: qty for item_id, qty in manual_items.items() if item_id in fabricator_outputs}
+    blocking = set()
+    depth = 0
+    while frontier and depth < 6:  # same generous bound as the sibling cascades
+        depth += 1
+        next_frontier = {}
+        for item_id, want in frontier.items():
+            shortfall = max(0, want - total_stock(item_id))
+            if shortfall <= 0:
+                log.trace(f"get_manual_order_blocking_items depth={depth}: {item_id} has no shortfall (want={want}), not cascading further")
+                continue
+            inputs = _recipe_inputs_for(item_id)
+            if not inputs:
+                continue
+            for input_id, ratio in inputs.items():
+                if input_id not in fabricator_outputs:
+                    continue  # only cascade through other Fabricator-built intermediates
+                blocking.add(input_id)
+                next_frontier[input_id] = next_frontier.get(input_id, 0) + (shortfall * ratio)
+                log.trace(f"get_manual_order_blocking_items depth={depth}: {item_id} shortfall={shortfall:.2f} cascades {ratio:.2f}x into {input_id} -> {next_frontier[input_id]:.2f}")
+        frontier = next_frontier
+    if depth >= 6 and frontier:
+        log.debug(f"get_manual_order_blocking_items: hit depth bound (6) with frontier still non-empty: {list(frontier.keys())}")
+    return blocking
 
 
 def _cascade_blueprint_demand():

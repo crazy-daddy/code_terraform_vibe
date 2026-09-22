@@ -62,7 +62,7 @@
 
 from archive import archive
 from power import PowerGridManager
-from storage import rebalance_inventory_to_warehouses, consolidate_cross_warehouse_stock
+from storage import rebalance_inventory_to_warehouses, consolidate_cross_warehouse_stock, reclaim_inventory_only_items_from_warehouses
 from version_guard import version_mismatch
 import outpost_mining
 import supply_dock
@@ -127,6 +127,11 @@ while True:
                 rebalance_inventory_to_warehouses()
             except Exception as e:
                 print(f"[AUTOMATION] Rebalance sweep error: {e}")
+
+            try:
+                reclaim_inventory_only_items_from_warehouses()
+            except Exception as e:
+                print(f"[AUTOMATION] Reclaim sweep error: {e}")
 
             outpost_new_count = 0
             try:

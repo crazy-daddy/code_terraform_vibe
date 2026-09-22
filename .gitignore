@@ -4,7 +4,7 @@
 /typeshed-LICENSE.txt
 __pycache__/
 /.github
-docs/Code-Terraform-DOCS-Manual.md
+docs/Code-Terraform-DOCS-Manual*.md
 *.tmp
 *.pyi
 *.pyc

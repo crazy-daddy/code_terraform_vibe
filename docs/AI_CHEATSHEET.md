@@ -278,7 +278,11 @@ just smooths supply gaps.
   `FluidPort`. A Thermal Cap has no `.outpost` property, so all three controllers use the shared
   `lib/fluid_routing.py` `discover_network_buildings(type_ids, resolve=True)` (Cap/Pump use the
   default resolved objects; Turbine passes `resolve=False` for plain ids), which walks every
-  outpost (`outpost_network.outposts()` → `outpost.buildings(type_id)`) network-wide.
+  outpost (`outpost_network.outposts()` → `outpost.buildings(type_id)`) network-wide. All three
+  pass their own `fluid_id` (`"steam"` here) so a tank operator-reserved for a different fluid via
+  `fluid_routing.tank_assignments` (§4) is dropped from candidacy outright — see that key's entry
+  for why building-type-only discovery isn't enough once an outpost has multiple distinct pipe
+  networks of the same medium.
   - **`connect()`'s `"ok"` status does not mean physically reachable** — a remote pairing needs a
     *completed* Gas Pipe route, which `connect()` never checks. The live signal of a broken route
     is `is_stalled()` (steam/throttle ready, nothing transferred) — all three controllers
@@ -824,6 +828,18 @@ Single source of truth for what the Fabricator should build, feeding `get_materi
    unlocked recipe outputs (heads-up only, can false-positive for a different Fabricator or a
    not-yet-unlocked recipe).
 
+`choose_recipe()`'s priority order is actually three tiers, not two: `production.get_manual_order_blocking_items()`
+outranks even the manual orders themselves. It's the set of Fabricator-output items a manual order
+transitively needs as an INPUT (e.g. `machine_frame` under a manual `drone_service_station_kit`
+order) that are currently short of stock — found via the same shortfall-only breadth-first walk as
+`_cascade_fabricator_output_demand()` (§2a-0-1), seeded from manual orders only. Without this tier, a
+Fabricator holding a manual order whose recipe needs an out-of-stock intermediate just kept
+re-selecting that manual recipe forever: `can_source_item()` only checks that some recipe path
+exists for the intermediate, not that anything is actually being produced, so the manual order never
+looked "blocked" — it sat idle waiting on an input nothing else was building, while other Fabricators
+worked lower-priority targets instead. Tier order: (0) manual-order-blocking intermediate, (1)
+manual order itself, (2) everything else by biggest shortfall.
+
 ### 2a-1b. Sourceability caching across a pass (`lib/production.py` `SourceCache`)
 
 `can_source_item()`, `can_source_fluid()`, and `can_fulfill_order()` (§2a-0-5) each walk real
@@ -1046,6 +1062,20 @@ outpost, matching how Inventory only participates at Nocturna Base.
     `[storage] Freed a slot... but it still reports no room...` instead of silently continuing.
 - `inventory_stack_size()`: `10`, or `20` once `research.is_unlocked("research_high_density_storage")`
   ("Bigger Stacks").
+- **Reverse sweep** — `reclaim_inventory_only_items_from_warehouses()`, called right after the
+  "inventory manager" sweep from `panel_4.py`'s AUTOMATION section: any stock sitting in a Warehouse
+  whose `item_catalog` category is in `NON_WAREHOUSABLE_CATEGORIES` (`_must_stay_in_inventory()`) is
+  moved back to Inventory, regardless of slot pressure — a safety net for gear that ended up in a
+  Warehouse some other way (manual stash, a `.compact()` pulling a stack the forward sweep never
+  intended to touch), since nothing here ever *places* such an item into a Warehouse on purpose.
+  Each slot moves with `property_match="exact"` so a durability-bearing variant isn't merged with a
+  different variant of the same `item_id`.
+  - **Dock-demand exception** (`_items_demanded_by_active_dock_orders()`): an item still owed by any
+    Supply Dock's active order is left in the Warehouse instead — `supply_dock.py` already ships
+    straight from a Warehouse via `take_item()`/`total_stock()`, and a bulk Earth Order contract for
+    a "deployable" equipment item can run hundreds of units deep, far more than Inventory has slots
+    for. Self-contained (own `outpost.buildings("supply_dock")` scan) rather than importing
+    `production.py`, which itself imports from this module.
 
 ### 2d. Outpost Ore-Assignment & Stock-Target Scaffolding (`lib/outpost_mining.py`)
 
@@ -1233,6 +1263,15 @@ the same pattern later.
   has no `.outpost` property of its own** (confirmed against `docs/models/vehicles_and_modules.md`):
   nearest Drone Depot's outpost first, falling back to nearest drone_service's outpost, then the
   network's home outpost.
+- **`DRONE_DEPOT_TYPE_ID = "drone_station"`** (bug fixed 2026-09-22, was `"drone_depot"`) — the
+  in-game building's `typeId` follows its item/error-code naming (`drone_station_kit`,
+  ship_computer.md's `"missing_drone_station"`/`"drone_station_full"`), not its doc-page slug or
+  display name "Drone Depot". The wrong constant made `outpost.buildings()` match nothing, so
+  `get_all_drone_depots()` was silently always empty and every depot-dependent call (home_coords/
+  home_outpost resolution, `_return_and_unload()`, recall) fell back to `(0.0, 0.0)` with no depot
+  id at all — caught via a drone recall visibly flying toward world origin. See
+  `docs/components/drone_depot.md`'s added scripting note. `DRONE_SERVICE_TYPE_ID` had no such
+  mismatch.
 - **No "biosphere region"** — per-outpost + per-biome: a sample can only be locally processed
   (Essence Liquifier) at the outpost it's dropped off at, and only if native to that outpost's
   biome (`nocturna.life_form_biome(item_id) == outpost.biome`). A miner drone filters
@@ -1258,6 +1297,39 @@ the same pattern later.
   re-validates the claim, checks `position()`/`current_station()`, and **re-issues** `go_to()`.
   `extract()`/`scan()` themselves do survive a restart transparently — only the flight leg needs
   re-issuing.
+- **Idle-to-recharge fallback**: `energy_needed_to_return_comfortably()` alone only covers the
+  "in danger where it's parked" case. A drone can be above that floor (safe to sit still) yet below
+  what any candidate's `calculate_trip_energy()` round trip needs — that's an `IDLE_OUT_OF_RANGE`
+  tick, not a low-battery one, so it was previously never sent home and would idle in place forever
+  (bug fixed 2026-09-22). Both `run_scout_loop()`/`run_miner_loop()` now call
+  `DroneEnergyMixin.return_to_service_for_charge()` (shared, dock-if-not-already-there) whenever a
+  cycle finds candidates but none reachable AND current charge is below 98%.
+- **Bay-full queueing** (Drone Depot only): `go_to_station()` itself queues a drone in
+  `"waiting_bay"` when the Depot is full (game-engine behavior, drone.md) — no script-side
+  reservation needed for the wait itself. `fly_to_station()` (`drone_navigation.py`) polls
+  `current_station()` (the documented authoritative arrival check) up to `timeout_ticks` (default
+  1500 ≈ 150 real seconds); a caller's raw-`fly_to()` fallback on timeout does NOT enter the bay
+  queue (only `go_to_station()` does), so it's self-healing only via the outer loop's next retry,
+  not a real dock.
+- **`leave_station()`** (`drone_navigation.py`): releases the current berth via `undock()` — keeps
+  exact position/cargo/modules, costs no flight energy, unlike re-issuing a `fly_to()` to the same
+  coords. `_return_and_unload()` (`drone_mining.py`) calls it right after every Depot unload
+  attempt (success or full), so a miner frees the bay for a peer drone waiting in line instead of
+  squatting there until its next mission happens to move it. No-op on `"not_docked"`/`"busy"` (the
+  latter protects an active Drone Service Station charge/rescue job, which must keep control —
+  never call this on a charging drone).
+- **Recall** (`lib/drone_claims.py`): mirrors `vehicle_claims.py`'s `RECALL_KEY` shape exactly but
+  on its own key, `drone.recall` `{drone_name: True}`. `is_drone_recalled()`/`set_drone_recalled()`
+  module-level read/write, toggled via `panel_5.py`'s DRONE FLEET card switch. Unlike the ground-
+  vehicle recall (returns to charging-station "base"), a drone recall targets the nearest **Drone
+  Depot specifically, never drone_service** — `couple()`/`uncouple()` (module re-equip) both
+  require being docked at an operational Depot (drone.md), and the whole point of recall is letting
+  the operator swap modules. `handle_recall_if_active()` abandons any biosite claim/mission, flies
+  to the Depot, and — deliberately the opposite of `leave_station()` — stays docked once there
+  rather than releasing the berth, since the berth is what re-equip needs held. Checked near the
+  top of both `run_miner_loop()`/`run_scout_loop()`, right after the stranded check (a stranded
+  drone needs `drone_service` rescue regardless of recall — it can't self-navigate anywhere) but
+  before mission-resume/target-selection, so an active mission is abandoned promptly.
 - **`lib/drone_service.py`** structurally mirrors `lib/charging.py`: docked charge queue,
   fleet-wide stranded/scrambled detection via `fleet.drones()` (stranded predicate additionally
   includes `"scrambled"`), nearest-station coordination (`is_nearest_station_to()`), and a
@@ -1315,6 +1387,42 @@ the same pattern later.
 - `fabricator.manual_orders`: `{item_id: quantity}` ad-hoc Fabricator build requests, edited directly
   in the Notebook (e.g. `{"drone_small": 2}`) — see §2a-1 item 4. Prioritized over other demanded
   recipes and counted down to 0 (then dropped) as units are actually delivered.
+- `fluid_routing.tank_assignments`: `{building_id: fluid_id}` operator-designated Liquid/Gas Tank
+  reservations, edited directly in the Notebook (e.g. `{"gas_tank_1": "steam", "gas_tank_3":
+  "ammonia"}`), same edit convention as `fabricator.manual_orders` above (though NOT the same
+  eligibility convention — see below) — see `lib/fluid_routing.py`'s `get_tank_assignments()`/
+  `tank_matches_assignment()`/`tank_is_eligible_target()`. `fluid_id` values use the exact
+  vocabulary `building.fluid()`/`production.FLUID_LATCH_IDS` already use (`"water"`, `"oil"`,
+  `"steam"`, or a biome essence id once the Essence Liquifier ships), not a separate taxonomy.
+  Exists because a generic Liquid/Gas Tank's `.fluid()` latch is purely content-based and
+  network-blind (`FluidOutputRouter` otherwise picks candidate tanks by building *type* alone,
+  with no notion of which of an outpost's several possible, non-merged physical pipe networks a
+  candidate actually sits on — see `docs/guide/infrastructure_and_pipes.md`'s "Service-footprint
+  contacts stay independent" note) — and because that same latch clears to `""` the instant a tank
+  drains to 0, so an unrelated router could otherwise mistake an operator's dedicated oil tank for
+  a blank, up-for-grabs buffer during that empty window and strand the network it was meant to
+  serve. Keyed by stable building id specifically so the reservation survives that empty window,
+  unlike the tank's own live latch. **Deny-by-default, deliberately**: an unassigned tank that
+  isn't already latched to anything is NOT eligible for a new connection — `tank_is_eligible_target()`
+  only lets a tank through with either an explicit matching entry here, or (the zero-config escape
+  hatch that keeps every already-working old/simple-save connection running unchanged) an already-
+  latched `.fluid()` matching what the router wants. The tradeoff is accepted deliberately: a
+  brand-new tank (always `fill_pct()==0`, so always top-ranked by every router's least-full-first
+  sort) now sits idle, untouched by any router, until the operator assigns it — better than the
+  alternative of it getting silently filled with the wrong fluid before anyone decides what it's
+  for. `lib/fluid_routing.py`'s `warn_about_unassigned_tanks()` (called from
+  `FluidOutputRouter.ensure_connection()` and Steam Turbine's `ensure_input_connection()`) prints
+  (console + `notify()`) every currently-blocked tank (unlatched AND unassigned) network-wide at
+  most once per `UNASSIGNED_TANK_WARNING_INTERVAL_TICKS=600` ticks (~60s at normal speed) — the
+  only signal such a tank exists at all, since it's otherwise invisible to every router. The
+  throttle timestamp (`fluid_routing.last_unassigned_warning_tick`) lives in `archive`, not a
+  module-level Python global — each deployed machine script that imports this Library gets its own
+  independent copy of module-level state (same "per-script-run" caveat as `production.py`'s
+  `_WARNED_UNKNOWN_MANUAL_ITEMS` above), so with several Water Pumps/Thermal Caps/Turbines all
+  calling in, a plain global would let each one print its own copy every interval instead of one
+  shared notice. `production.py`'s consumer-side `fluid_building_is_viable()` deliberately does
+  NOT consult this registry at all — a tank's
+  own `.fluid()` latch is already the complete answer to "can it deliver this fluid right now."
 - `outposts.known_ids`: List of outpost ids `panel_7.py`'s AUTOMATION section has already seen —
   diffed each throttled tick against `outpost_network.outposts()` to detect a newly-founded outpost
   and auto-trigger `outpost_mining.reevaluate_unassigned_near_outpost()` for it. See §7.
@@ -1325,6 +1433,7 @@ the same pattern later.
 - `scout.empty_pois`: Scout's bounded "confirmed-empty POI" cache `{"<x>_<y>": tick_scanned}`, capped at `SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000` (oldest entries dropped first). A fixed fact about that coordinate, not a hardware-capability blacklist like `survey.unsupported_targets` — see `lib/drone_claims.py` and §2h.
 - `drone.mission:<name>`: Per-drone resumable mission record `{"target_key", "target", "kind", "tick"}`, mirrors `vehicle.mission:<name>`'s shape but on its own prefix. See `lib/drone_claims.py` and §2h's resumability note (a drone's `go_to()` is cancelled by a script restart, unlike a rover's persistent drive command, so only the flight leg needs re-issuing on resume).
 - `drone_depot.status.<id>`: Drone Depot telemetry `{name, docked, bay_count, bays_occupied, slots_used, slot_capacity, is_full}`, published by `lib/drone_depot.py` for dashboards and for miner/scout drones' own "is my depot full" decisions.
+- `drone.recall`: one shared dict `{drone_name: True}` (not one key per drone), mirroring `vehicle.recall`'s shape on its own key. `is_drone_recalled()`/`set_drone_recalled()` module-level read/write — see `lib/drone_claims.py` and §2h. Recalls to the nearest Drone Depot, not `drone_service`.
 - `fleet.status.<id>` / `drone.status.<id>` (mirrored): Drone telemetry `{name, state, x, y, wh, level, target, tick}`, same shape/convention as ground vehicles' `fleet.status.<id>`/`rover.status.<id>` — see `lib/drone.py`'s `publish_telemetry()`.
 - `system.good_version`: Last operator-confirmed `get_game_version()` build hash (`lib/version_guard.py`).
   Seeded from the current build on first read (a fresh save never immediately halts). Every controller's
@@ -1620,5 +1729,7 @@ This repo (`C:\Users\Adrian\Code_Terraform`) is a dev root, separate from any li
 **Pyright/IntelliSense**: `pyrightconfig.json`'s `extraPaths` point at `.pyright-resolved/lib` (regenerate with `python devtools/scripts_sync.py resolve-preview`, gitignored) plus the live save folder for game-API stubs. This is a real, accepted limitation, not fully solved: a module referenced by a higher tier that hasn't been reached in the actual playthrough won't resolve until you `resolve-preview --force-tier <name>`, and the game's own in-editor syntax highlighting/autocomplete (tied to `codeterraform-workspace.json`) doesn't apply to source living outside a save folder at all — check the deployed copy in the save folder when that's needed.
 
 **`--auto`** (off by default) additionally calls `devtools/dap_client.py`'s `launch_script()` after filling a matched machine-script slot. `launch_in_game()` retries with backoff (`LAUNCH_RETRY_DELAYS_S = (0.5, 1.0, 2.0)`, ~3.5s max) if the first attempt fails — the game polls disk on its own cadence, so a freshly-written slot isn't necessarily registered in its workspace snapshot yet by the time we try to launch it; confirmed live (a freshly-cleared, re-filled `drone_2.py` failed to launch immediately, succeeded once retried after a short wait). Since `sync_lib()` mirrors changed `lib/` files unconditionally regardless of `--auto` (unlike a matched machine-script slot, a `lib/` module has no slot of its own for `--auto` to key off), `relaunch_lib_dependents()` separately walks every deployed script's import closure (`lib_dependency_closure()`, built via `ast`-parsed `import`/`from` statements) to find which ones actually import a changed `lib/` module. **As of the confirmed-live finding above, it does NOT relaunch them** — despite the name (kept for now, see TODO.md) — it only prints which deployed scripts need a manual in-game Apply. No automatable path was found that actually flushes the game's cached library module, so pretending to relaunch would be worse than not trying (false confidence while the script silently keeps running stale code). This warn-only behavior is still automation the operator explicitly opts into per invocation (`--auto`), not Claude starting a live-debug session on its own — see CLAUDE.md's Live Debugging rule, which binds Claude's own actions, not a flag on a tool the user runs themselves.
+
+**Parameterized templates** (`${VAR}` / `${VAR:default}` in a source script, same syntax as `early_game_runner/auto_deploy.py`'s placeholder substitution, kept identical on purpose): `sync_file()` detects these via `find_placeholders()` and prompts the operator interactively (`typer.prompt`, blocking) the first time a given save slot needs them — e.g. `scripts/4_controlpanel/pioneer/pioneer.py`'s `HOME_BASE`/`DESTINATION_OUTPOST_ID`/`CRUISE_THROTTLE`, asked once per slot (`pioneer_2.py`, `pioneer_3.py`, ... each asked independently) so the operator can say where that specific Pioneer should go. Answers are cached in `devtools/.sync-backups/script_params.json` (gitignored, keyed by `<save dir name>/<slot filename>`) so re-filling the same slot later doesn't re-ask; a slot only gets prompted again for names it hasn't answered before (e.g. a template gaining a new placeholder). `--dry-run` never prompts — it previews with cached-or-default values only. This blocks under `watch` too rather than skipping: the filesystem observer runs on its own thread and just queues further events into `Watcher.pending`/`repo_due` while the main thread waits on `input()`, so nothing is lost, only delayed until answered (or `Ctrl-C`, which still raises cleanly through `input()`). `status` shows which resolved scripts would prompt (`(asks for: VAR1, VAR2)`) without prompting itself.
 
 **`watch --auto`'s lib/ warning is debounced** (`--auto-debounce SECONDS`, default `30.0`): a `lib/` edit doesn't fire `relaunch_lib_dependents()` immediately — `Watcher._note_lib_changed()` accumulates the changed keys and pushes `auto_launch_due` out by `auto_debounce` seconds, re-extended by every further `lib/` edit seen before it fires (`Watcher.drain()`). This avoids warning about a still-mid-edit, inconsistent set of `lib/` files when touching several related modules for one fix (e.g. this session's `vehicle_mining.py` + `production.py` change) — one consolidated warning naming every affected script, instead of one per file touched. `once` (a single one-shot pass) skips the debounce and reports immediately — there's no "still editing" risk to wait out for a one-shot run.

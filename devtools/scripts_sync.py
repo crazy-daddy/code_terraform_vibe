@@ -57,6 +57,27 @@ used as a source) exactly as in vakermit's tool - see its docstring for the
 fill/pull marker mechanics (`synctool-fill` / `synctool-pull` here, renamed
 from `xyz`/`zyx` to avoid confusion with two unrelated tools sharing tokens),
 renumbering, and the "already has code" guard, all ported unchanged.
+
+A newly built (or newly re-equipped) machine's script slot exists in the
+game's own `codeterraform-workspace.json` (`context.scripts`, sibling of the
+save's `.py` files) well before the game ever writes a `.py` file for it on
+disk - confirmed live, that file only appears once a human opens the slot in
+the in-game script editor at least once. Watching the save directory for new
+files (as `watch` otherwise does) can never see such a slot - there is
+nothing to watch yet. `materialize_missing_slots()` polls that JSON instead
+(every 5s in `watch`, once up front in `once`) and writes a real `.py` file
+for any slot missing one, using the JSON's own live `source` text - never a
+blank stub, so an actually-running script that just hadn't had a file
+written for it yet is never clobbered. Once materialized, the slot flows
+through the normal fill pipeline like any other file.
+
+A source script may itself contain `${VAR}` / `${VAR:default}` placeholders
+(same syntax as `early_game_runner/auto_deploy.py`'s substitution, kept
+identical on purpose) for values only the operator knows at deploy time -
+e.g. `pioneer.py`'s destination outpost. `sync_file()` prompts for these
+interactively the first time a given save slot needs them and remembers the
+answer in `devtools/.sync-backups/script_params.json` (gitignored) so
+re-filling the same slot later doesn't re-ask.
 """
 import ast
 import json
@@ -78,6 +99,7 @@ from watchdog.observers.polling import PollingObserver
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SCRIPTS = REPO / "scripts"
 BACKUP_DIR = REPO / "devtools" / ".sync-backups"
+PARAMS_CACHE = REPO / "devtools" / ".sync-backups" / "script_params.json"
 RESOLVED_PREVIEW_DIR = REPO / ".pyright-resolved"
 UNMATCHED = "_unmatched"            # under scripts/; staged, never a source
 SAVE_GLOB = "save_*_scripts"
@@ -240,6 +262,94 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
         return None
     _state_cache[path] = (mtime, summary)
     return summary
+
+
+# ------------------------------------------------------- workspace state (slots)
+WORKSPACE_JSON = "codeterraform-workspace.json"
+
+# Cache keyed by the workspace file's path: (mtime, context dict) - same
+# reasoning as _state_cache above, this file can be multi-MB (it embeds every
+# script's full source text) and is rewritten frequently during play.
+_workspace_cache: dict = {}
+
+
+def read_workspace_context(save_dir: Path) -> Optional[dict]:
+    """Read-only: the game's own live workspace state
+    (`codeterraform-workspace.json`, sibling of the save's `.py` script
+    slots). Specifically `context.scripts` - a dict of every script slot id
+    the game currently knows about, each with its live `source` text and
+    `status`, populated as soon as a machine granting that slot exists.
+
+    Confirmed live (2026-09-22, this save): a slot appears here well before
+    the game ever writes a `.py` file for it on disk - the file is only
+    created once the operator opens that slot in the in-game script editor.
+    A file watcher on the save directory (as used elsewhere in this module)
+    can never see a slot that has no file yet, no matter how long it waits -
+    it has nothing to watch. See materialize_missing_slots(), which is why
+    this function exists: polling this JSON is the only way to notice a
+    newly-built (or newly-mounted-module) machine's script slot before a
+    human has opened its editor at least once.
+
+    Returns None if the file is missing or unreadable - callers treat that
+    as "nothing to discover yet".
+    """
+    path = save_dir / WORKSPACE_JSON
+    if not path.is_file():
+        return None
+    mtime = path.stat().st_mtime
+    cached = _workspace_cache.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        with path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        context = data["context"]
+    except (OSError, ValueError, KeyError):
+        return None
+    _workspace_cache[path] = (mtime, context)
+    return context
+
+
+def missing_slot_sources(save_dir: Path) -> dict:
+    """script id -> its live `source` text, for every slot workspace state
+    knows about that has no `.py` file on disk yet. Read-only; used by both
+    `status` (to report) and materialize_missing_slots() (to act)."""
+    context = read_workspace_context(save_dir)
+    if context is None:
+        return {}
+    missing = {}
+    for sid, info in context.get("scripts", {}).items():
+        path = save_dir / ("%s.py" % sid)
+        if path.exists() or not is_candidate(path, save_dir):
+            continue
+        missing[sid] = info.get("source") or ""
+    return missing
+
+
+def materialize_missing_slots(opts: Options) -> int:
+    """Writes a real `.py` file for every script slot workspace state knows
+    about but that has no file on disk yet (see read_workspace_context()),
+    using that slot's own live `source` text from the JSON - never a blank
+    stub, unless the JSON itself says the slot is empty. This matters: if the
+    slot is actually running non-empty code (just hadn't had a file written
+    for it yet), materializing a blank file instead would make sync_file()'s
+    own fill logic treat it as an empty slot and overwrite real operator code
+    with whatever scripts/ resolves to. Once materialized as a real file
+    (blank or not), the normal sync_file() pipeline treats it exactly like
+    any other slot from here on - this only bridges the gap of the file not
+    existing at all yet. Returns how many files were created."""
+    created = 0
+    for sid, source in missing_slot_sources(opts.save_dir).items():
+        path = opts.save_dir / ("%s.py" % sid)
+        tag = "has code" if source.strip() else "empty"
+        if opts.dry_run:
+            ok("  would sense %-23s new slot from workspace state (%s)" % (path.name, tag))
+            created += 1
+            continue
+        if write_atomic(path, source):
+            ok("  sense %-28s <- workspace state (%s)" % (path.name, tag))
+            created += 1
+    return created
 
 
 class TierNamingError(RuntimeError):
@@ -601,6 +711,76 @@ def write_atomic(path: Path, body: str) -> bool:
         return False
 
 
+# ---------------------------------------------------------- parameterized templates
+# A source script may contain `${VAR}` / `${VAR:default}` placeholders (same
+# syntax as early_game_runner/auto_deploy.py's substitute_placeholders(), kept
+# identical on purpose) for values that only the operator knows at deploy time
+# -- e.g. pioneer.py's destination outpost. sync_file() prompts for these
+# interactively the first time a given save slot needs them, then remembers
+# the answer in PARAMS_CACHE (keyed by save dir + slot filename) so re-filling
+# the same slot later (e.g. after it's blanked out again) doesn't re-ask.
+PLACEHOLDER = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}")
+
+
+def find_placeholders(text: str) -> list:
+    """Ordered, de-duplicated (name, default) pairs for every placeholder in
+    text - first occurrence's default wins if the same name appears twice."""
+    seen: dict = {}
+    for m in PLACEHOLDER.finditer(text):
+        name, default = m.group(1), m.group(2)
+        if name not in seen:
+            seen[name] = default if default is not None else ""
+    return list(seen.items())
+
+
+def render_placeholders(text: str, answers: dict) -> str:
+    return PLACEHOLDER.sub(lambda m: str(answers.get(m.group(1), m.group(0))), text)
+
+
+def load_params_cache() -> dict:
+    if not PARAMS_CACHE.is_file():
+        return {}
+    try:
+        return json.loads(PARAMS_CACHE.read_text(encoding="utf-8"))
+    except ValueError:
+        warn("  bad JSON in %s, ignoring cached script parameters" % show(PARAMS_CACHE))
+        return {}
+
+
+def save_params_cache(cache: dict) -> None:
+    PARAMS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    PARAMS_CACHE.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding="utf-8", newline="\n")
+
+
+def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run: bool) -> dict:
+    """Answers for every (name, default) in placeholders. Anything already
+    cached for this exact save slot is reused silently; anything new is
+    prompted for interactively (blocking - see scripts_sync.py's plan notes on
+    why that's fine even under `watch`: the filesystem observer runs on its
+    own thread and just queues further events while we wait on input()).
+    Under --dry-run nothing is prompted or cached - falls back to cached/
+    default values only, as a preview of what a real run would fill in."""
+    cache = load_params_cache()
+    key = "%s/%s" % (save_dir.name, stem)
+    slot_cache = dict(cache.get(key, {}))
+    answers: dict = {}
+    dirty = False
+    for name, default in placeholders:
+        if name in slot_cache:
+            answers[name] = slot_cache[name]
+            continue
+        if dry_run:
+            answers[name] = default
+            continue
+        answers[name] = typer.prompt("%s: %s" % (stem, name), default=default)
+        slot_cache[name] = answers[name]
+        dirty = True
+    if dirty:
+        cache[key] = slot_cache
+        save_params_cache(cache)
+    return answers
+
+
 def launch_in_game(save_dir: Path, script_stem: str) -> None:
     """Best-effort DAP launch, only ever called when --auto is passed.
 
@@ -760,10 +940,17 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
         err("  fail  %-28s cannot read %s" % (path.name, source))
         return False
 
+    param_note = None
+    placeholders = find_placeholders(body)
+    if placeholders:
+        answers = resolve_placeholders(opts.save_dir, path.stem, placeholders, opts.dry_run)
+        body = render_placeholders(body, answers)
+        param_note = "params: %s" % ", ".join("%s=%s" % kv for kv in answers.items())
+
     note = None
     if opts.renumber:
         body, _, note = renumber(body, source.stem, path.stem)
-    parts = ([opts.magic] if marked else []) + ([note] if note else [])
+    parts = ([opts.magic] if marked else []) + ([param_note] if param_note else []) + ([note] if note else [])
     suffix = "  [%s]" % ", ".join(parts) if parts else ""
 
     if text == body:
@@ -944,8 +1131,9 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options, on_lib_changed=
     immediate relaunch: a single one-shot run has no "still mid-edit" risk to
     wait out.
     """
+    materialized = materialize_missing_slots(opts)
     changed_lib_keys = sync_lib(lib_index, opts)
-    written = len(changed_lib_keys)
+    written = materialized + len(changed_lib_keys)
     launched_stems: set = set()
     for path in sorted(opts.save_dir.glob("*.py")):
         if sync_file(path, script_index, opts, quiet_skips=not opts.verbose):
@@ -1063,6 +1251,12 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     for key, path in sorted(lib_index.items()):
         typer.echo("  %-24s %s" % (key, show(path)))
 
+    missing = missing_slot_sources(opts.save_dir)
+    if missing:
+        typer.echo("\nKnown to the game, no file on disk yet (%d) - `once`/`watch` will materialize these from workspace state:" % len(missing))
+        for sid in sorted(missing):
+            typer.echo("  %-24s %s" % (sid + ".py", "has code" if missing[sid].strip() else "empty"))
+
     staged = sorted(opts.unmatched_dir.glob("*.py")) if opts.unmatched_dir.is_dir() else []
     if staged:
         typer.echo("\nStaged in %s (%d), waiting to be written and moved:" % (show(opts.unmatched_dir), len(staged)))
@@ -1086,6 +1280,9 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
             state = ("marked %r, " % opts.magic if marked else "empty, ") + "no match -> would stage"
         else:
             state = ("marked %r -> " % opts.magic if marked else "empty -> ") + "would fill from %s" % show(source)
+            names = find_placeholders(read(source) or "")
+            if names:
+                state += "  (asks for: %s)" % ", ".join(n for n, _ in names)
         typer.echo("  %-28s %s" % (path.name, state))
     typer.echo("")
 
@@ -1191,6 +1388,16 @@ class Watcher:
                 self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, new_tier)
                 report_conflicts(self.conflicts)
                 self.sweep()
+            # Same cadence covers materialize_missing_slots() too: a newly
+            # built (or newly re-equipped) machine's script slot shows up in
+            # codeterraform-workspace.json well before the game ever writes
+            # it a `.py` file - watching save_dir/*.py (as note_save() does)
+            # has nothing to see until that file exists, so this has to be
+            # polled rather than event-driven. Any file this actually writes
+            # is then picked up by the filesystem observer itself (it's a
+            # real write into the watched save_dir) and flows into the
+            # normal self.pending fill path - no extra handling needed here.
+            materialize_missing_slots(self.opts)
         if self.repo_due is not None and self.repo_due <= now:
             self.repo_due = None
             self.rebuild()

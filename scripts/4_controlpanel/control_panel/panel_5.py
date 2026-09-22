@@ -7,11 +7,15 @@
 # script picks it up via DroneController.__init__ (only when constructed with
 # cruise_throttle=None -- an explicit per-drone override is unaffected).
 #
-# No recall switch or Sport Nav button here -- unlike ground vehicles
-# (vehicle_claims.py/vehicle_upgrade.py), there is no equivalent recall or
-# upgrade-request mechanism implemented for drones yet. Add one only once
-# lib/drone_claims.py (or a new module) actually grows that capability --
-# this card should not invent UI for behavior the scripts don't have.
+# Recall switch per row (lib/drone_claims.py's is_drone_recalled()/
+# set_drone_recalled()), same pure-intent-publish pattern as panel_2.py's
+# vehicle recall switch: this card only writes the archive flag, each
+# drone's own script picks it up via handle_recall_if_active(). Recalls to
+# the nearest Drone Depot specifically, NOT the nearest drone_service --
+# couple()/uncouple() (module re-equip) both require being docked at a
+# Depot (drone.md), unlike a low-battery return. No Sport Nav equivalent --
+# that's a Pioneer-only upgrade-request mechanism (lib/vehicle_upgrade.py)
+# with no drone counterpart.
 #
 # Recommended card size: 2 columns x 1 row for small fleets, 2 x 2 once you
 # have more than ~6 drones -- same sizing guidance as panel_2.py (FLEET).
@@ -25,6 +29,7 @@
 # slot at this source file.
 
 from archive import archive
+from drone_claims import is_drone_recalled, set_drone_recalled
 from drone_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
 
 KIND_COLORS = {
@@ -61,6 +66,7 @@ while True:
     fleet = get_component("fleet")
     drones = fleet.drones() if fleet and hasattr(fleet, "drones") else []
     wide = width >= 900
+    recall_x = width - 115  # fixed right-margin anchor, matches panel_2.py's vehicle card
 
     if not drones:
         panel.label(24, 98, "No drones owned", "muted")
@@ -85,12 +91,19 @@ while True:
         for index, drone in enumerate(visible_drones):
             y = top + index * row_height
             name = str(getattr(drone, "name", getattr(drone, "id", "drone")))
+            # id-first, matching DroneController.self.name (lib/drone.py) exactly --
+            # that's the key each drone's own script checks recall under, so this
+            # card must key the archive flag the same way rather than by display name.
+            drone_id = str(getattr(drone, "id", getattr(drone, "name", "drone")))
             kind = str(getattr(drone, "kind", "drone_small"))
             engine = str(getattr(drone, "engine", ""))
             raw_status = str(getattr(drone, "status", "unknown"))
+            recalled = is_drone_recalled(drone_id)
 
             if getattr(drone, "is_being_rescued", False):
                 dot_status = "being_rescued"
+            elif recalled:
+                dot_status = "paused"
             elif raw_status in ["stalled_no_battery", "stalled_no_oil", "stalled_no_route", "scrambled"]:
                 dot_status = "error"
             elif raw_status in ["traveling", "holding_weather"]:
@@ -126,13 +139,20 @@ while True:
                 location = f"({getattr(drone, 'x', 0):.0f}, {getattr(drone, 'y', 0):.0f})"
             if wide:
                 loc_x = status_x + 120
-                panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
+                if loc_x + 90 < recall_x:
+                    panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
             else:
                 # Below the kind pill, not overlapping it -- same clearance
                 # trade-off as panel_2.py's narrow-layout location line.
                 panel.draw_text(40, y + 46, location, 10, "text-secondary")
 
+            switch_on = panel.switch(f"recall_{drone_id}", recall_x, y + 6, recalled, "recall")
+            if switch_on != recalled:
+                set_drone_recalled(drone_id, switch_on)
+
             rescue = getattr(drone, "rescue_status", "none")
+            badge_y = y + 22 if wide else y + 38
             if rescue != "none":
-                badge_y = y + 22 if wide else y + 38
                 panel.pill(status_x, badge_y, rescue, "warning")
+            elif switch_on:
+                panel.pill(status_x, badge_y, "recalled", "warning")

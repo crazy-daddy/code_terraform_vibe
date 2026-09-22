@@ -107,7 +107,7 @@ class SteamTurbineController:
             own_outpost_id = getattr(getattr(self.turbine, "outpost", None), "id", None)
             ranked = []
             for type_id in ("gas_tank", "thermal_cap"):
-                pairs = fluid_routing.discover_network_buildings(type_id, resolve=False)
+                pairs = fluid_routing.discover_network_buildings(type_id, resolve=False, fluid_id="steam")
                 pairs.sort(key=lambda p: p[1] != own_outpost_id)
                 ranked.extend(b_id for b_id, _ in pairs)
             self._cached_candidate_ids = ranked
@@ -136,6 +136,7 @@ class SteamTurbineController:
             return
 
         curr_tick = self.get_current_tick()
+        fluid_routing.warn_about_unassigned_tanks(curr_tick)
 
         is_stalled = fluid_routing.safe_is_stalled(self.turbine)
         self.stall_streak = self.stall_streak + 1 if is_stalled else 0

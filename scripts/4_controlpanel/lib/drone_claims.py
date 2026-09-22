@@ -18,6 +18,37 @@ BIOSITE_CLAIMS_KEY = "biosite.claims"
 MISSION_KEY_PREFIX = "drone.mission:"
 SCOUTED_EMPTY_POI_KEY = "scout.empty_pois"
 
+# Same one-shared-dict shape as vehicle_claims.py's RECALL_KEY, on its own key
+# so a drone and a ground vehicle sharing a display name can never collide.
+# Recall sends a drone to the nearest Drone Depot, NOT the nearest
+# drone_service -- the point is docking somewhere couple()/uncouple() can
+# re-equip it (drone.md: both require "docked at an operational Drone
+# Depot"), unlike a ground vehicle's charging-station "base".
+DRONE_RECALL_KEY = "drone.recall"
+
+
+def is_drone_recalled(drone_name):
+    """Module-level so non-drone scripts (e.g. panel_5.py's DRONE FLEET card) can
+    read a drone's recall flag without instantiating a DroneController."""
+    recalls = archive.get(DRONE_RECALL_KEY, {}) or {}
+    if not isinstance(recalls, dict):
+        return False
+    return bool(recalls.get(drone_name, False))
+
+
+def set_drone_recalled(drone_name, recalled):
+    """Sets or clears drone_name's recall flag in the shared DRONE_RECALL_KEY dict."""
+    def updater(recalls):
+        if not isinstance(recalls, dict):
+            recalls = {}
+        if recalled:
+            recalls[drone_name] = True
+        else:
+            recalls.pop(drone_name, None)
+        return recalls
+
+    archive.transaction(DRONE_RECALL_KEY, {}, updater)
+
 # Bounded fixed-size cache per CLAUDE.md rule 7 -- 35 permanent biosites total
 # (7 per biome x 5 biomes, docs/guide/biosphere_biomass_tier.md) means the
 # realistic ceiling of ever-scanned-empty POIs is small; this cap is a very
@@ -94,6 +125,61 @@ class DroneClaimsMixin:
         self.current_target_key = target_key
         self.current_target = record.get("target")
         return record
+
+    def is_recalled(self):
+        """
+        True when the operator has set this drone's recall flag (the DRONE
+        FLEET card's toggle in panel_5.py, or a direct set_drone_recalled()
+        call). Checked every loop cycle -- see handle_recall_if_active() --
+        so an active mission is abandoned promptly rather than only at the
+        next natural idle point.
+        """
+        return is_drone_recalled(self._host.name)
+
+    def handle_recall_if_active(self):
+        """
+        If recalled, abandons any current biosite claim/mission and heads to
+        the nearest Drone Depot for re-equipping (couple()/uncouple() both
+        require being docked at one -- NOT the nearest drone_service, unlike
+        a stranded/low-battery return). Idles there once docked rather than
+        undocking (mirrors leave_station()'s opposite intent: recall exists
+        so the operator can swap modules, which needs the berth held).
+        Returns True when recall is active, so callers should skip their
+        normal cycle this pass:
+            if self.handle_recall_if_active():
+                sleep(5.0)
+                continue
+        """
+        if not self.is_recalled():
+            return False
+
+        if not self._host.get_all_drone_depots():
+            # get_nearest_drone_depot() would otherwise fall back to
+            # home_coords (often (0.0, 0.0) this early) with an empty depot
+            # id -- flying there is meaningless when no Depot exists yet.
+            # Stay put and wait for one to be built rather than heading
+            # toward a bogus coordinate.
+            self._host.log.level("warn").print(f"[{self._host.name}] Recall active but no Drone Depot is deployed yet; staying put.")
+            self._host.publish_telemetry("RECALLED")
+            return True
+
+        depot_coords, depot_info = self._host.get_nearest_drone_depot()
+        depot_id = depot_info.get("id")
+
+        if depot_id and self._host.current_station() == depot_id:
+            self._host.log.debug(f"[{self._host.name}] Recall active and already docked at Drone Depot '{depot_id}'; idling in RECALLED state for re-equip.")
+            self._host.publish_telemetry("RECALLED")
+            return True
+
+        self._host.log.print(f"[{self._host.name}] Recall active; returning to Drone Depot '{depot_id or depot_coords}' for re-equip.")
+        self._host.publish_telemetry("RECALLED")
+        self.release_biosite_claim()
+
+        reached = bool(depot_id) and self._host.fly_to_station(depot_id, target_coords=depot_coords)
+        if not reached:
+            self._host.log.debug(f"[{self._host.name}] fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
+            self._host.fly_to(depot_coords[0], depot_coords[1], precision=1.5)
+        return True
 
     def claim_biosite(self, target_key, target_info):
         """

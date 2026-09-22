@@ -23,10 +23,97 @@
 # (only an ambiguous docking-point position). Everything here still works
 # the same way the code it replaces did: gather candidates, try connect(),
 # verify via is_stalled(), blacklist on failure.
+#
+# One thing candidates ARE filtered on before any of that: an operator's
+# manual fluid_routing.tank_assignments designation (get_tank_assignments()/
+# tank_matches_assignment()/tank_is_eligible_target()) -- a generic Liquid/Gas
+# Tank's own .fluid() latch says nothing about which of an outpost's several
+# possible, non-merged physical pipe networks it sits on (docs/guide/
+# infrastructure_and_pipes.md), and clears to "" the instant it drains to 0,
+# so without this an auto-router could steal a tank meant for a different
+# fluid the moment it's empty. See fluid_routing.tank_assignments in
+# docs/AI_CHEATSHEET.md.
+#
+# This is a hard gate, deliberately: a tank that is neither already latched
+# to the fluid a router wants NOR explicitly assigned to it is NOT eligible,
+# full stop -- not "eligible until proven otherwise". A brand-new tank is
+# always fill_pct()==0, so it would otherwise be the top-ranked candidate for
+# every router's least-full-first sort the instant it's built, before the
+# operator ever gets a chance to say what it's for. The cost is a real
+# behavior change versus the old "unrestricted by default" version of this
+# module: an unassigned, never-latched tank now sits idle, untouched by any
+# router, until the operator assigns it (see warn_about_unassigned_tanks()
+# below for the nudge) -- accepted deliberately, since a stalled/idle tank is
+# recoverable and a silently wrong fill may not be. An already-latched tank
+# is a different case entirely -- it's a proven physical fact, not a risk,
+# so tank_is_eligible_target() lets it keep working with zero configuration
+# regardless of the registry's state, exactly as before.
 
+from archive import archive
 from tree_console import TreeConsole
 
 log = TreeConsole(module="fluid_routing")
+
+TANK_ASSIGNMENTS_KEY = "fluid_routing.tank_assignments"
+
+
+def get_tank_assignments():
+    """{building_id: fluid_id} -- operator-designated tank reservations, edited directly in the
+    Data Archive Notebook (e.g. {"gas_tank_1": "steam", "gas_tank_3": "ammonia"}), same edit
+    convention as production.get_manual_orders(). Empty/absent by default -- an already-latched
+    tank never needs an entry here at all (see tank_is_eligible_target()'s escape hatch), only a
+    tank that isn't latched to anything yet does. fluid_id values use the exact same vocabulary as
+    building.fluid() / production.FLUID_LATCH_IDS ("water", "oil", "steam", or a biome essence id
+    once the Essence Liquifier ships) -- not a separate taxonomy."""
+    if not archive.has(TANK_ASSIGNMENTS_KEY):
+        archive.set(TANK_ASSIGNMENTS_KEY, {})
+    stored = archive.get(TANK_ASSIGNMENTS_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        building_id: fluid_id for building_id, fluid_id in stored.items()
+        if isinstance(fluid_id, str) and fluid_id
+    }
+
+
+def tank_matches_assignment(building_id, fluid_id):
+    """True only if building_id is explicitly assigned to exactly fluid_id; False if assigned to a
+    different fluid_id OR not assigned at all. Deliberately deny-by-default on no entry -- see the
+    module docstring for why "unrestricted until proven otherwise" was rejected. This is the pure
+    registry check; it has no way to know a tank is already safely latched to fluid_id (that needs
+    the live building object, not just its id) -- callers that have a resolved building should use
+    tank_is_eligible_target() below instead, which checks that first and only falls back to this
+    for a tank that isn't already latched to anything."""
+    return get_tank_assignments().get(building_id) == fluid_id
+
+
+def tank_is_eligible_target(building, fluid_id):
+    """
+    Whether a resolved Liquid/Gas Tank building (discover_network_buildings(resolve=True) shape --
+    has .fluid()/.id) is safe to treat as a candidate for a NEW fluid_id connection right now.
+
+    A tank already latched to fluid_id is always eligible, unconditionally, regardless of the
+    tank_assignments registry's state -- that's a proven physical fact, not a risk, and is exactly
+    what keeps every already-working connection in an old/simple save running with zero
+    configuration after this module started denying-by-default (see module docstring). A tank
+    latched to a DIFFERENT fluid is never eligible (an unrelated router should not attempt to
+    steal it -- connect() would fail/conflict anyway, this just skips the wasted attempt). Only a
+    tank that isn't latched to anything at all (freshly built, or drained to 0 and not yet
+    reassigned) falls through to tank_matches_assignment()'s strict registry check -- eligible only
+    with an explicit matching entry.
+    """
+    current_fluid = None
+    if building is not None and hasattr(building, "fluid"):
+        try:
+            current_fluid = building.fluid()
+        except Exception:
+            current_fluid = None
+    if current_fluid:
+        return current_fluid == fluid_id
+    b_id = getattr(building, "id", None)
+    if not b_id:
+        return False
+    return tank_matches_assignment(b_id, fluid_id)
 
 
 def safe_is_stalled(building):
@@ -98,7 +185,7 @@ class PerEntryBlacklist:
         return [e for e in entries if not self.is_blacklisted(key(e), curr_tick)]
 
 
-def discover_network_buildings(type_ids, resolve=True):
+def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
     """
     Every building across every known outpost matching type_ids (a single
     type_id string, or an iterable of them -- e.g. Water Pump's Liquid
@@ -106,6 +193,14 @@ def discover_network_buildings(type_ids, resolve=True):
     outpost_network.outposts() -> outpost.buildings(type_id). Returns
     [(building_or_id, outpost_id), ...] in discovery order, deduplicated by
     id within this call.
+
+    fluid_id, when given, drops any candidate tank_is_eligible_target() rejects -- either latched
+    to a different fluid, or unlatched with no matching tank_assignments entry (see that
+    function's docstring for why unassigned is deny-by-default). This always resolves the
+    candidate first regardless of this call's own resolve= value (tank_is_eligible_target() needs
+    the live building, not just its id, to apply its already-latched escape hatch) -- when
+    resolve=False was requested, the resolved object is used for the check only and discarded, and
+    the bare id is what's actually returned.
 
     outpost_id is the owning outpost's id, or None when the building has no
     .outpost of its own (Thermal Cap only -- built directly on a thermal
@@ -148,19 +243,136 @@ def discover_network_buildings(type_ids, resolve=True):
                         b_id = getattr(building, "id", None)
                         if not b_id or b_id in seen_ids:
                             continue
-                        seen_ids.add(b_id)
-                        if resolve:
+
+                        resolved = None
+                        if resolve or fluid_id is not None:
                             try:
                                 resolved = get_component(b_id) or building
                             except Exception:
                                 resolved = building
-                            pairs.append((resolved, outpost_id))
-                        else:
-                            pairs.append((b_id, outpost_id))
+
+                        if fluid_id is not None and not tank_is_eligible_target(resolved, fluid_id):
+                            continue
+
+                        seen_ids.add(b_id)
+                        pairs.append((resolved if resolve else b_id, outpost_id))
         except Exception:
             pass
     log.trace(f"discover_network_buildings({type_ids}): found {len(pairs)} building(s)")
     return pairs
+
+
+# liquid_tank/large_liquid_tank/gas_tank -- mirrors production.BUFFER_FLUID_TYPE_IDS, not
+# imported from there to avoid a circular import (production.py already imports from this
+# module). Kept in sync by hand; both lists are short and rarely change.
+TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank", "gas_tank")
+
+
+def assign_tanks_from_current_fluid(overwrite=False):
+    """
+    One-shot bootstrap for fluid_routing.tank_assignments: walks every Liquid/Gas Tank
+    network-wide (TANK_TYPE_IDS), reads each one's already-latched building.fluid(), and records
+    building_id -> fluid_id for every tank that has one. Meant to be run manually, once, by
+    pasting a short call into the in-game Playground (there's no machine to deploy a standalone
+    script onto for a network-wide utility like this one -- see docs/AI_CHEATSHEET.md), after
+    tanks have already latched onto their real-world contents through normal play -- it only ever
+    reads .fluid(), never guesses at an empty tank's intended fluid (nothing to infer from "").
+
+    overwrite=False (default) never touches a building_id that already has an assignment entry,
+    so a prior manual designation (or an earlier run of this same function) is never silently
+    clobbered. Pass overwrite=True to instead resync every already-latched tank's entry to its
+    current .fluid() -- e.g. after re-plumbing a tank onto a different network.
+
+    Returns (assigned, skipped_already_set, skipped_empty) counts for the caller to print.
+    """
+    tanks = discover_network_buildings(TANK_TYPE_IDS, resolve=True)
+    existing = get_tank_assignments()
+
+    to_add = {}
+    assigned = skipped_already_set = skipped_empty = 0
+    for building, _outpost_id in tanks:
+        b_id = getattr(building, "id", None)
+        if not b_id or not hasattr(building, "fluid"):
+            continue
+        try:
+            fluid = building.fluid()
+        except Exception:
+            fluid = None
+        if not fluid:
+            skipped_empty += 1
+            continue
+        if not overwrite and b_id in existing:
+            skipped_already_set += 1
+            continue
+        to_add[b_id] = fluid
+        assigned += 1
+
+    if to_add:
+        def updater(stored):
+            stored = dict(stored or {})
+            stored.update(to_add)
+            return stored
+        archive.transaction(TANK_ASSIGNMENTS_KEY, {}, updater)
+        log.print(f"assign_tanks_from_current_fluid(): wrote {len(to_add)} assignment(s) -> {to_add}")
+
+    return assigned, skipped_already_set, skipped_empty
+
+
+# ~60 real seconds at normal speed (10 ticks/sec, docs/components/clock.md) -- same tick-based
+# convention as RESCAN_INTERVAL_TICKS/CLAIM_STALE_TICKS elsewhere, not a real-time timer.
+UNASSIGNED_TANK_WARNING_INTERVAL_TICKS = 600
+LAST_UNASSIGNED_WARNING_TICK_KEY = "fluid_routing.last_unassigned_warning_tick"
+
+
+def warn_about_unassigned_tanks(curr_tick):
+    """
+    Prints a warning-level notice, at most once every UNASSIGNED_TANK_WARNING_INTERVAL_TICKS ticks,
+    listing every Liquid/Gas Tank network-wide that tank_is_eligible_target() would currently deny
+    for every fluid -- i.e. not latched to anything AND no tank_assignments entry. An already-latched
+    tank is never listed here even without an entry -- it's not actually blocked (see
+    tank_is_eligible_target()'s escape hatch), so flagging it would just be noise.
+
+    The throttle timestamp lives in archive (LAST_UNASSIGNED_WARNING_TICK_KEY), NOT a module-level
+    Python global -- a plain global is only shared within one script's own run, not across every
+    separately-deployed machine script that imports this Library (same "per-script-run" caveat
+    documented for production.py's _WARNED_UNKNOWN_MANUAL_ITEMS, docs/AI_CHEATSHEET.md). With
+    several Water Pumps/Thermal Caps/Turbines all calling into this, a module global would let each
+    one independently decide "I haven't warned recently" and print its own copy every interval --
+    archive is the one state store this codebase already uses specifically because it IS shared
+    across scripts (see CLAUDE.md's Data Archive rule).
+
+    Since tank_matches_assignment() now denies an unassigned, never-latched tank by default (see
+    module docstring), this is the operator's only signal that such a tank exists at all: it
+    otherwise sits completely idle, invisible to every router, until assigned. curr_tick == 0
+    (clock unavailable) always fires -- unlike PerEntryBlacklist's "no live clock == stay
+    blacklisted" convention, an extra or duplicate print here is harmless where suppressing a
+    genuine notice isn't.
+    """
+    last_warned = archive.get(LAST_UNASSIGNED_WARNING_TICK_KEY, None)
+    if curr_tick != 0 and last_warned is not None and curr_tick - last_warned < UNASSIGNED_TANK_WARNING_INTERVAL_TICKS:
+        return
+    archive.set(LAST_UNASSIGNED_WARNING_TICK_KEY, curr_tick)
+
+    tanks = discover_network_buildings(TANK_TYPE_IDS, resolve=True)
+    blocked = sorted({
+        building.id for building, _outpost_id in tanks
+        if not (hasattr(building, "fluid") and _safe_fluid(building)) and building.id not in get_tank_assignments()
+    })
+    if blocked:
+        message = (
+            f"{len(blocked)} tank(s) are idle -- not latched to any fluid and not in "
+            f"fluid_routing.tank_assignments, so no router will connect to them: {blocked} -- "
+            "designate them in the Data Archive Notebook (see docs/AI_CHEATSHEET.md)."
+        )
+        log.level("warn").print(message)
+        notify(message)
+
+
+def _safe_fluid(building):
+    try:
+        return building.fluid()
+    except Exception:
+        return None
 
 
 class FluidOutputEvent:
@@ -205,8 +417,9 @@ class FluidOutputRouter:
     """
 
     def __init__(self, type_ids, rebalance_fill_fraction, connection_grace_ticks,
-                 rescan_interval_ticks, discovery_cache_interval_steps):
+                 rescan_interval_ticks, discovery_cache_interval_steps, fluid_id=None):
         self.type_ids = type_ids
+        self.fluid_id = fluid_id
         self.rebalance_fill_fraction = rebalance_fill_fraction
         self.connection_grace_ticks = connection_grace_ticks
         self.discovery_cache_interval_steps = discovery_cache_interval_steps
@@ -230,7 +443,7 @@ class FluidOutputRouter:
     def _discover_targets_cached(self):
         """Target objects network-wide, refreshed at most every discovery_cache_interval_steps calls."""
         if self._cached_targets is None or self._ticks_since_discovery >= self.discovery_cache_interval_steps:
-            self._cached_targets = [b for b, _ in discover_network_buildings(self.type_ids)]
+            self._cached_targets = [b for b, _ in discover_network_buildings(self.type_ids, fluid_id=self.fluid_id)]
             for building in self._cached_targets:
                 self._target_lookup[building.id] = building
             self._ticks_since_discovery = 0
@@ -254,6 +467,8 @@ class FluidOutputRouter:
 
     def ensure_connection(self, port, curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
         """Returns a FluidOutputEvent. See class docstring for callback timing. Caller is responsible for the port-null guard before calling (matches the original methods' early-return ordering)."""
+        warn_about_unassigned_tanks(curr_tick)
+
         if not self._id_synced:
             try:
                 self._connected_id = port.connected_id() if hasattr(port, "connected_id") else None
@@ -273,8 +488,16 @@ class FluidOutputRouter:
             self._connected_id = None
 
         # Fast path: a connection already judged healthy needs no network
-        # scan, and no fresh component resolution either.
-        if current_id and not self.blacklist.is_blacklisted(current_id, curr_tick) and fill_pct_of(self._resolve_target(current_id)) < self.rebalance_fill_fraction:
+        # scan, just the cached (not necessarily fresh) resolved target --
+        # see _resolve_target(). Still re-checks tank_is_eligible_target()
+        # every call so an operator reassigning this exact tank to a
+        # different fluid is caught immediately, not only whenever it next
+        # happens to stall. In the overwhelmingly common case this target is
+        # already latched to self.fluid_id, so the check is a cheap "read
+        # one cached building's .fluid()", not a registry lookup at all.
+        if (current_id and not self.blacklist.is_blacklisted(current_id, curr_tick)
+                and (self.fluid_id is None or tank_is_eligible_target(self._resolve_target(current_id), self.fluid_id))
+                and fill_pct_of(self._resolve_target(current_id)) < self.rebalance_fill_fraction):
             return FluidOutputEvent("healthy")
 
         all_known_targets = self._discover_targets_cached()

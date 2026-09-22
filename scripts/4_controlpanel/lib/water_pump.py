@@ -64,6 +64,7 @@ class WaterPumpController:
             connection_grace_ticks=CONNECTION_GRACE_TICKS,
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
             discovery_cache_interval_steps=DISCOVERY_CACHE_INTERVAL_STEPS,
+            fluid_id="water",
         )
 
     def get_current_tick(self):

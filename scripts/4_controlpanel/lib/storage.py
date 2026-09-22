@@ -456,6 +456,119 @@ def _warehouse_item_ids(outpost=None):
     return held
 
 
+def _items_demanded_by_active_dock_orders(outpost=None):
+    """
+    Set of item_ids still owed (requires - shipped > 0) by any Supply Dock's
+    current active order at `outpost` (default: home outpost). A campaign/
+    weekly Earth Order can demand a NON_WAREHOUSABLE_CATEGORIES item (e.g. a
+    "deployable" equipment item) hundreds of units deep -- far more than
+    Inventory has slots for -- but supply_dock.py's loading step already
+    pulls straight from a Warehouse via storage.take_item()/total_stock()
+    without needing the stock staged in Inventory first, so there's no
+    benefit (and real risk of flooding every open Inventory slot) in
+    reclaim_inventory_only_items_from_warehouses() also dragging that bulk
+    stock back. Self-contained (doesn't import production.py's
+    discover_supply_dock_ids()/_all_dock_orders() to avoid a circular
+    import -- production.py already imports from this module) using the same
+    outpost.buildings() discovery idiom as discover_storage_buildings().
+    """
+    if outpost is None:
+        outpost = _home_outpost()
+    if not outpost or not hasattr(outpost, "buildings"):
+        return set()
+
+    demanded = set()
+    try:
+        dock_refs = outpost.buildings("supply_dock")
+    except Exception:
+        return demanded
+    for ref in dock_refs:
+        dock_id = getattr(ref, "id", None)
+        if not dock_id:
+            continue
+        dock = _component(dock_id)
+        if not dock or not hasattr(dock, "current_order"):
+            continue
+        try:
+            order = getattr(dock, "current_order")()
+        except Exception:
+            continue
+        if not order:
+            continue
+        requires = getattr(order, "requires", {}) or {}
+        shipped = getattr(order, "shipped", {}) or {}
+        for item_id, req_count in requires.items():
+            if req_count - shipped.get(item_id, 0) > 0:
+                demanded.add(item_id)
+    return demanded
+
+
+def reclaim_inventory_only_items_from_warehouses(outpost=None):
+    """
+    Reverse of rebalance_inventory_to_warehouses(): sweeps every discovered
+    Warehouse for stock in NON_WAREHOUSABLE_CATEGORIES (see
+    _must_stay_in_inventory) and moves it back to Inventory.
+
+    This exists as a safety net, not a normal code path -- nothing in this
+    codebase should ever *place* such an item into a Warehouse to begin with
+    (rebalance_inventory_to_warehouses() itself skips them via
+    _occupied_stackable_slots_by_item()), so any occurrence here means it
+    arrived some other way (e.g. a player manually stashing gear, or a
+    Warehouse compact()/consolidate operation moving a stack the sweep never
+    intended to touch). Left behind, it would be stranded with no way to
+    equip a Pioneer/Rover or place it as equipment.
+
+    Skips any item an active Supply Dock order still owes (see
+    _items_demanded_by_active_dock_orders()) -- a bulk Earth Order contract
+    for a deployable can run hundreds of units deep, far more than Inventory
+    has room for, and the Dock already ships straight from the Warehouse
+    without needing it staged here first. Everything else is reclaimed
+    unconditionally regardless of Inventory slot pressure.
+
+    Each exact property-variant slot is moved back individually (property_match
+    "exact") so a durability-bearing equipment stack isn't merged with a
+    different variant of the same item_id.
+    """
+    inventory = _component("inventory")
+    if not inventory or not hasattr(inventory, "transfer_to"):
+        return
+
+    dock_demanded = _items_demanded_by_active_dock_orders(outpost)
+
+    reclaimed_total = 0
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        if not component or not hasattr(component, "slots") or not hasattr(component, "transfer_to"):
+            continue
+        try:
+            slots = component.slots()
+        except Exception:
+            continue
+        for slot in slots:
+            item_id = getattr(slot, "item", None)
+            count = getattr(slot, "count", 0)
+            if not item_id or count <= 0:
+                continue
+            if not _must_stay_in_inventory(item_id):
+                continue
+            if item_id in dock_demanded:
+                log.debug(f"reclaim_inventory_only_items_from_warehouses: leaving {count}x {item_id} in Warehouse '{building['id']}' -- an active Supply Dock order still owes it, ships straight from the Warehouse")
+                continue
+            properties = getattr(slot, "properties", None)
+            try:
+                res = component.transfer_to("inventory", item_id, int(count), properties=properties, property_match="exact")
+            except Exception:
+                continue
+            moved = getattr(res, "moved", 0) or 0
+            if moved > 0:
+                reclaimed_total += moved
+                log.print(f"[storage] Reclaimed {moved}x {item_id} from Warehouse '{building['id']}' back to Inventory (Inventory-only category).")
+            elif getattr(res, "status", None) not in ("no_op",):
+                log.debug(f"reclaim_inventory_only_items_from_warehouses: '{building['id']}' transfer_to('inventory', {item_id}) moved 0 units ({getattr(res, 'status', '?')})")
+    log.debug(f"reclaim_inventory_only_items_from_warehouses: reclaimed {reclaimed_total} unit(s) total across every discovered Warehouse")
+    return reclaimed_total
+
+
 def rebalance_inventory_to_warehouses(outpost=None):
     """
     "Inventory manager" sweep: moves a stackable (propertyless) item out to a

@@ -79,15 +79,13 @@ class DroneScoutMixin:
                     sleep(poll_interval)
                     continue
 
+                if self._host.handle_recall_if_active():
+                    sleep(poll_interval)
+                    continue
+
                 curr_wh, _, _ = self._host.get_battery()
                 if curr_wh <= self._host.energy_needed_to_return_comfortably():
-                    service_coords, service_info = self._host.get_nearest_drone_service()
-                    if not self._host.is_at(service_coords, precision=3.0):
-                        log.debug(f"[{self._host.name}] Battery low ({curr_wh:.1f} Wh); returning to drone_service.")
-                        self._host.publish_telemetry("RETURNING_TO_SERVICE")
-                        service_id = service_info.get("id")
-                        if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
-                            self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
+                    self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} Wh)")
                     sleep(poll_interval)
                     continue
 
@@ -95,6 +93,14 @@ class DroneScoutMixin:
                 if not candidates:
                     log.debug(f"[{self._host.name}] No unscanned POI candidates this cycle.")
                     self._host.publish_telemetry("IDLE_NO_TARGETS")
+                    # Every known POI is resolved (scanned or cache/journal-
+                    # confirmed empty) -- nothing will ever change that
+                    # without a fresh POI appearing, so nothing else in this
+                    # loop will ever send the drone anywhere again. Without
+                    # this, a scout that finishes its survey mid-field just
+                    # idles wherever its last scan left it, forever.
+                    if self._host.return_to_service_for_charge(log, "No scan targets remain"):
+                        log.print(f"[{self._host.name}] Survey complete; standing by at drone_service.")
                     sleep(30.0)
                     continue
 
@@ -108,6 +114,13 @@ class DroneScoutMixin:
                 if not target:
                     log.debug(f"[{self._host.name}] {len(candidates)} candidate(s) found but none reachable on current battery.")
                     self._host.publish_telemetry("IDLE_OUT_OF_RANGE")
+                    _, _, lvl = self._host.get_battery()
+                    if lvl < 0.98:
+                        # Not low enough to trip the proactive-return check above
+                        # (not in danger where it's parked), but too low for any
+                        # scout trip -- top up now instead of idling here forever,
+                        # since nothing else in this loop will ever send it home.
+                        self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl*100:.0f}% charge")
                     sleep(30.0)
                     continue
 
