@@ -8,9 +8,21 @@ differences documented in the plan this came from:
      `.current` file or a marker, this project's scripts/ tree is split by
      *global progression tier* first (`0_cold_boot`, `1_early`, `2_libunlock`,
      `3_archiveunlock`, `4_controlpanel`, `5_uprising`, ...), with machine
-     categories (bio/, power/, rover/, ...) nested underneath. The active tier
-     is derived automatically, per save, from the save's own state file - see
-     `read_save_state()`. No hint file, no manual bookkeeping.
+     categories (bio/, power/, rover/, ...) nested underneath. Tiers are
+     discovered by scanning scripts/ for `<N>_<anything>` dirs and sorting by
+     `N` ascending (`discover_tiers()`/`tier_number()`) - only the leading
+     number is load-bearing, so dropping in `scripts/6_derp/` with its own
+     `.criteria` picks it up automatically as the new top tier, no code
+     change needed, and numbers may skip (`1_early`, `5_mid` today,
+     `3_inbetween` added later slots in between with no other change). A dir
+     whose name starts with a digit but isn't `<int>_...` (`1N3_DERP`) or two
+     dirs claiming the same number (`10_hi`, `10_ho`) raise `TierNamingError`
+     rather than being guessed past. The active tier is derived automatically,
+     per save, from the save's own state file - see `read_save_state()`. No
+     hint file, no manual bookkeeping. This assumes unlocks are monotonic
+     (`resolve_active_tier()` stops walking at the first tier whose `.criteria`
+     isn't met yet) - an out-of-order save where a higher tier's `.criteria`
+     is satisfied before a lower one's isn't handled specially.
 
   2. `lib/` is not a flat, single-version directory - it is itself a per-tier
      category (`scripts/<tier>/lib/<module>.py`), resolved with the exact same
@@ -33,6 +45,12 @@ No duplicate files across tiers: for a given category/base_name, the resolver
 walks tiers from the active one down to `0_cold_boot` and uses the first file
 found, so a higher tier only needs a file when its content actually diverges
 from what a lower tier already defines.
+
+A category directory sitting directly under `scripts/` (a sibling of the tier
+dirs, e.g. `scripts/contract/`) is a *global* category: it isn't gated by any
+tier and is always included, unchained, alongside whatever the active tier
+resolves. Use it for scripts that are genuinely tech-independent and
+self-contained (no `lib/` imports) - contracts are the motivating case.
 
 An empty game file with no match is staged into `scripts/_unmatched/` (never
 used as a source) exactly as in vakermit's tool - see its docstring for the
@@ -65,10 +83,6 @@ UNMATCHED = "_unmatched"            # under scripts/; staged, never a source
 SAVE_GLOB = "save_*_scripts"
 GAME_DIR = "io.codeterraform.game"
 
-TIER_ORDER = [
-    "0_cold_boot", "1_early", "2_libunlock", "3_archiveunlock",
-    "4_controlpanel", "5_uprising",
-]
 LIB_CATEGORY = "lib"
 
 # Machine types where each numbered instance is a genuinely distinct,
@@ -210,6 +224,70 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
     return summary
 
 
+class TierNamingError(RuntimeError):
+    """A dir directly under scripts/ has an ambiguous or conflicting tier
+    name - not something to silently guess past (see tier_number/
+    discover_tiers)."""
+
+
+def tier_number(dirname: str) -> Optional[int]:
+    """Split on the first `_` and cast the part before it to int - `10_endofworld`
+    -> 10, `010_iamsmart` -> 10 (int() strips the leading zero itself, no
+    octal surprise). None if there's no `_` at all, or the part before it
+    doesn't start with a digit - such a dir isn't attempting to be a tier,
+    it's a global category (see list_global_categories), e.g. `contract` or
+    `my_stuff`.
+
+    Raises TierNamingError if the part before the first `_` *starts* with a
+    digit but isn't a plain int (e.g. `1N3_DERP`, `5b_weird`) - that's not a
+    global category with a coincidental underscore, it's a typo'd tier
+    number, and guessing past it silently would misfile whatever's inside."""
+    prefix, sep, _ = dirname.partition("_")
+    if not sep or not prefix or not prefix[0].isdigit():
+        return None
+    if not prefix.isdigit():
+        raise TierNamingError(
+            "%r looks like it's trying to name a tier (starts with a digit "
+            "before the first `_`) but %r isn't a plain integer. Rename it "
+            "to `<N>_<name>`, or to something not starting with a digit if "
+            "it's meant to be a global (untiered) category." % (dirname, prefix)
+        )
+    return int(prefix)
+
+
+def discover_tiers(scripts_dir: Path) -> list:
+    """Tier dirs directly under scripts_dir, ordered ascending by their
+    leading number - e.g. `0_cold_boot`, `1_early`, ... `10_endofworld` sorts
+    after `9_...`, never between `1_` and `2_` (numeric key, not string
+    compare). Only the number is load-bearing; the rest of the name is free
+    text. Drop a new tier in as `scripts/<N>_<anything>/` with its own
+    `.criteria` and it's picked up automatically, no code change needed.
+    Numbers may skip (`1_early`, `5_mid` today, `3_inbetween` added later
+    slots in between and is picked up next run with no other change).
+
+    Raises TierNamingError if two tier dirs claim the same number (e.g.
+    `10_hi` and `10_ho`) - that's a genuine conflict, not something to
+    resolve by string order."""
+    tiers = []
+    if scripts_dir.is_dir():
+        for p in scripts_dir.iterdir():
+            if not p.is_dir():
+                continue
+            n = tier_number(p.name)
+            if n is not None:
+                tiers.append((n, p.name))
+    by_number: dict = {}
+    for n, name in tiers:
+        by_number.setdefault(n, []).append(name)
+    dupes = {n: names for n, names in by_number.items() if len(names) > 1}
+    if dupes:
+        detail = "; ".join("%d: %s" % (n, ", ".join(sorted(names)))
+                            for n, names in sorted(dupes.items()))
+        raise TierNamingError("duplicate tier number(s) under %s - %s" % (show(scripts_dir), detail))
+    tiers.sort(key=lambda t: t[0])
+    return [name for _, name in tiers]
+
+
 def load_criteria(scripts_dir: Path, tier: str) -> dict:
     path = scripts_dir / tier / ".criteria"
     if not path.is_file():
@@ -241,14 +319,22 @@ def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: Optional[
     fails, so an ancestor's criteria are implicitly required too (this only
     holds because unlocks are monotonic - a tech never becomes "unlearned").
     """
+    try:
+        tiers = discover_tiers(scripts_dir)
+    except TierNamingError as exc:
+        err(str(exc))
+        raise typer.Exit(2)
     if force_tier:
-        if force_tier not in TIER_ORDER:
-            err("Unknown tier %r. Known tiers: %s" % (force_tier, ", ".join(TIER_ORDER)))
+        if force_tier not in tiers:
+            err("Unknown tier %r. Known tiers: %s" % (force_tier, ", ".join(tiers)))
             raise typer.Exit(2)
         return force_tier
+    if not tiers:
+        err("No tier dirs found under %s (expected e.g. `0_cold_boot/`)" % show(scripts_dir))
+        raise typer.Exit(2)
     state = read_save_state(save_dir)
-    active = TIER_ORDER[0]
-    for tier in TIER_ORDER:
+    active = tiers[0]
+    for tier in tiers:
         if criteria_met(load_criteria(scripts_dir, tier), state):
             active = tier
         else:
@@ -256,10 +342,11 @@ def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: Optional[
     return active
 
 
-def tier_chain(active_tier: str) -> list:
+def tier_chain(scripts_dir: Path, active_tier: str) -> list:
     """Active tier first, down through its ancestors - the fallback search order."""
-    idx = TIER_ORDER.index(active_tier)
-    return list(reversed(TIER_ORDER[: idx + 1]))
+    tiers = discover_tiers(scripts_dir)
+    idx = tiers.index(active_tier)
+    return list(reversed(tiers[: idx + 1]))
 
 
 # -------------------------------------------------------------------- mapping
@@ -343,20 +430,47 @@ def list_categories(scripts_dir: Path, chain: list):
     return sorted(cats)
 
 
+def list_global_categories(scripts_dir: Path):
+    """Category dirs sitting directly under scripts/, sibling to the tiers -
+    not gated by any tier, always included (see module docstring)."""
+    cats = set()
+    if scripts_dir.is_dir():
+        for p in scripts_dir.iterdir():
+            if p.is_dir() and p.name != UNMATCHED and tier_number(p.name) is None:
+                cats.add(p.name)
+    return sorted(cats)
+
+
+def resolve_global_category(scripts_dir: Path, category: str):
+    """Same match_key resolution as resolve_category, but for a single
+    untiered dir directly under scripts/ (no tier fallback needed/possible)."""
+    return resolve_category(scripts_dir, [""], category)
+
+
 def build_index(scripts_dir: Path, active_tier: str):
     """(script_index, lib_index, conflicts) for the given active tier.
 
     script_index/lib_index map match_key -> resolved Path. Cross-category
     collisions (two categories both defining, say, "solar") are reported as
-    conflicts under a synthetic ("CROSS-CATEGORY", key) entry.
+    conflicts under a synthetic ("CROSS-CATEGORY", key) entry. Global
+    categories (scripts/<category>/, untiered) are merged in unconditionally,
+    on top of whatever the active tier resolves.
     """
-    chain = tier_chain(active_tier)
+    chain = tier_chain(scripts_dir, active_tier)
     conflicts: dict = {}
     script_index: dict = {}
     for category in list_categories(scripts_dir, chain):
         if category == LIB_CATEGORY:
             continue
         resolved, cat_conflicts = resolve_category(scripts_dir, chain, category)
+        conflicts.update(cat_conflicts)
+        for key, path in resolved.items():
+            if key in script_index and script_index[key] != path:
+                conflicts.setdefault(("CROSS-CATEGORY", key), []).extend([script_index[key], path])
+            else:
+                script_index[key] = path
+    for category in list_global_categories(scripts_dir):
+        resolved, cat_conflicts = resolve_global_category(scripts_dir, category)
         conflicts.update(cat_conflicts)
         for key, path in resolved.items():
             if key in script_index and script_index[key] != path:
@@ -678,7 +792,7 @@ def write_resolved_preview(scripts_dir: Path, active_tier: str) -> None:
     """Materialize the tier-resolved lib/ into .pyright-resolved/lib/ so
     Pyright can resolve `from lib.x import ...` for source under scripts/,
     where there is no single lib/ directory to point at directly."""
-    chain = tier_chain(active_tier)
+    chain = tier_chain(scripts_dir, active_tier)
     lib_index, conflicts = resolve_category(scripts_dir, chain, LIB_CATEGORY)
     report_conflicts(conflicts)
     dest_dir = RESOLVED_PREVIEW_DIR / "lib"
@@ -703,9 +817,20 @@ NoRenumberOpt = typer.Option(False, "--no-renumber",
                               help="Copy verbatim; do not point the script's own id at the slot.")
 MagicOpt = typer.Option(DEFAULT_MAGIC, "--magic", envvar="CT_MAGIC")
 PullOpt = typer.Option(DEFAULT_PULL, "--pull-magic", envvar="CT_PULL_MAGIC")
+def _known_tiers_blurb() -> str:
+    # Best-effort help text only - a bad tier name under the *default*
+    # scripts/ dir shouldn't crash --help; the real validation (and a hard
+    # error) happens per-command in resolve_active_tier, against whatever
+    # --scripts-dir actually got passed.
+    try:
+        return ", ".join(discover_tiers(DEFAULT_SCRIPTS)) or "(none found)"
+    except TierNamingError:
+        return "(run `status` to see - one of them has a naming issue)"
+
+
 ForceTierOpt = typer.Option(None, "--force-tier",
                              help="Skip save-state detection and use this tier for one run. "
-                                  "Known tiers: " + ", ".join(TIER_ORDER))
+                                  "Known tiers (under %s): %s" % (DEFAULT_SCRIPTS, _known_tiers_blurb()))
 AutoOpt = typer.Option(False, "--auto",
                         help="Also launch filled/updated slots in-game via DAP. "
                              "User-invoked automation, not on by default.")
