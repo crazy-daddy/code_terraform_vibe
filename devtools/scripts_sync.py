@@ -788,10 +788,31 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
     return written
 
 
-def write_resolved_preview(scripts_dir: Path, active_tier: str) -> None:
+def write_resolved_stubs(save_dir: Path) -> None:
+    """Copy the active save's game-API stubs (the restricted-stdlib shims and
+    `user_stubs.py` sitting flat at the save root) into .pyright-resolved/stubs/,
+    so pyrightconfig.json can point Pyright at a repo-relative, git-ignored
+    path instead of a raw AppData path - portable across machines/drives and
+    scoped to just the current user's active save, not every account/save on
+    the box."""
+    dest_dir = RESOLVED_PREVIEW_DIR / "stubs"
+    if dest_dir.is_dir():
+        shutil.rmtree(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    sources = sorted(save_dir.glob("*.pyi")) + [save_dir / "user_stubs.py"]
+    copied = 0
+    for source in sources:
+        if source.is_file():
+            shutil.copyfile(source, dest_dir / source.name)
+            copied += 1
+    ok("Resolved stubs: %d file(s) -> %s" % (copied, show(dest_dir)))
+
+
+def write_resolved_preview(scripts_dir: Path, active_tier: str, save_dir: Path) -> None:
     """Materialize the tier-resolved lib/ into .pyright-resolved/lib/ so
     Pyright can resolve `from lib.x import ...` for source under scripts/,
-    where there is no single lib/ directory to point at directly."""
+    where there is no single lib/ directory to point at directly. Also
+    refreshes the game-API stubs (see write_resolved_stubs)."""
     chain = tier_chain(scripts_dir, active_tier)
     lib_index, conflicts = resolve_category(scripts_dir, chain, LIB_CATEGORY)
     report_conflicts(conflicts)
@@ -802,6 +823,7 @@ def write_resolved_preview(scripts_dir: Path, active_tier: str) -> None:
     for key, source in lib_index.items():
         shutil.copyfile(source, dest_dir / f"{key}.py")
     ok("Resolved preview for tier %s: %d lib module(s) -> %s" % (active_tier, len(lib_index), show(dest_dir)))
+    write_resolved_stubs(save_dir)
 
 
 # ------------------------------------------------------------------- options
@@ -904,6 +926,8 @@ def once(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     typer.echo("Syncing %s" % opts.save_dir)
     n = sync_all(script_index, lib_index, opts)
     typer.echo("%s %d file(s)." % ("Would sync" if dry_run else "Synced", n))
+    if not dry_run:
+        write_resolved_preview(opts.scripts_dir, opts.active_tier, opts.save_dir)
 
 
 @app.command(name="resolve-preview")
@@ -912,7 +936,7 @@ def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Optional[Path] = S
     """Materialize the tier-resolved lib/ into .pyright-resolved/lib/ for Pyright."""
     save = resolve_save(save_dir)
     active_tier = resolve_active_tier(scripts_dir, save, force_tier)
-    write_resolved_preview(scripts_dir, active_tier)
+    write_resolved_preview(scripts_dir, active_tier, save)
 
 
 class Watcher:
@@ -950,6 +974,8 @@ class Watcher:
 
     def sweep(self):
         sync_all(self.script_index, self.lib_index, self.opts)
+        if not self.opts.dry_run:
+            write_resolved_preview(self.opts.scripts_dir, self.opts.active_tier, self.opts.save_dir)
 
     def drain(self):
         now = time.monotonic()
