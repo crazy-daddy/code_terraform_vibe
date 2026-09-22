@@ -26,6 +26,8 @@ For high-level operational workflows, progression roadmaps, and automation orche
 
 ## 🧱 0. Shared Library Module Map (`lib/`)
 
+> Physical location: `scripts/<tier>/lib/<module>.py` (tiered, see §9) — not a flat top-level `lib/`. `devtools/scripts_sync.py` resolves the right copy of each module per the active tier and mirrors it into the save folder's `lib/`. Module names below are logical; nearly everything currently lives under `scripts/4_controlpanel/lib/` since that's the tier this codebase was actually written and tested against (see §9).
+
 | Concern | Module(s) |
 | :--- | :--- |
 | Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`) |
@@ -38,6 +40,7 @@ For high-level operational workflows, progression roadmaps, and automation orche
 | &nbsp;&nbsp;↳ sonar survey loop (POI discovery) | `vehicle_survey.py` |
 | &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `vehicle_mining.py` — shared by Rover and Pioneer; see §2b |
 | &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
+| &nbsp;&nbsp;↳ automatic Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `vehicle_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1 |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; do **not** put shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
 | Smelting | `smelter.py` |
@@ -927,6 +930,56 @@ into `VehicleController`).
   `run_mining_loop()`), hauler → `run_haul_loop(dest_outpost_id=...)`. Equipment is swappable at
   runtime, so this re-probes fresh on every script run rather than caching a role.
 
+### 2b-1. Pioneer Auto-Upgrade (`lib/vehicle_upgrade.py` `VehicleUpgradeMixin`)
+
+Automatic hardware tier upgrades for Pioneer, checked once per idle-at-base cycle
+(`handle_upgrade_cycle_if_idle()`, called from the same "parked at base, checking readiness"
+checkpoint every role loop already has: `run_mining_loop()`/`run_construction_loop()` in
+`lib/pioneer.py`, `run_haul_loop()`/`_stationed_mining_cycle()` in `lib/vehicle_cargo.py`/
+`lib/vehicle_mining.py`, `run_survey_loop()` in `lib/vehicle_survey.py` — the last three are
+Rover-shared, so the call there is `hasattr(self._host, "handle_upgrade_cycle_if_idle")`-gated).
+
+- **Pioneer-only.** `docs/database/equipment_modules.md` documents Sport Nav, Wide/Deep Sonar, and
+  Industrial/Heavy Drill as Pioneer-universal-slot items — a Rover's 3 fixed slots only ever accept
+  the basic `nav_module`/`sonar_module`/`drill_module` (§2b), so there is never a better tier for it
+  to equip. `VehicleUpgradeMixin` is mixed into `PioneerController` only, never the shared
+  `VehicleController` base.
+- **Tier tables** (worst → best; `best_unlocked_tier()` only ever steps to the immediate next tier
+  present in a fresh `shop.get_catalogue()` read, never straight to the top, so one swap is always
+  one affordable purchase):
+  - `SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep"]`
+  - `DRILL_TIERS = ["drill_module", "drill_module_industrial", "drill_module_heavy"]`
+  - `BATTERY_HOLDER_TIERS = ["battery_holder_small", "battery_holder_medium", "battery_holder_large"]`
+    (`_BAY_COUNTS`: 1/2/3 bays)
+  - `CARGO_RACK_TIERS = ["cargo_rack_small", "cargo_rack_medium", "cargo_rack_large"]` (1/2/3 bays)
+  - `PORTABLE_BATTERY_TIERS = ["portable_battery", "heavy_portable_battery"]` (50Wh/100Wh)
+  - `PORTABLE_BIN_TIERS = ["portable_bin", "heavy_portable_bin"]` (25u/50u)
+- **Swap ordering (`_upgrade_function_module()`/`_upgrade_containers()`)**: `unmount` old → `shop.buy`
+  new → `mount` new → `shop.sell` old — deliberately holds both old and new hardware in Inventory for
+  one moment rather than selling first, so a failed purchase can roll back cleanly
+  (`mount(slot_index, old_id)` restores the vehicle). A failure *after* the buy (mount rejects, or a
+  container's mid-sequence purchase runs out of credits) is left as a logged, non-destructive stop
+  state for the operator to notice, not force-rolled-back — nothing is ever silently lost, only
+  possibly deferred one cycle.
+- **Battery Holder swaps always recharge to ~100% first** (`_ensure_full_charge_for_sale()`) before
+  uninstalling any Portable Battery — `shop.sell()` refunds a battery's retained charge% with a 50%
+  floor (`docs/components/shop.md`), so selling at full charge maximizes the refund. Cargo Rack swaps
+  skip this; Portable Bins aren't charge-valued.
+- **Density policy**: every Battery Holder/Cargo Rack bay — newly added by a size upgrade
+  (`_fill_container_bays()`) or already-installed at the base tier (`_top_up_container_density()`,
+  independent of any size upgrade that cycle) — gets the **Heavy** Portable Battery/Bin once
+  unlocked, falling back to the base variant only while Heavy is still locked.
+- **Sport Nav is deliberately excluded from the automatic ladder** — it stacks additively onto
+  whatever Nav is already mounted rather than replacing it, so it's a manual, one-shot,
+  operator-triggered action instead: `request_sport_nav(vehicle_name)` sets a shared
+  `{vehicle_name: True}` archive dict (`SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"`, same
+  shape/rationale as `vehicle_claims.RECALL_KEY`), surfaced as a per-Pioneer-row button on
+  `panel_2.py`'s FLEET card (only drawn when `width >= SPORT_NAV_BTN_MIN_WIDTH = 1100`, wide layout).
+  `handle_sport_nav_request_if_active()` consumes it once idle at base: finds the first free
+  `universal` slot, buys + mounts `nav_module_sport` if unlocked and affordable. The request flag
+  always clears after one attempt, success or failure — a stuck request (no free slot, locked
+  research, insufficient credits) does not retry forever; the operator just clicks again once ready.
+
 ### 2c. Storage Management (`lib/storage.py`)
 
 Makes the whole production chain aware of Warehouse/Large Warehouse buildings, not just the central
@@ -1319,9 +1372,9 @@ controller.run()
 
 ---
 
-## 🖥️ 7. Control Room Panel Cards (`panel_1.py`, `panel_2.py`, `panel_3.py`, `panel_7.py`)
+## 🖥️ 7. Control Room Panel Cards (`panel_1.py`..`panel_4.py`)
 
-**Headless calculator + UI card split (currently `panel_7.py` + `panel_1.py`).** The automation
+**Headless calculator + UI card split (currently `panel_4.py` + `panel_1.py`).** The automation
 calculator (grid supervision, rebalance sweep, outpost sync,
 `supply_dock.plan_dock_assignments()`) is **headless** (no `panel.*` calls,
 `sleep(1.0)`-paced) and publishes its result summary to `archive`
@@ -1331,18 +1384,22 @@ block a script that renders every tick, and a Custom Panel is the only slot that
 "always-on, not tied to one building" process. See `DESIGN_HISTORY.md` for the incident that forced
 this split.
 
-**⚠️ Panel-numbering quirk — this pairing's `panel_N.py` filenames drift, keep this note current.**
-Custom Panel ids are assigned by the game on creation and **only ever increment** — deleting a
-panel does not free its number, and cards **cannot be drag-reordered** once placed. Current mapping
-(verified live):
+**⚠️ Two separate numbering schemes, do not conflate them.** The game's own Custom Panel ids are
+assigned on creation and **only ever increment** — deleting a panel does not free its number, and
+cards **cannot be drag-reordered** once placed. `panel_4.py`/`panel_5.py`/`panel_6.py`/`panel_8.py`
+are **dead in that live-slot numbering** (deleted during testing, gone for good; the next new panel
+in-game will be `panel_9.py`). Separately, since the [tiered `scripts/` restructuring](#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy),
+the *source-tree* files under `scripts/4_controlpanel/control_panel/` were cosmetically renumbered
+`panel_1.py`..`panel_4.py` (four panels total, in role order) — this is a dev-side naming choice
+only, decoupled on purpose from the live-slot numbers above, and does **not** mean live slot 4 is
+back in use. Current mapping (verified live, live-slot column is authoritative for the actual save):
 
-| Role | Current file | Notes |
-| :--- | :--- | :--- |
-| STATUS + AUTOMATION UI | `panel_1.py` | wanted at the top of the Control Room; kept in the original slot 1 |
-| FLEET | `panel_2.py` | unchanged |
-| PRODUCTION | `panel_3.py` | unchanged |
-| *(retired — do not recreate)* | `panel_4.py`, `panel_5.py`, `panel_6.py`, `panel_8.py` | deleted during testing; these numbers are gone for good, next new panel will be `panel_9.py` |
-| Automation calculator (headless) | `panel_7.py` | moved here from `panel_1.py`; position doesn't matter since it draws nothing |
+| Role | Source-tree file | Live save slot | Notes |
+| :--- | :--- | :--- | :--- |
+| STATUS + AUTOMATION UI | `panel_1.py` | `panel_1.py` | wanted at the top of the Control Room; kept in the original slot 1 |
+| FLEET | `panel_2.py` | `panel_2.py` | unchanged |
+| PRODUCTION | `panel_3.py` | `panel_3.py` | unchanged |
+| Automation calculator (headless) | `panel_4.py` | `panel_7.py` | moved here from `panel_1.py`; position doesn't matter since it draws nothing. Source-tree name and live slot name **differ** — see TODO.md's "Panel dev-side numbering vs. save-side slot numbers" for the known sync-tool gap this creates |
 
 **Whenever a panel is added or removed in-game, re-verify this table (ask the operator for the
 current mapping) and update every `panel_N.py` cross-reference in this file and in the scripts'
@@ -1482,3 +1539,32 @@ real-world (real-save) side effects per this project's risk-awareness rules, not
 read-only inspection step.
 In other — throwaway — saves you can be more liberal, especially when developing the auto-play
 tools like `tools/auto_deploy.py`, `tools/early_game.py`, etc.
+
+## 🧬 9. Dev Workflow: Tiered `scripts/` + `devtools/scripts_sync.py`
+
+This repo (`C:\Users\Adrian\Code_Terraform`) is a dev root, separate from any live save folder (`%APPDATA%\io.codeterraform.game\save_*_scripts`). Source of truth lives under `scripts/<tier>/<category>/<name>.py`; `devtools/scripts_sync.py` (adapted from `inspirations/vakermit/bin/ct_sync.py`) fills the save folder's numbered script slots and mirrors `lib/` from it. See the tool's module docstring for the full mechanics (fill/pull markers, renumbering, `_unmatched/` staging) — this section covers the project-specific tiering layer on top.
+
+**Tier list** (`TIER_ORDER` in `scripts_sync.py`), each gated by a `.criteria` file at its root (absent for `0_cold_boot`, the always-active baseline):
+
+| Tier | `.criteria` | Unlocks (tech id / `research_*` id) |
+| :--- | :--- | :--- |
+| `0_cold_boot` | *(none — baseline)* | — |
+| `1_early` | `{"tech": ["ship_computer"]}` | `research_computer` |
+| `2_libunlock` | `{"tech": ["shared_library"]}` | `research_shared_library` |
+| `3_archiveunlock` | `{"tech": ["data_archive_unlock"]}` | `research_data_archive` |
+| `4_controlpanel` | `{"tech": ["custom_panels_unlock"]}` | `research_custom_panels` |
+| `5_uprising` | *(placeholder — see TODO.md)* | TBD |
+
+`.criteria` keys use the save file's own **tech ids** (from `state.unlockedTech`), not the `research_*` ids used in `docs/database/research_catalog.md` — the table above is the mapping. Supported keys: `"tech": [id, ...]` (all must be present) and `"outpost_count": N` (`len(state.planet.outposts) >= N`). A **higher-numbered TP field wasn't found** in the save state on a quick pass, so TP-threshold criteria aren't supported yet.
+
+**Active-tier resolution** is fully automatic and per-save: `scripts_sync.py` derives the sibling save-state file from the save-scripts dir name (`save_X_scripts/` → `save_X.json`, one level up), reads `state.unlockedTech` / `state.planet.outposts` **read-only**, and walks the tier list evaluating `.criteria` until one fails — the highest passing tier is active. No hint file, no manual bookkeeping; `--force-tier NAME` overrides for one run without persisting anything. Confirmed live against a real save this session (`python -c` one-liners against `save_mtzkzly3_4ww80o.json`).
+
+**No duplicate files across tiers**: for a given `category/base_name` (including the `lib` category), the resolver walks tiers from the active one down to `0_cold_boot` and uses the first file found. A higher tier only needs its own copy when behavior genuinely diverges.
+
+**Migration note**: the codebase existing before this restructuring was written and tested against a save that already had 60 techs unlocked (including `data_archive_unlock` and `custom_panels_unlock`), so it was moved wholesale into `4_controlpanel/` as its honest home tier (see `devtools/_migrate_from_root.py`) rather than guessed apart by file. `0_cold_boot`/`1_early` were separately seeded from `inspirations/vakermit`'s community `tools/templates/` (flat) and `tools/templates/early/` (richer) boilerplate, which don't depend on Archive/Signal Bus/Control Room. Retroactively splitting the `4_controlpanel` content into what could also run on an earlier-tier save is a manual follow-up (see TODO.md), not something done automatically.
+
+**`panel` is a distinct-instances category** (`DISTINCT_INSTANCES` in `scripts_sync.py`), living at `scripts/4_controlpanel/control_panel/panel_1..4.py` — separate, genuinely different hand-authored Control Room cards (see §7), not interchangeable copies of one template; matched by exact filename, never collapsed to a shared base name or renumbered. Dev-side numbering was cleaned up to `_1.._4` (the fourth was `panel_7.py`, `_7` being just an artifact of which slot the game happened to assign), but the game can't rename/reorder an existing script slot, so the save's actual file is still `panel_7.py` — this is a known, documented gap (see TODO.md), not yet bridged.
+
+**Pyright/IntelliSense**: `pyrightconfig.json`'s `extraPaths` point at `.pyright-resolved/lib` (regenerate with `python devtools/scripts_sync.py resolve-preview`, gitignored) plus the live save folder for game-API stubs. This is a real, accepted limitation, not fully solved: a module referenced by a higher tier that hasn't been reached in the actual playthrough won't resolve until you `resolve-preview --force-tier <name>`, and the game's own in-editor syntax highlighting/autocomplete (tied to `codeterraform-workspace.json`) doesn't apply to source living outside a save folder at all — check the deployed copy in the save folder when that's needed.
+
+**`--auto`** (off by default) additionally calls `tools/dap_client.py`'s `launch_script()` after filling a slot. This is automation the operator explicitly opts into per invocation, not Claude starting a live-debug session on its own — see CLAUDE.md's Live Debugging rule, which binds Claude's own actions, not a flag on a tool the user runs themselves.

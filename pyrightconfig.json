@@ -1,6 +1,11 @@
 {
-  "extends": "./pyrightconfig.codeterraform.json",
+  "extraPaths": [
+    ".pyright-resolved/lib",
+    "C:/Users/Adrian/AppData/Roaming/io.codeterraform.game/save_mtzkzly3_4ww80o_scripts"
+  ],
+  "stubPath": "C:/Users/Adrian/AppData/Roaming/io.codeterraform.game/save_mtzkzly3_4ww80o_scripts",
+  "pythonVersion": "3.12",
   "exclude": [
-    "tools", "**/node_modules", "**/__pycache__", "**/.*"
+    "tools", "inspirations", "**/node_modules", "**/__pycache__", "**/.*"
   ]
 }

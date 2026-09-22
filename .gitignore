@@ -16,3 +16,7 @@ internals/
 *codeterraform-retired*
 codeterraform-scripts.json
 codeterraform-workspace.json
+/.venv
+/scripts/_unmatched/
+/devtools/.sync-backups/
+/.pyright-resolved/
