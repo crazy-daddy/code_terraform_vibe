@@ -104,6 +104,10 @@ class DroneScoutMixin:
                     sleep(30.0)
                     continue
 
+                if self._host.hold_for_launch_charge(log):
+                    sleep(poll_interval)
+                    continue
+
                 target = None
                 for candidate in candidates:
                     budget = self._host.calculate_trip_energy(candidate)

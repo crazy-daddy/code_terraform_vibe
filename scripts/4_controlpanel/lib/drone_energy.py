@@ -48,6 +48,15 @@ SAFETY_MARGIN_MULTIPLIER = 1.05
 # docs/AI_CHEATSHEET.md's drone energy-budgeting section in the same change.
 MIN_EMERGENCY_RESERVE_WH = 4.0
 
+# Launch hysteresis: a drone below this state of charge tops up at its
+# drone_service before starting a NEW mission, even if the trip itself is
+# affordable. Without it a drone that just unloaded (depot and service share
+# coords, so energy_needed_to_return_comfortably() is ~0 there) flew out on
+# whatever charge was left (~26% seen), returned near the reserve floor, and
+# cycled low. A floor only, never a ceiling: a far target needing more than
+# this still falls through to the "none reachable" top-up-to-98% branch.
+LAUNCH_MIN_SOC = 0.80
+
 DEFAULT_CRUISE_THROTTLE_KEY = "drone.default_cruise_throttle"
 DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5
 
@@ -179,6 +188,7 @@ class DroneEnergyMixin:
     MAX_SPEEDMODE_THROTTLE = MAX_SPEEDMODE_THROTTLE
     SAFETY_MARGIN_MULTIPLIER = SAFETY_MARGIN_MULTIPLIER
     MIN_EMERGENCY_RESERVE_WH = MIN_EMERGENCY_RESERVE_WH
+    LAUNCH_MIN_SOC = LAUNCH_MIN_SOC
 
     def default_cruise_throttle(self):
         value = archive.get(DEFAULT_CRUISE_THROTTLE_KEY, None)
@@ -476,6 +486,22 @@ class DroneEnergyMixin:
         self._host.publish_telemetry("RETURNING_TO_SERVICE")
         if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
             self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
+        return True
+
+    def hold_for_launch_charge(self, log):
+        """
+        Launch hysteresis gate, checked right before picking a new mission.
+        Returns True (and sends/keeps the drone docked at its drone_service)
+        while charge is below LAUNCH_MIN_SOC; the caller should sleep and
+        re-check. Unreadable battery reads as 0%, so it fails safe to
+        charging.
+        """
+        _, _, lvl = self.get_battery()
+        if lvl >= self.LAUNCH_MIN_SOC:
+            return False
+        log.debug(f"[{self._host.name}] Launch gate: {lvl*100:.0f}% < {self.LAUNCH_MIN_SOC*100:.0f}% launch floor; charging before next mission.")
+        self.return_to_service_for_charge(log, f"Topping up before launch ({lvl*100:.0f}%)")
+        self._host.publish_telemetry("CHARGING")
         return True
 
     def calculate_trip_energy(self, target_coords, wh_per_meter=None):

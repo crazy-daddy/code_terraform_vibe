@@ -234,6 +234,10 @@ class DroneMiningMixin:
                     sleep(30.0)
                     continue
 
+                if self._host.hold_for_launch_charge(log):
+                    sleep(poll_interval)
+                    continue
+
                 target, budget = self.select_biosite_target(candidates)
                 if not target or not budget:
                     log.debug(f"[{self._host.name}] {len(candidates)} candidate(s) found but none both reachable and claimable.")
