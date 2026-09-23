@@ -126,6 +126,56 @@ def safe_is_stalled(building):
         return False
 
 
+# Liquid (not gas) buffer types -- the only valid target/source for liquids like water or a biome
+# essence. Same pair as water_pump.LIQUID_TANK_TYPE_IDS.
+LIQUID_TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank")
+
+# FluidConnection.state values (docs/types/infrastructure_and_fluids.md). Unlike is_stalled(),
+# these are a direct, per-peer reachability verdict: "local"/"ready" means the link can actually
+# move fluid right now; "unreachable"/"conflict"/"incompatible" means it can't, no matter how long
+# we wait. "neutral" (no fluid established yet, e.g. an empty tank that isn't latched yet) is
+# neither of these and is deliberately in neither tuple -- callers treat it as "pending".
+HEALTHY_CONNECTION_STATES = ("local", "ready")
+BROKEN_CONNECTION_STATES = ("unreachable", "conflict", "incompatible")
+
+
+def port_connections(port):
+    """port.connections() -- every effective peer, including ones the PEER declared -- or [] if unavailable."""
+    if not port or not hasattr(port, "connections"):
+        return []
+    try:
+        return list(port.connections())
+    except Exception:
+        return []
+
+
+def healthy_peer_id(port):
+    """machine_id of the first effective peer in a HEALTHY_CONNECTION_STATES state, or None. Counts
+    links declared by either side (declared_by "self"/"peer"/"both"), so a port another machine's
+    script already wired up reads as healthy without this side declaring anything."""
+    for conn in port_connections(port):
+        if getattr(conn, "state", None) in HEALTHY_CONNECTION_STATES:
+            return getattr(conn, "machine_id", None)
+    return None
+
+
+def declared_connection_state(port):
+    """FluidConnection.state of this port's OWN declared target (connected_id()), or None if it has
+    none or the target isn't in connections() yet."""
+    if not port or not hasattr(port, "connected_id"):
+        return None
+    try:
+        own_id = port.connected_id()
+    except Exception:
+        return None
+    if not own_id:
+        return None
+    for conn in port_connections(port):
+        if getattr(conn, "machine_id", None) == own_id:
+            return getattr(conn, "state", None)
+    return None
+
+
 def fill_pct_of(building):
     """fill_pct() of an already-resolved building object, or 1.0 ("full, deprioritize") if unreadable/missing."""
     if not building or not hasattr(building, "fill_pct"):

@@ -270,9 +270,9 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
     `run_miner_loop()` would produce anyway, not a new side effect. If Pioneer's own equipment ever
     shows the same hasattr-always-True behavior, its `detect_role()` needs the same fix.
 - [ ] Construct regional **Essence Liquifiers** at biome outposts to produce localized Biome Essences.
-  - [ ] Connect local storage to each Liquifier and drain output before its buffer blocks production.
-- [ ] Connect multi-biome essence pipeline to central **Biomass Mixers**.
-  - [ ] Confirm each pipe route is complete, conflict-free, and connected to the correct fluid ports.
+  - [x] Connect local storage to each Liquifier and drain output before its buffer blocks production. (`lib/essence_liquifier.py` — Depot `take()` feed + `FluidOutputRouter` to essence tanks)
+- [ ] Connect multi-biome essence pipeline to central **Biomass Mixers**. (scripted side done: `lib/biomass_mixer.py`; physical pipes still manual)
+  - [x] Confirm each pipe route is complete, conflict-free, and connected to the correct fluid ports.
 - [ ] Add biomass telemetry and threshold alerts for 500 t and 2,000 t milestones.
 - [ ] Reach **500 t Biomass** threshold (unlocks Seed Maker).
 - [ ] Reach **2,000 t Biomass** threshold (unlocks Plant Terraformers).

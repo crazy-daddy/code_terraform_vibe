@@ -1,9 +1,10 @@
 # Shared Library for Drone Depot (cargo logistics endpoint) automation.
 #
 # Mostly passive: no active drain/rescue-style verb exists for a Depot --
-# cargo moves via the drone's own cargo.load()/unload() while docked, and
-# ports drain passively once connected (same pattern as Warehouse Auto
-# Feeders elsewhere in this codebase). This controller's job is (1) one-time
+# cargo moves via the drone's own cargo.load()/unload() while docked. Ports
+# do NOT drain passively -- a declared link moves nothing until someone calls
+# take()/send(); the Essence Liquifier's own controller does the take()
+# (lib/essence_liquifier.py). This controller's job is (1) one-time
 # idempotent port wiring to the outpost's Essence Liquifier, only when
 # unambiguous, and (2) lightweight periodic telemetry.
 

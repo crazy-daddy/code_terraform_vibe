@@ -293,6 +293,10 @@ def _snapshot_property_count(snapshot, item_id, properties):
 # biome's backlog uniformly).
 MAX_LOCAL_BIO_ARTIFACTS = 4
 
+# item_id -> item_catalog category (or None if unknown). Static metadata, so
+# looked up once per id -- see BioExchangeController._is_bio_sample().
+_ITEM_CATEGORY_CACHE = {}
+
 
 def _total_demanded_artifacts(snapshot, fragment_ids):
     """Total local stock across every fragment id in `fragment_ids` (typically a
@@ -555,6 +559,29 @@ class BioExchangeController:
                     required.add(item_id)
         return required
 
+    def _is_bio_sample(self, item_id, properties, all_orders):
+        """True if item_catalog classifies item_id as "biology_sample" -- the only
+        reliable test, since Deep samples carry no properties at all and would
+        otherwise be indistinguishable from iron_ore or a reagent. Cached per id
+        (static metadata). Falls back to "has properties, or some Bio Order has
+        ever required this id" only if the catalog is unavailable/doesn't know it."""
+        if item_id not in _ITEM_CATEGORY_CACHE:
+            category = None
+            try:
+                catalog = get_component("item_catalog")
+                info = catalog.lookup(item_id) if catalog else None
+                category = getattr(info, "category", None) if info else None
+            except Exception:
+                pass
+            _ITEM_CATEGORY_CACHE[item_id] = category
+        category = _ITEM_CATEGORY_CACHE[item_id]
+        if category is not None:
+            return category == "biology_sample"
+        self.log.debug(f"[EXCHANGE] item_catalog has no category for {item_id} -- falling back to properties/order-requires heuristic.")
+        if properties:
+            return True
+        return any(item_id in (getattr(order, "requires", {}) or {}) for order in all_orders)
+
     def _cleanup_orphaned_artifacts(self, all_orders):
         """
         Destroys locally-staged property-tagged bio samples (raw or already
@@ -574,6 +601,11 @@ class BioExchangeController:
         sample never matches any order's exact requirement (that's the whole point
         of the biome processor), so gating on exact properties would misclassify
         perfectly good raw stock waiting to be processed as orphaned and destroy it.
+
+        A stack counts as a bio sample by item_catalog category (_is_bio_sample()),
+        not by carrying properties -- Deep samples are propertyless, and gating on
+        properties alone let finished orders' leftovers pile up one-per-Warehouse-slot
+        until the outpost jammed.
         """
         outpost = self.machine.outpost
         required = self._required_fragment_ids(all_orders)
@@ -589,14 +621,20 @@ class BioExchangeController:
             for stack in stacks:
                 item_id = getattr(stack, "id", None)
                 count = getattr(stack, "count", 0)
-                properties = getattr(stack, "properties", None) or {}
-                if not item_id or count <= 0 or not properties:
+                properties = getattr(stack, "properties", None) or None
+                if not item_id or count <= 0:
                     continue
                 if item_id in required:
                     continue
+                if not self._is_bio_sample(item_id, properties, all_orders):
+                    continue
                 if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
                     self.machine.input.connect(source_id)
+                # None + "exact" selects propertyless items only (docs/components/bio_conditioner.md load()).
                 take_res = self.machine.input.take(item_id, count, properties, "exact")
+                if getattr(take_res, "moved", 0) <= 0:
+                    self.log.debug(f"[EXCHANGE] Could not take orphaned {item_id} from '{source_id}': "
+                                   f"{getattr(take_res, 'status', '?')} - {getattr(take_res, 'message', '')}")
                 if getattr(take_res, "moved", 0) > 0:
                     flush_res = self.machine.input.flush()
                     cleaned += getattr(flush_res, "moved", count)
