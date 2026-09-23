@@ -53,7 +53,7 @@ SMELTER_PREFILL_SECONDS = 30
 # (harmless); "busy_starving" = every holder busy AND the buffer can't cover
 # the next craft while idle (real lost time). The former smelter.diag.<id>
 # archive key (time-weighted reason shares, used to tune this module) was
-# retired 2026-09-23; __init__ deletes any leftover copy.
+# retired 2026-09-23; ArchiveCleaner.clean_retired_keys() deletes leftovers.
 #
 # Recipe switching hysteresis: see select_needed_ore()/switch_min_demand() --
 # a Smelter only leaves a still-demanded recipe for an unclaimed one whose
@@ -61,7 +61,6 @@ SMELTER_PREFILL_SECONDS = 30
 # It likewise only JOINS a recipe a peer already claimed when demand >=
 # switch_min_demand() x (workers after joining); otherwise it idles with
 # outcome "demand_covered_by_peers".
-LEGACY_SMELTER_DIAG_KEY_PREFIX = "smelter.diag."
 
 
 class SmelterController:
@@ -103,13 +102,6 @@ class SmelterController:
         self.connected_in = False
         self.connected_out = False
         self.log = TreeConsole(module="smelter")
-
-        # Retired diagnostics key: drop any leftover copy (one-time cleanup,
-        # harmless no-op once gone).
-        try:
-            archive.delete(LEGACY_SMELTER_DIAG_KEY_PREFIX + self.name)
-        except Exception:
-            pass
         self._select_miss_reason = "no_demand"
 
     def get_current_tick(self):

@@ -16,7 +16,7 @@
 # without disrupting this design; DroneController assumes .battery is
 # readable (see drone_energy.py's get_battery()).
 
-from archive import archive
+import fleet_status
 from drone_navigation import DroneNavigationMixin
 from drone_energy import DroneEnergyMixin
 from drone_claims import DroneClaimsMixin
@@ -144,8 +144,8 @@ class DroneController(
         return 0
 
     def publish_telemetry(self, state, target_desc=None):
-        """Publishes live drone status to Data Archive, mirroring
-        VehicleController.publish_telemetry()'s shape/key convention."""
+        """Publishes live drone status to the shared fleet.status archive dict
+        (lib/fleet_status.py), same shape as VehicleController.publish_telemetry()."""
         self.state = state
         curr_wh, cap_wh, lvl = self.get_battery()
         pos = self.position()
@@ -159,8 +159,8 @@ class DroneController(
             "target": target_desc or (self.current_target.get("name") if self.current_target else "none"),
             "tick": self.get_current_tick(),
         }
-        archive.set(f"fleet.status.{self.name}", telemetry)
-        archive.set(f"drone.status.{self.name}", telemetry)
+        wrote = fleet_status.publish(self.name, telemetry)
+        self.log.trace(f"[{self.name}] publish_telemetry() -> fleet.status[{self.name!r}] {'written' if wrote else 'unchanged, throttled'}.")
 
     def detect_role(self, role_override=None):
         """

@@ -5,6 +5,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 
 # Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
 CLAIM_STALE_TICKS = 36000
@@ -35,6 +36,13 @@ LEGACY_PIONEER_SPIRAL_KEY = "pioneer.survey_spiral"
 # vehicle_recall_key()), superseded by the single consolidated RECALL_KEY dict.
 LEGACY_RECALL_KEY_PREFIX = "vehicle.recall:"
 RECALL_KEY = "vehicle.recall"
+
+# Key prefixes of families no script writes or reads any more. Leftovers are
+# only deleted here, never by their former writers, so all migration cleanup
+# lives in one place. Add a prefix when a key family is retired.
+RETIRED_KEY_PREFIXES = (
+    "smelter.diag.",  # lib/smelter.py diagnostics, retired 2026-09-23
+)
 
 
 def safe_get_component(name):
@@ -70,6 +78,7 @@ class ArchiveCleaner:
             "profiling_removed": 0,
             "recall_flags_migrated": 0,
             "grid_state_purged": 0,
+            "retired_keys_purged": 0,
             "corrupted_keys_deleted": 0,
             "errors": 0
         }
@@ -132,19 +141,23 @@ class ArchiveCleaner:
         return surveyed_ids, surveyed_coords
 
     def get_active_vehicle_names(self):
-        """Returns set of known active vehicle names/IDs from fleet."""
+        """Returns set of known active ground vehicle AND drone names/IDs from fleet.
+        Drones come from fleet.drones(), not fleet.vehicles() -- leaving them out made
+        clean_telemetry() treat every drone's telemetry as orphaned."""
         vehicles = set()
         fleet = safe_get_component("fleet")
-        if fleet and hasattr(fleet, "vehicles"):
+        for source in ("vehicles", "drones"):
+            if not (fleet and hasattr(fleet, source)):
+                continue
             try:
-                for v in fleet.vehicles() or []:
+                for v in getattr(fleet, source)() or []:
                     if hasattr(v, "id"):
                         vehicles.add(str(v.id))
                     if hasattr(v, "name"):
                         vehicles.add(str(v.name))
             except Exception as e:
-                self.log(f"[WARN] Failed querying fleet.vehicles: {e}")
-        self.console.debug(f"get_active_vehicle_names: resolved {len(vehicles)} active vehicle identifiers")
+                self.log(f"[WARN] Failed querying fleet.{source}: {e}")
+        self.console.debug(f"get_active_vehicle_names: resolved {len(vehicles)} active vehicle/drone identifiers")
         return vehicles
 
     def get_active_grid_anchors(self):
@@ -477,31 +490,50 @@ class ArchiveCleaner:
 
     def clean_telemetry(self, active_vehicles):
         """
-        Validates telemetry keys (fleet.status.* and rover.status.*).
-        Removes entries for vehicles that no longer exist or entries that are empty/corrupted.
+        Deletes the pre-consolidation per-entity telemetry keys (fleet.status.<id>,
+        rover.status.<id>, drone.status.<id> -- see lib/fleet_status.py), then prunes
+        entries of the shared fleet.status dict whose vehicle/drone no longer exists
+        or whose payload is empty/malformed. Pruning by existence is skipped when
+        the fleet query came back empty, so a failed query never wipes the dict.
         """
         self.log("\n--- Checking Vehicle Fleet Telemetry ---")
-        status_keys = self.archive.keys("fleet.status.") + self.archive.keys("rover.status.")
         telemetry_removed = 0
 
-        for k in set(status_keys):
-            val = self.archive.get(k)
-            vehicle_name = k.split(".")[-1]
-
-            is_obsolete = False
-            if active_vehicles and vehicle_name not in active_vehicles:
-                self.log(f"  [DELETE TELEMETRY] Key '{k}': Vehicle '{vehicle_name}' is not in active fleet")
-                is_obsolete = True
-            elif not isinstance(val, dict) or not val:
-                self.log(f"  [DELETE TELEMETRY] Key '{k}': Malformed or empty telemetry data")
-                is_obsolete = True
-
-            if is_obsolete:
+        for prefix in LEGACY_FLEET_STATUS_PREFIXES:
+            for k in self.archive.keys(prefix):
+                self.log(f"  [DELETE TELEMETRY] Legacy per-entity key '{k}' (superseded by '{FLEET_STATUS_KEY}' dict)")
                 telemetry_removed += 1
                 if not self.dry_run:
                     self.archive.delete(k)
+
+        status = self.archive.get(FLEET_STATUS_KEY, {})
+        if not isinstance(status, dict):
+            self.log(f"  [DELETE TELEMETRY] Key '{FLEET_STATUS_KEY}': not a dict, resetting")
+            telemetry_removed += 1
+            if not self.dry_run:
+                self.archive.delete(FLEET_STATUS_KEY)
+            status = {}
+
+        stale = []
+        for name, val in status.items():
+            if active_vehicles and name not in active_vehicles:
+                self.log(f"  [DELETE TELEMETRY] {FLEET_STATUS_KEY}['{name}']: not in active fleet")
+                stale.append(name)
+            elif not isinstance(val, dict) or not val:
+                self.log(f"  [DELETE TELEMETRY] {FLEET_STATUS_KEY}['{name}']: malformed or empty telemetry data")
+                stale.append(name)
             else:
-                self.console.debug(f"  Telemetry '{k}' retained: vehicle '{vehicle_name}' active, payload well-formed")
+                self.console.debug(f"  Telemetry '{name}' retained: active, payload well-formed")
+
+        if stale and not self.dry_run:
+            def updater(current):
+                if not isinstance(current, dict):
+                    return {}
+                for name in stale:
+                    current.pop(name, None)
+                return current
+            self.archive.transaction(FLEET_STATUS_KEY, {}, updater)
+        telemetry_removed += len(stale)
 
         self.stats["telemetry_removed"] += telemetry_removed
         self.log(f"  Result: {telemetry_removed} obsolete telemetry entries purged.")
@@ -572,6 +604,19 @@ class ArchiveCleaner:
 
         self.stats["recall_flags_migrated"] += len(legacy_keys)
         self.log(f"  Result: {len(legacy_keys)} legacy recall key(s) migrated/removed ({migrated} were actively recalled).")
+
+    def clean_retired_keys(self):
+        """Deletes every key under RETIRED_KEY_PREFIXES (families no script uses any more)."""
+        self.log("\n--- Purging Retired Key Families ---")
+        purged = 0
+        for prefix in RETIRED_KEY_PREFIXES:
+            for k in self.archive.keys(prefix):
+                self.log(f"  [DELETE RETIRED] Key '{k}' (retired family '{prefix}*')")
+                purged += 1
+                if not self.dry_run:
+                    self.archive.delete(k)
+        self.stats["retired_keys_purged"] += purged
+        self.log(f"  Result: {purged} retired key(s) purged.")
 
     def clean_power_grid_state(self, active_grid_anchors):
         """
@@ -799,6 +844,7 @@ class ArchiveCleaner:
         self.clean_telemetry(active_vehicles)
         self.clean_calibration()
         self.clean_recall_flags()
+        self.clean_retired_keys()
         self.clean_profiling(current_tick)
         self.clean_power_and_heat()
         self.clean_power_grid_state(active_grid_anchors)

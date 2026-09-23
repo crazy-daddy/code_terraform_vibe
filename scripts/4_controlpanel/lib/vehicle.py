@@ -14,8 +14,8 @@
 #     (Rover's basic drill vs Pioneer's Industrial/Heavy drill) so it's shared
 #     rather than duplicated between rover.py and pioneer.py
 
-from archive import archive
 from tree_console import TreeConsole
+import fleet_status
 from vehicle_navigation import VehicleNavigationMixin
 from vehicle_energy import VehicleEnergyMixin
 from vehicle_claims import VehicleClaimsMixin
@@ -165,7 +165,7 @@ class VehicleController(
         return 0
 
     def publish_telemetry(self, state, target_desc=None):
-        """Publishes live vehicle status to Data Archive under a dedicated key."""
+        """Publishes live vehicle status to the shared fleet.status archive dict (lib/fleet_status.py)."""
         self.log.trace(f"[{self.name}] publish_telemetry(state={state!r}, target_desc={target_desc!r}) called.")
         self.state = state
         curr_wh, cap_wh, lvl = self.get_battery()
@@ -180,7 +180,5 @@ class VehicleController(
             "target": target_desc or (self.current_target["name"] if self.current_target else "none"),
             "tick": self.get_current_tick()
         }
-        archive.set(f"fleet.status.{self.name}", telemetry)
-        if str(self.name).startswith("rover"):
-            archive.set(f"rover.status.{self.name}", telemetry)
-        self.log.trace(f"[{self.name}] publish_telemetry() -> wrote fleet.status.{self.name}: {telemetry}.")
+        wrote = fleet_status.publish(self.name, telemetry)
+        self.log.trace(f"[{self.name}] publish_telemetry() -> fleet.status[{self.name!r}] {'written' if wrote else 'unchanged, throttled'}: {telemetry}.")
