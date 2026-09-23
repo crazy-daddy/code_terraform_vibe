@@ -1,4 +1,4 @@
-# Shared Base Library for Drone Automation (scout/miner roles).
+# Shared Base Library for Drone Automation (scout/miner/hauler roles).
 #
 # Drones are a FRESH hierarchy, not a VehicleController subclass -- no
 # .drive/.nav, no terrain/stall handling, route-based go_to()/go_to_station()/
@@ -6,15 +6,14 @@
 # linear) power/speed model (see lib/drone_energy.py). But DroneController
 # follows the exact same mixin-composition philosophy as lib/vehicle.py:
 #   - drone_navigation.py: go_to()/go_to_station()/go_to_drill() wrappers, arrival polling
-#   - drone_energy.py: battery accounting, linear Wh/meter trip budgeting, drone_service/drone_depot discovery
+#   - drone_energy.py: engine detection, battery/oil accounting, linear per-meter trip budgeting, drone_service/drone_depot discovery
 #   - drone_claims.py: exclusive biosite claims + scout empty-POI cache + mission persistence
 #   - drone_cargo.py: cargo accounting/load-unload + home-biome filtering
-#   - drone_scout.py / drone_mining.py: role loops
+#   - drone_scout.py / drone_mining.py / drone_hauler.py: role loops
 #
-# Electric drones only this pass -- heli support (oil_tank instead of
-# battery, refuel() instead of charge()) can follow the same pattern later
-# without disrupting this design; DroneController assumes .battery is
-# readable (see drone_energy.py's get_battery()).
+# Electric and heli drones: the engine is auto-detected at startup
+# (drone_energy.py detect_engine()) and every energy figure is in that
+# engine's own unit (Wh / t Oil), so role loops never branch on it.
 
 import fleet_status
 from drone_navigation import DroneNavigationMixin
@@ -23,6 +22,7 @@ from drone_claims import DroneClaimsMixin
 from drone_cargo import DroneCargoMixin
 from drone_scout import DroneScoutMixin
 from drone_mining import DroneMiningMixin
+from drone_hauler import DroneHaulerMixin
 from tree_console import TreeConsole
 from version_guard import validate_game_version
 
@@ -34,6 +34,7 @@ class DroneController(
     DroneCargoMixin,
     DroneScoutMixin,
     DroneMiningMixin,
+    DroneHaulerMixin,
 ):
     """
     Unified base controller for autonomous electric drones. Resolves
@@ -43,8 +44,9 @@ class DroneController(
     .outpost property of its own, unlike ground vehicles/buildings -- see
     docs/models/vehicles_and_modules.md's DroneSmall/DroneMedium/DroneLarge
     class definitions), detects role from mounted field module
-    (bio_scanner -> scout, bio_extractor -> miner), and dispatches to the
-    matching loop.
+    (bio_scanner -> scout, bio_extractor -> miner, neither but Cargo Pods ->
+    hauler), and dispatches to the matching loop. A hauler ignores its home
+    (floating, see drone_hauler.py); the home still anchors recall.
     """
     ROLE_MODULES = {
         "scout": "bio_scanner",
@@ -68,6 +70,12 @@ class DroneController(
         # resolution below so resolve_home_depot()/get_nearest_drone_*()
         # -- called during this same __init__ -- can already log.
         self.log = TreeConsole(module="drone")
+
+        # Before home resolution: heli drones only consider oil-fed
+        # drone_service stations (get_all_drone_services()).
+        self.engine = "electric"
+        self.plated = False
+        self.detect_engine()
 
         # HOME_DEPOT script variable: depot id/display name (hardwired to that
         # depot) or outpost id (any free depot there). None = auto (archived
@@ -154,7 +162,9 @@ class DroneController(
             "state": state,
             "x": round(pos[0], 1),
             "y": round(pos[1], 1),
-            "wh": round(curr_wh, 1),
+            "wh": round(curr_wh, 1),  # in "unit": Wh (electric) or t Oil (heli)
+            "unit": self.energy_unit(),
+            "engine": self.engine,
             "level": round(lvl, 2),
             "target": target_desc or (self.current_target.get("name") if self.current_target else "none"),
             "tick": self.get_current_tick(),
@@ -227,6 +237,10 @@ class DroneController(
             self.log.end(f"[{self.name}] Role detection failed")
             return None
         if not present:
+            capacity = self.cargo_capacity()
+            if capacity > 0:
+                self.log.end(f"[{self.name}] No bio module, {capacity} unit(s) of Cargo Pods: role 'hauler'")
+                return "hauler"
             self.log.end(f"[{self.name}] No role-defining module mounted")
             return None
 
@@ -237,13 +251,15 @@ class DroneController(
     def run(self, role_override=None):
         """
         Unified entrypoint: detects this drone's role from its mounted field
-        module (Bio Scanner -> scout, Bio Extractor -> miner) and dispatches
+        module (Bio Scanner -> scout, Bio Extractor -> miner, only Cargo Pods
+        -> hauler) and dispatches
         to the matching loop. role_override forces a specific role, required
         when both/neither module is mounted (see detect_role()).
         """
+        self.detect_engine()  # re-read: modules may have been swapped while recalled
         role = self.detect_role(role_override)
         if role is None:
-            self.log.level("warn").print(f"[{self.name}] No role-defining module (bio_scanner/bio_extractor) mounted; cannot start. Mount one via couple() at a Drone Depot, or pass run(role_override=...).")
+            self.log.level("warn").print(f"[{self.name}] No role-defining module (bio_scanner/bio_extractor) or Cargo Pod mounted; cannot start. Mount one via couple() at a Drone Depot, or pass run(role_override=...).")
             # Deliberately stays docked: modules can only be coupled at a
             # Depot berth, so undocking a roleless (e.g. freshly deployed,
             # still bare) drone would make it impossible to equip. It does
@@ -256,5 +272,7 @@ class DroneController(
             self.run_scout_loop()
         elif role == "miner":
             self.run_miner_loop()
+        elif role == "hauler":
+            self.run_hauler_loop()
         else:
             self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from drone import DroneController
 
-STRANDED_STATUSES = ("stalled_no_battery", "scrambled")
+STRANDED_STATUSES = ("stalled_no_battery", "stalled_no_oil", "scrambled")
 
 
 class DroneNavigationMixin:
@@ -52,7 +52,7 @@ class DroneNavigationMixin:
 
     def is_stranded(self):
         """
-        True while stalled_no_battery or scrambled -- both require
+        True while stalled_no_battery/stalled_no_oil or scrambled -- all require
         drone_service rescue, unlike a ground vehicle's self-recoverable
         multi-stop recharge routing. Drones have no drive_with_recharge()
         equivalent: go_to() is a single fire-and-forget flight leg, so
@@ -91,10 +91,10 @@ class DroneNavigationMixin:
         """
         Real-time timeout budget for a flight leg, mirroring
         vehicle_navigation.py's drive_timeout_ticks() but at drone cruise
-        speed (300 m/h at throttle 1.0, linear in throttle -- no Sport Nav
-        equivalent for drones).
+        speed (300 m/h electric / 900 m/h heli at throttle 1.0, linear in
+        throttle -- no Sport Nav equivalent for drones).
         """
-        speed_m_per_hour = 300.0 * max(throttle, self._host.MIN_SPEEDMODE_THROTTLE)
+        speed_m_per_hour = self._host.flight_speed_m_per_h(max(throttle, self._host.MIN_SPEEDMODE_THROTTLE))
         if speed_m_per_hour <= 0 or distance <= 0:
             return min_ticks
 
@@ -182,7 +182,7 @@ class DroneNavigationMixin:
                 curr_wh, _, _ = self._host.get_battery()
                 energy_needed = self._host.energy_needed_to_return_now()
                 if curr_wh <= energy_needed:
-                    self._host.log.level("warn").print(f"[{self._host.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest drone_service). Aborting flight.")
+                    self._host.log.level("warn").print(f"[{self._host.name}] Battery threshold reached ({curr_wh:.1f} {self._host.energy_unit()} left, {energy_needed:.1f} {self._host.energy_unit()} required to reach nearest drone_service). Aborting flight.")
                     self._host.log.trace(f"[{self._host.name}] fly_to() exit: aborted on low battery after {ticks} ticks.")
                     return False
 
@@ -190,7 +190,7 @@ class DroneNavigationMixin:
         self._host.log.trace(f"[{self._host.name}] fly_to() exit: timed out after {ticks} ticks.")
         return False
 
-    def fly_to_station(self, name, target_coords=None, timeout_ticks=1500):
+    def fly_to_station(self, name, target_coords=None, timeout_ticks=None):
         """
         Flies to a named Drone Depot/Drone Service Station via
         go_to_station(), confirming arrival via current_station() equal to
@@ -207,6 +207,11 @@ class DroneNavigationMixin:
         if not name:
             return False
         self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') entry.")
+        if self.current_station() == name:
+            # Already there: skip the route call -- every go_to*() costs a
+            # minimal burn even for a 0 m leg (observed live on heli).
+            self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') exit: already there.")
+            return True
         res = self._host.drone.go_to_station(name)
         if res.status != "ok":
             self._log_route_rejection(f"go_to_station('{name}')", res)
@@ -217,6 +222,10 @@ class DroneNavigationMixin:
         else:
             throttle = min(self._host.cruise_throttle, self._host.MAX_SPEEDMODE_THROTTLE)
         self._host.drone.set_throttle(throttle)
+        if timeout_ticks is None:
+            # Long heli legs outlast a flat 1500-tick budget; scale with distance when known.
+            distance = self.distance_to(target_coords[0], target_coords[1]) if target_coords is not None else 0.0
+            timeout_ticks = self.flight_timeout_ticks(distance, throttle)
 
         ticks = 0
         while ticks < timeout_ticks:
@@ -270,15 +279,20 @@ class DroneNavigationMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] undock() notice: {res.status} - {res.message}")
         return False
 
-    def fly_to_drill(self, name, target_coords=None, timeout_ticks=1500):
+    def fly_to_drill(self, name, target_coords=None, timeout_ticks=None):
         """
-        Flies to a named field Mining Drill via go_to_drill(), for a future
-        ore-hauler drone role (not used by scout/miner this pass). Same
+        Flies to a named field Mining Drill via go_to_drill() (the hauler
+        role's pickup leg, lib/drone_hauler.py). Same
         target_coords/select_cruise_throttle() contract as fly_to_station().
         """
         if not name:
             return False
         self._host.log.trace(f"[{self._host.name}] fly_to_drill('{name}') entry.")
+        if self.current_drill() == name:
+            # Already there: skip the route call -- every go_to*() costs a
+            # minimal burn even for a 0 m leg (observed live on heli).
+            self._host.log.trace(f"[{self._host.name}] fly_to_drill('{name}') exit: already there.")
+            return True
         res = self._host.drone.go_to_drill(name)
         if res.status != "ok":
             self._log_route_rejection(f"go_to_drill('{name}')", res)
@@ -289,6 +303,10 @@ class DroneNavigationMixin:
         else:
             throttle = min(self._host.cruise_throttle, self._host.MAX_SPEEDMODE_THROTTLE)
         self._host.drone.set_throttle(throttle)
+        if timeout_ticks is None:
+            # Long heli legs outlast a flat 1500-tick budget; scale with distance when known.
+            distance = self.distance_to(target_coords[0], target_coords[1]) if target_coords is not None else 0.0
+            timeout_ticks = self.flight_timeout_ticks(distance, throttle)
 
         ticks = 0
         while ticks < timeout_ticks:

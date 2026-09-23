@@ -196,6 +196,34 @@ The save has grown past a single production base: multiple outposts are founded,
     `lib/drone_cargo.py` (`space_for()`/`cargo_full()`) now exist as shared library pieces any drone
     route script (scout/miner today, a future freight hauler) can use; exposure-threshold handling
     itself is not yet wired into a route loop (no route this pass collects Storm Glass/Raw Uranium).
+  - [x] **Heli (oil) drone support + engine auto-detect**: `DroneController` detects `"electric"`/`"heli"`
+    per drone (`DroneRef.engine`, else `oil_tank`/`battery` probe) and every energy budget runs in that
+    engine's unit (Wh / t Oil, `ENGINE_PROFILES` in `lib/drone_energy.py`); Shield Plating burn ×1.5.
+    `lib/drone_service.py` refuels docked helis and rescues them with oil-based floors. Scout/miner roles
+    work on heli drones unchanged. See `docs/AI_CHEATSHEET.md` §2h. Stub-tested only.
+  - [x] **Floating drone hauler, phase 1: drills → Drone Depots** (`lib/drone_hauler.py`, role auto-detected
+    from Cargo Pods without a bio module). No home: picks the best drill job network-wide against the same
+    demand/reservations as the Pioneer pull hauler (`logistics.pickups`, `mining.reserved_yield`), refuels at the
+    nearest service when a job's budget needs it, parks at the nearest service when idle. Drone Depots now drain
+    freight into local storage (`drain_freight()`, 2 s polling while busy) so a big load unloads in rounds.
+    See `docs/AI_CHEATSHEET.md` §2j. Stub-tested only.
+  - [ ] Validate live: heli engine detection, `refuel()` at a station with `oil_in` wired (and the `no_oil`
+    warning without), `go_to_drill()` + `cargo.load()` at a drill, multi-round unload into a 50/100/200-unit
+    Depot while `drain_freight()` empties it, drone + Pioneer pull hauler sharing one ore deficit without
+    overshoot. Retune `HAUL_MIN_LOAD_UNITS` / `HAUL_TRIP_OVERHEAD_M` / `HELI_MIN_EMERGENCY_RESERVE_T` from
+    observed trips. Measure the fixed minimal burn per `go_to*()` call (confirmed live: hovering is free, but every route call burns a little even for a 0 m leg) and add it as a per-leg term in `_route_fuel()` if it matters.
+  - [ ] **Floating drone hauler, phase 2: Depot → Depot freight.** Pickups at outposts need the source
+    Depot to stage items from storage (`depot.input.take()`) before or while the drone docks: e.g. a shared
+    `depot.stage` dict `{depot_id: {item_id: units}}` written by the hauler, fulfilled by `DroneDepotController`.
+    Watch Depot slot caps (3/4/6 materials), and don't let `drain_freight()` push staged items straight back into storage.
+  - [ ] Drones can self-locate unmapped drills: `go_to_drill(id)` needs no coordinates, so a hauler with a
+    full tank could fly to an unlocated advertised drill and record `drone.position()` into `drill.positions`
+    on arrival (`drill_sites.confirm_position()`). Needs an in-flight fuel abort in `fly_to_drill()` first.
+- [ ] **Pioneer `recall_home_and_decommission()`**: as drone haulers take over freight, retire Pioneers in an
+  orderly way. Recall to `outpost_home`, unload cargo, uncouple modules to Inventory, sell modules and any
+  leftover cargo, then undeploy/sell the chassis (Ship Computer deploy/undeploy API, v0.1.25). Operator-triggered
+  (Control Panel switch or script command), never automatic. Release its reservations and archive entries
+  (`vehicle.mission`, `vehicle.recall`, `fleet.status`, pickups/yield).
 - [ ] Verify power subnet topology after every remote build:
   - [ ] Confirm every line/bridge is complete and physically touches the intended service footprints.
   - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.

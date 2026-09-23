@@ -338,7 +338,7 @@ def _take_from_current(port, item_id, remaining):
     return (getattr(res, "moved", 0) or 0), getattr(res, "status", None)
 
 
-def drain_port_to_storage(port, outpost=None):
+def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False):
     """
     Sends every stack currently staged in `port` (a machine output/byproduct slot
     exposing .stacks()/.connect(id)/.send(item_id, count)) to the best local
@@ -349,6 +349,12 @@ def drain_port_to_storage(port, outpost=None):
     -- a remote machine (Bio Lab, Bio Exchange, Bio Luminizer, etc.) needs its output
     routed to whichever local Warehouse actually has room for what it just produced.
     Returns total units moved.
+
+    include: optional item_id -> bool filter (stacks it rejects stay put).
+    allow_partial: pick any destination with room for >= 1 unit and send
+    the whole stack anyway (the port moves what fits), instead of requiring
+    room for the whole stack -- for large stockpiles (a Drone Depot unload)
+    that should trickle into a nearly full Warehouse rather than wait.
     """
     if not port or not hasattr(port, "stacks"):
         return 0
@@ -364,8 +370,10 @@ def drain_port_to_storage(port, outpost=None):
         count = getattr(stack, "count", 0)
         if not item_id or count <= 0:
             continue
+        if include is not None and not include(item_id):
+            continue
 
-        target = best_unload_target(item_id, count, outpost=outpost)
+        target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost)
         if target is None:
             continue  # no local storage has room -- leave it staged, try again next cycle
         if hasattr(port, "connected_id") and port.connected_id() != target:

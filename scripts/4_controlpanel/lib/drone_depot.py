@@ -8,10 +8,18 @@
 # idempotent port wiring to the outpost's Essence Liquifier, only when
 # unambiguous, (2) buffering life forms in a local Warehouse (one stack per
 # form) so the Depot stays free for drones, the Liquifier has a reserve and a
-# pull hauler can take() them, and (3) lightweight periodic telemetry.
+# pull hauler can take() them, (3) draining freight (every non-life-form
+# item, e.g. ore a hauler drone dropped off -- lib/drone_hauler.py) into
+# local storage, and (4) lightweight periodic telemetry.
+#
+# (3) is what makes a Depot usable as a hauler endpoint at all: its
+# stockpile is tiny (50/100/200 units, 3/4/6 material slots) next to a Large
+# hauler's up-to-2000-unit load, so the drone unloads in several rounds while
+# this controller keeps draining (FREIGHT_POLL_INTERVAL while freight or a
+# docked drone is present).
 
 from archive import archive
-from storage import discover_storage_buildings, warehouse_stock
+from storage import discover_storage_buildings, warehouse_stock, drain_port_to_storage
 import logistics_requests
 from tree_console import TreeConsole
 from version_guard import validate_game_version
@@ -29,6 +37,11 @@ LIQUIFIER_TYPE_ID = "essence_liquifier"
 LIFEFORM_BUFFER_SLOTS = 1
 WAREHOUSE_FREE_SLOTS_KEEP = 1
 WAREHOUSE_SLOT_FALLBACK_UNITS = 2000  # docs/components/warehouse.md: 5 x 2,000
+
+# Poll interval (s) while freight sits in the stockpile or a drone is docked,
+# so a hauler unloading several Depot-fulls in a row isn't held up by the
+# idle 10 s cycle.
+FREIGHT_POLL_INTERVAL = 2.0
 
 
 class DroneDepotController:
@@ -176,6 +189,33 @@ class DroneDepotController:
             else:
                 self.log.debug(f"[{self.name}] stage '{item_id}' -> '{target}': {getattr(res, 'status', '?')}")
 
+    def drain_freight(self):
+        """
+        Sends every non-life-form stack in the Depot stockpile to local
+        storage (Warehouse, or Inventory at home -- storage.best_unload_target()),
+        trickling partial amounts into whatever room exists. Life forms are
+        left to stage_life_forms()/the Liquifier. Returns units moved.
+        """
+        outpost = getattr(self.station, "outpost", None)
+        port = getattr(self.station, "output", None)
+        if not outpost or not port:
+            return 0
+        moved = drain_port_to_storage(port, outpost=outpost, include=lambda i: not self._is_life_form(i), allow_partial=True)
+        if moved > 0:
+            self.log.print(f"[{self.name}] Drained {moved} unit(s) of freight to local storage.")
+            self._wired = False  # output now points at storage; re-declare the Liquifier link next step
+        return moved
+
+    def has_freight_activity(self):
+        """True while freight sits in the stockpile or any drone is docked (fast-poll trigger)."""
+        try:
+            if list(self.station.get_docked()):
+                return True
+        except Exception:
+            pass
+        stock = logistics_requests.depot_stock(self.station)
+        return any(u > 0 and not self._is_life_form(i) for i, u in stock.items())
+
     def _is_life_form(self, item_id):
         if not self.nocturna:
             return False
@@ -225,6 +265,7 @@ class DroneDepotController:
         self.log.trace(f"[{self.name}] publish_telemetry() exit: bays {bays_occupied}/{bay_count}, slots {slots_used}/{slot_capacity}.")
 
     def step(self):
+        self.drain_freight()
         self.stage_life_forms()
         self.wire_output_to_liquifier()
         self.publish_telemetry()
@@ -234,8 +275,11 @@ class DroneDepotController:
         self.log.print(f"Drone Depot Controller ({self.name}) online ({bay_count} bay(s)).")
         validate_game_version()
         while True:
+            interval = poll_interval
             try:
                 self.step()
+                if self.has_freight_activity():
+                    interval = min(poll_interval, FREIGHT_POLL_INTERVAL)
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
-            sleep(poll_interval)
+            sleep(interval)

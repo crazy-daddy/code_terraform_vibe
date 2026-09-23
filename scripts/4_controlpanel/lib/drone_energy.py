@@ -1,21 +1,26 @@
-# Drone mixin: drone-specific linear Wh/meter energy model, round-trip trip
-# budgeting, and drone_service/drone_depot discovery. Mirrors
-# vehicle_energy.py's "there-and-back" safety-margin + hard emergency-reserve
-# floor pattern, but with a DIFFERENT (simpler, linear) travel model and TWO
-# distinct "home" endpoints -- drone_service (power) and drone_depot (cargo)
-# -- rather than ground vehicles' single combined base/charging-station pair.
+# Drone mixin: engine-aware (electric battery / heli oil) linear energy
+# model, round-trip trip budgeting, and drone_service/drone_depot discovery.
+# Mirrors vehicle_energy.py's "there-and-back" safety-margin + hard
+# emergency-reserve floor pattern, but with a DIFFERENT (simpler, linear)
+# travel model and TWO distinct "home" endpoints -- drone_service (power/oil)
+# and drone_depot (cargo) -- rather than ground vehicles' single combined
+# base/charging-station pair.
 #
-# Game-confirmed constants (docs/components/drone.md): full throttle = 5 Wh/h
-# burn, 300 m/h speed; both scale with throttle (speed linear, burn
-# quadratic) -- collapsing to a flat linear Wh/meter model, structurally like
-# Rover's own flat model (lib/vehicle_energy.py's ROVER_WH_PER_METER_PER_THROTTLE),
-# just a different constant. Treat the drone's own range_remaining() as
-# ground truth; this formula is for PLANNING only (trip feasibility, throttle
-# selection), verified against the drone's live battery before committing.
-# Scan/extract themselves cost no extra travel Wh in the documented model
-# (hovering at throttle 0 costs 0), so there's deliberately no scan/extract
-# term in calculate_trip_energy() below, unlike VehicleEnergyMixin's sonar/
-# mining budget terms.
+# Game-confirmed constants (docs/components/drone.md, equipment_modules.md):
+#   electric: full throttle = 5 Wh/h burn, 300 m/h speed
+#   heli:     full throttle = 5 t/h Oil burn, 900 m/h speed
+# Both scale with throttle (speed linear, burn quadratic) -- collapsing to a
+# flat linear energy-per-meter model per engine (ENGINE_PROFILES). Shield
+# Plating raises burn 1.5x. "Energy" throughout this mixin means the
+# drone's own fuel unit: Wh for electric, tons of Oil for heli -- every
+# budget/floor below is in that unit, so callers never branch on engine.
+# The engine is auto-detected per drone (detect_engine()). Treat the drone's
+# own range_remaining() as ground truth; this formula is for PLANNING only
+# (trip feasibility, throttle selection), verified against the drone's live
+# fuel before committing. Scan/extract themselves cost no extra travel energy
+# in the documented model (hovering at throttle 0 costs 0), so there's
+# deliberately no scan/extract term in calculate_trip_energy() below, unlike
+# VehicleEnergyMixin's sonar/mining budget terms.
 
 from archive import archive
 from typing import TYPE_CHECKING
@@ -38,6 +43,10 @@ DRONE_DEPOT_TYPE_ID = "drone_station"
 
 # 5.0 Wh/h at 300 m/h full-throttle burn -> flat Wh/meter-per-throttle rate.
 DRONE_WH_PER_METER_PER_THROTTLE = 5.0 / 300.0  # ~0.01667 Wh/m at throttle 1.0
+# 5.0 t/h Oil at 900 m/h full-throttle burn -> flat t/meter-per-throttle rate.
+HELI_T_PER_METER_PER_THROTTLE = 5.0 / 900.0  # ~0.00556 t/m (5.6 t/km) at throttle 1.0
+# docs/components/drone.md is_plated(): Shield Plating raises burn 1.5x.
+PLATING_BURN_MULTIPLIER = 1.5
 MIN_SPEEDMODE_THROTTLE = 0.10
 MAX_SPEEDMODE_THROTTLE = 1.0
 SAFETY_MARGIN_MULTIPLIER = 1.05
@@ -47,6 +56,22 @@ SAFETY_MARGIN_MULTIPLIER = 1.05
 # would eat a large fraction of total capacity. Tune here and update
 # docs/AI_CHEATSHEET.md's drone energy-budgeting section in the same change.
 MIN_EMERGENCY_RESERVE_WH = 4.0
+# Heli equivalent, in tons of Oil: ~0.9 km at full throttle, ~9 km at the
+# speedmode floor. Oil tanks are 30/75/150 t, so this is a small slice.
+HELI_MIN_EMERGENCY_RESERVE_T = 5.0
+
+# Per-engine planning profile. "energy" = Wh (electric) or t Oil (heli).
+ENGINE_PROFILES = {
+    "electric": {"per_meter": DRONE_WH_PER_METER_PER_THROTTLE, "speed_m_per_h": 300.0, "reserve": MIN_EMERGENCY_RESERVE_WH, "unit": "Wh"},
+    "heli": {"per_meter": HELI_T_PER_METER_PER_THROTTLE, "speed_m_per_h": 900.0, "reserve": HELI_MIN_EMERGENCY_RESERVE_T, "unit": "t"},
+}
+DEFAULT_ENGINE = "electric"
+
+# A drone_service_station counts as able to refuel a heli when its oil_in
+# buffer (100 t max) holds at least this much, or oil is flowing in right
+# now. Dry stations are skipped as refuel/return targets (still used as a
+# last resort when no station has oil, see get_all_drone_services()).
+SERVICE_MIN_OIL_T = 10.0
 
 # Launch hysteresis: a drone below this state of charge tops up at its
 # drone_service before starting a NEW mission, even if the trip itself is
@@ -86,26 +111,94 @@ def _pin_home_depot(drone_name, depot_id):
     archive.transaction(HOME_DEPOTS_KEY, {}, updater)
 
 
-def drone_wh_per_meter_at_throttle(throttle):
+def engine_profile(engine):
+    """ENGINE_PROFILES entry for engine ("electric"/"heli"), electric for unknown/""."""
+    return ENGINE_PROFILES.get(engine or DEFAULT_ENGINE, ENGINE_PROFILES[DEFAULT_ENGINE])
+
+
+def drone_energy_per_meter_at_throttle(throttle, engine=DEFAULT_ENGINE, plated=False):
     """
-    Standalone: linear Wh/meter for ANY electric drone at the given
-    throttle -- no drone object needed, since the documented model has no
-    per-drone/cargo/module term (unlike Pioneer's travel formula), just one
-    flat rate for every electric drone.
+    Standalone: linear energy/meter (Wh or t Oil, see ENGINE_PROFILES) for
+    ANY drone of that engine at the given throttle -- no drone object
+    needed, since the documented model has no per-drone/cargo term (unlike
+    Pioneer's travel formula), just one flat rate per engine, times
+    PLATING_BURN_MULTIPLIER with Shield Plating.
     """
     if throttle <= 0:
         return 0.0
-    return DRONE_WH_PER_METER_PER_THROTTLE * throttle
+    rate = engine_profile(engine)["per_meter"] * throttle
+    return rate * PLATING_BURN_MULTIPLIER if plated else rate
+
+
+def drone_wh_per_meter_at_throttle(throttle):
+    """Electric-only shorthand for drone_energy_per_meter_at_throttle()."""
+    return drone_energy_per_meter_at_throttle(throttle, "electric")
+
+
+def drone_rescue_energy_per_meter(engine=DEFAULT_ENGINE):
+    """
+    Worst-case-safe energy/meter for rescue/return budgeting, at the
+    speedmode throttle floor -- mirrors vehicle_energy.py's
+    rescue_wh_per_meter_for(), but needs no drone object at all since the
+    model is a flat per-throttle rate with no vehicle-specific terms.
+    Plating unknown from a DroneRef, so assumed (conservative).
+    """
+    return drone_energy_per_meter_at_throttle(MIN_SPEEDMODE_THROTTLE, engine, plated=True)
 
 
 def drone_rescue_wh_per_meter():
+    """Electric-only shorthand for drone_rescue_energy_per_meter()."""
+    return drone_rescue_energy_per_meter("electric")
+
+
+def service_oil_state(service_id):
     """
-    Worst-case-safe Wh/meter for rescue/return budgeting, at the speedmode
-    throttle floor -- mirrors vehicle_energy.py's rescue_wh_per_meter_for(),
-    but needs no drone object at all since the model is a flat per-throttle
-    rate with no vehicle-specific terms.
+    (wired, buffer_t, flow_t_per_h) of a drone_service_station's oil_in.
+    "wired" uses connections() (every effective peer, including a link the
+    Oil Pump/tank declared from its side -- connected_to() only shows this
+    port's own declaration). Unreadable reads as (False, 0.0, 0.0).
     """
-    return drone_wh_per_meter_at_throttle(MIN_SPEEDMODE_THROTTLE)
+    try:
+        station = get_component(service_id)
+        port = getattr(station, "oil_in", None) if station else None
+        if port is None:
+            return (False, 0.0, 0.0)
+        wired = bool(port.connections()) or bool(port.connected_to())
+        return (wired, float(port.level() or 0.0), float(port.flow_rate() or 0.0))
+    except Exception:
+        return (False, 0.0, 0.0)
+
+
+def service_has_oil_feed(service_id):
+    """True when a drone_service_station's oil_in has any oil source wired (docs/components/drone_service_station.md)."""
+    return service_oil_state(service_id)[0]
+
+
+def service_can_refuel(service_id):
+    """True when the station holds >= SERVICE_MIN_OIL_T in its oil_in buffer or oil is flowing in now."""
+    _wired, buffer_t, flow = service_oil_state(service_id)
+    return buffer_t >= SERVICE_MIN_OIL_T or flow > 0.0
+
+
+def heli_capable_services(services):
+    """
+    (subset, tier) of `services` (discover_drone_services() dicts) usable
+    by a heli drone: tier "oil" = service_can_refuel() stations; else
+    "wired" = wired but dry (may refill); else "all" (a rescue still works,
+    and the station itself warns about the missing oil). Shared by
+    DroneEnergyMixin (the drone's own choice) and lib/drone_service.py
+    (rescue/nudge arbitration), so both skip dry stations the same way.
+    """
+    if not services:
+        return services, "all"
+    states = {s["id"]: service_oil_state(s["id"]) for s in services}
+    usable = [s for s in services if states[s["id"]][1] >= SERVICE_MIN_OIL_T or states[s["id"]][2] > 0.0]
+    if usable:
+        return usable, "oil"
+    wired = [s for s in services if states[s["id"]][0]]
+    if wired:
+        return wired, "wired"
+    return services, "all"
 
 
 def _extract_coords(pos):
@@ -200,24 +293,73 @@ class DroneEnergyMixin:
             return DEFAULT_CRUISE_THROTTLE_FALLBACK
         return max(self.MIN_SPEEDMODE_THROTTLE, min(self.MAX_SPEEDMODE_THROTTLE, value))
 
+    def detect_engine(self):
+        """
+        "electric" or "heli", auto-detected: this drone's own DroneRef.engine
+        from fleet.drones() first, else a live probe -- .oil_tank/.battery
+        methods raise ReferenceError on the other powertrain (drone.md).
+        Falls back to DEFAULT_ENGINE when neither answers (no thruster
+        mounted yet). Also caches Shield Plating (is_plated()) for the burn
+        multiplier. Re-run after a re-equip (DroneController.run() does).
+        """
+        engine, source = "", None
+        fleet = get_component("fleet")
+        if fleet and hasattr(fleet, "drones"):
+            try:
+                for ref in fleet.drones():
+                    if getattr(ref, "id", None) == self._host.name:
+                        engine = getattr(ref, "engine", "") or ""
+                        source = "fleet.drones()"
+                        break
+            except Exception:
+                pass
+        if engine not in ENGINE_PROFILES:
+            engine = ""
+            for candidate, attr in (("heli", "oil_tank"), ("electric", "battery")):
+                try:
+                    getattr(self._host.drone, attr).capacity()
+                    engine, source = candidate, f"{attr} probe"
+                    break
+                except Exception:
+                    continue
+        if not engine:
+            engine, source = DEFAULT_ENGINE, "fallback (no thruster/fuel module readable)"
+        try:
+            self._host.plated = bool(self._host.drone.is_plated())
+        except Exception:
+            self._host.plated = False
+        self._host.engine = engine
+        self._host.log.debug(f"[{self._host.name}] Engine detected: '{engine}' via {source}; plated={self._host.plated}.")
+        return engine
+
+    def energy_unit(self):
+        return engine_profile(getattr(self._host, "engine", DEFAULT_ENGINE))["unit"]
+
+    def emergency_reserve(self):
+        """Hard reserve floor in this drone's fuel unit (MIN_EMERGENCY_RESERVE_WH / HELI_MIN_EMERGENCY_RESERVE_T)."""
+        return engine_profile(getattr(self._host, "engine", DEFAULT_ENGINE))["reserve"]
+
+    def flight_speed_m_per_h(self, throttle=1.0):
+        return engine_profile(getattr(self._host, "engine", DEFAULT_ENGINE))["speed_m_per_h"] * throttle
+
     def get_battery(self):
         """
-        Returns (current_wh, capacity_wh, fraction 0-1). Electric drones only
-        this pass -- .battery raises ReferenceError on a heli drone (see
-        drone.md); DroneController is only ever constructed for an electric
-        DroneRef this pass (heli support deferred, see the module docstring
-        in lib/drone.py).
+        Returns (current, capacity, fraction 0-1) of this drone's fuel store
+        in its own unit: battery Wh (electric) or oil tank tons (heli).
+        Named for its electric origin; every budget in this mixin uses the
+        same unit (see module docstring). Unreadable reads as empty, so
+        every gate fails safe toward refuelling.
         """
+        store = "oil_tank" if getattr(self._host, "engine", DEFAULT_ENGINE) == "heli" else "battery"
         try:
-            wh = self._host.drone.battery.level()
-            cap = self._host.drone.battery.capacity()
-            lvl = self._host.drone.battery.percent()
-            return wh, cap, lvl
+            module = getattr(self._host.drone, store)
+            return module.level(), module.capacity(), module.percent()
         except Exception:
             return 0.0, 100.0, 0.0
 
     def wh_per_meter_at_throttle(self, throttle):
-        return drone_wh_per_meter_at_throttle(throttle)
+        """Energy/meter in this drone's fuel unit (engine + plating aware)."""
+        return drone_energy_per_meter_at_throttle(throttle, getattr(self._host, "engine", DEFAULT_ENGINE), getattr(self._host, "plated", False))
 
     def minimum_wh_per_meter(self):
         return self.wh_per_meter_at_throttle(self.MIN_SPEEDMODE_THROTTLE)
@@ -228,7 +370,28 @@ class DroneEnergyMixin:
         return distance_m * self.wh_per_meter_at_throttle(throttle)
 
     def get_all_drone_services(self):
-        return discover_drone_services()
+        """
+        Every drone_service_station -- for a heli drone only the ones that
+        can refuel it right now (service_can_refuel(): oil in the buffer or
+        flowing in), so dry stations are skipped for refuel, parking and
+        return budgeting. Falls back to wired-but-dry stations (they may
+        refill), then to all of them (a rescue still works, and the station
+        itself warns about the missing oil).
+        """
+        services = discover_drone_services()
+        if getattr(self._host, "engine", DEFAULT_ENGINE) != "heli" or not services:
+            return services
+        chosen, tier = heli_capable_services(services)
+        if tier == "oil":
+            skipped = [s["id"] for s in services if s not in chosen]
+            if skipped:
+                self._host.log.trace(f"[{self._host.name}] Skipping dry drone_service_station(s) for heli: {skipped}.")
+        else:
+            self._host.log.debug(
+                f"[{self._host.name}] No drone_service_station has oil (>= {SERVICE_MIN_OIL_T:.0f} t or inflow); "
+                + (f"falling back to {len(chosen)} wired but dry." if tier == "wired" else f"none wired; considering all {len(chosen)}.")
+            )
+        return chosen
 
     def get_all_drone_depots(self):
         return discover_drone_depots()
@@ -420,7 +583,7 @@ class DroneEnergyMixin:
         """Reserve-inclusive Wh to reach target_coords at the speedmode throttle floor."""
         pos = from_coords if from_coords is not None else self._host.position()
         dist = self._host.distance_between(pos, target_coords)
-        return (dist * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        return (dist * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.emergency_reserve()
 
     def return_floor_wh(self, from_coords=None):
         """
@@ -449,7 +612,7 @@ class DroneEnergyMixin:
         home_service, _ = self.get_home_service()
         dist = self._host.distance_between(pos, home_service)
         drive_wh = dist * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
-        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.emergency_reserve()
 
     def return_to_service_for_charge(self, log, reason):
         """
@@ -470,7 +633,7 @@ class DroneEnergyMixin:
         if curr_wh < home_wh:
             nearest_coords, nearest_info = self.get_nearest_drone_service()
             if nearest_info.get("id") != service_info.get("id"):
-                log.debug(f"[{self._host.name}] Home drone_service '{service_info.get('id')}' out of reach ({curr_wh:.1f} Wh < {home_wh:.1f} Wh needed); charging at nearest '{nearest_info.get('id')}' instead.")
+                log.debug(f"[{self._host.name}] Home drone_service '{service_info.get('id')}' out of reach ({curr_wh:.1f} {self.energy_unit()} < {home_wh:.1f} {self.energy_unit()} needed); charging at nearest '{nearest_info.get('id')}' instead.")
                 service_coords, service_info = nearest_coords, nearest_info
         service_id = service_info.get("id")
         # Docked-at check by id, not by coords: a Drone Depot and Drone
@@ -524,15 +687,15 @@ class DroneEnergyMixin:
         drive_home_wh = dist_inbound * rate
         net_wh = drive_out_wh + drive_home_wh
         buffered_wh = net_wh * self.SAFETY_MARGIN_MULTIPLIER
-        total_required_wh = buffered_wh + self.MIN_EMERGENCY_RESERVE_WH
+        total_required_wh = buffered_wh + self.emergency_reserve()
 
         curr_wh, cap_wh, lvl = self.get_battery()
         is_achievable = curr_wh >= total_required_wh
         self._host.log.trace(
             f"[{self._host.name}] calculate_trip_energy to {target_coords}: "
-            f"out={drive_out_wh:.2f}Wh ({dist_outbound:.1f}m), home={drive_home_wh:.2f}Wh ({dist_inbound:.1f}m to '{nearest_service}'), "
-            f"buffered={buffered_wh:.2f}Wh (x{self.SAFETY_MARGIN_MULTIPLIER}), reserve={self.MIN_EMERGENCY_RESERVE_WH:.1f}Wh, "
-            f"total_required={total_required_wh:.2f}Wh, current={curr_wh:.2f}Wh -> achievable={is_achievable}."
+            f"out={drive_out_wh:.2f} {self.energy_unit()} ({dist_outbound:.1f}m), home={drive_home_wh:.2f} {self.energy_unit()} ({dist_inbound:.1f}m to '{nearest_service}'), "
+            f"buffered={buffered_wh:.2f} {self.energy_unit()} (x{self.SAFETY_MARGIN_MULTIPLIER}), reserve={self.emergency_reserve():.1f} {self.energy_unit()}, "
+            f"total_required={total_required_wh:.2f} {self.energy_unit()}, current={curr_wh:.2f} {self.energy_unit()} -> achievable={is_achievable}."
         )
         return {
             "dist_outbound": dist_outbound,
@@ -552,9 +715,9 @@ class DroneEnergyMixin:
         safe reserve to reach the nearest drone_service from there. Unlike
         Pioneer's sqrt(throttle) relationship (vehicle_energy.py), the
         drone's Wh/m is LINEAR in throttle, so the bound solves directly:
-            leg_wh(t) = distance * DRONE_WH_PER_METER_PER_THROTTLE * t
-            leg_wh(t) * SAFETY_MARGIN_MULTIPLIER <= available_for_leg
-            => t <= available_for_leg / (distance * DRONE_WH_PER_METER_PER_THROTTLE * SAFETY_MARGIN_MULTIPLIER)
+            leg(t) = distance * per_meter(1.0) * t
+            leg(t) * SAFETY_MARGIN_MULTIPLIER <= available_for_leg
+            => t <= available_for_leg / (distance * per_meter(1.0) * SAFETY_MARGIN_MULTIPLIER)
         """
         distance = self._host.distance_between(self._host.position(), target_coords)
         if distance <= 0:
@@ -562,17 +725,17 @@ class DroneEnergyMixin:
 
         curr_wh, _, _ = self.get_battery()
         nearest_service, _ = self.get_nearest_drone_service(from_coords=target_coords)
-        reserve_needed = (self._host.distance_between(target_coords, nearest_service) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        reserve_needed = (self._host.distance_between(target_coords, nearest_service) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.emergency_reserve()
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
-            self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg to {target_coords}: no energy available for leg (current={curr_wh:.2f}Wh, reserve_needed={reserve_needed:.2f}Wh); throttle=0%.")
+            self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg to {target_coords}: no energy available for leg (current={curr_wh:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()}); throttle=0%.")
             return 0.0
 
-        denom = distance * self.DRONE_WH_PER_METER_PER_THROTTLE * self.SAFETY_MARGIN_MULTIPLIER
+        denom = distance * self.wh_per_meter_at_throttle(1.0) * self.SAFETY_MARGIN_MULTIPLIER
         if denom <= 0:
             return self.MAX_SPEEDMODE_THROTTLE
         throttle = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, available_for_leg / denom))
-        self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg to {target_coords}: distance={distance:.1f}m, available={available_for_leg:.2f}Wh, reserve_needed={reserve_needed:.2f}Wh -> max_safe_throttle={throttle*100:.0f}%.")
+        self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg to {target_coords}: distance={distance:.1f}m, available={available_for_leg:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()} -> max_safe_throttle={throttle*100:.0f}%.")
         return throttle
 
     def select_cruise_throttle(self, target_coords):

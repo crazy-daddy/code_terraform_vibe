@@ -156,7 +156,7 @@ class DroneMiningMixin:
         for candidate in candidates:
             budget = self._host.calculate_trip_energy(candidate["coords"])
             if not budget["is_achievable"]:
-                self._host.log.trace(f"[{self._host.name}] Biosite {candidate['target_key']}: {budget['total_required_wh']:.1f} Wh required, not achievable on current battery; skipping.")
+                self._host.log.trace(f"[{self._host.name}] Biosite {candidate['target_key']}: {budget['total_required_wh']:.1f} {self._host.energy_unit()} required, not achievable on current battery; skipping.")
                 continue
             if self._host.claim_biosite(candidate["target_key"], {"coords": candidate["coords"], "name": candidate["target_key"]}):
                 self._host.log.trace(f"[{self._host.name}] select_biosite_target() exit: claimed {candidate['target_key']}.")
@@ -206,7 +206,7 @@ class DroneMiningMixin:
 
                 curr_wh, _, _ = self._host.get_battery()
                 if curr_wh <= self._host.energy_needed_to_return_comfortably():
-                    self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} Wh)")
+                    self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} {self._host.energy_unit()})")
                     sleep(poll_interval)
                     continue
 
@@ -256,7 +256,7 @@ class DroneMiningMixin:
                 self.current_target = {"coords": target["coords"], "name": target["target_key"], "sample_type": target["sample_type"]}
                 self._host.save_mission("mine", self.current_target)
 
-                log.print(f"[{self._host.name}] Reserved biosite {target['target_key']} ({target['sample_type']}) at {target['coords']} (Est. trip cost: {budget['total_required_wh']:.1f} Wh).")
+                log.print(f"[{self._host.name}] Reserved biosite {target['target_key']} ({target['sample_type']}) at {target['coords']} (Est. trip cost: {budget['total_required_wh']:.1f} {self._host.energy_unit()}).")
                 self._host.publish_telemetry("OUTBOUND", target["target_key"])
 
                 if not self._host.fly_to(target["coords"][0], target["coords"][1], precision=1.0):

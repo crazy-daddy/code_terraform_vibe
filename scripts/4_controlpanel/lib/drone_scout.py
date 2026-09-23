@@ -85,7 +85,7 @@ class DroneScoutMixin:
 
                 curr_wh, _, _ = self._host.get_battery()
                 if curr_wh <= self._host.energy_needed_to_return_comfortably():
-                    self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} Wh)")
+                    self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} {self._host.energy_unit()})")
                     sleep(poll_interval)
                     continue
 
@@ -111,7 +111,7 @@ class DroneScoutMixin:
                 target = None
                 for candidate in candidates:
                     budget = self._host.calculate_trip_energy(candidate)
-                    log.trace(f"POI {candidate}: {budget['total_required_wh']:.1f} Wh required, achievable={budget['is_achievable']}.")
+                    log.trace(f"POI {candidate}: {budget['total_required_wh']:.1f} {self._host.energy_unit()} required, achievable={budget['is_achievable']}.")
                     if budget["is_achievable"]:
                         target = candidate
                         break
