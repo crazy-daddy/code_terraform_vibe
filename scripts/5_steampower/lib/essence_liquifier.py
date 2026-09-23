@@ -1,5 +1,7 @@
 import fluid_routing
+import logistics_requests
 from archive import archive
+from storage import take_item, warehouse_stock, discover_storage_buildings
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 
@@ -15,6 +17,9 @@ from tree_console import TreeConsole
 #      link. Every candidate is checked against
 #      nocturna.life_form_biome(item_id) == liquifier.biome() first, so
 #      non-life-form cargo and foreign-biome samples are never touched.
+#      Items requested via lib/logistics_requests.py (e.g. by the Seed Maker)
+#      are held back up to logistics_requests.retain_amount(). Second source:
+#      the local Warehouse buffer the Drone Depot fills (one stack per form).
 #   2. Drain: keep the single biome-named <biome>_essence_out port pointed at
 #      a reachable Liquid Tank latched/assigned to that essence, via the same
 #      FluidOutputRouter Water Pump uses (lib/fluid_routing.py). A Biomass
@@ -29,7 +34,7 @@ DRONE_DEPOT_TYPE_ID = "drone_station"  # typeId, not the "Drone Depot" display n
 # every cycle would spend most of the loop waiting on tiny transfers.
 FEED_MIN_ROOM_UNITS = 5
 
-# Same meaning/values as lib/water_pump.py's constants of the same names --
+# Same meaning/values as lib/fluid_pump.py's constants of the same names --
 # see there and lib/thermal_cap.py for the reasoning.
 ESSENCE_TANK_REBALANCE_FILL_FRACTION = 0.98
 CONNECTION_GRACE_TICKS = 2
@@ -168,6 +173,9 @@ class EssenceLiquifierController:
 
         input_slot = self.liquifier.input
         loaded = self._loaded_item_ids()
+        requests = logistics_requests.active_requests()
+        outpost = getattr(self.liquifier, "outpost", None)
+        outpost_id = getattr(outpost, "id", None)
         for depot in depots:
             stock = self._depot_stock(depot)
             native = []
@@ -176,6 +184,14 @@ class EssenceLiquifierController:
                     continue
                 item_biome = self.sample_biome(item_id)
                 if item_biome == self.biome:
+                    retain = logistics_requests.retain_amount(item_id, outpost_id, requests) if requests else 0
+                    if retain > 0:
+                        # Keep what the local Warehouse stash still lacks; lib/drone_depot.py stages it there.
+                        held = max(0, retain - warehouse_stock(item_id, outpost))
+                        stock[item_id] = units - held
+                        self.log.debug(f"[{self.name}] feed: '{item_id}' requested (retain {retain}); holding back {held}, {stock[item_id]} usable.")
+                        if stock[item_id] <= 0:
+                            continue
                     native.append(item_id)
                 elif item_biome and item_id not in self._warned_foreign:
                     # A foreign-biome life form parked here can never be processed locally and
@@ -219,6 +235,45 @@ class EssenceLiquifierController:
                 else:
                     # target_wrong_material / slots_full: bin still holds another species -- expected, try the next.
                     self.log.debug(f"[{self.name}] feed: take('{item_id}', {want}) -> {status}: {getattr(res, 'message', '')}")
+
+    def feed_from_warehouse(self):
+        """
+        Liquifies native life forms from the local Warehouse buffer (filled by
+        lib/drone_depot.py stage_life_forms(), one stack per form) beyond what
+        is still requested (retain_amount()). Runs after the Depot feed, so
+        the Depot's small stockpile is emptied first.
+        """
+        room = self._input_room()
+        if room < FEED_MIN_ROOM_UNITS:
+            return
+        outpost = getattr(self.liquifier, "outpost", None)
+        outpost_id = getattr(outpost, "id", None)
+        if not outpost_id or not self.nocturna:
+            return
+        requests = logistics_requests.active_requests()
+        loaded = self._loaded_item_ids()
+        stored = set()
+        for building in discover_storage_buildings(outpost):
+            try:
+                stored.update(building["component"].materials())
+            except Exception:
+                continue
+        forms = [f for f in stored if self.sample_biome(f) == self.biome]
+        forms.sort(key=lambda f: f not in loaded)
+        for item_id in forms:
+            surplus = warehouse_stock(item_id, outpost) - logistics_requests.retain_amount(item_id, outpost_id, requests)
+            if surplus <= 0:
+                continue
+            want = min(room, surplus)
+            moved = take_item(self.liquifier.input, item_id, want, outpost=outpost)
+            if moved > 0:
+                self.log.print(f"[{self.name}] Loaded {moved}x '{item_id}' from Warehouse buffer.")
+                self._last_fed = item_id
+                room -= moved
+                if room < FEED_MIN_ROOM_UNITS:
+                    return
+            else:
+                self.log.debug(f"[{self.name}] feed: Warehouse surplus {surplus}x '{item_id}' but take() moved nothing (bin holds another species?).")
 
     def _ensure_input_source(self, input_slot, depot_id):
         """Points .input at depot_id if it isn't already. Returns False only on a hard connect rejection."""
@@ -304,6 +359,7 @@ class EssenceLiquifierController:
             self.log.level("warn").print(f"[{self.name}] No valid host biome (stall_reason={self.stall_reason()!r}); waiting.")
             return
         self.feed_from_depot()
+        self.feed_from_warehouse()
         self.ensure_output_connection()
         self.publish_telemetry()
 

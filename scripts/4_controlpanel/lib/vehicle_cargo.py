@@ -11,13 +11,26 @@
 
 from production import get_raw_material_demands
 from version_guard import validate_game_version
-from storage import best_unload_target, take_item, total_stock, inventory_stack_size
+from storage import best_unload_target, take_item, total_stock, inventory_stack_size, warehouse_stock
 import outpost_reagents
 import mining_reservations
+import logistics_requests
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
+
+# Reverse ("pull") hauler, run_pull_loop(): source outposts visited per trip,
+# and the smallest load worth a trip (or the whole outstanding deficit, if
+# that's smaller).
+PULL_MAX_STOPS_PER_TRIP = 3
+PULL_MIN_LOAD_UNITS = 10
+# A further stop is only chained onto a pull trip when driving there directly
+# from the previous stop is at most this fraction of going via home instead
+# (prev -> home -> next). Home lying on or near the chain leg means dropping
+# the cargo off first costs (almost) nothing extra, so the stop is left for
+# the next trip instead of driving straight past home.
+PULL_CHAIN_MAX_DETOUR_RATIO = 0.75
 
 
 def _outpost_haul_demand(dest_outpost_id):
@@ -467,4 +480,199 @@ class VehicleCargoMixin:
                 except Exception:
                     pass
             sleep(poll_interval)
+
+    # ------------------------------------------------------------ pull (reverse) hauling
+
+    def _pull_source_stock(self, outpost, items, requests):
+        """
+        {item_id: units} a source outpost can give away: its Warehouse stock
+        (plus Inventory when it's home) minus whatever that outpost requests
+        for itself. Drone Depot stock is left out on purpose -- lib/drone_depot.py
+        stages requested items into a Warehouse, which vehicles can take() from.
+        """
+        own = requests.get(getattr(outpost, "id", None), {})
+        is_home = bool(getattr(outpost, "is_home", False))
+        inventory = get_component("inventory") if is_home else None
+        available = {}
+        for item_id in items:
+            units = warehouse_stock(item_id, outpost)
+            if inventory is not None:
+                try:
+                    units += inventory.count(item_id)
+                except Exception:
+                    pass
+            units -= own.get(item_id, {}).get("target", 0)
+            if units > 0:
+                available[item_id] = units
+        return available
+
+    def _plan_pull_route(self, deficits, capacity, curr_tick):
+        """
+        Greedy multi-stop pickup plan for this vehicle's home outpost:
+        repeatedly visits the nearest (from the previous stop) other outpost
+        that still holds something from `deficits`, taking the largest
+        deficits first, until capacity, PULL_MAX_STOPS_PER_TRIP or the
+        deficits run out. Stops after the first must pass
+        _pull_chain_worthwhile() (no driving past home). Returns [(outpost, [(item_id, amount), ...]), ...].
+        """
+        network = get_component("outpost_network")
+        try:
+            outposts = list(network.outposts()) if network else []
+        except Exception:
+            outposts = []
+        home_id = getattr(self._host.home_outpost, "id", None)
+        requests = logistics_requests.active_requests(curr_tick)
+        items = list(deficits.keys())
+
+        sources = []
+        for outpost in outposts:
+            if getattr(outpost, "id", None) == home_id or not hasattr(outpost, "coords"):
+                continue
+            available = self._pull_source_stock(outpost, items, requests)
+            if available:
+                sources.append((outpost, available))
+        self._host.log.debug(f"[{self._host.name}] pull: {len(sources)} source outpost(s) hold requested items: " + ", ".join(f"{o.id}={a}" for o, a in sources))
+
+        home_coords = None
+        try:
+            home_coords = self._host.home_outpost.coords() if self._host.home_outpost else None
+        except Exception:
+            home_coords = None
+
+        remaining = dict(deficits)
+        cap_left = capacity
+        pos = self._host.get_position()
+        route = []
+        while sources and cap_left > 0 and remaining and len(route) < PULL_MAX_STOPS_PER_TRIP:
+            useful = [(o, a) for o, a in sources if any(remaining.get(i, 0) > 0 and u > 0 for i, u in a.items())]
+            if route and home_coords is not None:
+                useful = [(o, a) for o, a in useful if self._pull_chain_worthwhile(pos, o, home_coords)]
+            if not useful:
+                break
+            useful.sort(key=lambda pair: self._host.distance_between(pos, pair[0].coords()))
+            outpost, available = useful[0]
+            sources = [(o, a) for o, a in sources if o.id != outpost.id]
+            loads = []
+            for item_id in sorted(available.keys(), key=lambda i: -remaining.get(i, 0)):
+                amount = min(remaining.get(item_id, 0), available[item_id], cap_left)
+                if amount <= 0:
+                    continue
+                loads.append((item_id, amount))
+                remaining[item_id] -= amount
+                cap_left -= amount
+                if cap_left <= 0:
+                    break
+            if loads:
+                route.append((outpost, loads))
+                pos = outpost.coords()
+        return route
+
+    def _pull_chain_worthwhile(self, prev_coords, outpost, home_coords):
+        """
+        True when chaining `outpost` straight after prev_coords beats
+        dropping off at home first: direct leg <= PULL_CHAIN_MAX_DETOUR_RATIO
+        * (prev -> home -> outpost). Rejects stops that lie "behind" home.
+        """
+        coords = outpost.coords()
+        direct = self._host.distance_between(prev_coords, coords)
+        via_home = self._host.distance_between(prev_coords, home_coords) + self._host.distance_between(home_coords, coords)
+        ok = via_home > 0 and direct <= PULL_CHAIN_MAX_DETOUR_RATIO * via_home
+        self._host.log.debug(f"[{self._host.name}] pull: chain to '{outpost.id}' direct={direct:.0f}m vs via-home={via_home:.0f}m -> {'chain' if ok else 'skip (home is on the way; next trip)'}.")
+        return ok
+
+    def run_pull_loop(self, poll_interval=10.0):
+        """
+        Reverse hauler: parked at self.home_base, fetches whatever
+        lib/logistics_requests.py says this outpost is missing from any other
+        outpost's Warehouses and brings it home (Pioneer entrypoint with
+        DESTINATION_OUTPOST_ID="*"). One trip can chain up to
+        PULL_MAX_STOPS_PER_TRIP source outposts, nearest-neighbour ordered.
+        Every leg goes through drive_with_recharge(), which already refuses a
+        leg unless the vehicle can still reach a charging station afterwards.
+        Planned amounts are debited as in-flight pickups so a second pull
+        hauler at the same outpost doesn't chase the same deficit.
+        """
+        home = self._host.home_outpost
+        home_id = getattr(home, "id", None)
+        self._host.log.print(f"[{self._host.name}] Pull Controller online. Fetching requested items to '{home_id}' from any outpost.")
+        validate_game_version()
+        while True:
+            try:
+                if self._host.handle_recall_if_active():
+                    sleep(poll_interval)
+                    continue
+                upgrade_cycle = getattr(self._host, "handle_upgrade_cycle_if_idle", None)
+                if upgrade_cycle is not None:
+                    upgrade_cycle()
+
+                if self._host.vehicle.cargo.count() > 0:
+                    self._host.log.debug(f"[{self._host.name}] pull: cargo aboard; delivering home first.")
+                    self._finish_pull_delivery(poll_interval)
+                    continue
+
+                curr_tick = self._host.get_current_tick()
+                deficits = logistics_requests.outpost_deficits(home, curr_tick, live=True)
+                if not deficits:
+                    if not self._host.is_at_base():
+                        self._host.return_to_base()
+                    self._host.publish_telemetry("IDLE_AT_OUTPOST", "no pull requests")
+                    sleep(poll_interval)
+                    continue
+                self._host.log.debug(f"[{self._host.name}] pull: deficits at '{home_id}': {deficits}")
+
+                capacity = self._host.vehicle.cargo.capacity()
+                route = self._plan_pull_route(deficits, capacity, curr_tick)
+                planned = sum(a for _o, loads in route for _i, a in loads)
+                wanted = min(PULL_MIN_LOAD_UNITS, sum(deficits.values()))
+                if not route or planned < wanted:
+                    self._host.log.debug(f"[{self._host.name}] pull: planned {planned} unit(s) < minimum {wanted}; waiting.")
+                    self._host.publish_telemetry("IDLE_AT_OUTPOST", "requested items not available anywhere yet")
+                    sleep(poll_interval)
+                    continue
+
+                legs = []
+                for outpost, loads in route:
+                    legs.append(outpost.id + " (" + ", ".join(str(a) + "x " + i for i, a in loads) + ")")
+                self._host.log.start(f"[{self._host.name}] Pull trip: " + " -> ".join(legs))
+                for outpost, loads in route:
+                    for item_id, amount in loads:
+                        logistics_requests.reserve_pickup(self._host.name, home_id, item_id, amount, curr_tick)
+
+                for outpost, loads in route:
+                    coords = outpost.coords()
+                    self._host.publish_telemetry("OUTBOUND", f"pickup at '{outpost.id}'")
+                    if not self._host.drive_with_recharge(coords[0], coords[1]):
+                        self._host.log.level("warn").print(f"[{self._host.name}] Could not reach '{outpost.id}'; heading home with what's aboard.")
+                        break
+                    for item_id, amount in loads:
+                        moved = take_item(self._host.vehicle.input, item_id, amount, outpost=outpost)
+                        self._host.log.print(f"[{self._host.name}] Picked up {moved}/{amount}x {item_id} at '{outpost.id}'.")
+                        logistics_requests.reserve_pickup(self._host.name, home_id, item_id, moved, curr_tick)
+                    if self._host.find_charging_station(outpost) is not None:
+                        self._host.recharge_at_station(target_level=1.0)
+                self._host.log.end(f"[{self._host.name}] Pickups done; {self._host.vehicle.cargo.count()} unit(s) aboard.")
+
+                self._finish_pull_delivery(poll_interval)
+            except Exception as error:
+                self._host.log.level("error").print(f"[{self._host.name}] Pull exception: {error}")
+                try:
+                    self._host.vehicle.nav.brake()
+                except Exception:
+                    pass
+            sleep(poll_interval)
+
+    def _finish_pull_delivery(self, poll_interval):
+        """Drives home, unloads, releases this vehicle's pickup debits and recharges."""
+        self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}' with pickups")
+        if not self._host.return_to_base():
+            self._host.log.level("warn").print(f"[{self._host.name}] Could not reach home to unload; will retry.")
+            sleep(poll_interval)
+            return
+        if self.unload_cargo() < 0:
+            self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
+            sleep(poll_interval)
+            return
+        logistics_requests.release_pickups(self._host.name)
+        self._host.recharge_at_station(target_level=1.0)
+        self._host.publish_telemetry("READY_AT_OUTPOST")
 

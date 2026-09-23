@@ -617,7 +617,7 @@ class FluidOutputRouter:
     Shared "declare/rebalance a single-destination output FluidPort among
     reachable same-type buildings, network-wide" state machine, used
     identically by ThermalCapController.ensure_output_connection() (steam_out
-    -> Gas Tank) and WaterPumpController.ensure_output_connection() (water_out
+    -> Gas Tank) and FluidPumpController.ensure_output_connection() (water_out/oil_out
     -> Liquid Tank/Large Liquid Tank).
 
     Consumer-side input ports (Steam Turbine, Fabricator, Biomass Mixer) use

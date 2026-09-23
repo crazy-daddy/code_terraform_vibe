@@ -158,9 +158,17 @@ class DroneNavigationMixin:
             if self._host.current_target_key:
                 self._host.refresh_biosite_claim(self._host.current_target_key)
 
+            # Within precision is not arrival yet: go_to() keeps the route
+            # "traveling" until the drone settles into a hover, and
+            # bio_extractor.extract()/scan() reject "not_at_location" until
+            # then. Returning early here made miners fly home empty and
+            # re-pick the same site forever.
             if self.is_at(target_coords, precision=precision):
-                self._host.log.trace(f"[{self._host.name}] fly_to() exit: arrived after {ticks} ticks.")
-                return True
+                if self.status() != "traveling":
+                    self._host.log.trace(f"[{self._host.name}] fly_to() exit: arrived after {ticks} ticks.")
+                    return True
+                self._host.log.debug(f"[{self._host.name}] fly_to() within {precision}m of target but route still 'traveling'; waiting for hover.")
+                continue
 
             if ticks % 100 == 0:
                 remaining = self.distance_to(target_x, target_y)

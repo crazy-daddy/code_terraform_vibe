@@ -90,6 +90,70 @@ def _notify(text, level="warn", duration=8.0):
         pass
 
 
+def steam_pool(tank_ids):
+    """(stored_t, capacity_t, tank_count) over the steam Gas Tanks among
+    tank_ids. An unlatched (empty) tank counts only when fluid_routing's
+    tank_assignments reserves it for steam -- a drained steam tank unlatches
+    at 0, and dropping its capacity would hide the loss."""
+    assignments = archive.get("fluid_routing.tank_assignments", {}) or {}
+    stored_t = 0.0
+    capacity_t = 0.0
+    count = 0
+    for tank_id in tank_ids:
+        try:
+            tank = get_component(tank_id)
+            if tank is None:
+                continue
+            fluid = tank.fluid()
+            if fluid != "steam" and not (fluid == "" and assignments.get(tank_id) == "steam"):
+                continue
+            stored_t += tank.level()
+            capacity_t += tank.capacity()
+            count += 1
+        except Exception:
+            pass
+    return stored_t, capacity_t, count
+
+
+def grid_steam_tank_ids(grid):
+    """Gas Tank ids listed in grid.members (buildings at a connected outpost
+    are members with an empty roles list). PowerGridManager adds a throttled
+    outpost-walk fallback on top of this for grids where they are missing."""
+    return [m.id for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == "gas_tank"]
+
+
+def measure_grid(grid, tank_ids):
+    """Battery + steam snapshot of one grid, the shape reserve_fraction() reads."""
+    bat_wh = getattr(grid, "stored", 0.0) + getattr(grid, "reserve_stored", 0.0)
+    bat_cap = getattr(grid, "capacity", 0.0) + getattr(grid, "reserve_capacity", 0.0)
+    steam_t, steam_cap, tanks = steam_pool(tank_ids)
+    return {
+        "bat_wh": round(bat_wh, 1),
+        "bat_cap": round(bat_cap, 1),
+        "steam_t": round(steam_t, 1),
+        "steam_cap": round(steam_cap, 1),
+        "tanks": tanks,
+    }
+
+
+def reserve_totals(now):
+    """(total_wh, total_cap_wh) of the combined reserve in a _measure()-shaped
+    dict: battery Wh plus banked steam converted at STEAM_WH_PER_TON."""
+    total_wh = now["bat_wh"] + now["steam_t"] * STEAM_WH_PER_TON
+    total_cap = now["bat_cap"] + now["steam_cap"] * STEAM_WH_PER_TON
+    return total_wh, total_cap
+
+
+def reserve_fraction(now):
+    """Combined reserve fraction (0-1), or None when the grid has no battery
+    or steam storage to measure. Shared by the emergency guard and
+    lib/oil_generator.py so both read the same number."""
+    total_wh, total_cap = reserve_totals(now)
+    if total_cap <= 0:
+        return None
+    return total_wh / total_cap
+
+
 class PowerGridManager:
     """Supervises one power grid: daily reserve balance + emergency shedding."""
 
@@ -119,7 +183,7 @@ class PowerGridManager:
     # Reserve measurement
     # ------------------------------------------------------------------
     def _steam_tank_ids(self, grid):
-        ids = [m.id for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == "gas_tank"]
+        ids = grid_steam_tank_ids(grid)
         if ids:
             return ids
 
@@ -139,41 +203,8 @@ class PowerGridManager:
             self.log.debug(f"[POWER] Gas Tanks not in grid members for '{self.grid_anchor}'; outpost walk over {len(outpost_ids)} outpost(s) found {len(found)}.")
         return self.fallback_tank_ids
 
-    def _steam_pool(self, grid):
-        """(stored_t, capacity_t, tank_count) over steam Gas Tanks on this grid.
-        An unlatched (empty) tank counts only when fluid_routing's
-        tank_assignments reserves it for steam -- a drained steam tank
-        unlatches at 0, and dropping its capacity would hide the loss."""
-        assignments = archive.get("fluid_routing.tank_assignments", {}) or {}
-        stored_t = 0.0
-        capacity_t = 0.0
-        count = 0
-        for tank_id in self._steam_tank_ids(grid):
-            try:
-                tank = get_component(tank_id)
-                if tank is None:
-                    continue
-                fluid = tank.fluid()
-                if fluid != "steam" and not (fluid == "" and assignments.get(tank_id) == "steam"):
-                    continue
-                stored_t += tank.level()
-                capacity_t += tank.capacity()
-                count += 1
-            except Exception:
-                pass
-        return stored_t, capacity_t, count
-
     def _measure(self, grid):
-        bat_wh = getattr(grid, "stored", 0.0) + getattr(grid, "reserve_stored", 0.0)
-        bat_cap = getattr(grid, "capacity", 0.0) + getattr(grid, "reserve_capacity", 0.0)
-        steam_t, steam_cap, tanks = self._steam_pool(grid)
-        return {
-            "bat_wh": round(bat_wh, 1),
-            "bat_cap": round(bat_cap, 1),
-            "steam_t": round(steam_t, 1),
-            "steam_cap": round(steam_cap, 1),
-            "tanks": tanks,
-        }
+        return measure_grid(grid, self._steam_tank_ids(grid))
 
     # ------------------------------------------------------------------
     # Daily balance
@@ -319,12 +350,11 @@ class PowerGridManager:
         self.update_archive_shedded()
 
     def _guard(self, now, grid_machines, grid_id_str):
-        total_cap = now["bat_cap"] + now["steam_cap"] * STEAM_WH_PER_TON
-        total_wh = now["bat_wh"] + now["steam_t"] * STEAM_WH_PER_TON
-        if total_cap <= 0:
+        total_wh, total_cap = reserve_totals(now)
+        frac = reserve_fraction(now)
+        if frac is None:
             self.log.debug(f"[POWER] Guard idle on '{grid_id_str}': no battery or steam storage to measure.")
             return
-        frac = total_wh / total_cap
         tiers = self.get_shedding_tiers()
 
         if frac < EMERGENCY_SHED_ALL_FRACTION:

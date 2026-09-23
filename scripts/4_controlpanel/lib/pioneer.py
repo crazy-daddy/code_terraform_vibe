@@ -12,6 +12,7 @@ from vehicle_upgrade import VehicleUpgradeMixin
 from storage import take_item
 from version_guard import validate_game_version
 import mining_reservations
+from logistics_requests import PULL_DESTINATION_WILDCARDS
 
 class PioneerController(VehicleController, VehicleUpgradeMixin):
     """
@@ -81,7 +82,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
         matching loop, so a thin entrypoint script no longer needs to name
         the loop function by hand. dest_outpost_id is only used (and
         required) for the hauler role, since it's the only role without a
-        module to detect it by. role_override forces a specific role,
+        module to detect it by; a wildcard ("*", "any", "%") makes it a reverse
+        hauler that fetches requested items from anywhere to its HOME_BASE
+        (run_pull_loop()). role_override forces a specific role,
         bypassing detection -- required when more than one role-defining
         module is mounted at once (see detect_role()).
         """
@@ -98,6 +101,10 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
         elif role == "hauler":
             if not dest_outpost_id:
                 self.log.level("warn").print(f"[{self.name}] Hauler role detected but no dest_outpost_id given; cannot start.")
+                return
+            if dest_outpost_id in PULL_DESTINATION_WILDCARDS:
+                # "Go anywhere, bring it home": reverse hauler parked at HOME_BASE.
+                self.run_pull_loop()
                 return
             self.run_haul_loop(dest_outpost_id=dest_outpost_id)
         else:

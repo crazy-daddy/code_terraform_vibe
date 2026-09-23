@@ -40,7 +40,7 @@ SMELTER_LOAD_CHUNK_SIZE = 10
 # Seconds of continuous crafting a Smelter's input buffer should cover --
 # passed to production.craft_prefill_units(). Same value as the shared
 # INPUT_PREFILL_SECONDS default, split out so it can be tuned for Smelters
-# alone from smelter.diag.* data (see below) rather than guessed: once the
+# alone (tuned from the retired smelter.diag.* data, see below): once the
 # demand trickle was fixed (production.get_smelter_demands()), refill
 # capacity (SMELTER_LOAD_CHUNK_SIZE per poll) is far above consumption
 # (~0.5 ore/s for a 0.08 h recipe), so buffer size was not the bottleneck.
@@ -48,26 +48,20 @@ SMELTER_LOAD_CHUNK_SIZE = 10
 # cap in step(), not by keeping this small.
 SMELTER_PREFILL_SECONDS = 30
 
-# TEMPORARY diagnostics (remove once smelter tuning is done -- see TODO.md):
-# one small dict per Smelter at "smelter.diag.<smelter_id>" recording WHY it
-# did or didn't load ore, time-weighted: "ticks" accumulates game ticks spent
-# in each reason, so it reads directly as a share of time (e.g. 70%
-# no_demand, 20% busy_all_sources) -- step counts would be skewed, since a
-# step blocked on a feeder transfer counts the same as a quick idle poll.
-# Written only when the reason changes or every SMELTER_DIAG_WRITE_EVERY_STEPS
-# steps, so archive traffic stays bounded. Clear the key by hand to reset.
-# "busy_all_sources" = every holder answered busy but the Smelter kept working
-# from its buffer (harmless); "busy_starving" = every holder busy AND the
-# buffer can't cover the next craft while idle (real lost time).
+# Each step's outcome is narrated via debug() (log_outcome()) -- "busy_all_sources"
+# = every holder answered busy but the Smelter kept working from its buffer
+# (harmless); "busy_starving" = every holder busy AND the buffer can't cover
+# the next craft while idle (real lost time). The former smelter.diag.<id>
+# archive key (time-weighted reason shares, used to tune this module) was
+# retired 2026-09-23; __init__ deletes any leftover copy.
 #
 # Recipe switching hysteresis: see select_needed_ore()/switch_min_demand() --
 # a Smelter only leaves a still-demanded recipe for an unclaimed one whose
 # demand is at least one SMELTER_PREFILL_SECONDS window's worth of output.
 # It likewise only JOINS a recipe a peer already claimed when demand >=
 # switch_min_demand() x (workers after joining); otherwise it idles with
-# diag reason "demand_covered_by_peers".
-SMELTER_DIAG_KEY_PREFIX = "smelter.diag."
-SMELTER_DIAG_WRITE_EVERY_STEPS = 15
+# outcome "demand_covered_by_peers".
+LEGACY_SMELTER_DIAG_KEY_PREFIX = "smelter.diag."
 
 
 class SmelterController:
@@ -110,22 +104,12 @@ class SmelterController:
         self.connected_out = False
         self.log = TreeConsole(module="smelter")
 
-        # Diagnostics state (see SMELTER_DIAG_KEY_PREFIX). Accumulated ticks
-        # resume from the archived dict so a script restart doesn't reset them.
-        self._diag_key = SMELTER_DIAG_KEY_PREFIX + self.name
-        self._diag_ticks: dict[str, int] = {}
-        stored = archive.get(self._diag_key, {})
-        stored_ticks: dict = {}
-        if isinstance(stored, dict) and isinstance(stored.get("ticks"), dict):
-            stored_ticks = dict(stored["ticks"])
-        for reason, ticks in stored_ticks.items():
-            if isinstance(ticks, (int, float)):
-                self._diag_ticks[str(reason)] = int(ticks)
-        self._diag_reason = None
-        self._diag_since = 0
-        self._diag_last_tick = 0
-        self._diag_steps_since_write = 0
-        self._diag_detail = {}
+        # Retired diagnostics key: drop any leftover copy (one-time cleanup,
+        # harmless no-op once gone).
+        try:
+            archive.delete(LEGACY_SMELTER_DIAG_KEY_PREFIX + self.name)
+        except Exception:
+            pass
         self._select_miss_reason = "no_demand"
 
     def get_current_tick(self):
@@ -239,49 +223,13 @@ class SmelterController:
                     return moved
         return 0
 
-    def record_diag(self, reason, **detail):
-        """
-        Notes this step's outcome for the temporary smelter.diag.<id> archive
-        key (see SMELTER_DIAG_KEY_PREFIX): the ticks elapsed since the previous
-        step are credited to the PREVIOUS step's reason (that's the state the
-        Smelter actually sat in over that interval), then `reason` becomes
-        the current one. Also narrated via debug(). Writes the archive only
-        when the reason changes or every SMELTER_DIAG_WRITE_EVERY_STEPS steps.
-        """
-        now = self.get_current_tick()
-        if self._diag_reason is not None and self._diag_last_tick and now > self._diag_last_tick:
-            prev = self._diag_reason
-            self._diag_ticks[prev] = self._diag_ticks.get(prev, 0) + (now - self._diag_last_tick)
-        self._diag_last_tick = now
-
-        changed = reason != self._diag_reason
-        if changed:
-            self._diag_since = now
-        self._diag_reason = reason
-        # Detail describes THIS record only -- carrying keys over from older
-        # records mixed e.g. a recipe_switch's new recipe with an earlier
-        # take's ore. Only last_take persists (it's the most recent transfer
-        # attempt, whenever that was). in_buf is always recorded so a "busy"
-        # read can be told apart from real starvation.
-        fresh = {"last_take": self._diag_detail["last_take"]} if "last_take" in self._diag_detail else {}
-        fresh.update(detail)
+    def log_outcome(self, reason, **detail):
+        """Narrates why this step did or didn't load ore, via debug()."""
         try:
-            fresh["in_buf"] = self.smelter.get_input_count()
+            detail["in_buf"] = self.smelter.get_input_count()
         except Exception:
             pass
-        self._diag_detail = fresh
-        self._diag_steps_since_write += 1
-        self.log.debug(f"[{self.name}] diag: {reason} {detail}")
-
-        if not changed and self._diag_steps_since_write < SMELTER_DIAG_WRITE_EVERY_STEPS:
-            return
-        self._diag_steps_since_write = 0
-        payload = {"reason": reason, "since_tick": self._diag_since, "ticks": dict(self._diag_ticks)}
-        payload.update(self._diag_detail)
-        try:
-            archive.set(self._diag_key, payload)
-        except Exception:
-            pass
+        self.log.debug(f"[{self.name}] outcome: {reason} {detail}")
 
     def switch_min_demand(self, recipe, ore):
         """Smallest output demand worth pulling this Smelter off a recipe that
@@ -319,7 +267,7 @@ class SmelterController:
             # Whatever's already loaded keeps running to completion (never
             # interrupted mid-craft), it just isn't fed more, so draw winds
             # down to 0 W on its own instead of an abrupt breaker cut.
-            self.record_diag("shedded")
+            self.log_outcome("shedded")
             return
 
         demands = get_smelter_demands(cache)
@@ -353,7 +301,7 @@ class SmelterController:
                 # Breaker cycling disabled: power_draw only applies while a
                 # recipe is running (see docs), so idle draw is already 0 W.
                 # self.power_down_if_idle()
-            self.record_diag("recipe_switch", recipe=current_recipe)
+            self.log_outcome("recipe_switch", recipe=current_recipe)
             return
 
         recipe, ore_to_process = self.select_needed_ore(unlocked_recipes, demands, cache, dock_reserved)
@@ -370,7 +318,7 @@ class SmelterController:
             # Breaker cycling disabled: power_draw only applies while a
             # recipe is running (see docs), so idle draw is already 0 W.
             # self.power_down_if_idle()
-            self.record_diag("output_blocked" if output_blocked else self._select_miss_reason, demand=demands)
+            self.log_outcome("output_blocked" if output_blocked else self._select_miss_reason, demand=demands)
             return
 
         recipe_id = getattr(recipe, "id", "")
@@ -384,7 +332,7 @@ class SmelterController:
                 if buffered_items - recipe_inputs:
                     self.recover_input()
                     if self.smelter.get_input_count() > 0:
-                        self.record_diag("recipe_switch", recipe=recipe_id)
+                        self.log_outcome("recipe_switch", recipe=recipe_id)
                         return
                 set_res = self.smelter.set_recipe(recipe_id)
                 if set_res.status == "ok":
@@ -395,14 +343,14 @@ class SmelterController:
                     reason = get_raw_material_reason(ore_to_process, self.smelter)
                     output_item = getattr(recipe, "output_item", "?")
                     self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore_to_process} -> {output_item} for {reason}.")
-            self.record_diag("recipe_switch", recipe=recipe_id)
+            self.log_outcome("recipe_switch", recipe=recipe_id)
             return
 
         # Step 3: Top up the input buffer. take_item() tries only endpoints
         # that actually hold the ore -- Inventory first (never locks), then
         # Warehouses by most stock, recently-"busy" ones last.
-        diag_reason = "buffer_full"
-        diag_detail = {"recipe": recipe_id, "ore": ore_to_process}
+        outcome = "buffer_full"
+        outcome_detail = {"recipe": recipe_id, "ore": ore_to_process}
         if ore_to_process:
             recipe_inputs = getattr(recipe, "inputs", {}) or {}
             output_count = max(1, getattr(recipe, "output_count", 1))
@@ -431,7 +379,7 @@ class SmelterController:
                 "fair_share": fair_total - in_buf,
             }
             take_count = max(0, min(caps.values()))
-            diag_detail.update({"demand": demand_qty, "workers": worker_count, "available": available, "fair_total": fair_total})
+            outcome_detail.update({"demand": demand_qty, "workers": worker_count, "available": available, "fair_total": fair_total})
             self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} workers={worker_count} peers_buffered={peers_buffered} available={available} caps={caps} -> take_count={take_count}")
 
             if take_count > 0:
@@ -440,9 +388,9 @@ class SmelterController:
                 moved = take_item(self.smelter.input, ore_to_process, take_count, cache=cache, report=report)
                 sources = report.get("sources", [])
                 statuses = [entry[1] for entry in sources]
-                diag_detail["last_take"] = {"asked": take_count, "moved": moved, "sources": [list(entry) for entry in sources]}
+                outcome_detail["last_take"] = {"asked": take_count, "moved": moved, "sources": [list(entry) for entry in sources]}
                 if moved > 0:
-                    diag_reason = "took"
+                    outcome = "took"
                     reason = get_raw_material_reason(ore_to_process, self.smelter)
                     self.log.print(f"[{self.name}] Loaded {moved}x {ore_to_process} (for {reason}).")
                 elif statuses and all(status == "busy" for status in statuses):
@@ -450,16 +398,16 @@ class SmelterController:
                     # a running Smelter (or one with a full craft's worth staged)
                     # keeps working through a failed top-up.
                     if self.smelter.is_running() or self.smelter.get_input_count() >= units_per_run:
-                        diag_reason = "busy_all_sources"
+                        outcome = "busy_all_sources"
                     else:
-                        diag_reason = "busy_starving"
+                        outcome = "busy_starving"
                 else:
-                    diag_reason = "no_ore"
+                    outcome = "no_ore"
             elif caps["fair_share"] <= 0 and min(v for k, v in caps.items() if k != "fair_share") > 0:
-                diag_reason = "fair_share_capped"
+                outcome = "fair_share_capped"
         if output_blocked:
-            diag_reason = "output_blocked"
-        self.record_diag(diag_reason, **diag_detail)
+            outcome = "output_blocked"
+        self.log_outcome(outcome, **outcome_detail)
 
         # Step 4: Check idle condition & power management
         in_buf = self.smelter.get_input_count()
@@ -544,7 +492,7 @@ class SmelterController:
         (each computed on the spot when omitted). Ore an active Supply Dock
         order still ships raw doesn't count as sourceable. When nothing is
         returned, self._select_miss_reason says why (no_demand / no_ore /
-        ore_reserved_for_dock) for the diagnostics key.
+        ore_reserved_for_dock) for the debug narration.
         """
         self._select_miss_reason = "no_demand"
         if not self.inventory or not hasattr(self.smelter, "list_recipes"):
