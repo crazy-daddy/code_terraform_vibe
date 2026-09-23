@@ -31,7 +31,7 @@ For high-level operational workflows, progression roadmaps, and automation orche
 | Concern | Module(s) |
 | :--- | :--- |
 | Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`) |
-| Power grid & brownout | `power.py` (`PowerGridManager` — generic, works for solar/oil/reactor/turbine grids, owned centrally by `panel_7.py`, one instance per grid, no election — see §1a-1); `solar.py` (`SolarController` — pure sun tracking, no grid supervision of its own any more) |
+| Power grid & brownout | `power.py` (`PowerGridManager` — generic, works for solar/oil/reactor/turbine grids, owned centrally by the headless automation panel, one instance per grid, no election — see §1a-1); `solar.py` (`SolarController` — pure sun tracking, no grid supervision of its own any more) |
 | Vehicles (Rover/Pioneer base) | `vehicle.py` (`VehicleController`, composes the mixins below) |
 | &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting / charging-station discovery | `vehicle_energy.py` |
@@ -75,7 +75,7 @@ For high-level operational workflows, progression roadmaps, and automation orche
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 
-Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_7.py`, etc.) should stay thin
+Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_4.py`, etc.) should stay thin
 entrypoints that import and run a controller from `lib/` — they should not contain their own
 copies of tier lists, thresholds, or budgeting formulas.
 
@@ -239,9 +239,9 @@ self.log.level("warn").print("Battery below safety floor, aborting trip")  # one
   `PowerGridManager.release_all()` (§1a-1) is the automatic, immediate version of the same
   cleanup for whatever a vanished grid anchor still had shed.
 
-### 1a-1. Centralized Grid Ownership (`panel_7.py`, no Master/Follower election)
+### 1a-1. Centralized Grid Ownership (headless automation panel, no Master/Follower election)
 
-`panel_7.py`'s AUTOMATION section (§7) is a single always-running process that owns grid
+The headless automation panel's AUTOMATION section (§7 — `panel_4.py` in the source tree) is a single always-running process that owns grid
 supervision directly, one `PowerGridManager` instance per grid, with no election needed.
 
 - **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param.
@@ -260,12 +260,12 @@ supervision directly, one `PowerGridManager` instance per grid, with no election
   supervision strategy for battery-less grids remains a follow-up, not implemented here.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no master role, no `power`/`run_ctrl` constructor params. **Hard
-  dependency**: Solar Grid brownout supervision only happens while `panel_7.py` is running — see
+  dependency**: Solar Grid brownout supervision only happens while the headless automation panel is running — see
   `legacy/README.md` for the pre-Control-Room fallback (a save without `research_custom_panels`
   has no panel scripts, so this centralization doesn't help it).
 - **`lib/smelter.py`'s `SmelterController`** likewise has no Leader election — the "inventory
   manager" sweep (`storage.rebalance_inventory_to_warehouses()`) runs once, directly, from
-  `panel_7.py`'s AUTOMATION section, same hard dependency as Solar Grid supervision.
+  the headless automation panel's AUTOMATION section, same hard dependency as Solar Grid supervision.
 
 ### 1b. Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine
 
@@ -328,7 +328,7 @@ just smooths supply gaps.
   5. Otherwise → `1.0`.
   Reads grid state the same way `lib/power.py`'s `PowerGridManager` does
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but runs no
-  shedding itself — that's `panel_7.py`'s AUTOMATION section's job (§1a-1).
+  shedding itself — that's the headless automation panel's AUTOMATION section's job (§1a-1).
 
 ### 1c. Water Pump: Liquid Tank Routing (`lib/water_pump.py` `WaterPumpController`)
 
@@ -643,6 +643,12 @@ Frozen (no transform step) or an outpost without its processor yet.
   `execute_construction()` heartbeats via `refresh_claim()` every attempt (no-op if not owner).
   Released on completion (`get_construction_progress() >= 1.0`) or genuine failure, kept held
   across an incomplete "still paused" outcome, also released wholesale on an unhandled exception.
+  **A blueprint missing from every list (pending/active/paused) counts as complete (1.0)** — the
+  game drops finished blueprints from all lists; this used to read 0.0, so completion claims
+  never released (121 of 124 claims leaked in one save) and the completing step never calibrated
+  `wh_per_progress`. `release_finished_construction_claims()` also sweeps this Pioneer's own
+  `build_*` claims on blueprints that are no longer live, each loop pass (one transaction per
+  claims key, only when something needs releasing, skipped if any list read failed).
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
   `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expiring after
   `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral mining sites are no longer exclusive**
@@ -746,15 +752,49 @@ in shortfall order, moving to the next if the claim fails.
   their take amount with this, alongside the chunk-size ceilings above (kept as a simple per-call
   cap, not the primary fairness mechanism). Supply Dock stays on `SUPPLY_DOCK_LOAD_CHUNK_SIZE`
   alone (no recipe/duration to derive a prefill window from).
-- **Ore intake demand-size gating** (Smelter Step 3, `lib/smelter.py`): the take amount is
-  `max(0, min(50 - in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share - in_buf,
-  craft_prefill_units(recipe, ore) - in_buf))`, where `share = ceil(demand_qty /
-  get_smelter_worker_count(recipe_id))` is this Smelter's fair slice of current total demand
-  (re-read fresh every `step()`) and `max_ore_for_share` converts that output-unit share into an
-  ore-unit ceiling via `(qty * units_per_run + output_count - 1) // output_count`. A single Smelter
-  with a small demand now loads only that much ore, not a reflexive full 50-unit buffer fill;
-  several Smelters on one recipe split the demand instead of each independently re-filling to its
-  entirety.
+- **Smelter demand = whole order tree** (`production.get_smelter_demands(cache)`, used by
+  `lib/smelter.py` instead of `get_material_demands()`). `get_material_demands()` only sees ingot
+  demand through each Fabricator's *currently selected* recipe (per-worker split, each share netted
+  against the full stock separately) and `_cascade_fabricator_output_demand()` stops at Smelter
+  outputs — so 400 drones on manual order showed up as ~1 ingot and Smelters trickled 1 ore per
+  poll. Gross-then-net-once: every `get_fabricator_targets()` entry with deficit `D` adds
+  `D × ratio` for each recipe input that is a Smelter output; a target set directly on a Smelter
+  output counts as-is; dock orders for Smelter outputs not already in targets are added; then net
+  once against total stock **and** every Fabricator's staged `get_stockpile()`. Mining
+  (`get_raw_material_demands()`) is not switched over yet (TODO).
+- **Raw ore owed to a dock is never smelted**: `production.dock_remaining_requirements()`
+  (`required − shipped − dock.count()` per item, all active orders) is subtracted from stock in
+  `SmelterController.available_ore()` — needed now that real ingot demand can consume every unit.
+- **Ore intake caps** (Smelter Step 3, `lib/smelter.py`): the take amount is
+  `max(0, min(50 − in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share − in_buf,
+  prefill_cap − in_buf, fair_total − in_buf))`.
+  - `share = ceil(demand_qty / workers)` is this Smelter's slice of current total demand;
+    `max_ore_for_share` converts it to ore units via `(qty * units_per_run + output_count - 1) //
+    output_count`.
+  - `prefill_cap = craft_prefill_units(recipe, ore, SMELTER_PREFILL_SECONDS)` —
+    `SMELTER_PREFILL_SECONDS = 30`, split out from the shared `INPUT_PREFILL_SECONDS` so Smelters can
+    be tuned alone from `smelter.diag.*` data. At 0.08 h/craft (2 s) that's 15 ore.
+  - **Fair-share cap** (`fair_total`): `(available ore + Σ input buffers of every Smelter on this
+    recipe, this one included) // workers`, from `production.smelter_recipe_peers(recipe_id)` →
+    `(workers, buffered)`. Plentiful stock never binds; scarce stock splits evenly (fixes one Smelter
+    grabbing a whole scarce silicon stock).
+- **Recipe switching hysteresis** (`select_needed_ore()`): while the current recipe is still
+  demanded and sourceable, a Smelter keeps it outright if it holds (or can take) its claim; a
+  joiner (claim held by a peer) may still move to an *unclaimed* recipe, but only if that
+  recipe's demand ≥ `switch_min_demand()` = one `SMELTER_PREFILL_SECONDS` window of output
+  (15 units for a 2 s 1:1 recipe). Found live: leftover demands of 3–22 units bounced Smelters
+  between iron/glass/titanium, 6–10% of their time in `recipe_switch` (each switch ejects the
+  buffer, changes recipe, skips a step). A Smelter now also releases the old recipe's claim as
+  soon as it switches, instead of blocking peers until the claim goes stale.
+- **Join gate** (same function): pile-on joining a recipe a peer already claims requires
+  `demand ≥ switch_min_demand() × (workers after joining)`; otherwise the Smelter idles with diag
+  reason `demand_covered_by_peers`. Found live: a 1-unit Rare Earth Core demand pulled all five
+  Smelters (three ejecting buffers to switch) onto one recipe.
+- **One `SourceCache` per Smelter `step()`**: stock snapshot, recipe lists and
+  `get_fabricator_targets()` (memoized on `cache._fabricator_targets`) are computed once per step.
+  `get_fabricator_targets()`, `get_fabricator_active_recipe()`, `get_material_demands()`,
+  `_cascade_blueprint_demand()` and `_cascade_fabricator_output_demand()` all take an optional
+  `cache=None` (unchanged behavior without one).
 
 ### 2a-0-3. Multi-Dock Support (`lib/production.py`, `lib/fabricator.py`)
 
@@ -779,7 +819,7 @@ each contributes only its fair share.
 ### 2a-0-5. Multi-Dock order planning & weekly-deadline feasibility (`lib/supply_dock.py`)
 
 A central planner, `plan_dock_assignments(clock=None)`, runs **once** per cycle from
-`panel_7.py`'s AUTOMATION section (throttled to `STORAGE_TICK_INTERVAL`) instead of each dock
+the headless automation panel's AUTOMATION section (throttled to `STORAGE_TICK_INTERVAL`) instead of each dock
 independently re-scanning the full Earth Order board every cycle. `set_order()`/`clear_order()`/
 `set_enabled()` are all `*(self only)*` hardware calls, so the planner only decides — it writes
 `{dock_id: order_id or None}` to the `"supply_dock.order_plan"` archive key
@@ -1024,24 +1064,31 @@ outpost, matching how Inventory only participates at Nocturna Base.
   Warehouse/Large Warehouse at `outpost` to pull a same-item stock split across more than one of
   them back together — genuinely pulls from *other* storage endpoints, not purely intra-building
   (confirmed live; `.compact()` locks its Warehouse as a material endpoint for the whole cycle).
-  Runs once per `STORAGE_TICK_INTERVAL` cycle from `panel_7.py`'s AUTOMATION section for **every**
+  Runs once per `STORAGE_TICK_INTERVAL` cycle from the headless automation panel's AUTOMATION section for **every**
   outpost (unlike the Inventory-only, home-scoped rebalance sweep below).
-- `take_item(port, item_id, amount)`: the one function behind every `machine.input.take(item_id,
-  amount)` call site. Tries whatever `port` is currently connected to first, only reconnects to a
-  Warehouse if that falls short.
+- `take_item(port, item_id, amount, outpost=None, cache=None, report=None)`: the one function
+  behind every `machine.input.take(item_id, amount)` call site. Tries **only endpoints that hold
+  the item** (`_holder_candidates()`): Inventory first (home only — no Auto Feeder of its own, never
+  locks), then Warehouses by most stock, and any endpoint that answered `"busy"` within
+  `TAKE_BUSY_COOLDOWN_TICKS = 20` (~2 s) moved last (still tried as a last resort). There's no API
+  to ask "is this Warehouse busy?" up front — the `"busy"` rejection returns immediately (no feeder
+  wait), so it is the probe; remembered per script in module-level `_recent_busy`. With a
+  `SourceCache`, holders come from its one-shot `building_stock(item_id)` snapshot (home only);
+  otherwise one `.count()` per building. `report` gets `{"sources": [(id, status, moved), ...]}`.
+  Warehouse feeder cost observed live: ~2.5 ticks/unit (10 units = 25 ticks), locking the whole
+  building for the duration.
 - **Multi-Smelter Coordination** (`SmelterController`) — `production.discover_smelter_ids()`
   replaces hardcoded `"smelter_1"`. No Leader/Follower election — the inventory-manager sweep runs
-  centrally from `panel_7.py`'s AUTOMATION section (§1a-1). Each smelter's `select_needed_ore()`
+  centrally from the headless automation panel's AUTOMATION section (§1a-1). Each smelter's `select_needed_ore()`
   claims its recipe (`claim_recipe()`/`release_recipe()`, `archive.transaction("smelter.recipe_claims",
   ...)`, `SMELTER_RECIPE_CLAIM_STALE_TICKS = 600`) before crafting, so two smelters don't start the
   same recipe while another demanded ore sits untouched.
   - **Pile-on fallback**: if only ONE ore is demanded, `select_needed_ore()` collects every
     sourceable/demanded candidate, tries to claim each, and if none can be claimed exclusively,
-    joins the first anyway rather than idling. No explicit even split needed — `get_material_demands()`
-    already nets against `total_stock()`, so joined smelters self-throttle together as the target
-    is met.
+    joins the first anyway rather than idling. Joined smelters split intake via the demand-share
+    and fair-share caps (§2a-0-2) and self-throttle together as `get_smelter_demands()` nets down.
 - **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per cycle from
-  `panel_7.py`'s AUTOMATION section: any **propertyless** Inventory item gets moved to a Warehouse
+  the headless automation panel's AUTOMATION section: any **propertyless** Inventory item gets moved to a Warehouse
   **entirely** when either it spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots, or
   it's already split (some units in Inventory, some already in a Warehouse — `_warehouse_item_ids()`).
   - **Exception**: `item_catalog.lookup(item_id).category` of `"equipment"`, `"module"`, or
@@ -1423,10 +1470,22 @@ the same pattern later.
   shared notice. `production.py`'s consumer-side `fluid_building_is_viable()` deliberately does
   NOT consult this registry at all — a tank's
   own `.fluid()` latch is already the complete answer to "can it deliver this fluid right now."
-- `outposts.known_ids`: List of outpost ids `panel_7.py`'s AUTOMATION section has already seen —
+- `smelter.diag.<smelter_id>` (**temporary**, remove once Smelter tuning is done — TODO.md):
+  `{"reason", "since_tick", "ticks": {reason: total_ticks}, "in_buf", "last_take": {"asked",
+  "moved", "sources"}, ...this record's own detail ("demand", "workers", "available",
+  "fair_total", "recipe", "ore")}`. Detail is reset per record (only `last_take` persists), so
+  fields never mix across records. `ticks` is time-weighted (elapsed ticks credited to the
+  previous step's reason), so it reads as a share of time per state. Reasons: `shedded`,
+  `no_demand`, `no_ore`, `ore_reserved_for_dock`, `buffer_full`, `fair_share_capped`, `took`,
+  `busy_all_sources` (every holder busy, but still running / a craft's worth buffered —
+  harmless), `busy_starving` (every holder busy AND idle without a craft's worth — real lost
+  time), `recipe_switch`, `output_blocked`, `demand_covered_by_peers` (demand exists but is
+  too small to justify joining the peer that holds its claim). Written only on reason change or every `SMELTER_DIAG_WRITE_EVERY_STEPS = 15`
+  steps; resumes accumulated ticks after a restart; delete the key by hand to reset.
+- `outposts.known_ids`: List of outpost ids the headless automation panel's AUTOMATION section has already seen —
   diffed each throttled tick against `outpost_network.outposts()` to detect a newly-founded outpost
   and auto-trigger `outpost_mining.reevaluate_unassigned_near_outpost()` for it. See §7.
-- `control_room.automation_summary`: `panel_7.py`'s one-line automation result string (grids
+- `control_room.automation_summary`: the headless automation panel's one-line automation result string (grids
   supervised, new outposts, docks assigned), published each storage tick for `panel_1.py`'s
   ALWAYS-ON line to display — see §7's headless-calculator/UI-card split.
 - `biosite.claims`: Exclusive biosite extraction claims dict `{target_key: {"drone": id, "coords", "name", "tick"}}` — own key, distinct from `rover.claims`/`survey.claims`, so ground-vehicle and drone claims never collide. Stale after `CLAIM_STALE_TICKS = 36,000` ticks — see `lib/drone_claims.py` and §2h. **Exclusive**, not the shared yield-debit pattern `mining.reserved_yield` uses — see §2h's note distinguishing the two.
@@ -1540,7 +1599,7 @@ First number = columns (width), second = rows (height) — `1x1` to `1x2` only a
 width. A wide-canvas layout (side-by-side sections, a right-anchored control) will clip on a `1x2`
 card since it's still only 500px wide.
 
-**Sizing recommendations** (`panel_7.py` draws nothing, no card/size to set): `panel_1.py` (STATUS
+**Sizing recommendations** (the headless automation panel draws nothing, no card/size to set): `panel_1.py` (STATUS
 + AUTOMATION) → **`2 x 2`** (1000x400), splitting `panel.height()` ~55/45 between its two sub-cards
 (not a fixed pixel split, so it degrades reasonably at `2 x 1`). `panel_2.py` (FLEET, one row per
 vehicle) / `panel_3.py` (PRODUCTION, one row per Smelter + Fabricator + Supply Dock — discovered
@@ -1553,7 +1612,7 @@ bar (0-1 value → row offset, `round(value * (len(rows) - max_rows))`) covers t
 once the list exceeds `max_rows`. Both degrade at 1-column widths (`wide = width >= 900` branches
 to a shorter row height, and `panel_2.py` hides the location column).
 
-**`panel_7.py`'s automation work, displayed on `panel_1.py`'s AUTOMATION card** — §1a-1's
+**The headless automation panel's work, displayed on `panel_1.py`'s AUTOMATION card** — §1a-1's
 centralized Power Grid supervision + Smelter rebalance sweep, plus:
 - **Outpost-founding → resource marker auto-reassignment**: diffs `outpost_network.outposts()`'
   current id set against the stored `outposts.known_ids` (archive list) each throttled storage
@@ -1576,7 +1635,7 @@ centralized Power Grid supervision + Smelter rebalance sweep, plus:
 - **Version safety gate widget** (`lib/version_guard.py`, §4), drawn on `panel_1.py`: a `VERSION`
   pill anchored `width - 190` from the right edge (always drawn, success/error colored) plus, only
   while `version_mismatch()` is true, a `was <old> -- new scripts halt on startup` note and a
-  `panel.button("confirm_new_version", ...)`. Neither `panel_7.py` nor `panel_1.py` calls
+  `panel.button("confirm_new_version", ...)`. Neither the headless automation panel nor `panel_1.py` calls
   `validate_game_version()` itself — both independently check `version_mismatch()` and gate their
   own mutating work behind `if not mismatch:` — `panel_1.py` keeps rendering and stays clickable
   during a mismatch but neither script makes changes until confirmed.

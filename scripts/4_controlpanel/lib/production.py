@@ -428,15 +428,33 @@ def consume_manual_order(item_id, quantity):
         pass
 
 
-def _recipe_inputs_for(item_id):
+def _stock_fn(cache):
+    """cache.stock when a SourceCache is threaded through, else the uncached
+    storage.total_stock() -- lets every demand helper below take an optional
+    `cache` without changing behavior for callers that don't pass one."""
+    return cache.stock if cache is not None else total_stock
+
+
+def _recipe_inputs_for(item_id, cache=None):
     """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
     Smelter builds item_id, or None if neither does. Shared by
-    _cascade_blueprint_demand() and _cascade_fabricator_output_demand()."""
-    for component in (_default_fabricator(), _default_smelter()):
-        if not component or not hasattr(component, "list_recipes"):
-            continue
+    _cascade_blueprint_demand(), _cascade_fabricator_output_demand() and
+    get_smelter_demands(). With a `cache`, reads its memoized recipe lists
+    instead of calling list_recipes() again per item."""
+    if cache is not None:
+        recipe_lists = [cache.fabricator_recipes(), cache.smelter_recipes()]
+    else:
+        recipe_lists = []
+        for component in (_default_fabricator(), _default_smelter()):
+            if not component or not hasattr(component, "list_recipes"):
+                continue
+            try:
+                recipe_lists.append(list(component.list_recipes()))
+            except Exception:
+                continue
+    for recipes in recipe_lists:
         try:
-            for recipe in component.list_recipes():
+            for recipe in recipes:
                 if getattr(recipe, "output_item", None) != item_id:
                     continue
                 output_count = max(1, getattr(recipe, "output_count", 1))
@@ -447,7 +465,7 @@ def _recipe_inputs_for(item_id):
     return None
 
 
-def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs):
+def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=None):
     """
     Breadth-first demand cascade seeded from seed_targets (Fabricator stock
     targets/Supply Dock orders, restricted to items the Fabricator itself
@@ -466,6 +484,7 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs):
     stock, restricted to fabricator_outputs (Smelter-built intermediates
     aren't Fabricator targets -- get_raw_material_demands() handles those).
     """
+    stock = _stock_fn(cache)
     targets = {}
     frontier = dict(seed_targets)
     depth = 0
@@ -475,11 +494,11 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs):
         for item_id, want in frontier.items():
             if item_id in fabricator_outputs:
                 targets[item_id] = max(targets.get(item_id, 0), want)
-            shortfall = max(0, want - total_stock(item_id))
+            shortfall = max(0, want - stock(item_id))
             if shortfall <= 0:
                 log.trace(f"_cascade_fabricator_output_demand depth={depth}: {item_id} has no shortfall (want={want}), not cascading further")
                 continue
-            inputs = _recipe_inputs_for(item_id)
+            inputs = _recipe_inputs_for(item_id, cache)
             if not inputs:
                 continue
             for input_id, ratio in inputs.items():
@@ -540,7 +559,7 @@ def get_manual_order_blocking_items(fabricator_outputs):
     return blocking
 
 
-def _cascade_blueprint_demand():
+def _cascade_blueprint_demand(cache=None):
     """
     Breadth-first demand cascade seeded from pending/paused Construction
     Blueprint required_item/required_count (summed across jobs, deduped by
@@ -588,6 +607,7 @@ def _cascade_blueprint_demand():
             except Exception:
                 pass
 
+    stock = _stock_fn(cache)
     total_needed = {}
     depth = 0
     while frontier and depth < 6:  # generous bound against an accidental recipe cycle
@@ -595,11 +615,11 @@ def _cascade_blueprint_demand():
         next_frontier = {}
         for item_id, want in frontier.items():
             total_needed[item_id] = total_needed.get(item_id, 0) + want
-            shortfall = max(0, want - total_stock(item_id))
+            shortfall = max(0, want - stock(item_id))
             if shortfall <= 0:
                 log.trace(f"_cascade_blueprint_demand depth={depth}: {item_id} has no shortfall (want={want}), not cascading further")
                 continue
-            inputs = _recipe_inputs_for(item_id)
+            inputs = _recipe_inputs_for(item_id, cache)
             if not inputs:
                 continue
             for input_id, ratio in inputs.items():
@@ -637,20 +657,33 @@ def get_construction_material_reservations():
 _WARNED_UNKNOWN_MANUAL_ITEMS = set()
 
 
-def get_fabricator_targets():
-    """Returns desired finished-goods quantities for Fabricator planning."""
+def get_fabricator_targets(cache=None):
+    """Returns desired finished-goods quantities for Fabricator planning.
+
+    With a `cache` (SourceCache), the result is memoized on it for the rest
+    of that pass: this is the single most expensive demand helper (manual
+    orders, every dock order, the blueprint cascade and the Fabricator output
+    cascade, each walking stock), and get_material_demands() alone used to
+    rebuild it once per Fabricator via get_fabricator_active_recipe(). A copy
+    is returned so a caller mutating its result can't poison the memo."""
+    if cache is not None and cache._fabricator_targets is not None:
+        return dict(cache._fabricator_targets)
+
     targets = get_fabricator_stock_targets()
 
     fabricator_outputs = set()
-    fabricator = _default_fabricator()
-    if fabricator and hasattr(fabricator, "list_recipes"):
+    if cache is not None:
+        recipes = cache.fabricator_recipes()
+    else:
+        fabricator = _default_fabricator()
         try:
-            for recipe in fabricator.list_recipes():
-                output_item = getattr(recipe, "output_item", None)
-                if output_item:
-                    fabricator_outputs.add(output_item)
+            recipes = fabricator.list_recipes() if fabricator and hasattr(fabricator, "list_recipes") else []
         except Exception:
-            pass
+            recipes = []
+    for recipe in recipes:
+        output_item = getattr(recipe, "output_item", None)
+        if output_item:
+            fabricator_outputs.add(output_item)
 
     # Manual build orders (get_manual_orders()) max()'d in like every other source below -- they
     # don't add to a standing target, they just guarantee at least this many exist. Priority over
@@ -705,7 +738,7 @@ def get_fabricator_targets():
     # buffer IS what a blueprint (or order) draws from, and choose_recipe()
     # already nets target-vs-current to rebuild it after that draw, so
     # adding would just over-target and waste materials/time.
-    for item_id, count in _cascade_blueprint_demand().items():
+    for item_id, count in _cascade_blueprint_demand(cache).items():
         if item_id in fabricator_outputs:
             targets[item_id] = max(targets.get(item_id, 0), count)
             log.trace(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
@@ -718,11 +751,13 @@ def get_fabricator_targets():
     # target for the intermediate (Circuit Panel), so no Fabricator ever
     # builds it and the top-level item stalls forever waiting on stock that
     # nothing produces.
-    for item_id, count in _cascade_fabricator_output_demand(targets, fabricator_outputs).items():
+    for item_id, count in _cascade_fabricator_output_demand(targets, fabricator_outputs, cache).items():
         targets[item_id] = max(targets.get(item_id, 0), count)
         log.trace(f"get_fabricator_targets: output-demand cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
 
     log.trace(f"get_fabricator_targets: final targets={targets}")
+    if cache is not None:
+        cache._fabricator_targets = dict(targets)
     return targets
 
 
@@ -780,7 +815,7 @@ def get_smelter_worker_count(recipe_id):
     return max(1, count)
 
 
-def get_fabricator_active_recipe(fabricator=None):
+def get_fabricator_active_recipe(fabricator=None, cache=None):
     """Returns (recipe, crafts_remaining) for the Fabricator's selected recipe,
     where crafts_remaining covers the full remaining shortfall against its
     output target/order (not just one craft's worth), divided evenly across
@@ -801,9 +836,9 @@ def get_fabricator_active_recipe(fabricator=None):
             return None, 0
         output_item = getattr(recipe, "output_item", None)
         output_count = max(1, getattr(recipe, "output_count", 1))
-        current = total_stock(output_item)
+        current = _stock_fn(cache)(output_item)
         output_buffer = fabricator.get_output_count() if hasattr(fabricator, "get_output_count") else 0
-        target = get_fabricator_targets().get(output_item, 0)
+        target = get_fabricator_targets(cache).get(output_item, 0)
         still_needed = max(0, target - current - output_buffer)
         crafts_remaining = -(-still_needed // output_count)  # ceil division
         worker_count = _fabricator_worker_count(current_recipe_id)
@@ -817,14 +852,19 @@ def get_fabricator_active_recipe(fabricator=None):
         return None, 0
 
 
-def get_material_demands():
-    """Returns material quantities currently requested by production and shipping."""
+def get_material_demands(cache=None):
+    """Returns material quantities currently requested by production and shipping.
+
+    NOTE: for Smelter outputs (ingots, glass, ...) this only sees the direct
+    inputs of each Fabricator's *currently selected* recipe -- lib/smelter.py
+    uses get_smelter_demands() instead, which follows the whole order tree."""
+    stock = _stock_fn(cache)
     demands = {}
 
     # Finished fabricated goods have a standing building-stock target and
     # may also be required by the active Supply Dock order.
-    for item_id, target in get_fabricator_targets().items():
-        current = total_stock(item_id)
+    for item_id, target in get_fabricator_targets(cache).items():
+        current = stock(item_id)
         deficit = max(0, target - current)
         _add_demand(demands, item_id, deficit)
         if deficit > 0:
@@ -850,7 +890,7 @@ def get_material_demands():
         fabricator = _component(fabricator_id)
         if not fabricator:
             continue
-        recipe, crafts_remaining = get_fabricator_active_recipe(fabricator)
+        recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)
         if not recipe or crafts_remaining <= 0:
             log.trace(f"get_material_demands: {fabricator_id} has no active recipe/crafts remaining, skipping input demand")
             continue
@@ -858,7 +898,7 @@ def get_material_demands():
             stockpile = fabricator.get_stockpile() or {}
             for item_id, required in (getattr(recipe, "inputs", {}) or {}).items():
                 missing = (required * crafts_remaining) - stockpile.get(item_id, 0)
-                missing -= total_stock(item_id)
+                missing -= stock(item_id)
                 missing = max(0, missing)
                 _add_demand(demands, item_id, missing)
                 if missing > 0:
@@ -876,7 +916,7 @@ def get_material_demands():
                 missing = required - shipped.get(item_id, 0)
                 if hasattr(dock, "count"):
                     missing -= dock.count(item_id)
-                missing -= total_stock(item_id)
+                missing -= stock(item_id)
                 missing = max(0, missing)
                 _add_demand(demands, item_id, missing)
                 if missing > 0:
@@ -886,6 +926,140 @@ def get_material_demands():
 
     log.trace(f"get_material_demands: final demands={demands}")
     return demands
+
+
+def get_smelter_demands(cache=None):
+    """
+    {smelter_output_item: units_still_to_refine} -- what lib/smelter.py
+    should actually produce, following the WHOLE order tree down to Smelter
+    outputs (ingots, glass, ...), not just the direct inputs of whatever
+    recipe a Fabricator happens to have selected right now.
+
+    Why this exists (found live: 400 drone_small + 200 drone_medium on manual
+    order, yet both iron Smelters trickled 1 ore per poll next to ~2000 iron
+    ore): get_material_demands() only registers ingot demand through
+    get_fabricator_active_recipe() -- already split per worker, and each
+    Fabricator's share netted against the FULL total_stock() independently --
+    while _cascade_fabricator_output_demand() deliberately stops at Smelter
+    outputs. A big order therefore showed up as ~1 ingot of demand, and the
+    Smelters ran one unit at a time.
+
+    Gross-then-net-once:
+      1. Every get_fabricator_targets() entry (manual orders, stock targets,
+         docks, blueprints, and the Fabricator-intermediate cascade -- which
+         already propagates a top-level order's shortfall into every
+         Fabricator-built intermediate's own target) with a deficit D
+         contributes D x ratio for each of its recipe inputs that is a
+         Smelter output. Each Fabricator output's own direct ingot use is
+         distinct, so summing these doesn't double-count.
+      2. A target set directly on a Smelter output (a standing stock target,
+         or a dock order get_fabricator_targets() already folded in) counts
+         as gross need as-is.
+      3. Dock orders for Smelter outputs NOT already covered by (2).
+      4. Net once: minus total stock (Inventory + Warehouses) and minus what's
+         already staged in every Fabricator's stockpile.
+
+    Pass the step's SourceCache -- this walks the full target set, so it is
+    not cheap uncached. Mining (get_raw_material_demands()) is deliberately
+    NOT switched over yet -- see TODO.md.
+    """
+    cache = SourceCache() if cache is None else cache
+    smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()}
+    smelter_outputs.discard(None)
+    if not smelter_outputs:
+        return {}
+
+    gross = {}
+    targets = get_fabricator_targets(cache)
+    for item_id, target in targets.items():
+        if item_id in smelter_outputs:
+            _add_demand(gross, item_id, target)
+            log.trace(f"get_smelter_demands: direct target on smelter output {item_id} -> gross += {target}")
+            continue
+        deficit = target - cache.stock(item_id)
+        if deficit <= 0:
+            continue
+        for input_id, ratio in (_recipe_inputs_for(item_id, cache) or {}).items():
+            if input_id in smelter_outputs:
+                need = _ceil(deficit * ratio)
+                _add_demand(gross, input_id, need)
+                log.trace(f"get_smelter_demands: {item_id} deficit={deficit} x {ratio:.2f} -> {input_id} gross += {need}")
+
+    for dock, order in _all_dock_orders():
+        try:
+            shipped = getattr(order, "shipped", {}) or {}
+            for item_id, required in (getattr(order, "requires", {}) or {}).items():
+                if item_id not in smelter_outputs or item_id in targets:
+                    continue  # not ours, or already counted via get_fabricator_targets()
+                remaining = required - shipped.get(item_id, 0)
+                if hasattr(dock, "count"):
+                    remaining -= dock.count(item_id)
+                _add_demand(gross, item_id, remaining)
+                if remaining > 0:
+                    log.trace(f"get_smelter_demands: dock {getattr(dock, 'id', '?')} still needs {remaining}x {item_id}")
+        except Exception:
+            pass
+
+    staged = {}
+    for fabricator_id in discover_fabricator_ids():
+        fabricator = _component(fabricator_id)
+        if not fabricator or not hasattr(fabricator, "get_stockpile"):
+            continue
+        try:
+            for item_id, count in (fabricator.get_stockpile() or {}).items():
+                if item_id in gross:
+                    staged[item_id] = staged.get(item_id, 0) + count
+        except Exception:
+            pass
+
+    demands = {}
+    for item_id, qty in gross.items():
+        net = qty - cache.stock(item_id) - staged.get(item_id, 0)
+        if net > 0:
+            demands[item_id] = net
+        log.debug(f"get_smelter_demands: {item_id} gross={qty} stock={cache.stock(item_id)} staged_in_fabricators={staged.get(item_id, 0)} -> net={max(0, net)}")
+    return demands
+
+
+def dock_remaining_requirements():
+    """{item_id: units} still owed (required - shipped - already loaded into
+    the dock) across every active Supply Dock order. lib/smelter.py subtracts
+    this from raw ore it may refine, so real ingot demand can't eat ore a dock
+    order ships raw."""
+    remaining_by_item = {}
+    for dock, order in _all_dock_orders():
+        try:
+            shipped = getattr(order, "shipped", {}) or {}
+            for item_id, required in (getattr(order, "requires", {}) or {}).items():
+                remaining = required - shipped.get(item_id, 0)
+                if hasattr(dock, "count"):
+                    remaining -= dock.count(item_id)
+                _add_demand(remaining_by_item, item_id, remaining)
+        except Exception:
+            pass
+    return remaining_by_item
+
+
+def smelter_recipe_peers(recipe_id):
+    """(worker_count, buffered_units) across every discovered Smelter currently
+    holding recipe_id -- get_smelter_worker_count() plus the sum of their
+    input buffers, in one walk. lib/smelter.py's fair-share cap uses both:
+    (available ore + everything already buffered by these peers) // workers
+    is the most any one of them should hold. worker_count is at least 1."""
+    count = 0
+    buffered = 0
+    for smelter_id in discover_smelter_ids():
+        candidate = _component(smelter_id)
+        if not candidate or not hasattr(candidate, "get_recipe"):
+            continue
+        try:
+            if candidate.get_recipe() != recipe_id:
+                continue
+            count += 1
+            buffered += candidate.get_input_count() if hasattr(candidate, "get_input_count") else 0
+        except Exception:
+            pass
+    return max(1, count), buffered
 
 
 def get_raw_material_demands(smelter=None):
@@ -1015,6 +1189,8 @@ class SourceCache:
         self._item_stack = set()
         self._surveyed_sites = None
         self._stock_map = None
+        self._building_stock = None  # {source_id: {item_id: units}}, filled alongside _stock_map
+        self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
 
     def _build_stock_map(self):
         log.trace("SourceCache._build_stock_map: one-shot stock scan across Inventory + Warehouses starting")
@@ -1025,20 +1201,27 @@ class SourceCache:
         per-item .count(item_id) shape) would still cost one call per
         building per distinct item; a single .stacks() sweep per building up
         front replaces that with one call per building, period, no matter how
-        many distinct items this pass ends up checking."""
+        many distinct items this pass ends up checking. The same sweep also
+        fills the per-building breakdown building_stock() serves (used by
+        storage.take_item() to pick which holder to pull from), at no extra
+        game calls."""
         totals = {}
-        inventory = _component("inventory")
-        sources = [inventory] + [b["component"] for b in discover_storage_buildings()]
-        for component in sources:
+        per_building = {}
+        sources = [("inventory", _component("inventory"))] + [(b["id"], b["component"]) for b in discover_storage_buildings()]
+        for source_id, component in sources:
             if not component or not hasattr(component, "stacks"):
                 continue
+            held = per_building.setdefault(source_id, {})
             try:
                 for stack in component.stacks():
                     stack_item_id = getattr(stack, "id", None)
                     if stack_item_id:
-                        totals[stack_item_id] = totals.get(stack_item_id, 0) + getattr(stack, "count", 0)
+                        count = getattr(stack, "count", 0)
+                        totals[stack_item_id] = totals.get(stack_item_id, 0) + count
+                        held[stack_item_id] = held.get(stack_item_id, 0) + count
             except Exception:
                 pass
+        self._building_stock = per_building
         log.trace(f"SourceCache._build_stock_map: scanned {len(sources)} storage components, {len(totals)} distinct items")
         return totals
 
@@ -1048,6 +1231,18 @@ class SourceCache:
         if self._stock_map is None:
             self._stock_map = self._build_stock_map()
         return self._stock_map.get(item_id, 0)
+
+    def building_stock(self, item_id):
+        """[(source_id, units), ...] for every home storage endpoint ("inventory"
+        or a Warehouse id) holding item_id, from the same one-shot snapshot as
+        stock(). Unordered -- storage.take_item() applies its own priority."""
+        if self._stock_map is None:
+            self._stock_map = self._build_stock_map()
+        return [
+            (source_id, held[item_id])
+            for source_id, held in (self._building_stock or {}).items()
+            if held.get(item_id, 0) > 0
+        ]
 
     def smelter_recipes(self):
         if self._smelter_recipes is None:

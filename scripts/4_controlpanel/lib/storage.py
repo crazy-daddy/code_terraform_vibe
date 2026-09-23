@@ -196,31 +196,99 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
     return winner["id"]
 
 
-def take_item(port, item_id, amount, outpost=None):
+# A storage endpoint that answered "busy" to a take() within this many ticks
+# (~2s at 10 ticks/s) is tried LAST by take_item(), not skipped -- still
+# used when nothing else holds the item. There is no API to ask "is this
+# Warehouse busy?" up front; a "busy" rejection comes back immediately (no
+# feeder wait), so the rejection itself is the probe, remembered here so
+# the next take_item() call (from any consumer in this script) doesn't lead
+# with the same locked building again.
+TAKE_BUSY_COOLDOWN_TICKS = 20
+_recent_busy = {}  # {source_id: tick of last "busy" rejection}
+
+
+def _now_tick():
+    clock = _component("clock")
+    if clock and hasattr(clock, "tick"):
+        try:
+            return clock.tick()
+        except Exception:
+            pass
+    return 0
+
+
+def _holder_candidates(item_id, outpost=None, cache=None):
+    """
+    [(source_id, units)] for every storage endpoint holding item_id, in the
+    order take_item() should try them:
+      1. Inventory (home only) -- it has no Auto Feeder of its own and never
+         locks, so it's the one source that can't be "busy".
+      2. Warehouses holding the item, most units first.
+      3. ...with any endpoint that answered "busy" within
+         TAKE_BUSY_COOLDOWN_TICKS moved to the end (stable, so the order
+         above is kept within each group).
+    Endpoints holding 0 are left out entirely -- the old blind
+    connect()+take() walk over every Warehouse regardless of contents cost a
+    reconnect per miss. Uses a SourceCache's one-shot per-building snapshot
+    when one is passed (home outpost only, which is all it covers).
+    """
+    resolved = outpost if outpost is not None else _home_outpost()
+    is_home = outpost is None or bool(resolved and getattr(resolved, "is_home", False))
+
+    holders = []
+    if cache is not None and outpost is None and hasattr(cache, "building_stock"):
+        holders = list(cache.building_stock(item_id))
+    else:
+        if is_home:
+            inventory = _component("inventory")
+            if inventory and hasattr(inventory, "count"):
+                try:
+                    count = inventory.count(item_id)
+                except Exception:
+                    count = 0
+                if count > 0:
+                    holders.append(("inventory", count))
+        for building in discover_storage_buildings(outpost):
+            component = building["component"]
+            if not component or not hasattr(component, "count"):
+                continue
+            try:
+                count = component.count(item_id)
+            except Exception:
+                continue
+            if count > 0:
+                holders.append((building["id"], count))
+
+    now = _now_tick()
+    ranked = []
+    for source_id, count in holders:
+        busy_tick = _recent_busy.get(source_id)
+        recently_busy = busy_tick is not None and now > 0 and now - busy_tick <= TAKE_BUSY_COOLDOWN_TICKS
+        ranked.append(((1 if recently_busy else 0, 0 if source_id == "inventory" else 1, -count), (source_id, count)))
+    ranked.sort(key=lambda pair: pair[0])
+    return [entry for _key, entry in ranked]
+
+
+def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     """
     Pulls up to `amount` units of item_id into `port` (a machine/vehicle
-    input port exposing .connect(id)/.connected_to()/.take(item_id, count)).
-    Tries whatever `port` is currently connected to first (usually Inventory,
-    the existing default every consumer already connects to), then -- only if
-    that source can't supply enough -- reconnects to each discovered
-    Warehouse in turn until `amount` is satisfied or every source is
-    exhausted. Ports hold one source at a time (same single-destination
-    constraint as FluidPort, see lib/thermal_cap.py), so this reconnects on
-    demand rather than fanning out. Returns total units actually moved.
+    input port exposing .connect(id)/.connected_id()/.take(item_id, count)).
+    Only endpoints that actually hold the item are tried, in
+    _holder_candidates() order (Inventory first, then Warehouses by most
+    stock, recently-"busy" ones last), reconnecting between them since a
+    port holds one source at a time (same single-source constraint as
+    FluidPort, see lib/thermal_cap.py). Stops once `amount` is met or every
+    holder has been tried. Returns total units actually moved.
+
+    `cache`: optional SourceCache (lib/production.py) -- its stock snapshot
+    replaces a .count() call per building. `report`: optional dict, filled
+    with {"sources": [(source_id, status, moved), ...]} for diagnostics.
     """
+    if report is not None:
+        report["sources"] = []
     if not port or not hasattr(port, "take") or amount <= 0:
         return 0
 
-    moved_total = 0
-    remaining = amount
-
-    moved = _take_from_current(port, item_id, remaining)
-    moved_total += moved
-    remaining -= moved
-    if remaining <= 0:
-        return moved_total
-
-    candidate_ids = ["inventory"] + [b["id"] for b in discover_storage_buildings(outpost)]
     current_id = None
     if hasattr(port, "connected_id"):
         try:
@@ -228,19 +296,28 @@ def take_item(port, item_id, amount, outpost=None):
         except Exception:
             current_id = None
 
-    for source_id in candidate_ids:
+    moved_total = 0
+    remaining = amount
+    for source_id, _held in _holder_candidates(item_id, outpost, cache):
         if remaining <= 0:
             break
-        if source_id == current_id:
-            continue  # already tried above
-        try:
-            res = port.connect(source_id)
-        except Exception:
-            continue
-        if getattr(res, "status", None) != "ok":
-            continue
-        current_id = source_id
-        moved = _take_from_current(port, item_id, remaining)
+        if source_id != current_id:
+            try:
+                res = port.connect(source_id)
+            except Exception:
+                continue
+            status = getattr(res, "status", None)
+            if status != "ok":
+                if report is not None:
+                    report["sources"].append((source_id, f"connect:{status}", 0))
+                continue
+            current_id = source_id
+        moved, status = _take_from_current(port, item_id, remaining)
+        if status == "busy":
+            _recent_busy[source_id] = _now_tick()
+        if report is not None:
+            report["sources"].append((source_id, status, moved))
+        log.debug(f"take_item({item_id}): '{source_id}' -> status={status} moved={moved}/{remaining}")
         moved_total += moved
         remaining -= moved
 
@@ -249,16 +326,16 @@ def take_item(port, item_id, amount, outpost=None):
 
 def _take_from_current(port, item_id, remaining):
     """take(item_id, remaining) off whatever port is currently connected to.
-    Returns units actually moved, 0 on any rejection/exception. Split out of
-    take_item() as a plain helper (not a nested closure) since the sandboxed
-    script parser does not support `nonlocal`."""
+    Returns (units actually moved, status) -- (0, "exception") if the call
+    raised. Split out of take_item() as a plain helper (not a nested closure)
+    since the sandboxed script parser does not support `nonlocal`."""
     if remaining <= 0:
-        return 0
+        return 0, "no_op"
     try:
         res = port.take(item_id, remaining)
     except Exception:
-        return 0
-    return getattr(res, "moved", 0) or 0
+        return 0, "exception"
+    return (getattr(res, "moved", 0) or 0), getattr(res, "status", None)
 
 
 def drain_port_to_storage(port, outpost=None):

@@ -6,6 +6,7 @@
 
 from archive import archive
 from vehicle import VehicleController
+from vehicle_claims import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
 from vehicle_mining import ROVER_PREFERRED_MAX_HARDNESS
 from vehicle_upgrade import VehicleUpgradeMixin
 from storage import take_item
@@ -124,21 +125,69 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
         return not (curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS)
 
     def get_construction_progress(self, blueprint_id):
-        """Current 0-1 progress for a blueprint id, checking pending/active/paused lists."""
+        """
+        Current 0-1 progress for a blueprint id, checking pending/active/paused lists.
+
+        A blueprint that is in NONE of those lists (while at least one of them
+        could actually be read) is finished (or was removed), so it counts as
+        1.0. Found live: the game drops a completed blueprint from every list,
+        and this used to fall through to 0.0 -- so run_construction_loop()'s
+        "release the claim once progress >= 1.0" check never fired (121 of 124
+        build_* claims in one save pointed at finished jobs, each blocking a
+        second builder for up to CLAIM_STALE_TICKS), and the completing
+        execute() step read as negative progress, so calibrate_wh_per_progress()
+        ignored it. Stays 0.0 when the component or every list is unreadable.
+        """
         bp = get_component("construction_blueprint")
         if not bp:
             return 0.0
+        any_list_read = False
         for getter_name in ("pending_constructions", "active_constructions", "paused_constructions"):
             getter = getattr(bp, getter_name, None)
             if not getter:
                 continue
             try:
-                for c in getter():
-                    if getattr(c, "id", None) == blueprint_id:
-                        return getattr(c, "progress", 0.0) or 0.0
+                jobs = getter() or []
             except Exception:
-                pass
+                continue
+            any_list_read = True
+            for c in jobs:
+                if getattr(c, "id", None) == blueprint_id:
+                    return getattr(c, "progress", 0.0) or 0.0
+        if any_list_read:
+            self.log.debug(f"[{self.name}] get_construction_progress({blueprint_id}): not in any blueprint list -- treating as complete (1.0)")
+            return 1.0
         return 0.0
+
+    def release_finished_construction_claims(self, live_job_ids, existing_claims):
+        """
+        Drops every build_* claim THIS Pioneer holds whose blueprint is no
+        longer live (not in pending/active/paused) -- finished or removed
+        while this script wasn't the one to observe it (restart mid-build, or
+        claims leaked before get_construction_progress() learned that "gone"
+        means done). One transaction per claims key, and only when something
+        actually needs releasing (checked first against existing_claims, which
+        the caller already fetched).
+        """
+        mine = [
+            key for key, claim in (existing_claims or {}).items()
+            if key.startswith("build_") and isinstance(claim, dict)
+            and (claim.get("vehicle") == self.name or claim.get("rover") == self.name)
+            and key[len("build_"):] not in live_job_ids
+        ]
+        if not mine:
+            return 0
+        dead = set(mine)
+
+        def updater(claims):
+            if not isinstance(claims, dict):
+                return {}
+            return {k: v for k, v in claims.items() if k not in dead}
+
+        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
+        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
+        self.log.print(f"[{self.name}] Released {len(dead)} build claim(s) on finished/removed blueprints.")
+        return len(dead)
 
     def planned_progress_for_job(self, job):
         """Remaining progress capped at TARGET_CONSTRUCTION_PROGRESS_PER_TRIP, for trip budgeting."""
@@ -343,20 +392,33 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                 # Query paused and pending constructions
                 paused = []
                 pending = []
+                # Only sweep leaked claims when every list read cleanly -- a
+                # failed read would make live jobs look finished.
+                lists_ok = bool(bp_component)
                 if bp_component:
                     if hasattr(bp_component, "paused_constructions"):
                         try:
                             paused = bp_component.paused_constructions() or []
                         except Exception:
                             paused = []
+                            lists_ok = False
                     if hasattr(bp_component, "pending_constructions"):
                         try:
                             pending = bp_component.pending_constructions() or []
                         except Exception:
                             pending = []
+                            lists_ok = False
 
                 if not paused and not pending:
                     self.log.debug(f"[{self.name}] run_construction_loop(): no paused or pending construction jobs; idling.")
+                    if lists_ok and bp_component is not None:
+                        try:
+                            active_now = bp_component.active_constructions() if hasattr(bp_component, "active_constructions") else []
+                        except Exception:
+                            active_now = None  # unreadable -- don't sweep this cycle
+                        if active_now is not None:
+                            live_ids = {getattr(j, "id", getattr(j, "blueprint_id", None)) for j in (active_now or [])}
+                            self.release_finished_construction_claims(live_ids, self.get_claims())
                     if failed_jobs:
                         failed_jobs.clear()
                     if self.distance_to_home() > 3.0:
@@ -374,6 +436,16 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                 # is_construction_job_free()).
                 existing_claims = self.get_claims()
                 curr_tick = self.get_current_tick()
+                active = []
+                if bp_component and hasattr(bp_component, "active_constructions"):
+                    try:
+                        active = bp_component.active_constructions() or []
+                    except Exception:
+                        active = []
+                        lists_ok = False
+                if lists_ok:
+                    live_job_ids = {getattr(j, "id", getattr(j, "blueprint_id", None)) for j in list(paused) + list(pending) + list(active)}
+                    self.release_finished_construction_claims(live_job_ids, existing_claims)
                 paused = [j for j in paused if self.is_construction_job_free(getattr(j, "id", None), existing_claims, curr_tick)]
                 pending = [j for j in pending if self.is_construction_job_free(getattr(j, "id", getattr(j, "blueprint_id", None)), existing_claims, curr_tick)]
 
