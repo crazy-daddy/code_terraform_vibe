@@ -7,7 +7,7 @@ differences documented in the plan this came from:
   1. Instead of vakermit's per-category "variant" subdirectories chosen by a
      `.current` file or a marker, this project's scripts/ tree is split by
      *global progression tier* first (`0_cold_boot`, `1_early`, `2_libunlock`,
-     `3_archiveunlock`, `4_controlpanel`, `5_uprising`, ...), with machine
+     `3_archiveunlock`, `4_controlpanel`, `5_steampower`, ...), with machine
      categories (bio/, power/, rover/, ...) nested underneath. Tiers are
      discovered by scanning scripts/ for `<N>_<anything>` dirs and sorting by
      `N` ascending (`discover_tiers()`/`tier_number()`) - only the leading

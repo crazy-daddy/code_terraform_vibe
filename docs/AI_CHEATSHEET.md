@@ -11,11 +11,11 @@ Dense ref: physics, formulas, component specs, bus channels, data conventions.
 
 High-level workflows, progression roadmaps, automation orchestration → dedicated walkthrough guides:
 
-- **[`manual_walkthrough.md`](../tools/manual_walkthrough.md)**: **Manual Progression Roadmap (0 $\rightarrow$ 1,000,000 TP Victory)**
+- **[`manual_walkthrough.md`](../early_game_runner/manual_walkthrough.md)**: **Manual Progression Roadmap (0 $\rightarrow$ 1,000,000 TP Victory)**
   - Manual progression playbook: First Contact onboarding, Earth Clearance contract solvers (+3,750 cr & +22,500 cr), research prereqs, critical bottleneck matrix, chronological phases from Phase 0 (Cold Boot) to Phase 7 (Deep Biome, Nuclear Reactor Recovery & Endgame Victory).
-- **[`auto_walkthrough.md`](../tools/auto_walkthrough.md)**: **Autonomous Architecture & Early Speedrunner (0 $\rightarrow$ 150,000 TP)**
-  - Hands-off automation blueprint: Master Automation Architecture, revised 25-slot Nocturna Base speedrun, `solar_1.py` master building-buyer (auto buy/deploy/sell cycles), `tools/early_game.py` speedrunner daemon & machine watcher, Earth Clearance contract solvers, 150k TP mid-game migration protocol to `lib/`.
-- *(Top-level nav hub: [`walkthrough.md`](../tools/walkthrough.md))*
+- **[`auto_walkthrough.md`](../early_game_runner/auto_walkthrough.md)**: **Autonomous Architecture & Early Speedrunner (0 $\rightarrow$ 150,000 TP)**
+  - Hands-off automation blueprint: Master Automation Architecture, revised 25-slot Nocturna Base speedrun, `solar_1.py` master building-buyer (auto buy/deploy/sell cycles), `early_game_runner/early_game.py` speedrunner daemon & machine watcher, Earth Clearance contract solvers, 150k TP mid-game migration protocol to `lib/`.
+- *(Top-level nav hub: [`walkthrough.md`](../early_game_runner/walkthrough.md))*
 
 ---
 
@@ -1103,24 +1103,24 @@ Game exposes real Debug Adapter Protocol (DAP) integration against actual runnin
     running script pick up a changed `lib/` module — `relaunch_lib_dependents()` deliberately does not
     attempt this (see its docstring and TODO.md); it only warns which deployed scripts need a manual
     in-game Apply.
-- **Automated Script Deployment (`tools/auto_deploy.py`)**:
+- **Automated Script Deployment (`early_game_runner/auto_deploy.py`)**:
   - Auto-bridges newly placed/deployed hardware (via in-game `computer.deploy(...)`) to host-side Python controller scripts.
   - **Dual-Channel Monitoring**:
     - Watches `logs/all.log` for explicit `[DEPLOY]` lines with arbitrary parameter assignments (e.g. `[DEPLOY] machine_id=pioneer_5 template=pioneer_hauler HOME_BASE="outpost_3" DESTINATION="outpost_home"`).
     - Periodically scans `codeterraform-workspace.json` for newly registered machines whose script slots are idle and unpopulated.
-  - **Template Directory (`tools/templates/`)**:
+  - **Template Directory (`early_game_runner/templates/`)**:
     - Stores modular templates (e.g., `solar.py`, `heater.py`, `smelter.py`, `pioneer_hauler.py`).
     - Supports flexible parameter substitution: `${PARAM:default_value}` or `{PARAM}`.
     - Built-in variables automatically injected: `MACHINE_ID`, `TYPE_ID`, `LOCATION_ID`.
   - **CLI Modes**:
-    - `python tools/auto_deploy.py --scan`: One-shot scan and deploy for all unscripted idle machines.
-    - `python tools/auto_deploy.py --scan --dry-run`: Preview generated script code and parameters without modifying disk or launching.
-    - `python tools/auto_deploy.py --daemon`: Continuous background watcher loop.
-    - `python tools/auto_deploy.py --deploy <machine_id> [--template <name>] [--param KEY=VALUE ...]`: Targeted single-machine deployment.
+    - `python early_game_runner/auto_deploy.py --scan`: One-shot scan and deploy for all unscripted idle machines.
+    - `python early_game_runner/auto_deploy.py --scan --dry-run`: Preview generated script code and parameters without modifying disk or launching.
+    - `python early_game_runner/auto_deploy.py --daemon`: Continuous background watcher loop.
+    - `python early_game_runner/auto_deploy.py --deploy <machine_id> [--template <name>] [--param KEY=VALUE ...]`: Targeted single-machine deployment.
 
 **Before starting any debug session (F5/`launch`/`attach`) or using **Run Script in Game**:
 If running user's main save (save_mtzkzly3_4ww80o): ask user first, every time. Never assume standing permission from prior yes.** Debug session runs against live save with real effects: script that spends credits, moves vehicle, fires drill, etc. does so for real, no sandbox. Pausing at breakpoint can also leave machine mid-action in state player didn't intend. Treat like any other action with real-save side effects per project's risk-awareness rules, not routine read-only inspection.
-Other (throwaway) saves: can be more liberal, especially when developing auto-play tools like `tools/auto_deploy.py`, `tools/early_game.py`, etc.
+Other (throwaway) saves: can be more liberal, especially when developing auto-play tools like `early_game_runner/auto_deploy.py`, `early_game_runner/early_game.py`, etc.
 
 ## 🧬 9. Dev Workflow: Tiered `scripts/` + `devtools/scripts_sync.py`
 
@@ -1145,7 +1145,7 @@ Repo (`C:\Users\Adrian\Code_Terraform`) = dev root, separate from live save fold
 
 **Global (untiered) categories**: category dir directly under `scripts/` (sibling of tier dirs, e.g. `scripts/contract/`) not gated by any `.criteria`. Always included, merged on top of active tier resolution (`list_global_categories`/`resolve_global_category` in `scripts_sync.py`). Contracts live here: genuinely tech-independent, self-contained (no imports), available from very first save, not tied to any progression tier.
 
-**Migration note**: pre-restructure codebase written/tested against save with 60 techs unlocked (incl. `data_archive_unlock`, `custom_panels_unlock`) → moved wholesale into `4_controlpanel/` as honest home tier (see `devtools/_migrate_from_root.py`), not guessed apart per file. `0_cold_boot`/`1_early` seeded separately from top-level `tools/` submodule's `tools/templates/` (flat) and `tools/templates/early/` (richer) boilerplate. That submodule = this project's own earlier `code-terraform-earlygame-automation` prototype, not `inspirations/vakermit`. Flat `tools/templates/*.py` = thin `from <lib_module> import ...` wrappers around project's own `lib/` controllers (`terraforming.py`, `solar.py`, `smelter.py`, ...), need `research_shared_library` → wrongly copied into `0_cold_boot` in initial seeding. Only `tools/templates/early/` genuinely self-contained (no `lib/`/game-module imports), belongs at `0_cold_boot`/`1_early`. `0_cold_boot/power/solar.py` = hand-trimmed exception: `tools/templates/early/solar.py` bundles full Ship-Computer building-buyer speedrunner around tracking loop, so cold-boot gets few-line sun-tracking-only script extracted from it. `fabricator`, unified `pioneer` (destination-routing, distinct from `pioneer_scout`), `steam_turbine`, `thermal_cap`, `water_pump` have no self-contained early equivalent yet → removed from `0_cold_boot` rather than left broken. They resolve once save reaches tier defining them (currently `4_controlpanel`). Splitting rest of `4_controlpanel` into earlier-tier-capable content = manual follow-up (see TODO.md), not automatic.
+**Migration note**: pre-restructure codebase written/tested against save with 60 techs unlocked (incl. `data_archive_unlock`, `custom_panels_unlock`) → moved wholesale into `4_controlpanel/` as honest home tier (see `devtools/_migrate_from_root.py`), not guessed apart per file. `0_cold_boot`/`1_early` seeded separately from top-level `early_game_runner/` submodule's `early_game_runner/templates/` (flat) and `early_game_runner/templates/early/` (richer) boilerplate. That submodule = this project's own earlier `code-terraform-earlygame-automation` prototype, not `inspirations/vakermit`. Flat `early_game_runner/templates/*.py` = thin `from <lib_module> import ...` wrappers around project's own `lib/` controllers (`terraforming.py`, `solar.py`, `smelter.py`, ...), need `research_shared_library` → wrongly copied into `0_cold_boot` in initial seeding. Only `early_game_runner/templates/early/` genuinely self-contained (no `lib/`/game-module imports), belongs at `0_cold_boot`/`1_early`. `0_cold_boot/power/solar.py` = hand-trimmed exception: `early_game_runner/templates/early/solar.py` bundles full Ship-Computer building-buyer speedrunner around tracking loop, so cold-boot gets few-line sun-tracking-only script extracted from it. `fabricator`, unified `pioneer` (destination-routing, distinct from `pioneer_scout`), `steam_turbine`, `thermal_cap`, `water_pump` have no self-contained early equivalent yet → removed from `0_cold_boot` rather than left broken. They resolve once save reaches tier defining them (currently `4_controlpanel`). Splitting rest of `4_controlpanel` into earlier-tier-capable content = manual follow-up (see TODO.md), not automatic.
 
 **`panel` = distinct-instances category** (`DISTINCT_INSTANCES` in `scripts_sync.py`), at `scripts/4_controlpanel/control_panel/panel_1..4.py`. Separate, genuinely different hand-authored Control Room cards (see §7), not interchangeable template copies. Matched by exact filename, never collapsed to shared base name or renumbered. Dev-side numbering cleaned to `_1.._4` (fourth was `panel_7.py`; `_7` just artifact of game-assigned slot). Game can't rename/reorder existing script slot → save's actual file still `panel_7.py`. Known, documented gap (see TODO.md), not yet bridged.
 

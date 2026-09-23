@@ -13,36 +13,45 @@ files.
 scripts/                    # source of truth for every deployable script and lib/ module
   0_cold_boot/               # baseline tier - always active, no unlocks required
   1_early/                   # unlocked once research_computer is researched
-  2_libunlock/                # unlocked once the Shared Library is researched
-  3_archiveunlock/            # unlocked once the Data Archive is researched
-  4_controlpanel/             # unlocked once the Control Room is researched
-  5_uprising/                 # placeholder future tier
-    <category>/<name>.py      # one script per machine type, e.g. power/solar.py
-    lib/<module>.py           # shared library modules for that tier
-    control_panel/            # Control Room panel cards (see docs/AI_CHEATSHEET.md §7)
-  contract/                   # Earth Clearance contract puzzle solvers - untiered, see below
-  _unmatched/                 # gitignored staging area, see devtools/scripts_sync.py
+  2_libunlock/               # unlocked once the Shared Library is researched
+  3_archiveunlock/           # unlocked once the Data Archive is researched
+  4_controlpanel/            # unlocked once the Control Room is researched
+  5_steampower/              # active once the steam grid is built (>= 2 thermal_cap, >= 5 steam_turbine)
+    .criteria                # what a save needs for this tier to be active (absent in 0_cold_boot)
+    <category>/<name>.py     # one script per machine type, e.g. power/solar.py
+    lib/<module>.py          # shared library modules for that tier
+    control_panel/           # Control Room panel cards (see docs/AI_CHEATSHEET.md §7)
+  contract/                  # Earth Clearance contract puzzle solvers - untiered, see below
+  _unmatched/                # gitignored staging area, see devtools/scripts_sync.py
 
 devtools/
   scripts_sync.py            # syncs scripts/ into a live save folder's script slots
-  _migrate_from_root.py       # one-off migration script (kept for reference)
+  dap_client.py              # minimal Debug Adapter Protocol client, used by scripts_sync.py --auto
+  _migrate_from_root.py      # one-off migration script (kept for reference)
 
 docs/                        # authoritative game API reference (components, models, database)
-tools/                       # git submodule: auto-deploy/DAP/early-game automation
+early_game_runner/           # git submodule: auto-deploy/DAP/early-game automation
 inspirations/                # git submodules: other players' Code: Terraform repos
-legacy/, internals/          # archived / reference-only material
+legacy/                      # archived / reference-only material
 
 CLAUDE.md                    # project rules and conventions for AI coding agents
 TODO.md                      # roadmap and task tracker
-docs/AI_CHEATSHEET.md         # single source of truth for formulas, constants, module map
+TODO_inspirations.md         # ideas from inspirations/ picked for implementation
+docs/AI_CHEATSHEET.md        # single source of truth for formulas, constants, module map
 ```
+
+Tier 5 (`5_steampower`) is the first tier gated on built buildings rather than research: it
+carries the steam-aware power guard (`lib/power.py`, overriding tier 4's), the Essence Liquifier /
+Biomass Mixer controllers and the Mixer duty-cycle gate, plus the `panel_4.py` card that drives the
+gate. See `docs/AI_CHEATSHEET.md` §1a-0 and §9.
 
 ### Why tiers?
 
 Each tier is a checkpoint in the game's own progression (research unlocks, in this codebase's
-current scheme), not a folder you pick by hand. A `.criteria` file at each tier's root (e.g.
-`scripts/3_archiveunlock/.criteria`) declares what must be true of a save — which techs are
-unlocked, how many outposts exist — for that tier to be considered active. `scripts_sync.py` reads
+current scheme, plus built buildings from tier 5 up), not a folder you pick by hand. A `.criteria`
+file at each tier's root (e.g. `scripts/3_archiveunlock/.criteria`) declares what must be true of a
+save — which techs are unlocked, how many outposts exist, how many of a building type are built —
+for that tier to be considered active. `scripts_sync.py` reads
 a save's own state file to figure out the highest tier whose criteria (and all its ancestors') are
 satisfied, automatically, per save — no manual bookkeeping. A script or `lib/` module only needs to
 exist at the lowest tier where its behavior is actually correct; higher tiers fall back to a lower
