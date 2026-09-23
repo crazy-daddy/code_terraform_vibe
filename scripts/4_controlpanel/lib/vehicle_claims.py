@@ -22,7 +22,14 @@ SURVEY_UNSUPPORTED_KEY = "survey.unsupported_targets"
 LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
-MISSION_KEY_PREFIX = "vehicle.mission:"
+# One shared dict {vehicle_name: {target_key, target, kind, tick}} of
+# resumable in-progress missions (not one key per vehicle, CLAUDE.md rule 7).
+# LEGACY_MISSION_KEY_PREFIX is the old per-vehicle "vehicle.mission:<name>"
+# shape: load_mission() moves a leftover into the dict on first read, so a
+# vehicle mid-mission across the deploy still resumes; ArchiveCleaner's
+# clean_missions() migrates the rest.
+MISSION_KEY = "vehicle.mission"
+LEGACY_MISSION_KEY_PREFIX = "vehicle.mission:"
 
 # One shared dict {vehicle_name: True} rather than one archive key per vehicle
 # (the old "vehicle.recall:<name>" scheme) -- the Data Archive has a fixed
@@ -70,9 +77,6 @@ class VehicleClaimsMixin:
 
     CLAIM_STALE_TICKS = 36000
 
-    def mission_key(self):
-        return f"{MISSION_KEY_PREFIX}{self._host.name}"
-
     def save_mission(self, kind, target):
         """
         Persists the in-progress target (and its kind, e.g. "poi_survey" or
@@ -81,7 +85,7 @@ class VehicleClaimsMixin:
         """
         if not self.current_target_key:
             return
-        archive.set(self.mission_key(), {
+        archive.set_entry(MISSION_KEY, self._host.name, {
             "target_key": self.current_target_key,
             "target": target,
             "kind": kind,
@@ -89,7 +93,28 @@ class VehicleClaimsMixin:
         })
 
     def clear_mission(self):
-        archive.delete(self.mission_key())
+        # Plain read first: a transaction always writes back, and this runs
+        # on every claim release, mostly with no mission stored.
+        if archive.get_entry(MISSION_KEY, self._host.name) is not None:
+            archive.pop_entry(MISSION_KEY, self._host.name)
+
+    def _read_mission(self) -> "dict | None":
+        """This vehicle's stored mission record, moving a pre-consolidation
+        vehicle.mission:<name> key into the shared dict on first read."""
+        name = self._host.name
+        record = archive.get_entry(MISSION_KEY, name)
+        if record is not None:
+            return record if isinstance(record, dict) else None
+        legacy_key = f"{LEGACY_MISSION_KEY_PREFIX}{name}"
+        record = archive.get(legacy_key, None)
+        if record is None:
+            return None
+        archive.delete(legacy_key)
+        if not isinstance(record, dict):
+            return None
+        archive.set_entry(MISSION_KEY, name, record)
+        self._host.log.debug(f"[{name}] load_mission: migrated legacy '{legacy_key}' into {MISSION_KEY}.")
+        return record
 
     def load_mission(self):
         """
@@ -98,8 +123,8 @@ class VehicleClaimsMixin:
         expired while the script was down). Returns the mission record, or
         None if there was nothing to resume.
         """
-        record = archive.get(self.mission_key(), None)
-        if not isinstance(record, dict) or not record.get("target_key"):
+        record = self._read_mission()  # dict or None
+        if record is None or not record.get("target_key"):
             return None
 
         target_key = record["target_key"]

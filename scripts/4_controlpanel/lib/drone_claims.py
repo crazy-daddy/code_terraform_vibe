@@ -15,7 +15,11 @@ if TYPE_CHECKING:
     from drone import DroneController
 
 BIOSITE_CLAIMS_KEY = "biosite.claims"
-MISSION_KEY_PREFIX = "drone.mission:"
+# One shared dict {drone_name: {target_key, target, kind, tick}}, same
+# shape and legacy handling as vehicle_claims.py's MISSION_KEY (old
+# per-drone "drone.mission:<name>" keys are moved in on first read).
+MISSION_KEY = "drone.mission"
+LEGACY_MISSION_KEY_PREFIX = "drone.mission:"
 SCOUTED_EMPTY_POI_KEY = "scout.empty_pois"
 
 # Same one-shared-dict shape as vehicle_claims.py's RECALL_KEY, on its own key
@@ -80,9 +84,6 @@ class DroneClaimsMixin:
 
     CLAIM_STALE_TICKS = CLAIM_STALE_TICKS
 
-    def mission_key(self):
-        return f"{MISSION_KEY_PREFIX}{self._host.name}"
-
     def save_mission(self, kind, target):
         """
         Persists the in-progress target so a script reload mid-trip resumes
@@ -95,7 +96,7 @@ class DroneClaimsMixin:
         """
         if not self.current_target_key:
             return
-        archive.set(self.mission_key(), {
+        archive.set_entry(MISSION_KEY, self._host.name, {
             "target_key": self.current_target_key,
             "target": target,
             "kind": kind,
@@ -103,7 +104,28 @@ class DroneClaimsMixin:
         })
 
     def clear_mission(self):
-        archive.delete(self.mission_key())
+        # Plain read first: a transaction always writes back, and this runs
+        # on every claim release, mostly with no mission stored.
+        if archive.get_entry(MISSION_KEY, self._host.name) is not None:
+            archive.pop_entry(MISSION_KEY, self._host.name)
+
+    def _read_mission(self) -> "dict | None":
+        """This drone's stored mission record, moving a pre-consolidation
+        drone.mission:<name> key into the shared dict on first read."""
+        name = self._host.name
+        record = archive.get_entry(MISSION_KEY, name)
+        if record is not None:
+            return record if isinstance(record, dict) else None
+        legacy_key = f"{LEGACY_MISSION_KEY_PREFIX}{name}"
+        record = archive.get(legacy_key, None)
+        if record is None:
+            return None
+        archive.delete(legacy_key)
+        if not isinstance(record, dict):
+            return None
+        archive.set_entry(MISSION_KEY, name, record)
+        self._host.log.debug(f"[{name}] load_mission: migrated legacy '{legacy_key}' into {MISSION_KEY}.")
+        return record
 
     def load_mission(self):
         """
@@ -111,8 +133,8 @@ class DroneClaimsMixin:
         drone still owns that target's claim. Returns the mission record, or
         None if there was nothing to resume.
         """
-        record = archive.get(self.mission_key(), None)
-        if not isinstance(record, dict) or not record.get("target_key"):
+        record = self._read_mission()  # dict or None
+        if record is None or not record.get("target_key"):
             return None
 
         target_key = record["target_key"]

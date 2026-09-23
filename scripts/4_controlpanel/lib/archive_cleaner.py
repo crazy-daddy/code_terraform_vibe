@@ -6,6 +6,7 @@
 from archive import archive
 from tree_console import TreeConsole
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
+from fluid_routing import discover_network_buildings
 
 # Stale claim duration (1 simulation hour = 36000 ticks at 10 ticks/sec)
 CLAIM_STALE_TICKS = 36000
@@ -42,7 +43,31 @@ RECALL_KEY = "vehicle.recall"
 # lives in one place. Add a prefix when a key family is retired.
 RETIRED_KEY_PREFIXES = (
     "smelter.diag.",  # lib/smelter.py diagnostics, retired 2026-09-23
+    # Per-machine status keys, consolidated 2026-09-23 into the shared
+    # MACHINE_STATUS_KEYS dicts below. Payloads are rewritten every step(),
+    # so nothing needs migrating.
+    "drone_depot.status.",
+    "essence_liquifier.status.",
+    "biomass_mixer.status.",
 )
+
+# Shared resumable-mission dicts {name: record} and their pre-consolidation
+# per-entity key prefixes (lib/vehicle_claims.py / lib/drone_claims.py).
+# Unlike telemetry, a legacy record is real state (a claim is still held for
+# it), so it's migrated into the dict, not just deleted.
+MISSION_KEYS = {
+    "vehicle.mission": "vehicle.mission:",
+    "drone.mission": "drone.mission:",
+}
+
+# Shared machine-status dicts {building_id: telemetry} -> building type_id,
+# pruned of buildings no longer found on the outpost network. Literal
+# strings, not imports: the Liquifier/Mixer modules live in a later tier.
+MACHINE_STATUS_KEYS = {
+    "drone_depot.status": "drone_station",
+    "essence_liquifier.status": "essence_liquifier",
+    "biomass_mixer.status": "biomass_mixer",
+}
 
 
 def safe_get_component(name):
@@ -79,6 +104,9 @@ class ArchiveCleaner:
             "recall_flags_migrated": 0,
             "grid_state_purged": 0,
             "retired_keys_purged": 0,
+            "missions_migrated": 0,
+            "missions_removed": 0,
+            "machine_status_removed": 0,
             "corrupted_keys_deleted": 0,
             "errors": 0
         }
@@ -618,6 +646,97 @@ class ArchiveCleaner:
         self.stats["retired_keys_purged"] += purged
         self.log(f"  Result: {purged} retired key(s) purged.")
 
+    def clean_missions(self, active_vehicles):
+        """
+        Moves leftover per-entity mission keys (vehicle.mission:<name>,
+        drone.mission:<name>) into their shared MISSION_KEYS dict -- never
+        overwriting an entry the owner already re-saved -- then deletes the
+        legacy key. Also drops dict entries that are malformed, or whose
+        vehicle/drone no longer exists (existence check skipped when the
+        fleet query came back empty).
+        """
+        self.log("\n--- Checking Resumable Mission Records ---")
+        for key, legacy_prefix in MISSION_KEYS.items():
+            missions = self.archive.get(key, {})
+            missions = dict(missions) if isinstance(missions, dict) else {}
+            changed = False
+
+            for k in self.archive.keys(legacy_prefix):
+                name = k[len(legacy_prefix):]
+                record = self.archive.get(k, None)
+                if isinstance(record, dict) and name not in missions:
+                    missions[name] = record
+                    changed = True
+                    self.stats["missions_migrated"] += 1
+                    self.log(f"  [MIGRATE MISSION] Key '{k}' -> {key}['{name}']")
+                else:
+                    self.log(f"  [DELETE MISSION] Key '{k}': {'superseded by dict entry' if name in missions else 'malformed'}")
+                if not self.dry_run:
+                    self.archive.delete(k)
+
+            for name in list(missions):
+                record = missions[name]
+                if not isinstance(record, dict) or not record.get("target_key"):
+                    reason = "malformed record"
+                elif active_vehicles and name not in active_vehicles:
+                    reason = "not in active fleet"
+                else:
+                    self.console.debug(f"  {key}['{name}'] retained: target '{record.get('target_key')}'")
+                    continue
+                self.log(f"  [DELETE MISSION] {key}['{name}']: {reason}")
+                del missions[name]
+                changed = True
+                self.stats["missions_removed"] += 1
+
+            # Plain set, not a transaction: this rebuilds the whole dict from
+            # legacy keys, and the cleaner is a rare, operator-triggered run.
+            if changed and not self.dry_run:
+                self.archive.set(key, missions)
+
+        self.log(f"  Result: {self.stats['missions_migrated']} mission(s) migrated, {self.stats['missions_removed']} removed.")
+
+    def clean_machine_status(self):
+        """
+        Drops MACHINE_STATUS_KEYS dict entries whose building is no longer on
+        the outpost network. Skipped per key when discovery finds no building
+        of that type at all (not unlocked yet, or discovery failed), so a
+        failed walk never wipes the dict.
+        """
+        self.log("\n--- Checking Machine Status Dicts ---")
+        removed = 0
+        for key, type_id in MACHINE_STATUS_KEYS.items():
+            status = self.archive.get(key, None)
+            if status is None:
+                continue
+            if not isinstance(status, dict):
+                self.log(f"  [DELETE STATUS] Key '{key}': not a dict, resetting")
+                removed += 1
+                if not self.dry_run:
+                    self.archive.delete(key)
+                continue
+            try:
+                live = {str(b) for b, _ in discover_network_buildings(type_id, resolve=False)}
+            except Exception as e:
+                self.log(f"  [WARN] Discovering '{type_id}' failed: {e}; skipping '{key}'.")
+                continue
+            if not live:
+                self.console.debug(f"  No '{type_id}' found on network; not pruning '{key}'.")
+                continue
+            stale = [bid for bid in status if bid not in live]
+            for bid in stale:
+                self.log(f"  [DELETE STATUS] {key}['{bid}']: building no longer on network")
+            if stale and not self.dry_run:
+                def updater(current, stale=stale):
+                    if not isinstance(current, dict):
+                        return {}
+                    for bid in stale:
+                        current.pop(bid, None)
+                    return current
+                self.archive.transaction(key, {}, updater)
+            removed += len(stale)
+        self.stats["machine_status_removed"] += removed
+        self.log(f"  Result: {removed} stale machine status entr{'y' if removed == 1 else 'ies'} purged.")
+
     def clean_power_grid_state(self, active_grid_anchors):
         """
         Purges per-grid power.shedded:<anchor>/power.night_wh:<anchor> entries
@@ -845,6 +964,8 @@ class ArchiveCleaner:
         self.clean_calibration()
         self.clean_recall_flags()
         self.clean_retired_keys()
+        self.clean_missions(active_vehicles)
+        self.clean_machine_status()
         self.clean_profiling(current_tick)
         self.clean_power_and_heat()
         self.clean_power_grid_state(active_grid_anchors)

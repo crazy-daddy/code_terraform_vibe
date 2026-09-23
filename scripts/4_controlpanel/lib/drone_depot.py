@@ -16,7 +16,10 @@ import logistics_requests
 from tree_console import TreeConsole
 from version_guard import validate_game_version
 
-DEPOT_STATUS_KEY_PREFIX = "drone_depot.status."
+# One shared dict {depot_id: telemetry} (not one key per depot, CLAUDE.md
+# rule 7). Old per-depot "drone_depot.status.<id>" keys are purged by
+# ArchiveCleaner.clean_retired_keys().
+DEPOT_STATUS_KEY = "drone_depot.status"
 LIQUIFIER_TYPE_ID = "essence_liquifier"
 
 # Depot -> Warehouse life-form buffer (stage_life_forms()): at most this many
@@ -218,7 +221,7 @@ class DroneDepotController:
             "slot_capacity": slot_capacity,
             "is_full": slot_capacity > 0 and slots_used >= slot_capacity,
         }
-        archive.set(f"{DEPOT_STATUS_KEY_PREFIX}{self.name}", telemetry)
+        archive.set_entry(DEPOT_STATUS_KEY, self.name, telemetry)
         self.log.trace(f"[{self.name}] publish_telemetry() exit: bays {bays_occupied}/{bay_count}, slots {slots_used}/{slot_capacity}.")
 
     def step(self):

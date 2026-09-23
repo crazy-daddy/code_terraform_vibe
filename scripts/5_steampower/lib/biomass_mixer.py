@@ -48,7 +48,10 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 STARVED_LEVEL_T = 1.0
 STALL_STREAK_THRESHOLD = 6
 
-STATUS_KEY_PREFIX = "biomass_mixer.status."
+# One shared dict {mixer_id: telemetry} (not one key per mixer, CLAUDE.md
+# rule 7). Old per-mixer "biomass_mixer.status.<id>" keys are purged by
+# ArchiveCleaner.clean_retired_keys().
+STATUS_KEY = "biomass_mixer.status"
 
 
 class EssenceInputRouter:
@@ -186,7 +189,7 @@ class BiomassMixerController:
                 "route": results.get(router.biome),
                 "level": level,
             }
-        archive.set(f"{STATUS_KEY_PREFIX}{self.name}", {
+        archive.set_entry(STATUS_KEY, self.name, {
             "name": self.name,
             "tier": self._read("tier", 1),
             "phase": self._read("phase", 0),

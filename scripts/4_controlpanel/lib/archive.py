@@ -89,5 +89,41 @@ class ArchiveClient:
         except Exception:
             return []
 
+    # One-shared-dict-per-concern helpers (CLAUDE.md rule 7): a key holds
+    # {entry_id: value} for many entities instead of one key per entity.
+    # Writes are atomic transactions touching only entry_id's own slot, and a
+    # non-dict stored value is treated as empty.
+
+    if TYPE_CHECKING:
+        @overload
+        def get_entry(self, key: str, entry_id: "Any", default: None = None) -> "Any": ...
+        @overload
+        def get_entry(self, key: str, entry_id: "Any", default: "_T") -> "_T": ...
+
+    def get_entry(self, key, entry_id, default=None):
+        """Returns shared dict key's entry_id value, or default if missing."""
+        entries = self.get(key, {})
+        if not isinstance(entries, dict):
+            return default
+        return entries.get(entry_id, default)
+
+    def set_entry(self, key, entry_id, value):
+        """Atomically sets key[entry_id] = value."""
+        def updater(entries):
+            if not isinstance(entries, dict):
+                entries = {}
+            entries[entry_id] = value
+            return entries
+        return self.transaction(key, {}, updater)
+
+    def pop_entry(self, key, entry_id):
+        """Atomically removes key[entry_id] (no-op if absent)."""
+        def updater(entries):
+            if not isinstance(entries, dict):
+                return {}
+            entries.pop(entry_id, None)
+            return entries
+        return self.transaction(key, {}, updater)
+
 # Singleton / default instance
 archive = ArchiveClient()

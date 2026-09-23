@@ -47,7 +47,10 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 # blacklist a perfectly good tank.
 OUTPUT_BLOCKED_STALL_REASONS = ("output_full", "unconnected")
 
-STATUS_KEY_PREFIX = "essence_liquifier.status."
+# One shared dict {liquifier_id: telemetry} (not one key per liquifier, CLAUDE.md
+# rule 7). Old per-liquifier "essence_liquifier.status.<id>" keys are purged by
+# ArchiveCleaner.clean_retired_keys().
+STATUS_KEY = "essence_liquifier.status"
 
 
 class EssenceLiquifierController:
@@ -343,7 +346,7 @@ class EssenceLiquifierController:
             output_target = port.connected_id() if port else ""
         except Exception:
             output_target = ""
-        archive.set(f"{STATUS_KEY_PREFIX}{self.name}", {
+        archive.set_entry(STATUS_KEY, self.name, {
             "name": self.name,
             "biome": self.biome,
             "fluid": self.fluid_id,
