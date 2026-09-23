@@ -38,8 +38,9 @@ REQUEST_STALE_TICKS = 3000
 # Same window as mining_reservations.RESERVATION_STALE_TICKS.
 PICKUP_STALE_TICKS = 36000
 
-# How much of a requested item a SOURCE outpost keeps back from its own local
-# consumers (Liquifier) for a remote requester. Roughly one extractor load.
+# Minimum a SOURCE outpost keeps back from its own local consumers
+# (Liquifier) for a remote requester -- roughly one extractor load. The
+# requester's own target raises it (retain_amount()).
 LIFEFORM_STASH_CAP_T = 25
 
 DRONE_DEPOT_TYPE_ID = "drone_station"  # typeId, not the "Drone Depot" display name -- see lib/drone_energy.py
@@ -294,17 +295,22 @@ def network_deficits(curr_tick=None):
 def retain_amount(item_id, outpost_id, requests=None):
     """
     Units of item_id that local consumers (Liquifier) at outpost_id must leave
-    alone: the full target when outpost_id itself requests it, else
-    LIFEFORM_STASH_CAP_T when another outpost still misses some, else 0.
+    alone: the full target when outpost_id itself requests it, else -- while
+    any other outpost requests it at all -- the largest such remote target,
+    at least LIFEFORM_STASH_CAP_T, else 0. Held regardless of whether the
+    requester is currently topped up: a continuous consumer (Seed Maker)
+    drains its stash again soon, and the hauler should find a batch waiting
+    instead of stock the Liquifier burnt in between.
     """
     requests = requests if requests is not None else active_requests()
     own = requests.get(outpost_id, {}).get(item_id)
     if own:
         return own.get("target", 0)
+    retain = 0
     for o_id, items in requests.items():
         if o_id == outpost_id:
             continue
         entry = items.get(item_id)
-        if entry and entry.get("target", 0) - entry.get("have", 0) > 0:
-            return LIFEFORM_STASH_CAP_T
-    return 0
+        if entry:
+            retain = max(retain, LIFEFORM_STASH_CAP_T, entry.get("target", 0))
+    return retain

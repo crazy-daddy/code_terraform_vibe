@@ -39,9 +39,10 @@ REQUESTER_ID = "seed_maker"
 
 SEED_SPECIES_TOTAL = 15          # docs/types/biosphere.md SeedRecipe.seed_id possible values
 MAX_RECIPES_PER_FORM = 4         # generator cap per life form (see module docstring)
-SEED_STASH_TARGET_T = 10         # per-form stock requested at the Seed Maker outpost
+SEED_STASH_TARGET_T = 60         # per-form stock requested at the Seed Maker outpost (capped by open triples left)
 SEED_CLAIM_STALE_TICKS = 3000    # ~5 min; a claim older than this is free again
-REQUEST_REFRESH_TICKS = 600      # recompute + republish requests at most this often (~1 min)
+REQUEST_REFRESH_TICKS = 1200     # recompute + republish requests at most this often (~2 min);
+                                 # must stay well below logistics_requests.REQUEST_STALE_TICKS
 IDLE_POLL_SECONDS = 10.0         # nothing to try / waiting for material
 DONE_POLL_SECONDS = 120.0        # all species found
 
@@ -78,6 +79,7 @@ class SeedMakerController:
         self.forms = self._read_life_forms()
         self._tried = {}              # local mirror of TRIED_KEY, refreshed by every transaction
         self._last_request_tick = -REQUEST_REFRESH_TICKS
+        self._last_open_total = None
         self._last_result = ""
         self._trials_this_run = 0
 
@@ -261,33 +263,48 @@ class SeedMakerController:
         return None, None
 
     def _open_combo_counts(self, saturated, curr_tick):
-        """{form: open triples it still appears in} over non-saturated forms, plus the grand total."""
+        """
+        {form: open triples it still appears in} over non-saturated forms, plus
+        the grand total. Starts from the closed-form C(n,3) / C(n-1,2) counts
+        and subtracts only the closed entries in `_tried`, so the cost scales
+        with trials done instead of walking all 4060 triples (that full walk
+        took ~620 ticks in-game and ran before every trial).
+        """
         viable = self._viable_forms(saturated)
-        counts = {f: 0 for f in viable}
-        total = 0
+        viable_set = set(viable)
         n = len(viable)
-        for i in range(n):
-            for j in range(i + 1, n):
-                for k in range(j + 1, n):
-                    key = combo_key(viable[i], viable[j], viable[k])
-                    if self._is_open(key, curr_tick, allow_own_claim=True):
-                        counts[viable[i]] += 1
-                        counts[viable[j]] += 1
-                        counts[viable[k]] += 1
-                        total += 1
+        per_form = (n - 1) * (n - 2) // 2
+        counts = {f: per_form for f in viable}
+        total = n * (n - 1) * (n - 2) // 6
+        for key in self._tried:
+            members = key.split(",")
+            if len(members) != 3 or not all(m in viable_set for m in members):
+                continue
+            if self._is_open(key, curr_tick, allow_own_claim=True):
+                continue
+            total -= 1
+            for m in members:
+                counts[m] -= 1
         return counts, total
 
     def _publish_requests(self, saturated, stock, curr_tick, force=False):
-        """Requests SEED_STASH_TARGET_T of every form that still appears in an open triple."""
+        """
+        Requests every form that still appears in an open triple. Each open
+        triple needs 1 t of each member, so a form's target is its open-triple
+        count capped at SEED_STASH_TARGET_T -- big batches per hauler trip
+        early on, never more than the sweep can still use near the end.
+        """
         if not force and curr_tick - self._last_request_tick < REQUEST_REFRESH_TICKS:
-            return None
+            return self._last_open_total
         self._last_request_tick = curr_tick
         counts, total = self._open_combo_counts(saturated, curr_tick)
-        wants = {f: (SEED_STASH_TARGET_T, stock.get(f, 0)) for f, n in counts.items() if n > 0}
+        wants = {f: (min(SEED_STASH_TARGET_T, n), stock.get(f, 0)) for f, n in counts.items() if n > 0}
         if self.outpost_id:
             logistics_requests.set_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick)
         short = sorted(f for f, pair in wants.items() if pair[1] < pair[0])
-        self.log.debug(f"[{self.name}] requests: {len(wants)} form(s) still in open triples ({total} open), {len(short)} below {SEED_STASH_TARGET_T} t: {short}")
+        missing = sum(max(0, t - h) for t, h in wants.values())
+        self.log.debug(f"[{self.name}] requests: {len(wants)} form(s) still in open triples ({total} open), {len(short)} below target ({missing} t missing): {short}")
+        self._last_open_total = total
         return total
 
     def _publish_status(self, state, recipes, saturated, open_total):
