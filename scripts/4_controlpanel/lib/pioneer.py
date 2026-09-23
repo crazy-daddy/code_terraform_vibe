@@ -12,6 +12,7 @@ from vehicle_upgrade import VehicleUpgradeMixin
 from storage import take_item
 from version_guard import validate_game_version
 import mining_reservations
+import drill_sites
 from logistics_requests import PULL_DESTINATION_WILDCARDS
 
 class PioneerController(VehicleController, VehicleUpgradeMixin):
@@ -226,7 +227,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
             return res.status == "ok"
         return False
 
-    def execute_construction(self, blueprint_id, coords=None):
+    def execute_construction(self, blueprint_id, coords=None, kind=None):
         """
         Drives within interaction range of a construction blueprint and executes it,
         recharging on-site and resuming for as long as real progress keeps being made.
@@ -236,6 +237,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
         would waste the trip and abandon a perfectly workable job. Blueprints can
         build outposts, pumps, well caps, power lines, and pipe networks.
         Caller must ensure required cargo is loaded first; see load_construction_materials().
+        `kind` (the Construction's .kind): a finished mining_drill* blueprint
+        records the new drill's position (drill_sites.record_built_drill()),
+        since no game API exposes drill coordinates.
 
         Returns False only for a genuine rejection (blocked, insufficient materials,
         etc.) or an inability to physically reach the site/station -- never merely
@@ -274,6 +278,11 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
             self.log.print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
 
             if res.status == "ok":
+                if kind and str(kind).startswith("mining_drill") and coords and hasattr(self.vehicle, "input"):
+                    try:
+                        drill_sites.record_built_drill(self.vehicle.input, str(kind), coords)
+                    except Exception as error:
+                        self.log.level("warn").print(f"[{self.name}] Could not record new drill position: {error}")
                 self.log.trace(f"[{self.name}] execute_construction() exit: blueprint '{blueprint_id}' complete")
                 return True
             if res.status not in ("paused_no_power", "paused"):
@@ -485,7 +494,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                     coords = self.extract_coords(getattr(active_job, "position", None))
                     if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
                         self.log.print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
-                        success = self.execute_construction(job_id, coords)
+                        success = self.execute_construction(job_id, coords, kind=getattr(active_job, "kind", None))
                         if not success:
                             failed_jobs.add(job_id)
                             self.release_target_claim(self.construction_claim_key(job_id))
@@ -535,7 +544,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                         coords = self.extract_coords(getattr(candidate, "position", None))
                         if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
                             self.log.print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
-                            success = self.execute_construction(job_id, coords)
+                            success = self.execute_construction(job_id, coords, kind=getattr(candidate, "kind", None))
                             if not success:
                                 failed_jobs.add(job_id)
                                 self.release_target_claim(self.construction_claim_key(job_id))

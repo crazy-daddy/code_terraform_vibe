@@ -17,6 +17,8 @@ scripts/                    # source of truth for every deployable script and li
   3_archiveunlock/           # unlocked once the Data Archive is researched
   4_controlpanel/            # unlocked once the Control Room is researched
   5_steampower/              # active once the steam grid is built (>= 2 thermal_cap, >= 5 steam_turbine)
+  6_seeds/                   # active once a Seed Maker is deployed
+  7_miningdrills/            # active once any Mining Drill (standard/Industrial/Heavy) is deployed
     .criteria                # what a save needs for this tier to be active (absent in 0_cold_boot)
     <category>/<name>.py     # one script per machine type, e.g. power/solar.py
     lib/<module>.py          # shared library modules for that tier
@@ -50,7 +52,7 @@ gate. See `docs/AI_CHEATSHEET.md` §1a-0 and §9.
 Each tier is a checkpoint in the game's own progression (research unlocks, in this codebase's
 current scheme, plus built buildings from tier 5 up), not a folder you pick by hand. A `.criteria`
 file at each tier's root (e.g. `scripts/3_archiveunlock/.criteria`) declares what must be true of a
-save — which techs are unlocked, how many outposts exist, how many of a building type are built —
+save — which techs are unlocked, how many outposts exist, how many of a building type are built, or that at least one of several types is (e.g. any Mining Drill variant) —
 for that tier to be considered active. `scripts_sync.py` reads
 a save's own state file to figure out the highest tier whose criteria (and all its ancestors') are
 satisfied, automatically, per save — no manual bookkeeping. A script or `lib/` module only needs to

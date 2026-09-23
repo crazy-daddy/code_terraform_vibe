@@ -11,10 +11,11 @@
 
 from production import get_raw_material_demands
 from version_guard import validate_game_version
-from storage import best_unload_target, take_item, total_stock, inventory_stack_size, warehouse_stock
+from storage import best_unload_target, take_item, total_stock, inventory_stack_size
 import outpost_reagents
 import mining_reservations
 import logistics_requests
+import drill_sites
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -207,6 +208,9 @@ class VehicleCargoMixin:
             return []
         self._host.log.debug(f"[{self._host.name}] _plan_haul_load(): demand at '{dest_outpost_id}': {demands}")
         source_is_home = getattr(self._host.home_outpost, "is_home", True)
+        # Stock a pull hauler (run_pull_loop()) already promised itself here
+        # isn't ours to load -- it would arrive to an emptied Warehouse.
+        pulled = {} if source_is_home else logistics_requests.reserved_from(getattr(self._host.home_outpost, "id", None), exclude_vehicle=self._host.name)
         ranked = []
         for item_id, unmet in demands.items():
             if unmet <= 0:
@@ -219,7 +223,7 @@ class VehicleCargoMixin:
             else:
                 # No Shop delivery anywhere but home: real stock on hand is the
                 # hard ceiling, same as before this role was generalized.
-                available = total_stock(item_id, outpost=self._host.home_outpost)
+                available = total_stock(item_id, outpost=self._host.home_outpost) - pulled.get(item_id, 0)
                 if available <= 0:
                     continue
             ranked.append((unmet, item_id, available))
@@ -483,55 +487,83 @@ class VehicleCargoMixin:
 
     # ------------------------------------------------------------ pull (reverse) hauling
 
-    def _pull_source_stock(self, outpost, items, requests):
+    def _pull_deficits(self, curr_tick):
         """
-        {item_id: units} a source outpost can give away: its Warehouse stock
-        (plus Inventory when it's home) minus whatever that outpost requests
-        for itself. Drone Depot stock is left out on purpose -- lib/drone_depot.py
-        stages requested items into a Warehouse, which vehicles can take() from.
+        {item_id: units} this vehicle's home outpost still needs: its live
+        pull-request deficits (logistics_requests, already net of in-flight
+        pickups), plus -- when home is the production outpost -- the raw-ore
+        demand normal haulers and miners chase (get_raw_material_demands(),
+        already net of mining.reserved_yield). The larger of the two per
+        item, never the sum: both measure a target against the same stock.
         """
-        own = requests.get(getattr(outpost, "id", None), {})
-        is_home = bool(getattr(outpost, "is_home", False))
-        inventory = get_component("inventory") if is_home else None
-        available = {}
-        for item_id in items:
-            units = warehouse_stock(item_id, outpost)
-            if inventory is not None:
-                try:
-                    units += inventory.count(item_id)
-                except Exception:
-                    pass
-            units -= own.get(item_id, {}).get("target", 0)
-            if units > 0:
-                available[item_id] = units
-        return available
+        home = self._host.home_outpost
+        deficits = logistics_requests.outpost_deficits(home, curr_tick, live=True)
+        if getattr(home, "is_home", False):
+            raw = get_raw_material_demands()
+            self._host.log.debug(f"[{self._host.name}] pull: requests={deficits}, raw-ore demand={raw}.")
+            for item_id, units in raw.items():
+                if units > deficits.get(item_id, 0):
+                    deficits[item_id] = units
+        return deficits
 
-    def _plan_pull_route(self, deficits, capacity, curr_tick):
+    def _pull_sources(self, items, curr_tick):
         """
-        Greedy multi-stop pickup plan for this vehicle's home outpost:
-        repeatedly visits the nearest (from the previous stop) other outpost
-        that still holds something from `deficits`, taking the largest
-        deficits first, until capacity, PULL_MAX_STOPS_PER_TRIP or the
-        deficits run out. Stops after the first must pass
-        _pull_chain_worthwhile() (no driving past home). Returns [(outpost, [(item_id, amount), ...]), ...].
+        Every place holding free stock of `items`, as dicts {"kind", "id",
+        "coords", "available", "outpost"}: other outposts
+        (logistics_requests.outpost_free_stock(), computed live) and field
+        Mining Drills advertising in drill.status (lib/drill_sites.py), each
+        net of what other haulers already reserved there. A drill with no
+        recorded position (drill.positions) is skipped, warned about once.
         """
+        home_id = getattr(self._host.home_outpost, "id", None)
+        requests = logistics_requests.active_requests(curr_tick)
+        sources = []
+        if not hasattr(self, "_unlocated_drills_warned"):
+            self._unlocated_drills_warned = set()
+
         network = get_component("outpost_network")
         try:
             outposts = list(network.outposts()) if network else []
         except Exception:
             outposts = []
-        home_id = getattr(self._host.home_outpost, "id", None)
-        requests = logistics_requests.active_requests(curr_tick)
-        items = list(deficits.keys())
-
-        sources = []
         for outpost in outposts:
             if getattr(outpost, "id", None) == home_id or not hasattr(outpost, "coords"):
                 continue
-            available = self._pull_source_stock(outpost, items, requests)
+            available = logistics_requests.outpost_free_stock(outpost, items, requests, curr_tick, exclude_vehicle=self._host.name)
             if available:
-                sources.append((outpost, available))
-        self._host.log.debug(f"[{self._host.name}] pull: {len(sources)} source outpost(s) hold requested items: " + ", ".join(f"{o.id}={a}" for o, a in sources))
+                sources.append({"kind": "outpost", "id": outpost.id, "coords": outpost.coords(), "available": available, "outpost": outpost})
+
+        positions = drill_sites.known_positions()
+        for drill_id, entry in drill_sites.advertised_drills(curr_tick).items():
+            taken = logistics_requests.reserved_from(drill_id, curr_tick, exclude_vehicle=self._host.name)
+            available = {}
+            for item_id, units in (entry.get("items") or {}).items():
+                free = units - taken.get(item_id, 0)
+                if item_id in items and free > 0:
+                    available[item_id] = free
+            if not available:
+                continue
+            coords = drill_sites.position_of(drill_id, positions)
+            if not coords:
+                if drill_id not in self._unlocated_drills_warned:
+                    self._host.log.level("warn").print(f"[{self._host.name}] Drill '{drill_id}' holds {available} but its position is unknown; seed drill.positions to include it.")
+                    self._unlocated_drills_warned.add(drill_id)
+                continue
+            sources.append({"kind": "drill", "id": drill_id, "coords": coords, "available": available, "outpost": None})
+
+        self._host.log.debug(f"[{self._host.name}] pull: {len(sources)} source(s) hold wanted items: " + ", ".join(f"{src['kind']}:{src['id']}={src['available']}" for src in sources))
+        return sources
+
+    def _plan_pull_route(self, deficits, capacity, curr_tick):
+        """
+        Greedy multi-stop pickup plan for this vehicle's home outpost:
+        repeatedly visits the nearest (from the previous stop) source that
+        still holds something from `deficits`, taking the largest deficits
+        first, until capacity, PULL_MAX_STOPS_PER_TRIP or the deficits run
+        out. Stops after the first must pass _pull_chain_worthwhile() (no
+        driving past home). Returns [(source, [(item_id, amount), ...]), ...].
+        """
+        sources = self._pull_sources(list(deficits.keys()), curr_tick)
 
         home_coords = None
         try:
@@ -544,17 +576,17 @@ class VehicleCargoMixin:
         pos = self._host.get_position()
         route = []
         while sources and cap_left > 0 and remaining and len(route) < PULL_MAX_STOPS_PER_TRIP:
-            useful = [(o, a) for o, a in sources if any(remaining.get(i, 0) > 0 and u > 0 for i, u in a.items())]
+            useful = [src for src in sources if any(remaining.get(i, 0) > 0 and u > 0 for i, u in src["available"].items())]
             if route and home_coords is not None:
-                useful = [(o, a) for o, a in useful if self._pull_chain_worthwhile(pos, o, home_coords)]
+                useful = [src for src in useful if self._pull_chain_worthwhile(pos, src, home_coords)]
             if not useful:
                 break
-            useful.sort(key=lambda pair: self._host.distance_between(pos, pair[0].coords()))
-            outpost, available = useful[0]
-            sources = [(o, a) for o, a in sources if o.id != outpost.id]
+            useful.sort(key=lambda src: self._host.distance_between(pos, src["coords"]))
+            source = useful[0]
+            sources = [src for src in sources if src["id"] != source["id"]]
             loads = []
-            for item_id in sorted(available.keys(), key=lambda i: -remaining.get(i, 0)):
-                amount = min(remaining.get(item_id, 0), available[item_id], cap_left)
+            for item_id in sorted(source["available"].keys(), key=lambda i: -remaining.get(i, 0)):
+                amount = min(remaining.get(item_id, 0), source["available"][item_id], cap_left)
                 if amount <= 0:
                     continue
                 loads.append((item_id, amount))
@@ -563,38 +595,115 @@ class VehicleCargoMixin:
                 if cap_left <= 0:
                     break
             if loads:
-                route.append((outpost, loads))
-                pos = outpost.coords()
+                route.append((source, loads))
+                pos = source["coords"]
         return route
 
-    def _pull_chain_worthwhile(self, prev_coords, outpost, home_coords):
+    def _pull_chain_worthwhile(self, prev_coords, source, home_coords):
         """
-        True when chaining `outpost` straight after prev_coords beats
+        True when chaining `source` straight after prev_coords beats
         dropping off at home first: direct leg <= PULL_CHAIN_MAX_DETOUR_RATIO
-        * (prev -> home -> outpost). Rejects stops that lie "behind" home.
+        * (prev -> home -> source). Rejects stops that lie "behind" home.
         """
-        coords = outpost.coords()
+        coords = source["coords"]
         direct = self._host.distance_between(prev_coords, coords)
         via_home = self._host.distance_between(prev_coords, home_coords) + self._host.distance_between(home_coords, coords)
         ok = via_home > 0 and direct <= PULL_CHAIN_MAX_DETOUR_RATIO * via_home
-        self._host.log.debug(f"[{self._host.name}] pull: chain to '{outpost.id}' direct={direct:.0f}m vs via-home={via_home:.0f}m -> {'chain' if ok else 'skip (home is on the way; next trip)'}.")
+        self._host.log.debug(f"[{self._host.name}] pull: chain to '{source['id']}' direct={direct:.0f}m vs via-home={via_home:.0f}m -> {'chain' if ok else 'skip (home is on the way; next trip)'}.")
         return ok
+
+    def _pull_yield_key(self, item_id):
+        return f"pull:{self._host.name}:{item_id}"
+
+    def _reserve_pull_yield(self, totals, curr_tick):
+        """
+        Debits {item_id: units} headed home from get_raw_material_demands()
+        (mining.reserved_yield, same debit run_haul_loop() and home-demand
+        miners write), so a normal hauler or miner doesn't also chase ore
+        this trip already covers -- and vice versa, since this vehicle's own
+        _pull_deficits() reads the same debited demand. Only for a home-based
+        pull hauler; elsewhere raw-ore demand isn't read at all.
+        """
+        if not getattr(self._host.home_outpost, "is_home", False):
+            return
+        for item_id, units in totals.items():
+            if units > 0:
+                mining_reservations.reserve_yield(self._host.name, self._pull_yield_key(item_id), item_id, units, curr_tick)
+            else:
+                mining_reservations.release_yield(self._host.name, self._pull_yield_key(item_id))
+
+    def _pull_from_source(self, source, loads, home_id, curr_tick):
+        """
+        Drives to one planned source and loads its items; returns
+        {item_id: moved}, or None when the source couldn't be reached.
+        Corrects this vehicle's pickup reservations there to what actually
+        got loaded. A drill that refuses the connection (wrong recorded
+        position) yields nothing and is warned about.
+        """
+        moved_by_item = {}
+        coords = source["coords"]
+        is_drill = source["kind"] == "drill"
+        self._host.publish_telemetry("OUTBOUND", f"pickup at {source['kind']} '{source['id']}'")
+        precision = drill_sites.DRILL_ARRIVAL_PRECISION_M if is_drill else 1.5
+        if not self._host.drive_with_recharge(coords[0], coords[1], precision=precision):
+            self._host.log.level("warn").print(f"[{self._host.name}] Could not reach '{source['id']}'; heading home with what's aboard.")
+            return None
+
+        if is_drill:
+            if not drill_sites.connect_to_drill(self._host.vehicle.input, source["id"]):
+                self._host.log.level("warn").print(f"[{self._host.name}] Drill '{source['id']}' refused the connection at {coords}; check its drill.positions entry.")
+                for item_id, _amount in loads:
+                    logistics_requests.reserve_pickup(self._host.name, home_id, item_id, 0, curr_tick, source_id=source["id"])
+                return moved_by_item
+
+        for item_id, amount in loads:
+            if is_drill:
+                moved = drill_sites.take_from_drill(self._host.vehicle.input, item_id, amount)
+            else:
+                moved = take_item(self._host.vehicle.input, item_id, amount, outpost=source["outpost"])
+            self._host.log.print(f"[{self._host.name}] Picked up {moved}/{amount}x {item_id} at '{source['id']}'.")
+            logistics_requests.reserve_pickup(self._host.name, home_id, item_id, moved, curr_tick, source_id=source["id"])
+            moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
+
+        if not is_drill and self._host.find_charging_station(source["outpost"]) is not None:
+            self._host.recharge_at_station(target_level=1.0)
+        return moved_by_item
+
+    def _cargo_totals(self):
+        """{item_id: units} physically aboard."""
+        totals = {}
+        try:
+            stacks = self._host.vehicle.cargo.stacks()
+        except Exception:
+            stacks = []
+        for stack in stacks:
+            item_id = getattr(stack, "id", None)
+            count = getattr(stack, "count", 0)
+            if item_id and count > 0:
+                totals[item_id] = totals.get(item_id, 0) + count
+        return totals
 
     def run_pull_loop(self, poll_interval=10.0):
         """
-        Reverse hauler: parked at self.home_base, fetches whatever
-        lib/logistics_requests.py says this outpost is missing from any other
-        outpost's Warehouses and brings it home (Pioneer entrypoint with
-        DESTINATION_OUTPOST_ID="*"). One trip can chain up to
-        PULL_MAX_STOPS_PER_TRIP source outposts, nearest-neighbour ordered.
-        Every leg goes through drive_with_recharge(), which already refuses a
-        leg unless the vehicle can still reach a charging station afterwards.
-        Planned amounts are debited as in-flight pickups so a second pull
-        hauler at the same outpost doesn't chase the same deficit.
+        Reverse hauler: parked at self.home_base, fetches what this outpost
+        is missing (_pull_deficits(): pull requests, plus raw-ore demand when
+        parked at home) from any other outpost's free stock or any field
+        Mining Drill's stockpile, and brings it home (Pioneer entrypoint
+        with DESTINATION_OUTPOST_ID="*"). One trip can chain up to
+        PULL_MAX_STOPS_PER_TRIP sources, nearest-neighbour ordered. Every leg
+        goes through drive_with_recharge(), which already refuses a leg
+        unless the vehicle can still reach a charging station afterwards.
+
+        Plays nice with other haulers on both ends: planned amounts are
+        reserved per source (logistics.pickups "source", so nobody else
+        plans the same units there) and, for home-bound ore, debited from
+        home raw-ore demand (mining.reserved_yield, shared with
+        run_haul_loop() and home-demand miners), so a normal hauler already
+        bringing 800 ore makes this one see 800 less demand, and vice versa.
         """
         home = self._host.home_outpost
         home_id = getattr(home, "id", None)
-        self._host.log.print(f"[{self._host.name}] Pull Controller online. Fetching requested items to '{home_id}' from any outpost.")
+        self._host.log.print(f"[{self._host.name}] Pull Controller online. Fetching what '{home_id}' needs from outposts and drills.")
         validate_game_version()
         while True:
             try:
@@ -607,52 +716,63 @@ class VehicleCargoMixin:
 
                 if self._host.vehicle.cargo.count() > 0:
                     self._host.log.debug(f"[{self._host.name}] pull: cargo aboard; delivering home first.")
+                    # After a restart the in-flight yield debit may be gone;
+                    # re-assert it from what's physically aboard.
+                    self._reserve_pull_yield(self._cargo_totals(), self._host.get_current_tick())
                     self._finish_pull_delivery(poll_interval)
                     continue
 
                 curr_tick = self._host.get_current_tick()
-                deficits = logistics_requests.outpost_deficits(home, curr_tick, live=True)
+                deficits = self._pull_deficits(curr_tick)
                 if not deficits:
                     if not self._host.is_at_base():
                         self._host.return_to_base()
-                    self._host.publish_telemetry("IDLE_AT_OUTPOST", "no pull requests")
+                    self._host.publish_telemetry("IDLE_AT_OUTPOST", "no demand")
                     sleep(poll_interval)
                     continue
                 self._host.log.debug(f"[{self._host.name}] pull: deficits at '{home_id}': {deficits}")
 
                 capacity = self._host.vehicle.cargo.capacity()
                 route = self._plan_pull_route(deficits, capacity, curr_tick)
-                planned = sum(a for _o, loads in route for _i, a in loads)
+                planned = sum(a for _src, loads in route for _i, a in loads)
                 wanted = min(PULL_MIN_LOAD_UNITS, sum(deficits.values()))
                 if not route or planned < wanted:
                     self._host.log.debug(f"[{self._host.name}] pull: planned {planned} unit(s) < minimum {wanted}; waiting.")
-                    self._host.publish_telemetry("IDLE_AT_OUTPOST", "requested items not available anywhere yet")
+                    self._host.publish_telemetry("IDLE_AT_OUTPOST", "wanted items not available anywhere yet")
                     sleep(poll_interval)
                     continue
 
                 legs = []
-                for outpost, loads in route:
-                    legs.append(outpost.id + " (" + ", ".join(str(a) + "x " + i for i, a in loads) + ")")
+                planned_totals = {}
+                for source, loads in route:
+                    legs.append(source["id"] + " (" + ", ".join(str(a) + "x " + i for i, a in loads) + ")")
+                    for item_id, amount in loads:
+                        logistics_requests.reserve_pickup(self._host.name, home_id, item_id, amount, curr_tick, source_id=source["id"])
+                        planned_totals[item_id] = planned_totals.get(item_id, 0) + amount
+                self._reserve_pull_yield(planned_totals, curr_tick)
                 self._host.log.start(f"[{self._host.name}] Pull trip: " + " -> ".join(legs))
-                for outpost, loads in route:
-                    for item_id, amount in loads:
-                        logistics_requests.reserve_pickup(self._host.name, home_id, item_id, amount, curr_tick)
 
-                for outpost, loads in route:
-                    coords = outpost.coords()
-                    self._host.publish_telemetry("OUTBOUND", f"pickup at '{outpost.id}'")
-                    if not self._host.drive_with_recharge(coords[0], coords[1]):
-                        self._host.log.level("warn").print(f"[{self._host.name}] Could not reach '{outpost.id}'; heading home with what's aboard.")
+                loaded_totals = {item_id: 0 for item_id in planned_totals}
+                for index, (source, loads) in enumerate(route):
+                    moved_by_item = self._pull_from_source(source, loads, home_id, curr_tick)
+                    if moved_by_item is None:
+                        # Unreachable: drop this and every later stop's reservations.
+                        for later_source, later_loads in route[index:]:
+                            for item_id, _amount in later_loads:
+                                logistics_requests.reserve_pickup(self._host.name, home_id, item_id, 0, curr_tick, source_id=later_source["id"])
                         break
-                    for item_id, amount in loads:
-                        moved = take_item(self._host.vehicle.input, item_id, amount, outpost=outpost)
-                        self._host.log.print(f"[{self._host.name}] Picked up {moved}/{amount}x {item_id} at '{outpost.id}'.")
-                        logistics_requests.reserve_pickup(self._host.name, home_id, item_id, moved, curr_tick)
-                    if self._host.find_charging_station(outpost) is not None:
-                        self._host.recharge_at_station(target_level=1.0)
+                    for item_id, moved in moved_by_item.items():
+                        loaded_totals[item_id] = loaded_totals.get(item_id, 0) + moved
+                self._reserve_pull_yield(loaded_totals, curr_tick)
                 self._host.log.end(f"[{self._host.name}] Pickups done; {self._host.vehicle.cargo.count()} unit(s) aboard.")
 
-                self._finish_pull_delivery(poll_interval)
+                if self._host.vehicle.cargo.count() > 0:
+                    self._finish_pull_delivery(poll_interval)
+                else:
+                    logistics_requests.release_pickups(self._host.name)
+                    mining_reservations.release_yield(self._host.name)
+                    if not self._host.is_at_base():
+                        self._host.return_to_base()
             except Exception as error:
                 self._host.log.level("error").print(f"[{self._host.name}] Pull exception: {error}")
                 try:
@@ -673,6 +793,8 @@ class VehicleCargoMixin:
             sleep(poll_interval)
             return
         logistics_requests.release_pickups(self._host.name)
+        # A pull hauler holds no other yield reservations (roles are exclusive per script).
+        mining_reservations.release_yield(self._host.name)
         self._host.recharge_at_station(target_level=1.0)
         self._host.publish_telemetry("READY_AT_OUTPOST")
 

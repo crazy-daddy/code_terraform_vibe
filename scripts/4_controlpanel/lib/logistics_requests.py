@@ -14,12 +14,15 @@
 # Archive shape (one shared dict per concern, CLAUDE.md rule 7):
 #   logistics.requests = {outpost_id: {item_id: {"target": t, "have": h,
 #                                                "by": requester, "tick": n}}}
-#   logistics.pickups  = {pickup_key: {"vehicle", "dest", "item_id",
-#                                      "units", "tick"}}
+#   logistics.pickups  = {pickup_key: {"vehicle", "dest", "source",
+#                                      "item_id", "units", "tick"}}
 # "have" is the requester's own last-published local stock -- a cheap,
 # slightly lagging number for readers that can't afford a live stock walk
 # (miner drones). The hauler recomputes local stock live (outpost_stock())
 # before planning, since it's physically at the requesting outpost anyway.
+# "source" (outpost or drill id, None for legacy entries) lets a planner
+# debit stock another hauler has already promised itself (reserved_from()),
+# so two haulers never plan the same units at the same source.
 
 from archive import archive
 from storage import warehouse_stock
@@ -140,19 +143,28 @@ def active_requests(curr_tick=None):
 
 # ------------------------------------------------------------------- pickups
 
-def pickup_key(vehicle_name, dest_outpost_id, item_id):
-    return f"pull:{vehicle_name}:{dest_outpost_id}:{item_id}"
+def pickup_key(vehicle_name, dest_outpost_id, item_id, source_id=None):
+    base = f"pull:{vehicle_name}:{dest_outpost_id}:{item_id}"
+    return f"{base}:{source_id}" if source_id else base
 
 
-def reserve_pickup(vehicle_name, dest_outpost_id, item_id, units, curr_tick=None):
-    """Debits `units` of item_id headed for dest_outpost_id until released (or stale)."""
+def reserve_pickup(vehicle_name, dest_outpost_id, item_id, units, curr_tick=None, source_id=None):
+    """
+    Debits `units` of item_id headed for dest_outpost_id (and, with
+    source_id, taken from that outpost/drill) until released (or stale).
+    Re-reserving the same (vehicle, dest, item, source) overwrites, so the
+    planned amount can be corrected to what actually got loaded.
+    """
     tick = curr_tick if curr_tick is not None else _now_tick()
-    key = pickup_key(vehicle_name, dest_outpost_id, item_id)
+    key = pickup_key(vehicle_name, dest_outpost_id, item_id, source_id)
 
     def updater(pickups):
         if not isinstance(pickups, dict):
             pickups = {}
-        pickups[key] = {"vehicle": vehicle_name, "dest": dest_outpost_id, "item_id": item_id, "units": units, "tick": tick}
+        if units > 0:
+            pickups[key] = {"vehicle": vehicle_name, "dest": dest_outpost_id, "source": source_id, "item_id": item_id, "units": units, "tick": tick}
+        else:
+            pickups.pop(key, None)
         return pickups
 
     archive.transaction(PICKUPS_KEY, {}, updater)
@@ -185,6 +197,29 @@ def in_flight(dest_outpost_id, curr_tick=None):
         return totals
     for entry in raw.values():
         if not _is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("dest") != dest_outpost_id:
+            continue
+        item_id = entry.get("item_id")
+        if item_id:
+            totals[item_id] = totals.get(item_id, 0) + (entry.get("units", 0) or 0)
+    return totals
+
+
+def reserved_from(source_id, curr_tick=None, exclude_vehicle=None):
+    """
+    {item_id: units} other haulers have planned to take from source_id (an
+    outpost or drill id) and not delivered yet. The planning vehicle passes
+    its own name as exclude_vehicle so its previous trip's leftovers don't
+    count against it.
+    """
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    raw = archive.get(PICKUPS_KEY, {})
+    totals = {}
+    if not isinstance(raw, dict):
+        return totals
+    for entry in raw.values():
+        if not _is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("source") != source_id:
+            continue
+        if exclude_vehicle is not None and entry.get("vehicle") == exclude_vehicle:
             continue
         item_id = entry.get("item_id")
         if item_id:
@@ -290,6 +325,39 @@ def network_deficits(curr_tick=None):
             if missing > 0:
                 totals[item_id] = totals.get(item_id, 0) + missing
     return totals
+
+
+def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude_vehicle=None):
+    """
+    {item_id: units} an outpost can give away to a pull hauler -- its
+    advertised "free stock", computed live (no per-outpost script needed):
+    Warehouse stock (+ Inventory when it's home) minus the outpost's own
+    request target for that item, minus what other haulers already reserved
+    from it. Drone Depot stock is left out on purpose -- lib/drone_depot.py
+    stages requested items into a Warehouse, which vehicles can take() from.
+    """
+    requests = requests if requests is not None else active_requests(curr_tick)
+    outpost_id = getattr(outpost, "id", None)
+    own = requests.get(outpost_id, {})
+    taken = reserved_from(outpost_id, curr_tick, exclude_vehicle)
+    inventory = None
+    if getattr(outpost, "is_home", False):
+        try:
+            inventory = get_component("inventory")
+        except Exception:
+            inventory = None
+    free = {}
+    for item_id in item_ids:
+        units = warehouse_stock(item_id, outpost)
+        if inventory is not None:
+            try:
+                units += inventory.count(item_id)
+            except Exception:
+                pass
+        units -= own.get(item_id, {}).get("target", 0) + taken.get(item_id, 0)
+        if units > 0:
+            free[item_id] = units
+    return free
 
 
 def retain_amount(item_id, outpost_id, requests=None):

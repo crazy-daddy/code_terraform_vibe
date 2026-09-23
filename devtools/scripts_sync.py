@@ -244,7 +244,9 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
     `state.machines` is a dict of built machines keyed by id, each carrying a
     `typeId` (e.g. "steam_turbine", "thermal_cap") - counted per type into
     `building_counts`. Pending construction blueprints live elsewhere
-    (`state.planet.constructionBlueprints`) and are deliberately not counted.
+    (`state.planet.constructionBlueprints`) and are deliberately not counted,
+    nor are placed machines still `isUnderConstruction` - only finished,
+    actually deployed buildings count.
     Returns None if the save's state file can't be found or parsed - callers
     treat that as "nothing unlocked", i.e. tier 0.
     """
@@ -264,7 +266,7 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
             "outpost_count": len(state.get("planet", {}).get("outposts", [])),
             "building_counts": Counter(
                 m.get("typeId") for m in state.get("machines", {}).values()
-                if isinstance(m, dict)
+                if isinstance(m, dict) and not m.get("isUnderConstruction", False)
             ),
         }
     except (OSError, ValueError, KeyError):
@@ -450,6 +452,11 @@ def criteria_met(criteria: dict, state: Optional[dict]) -> bool:
     for type_id, minimum in criteria.get("buildings", {}).items():
         if counts.get(type_id, 0) < minimum:
             return False
+    # OR-group: at least one listed type meets its minimum (e.g. any of the
+    # three Mining Drill variants). Empty/absent group imposes nothing.
+    any_of = criteria.get("buildings_any", {})
+    if any_of and not any(counts.get(t, 0) >= n for t, n in any_of.items()):
+        return False
     return True
 
 
