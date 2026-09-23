@@ -407,6 +407,11 @@ def consume_manual_order(item_id, quantity):
     no active manual order or quantity <= 0."""
     if not item_id or quantity <= 0:
         return
+    # Plain read first: archive.transaction() always writes the key back, even when the updater
+    # returns it unchanged, which locks out manual Notebook edits of fabricator.manual_orders.
+    # Only transact when item_id actually has an active order to count down.
+    if item_id not in get_manual_orders():
+        return
 
     def updater(stored):
         stored = dict(stored or {})
@@ -761,7 +766,7 @@ def get_fabricator_targets(cache=None):
     return targets
 
 
-def _fabricator_worker_count(recipe_id):
+def get_fabricator_worker_count(recipe_id):
     """
     How many discovered Fabricators currently have recipe_id selected
     (get_recipe() == recipe_id) right now -- a live headcount, not an
@@ -791,16 +796,15 @@ def _fabricator_worker_count(recipe_id):
 def get_smelter_worker_count(recipe_id):
     """
     Live headcount of discovered Smelters currently holding recipe_id
-    (get_recipe() == recipe_id) right now -- mirrors _fabricator_worker_count()
+    (get_recipe() == recipe_id) right now -- mirrors get_fabricator_worker_count()
     exactly, same reasoning, for lib/smelter.py's ore-intake cap: with several
     Smelters "joined" on the same recipe (select_needed_ore()'s pile-on
     fallback, used whenever only one ore is currently demanded), each one
     independently topping its own 50-unit ore buffer up to the FULL current
     demand overshoots badly once you have more than one -- e.g. two Smelters
     each independently filling to a demand of 50 produces 100, not 50. Public
-    (unlike the private _fabricator_worker_count) since lib/smelter.py needs
-    it directly, not just lib/production.py's own internals. Returns at
-    least 1.
+    (like get_fabricator_worker_count(), which lib/fabricator.py uses) since
+    lib/smelter.py needs it directly. Returns at least 1.
     """
     count = 0
     for smelter_id in discover_smelter_ids():
@@ -820,7 +824,7 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
     where crafts_remaining covers the full remaining shortfall against its
     output target/order (not just one craft's worth), divided evenly across
     every Fabricator currently working this same recipe (see
-    _fabricator_worker_count()) so several Fabricators piled onto one
+    get_fabricator_worker_count()) so several Fabricators piled onto one
     large order split its remaining work instead of each independently
     re-loading the full shortfall."""
     if fabricator is None:
@@ -841,7 +845,7 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
         target = get_fabricator_targets(cache).get(output_item, 0)
         still_needed = max(0, target - current - output_buffer)
         crafts_remaining = -(-still_needed // output_count)  # ceil division
-        worker_count = _fabricator_worker_count(current_recipe_id)
+        worker_count = get_fabricator_worker_count(current_recipe_id)
         if worker_count > 1:
             pre_split = crafts_remaining
             crafts_remaining = -(-crafts_remaining // worker_count)  # ceil division -- an odd remainder goes to every worker equally rather than being dropped, converging (not undershooting) once demand nets back down on the next poll

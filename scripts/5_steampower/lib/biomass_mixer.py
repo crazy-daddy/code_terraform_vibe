@@ -18,7 +18,10 @@ from tree_console import TreeConsole
 # rather than FluidOutputRouter. Reachability comes straight from
 # port.connections()' per-peer FluidConnection.state instead of is_stalled()
 # -- a Mixer's is_stalled() is one machine-wide "fewer essences than the
-# phase needs" flag and can't say which input is broken.
+# phase needs" flag and can't say which input is broken. Starvation is judged
+# per port instead (see _port_starved()): a link can read "ready" to a remote
+# Liquifier that has run dry while a same-essence tank sits full next to the
+# Mixer, and link state alone would keep that dead link forever.
 
 ESSENCE_BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 LIQUIFIER_TYPE_ID = "essence_liquifier"
@@ -33,14 +36,24 @@ NEUTRAL_GRACE_STEPS = 6
 # Pipe may get built later) -- see fluid_routing.PerEntryBlacklist.
 RESCAN_INTERVAL_TICKS = 300
 
-# Candidate list cache, in ensure() calls on the slow path.
-DISCOVERY_CACHE_INTERVAL_STEPS = 20
+# Candidate list cache in simulation ticks, not calls -- see
+# fluid_routing.TickedDiscoveryCache.
+DISCOVERY_CACHE_INTERVAL_TICKS = 100
+
+# Per-port starvation: buffer below STARVED_LEVEL_T with flow_rate() == 0.
+# A well-stocked buffer that isn't flowing (Mixer not selecting that essence
+# right now) is not starved. After STALL_STREAK_THRESHOLD consecutive starved
+# step() calls (~30 s at the 5 s poll) the source is dropped and blacklisted,
+# so the router moves on to the next candidate (e.g. a full tank).
+STARVED_LEVEL_T = 1.0
+STALL_STREAK_THRESHOLD = 6
 
 STATUS_KEY_PREFIX = "biomass_mixer.status."
 
 
 class EssenceInputRouter:
-    """Keeps one <biome>_essence_in port connected to a reachable tank or Liquifier of that essence."""
+    """Keeps one <biome>_essence_in port connected to a reachable tank or Liquifier of that essence,
+    via the shared consumer-side fluid_routing.FluidInputRouter."""
 
     def __init__(self, mixer, biome, log):
         self.mixer = mixer
@@ -49,24 +62,36 @@ class EssenceInputRouter:
         self.port_name = f"{self.fluid_id}_in"
         self.log = log
         self.name = getattr(mixer, "id", "biomass_mixer")
-        self.blacklist = fluid_routing.PerEntryBlacklist(RESCAN_INTERVAL_TICKS)
-        # Starts at 0 on (re)start so a link that's merely neutral after a power cycle gets its grace period too.
-        self.steps_since_connect = 0
-        self._cached_candidates = None
-        self._steps_since_discovery = 0
+        self._router = fluid_routing.FluidInputRouter(
+            discover=self._discover_candidates,
+            rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
+            discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
+            # Starvation comes from this port's own buffer (_port_starved()), not the Mixer's
+            # machine-wide is_stalled().
+            stall_streak_threshold=STALL_STREAK_THRESHOLD,
+            neutral_grace_steps=NEUTRAL_GRACE_STEPS,
+            label=f"{self.name}.{self.port_name}",
+        )
 
     def port(self):
         return getattr(self.mixer, self.port_name, None)
 
+    def _port_starved(self, port):
+        """Buffer nearly empty and nothing flowing in -- the linked source has nothing to give."""
+        try:
+            level = port.level()
+            flow = port.flow_rate()
+        except Exception:
+            return False
+        starved = level < STARVED_LEVEL_T and flow == 0
+        if starved:
+            self.log.debug(f"[{self.name}] {self.port_name}: starved (level {level:.2f} t < {STARVED_LEVEL_T} t, flow 0).")
+        return starved
+
     def _discover_candidates(self):
         """Source ids: essence tanks first, then same-biome Liquifiers; own outpost first within each group."""
-        if self._cached_candidates is not None and self._steps_since_discovery < DISCOVERY_CACHE_INTERVAL_STEPS:
-            self._steps_since_discovery += 1
-            return self._cached_candidates
-
         own_outpost_id = getattr(getattr(self.mixer, "outpost", None), "id", None)
         tanks = fluid_routing.discover_network_buildings(fluid_routing.LIQUID_TANK_TYPE_IDS, resolve=False, fluid_id=self.fluid_id)
-        tanks.sort(key=lambda p: p[1] != own_outpost_id)
 
         liquifiers = []
         for building, outpost_id in fluid_routing.discover_network_buildings(LIQUIFIER_TYPE_ID, resolve=True):
@@ -76,67 +101,31 @@ class EssenceInputRouter:
                 biome = None
             if biome == self.biome:
                 liquifiers.append((building.id, outpost_id))
-        liquifiers.sort(key=lambda p: p[1] != own_outpost_id)
 
-        self._cached_candidates = [b_id for b_id, _ in tanks] + [b_id for b_id, _ in liquifiers]
-        self._steps_since_discovery = 0
-        self.log.debug(f"[{self.name}] {self.port_name}: discovered {len(tanks)} tank(s) + {len(liquifiers)} Liquifier(s) -> {self._cached_candidates}.")
-        return self._cached_candidates
+        candidates = fluid_routing.rank_own_outpost_first(tanks, own_outpost_id) + fluid_routing.rank_own_outpost_first(liquifiers, own_outpost_id)
+        self.log.debug(f"[{self.name}] {self.port_name}: discovered {len(tanks)} tank(s) + {len(liquifiers)} Liquifier(s) -> {candidates}.")
+        return candidates
 
     def ensure(self, curr_tick):
         """Returns one of "no_port"/"healthy"/"pending"/"connected"/"waiting"/"not_found"/"exhausted"."""
+        def on_dropped(source_id, reason):
+            self.log.level("warn").print(f"[{self.name}] {self.port_name}: dropping '{source_id}' ({reason}). Trying another source.")
+
+        def on_connect_notice(source_id, status, message):
+            self.log.level("warn").print(f"[{self.name}] {self.port_name} connect notice for '{source_id}': {status} - {message}")
+
         port = self.port()
-        if not port or not hasattr(port, "connect"):
-            return "no_port"
-
-        # Any healthy peer, including a Liquifier that declared itself onto this port, is enough.
-        peer = fluid_routing.healthy_peer_id(port)
-        if peer:
-            self.log.trace(f"[{self.name}] {self.port_name}: healthy via '{peer}'.")
-            return "healthy"
-
-        self.steps_since_connect += 1
-        try:
-            own_id = port.connected_id()
-        except Exception:
-            own_id = ""
-        own_state = fluid_routing.declared_connection_state(port)
-
-        candidates = self.blacklist.filter_reachable(self._discover_candidates(), curr_tick)
-        alternatives = [c for c in candidates if c != own_id]
-
-        if own_id:
-            broken = own_state in fluid_routing.BROKEN_CONNECTION_STATES
-            if not broken and self.steps_since_connect < NEUTRAL_GRACE_STEPS:
-                self.log.debug(f"[{self.name}] {self.port_name}: '{own_id}' is {own_state!r}, within grace ({self.steps_since_connect}/{NEUTRAL_GRACE_STEPS}).")
-                return "pending"
-            if not broken and not alternatives:
-                # Still neutral (e.g. the only tank is empty) and nothing else to try -- keep it.
-                self.log.debug(f"[{self.name}] {self.port_name}: '{own_id}' still {own_state!r} but no alternative source; keeping it.")
-                return "pending"
-            self.blacklist.blacklist(own_id, curr_tick)
-            self.log.level("warn").print(f"[{self.name}] {self.port_name}: '{own_id}' link is {own_state!r} -- {'no completed Liquid Pipe route?' if broken else 'no essence arriving'}. Trying another source.")
-
-        if not alternatives:
-            known = self._cached_candidates or []
-            if known:
-                self.log.debug(f"[{self.name}] {self.port_name}: every known source is blacklisted; waiting for expiry.")
-                return "waiting"
+        is_starved = bool(port) and self._port_starved(port)
+        event = self._router.ensure(port, curr_tick, is_starved=is_starved, on_dropped=on_dropped, on_connect_notice=on_connect_notice)
+        if event.kind == "healthy":
+            self.log.trace(f"[{self.name}] {self.port_name}: healthy via '{event.source_id}'.")
+        elif event.kind == "connected":
+            self.log.print(f"[{self.name}] Connected {self.port_name} -> '{event.source_id}'.")
+        elif event.kind == "waiting":
+            self.log.debug(f"[{self.name}] {self.port_name}: every known source is blacklisted; waiting for expiry.")
+        elif event.kind == "not_found":
             self.log.debug(f"[{self.name}] {self.port_name}: no '{self.fluid_id}' tank or '{self.biome}' Liquifier anywhere yet.")
-            return "not_found"
-
-        for source_id in alternatives:
-            try:
-                res = port.connect(source_id)
-            except Exception:
-                continue
-            if res.status == "ok":
-                self.steps_since_connect = 0
-                self.log.print(f"[{self.name}] Connected {self.port_name} -> '{source_id}'.")
-                return "connected"
-            if res.status != "busy":
-                self.log.level("warn").print(f"[{self.name}] {self.port_name} connect notice for '{source_id}': {res.status} - {res.message}")
-        return "exhausted"
+        return event.kind
 
 
 class BiomassMixerController:

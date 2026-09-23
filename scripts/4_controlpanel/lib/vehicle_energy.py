@@ -54,7 +54,11 @@ def is_rover_chassis_for(vehicle):
 
 from archive import archive
 
-CHARGING_STATION_TYPE_ID = "vehicle_charging_station"
+# Building type id as returned by OutpostRef.buildings() / Machine.typeId
+# ("charging_station"), not the component doc name
+# ("vehicle_charging_station"), which never matches and silently made every
+# station lookup fall back to the home slot.
+CHARGING_STATION_TYPE_ID = "charging_station"
 
 # Fleet-wide default cruise_throttle, settable via the Data Archive Notebook
 # (e.g. bump to 1.0 once battery capacity supports full-throttle driving)

@@ -122,7 +122,7 @@ def plan_dock_assignments(clock=None):
     already assigned to it -- spreads docks across several needed orders
     instead of piling every idle dock onto a single top-priority one, while
     still letting every dock share one order when it's the only good
-    candidate (mirrors production._fabricator_worker_count()'s
+    candidate (mirrors production.get_fabricator_worker_count()'s
     spread-then-join pattern). Writes the plan to archive and returns it.
     """
     orders_api = get_component("orders")

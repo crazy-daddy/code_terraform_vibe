@@ -86,6 +86,7 @@ import re
 import shutil
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -238,8 +239,12 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
     """Read-only: state.unlockedTech and outpost count, straight from the save.
 
     Verified fields (see the plan this tool came from): `state.unlockedTech`
-    is a list of tech ids (e.g. "shared_library", "data_archive_unlock"), and
-    `state.planet.outposts` is a list whose length is the outpost count.
+    is a list of tech ids (e.g. "shared_library", "data_archive_unlock"),
+    `state.planet.outposts` is a list whose length is the outpost count, and
+    `state.machines` is a dict of built machines keyed by id, each carrying a
+    `typeId` (e.g. "steam_turbine", "thermal_cap") - counted per type into
+    `building_counts`. Pending construction blueprints live elsewhere
+    (`state.planet.constructionBlueprints`) and are deliberately not counted.
     Returns None if the save's state file can't be found or parsed - callers
     treat that as "nothing unlocked", i.e. tier 0.
     """
@@ -257,6 +262,10 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
         summary = {
             "unlockedTech": set(state.get("unlockedTech", [])),
             "outpost_count": len(state.get("planet", {}).get("outposts", [])),
+            "building_counts": Counter(
+                m.get("typeId") for m in state.get("machines", {}).values()
+                if isinstance(m, dict)
+            ),
         }
     except (OSError, ValueError, KeyError):
         return None
@@ -437,6 +446,10 @@ def criteria_met(criteria: dict, state: Optional[dict]) -> bool:
         return False
     if "outpost_count" in criteria and state["outpost_count"] < criteria["outpost_count"]:
         return False
+    counts = state["building_counts"]
+    for type_id, minimum in criteria.get("buildings", {}).items():
+        if counts.get(type_id, 0) < minimum:
+            return False
     return True
 
 

@@ -1,9 +1,10 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
+from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
 from archive import archive
 from storage import take_item, total_stock, best_unload_target
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+import fluid_routing
 
 # Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
 # exactly, same reasoning: with several Fabricators, choose_recipe() picking
@@ -30,21 +31,23 @@ RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 # share fairly with.
 FABRICATOR_LOAD_CHUNK_SIZE = 10
 
-# ensure_fluid_connections() mirrors lib/steam_turbine.py's
-# ensure_input_connection() almost exactly -- both are an INPUT FluidPort
-# declaring its own upstream source (a Gas/Liquid Tank has no script of its
-# own, so nothing else ever calls connect() on the other side of the pipe).
-# The Fabricator has no is_stalled() of its own (unlike Steam Turbine/Thermal
-# Cap/Water Pump), so reachability is instead inferred from flow_rate()
-# staying 0 for several consecutive ticks while the port still has room to
-# receive (level() < capacity()) -- connect()'s "ok" status alone never
-# verifies a completed pipe route exists (docs/guide/infrastructure_and_pipes.md).
+# ensure_fluid_connections() drives one fluid_routing.FluidInputRouter per
+# recipe fluid port -- the same consumer-side router lib/steam_turbine.py and
+# lib/biomass_mixer.py use (a Gas/Liquid Tank has no script of its own, so
+# nothing else ever calls connect() on the other side of the pipe). The
+# Fabricator has no is_stalled() of its own, so the router's starvation signal
+# is flow_rate() staying 0 while the port still has room to receive
+# (level() < capacity()) -- a legitimately full port also reads 0 and must not
+# count.
 FLUID_STALL_STREAK_BLACKLIST_THRESHOLD = 5
 # Same per-entry (not shared-clock) blacklist expiry as every other
 # discover/connect/blacklist controller in this project -- see
 # lib/thermal_cap.py's RESCAN_INTERVAL_TICKS for the full reasoning.
 FLUID_RESCAN_INTERVAL_TICKS = 150
-FLUID_DISCOVERY_CACHE_INTERVAL_STEPS = 20
+# Simulation ticks, not calls -- see fluid_routing.TickedDiscoveryCache.
+FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
+# Declared link still "neutral" after this many checks is dropped, only if another candidate exists.
+FLUID_NEUTRAL_GRACE_STEPS = 5
 
 
 class FabricatorController:
@@ -58,16 +61,10 @@ class FabricatorController:
         self.clock = get_component("clock")
         self.log = TreeConsole(module="fabricator")
 
-        # Per-fluid-key (water_in/steam_in/oil_in) connection state -- see
-        # ensure_fluid_connections(). Keyed dicts rather than one shared value
-        # since a recipe can need more than one fluid at once (e.g. an
-        # oil-refining recipe needs both oil_in and water_in), and each port's
-        # own source is entirely independent of the others.
-        self._fluid_connected = {}
-        self._fluid_stall_streak = {}
-        self._fluid_unreachable = {}          # fluid_key -> {source_id: tick}
-        self._fluid_cached_candidates = {}    # fluid_key -> [ids]
-        self._fluid_ticks_since_discovery = {}
+        # fluid_key (water_in/steam_in/oil_in) -> FluidInputRouter, created lazily -- a recipe can
+        # need more than one fluid at once (e.g. oil refining needs oil_in + water_in), and each
+        # port's source is independent of the others.
+        self._fluid_routers = {}
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -148,57 +145,69 @@ class FabricatorController:
             if not self.connected_output and result.status not in ["busy"]:
                 self.log.level("warn").print(f"[{self.name}] Output connection notice: {result.status} - {result.message}")
 
-    def _fluid_is_blacklisted(self, fluid_key, source_id, curr_tick):
-        """Per-entry blacklist expiry -- see lib/thermal_cap.py's identical is_blacklisted()."""
-        blacklisted_at = self._fluid_unreachable.get(fluid_key, {}).get(source_id)
-        if blacklisted_at is None:
-            return False
-        age = curr_tick - blacklisted_at
-        return curr_tick == 0 or age < FLUID_RESCAN_INTERVAL_TICKS
-
-    def _discover_fluid_candidates_cached(self, fluid_key, type_ids):
+    def _discover_fluid_candidates(self, fluid_key, type_ids):
         """
         Candidate source ids network-wide for fluid_key (e.g. every
         water_pump/steam_condenser/liquid_tank/large_liquid_tank for
-        "water_in" -- see production.FLUID_SOURCE_TYPE_IDS), refreshed at
-        most every FLUID_DISCOVERY_CACHE_INTERVAL_STEPS calls. Only reached
-        from ensure_fluid_connections()'s slow path (a healthy connection
-        returns long before this).
+        "water_in" -- see production.FLUID_SOURCE_TYPE_IDS), own outpost
+        first, dropping any production.fluid_building_is_viable() rejects
+        (e.g. a Liquid Tank latched to a different fluid, or empty with no
+        producer to ever fill it). Called by this fluid's FluidInputRouter,
+        which caches it (fluid_routing.TickedDiscoveryCache).
         """
-        ticks = self._fluid_ticks_since_discovery.get(fluid_key, 0)
-        cached = self._fluid_cached_candidates.get(fluid_key)
-        if cached is None or ticks >= FLUID_DISCOVERY_CACHE_INTERVAL_STEPS:
-            ids = []
-            network = get_component("outpost_network")
-            if network and hasattr(network, "outposts"):
-                try:
-                    for outpost in network.outposts():
-                        for type_id in type_ids:
-                            for building in outpost.buildings(type_id):
-                                if not fluid_building_is_viable(fluid_key, type_id, building):
-                                    continue  # e.g. a Liquid Tank latched to a different fluid, or empty with no producer to ever fill it -- see production.fluid_building_is_viable()
-                                b_id = getattr(building, "id", None)
-                                if b_id:
-                                    ids.append(b_id)
-                except Exception:
-                    pass
-            self._fluid_cached_candidates[fluid_key] = ids
-            self._fluid_ticks_since_discovery[fluid_key] = 0
-        else:
-            self._fluid_ticks_since_discovery[fluid_key] = ticks + 1
-        return self._fluid_cached_candidates[fluid_key]
+        pairs = []
+        network = get_component("outpost_network")
+        if network and hasattr(network, "outposts"):
+            try:
+                for outpost in network.outposts():
+                    outpost_id = getattr(outpost, "id", None)
+                    for type_id in type_ids:
+                        for building in outpost.buildings(type_id):
+                            if not fluid_building_is_viable(fluid_key, type_id, building):
+                                continue
+                            b_id = getattr(building, "id", None)
+                            if b_id:
+                                pairs.append((b_id, outpost_id))
+            except Exception:
+                pass
+        own_outpost_id = getattr(getattr(self.machine, "outpost", None), "id", None)
+        ids = fluid_routing.rank_own_outpost_first(pairs, own_outpost_id)
+        self.log.debug(f"[{self.name}] {fluid_key}: rediscovered sources (own outpost first): {ids}.")
+        return ids
+
+    def _fluid_router(self, fluid_key, type_ids):
+        router = self._fluid_routers.get(fluid_key)
+        if router is None:
+            router = fluid_routing.FluidInputRouter(
+                discover=lambda: self._discover_fluid_candidates(fluid_key, type_ids),
+                rescan_interval_ticks=FLUID_RESCAN_INTERVAL_TICKS,
+                discovery_cache_interval_ticks=FLUID_DISCOVERY_CACHE_INTERVAL_TICKS,
+                stall_streak_threshold=FLUID_STALL_STREAK_BLACKLIST_THRESHOLD,
+                neutral_grace_steps=FLUID_NEUTRAL_GRACE_STEPS,
+                label=f"{self.name}.{fluid_key}",
+            )
+            self._fluid_routers[fluid_key] = router
+        return router
+
+    @staticmethod
+    def _fluid_port_starved(port):
+        """flow_rate() == 0 while the port still has room -- a full port also reads 0, not a stall."""
+        try:
+            level = port.level() if hasattr(port, "level") else 0
+            capacity = port.capacity() if hasattr(port, "capacity") else 0
+            flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
+            return flow == 0 and (not capacity or level < capacity)
+        except Exception:
+            return False
 
     def ensure_fluid_connections(self, recipe):
         """
         Connects each fluid_input the active recipe declares (recipe.fluid_inputs,
         e.g. {"water_in": 1.0} -- a separate field from .inputs, delivered via
         a FluidPort, not an Inventory/Warehouse take) to a reachable source
-        building network-wide. A Liquid/Gas Tank or Water Pump has no script
-        of its own, so nothing else ever calls connect() on the other side of
-        the pipe -- this Fabricator's own script must declare the link, same
-        role lib/steam_turbine.py's ensure_input_connection() plays for
-        steam_in. See production.FLUID_SOURCE_TYPE_IDS for which building
-        types satisfy each fluid_key.
+        building network-wide, via one fluid_routing.FluidInputRouter per port.
+        See production.FLUID_SOURCE_TYPE_IDS for which building types satisfy
+        each fluid_key.
         """
         if not recipe:
             return
@@ -215,60 +224,18 @@ class FabricatorController:
             if not port or not hasattr(port, "connect"):
                 continue
 
-            # No is_stalled() exists on the Fabricator itself (unlike Steam
-            # Turbine/Thermal Cap/Water Pump), so infer reachability from
-            # flow_rate() staying 0 while there's still room to receive
-            # (level() < capacity()) -- a legitimately full port also reads
-            # flow_rate()==0, and that's not a stall.
-            is_starved = False
-            try:
-                level = port.level() if hasattr(port, "level") else 0
-                capacity = port.capacity() if hasattr(port, "capacity") else 0
-                flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
-                is_starved = flow == 0 and (not capacity or level < capacity)
-            except Exception:
-                is_starved = False
+            def on_dropped(source_id, reason, fluid_key=fluid_key):
+                self.log.level("warn").print(f"[{self.name}] Dropping {fluid_key} source '{source_id}': {reason}. Picking a different source.")
 
-            was_connected = self._fluid_connected.get(fluid_key, False)
-            streak = self._fluid_stall_streak.get(fluid_key, 0)
-            streak = streak + 1 if (was_connected and is_starved) else 0
-            self._fluid_stall_streak[fluid_key] = streak
+            def on_connect_notice(source_id, status, message, fluid_key=fluid_key):
+                self.log.level("warn").print(f"[{self.name}] {fluid_key} connect notice for '{source_id}': {status} - {message}")
 
-            if was_connected:
-                if streak < FLUID_STALL_STREAK_BLACKLIST_THRESHOLD:
-                    continue
-                current_id = None
-                try:
-                    current_id = port.connected_to() if hasattr(port, "connected_to") else None
-                except Exception:
-                    pass
-                if current_id:
-                    self._fluid_unreachable.setdefault(fluid_key, {})[current_id] = curr_tick
-                    self.log.level("warn").print(f"[{self.name}] '{current_id}' ({fluid_key}) starved for {streak} consecutive ticks -- likely no completed pipe route. Blacklisting and picking a different source.")
-                self._fluid_connected[fluid_key] = False
-                self._fluid_stall_streak[fluid_key] = 0
-
-            all_known_candidates = self._discover_fluid_candidates_cached(fluid_key, type_ids)
-            candidates = [c for c in all_known_candidates if not self._fluid_is_blacklisted(fluid_key, c, curr_tick)]
-            if not candidates:
-                # Every known source is still within its own blacklist window
-                # (or none exist at all) -- deliberately do NOT wipe the
-                # blacklist here; each entry expires on its own schedule.
-                if all_known_candidates:
-                    self.log.level("warn").print(f"[{self.name}] Every known {fluid_key} source is still within its blacklist window; waiting for one to expire.")
-                continue
-
-            for source_id in candidates:
-                try:
-                    res = port.connect(source_id)
-                except Exception:
-                    continue
-                if res.status == "ok":
-                    self._fluid_connected[fluid_key] = True
-                    self.log.print(f"[{self.name}] Connected {fluid_key} -> '{source_id}'.")
-                    break
-                elif res.status != "busy":
-                    self.log.level("warn").print(f"[{self.name}] {fluid_key} connect notice for '{source_id}': {res.status} - {res.message}")
+            router = self._fluid_router(fluid_key, type_ids)
+            event = router.ensure(port, curr_tick, self._fluid_port_starved(port), on_dropped, on_connect_notice)
+            if event.kind == "connected":
+                self.log.print(f"[{self.name}] Connected {fluid_key} -> '{event.source_id}'.")
+            elif event.kind == "waiting":
+                self.log.level("warn").print(f"[{self.name}] Every known {fluid_key} source is still within its blacklist window; waiting for one to expire.")
 
     def recipe_is_sourceable(self, recipe, cache=None):
         """Whether every input of this recipe -- solid and fluid alike -- has a currently known supply."""
@@ -381,7 +348,7 @@ class FabricatorController:
                 output_item = getattr(recipe, "output_item", recipe)
                 blocked.append(f"{output_item} ({reason})")
                 continue
-            sourceable.append(recipe)
+            sourceable.append((missing, recipe))
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
                 output_item = getattr(recipe, "output_item", None)
@@ -409,9 +376,21 @@ class FabricatorController:
         # Fabricators currently have this same recipe selected, so joining
         # doesn't also cause every joiner to independently load the FULL
         # remaining shortfall (see production.py).
-        if sourceable:
-            recipe = sourceable[0]
-            self.log.print(f"[{self.name}] Joining '{getattr(recipe, 'id', '?')}' alongside another Fabricator (biggest remaining shortfall, no other demanded recipe to work instead).")
+        # Only join while there are more crafts left than Fabricators already
+        # on it: the split rounds UP, so every joiner builds at least one
+        # craft. Found live: a 1x drone_service_station_kit manual order had
+        # 3-4 Fabricators joined, each building one kit -- 3-4x overshoot.
+        current_recipe_id = self.machine.get_recipe() if hasattr(self.machine, "get_recipe") else None
+        for missing, recipe in sourceable:
+            recipe_id = getattr(recipe, "id", "?")
+            crafts_needed = -(-missing // max(1, getattr(recipe, "output_count", 1)))  # ceil division
+            workers = get_fabricator_worker_count(recipe_id)
+            if current_recipe_id == recipe_id:
+                workers -= 1  # don't count ourselves as a peer
+            if crafts_needed <= workers:
+                self.log.debug(f"[{self.name}] choose_recipe: not joining '{recipe_id}' -- {crafts_needed} craft(s) left, {workers} Fabricator(s) already on it")
+                continue
+            self.log.print(f"[{self.name}] Joining '{recipe_id}' alongside {workers} other Fabricator(s) ({crafts_needed} crafts left, no unclaimed demanded recipe to work instead).")
             return recipe
         self.log.debug(f"[{self.name}] choose_recipe: no candidates at all (target-met, unreachable, or empty demand) -- returning None")
         return None

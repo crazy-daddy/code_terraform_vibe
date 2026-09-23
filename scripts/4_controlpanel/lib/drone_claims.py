@@ -139,7 +139,7 @@ class DroneClaimsMixin:
     def handle_recall_if_active(self):
         """
         If recalled, abandons any current biosite claim/mission and heads to
-        the nearest Drone Depot for re-equipping (couple()/uncouple() both
+        its home Drone Depot (get_home_depot()) for re-equipping (couple()/uncouple() both
         require being docked at one -- NOT the nearest drone_service, unlike
         a stranded/low-battery return). Idles there once docked rather than
         undocking (mirrors leave_station()'s opposite intent: recall exists
@@ -163,7 +163,7 @@ class DroneClaimsMixin:
             self._host.publish_telemetry("RECALLED")
             return True
 
-        depot_coords, depot_info = self._host.get_nearest_drone_depot()
+        depot_coords, depot_info = self._host.get_home_depot()
         depot_id = depot_info.get("id")
 
         if depot_id and self._host.current_station() == depot_id:
@@ -176,6 +176,11 @@ class DroneClaimsMixin:
         self.release_biosite_claim()
 
         reached = bool(depot_id) and self._host.fly_to_station(depot_id, target_coords=depot_coords)
+        if not reached and self._host.status() == "waiting_bay":
+            # At the depot, bay taken: next cycle's get_home_depot() re-picks
+            # (a free sibling depot in a pool home), no direct fly_to needed.
+            self._host.log.debug(f"[{self._host.name}] Recall: Drone Depot '{depot_id}' bay taken; retrying next cycle.")
+            return True
         if not reached:
             self._host.log.debug(f"[{self._host.name}] fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
             self._host.fly_to(depot_coords[0], depot_coords[1], precision=1.5)

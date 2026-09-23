@@ -72,6 +72,18 @@ class DroneNavigationMixin:
         except Exception:
             return ""
 
+    def _log_route_rejection(self, call_desc, res):
+        """
+        "busy" means a yielding job (an extract() that survived a script
+        restart, a station charge/rescue) still owns the drone. That's
+        expected and the caller retries, so log it at debug instead of
+        warning on every retry.
+        """
+        if res.status == "busy":
+            self._host.log.debug(f"[{self._host.name}] {call_desc} rejected: busy (drone still occupied by a running job); will retry.")
+        else:
+            self._host.log.level("warn").print(f"[{self._host.name}] {call_desc} rejected: {res.status} - {res.message}")
+
     def is_at(self, coords, precision=1.5):
         return self.distance_between(self.position(), coords) <= precision
 
@@ -119,12 +131,13 @@ class DroneNavigationMixin:
         self._host.log.debug(f"[{self._host.name}] fly_to() leg: distance={distance:.1f}m, throttle={throttle*100:.0f}%, timeout_ticks={timeout_ticks}.")
 
         nearest_service, _ = self._host.get_nearest_drone_service()
-        is_flying_to_service = self.distance_between(target_coords, nearest_service) <= 3.0
+        home_service, _ = self._host.get_home_service()
+        is_flying_to_service = any(self.distance_between(target_coords, s) <= 3.0 for s in (nearest_service, home_service))
 
         self._host.log.print(f"[{self._host.name}] Flying to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self._host.cruise_throttle*100:.0f}%).")
         res = self._host.drone.go_to(target_x, target_y)
         if res.status != "ok":
-            self._host.log.level("warn").print(f"[{self._host.name}] go_to({target_x:.1f}, {target_y:.1f}) rejected: {res.status} - {res.message}")
+            self._log_route_rejection(f"go_to({target_x:.1f}, {target_y:.1f})", res)
             self._host.log.trace(f"[{self._host.name}] fly_to() exit: go_to() rejected ({res.status}).")
             return False
         # go_to() only sets the route -- throttle is a separate axis that
@@ -188,7 +201,7 @@ class DroneNavigationMixin:
         self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') entry.")
         res = self._host.drone.go_to_station(name)
         if res.status != "ok":
-            self._host.log.level("warn").print(f"[{self._host.name}] go_to_station('{name}') rejected: {res.status} - {res.message}")
+            self._log_route_rejection(f"go_to_station('{name}')", res)
             self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') exit: rejected ({res.status}).")
             return False
         if target_coords is not None:
@@ -207,6 +220,13 @@ class DroneNavigationMixin:
             if self.current_station():
                 self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') exit: docked after {ticks} ticks.")
                 return True
+            if self.status() == "waiting_bay":
+                # Arrived but the bay is taken. Hand back to the caller
+                # instead of sitting out the timeout: with a pool home,
+                # get_home_depot() can pick a free sibling depot on retry
+                # (same coords, local transfer, no flight cost).
+                self._host.log.trace(f"[{self._host.name}] fly_to_station('{name}') exit: waiting_bay after {ticks} ticks.")
+                return False
             if ticks % 100 == 0:
                 self._host.log.debug(f"[{self._host.name}] fly_to_station('{name}') arrival-poll retry: still not docked after {ticks}/{timeout_ticks} ticks.")
 
@@ -253,7 +273,7 @@ class DroneNavigationMixin:
         self._host.log.trace(f"[{self._host.name}] fly_to_drill('{name}') entry.")
         res = self._host.drone.go_to_drill(name)
         if res.status != "ok":
-            self._host.log.level("warn").print(f"[{self._host.name}] go_to_drill('{name}') rejected: {res.status} - {res.message}")
+            self._log_route_rejection(f"go_to_drill('{name}')", res)
             self._host.log.trace(f"[{self._host.name}] fly_to_drill('{name}') exit: rejected ({res.status}).")
             return False
         if target_coords is not None:

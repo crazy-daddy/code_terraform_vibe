@@ -38,11 +38,11 @@ CONNECTION_GRACE_TICKS = 2
 # progress against several simultaneously-unreachable candidates at once).
 RESCAN_INTERVAL_TICKS = 300
 
-# Caches the network-wide tank list for this many step() calls -- the
+# Caches the network-wide tank list for this many simulation ticks -- the
 # steady-state fast path below (a healthy connection needs only a single
 # fill_pct() read on the one id already in use) barely ever reaches this at
-# all. See lib/thermal_cap.py's DISCOVERY_CACHE_INTERVAL_STEPS.
-DISCOVERY_CACHE_INTERVAL_STEPS = 20
+# all. See lib/thermal_cap.py's DISCOVERY_CACHE_INTERVAL_TICKS.
+DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 
 class WaterPumpController:
@@ -63,7 +63,7 @@ class WaterPumpController:
             rebalance_fill_fraction=LIQUID_TANK_REBALANCE_FILL_FRACTION,
             connection_grace_ticks=CONNECTION_GRACE_TICKS,
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
-            discovery_cache_interval_steps=DISCOVERY_CACHE_INTERVAL_STEPS,
+            discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
             fluid_id="water",
         )
 

@@ -35,7 +35,7 @@ STALL_STREAK_BLACKLIST_THRESHOLD = 5
 # A source blacklisted as unreachable might become reachable later (the
 # player builds a new Gas Pipe route to it) -- an entry expires and becomes
 # retryable again once it's been blacklisted for this many *simulation*
-# ticks, tracked per-entry (self.blacklist maps source_id -> the tick it was
+# ticks, tracked per-entry (self._router.blacklist maps source_id -> the tick it was
 # blacklisted at, see lib/fluid_routing.py's PerEntryBlacklist), NOT as one
 # shared "clear everything at once" timer. See PerEntryBlacklist's docstring
 # for why per-entry timestamps matter: with 2+ simultaneously-bad candidates
@@ -46,14 +46,15 @@ STALL_STREAK_BLACKLIST_THRESHOLD = 5
 RESCAN_INTERVAL_TICKS = 150
 
 # fluid_routing.discover_network_buildings() walks every outpost's buildings
-# for both "gas_tank" and "thermal_cap", pairing each with its outpost id so
-# _discover_candidates_cached() can try this Turbine's own outpost first --
-# the real cost of ensure_input_connection().
-# It's already skipped entirely while connected_input is True and the stall
-# streak is below threshold (see the early return below), so this cache only
-# matters for the remaining cases: bootstrap, or every candidate blacklisted
-# at once. Counts step() calls, same units as RESCAN_INTERVAL_TICKS above.
-DISCOVERY_CACHE_INTERVAL_STEPS = 20
+# for both "gas_tank" and "thermal_cap" -- the real cost of
+# ensure_input_connection(), only reached on FluidInputRouter's slow path.
+# Simulation ticks, not calls -- see fluid_routing.TickedDiscoveryCache.
+DISCOVERY_CACHE_INTERVAL_TICKS = 100
+
+# A declared link still "neutral" (no fluid established, e.g. an empty
+# unlatched tank) after this many step() calls is dropped -- but only when
+# another candidate exists. Matches the stall streak window.
+NEUTRAL_GRACE_STEPS = 5
 
 
 class SteamTurbineController:
@@ -65,19 +66,17 @@ class SteamTurbineController:
         self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="steam_turbine")
-        self.connected_input = False
-        # connect()'s "ok" status only means the pairing was logically
-        # accepted -- it never verifies a completed Gas Pipe route actually
-        # exists (docs/guide/infrastructure_and_pipes.md). is_stalled() is
-        # the only live signal a source isn't reachable, but it's ambiguous
-        # on its own (also true, harmlessly, whenever the feeding vent is
-        # just dormant) -- see stall_streak below. Per-entry blacklist expiry
-        # -- see lib/fluid_routing.py's PerEntryBlacklist for the full
-        # rationale (shared with Thermal Cap/Water Pump).
-        self.blacklist = fluid_routing.PerEntryBlacklist(RESCAN_INTERVAL_TICKS)
-        self.stall_streak = 0
-        self._cached_candidate_ids = None
-        self._ticks_since_discovery = 0
+        # Source selection, reachability and blacklisting live in the shared consumer-side
+        # router (lib/fluid_routing.py FluidInputRouter) -- this controller only supplies which
+        # buildings count as a steam source, how they rank, and the stall signal.
+        self._router = fluid_routing.FluidInputRouter(
+            discover=self._discover_candidates,
+            rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
+            discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
+            stall_streak_threshold=STALL_STREAK_BLACKLIST_THRESHOLD,
+            neutral_grace_steps=NEUTRAL_GRACE_STEPS,
+            label=f"{self.name}.steam_in",
+        )
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -87,102 +86,46 @@ class SteamTurbineController:
                 pass
         return 0
 
-    def _discover_candidates_cached(self):
+    def _discover_candidates(self):
         """
-        Gas Tank + Thermal Cap ids network-wide, refreshed at most every
-        DISCOVERY_CACHE_INTERVAL_STEPS calls. Ranked so this Turbine's own
-        outpost's candidates come first within each type (gas_tank ids, then
-        thermal_cap ids) -- a same-outpost Gas Tank/Thermal Cap is far more
-        likely to already have a completed Gas Pipe route than one built at
-        a different outpost, and trying it first avoids burning a whole
-        STALL_STREAK_BLACKLIST_THRESHOLD-tick stall window connected to an
-        unreachable cross-outpost tank when a reachable local one exists
-        (found from a real case: turbine_5/turbine_6 connecting to
-        cross-outpost gas_tank_2, which had no completed pipe route to
-        either, instead of trying their own outpost's tank first). Only
-        reached from ensure_input_connection()'s slow path (see comment
-        there).
+        Gas Tank ids, then Thermal Cap ids, network-wide, own outpost first within each type -- a
+        same-outpost source is far more likely to already have a completed Gas Pipe route (found
+        from a real case: turbine_5/turbine_6 connecting to cross-outpost gas_tank_2, which had no
+        completed route to either, instead of trying their own outpost's tank first). Per
+        docs/guide/infrastructure_and_pipes.md a Turbine may connect steam_in straight to a Cap,
+        independent of the Cap's own steam_out, hence the Cap fallback.
         """
-        if self._cached_candidate_ids is None or self._ticks_since_discovery >= DISCOVERY_CACHE_INTERVAL_STEPS:
-            own_outpost_id = getattr(getattr(self.turbine, "outpost", None), "id", None)
-            ranked = []
-            for type_id in ("gas_tank", "thermal_cap"):
-                pairs = fluid_routing.discover_network_buildings(type_id, resolve=False, fluid_id="steam")
-                pairs.sort(key=lambda p: p[1] != own_outpost_id)
-                ranked.extend(b_id for b_id, _ in pairs)
-            self._cached_candidate_ids = ranked
-            self._ticks_since_discovery = 0
-        else:
-            self._ticks_since_discovery += 1
-        return self._cached_candidate_ids
+        own_outpost_id = getattr(getattr(self.turbine, "outpost", None), "id", None)
+        ranked = []
+        for type_id in ("gas_tank", "thermal_cap"):
+            pairs = fluid_routing.discover_network_buildings(type_id, resolve=False, fluid_id="steam")
+            ranked.extend(fluid_routing.rank_own_outpost_first(pairs, own_outpost_id))
+        self.log.debug(f"[{self.name}] Rediscovered steam sources (own outpost '{own_outpost_id}' first): {ranked}.")
+        return ranked
 
     def ensure_input_connection(self):
-        """
-        Declares steam_in's source, discovering candidates network-wide and
-        rechecking reachability via is_stalled() rather than trusting
-        connect()'s "ok" status alone (see __init__). A Gas Tank has no
-        script of its own (purely passive -- see docs/components/gas_tank.md),
-        so nothing ever calls connect() on its side of the pipe; this Turbine's
-        own script must declare the link instead, same as it declares its own
-        source for any other input port. Per docs/guide/infrastructure_and_pipes.md,
-        a Turbine is exactly the kind of "additional consumer" that may connect
-        its own steam_in straight to a Thermal Cap, independent of whatever the
-        Cap's own steam_out currently points at -- so this tries every known
-        Gas Tank first (the larger, shared buffer), then falls through to
-        every known Thermal Cap directly if no tank connection succeeds.
-        """
+        """Keeps steam_in on a reachable steam source via fluid_routing.FluidInputRouter. A Gas Tank
+        has no script (docs/components/gas_tank.md), so this Turbine must declare the link itself."""
         port = getattr(self.turbine, "steam_in", None)
-        if not port or not hasattr(port, "connect"):
-            return
-
         curr_tick = self.get_current_tick()
         fluid_routing.warn_about_unassigned_tanks(curr_tick)
 
-        is_stalled = fluid_routing.safe_is_stalled(self.turbine)
-        self.stall_streak = self.stall_streak + 1 if is_stalled else 0
+        def on_dropped(source_id, reason):
+            self.log.level("warn").print(f"[{self.name}] Dropping steam source '{source_id}': {reason}. Picking a different source.")
 
-        if self.connected_input:
-            if self.stall_streak < STALL_STREAK_BLACKLIST_THRESHOLD:
-                return
-            current_id = None
-            try:
-                current_id = port.connected_id() if hasattr(port, "connected_id") else None
-            except Exception:
-                pass
-            if current_id:
-                self.blacklist.blacklist(current_id, curr_tick)
-                self.log.level("warn").print(f"[{self.name}] '{current_id}' stalled for {self.stall_streak} consecutive ticks -- likely no completed Gas Pipe route (not just vent dormancy). Blacklisting and picking a different source.")
-            self.connected_input = False
-            self.stall_streak = 0
+        def on_connect_notice(source_id, status, message):
+            self.log.level("warn").print(f"[{self.name}] steam_in connect notice for '{source_id}': {status} - {message}")
 
-        all_known_candidates = self._discover_candidates_cached()
-        candidates = self.blacklist.filter_reachable(all_known_candidates, curr_tick)
-        if not candidates:
-            # Every known source is still within its own blacklist window (or
-            # none exist at all) -- deliberately do NOT wipe the blacklist
-            # here; each entry expires on its own schedule
-            # (self.blacklist.is_blacklisted()). Force-clearing everything at
-            # once would reintroduce the exact ping-pong bug per-entry expiry
-            # fixes (see RESCAN_INTERVAL_TICKS).
-            if all_known_candidates:
-                self.log.debug(f"[{self.name}] Every known source is still within its blacklist window; waiting for one to expire.")
-                for sid, blacklisted_at in self.blacklist._blacklisted_at.items():
-                    remaining = max(0, self.blacklist.rescan_interval_ticks - (curr_tick - blacklisted_at))
-                    self.log.debug(f"[{self.name}] Blacklisted source '{sid}': {remaining} tick(s) remaining until retry-eligible.")
-            return
-
-        self.log.debug(f"[{self.name}] Candidate sources this cycle (own-outpost-first ranked): {candidates}.")
-        for source_id in candidates:
-            try:
-                res = port.connect(source_id)
-            except Exception:
-                continue
-            if res.status == "ok":
-                self.connected_input = True
-                self.log.print(f"[{self.name}] Connected steam_in -> '{source_id}'.")
-                return
-            elif res.status != "busy":
-                self.log.level("warn").print(f"[{self.name}] steam_in connect notice for '{source_id}': {res.status} - {res.message}")
+        event = self._router.ensure(port, curr_tick, fluid_routing.safe_is_stalled(self.turbine), on_dropped, on_connect_notice)
+        if event.kind == "connected":
+            self.log.print(f"[{self.name}] Connected steam_in -> '{event.source_id}'.")
+        elif event.kind == "waiting":
+            self.log.debug(f"[{self.name}] Every known steam source is still within its blacklist window; waiting for one to expire.")
+            for sid, blacklisted_at in self._router.blacklist._blacklisted_at.items():
+                remaining = max(0, self._router.blacklist.rescan_interval_ticks - (curr_tick - blacklisted_at))
+                self.log.debug(f"[{self.name}] Blacklisted source '{sid}': {remaining} tick(s) remaining until retry-eligible.")
+        elif event.kind == "not_found":
+            self.log.debug(f"[{self.name}] No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
 
     def buffer_fraction(self):
         """Fraction (0-1) of steam_in's own buffer currently filled."""

@@ -34,7 +34,7 @@ FEED_MIN_ROOM_UNITS = 5
 ESSENCE_TANK_REBALANCE_FILL_FRACTION = 0.98
 CONNECTION_GRACE_TICKS = 2
 RESCAN_INTERVAL_TICKS = 300
-DISCOVERY_CACHE_INTERVAL_STEPS = 20
+DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 # stall_reason() values that mean "the output side can't take the next
 # yield" -- the only ones that say anything about the current tank. "no_input"
@@ -79,7 +79,7 @@ class EssenceLiquifierController:
             rebalance_fill_fraction=ESSENCE_TANK_REBALANCE_FILL_FRACTION,
             connection_grace_ticks=CONNECTION_GRACE_TICKS,
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
-            discovery_cache_interval_steps=DISCOVERY_CACHE_INTERVAL_STEPS,
+            discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
             fluid_id=self.fluid_id,
         )
         self.log.debug(f"[{self.name}] Host biome '{biome}' -> output port '{self.fluid_id}_out', routing to Liquid Tanks latched/assigned to '{self.fluid_id}'.")

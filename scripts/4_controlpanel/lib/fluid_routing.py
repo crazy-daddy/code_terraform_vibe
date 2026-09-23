@@ -1,20 +1,15 @@
-# Shared "network-wide reachable-fluid-target" mechanism used by
-# lib/thermal_cap.py, lib/water_pump.py, and lib/steam_turbine.py -- each
-# independently implemented "discover Gas/Liquid Tank or Thermal Cap
-# candidates network-wide, try to connect, verify reachability via
-# is_stalled() (connect()'s "ok" status never confirms a completed physical
-# pipe route exists -- see docs/guide/infrastructure_and_pipes.md), and
-# blacklist an unreachable target with per-entry (not shared-clock) expiry."
-# Thermal Cap and Water Pump's versions were ~100% identical copy-paste
-# (same fields, same method bodies, differing only in type-id string(s)/
-# port name/fill-fraction constant/print wording) -- FluidOutputRouter below
-# is that shared state machine. Steam Turbine's consumer-side selection has
-# real behavioral differences (streak-based blacklist criterion instead of a
-# grace period, no proactive fill-based rebalancing, no id-lookup/
-# connected-id-sync optimizations, own-outpost-first candidate ranking) and
-# deliberately keeps its own ensure_input_connection() body, composing only
-# the smaller primitives below (PerEntryBlacklist, discover_network_buildings(),
-# safe_is_stalled()) rather than being forced through FluidOutputRouter.
+# Shared "network-wide reachable-fluid-target" mechanism: discover Gas/Liquid
+# Tank (or other source/target) candidates network-wide, try to connect,
+# verify reachability (connect()'s "ok" status never confirms a completed
+# physical pipe route exists -- see docs/guide/infrastructure_and_pipes.md),
+# and blacklist an unreachable one with per-entry (not shared-clock) expiry.
+# Two routers, one per port direction, sharing PerEntryBlacklist,
+# TickedDiscoveryCache and discover_network_buildings():
+#   - FluidOutputRouter (producer side: Thermal Cap, Water Pump, Essence
+#     Liquifier) -- rebalances among targets by fill_pct().
+#   - FluidInputRouter (consumer side: Steam Turbine, Fabricator, Biomass
+#     Mixer) -- only cares whether fluid arrives; accepts peer-declared links.
+# See each class's docstring for why they stay separate.
 #
 # A pre-computed physical pipe-network graph (like power_control's PowerGrid)
 # was investigated and rejected: pipes have no engine-side merged-network
@@ -425,6 +420,189 @@ def _safe_fluid(building):
         return None
 
 
+class TickedDiscoveryCache:
+    """
+    Candidate-list cache shared by FluidOutputRouter and FluidInputRouter: recomputed at most every
+    interval_ticks *simulation* ticks, and on the next get() after invalidate() (every
+    blacklist/drop -- a failed target is exactly when a newly built/assigned tank is most likely the
+    answer). curr_tick == 0 (no clock) always recomputes -- a stale list is the failure mode this
+    cache must never cause.
+
+    Tick-based on purpose, NOT counted in slow-path calls: routers only reach discovery on the slow
+    path, so a call counter advanced once per rebalance/stall event and a new tank could stay
+    invisible for 20 such events -- observed as turbine_10/11 cycling unreachable cross-outpost
+    tanks while their own outpost's freshly assigned gas_tank_12/13 were never tried.
+    """
+
+    def __init__(self, interval_ticks):
+        self.interval_ticks = interval_ticks
+        self.value = None
+        self._computed_at_tick = None
+
+    def invalidate(self):
+        self._computed_at_tick = None
+
+    def get(self, curr_tick, compute):
+        stale = (
+            self.value is None
+            or self._computed_at_tick is None
+            or curr_tick == 0
+            or curr_tick - self._computed_at_tick >= self.interval_ticks
+        )
+        if stale:
+            self.value = compute()
+            self._computed_at_tick = curr_tick
+        return self.value
+
+
+def rank_own_outpost_first(pairs, own_outpost_id):
+    """Ids from discover_network_buildings(resolve=False)-shaped pairs, own outpost's first (stable
+    otherwise). A same-outpost source can link "local" with no pipe at all, so it is far more likely
+    reachable than a cross-outpost one."""
+    return [b_id for b_id, _ in sorted(pairs, key=lambda p: p[1] != own_outpost_id)]
+
+
+class FluidInputEvent:
+    """Result of FluidInputRouter.ensure(). .kind is one of "no_port"/"healthy"/"pending"/"connected"/
+    "waiting"/"not_found"/"exhausted". .source_id is set for "healthy" (the healthy peer, if known),
+    "pending" (the declared source) and "connected"."""
+
+    def __init__(self, kind, source_id=None):
+        self.kind = kind
+        self.source_id = source_id
+
+
+class FluidInputRouter:
+    """
+    Shared consumer-side state machine: keep ONE input FluidPort pulling from a reachable source,
+    network-wide. Used by SteamTurbineController (steam_in), FabricatorController (one per recipe
+    fluid port) and the Biomass Mixer (one per <biome>_essence_in).
+
+    Why not FluidOutputRouter: an output port rebalances among tanks by fill_pct() (leave a tank at
+    ~98% full, prefer the least full); an input port doesn't care how full a source is, only whether
+    fluid actually arrives, and one "healthy" signal is a peer-declared link (a Liquifier or Cap may
+    declare itself onto this port). Different questions, different state -- one class per direction.
+
+    Per call (ensure()), in order:
+      1. starvation streak: is_starved (caller-supplied, since each machine exposes it differently --
+         Turbine is_stalled(), Fabricator flow_rate()==0 with room left, Mixer per-port low buffer with
+         flow_rate()==0) counted in consecutive calls; reset on every new connection.
+         stall_streak_threshold=None disables starvation drops entirely.
+      2. any peer in HEALTHY_CONNECTION_STATES and streak below stall_streak_threshold -> "healthy".
+      3. own declared source (connected_id()): link state in BROKEN_CONNECTION_STATES -> drop now
+         (FluidConnection.state is a direct reachability verdict, unlike is_stalled(), which is also
+         harmlessly true while e.g. a vent is dormant); starved >= stall_streak_threshold -> drop;
+         otherwise "neutral"/unknown gets neutral_grace_steps calls, then is dropped only if some
+         other candidate exists (an empty unlatched tank may be the only option).
+      4. slow path: discover (TickedDiscoveryCache; invalidated on every drop), filter the
+         PerEntryBlacklist, connect() to the first candidate whose link state isn't already broken
+         right after "ok" ("ok" only records intent -- docs/guide/flow_networks_fluids.md).
+
+    discover is a zero-arg callable returning ranked candidate ids -- each caller owns which
+    building types count and how they rank (rank_own_outpost_first() for the common case). Does no
+    printing at info level: on_dropped(source_id, reason) / on_connect_notice(source_id, status,
+    message) callbacks fire synchronously for side events, like FluidOutputRouter's.
+    """
+
+    def __init__(self, discover, rescan_interval_ticks, discovery_cache_interval_ticks,
+                 neutral_grace_steps, stall_streak_threshold=None, label="input"):
+        self.discover = discover
+        self.stall_streak_threshold = stall_streak_threshold
+        self.neutral_grace_steps = neutral_grace_steps
+        self.label = label
+        self.blacklist = PerEntryBlacklist(rescan_interval_ticks)
+        self._cache = TickedDiscoveryCache(discovery_cache_interval_ticks)
+        self.stall_streak = 0
+        # Starts at 0 on (re)start so a link that's merely neutral after a power cycle gets its grace too.
+        self.steps_since_connect = 0
+
+    @property
+    def known_candidates(self):
+        """Last discovered candidate ids (empty before first discovery)."""
+        return self._cache.value or []
+
+    def _drop(self, source_id, curr_tick, reason, on_dropped):
+        self.blacklist.blacklist(source_id, curr_tick)
+        self._cache.invalidate()
+        self.stall_streak = 0
+        log.debug(f"FluidInputRouter({self.label}): dropping '{source_id}' ({reason})")
+        if on_dropped:
+            on_dropped(source_id, reason)
+
+    def ensure(self, port, curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
+        if not port or not hasattr(port, "connect"):
+            return FluidInputEvent("no_port")
+
+        self.stall_streak = self.stall_streak + 1 if is_starved else 0
+        starved_out = self.stall_streak_threshold is not None and self.stall_streak >= self.stall_streak_threshold
+
+        peer = healthy_peer_id(port)
+        if peer and not starved_out:
+            if self.stall_streak:
+                log.debug(f"FluidInputRouter({self.label}): healthy link via '{peer}' but starved {self.stall_streak}/{self.stall_streak_threshold} -- waiting (source may be temporarily dry)")
+            return FluidInputEvent("healthy", peer)
+
+        self.steps_since_connect += 1
+        try:
+            own_id = port.connected_id() if hasattr(port, "connected_id") else None
+        except Exception:
+            own_id = None
+        own_state = declared_connection_state(port)
+
+        # The port keeps pointing at a dropped source until a new connect() succeeds -- don't
+        # re-drop it every call (that would re-warn, restart its blacklist clock so it never
+        # expires, and force a network rescan each step).
+        if own_id and self.blacklist.is_blacklisted(own_id, curr_tick):
+            own_id_already_dropped = True
+        else:
+            own_id_already_dropped = False
+
+        if own_id and not own_id_already_dropped:
+            if own_state in BROKEN_CONNECTION_STATES:
+                self._drop(own_id, curr_tick, f"link state '{own_state}'", on_dropped)
+            elif starved_out:
+                self._drop(own_id, curr_tick, f"starved {self.stall_streak} consecutive checks (link state '{own_state}')", on_dropped)
+            elif self.steps_since_connect < self.neutral_grace_steps:
+                log.debug(f"FluidInputRouter({self.label}): '{own_id}' is {own_state!r}, within grace ({self.steps_since_connect}/{self.neutral_grace_steps})")
+                return FluidInputEvent("pending", own_id)
+            else:
+                others = [c for c in self.blacklist.filter_reachable(self._cache.get(curr_tick, self.discover), curr_tick) if c != own_id]
+                if not others:
+                    log.debug(f"FluidInputRouter({self.label}): '{own_id}' still {own_state!r} but no alternative source; keeping it")
+                    return FluidInputEvent("pending", own_id)
+                self._drop(own_id, curr_tick, f"link still {own_state!r} after {self.steps_since_connect} checks", on_dropped)
+
+        all_known = self._cache.get(curr_tick, self.discover)
+        candidates = [c for c in self.blacklist.filter_reachable(all_known, curr_tick) if c != own_id]
+        if not candidates:
+            # Deliberately never wipe the blacklist here -- each entry expires on its own
+            # schedule (see PerEntryBlacklist for the ping-pong this avoids).
+            log.debug(f"FluidInputRouter({self.label}): {'every known source still blacklisted' if all_known else 'no known sources at all'}")
+            return FluidInputEvent("waiting") if all_known else FluidInputEvent("not_found")
+
+        log.debug(f"FluidInputRouter({self.label}): trying candidates in order {candidates}")
+        for source_id in candidates:
+            try:
+                res = port.connect(source_id)
+            except Exception:
+                continue
+            if res.status == "ok":
+                link_state = declared_connection_state(port)
+                if link_state in BROKEN_CONNECTION_STATES:
+                    self.blacklist.blacklist(source_id, curr_tick)
+                    log.debug(f"FluidInputRouter({self.label}): '{source_id}' accepted but link state '{link_state}'; blacklisted, trying next")
+                    continue
+                self.steps_since_connect = 0
+                self.stall_streak = 0
+                log.debug(f"FluidInputRouter({self.label}): connected -> '{source_id}' (link state '{link_state}')")
+                return FluidInputEvent("connected", source_id)
+            if res.status != "busy" and on_connect_notice:
+                on_connect_notice(source_id, res.status, res.message)
+
+        log.debug(f"FluidInputRouter({self.label}): every candidate rejected, busy or broken this pass -- exhausted")
+        return FluidInputEvent("exhausted")
+
+
 class FluidOutputEvent:
     """Result of FluidOutputRouter.ensure_connection(). .kind is one of "no_port"/"healthy"/"waiting"/"not_found"/"connected"/"exhausted". .target_id/.fill_pct are only meaningful for "connected" (default None/0.0 otherwise)."""
 
@@ -442,19 +620,9 @@ class FluidOutputRouter:
     -> Gas Tank) and WaterPumpController.ensure_output_connection() (water_out
     -> Liquid Tank/Large Liquid Tank).
 
-    Steam Turbine's ensure_input_connection() is deliberately NOT built on
-    this class: it blacklists on a STALL_STREAK_BLACKLIST_THRESHOLD-tick
-    consecutive-stall streak rather than a single stalled tick + grace
-    period (a Turbine's is_stalled() is ambiguous -- also harmlessly true
-    whenever the feeding vent is dormant, unlike Cap/Pump's), has no
-    proactive fill_pct-based rebalancing at all (a consumer doesn't care
-    about a source's fill level, only reachability), and its healthy fast
-    path touches zero port methods (no id-lookup cache, no
-    connected-id-sync) where this class's does both. Forcing Turbine through
-    this class's parameters would either drop that behavior or bloat this
-    class with turbine-only branches for something used by exactly one
-    caller -- it instead composes PerEntryBlacklist and
-    discover_network_buildings() directly. See lib/steam_turbine.py.
+    Consumer-side input ports (Steam Turbine, Fabricator, Biomass Mixer) use
+    FluidInputRouter below instead -- see its docstring for why the two
+    directions stay separate classes.
 
     This class does no printing -- Cap and Pump report the same events in
     different domain vocabulary ("steam available" vs "well water
@@ -467,16 +635,15 @@ class FluidOutputRouter:
     """
 
     def __init__(self, type_ids, rebalance_fill_fraction, connection_grace_ticks,
-                 rescan_interval_ticks, discovery_cache_interval_steps, fluid_id=None):
+                 rescan_interval_ticks, discovery_cache_interval_ticks, fluid_id=None):
         self.type_ids = type_ids
         self.fluid_id = fluid_id
         self.rebalance_fill_fraction = rebalance_fill_fraction
         self.connection_grace_ticks = connection_grace_ticks
-        self.discovery_cache_interval_steps = discovery_cache_interval_steps
+        self.discovery_cache_interval_ticks = discovery_cache_interval_ticks
         self.blacklist = PerEntryBlacklist(rescan_interval_ticks)
         self.ticks_since_connect = 0
-        self._cached_targets = None
-        self._ticks_since_discovery = 0
+        self._cache = TickedDiscoveryCache(discovery_cache_interval_ticks)
         # id -> resolved building object, merged across rediscovery, never
         # wholesale-cleared -- a building's identity doesn't change between
         # scans, only the candidate list goes stale.
@@ -490,17 +657,20 @@ class FluidOutputRouter:
         self._connected_id = None
         self._id_synced = False
 
-    def _discover_targets_cached(self):
-        """Target objects network-wide, refreshed at most every discovery_cache_interval_steps calls."""
-        if self._cached_targets is None or self._ticks_since_discovery >= self.discovery_cache_interval_steps:
-            self._cached_targets = [b for b, _ in discover_network_buildings(self.type_ids, fluid_id=self.fluid_id)]
-            for building in self._cached_targets:
+    @property
+    def _cached_targets(self):
+        """Last discovered target list (None before first discovery) -- read by callers' debug lines."""
+        return self._cache.value
+
+    def _discover_targets_cached(self, curr_tick):
+        """Target objects network-wide, via TickedDiscoveryCache (tick-based, invalidated on blacklist)."""
+        def discover():
+            targets = [b for b, _ in discover_network_buildings(self.type_ids, fluid_id=self.fluid_id)]
+            for building in targets:
                 self._target_lookup[building.id] = building
-            self._ticks_since_discovery = 0
-            log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(self._cached_targets)} candidate target(s)")
-        else:
-            self._ticks_since_discovery += 1
-        return self._cached_targets
+            log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(targets)} candidate target(s): {[b.id for b in targets]}")
+            return targets
+        return self._cache.get(curr_tick, discover)
 
     def _resolve_target(self, target_id):
         """Building object for target_id, preferring the cache filled by discovery over a fresh get_component() round trip."""
@@ -536,6 +706,7 @@ class FluidOutputRouter:
                 on_blacklisted(current_id)
             current_id = None
             self._connected_id = None
+            self._cache.invalidate()
 
         # Fast path: a connection already judged healthy needs no network
         # scan, just the cached (not necessarily fresh) resolved target --
@@ -550,7 +721,7 @@ class FluidOutputRouter:
                 and fill_pct_of(self._resolve_target(current_id)) < self.rebalance_fill_fraction):
             return FluidOutputEvent("healthy")
 
-        all_known_targets = self._discover_targets_cached()
+        all_known_targets = self._discover_targets_cached(curr_tick)
         targets = self.blacklist.filter_reachable(all_known_targets, curr_tick, key=lambda t: t.id)
         if not targets:
             # Every known target is still within its own blacklist window

@@ -51,6 +51,31 @@ MIN_EMERGENCY_RESERVE_WH = 4.0
 DEFAULT_CRUISE_THROTTLE_KEY = "drone.default_cruise_throttle"
 DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5
 
+# Pinned drone homes (see resolve_home_depot()): ONE shared dict
+# {drone_name: outpost_id (pool) or depot_id (hardwired)}, like
+# drone_claims.py's drone.recall, not a key per
+# drone. Bounded by fleet size; entries of drones that no longer exist are
+# pruned on every write.
+HOME_DEPOTS_KEY = "drone.home_depots"
+
+
+def _pin_home_depot(drone_name, depot_id):
+    def updater(pins):
+        if not isinstance(pins, dict):
+            pins = {}
+        pins[drone_name] = depot_id
+        fleet = get_component("fleet")
+        if fleet and hasattr(fleet, "drones"):
+            try:
+                live = {getattr(d, "id", "") for d in fleet.drones()}
+            except Exception:
+                live = set()
+            if live:
+                pins = {name: pin for name, pin in pins.items() if name in live or name == drone_name}
+        return pins
+
+    archive.transaction(HOME_DEPOTS_KEY, {}, updater)
+
 
 def drone_wh_per_meter_at_throttle(throttle):
     """
@@ -90,7 +115,8 @@ def discover_drone_buildings(type_id):
     """
     Standalone: every deployed building of type_id (drone_service_station or
     drone_depot) across every owned outpost, as
-    [{"id": str, "coords": (x, y), "outpost": OutpostRef|None}, ...]. Mirrors
+    [{"id": str, "name": str, "coords": (x, y), "outpost": OutpostRef|None,
+    "outpost_id": str}, ...]. Mirrors
     vehicle_energy.py's get_all_charging_stations() discovery shape, but
     module-level so both DroneEnergyMixin and lib/drone_service.py's own
     station-side nearest-station arbitration (mirroring charging.py's
@@ -119,7 +145,13 @@ def discover_drone_buildings(type_id):
                 if not pos:
                     continue
                 found_ids.add(b_id)
-                refs.append({"id": b_id, "coords": pos, "outpost": getattr(b, "outpost", None)})
+                refs.append({
+                    "id": b_id,
+                    "name": getattr(b, "name", "") or "",
+                    "coords": pos,
+                    "outpost": getattr(b, "outpost", None),
+                    "outpost_id": getattr(b, "outpost_id", "") or "",
+                })
     return refs
 
 
@@ -225,17 +257,172 @@ class DroneEnergyMixin:
         self._host.log.trace(f"[{self._host.name}] get_nearest_drone_depot: {len(depots)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
         return best["coords"], best
 
+    def resolve_home_depot(self, home_depot=None):
+        """
+        Picks and pins this drone's home. The home is either one specific
+        Drone Depot ("hardwired") or a whole outpost ("pool": any depot in
+        that outpost; get_home_depot() picks a free one per trip, since all
+        depots of an outpost share its coords). Sets
+        self._host.home_depot_pool to the pool's outpost id, or None when
+        hardwired. Returns a representative depot info dict (coords/outpost
+        for home_biome etc.), or {} when no Depot is deployed. Priority:
+          1. home_depot override (the HOME_DEPOT script variable): a depot
+             id or display name (hardwired), or an outpost id (pool).
+          2. The pin persisted in archive by a previous run (depot id or
+             outpost id, same matching), so a script restart while the drone
+             is out in the field does not re-home it to whichever depot
+             happens to be nearest there.
+          3. Nearest depot to the drone's current position (first run),
+             pinned as a pool of that depot's outpost.
+        The pin is written back to archive (HOME_DEPOTS_KEY dict).
+        """
+        self._host.home_depot_pool = None
+        depots = self.get_all_drone_depots()
+        if not depots:
+            self._host.log.debug(f"[{self._host.name}] resolve_home_depot(): no Drone Depot deployed; no home depot.")
+            return {}
+
+        def match(wanted):
+            """(representative_depot, pool_outpost_id or None) for a depot id/name or outpost id."""
+            depot = next((d for d in depots if wanted in (d["id"], d.get("name"))), None)
+            if depot:
+                return depot, None
+            pool = [d for d in depots if d.get("outpost_id") == wanted]
+            if pool:
+                return pool[0], wanted
+            return None, None
+
+        chosen, pool_id, source = None, None, None
+        if home_depot:
+            wanted = str(home_depot)
+            chosen, pool_id = match(wanted)
+            if chosen:
+                source = "HOME_DEPOT override"
+            else:
+                self._host.log.level("warn").print(f"[{self._host.name}] HOME_DEPOT '{wanted}' matches no Drone Depot id, name or outpost id; falling back to auto-detection.")
+        if chosen is None:
+            pins = archive.get(HOME_DEPOTS_KEY, {}) or {}
+            pinned = pins.get(self._host.name) if isinstance(pins, dict) else None
+            if pinned:
+                chosen, pool_id = match(str(pinned))
+                if chosen:
+                    source = "archived pin"
+                else:
+                    self._host.log.debug(f"[{self._host.name}] resolve_home_depot(): archived pin '{pinned}' no longer exists; re-resolving.")
+        if chosen is None:
+            _, chosen = self.get_nearest_drone_depot()
+            pool_id = chosen.get("outpost_id") or None
+            source = "nearest to current position"
+
+        self._host.home_depot_pool = pool_id
+        _pin_home_depot(self._host.name, pool_id or chosen["id"])
+        home_desc = f"any Drone Depot in '{pool_id}'" if pool_id else f"Drone Depot '{chosen['id']}' (hardwired)"
+        self._host.log.debug(f"[{self._host.name}] Home pinned to {home_desc} via {source}.")
+        return chosen
+
+    def _home_depot_candidates(self):
+        """Live depot dicts making up this drone's home (the pool outpost's depots, or the one hardwired depot)."""
+        depots = self.get_all_drone_depots()
+        pool_id = getattr(self._host, "home_depot_pool", None)
+        if pool_id:
+            return [d for d in depots if d.get("outpost_id") == pool_id]
+        depot_id = (getattr(self._host, "home_depot", None) or {}).get("id")
+        return [d for d in depots if d["id"] == depot_id] if depot_id else []
+
+    def _pick_free_depot(self, candidates, prefer_id=None):
+        """
+        Best depot of candidates for this trip: the one this drone is
+        already docked at, else free bay first, then prefer_id (the depot
+        already queued for, so an all-full pool doesn't churn between
+        queues), then free cargo slots, then nearest. Bay/slot counts are read live via get_component(depot_id);
+        an unreadable depot sorts as full but stays eligible.
+        """
+        current = self._host.current_station()
+        for d in candidates:
+            if d["id"] == current:
+                return d
+        if len(candidates) == 1:
+            return candidates[0]
+
+        pos = self._host.position()
+        scored = []
+        for d in candidates:
+            free_bays, free_slots = 0, 0
+            try:
+                depot = get_component(d["id"])
+                if depot is not None:
+                    free_bays = depot.bay_count() - depot.bays_occupied()
+                    free_slots = depot.slot_capacity() - depot.slots_used()
+            except Exception as e:
+                self._host.log.debug(f"[{self._host.name}] _pick_free_depot(): could not read '{d['id']}': {e}")
+            scored.append(((free_bays <= 0, d["id"] != prefer_id, free_slots <= 0, self._host.distance_between(pos, d["coords"]), d["id"]), d, free_bays, free_slots))
+        scored.sort(key=lambda s: s[0])
+        self._host.log.debug(
+            f"[{self._host.name}] _pick_free_depot(): "
+            + ", ".join(f"{d['id']}(bays free={fb}, slots free={fs})" for _, d, fb, fs in scored)
+            + f" -> '{scored[0][1]['id']}'."
+        )
+        return scored[0][1]
+
+    def get_home_depot(self, prefer_id=None):
+        """
+        Returns (coords, depot_info_dict) for the depot this drone should use
+        now -- where it unloads and re-equips, regardless of which depot is
+        nearest right now. With a pool home, re-picks per call so a drone
+        never queues for a busy depot while a sibling in the same outpost
+        is free (see _pick_free_depot()). Re-homes
+        (DroneController.resolve_home()) when the home no longer has any
+        depot. Same fallback shape as get_nearest_drone_depot() when no
+        depot exists at all.
+        """
+        candidates = self._home_depot_candidates()
+        if not candidates:
+            if getattr(self._host, "home_depot", None):
+                # resolve_home_depot() skips (and overwrites) the stale pin itself.
+                self._host.log.level("warn").print(f"[{self._host.name}] Home Drone Depot no longer exists; re-homing.")
+            self._host.resolve_home()
+            candidates = self._home_depot_candidates()
+        if candidates:
+            depot = self._pick_free_depot(candidates, prefer_id=prefer_id)
+            return depot["coords"], depot
+        return self.get_nearest_drone_depot()
+
+    def get_home_service(self):
+        """
+        Returns (coords, station_info_dict) for this drone's home
+        drone_service: the one in the home depot's outpost (nearest to the
+        depot if there are several), else the service nearest to the home
+        depot. Falls back to get_nearest_drone_service() without a home
+        depot. This is the PLANNING/charging target; the hard in-flight
+        survival floor (return_floor_wh()) still uses the nearest service.
+        """
+        depot = getattr(self._host, "home_depot", None) or {}
+        services = self.get_all_drone_services()
+        if not depot or not services:
+            return self.get_nearest_drone_service()
+        depot_coords = depot["coords"]
+        same_outpost = [s for s in services if depot.get("outpost_id") and s.get("outpost_id") == depot.get("outpost_id")]
+        pool = same_outpost or services
+        best = min(pool, key=lambda s: self._host.distance_between(depot_coords, s["coords"]))
+        return best["coords"], best
+
+    def wh_to_reach(self, target_coords, from_coords=None):
+        """Reserve-inclusive Wh to reach target_coords at the speedmode throttle floor."""
+        pos = from_coords if from_coords is not None else self._host.position()
+        dist = self._host.distance_between(pos, target_coords)
+        return (dist * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+
     def return_floor_wh(self, from_coords=None):
         """
         Wh needed on board right now to safely reach the nearest drone_service
         (power home) at the speedmode throttle floor -- the hard survival
         floor, mirroring vehicle_energy.py's energy_needed_to_return_now().
+        Deliberately the NEAREST service, not the home one: this is the
+        in-flight abort threshold, where any charger is better than none.
         """
         pos = from_coords if from_coords is not None else self._host.position()
         nearest, _ = self.get_nearest_drone_service(from_coords=pos)
-        dist = self._host.distance_between(pos, nearest)
-        drive_wh = dist * self.minimum_wh_per_meter()
-        return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
+        return self.wh_to_reach(nearest, from_coords=pos)
 
     def energy_needed_to_return_now(self):
         return self.return_floor_wh()
@@ -245,18 +432,20 @@ class DroneEnergyMixin:
         Same as return_floor_wh() but at self.cruise_throttle rather than the
         speedmode floor -- the proactive "time to head back" trigger for field
         loops, not the hard abort (mirrors VehicleEnergyMixin's own
-        floor-vs-comfortable distinction).
+        floor-vs-comfortable distinction). Measured to the HOME service,
+        since that's where return_to_service_for_charge() heads first.
         """
         pos = self._host.position()
-        nearest, _ = self.get_nearest_drone_service(from_coords=pos)
-        dist = self._host.distance_between(pos, nearest)
+        home_service, _ = self.get_home_service()
+        dist = self._host.distance_between(pos, home_service)
         drive_wh = dist * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.MIN_EMERGENCY_RESERVE_WH
 
     def return_to_service_for_charge(self, log, reason):
         """
-        Flies to (and docks at) the nearest drone_service, unless already
-        there. Shared by both the proactive low-battery return AND the
+        Flies to (and docks at) the home drone_service (get_home_service()),
+        or the nearest one when the home service is out of reach on the
+        current battery, unless already docked there. Shared by both the proactive low-battery return AND the
         "candidates exist but none reachable on current battery" idle
         fallback in run_scout_loop()/run_miner_loop() -- without the latter,
         a drone whose battery is too low for ANY trip but still above
@@ -265,12 +454,26 @@ class DroneEnergyMixin:
         loop ever sends it home to top up. Returns True if a return was
         issued, False if already at the service.
         """
-        service_coords, service_info = self.get_nearest_drone_service()
-        if self._host.is_at(service_coords, precision=3.0):
+        service_coords, service_info = self.get_home_service()
+        curr_wh, _, _ = self.get_battery()
+        home_wh = self.wh_to_reach(service_coords)
+        if curr_wh < home_wh:
+            nearest_coords, nearest_info = self.get_nearest_drone_service()
+            if nearest_info.get("id") != service_info.get("id"):
+                log.debug(f"[{self._host.name}] Home drone_service '{service_info.get('id')}' out of reach ({curr_wh:.1f} Wh < {home_wh:.1f} Wh needed); charging at nearest '{nearest_info.get('id')}' instead.")
+                service_coords, service_info = nearest_coords, nearest_info
+        service_id = service_info.get("id")
+        # Docked-at check by id, not by coords: a Drone Depot and Drone
+        # Service Station often share the same outpost coords, so a drone
+        # hovering at (or queued for) the Depot would otherwise count as
+        # "already at the service" and never dock there to charge.
+        if service_id:
+            if self._host.current_station() == service_id:
+                return False
+        elif self._host.is_at(service_coords, precision=3.0):
             return False
         log.debug(f"[{self._host.name}] {reason}; returning to drone_service.")
         self._host.publish_telemetry("RETURNING_TO_SERVICE")
-        service_id = service_info.get("id")
         if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
             self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
         return True
@@ -278,15 +481,16 @@ class DroneEnergyMixin:
     def calculate_trip_energy(self, target_coords, wh_per_meter=None):
         """
         Round-trip budget: outbound flight to target_coords + return flight
-        from target_coords to the nearest drone_service (power home, NOT
-        necessarily the nearest drone_depot -- see module docstring),
+        from target_coords to the home drone_service (get_home_service() --
+        where the drone actually goes back to, not whichever service happens
+        to be nearest the target),
         buffered by SAFETY_MARGIN_MULTIPLIER plus a hard
         MIN_EMERGENCY_RESERVE_WH floor. No scan/extract term (see module
         docstring).
         """
         current_pos = self._host.position()
         dist_outbound = self._host.distance_between(current_pos, target_coords)
-        nearest_service, _ = self.get_nearest_drone_service(from_coords=target_coords)
+        nearest_service, _ = self.get_home_service()
         dist_inbound = self._host.distance_between(target_coords, nearest_service)
 
         rate = wh_per_meter if wh_per_meter is not None else self.wh_per_meter_at_throttle(self._host.cruise_throttle)

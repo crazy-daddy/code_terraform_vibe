@@ -76,9 +76,10 @@ RESCAN_INTERVAL_TICKS = 300
 # so in steady state this cache barely ever gets exercised at all. It exists
 # as a ceiling for the remaining cases (bootstrap, every candidate blacklisted
 # at once) so repeated reselection attempts in a short window don't each pay
-# the full network walk. Counts step() calls, same units as
-# RESCAN_INTERVAL_TICKS above.
-DISCOVERY_CACHE_INTERVAL_STEPS = 20
+# the full network walk. Simulation ticks (same units as RESCAN_INTERVAL_TICKS
+# above), not step() calls -- see FluidOutputRouter._discovered_at_tick for why:
+# ~10 s at normal speed, so a newly built/assigned tank is seen that fast.
+DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 
 class ThermalCapController:
@@ -100,7 +101,7 @@ class ThermalCapController:
             rebalance_fill_fraction=GAS_TANK_REBALANCE_FILL_FRACTION,
             connection_grace_ticks=CONNECTION_GRACE_TICKS,
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
-            discovery_cache_interval_steps=DISCOVERY_CACHE_INTERVAL_STEPS,
+            discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
             fluid_id="steam",
         )
 

@@ -369,6 +369,11 @@ class VehicleMiningMixin:
         cargo_capacity = self._host.vehicle.cargo.capacity() if hasattr(self._host.vehicle, "cargo") else 10
         if max_units is None:
             max_units = cargo_capacity
+        # Callers may pass a stockpile headroom far above what the hold can
+        # take (e.g. 1999 left to a 2000-unit stock target); the cargo.full()
+        # check stops us anyway, so cap here to keep progress logs honest.
+        free_space = cargo_capacity - self._host.vehicle.cargo.count() if hasattr(self._host.vehicle, "cargo") else cargo_capacity
+        max_units = max(0, min(max_units, free_space))
 
         self._host.publish_telemetry("MINING")
         mined_count = 0

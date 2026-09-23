@@ -377,6 +377,24 @@ class VehicleClaimsMixin:
 
     def clear_unsupported_target(self, target_key):
         """Removes a target from unsupported_targets once technology or survey successfully resolves it."""
+        # Called after every successful drill/scan, so bail out cheaply when
+        # the target was never blacklisted -- otherwise each mined unit costs
+        # three archive transactions plus a markers.remove() that logs
+        # 'not_found' to the console.
+        leg_key = None
+        if target_key.startswith("poi_"):
+            parts = target_key.split("_")
+            if len(parts) >= 3:
+                leg_key = f"{parts[1]}:{parts[2]}"
+        listed = False
+        for store_key in (SURVEY_UNSUPPORTED_KEY, LEGACY_ROVER_UNSUPPORTED_KEY, "pioneer.sonar_retries"):
+            store = archive.get(store_key, {})
+            if isinstance(store, dict) and (target_key in store or (leg_key and leg_key in store)):
+                listed = True
+                break
+        if not listed:
+            return
+
         def updater(targets):
             if isinstance(targets, dict) and target_key in targets:
                 del targets[target_key]

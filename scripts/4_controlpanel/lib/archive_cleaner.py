@@ -593,7 +593,7 @@ class ArchiveCleaner:
 
         if active_grid_anchors:
             all_keys = self.archive.keys()
-            for prefix in ("power.shedded:", "power.night_wh:"):
+            for prefix in ("power.shedded:", "power.night_wh:", "power.daily:", "power.daily_hist:"):
                 for k in all_keys:
                     if not k.startswith(prefix):
                         continue

@@ -37,7 +37,9 @@ class DroneController(
 ):
     """
     Unified base controller for autonomous electric drones. Resolves
-    home_outpost/home_biome from the nearest Drone Depot (a drone has no
+    home_outpost/home_biome from its pinned home Drone Depot (HOME_DEPOT
+    override, else archived pin, else nearest -- see
+    drone_energy.py's resolve_home_depot()) (a drone has no
     .outpost property of its own, unlike ground vehicles/buildings -- see
     docs/models/vehicles_and_modules.md's DroneSmall/DroneMedium/DroneLarge
     class definitions), detects role from mounted field module
@@ -56,27 +58,57 @@ class DroneController(
         "bio_extractor": "extract",
     }
 
-    def __init__(self, drone, cruise_throttle=None):
+    def __init__(self, drone, home_depot=None, cruise_throttle=None):
         self.drone = drone
         self.name = getattr(drone, "id", getattr(drone, "name", "drone"))
 
         # Created once here (not per-call) since TreeConsole.__init__ reads
         # the console.log_levels archive dict -- see
-        # docs/AI_CHEATSHEET.md #0a. Constructed before the home_outpost
-        # resolution chain below (rather than after, as in the shape this
-        # was ported from) so get_nearest_drone_depot()/_service() -- called
-        # during this same __init__ -- can already log through self.log.
+        # docs/AI_CHEATSHEET.md #0a. Constructed before the home
+        # resolution below so resolve_home_depot()/get_nearest_drone_*()
+        # -- called during this same __init__ -- can already log.
         self.log = TreeConsole(module="drone")
 
-        # No self.home_coords yet -- get_nearest_drone_depot()/_service()
+        # HOME_DEPOT script variable: depot id/display name (hardwired to that
+        # depot) or outpost id (any free depot there). None = auto (archived
+        # pin, else nearest depot's outpost). See resolve_home_depot().
+        self.home_depot_override = home_depot
+        self.home_depot_pool: "str | None" = None
+        self.resolve_home()
+
+        self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
+
+        self.state = "INIT"
+        self.current_target = None
+        self.current_target_key = None
+        # {module_attr: status} from detect_role()'s one-time live probe.
+        self.role_probe_status = {}
+
+        # Resume an in-progress mission left over from before a script
+        # reload, if this drone still owns that target's claim (see
+        # drone_claims.py). A drone's go_to() is cancelled by a script
+        # restart (drone.md), so the flight leg itself still needs
+        # re-issuing -- see drone_mining.py's run_miner_loop() resume path.
+        resumed = self.load_mission()
+        if resumed:
+            self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+
+    def resolve_home(self):
+        """
+        (Re)resolves home_depot/home_coords/home_outpost/home_biome. Called
+        once from __init__, and again by get_home_depot() if the pinned
+        depot has since been removed.
+        """
+        # No self.home_coords yet on first call -- get_nearest_drone_*()
         # fall back to (0.0, 0.0) via getattr(self, "home_coords", ...)
         # until it's assigned below (see drone_energy.py's fallback note).
-        depot_coords, depot_info = self.get_nearest_drone_depot()
-        self.home_coords = depot_coords
+        self.home_depot = self.resolve_home_depot(self.home_depot_override)
+        depot_info = self.home_depot
+        self.home_coords = depot_info.get("coords", getattr(self, "home_coords", (0.0, 0.0)))
 
         # A drone has no .outpost property (unlike a Rover/Pioneer/building),
         # so home_outpost is resolved from whichever building anchors this
-        # drone's home: its nearest Drone Depot first (BuildingRef.outpost),
+        # drone's home: its pinned home Drone Depot first (BuildingRef.outpost),
         # falling back to the nearest drone_service, then to the network's
         # home outpost if neither is deployed yet.
         self.home_outpost = depot_info.get("outpost")
@@ -100,22 +132,7 @@ class DroneController(
                         pass
 
         self.home_biome = getattr(self.home_outpost, "biome", None)
-        self.log.debug(f"[{self.name}] home_outpost resolved via {home_outpost_source or 'none (no depot/service/network home found)'}; home_coords={self.home_coords}, home_biome={self.home_biome!r}.")
-
-        self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
-
-        self.state = "INIT"
-        self.current_target = None
-        self.current_target_key = None
-
-        # Resume an in-progress mission left over from before a script
-        # reload, if this drone still owns that target's claim (see
-        # drone_claims.py). A drone's go_to() is cancelled by a script
-        # restart (drone.md), so the flight leg itself still needs
-        # re-issuing -- see drone_mining.py's run_miner_loop() resume path.
-        resumed = self.load_mission()
-        if resumed:
-            self.log.print(f"[{self.name}] Resuming mission '{resumed.get('kind')}' on target '{self.current_target_key}' after reload.")
+        self.log.debug(f"[{self.name}] home_outpost resolved via {home_outpost_source or 'none (no depot/service/network home found)'}; home_depot={depot_info.get('id') or 'none'}, home_coords={self.home_coords}, home_biome={self.home_biome!r}.")
 
     def get_current_tick(self):
         clock = get_component("clock")
@@ -189,7 +206,13 @@ class DroneController(
             if module is not None and probe_method:
                 try:
                     result = getattr(module, probe_method)()
-                    mounted = getattr(result, "status", None) != "not_mounted"
+                    probe_status = getattr(result, "status", None)
+                    # Kept for the role loops: an extract() probe coming
+                    # back "busy"/"ok" means the drone is hovering over a
+                    # biosite mid-harvest (e.g. restarted during extraction)
+                    # -- see drone_mining.py's _adopt_interrupted_extraction().
+                    self.role_probe_status[attr] = probe_status
+                    mounted = probe_status != "not_mounted"
                 except Exception as exc:
                     self.log.debug(f"{attr}.{probe_method}() probe raised: {exc}")
             self.log.debug(f"{attr} module mounted: {mounted}")
@@ -221,6 +244,11 @@ class DroneController(
         role = self.detect_role(role_override)
         if role is None:
             self.log.level("warn").print(f"[{self.name}] No role-defining module (bio_scanner/bio_extractor) mounted; cannot start. Mount one via couple() at a Drone Depot, or pass run(role_override=...).")
+            # Deliberately stays docked: modules can only be coupled at a
+            # Depot berth, so undocking a roleless (e.g. freshly deployed,
+            # still bare) drone would make it impossible to equip. It does
+            # hold the bay meanwhile -- peers queue in "waiting_bay" until
+            # it's equipped.
             return
 
         validate_game_version()
