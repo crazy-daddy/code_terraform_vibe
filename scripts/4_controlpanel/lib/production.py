@@ -213,6 +213,53 @@ def _all_dock_orders():
     return pairs
 
 
+def _dock_order_remaining():
+    """
+    {order_id: {item_id: units}} still owed per active order:
+    required - shipped - units already loaded into every dock serving it.
+
+    Deduplicated per order: several docks may serve the same order and share
+    its shipped progress (docs/components/supply_dock.md), so looping
+    _all_dock_orders() pairs and adding each dock's remaining counted a
+    shared order once per dock (seen live: spire_13 on two docks demanded
+    120 Neutronium Bars for a 60-bar order). Loaded-but-undispatched units
+    are in neither Inventory nor order.shipped, so every dock's count() is
+    summed and subtracted -- without that, producers re-craft whatever sits
+    in the dock and overshoot the order by that much (seen live: 104 Heli
+    Thrusters / 204 small Oil Tanks for 100/200 orders, the extras stranded
+    in Inventory, one slot each). Negative remainders are kept; callers clamp.
+    """
+    loaded_by_order = {}
+    orders_by_id = {}
+    for dock, order in _all_dock_orders():
+        if not hasattr(order, "requires"):
+            continue
+        order_id = getattr(order, "id", None)
+        orders_by_id[order_id] = order
+        loaded = loaded_by_order.setdefault(order_id, {})
+        if not hasattr(dock, "count"):
+            continue
+        try:
+            for item_id in order.requires:
+                loaded[item_id] = loaded.get(item_id, 0) + dock.count(item_id)
+        except Exception:
+            pass
+
+    result = {}
+    for order_id, order in orders_by_id.items():
+        try:
+            shipped = getattr(order, "shipped", {}) or {}
+            loaded = loaded_by_order.get(order_id, {})
+            result[order_id] = {
+                item_id: required - shipped.get(item_id, 0) - loaded.get(item_id, 0)
+                for item_id, required in (getattr(order, "requires", {}) or {}).items()
+            }
+        except Exception:
+            pass
+    log.trace(f"_dock_order_remaining: {len(orders_by_id)} distinct active order(s) -> {result}")
+    return result
+
+
 def find_dock_order_requiring(item_id):
     """
     First (dock, order) pair, across every discovered Supply Dock, whose
@@ -631,6 +678,33 @@ def get_manual_order_blocking_items(fabricator_outputs, orders=None):
     return blocking
 
 
+def _vehicle_cargo_counts(item_ids):
+    """{item_id: units} of the given items currently aboard any ground
+    vehicle (fleet.vehicles() + each vehicle's live cargo.stacks()). Only
+    items with a non-zero count are returned."""
+    counts = {}
+    fleet = _component("fleet")
+    if not fleet or not hasattr(fleet, "vehicles"):
+        return counts
+    try:
+        refs = fleet.vehicles()
+    except Exception:
+        return counts
+    for ref in refs:
+        vehicle = _component(getattr(ref, "id", None))
+        cargo = getattr(vehicle, "cargo", None) if vehicle else None
+        if not cargo or not hasattr(cargo, "stacks"):
+            continue
+        try:
+            for stack in cargo.stacks():
+                item_id = getattr(stack, "id", None)
+                if item_id in item_ids:
+                    counts[item_id] = counts.get(item_id, 0) + (getattr(stack, "count", 0) or 0)
+        except Exception:
+            continue
+    return {k: v for k, v in counts.items() if v > 0}
+
+
 def _cascade_blueprint_demand(cache=None):
     """
     Breadth-first demand cascade seeded from pending/paused Construction
@@ -678,6 +752,16 @@ def _cascade_blueprint_demand(cache=None):
                     frontier[item_id] = frontier.get(item_id, 0) + count
             except Exception:
                 pass
+
+    # A constructor Pioneer loads a whole batch for chained jobs before
+    # driving out, and every job stays pending until actually built -- so
+    # while the materials ride in its cargo they're in neither Inventory nor
+    # a Warehouse, and the Fabricator re-crafted the full batch (seen live:
+    # 3 Oil Pump blueprints -> 6 pumps built, 3 left over). Net those out.
+    if frontier:
+        for item_id, carried in _vehicle_cargo_counts(frontier).items():
+            frontier[item_id] = max(0, frontier[item_id] - carried)
+            log.trace(f"_cascade_blueprint_demand: {carried}x {item_id} already aboard vehicles -> seed demand {frontier[item_id]}")
 
     stock = _stock_fn(cache)
     total_needed = {}
@@ -786,23 +870,16 @@ def get_fabricator_targets(cache=None):
         targets[item_id] = max(targets.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: fleet upgrade order raises target for {item_id} -> {targets[item_id]}")
 
-    for dock, order in _all_dock_orders():
-        if not hasattr(order, "requires"):
-            continue
-        try:
-            shipped = getattr(order, "shipped", {}) or {}
-            for item_id, required in order.requires.items():
-                # Only order items the Fabricator can actually build become
-                # targets; other order items (raw/mined) are handled by
-                # the dock demand loop in get_material_demands() and must
-                # not be double-counted here.
-                if item_id not in targets and item_id not in fabricator_outputs:
-                    continue
-                remaining = required - shipped.get(item_id, 0)
-                targets[item_id] = max(targets.get(item_id, 0), remaining)
-                log.trace(f"get_fabricator_targets: dock order {getattr(order, 'id', '?')} raises target for {item_id} -> {targets[item_id]} (remaining={remaining})")
-        except Exception:
-            pass
+    for order_id, remaining_by_item in _dock_order_remaining().items():
+        for item_id, remaining in remaining_by_item.items():
+            # Only order items the Fabricator can actually build become
+            # targets; other order items (raw/mined) are handled by
+            # the dock demand loop in get_material_demands() and must
+            # not be double-counted here.
+            if item_id not in targets and item_id not in fabricator_outputs:
+                continue
+            targets[item_id] = max(targets.get(item_id, 0), remaining)
+            log.trace(f"get_fabricator_targets: dock order {order_id} raises target for {item_id} -> {targets[item_id]} (remaining={remaining})")
 
     # Fold in Construction Blueprint demand for items the Fabricator can
     # actually build (e.g. thermal_cap_kit) -- a queued build could otherwise
@@ -984,22 +1061,12 @@ def get_material_demands(cache=None):
             pass
 
     # Every dock's active order is a current downstream shipping requirement.
-    for dock, order in _all_dock_orders():
-        if not hasattr(order, "requires"):
-            continue
-        try:
-            shipped = getattr(order, "shipped", {}) or {}
-            for item_id, required in order.requires.items():
-                missing = required - shipped.get(item_id, 0)
-                if hasattr(dock, "count"):
-                    missing -= dock.count(item_id)
-                missing -= stock(item_id)
-                missing = max(0, missing)
-                _add_demand(demands, item_id, missing)
-                if missing > 0:
-                    log.trace(f"get_material_demands: dock {getattr(dock, 'id', '?')} order {getattr(order, 'id', '?')} needs {item_id} -> deficit={missing}")
-        except Exception:
-            pass
+    for order_id, remaining_by_item in _dock_order_remaining().items():
+        for item_id, remaining in remaining_by_item.items():
+            missing = max(0, remaining - stock(item_id))
+            _add_demand(demands, item_id, missing)
+            if missing > 0:
+                log.trace(f"get_material_demands: order {order_id} needs {item_id} -> deficit={missing}")
 
     log.trace(f"get_material_demands: final demands={demands}")
     return demands
@@ -1062,20 +1129,13 @@ def get_smelter_demands(cache=None):
                 _add_demand(gross, input_id, need)
                 log.trace(f"get_smelter_demands: {item_id} deficit={deficit} x {ratio:.2f} -> {input_id} gross += {need}")
 
-    for dock, order in _all_dock_orders():
-        try:
-            shipped = getattr(order, "shipped", {}) or {}
-            for item_id, required in (getattr(order, "requires", {}) or {}).items():
-                if item_id not in smelter_outputs or item_id in targets:
-                    continue  # not ours, or already counted via get_fabricator_targets()
-                remaining = required - shipped.get(item_id, 0)
-                if hasattr(dock, "count"):
-                    remaining -= dock.count(item_id)
-                _add_demand(gross, item_id, remaining)
-                if remaining > 0:
-                    log.trace(f"get_smelter_demands: dock {getattr(dock, 'id', '?')} still needs {remaining}x {item_id}")
-        except Exception:
-            pass
+    for order_id, remaining_by_item in _dock_order_remaining().items():
+        for item_id, remaining in remaining_by_item.items():
+            if item_id not in smelter_outputs or item_id in targets:
+                continue  # not ours, or already counted via get_fabricator_targets()
+            _add_demand(gross, item_id, remaining)
+            if remaining > 0:
+                log.trace(f"get_smelter_demands: order {order_id} still needs {remaining}x {item_id}")
 
     staged = {}
     for fabricator_id in discover_fabricator_ids():
@@ -1104,16 +1164,9 @@ def dock_remaining_requirements():
     this from raw ore it may refine, so real ingot demand can't eat ore a dock
     order ships raw."""
     remaining_by_item = {}
-    for dock, order in _all_dock_orders():
-        try:
-            shipped = getattr(order, "shipped", {}) or {}
-            for item_id, required in (getattr(order, "requires", {}) or {}).items():
-                remaining = required - shipped.get(item_id, 0)
-                if hasattr(dock, "count"):
-                    remaining -= dock.count(item_id)
-                _add_demand(remaining_by_item, item_id, remaining)
-        except Exception:
-            pass
+    for remaining_for_order in _dock_order_remaining().values():
+        for item_id, remaining in remaining_for_order.items():
+            _add_demand(remaining_by_item, item_id, remaining)
     return remaining_by_item
 
 

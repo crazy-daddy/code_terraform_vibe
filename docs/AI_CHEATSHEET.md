@@ -653,6 +653,9 @@ intermediate — active construction ultimately needs":
 
 - Seeded from `required_item`/`required_count` across every pending/paused Construction Blueprint
   job (summed, deduped by job id).
+- Seed netted against units already aboard ground vehicles (`_vehicle_cargo_counts()`, via
+  `fleet.vehicles()` + live `cargo.stacks()`): a constructor Pioneer loads a whole chained-job batch
+  while every job stays pending until built, so without this the Fabricator re-crafts the batch.
 - Breadth-first propagated down through Fabricator/Smelter recipe `inputs` (`recipe_inputs_for()`).
 - **Only each tier's shortfall propagates down** — demand beyond item's current
   `inventory.count()`, so on-hand stock counted once. Example: 10 `power_line_segment` needed,
@@ -688,6 +691,7 @@ after cargo loaded (cargo not tracked here).
 - **Smelter demand = whole order tree** (`production.get_smelter_demands(cache)`, used by `lib/smelter.py` instead of `get_material_demands()`). `get_material_demands()` only sees ingot demand through each Fabricator's *currently selected* recipe (per-worker split, each share netted vs full stock separately), and `_cascade_fabricator_output_demand()` stops at Smelter outputs — so 400 drones on manual order showed as ~1 ingot, Smelters trickled 1 ore per poll. Gross-then-net-once: each `get_fabricator_targets()` entry with deficit `D` adds `D × ratio` per recipe input that is Smelter output; target set directly on Smelter output counts as-is; dock orders for Smelter outputs not in targets added; then net once vs total stock **and** every Fabricator's staged `get_stockpile()`. Mining (`get_raw_material_demands()`) not switched yet (TODO).
 - **Raw ore owed to dock never smelted**: `production.dock_remaining_requirements()`
   (`required − shipped − dock.count()` per item, all active orders) subtracted from stock in `SmelterController.available_ore()` — needed since real ingot demand can eat every unit.
+- **Dock order remainder = one helper, per order**: `production._dock_order_remaining()` → `{order_id: {item_id: required − shipped − Σ dock.count() over every dock serving that order}}`. Every dock-demand site (`get_fabricator_targets()`, `get_material_demands()`, `get_smelter_demands()`, `dock_remaining_requirements()`) reads it. Deduped per order id because several docks can share one order (was counted once per dock); loaded-but-undispatched units subtracted because they're in neither Inventory nor `shipped` (Fabricator targets skipped this and overshot every order by the dock's load, stranding non-stacking gear in Inventory).
 - **Ore intake caps** (Smelter Step 3, `lib/smelter.py`): take amount =
   `max(0, min(50 − in_buf, SMELTER_LOAD_CHUNK_SIZE, max_ore_for_share − in_buf,
   prefill_cap − in_buf, fair_total − in_buf))`.
