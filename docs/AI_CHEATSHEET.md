@@ -294,9 +294,9 @@ every cycle — delivery self-limits to what connected tank accepts.
 
 +700 W at throttle 1 for 8 t/h oil; burning emits CO2 and oil feeds Fabricator recipes, so it only runs as last resort. No oil floor.
 
-- **Start**: combined reserve (§1a-0 `reserve_fraction()`, battery + steam) `< OIL_START_RESERVE_FRACTION = 0.15` AND deficit without oil `> 0`. One `notify()` at start. No storage at all → burns only while deficit.
-- **Throttle**: `deficit = consumed − (generated − Σ oil_generator member.generated)`, split evenly over all Oil Generators in `grid.members`; `throttle = clamp(share × OIL_DEFICIT_HEADROOM (1.1) / OIL_GENERATOR_RATED_W (700), OIL_MIN_THROTTLE (0.1), 1.0)`. No current deficit while burning → `OIL_MIN_THROTTLE`.
-- **Stop**: reserve `≥ OIL_STOP_RESERVE_FRACTION = 0.30` (above the guard's 0.25 restore line). Grid unreadable → throttle 0 (fail safe).
+- **Start**: `min(battery fraction, combined reserve)` (§1a-0 `reserve_fraction()`, battery + steam) `< OIL_START_RESERVE_FRACTION = 0.15` AND deficit without oil `> 0`. Battery fraction matters because the deficit is measured after turbine output: banked steam can't cover it (turbines are rate-limited), only the battery buffers it — combined-only let the battery hit 0 with 35 kt steam banked (reserve read 64%). One `notify()` at start. No storage at all → burns only while deficit.
+- **Throttle**: `deficit = consumed − (generated − Σ oil_generator member.generated)`, split evenly over all Oil Generators in `grid.members`; `throttle = clamp((max(0, share) × OIL_DEFICIT_HEADROOM (1.1) + OIL_RECHARGE_W (300) / count) / OIL_GENERATOR_RATED_W (700), OIL_MIN_THROTTLE (0.1), 1.0)`; recharge term only when the grid has a battery.
+- **Stop**: battery fraction AND combined reserve both `≥ OIL_STOP_RESERVE_FRACTION = 0.30` (above the guard's 0.25 restore line). Grid unreadable → throttle 0 (fail safe).
 - **Oil input**: `FluidInputRouter` (steam-turbine constants: stall streak 5, rescan 150 ticks, discovery cache 100 ticks, neutral grace 5); candidates = oil-eligible Liquid/Large Liquid Tanks (own outpost first), then Oil Pumps. Starved = throttle > 0, `oil_in.level() == 0`, `oil_consumption() == 0`.
 - No archive state: game resets throttle to 0 on script stop; restart re-evaluates within one step.
 

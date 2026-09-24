@@ -9,16 +9,22 @@ from tree_console import TreeConsole
 # (docs/components/oil_generator.md). Oil is valuable (Fabricator recipes use
 # it) and burning it emits CO2, so this controller keeps the generator idle
 # until both of these are true:
-#   - the grid's combined reserve (battery + banked steam, measured exactly
-#     like the tier-5 Power Guard -- power.measure_grid()/reserve_fraction())
-#     is below OIL_START_RESERVE_FRACTION, just above the guard's tier-1 shed
-#     line, and
+#   - the grid's reserve is low: the BATTERY fraction is below
+#     OIL_START_RESERVE_FRACTION, or the combined reserve (battery + banked
+#     steam, measured exactly like the tier-5 Power Guard --
+#     power.measure_grid()/reserve_fraction()) is, and
 #   - the grid is running a deficit without oil (consumption exceeds every
 #     non-oil generator's output).
-# While burning, the throttle covers only the deficit (plus a little
-# headroom), shared evenly across every Oil Generator on the grid so they
-# don't stack. It stops once the reserve has recovered to
-# OIL_STOP_RESERVE_FRACTION (hysteresis, so it doesn't flap on the start line).
+# Why battery and not just the combined figure: the deficit is measured
+# after the Steam Turbines' output, so banked steam cannot cover it --
+# turbines are rate-limited (90 t/h each), not stock-limited. Only the
+# battery buffers a deficit. With 35,000 t of steam banked the combined
+# reserve read 64% while the battery ran dry and the grid browned out.
+# While burning, the throttle covers the deficit (plus a little headroom)
+# and OIL_RECHARGE_W to refill the battery, shared evenly across every Oil
+# Generator on the grid so they don't stack. It stops once both fractions
+# have recovered to OIL_STOP_RESERVE_FRACTION (hysteresis, so it doesn't
+# flap on the start line).
 #
 # No archive state: the game resets the throttle to 0 when the script stops,
 # and after a restart the idle->burning check re-triggers within one step if
@@ -38,6 +44,11 @@ OIL_STOP_RESERVE_FRACTION = 0.30
 # move the reserve.
 OIL_DEFICIT_HEADROOM = 1.1
 OIL_MIN_THROTTLE = 0.1
+
+# Grid-wide surplus (W) the burning generators add on top of the deficit so
+# the battery actually climbs back to the stop line. Without it the 10%
+# headroom alone refills an 11 kWh bank at ~50 W (days of oil burn).
+OIL_RECHARGE_W = 300.0
 
 # Oil source routing (FluidInputRouter) -- same meaning as
 # lib/steam_turbine.py's constants of the same names.
@@ -169,38 +180,46 @@ class OilGeneratorController:
 
         now = power.measure_grid(grid, power.grid_steam_tank_ids(grid))
         reserve = power.reserve_fraction(now)
+        battery = now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None
         deficit, share, count = self.oil_deficit_share(grid)
         reserve_str = f"{reserve*100:.1f}%" if reserve is not None else "n/a (no storage)"
+        battery_str = f"{battery*100:.1f}%" if battery is not None else "n/a (no battery)"
         self.log.debug(
-            f"[{self.name}] Reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], "
+            f"[{self.name}] Battery {battery_str}, combined reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], "
             f"deficit without oil {deficit:.0f} W, share {share:.0f} W over {count} oil generator(s), burning={self.burning}."
         )
 
         if not self.burning:
-            low = reserve is None or reserve < OIL_START_RESERVE_FRACTION
+            fractions = [f for f in (battery, reserve) if f is not None]
+            low = not fractions or min(fractions) < OIL_START_RESERVE_FRACTION
             if low and deficit > 0:
                 self.burning = True
-                msg = f"Oil Generator '{self.name}' burning oil: reserve {reserve_str}, deficit {deficit:.0f} W. Emits CO2."
-                self.log.level("warn").print(f"[{self.name}] Last resort ON -- reserve {reserve_str} < {OIL_START_RESERVE_FRACTION*100:.0f}% and deficit {deficit:.0f} W.")
+                msg = f"Oil Generator '{self.name}' burning oil: battery {battery_str}, combined reserve {reserve_str}, deficit {deficit:.0f} W. Emits CO2."
+                self.log.level("warn").print(
+                    f"[{self.name}] Last resort ON -- battery {battery_str} / combined {reserve_str}, lowest < {OIL_START_RESERVE_FRACTION*100:.0f}%, deficit {deficit:.0f} W."
+                )
                 _notify(f"[Power] {msg}")
             else:
-                self.log.debug(f"[{self.name}] Idle: reserve_low={low}, deficit={deficit:.0f} W -- oil stays in the tank.")
+                self.log.debug(f"[{self.name}] Idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W -- oil stays in the tank.")
                 return 0.0
         else:
-            recovered = reserve >= OIL_STOP_RESERVE_FRACTION if reserve is not None else deficit <= 0
+            fractions = [f for f in (battery, reserve) if f is not None]
+            recovered = min(fractions) >= OIL_STOP_RESERVE_FRACTION if fractions else deficit <= 0
             if recovered:
                 self.burning = False
                 self.starved_warned = False
-                self.log.print(f"[{self.name}] Last resort OFF -- reserve {reserve_str} (stop at {OIL_STOP_RESERVE_FRACTION*100:.0f}%), deficit {deficit:.0f} W.")
+                self.log.print(
+                    f"[{self.name}] Last resort OFF -- battery {battery_str}, combined {reserve_str} (stop at {OIL_STOP_RESERVE_FRACTION*100:.0f}%), deficit {deficit:.0f} W."
+                )
                 return 0.0
 
-        if share <= 0:
-            # Burning but no current deficit (e.g. solar came up): keep a
-            # trickle so the reserve keeps recovering toward the stop line.
-            self.log.debug(f"[{self.name}] Burning, no deficit right now; holding minimum throttle {OIL_MIN_THROTTLE}.")
-            return OIL_MIN_THROTTLE
-        throttle = min(1.0, max(OIL_MIN_THROTTLE, share * OIL_DEFICIT_HEADROOM / OIL_GENERATOR_RATED_W))
-        self.log.debug(f"[{self.name}] Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}.")
+        # Only add recharge wattage when there is a battery to refill.
+        recharge_share = OIL_RECHARGE_W / count if battery is not None else 0.0
+        target_w = max(0.0, share) * OIL_DEFICIT_HEADROOM + recharge_share
+        throttle = min(1.0, max(OIL_MIN_THROTTLE, target_w / OIL_GENERATOR_RATED_W))
+        self.log.debug(
+            f"[{self.name}] Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}."
+        )
         return throttle
 
     def step(self):
