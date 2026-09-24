@@ -32,6 +32,11 @@ PULL_MIN_LOAD_UNITS = 10
 # the cargo off first costs (almost) nothing extra, so the stop is left for
 # the next trip instead of driving straight past home.
 PULL_CHAIN_MAX_DETOUR_RATIO = 0.75
+# Candidate pull trips (one per possible first stop) are scored
+# units / (round-trip m + this overhead), like the drone hauler's
+# HAUL_TRIP_OVERHEAD_M, so a nearby source holding a 1-unit top-up can't
+# shadow a farther one holding what's actually missing.
+PULL_TRIP_OVERHEAD_M = 300
 
 
 def _outpost_haul_demand(dest_outpost_id):
@@ -556,12 +561,14 @@ class VehicleCargoMixin:
 
     def _plan_pull_route(self, deficits, capacity, curr_tick):
         """
-        Greedy multi-stop pickup plan for this vehicle's home outpost:
-        repeatedly visits the nearest (from the previous stop) source that
-        still holds something from `deficits`, taking the largest deficits
-        first, until capacity, PULL_MAX_STOPS_PER_TRIP or the deficits run
-        out. Stops after the first must pass _pull_chain_worthwhile() (no
-        driving past home). Returns [(source, [(item_id, amount), ...]), ...].
+        Multi-stop pickup plan for this vehicle's home outpost. Every source
+        holding something from `deficits` is tried as the first stop; from
+        there the chain greedily visits the nearest (from the previous stop)
+        remaining source, taking the largest deficits first, until capacity,
+        PULL_MAX_STOPS_PER_TRIP or the deficits run out. Stops after the
+        first must pass _pull_chain_worthwhile() (no driving past home). The
+        chain with the best units / (round-trip m + PULL_TRIP_OVERHEAD_M)
+        wins. Returns [(source, [(item_id, amount), ...]), ...].
         """
         sources = self._pull_sources(list(deficits.keys()), curr_tick)
 
@@ -570,20 +577,43 @@ class VehicleCargoMixin:
             home_coords = self._host.home_outpost.coords() if self._host.home_outpost else None
         except Exception:
             home_coords = None
+        start = self._host.get_position()
 
+        best_route, best_score = [], -1.0
+        for first in sources:
+            route = self._plan_pull_chain(first, sources, deficits, capacity, start, home_coords)
+            if not route:
+                continue
+            units = sum(a for _src, loads in route for _i, a in loads)
+            meters, pos = 0.0, start
+            for source, _loads in route:
+                meters += self._host.distance_between(pos, source["coords"])
+                pos = source["coords"]
+            meters += self._host.distance_between(pos, home_coords) if home_coords is not None else 0.0
+            score = units / (meters + PULL_TRIP_OVERHEAD_M)
+            self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) over {meters:.0f}m ({len(route)} stop(s)), score {score:.4f}.")
+            if score > best_score:
+                best_route, best_score = route, score
+        return best_route
+
+    def _plan_pull_chain(self, first, sources, deficits, capacity, start, home_coords):
+        """One candidate trip for _plan_pull_route(), starting at `first`."""
         remaining = dict(deficits)
         cap_left = capacity
-        pos = self._host.get_position()
+        pos = start
+        pending = list(sources)
         route = []
-        while sources and cap_left > 0 and remaining and len(route) < PULL_MAX_STOPS_PER_TRIP:
-            useful = [src for src in sources if any(remaining.get(i, 0) > 0 and u > 0 for i, u in src["available"].items())]
-            if route and home_coords is not None:
+        while pending and cap_left > 0 and remaining and len(route) < PULL_MAX_STOPS_PER_TRIP:
+            useful = [src for src in pending if any(remaining.get(i, 0) > 0 and u > 0 for i, u in src["available"].items())]
+            if not route:
+                useful = [src for src in useful if src["id"] == first["id"]]
+            elif home_coords is not None:
                 useful = [src for src in useful if self._pull_chain_worthwhile(pos, src, home_coords)]
             if not useful:
                 break
             useful.sort(key=lambda src: self._host.distance_between(pos, src["coords"]))
             source = useful[0]
-            sources = [src for src in sources if src["id"] != source["id"]]
+            pending = [src for src in pending if src["id"] != source["id"]]
             loads = []
             for item_id in sorted(source["available"].keys(), key=lambda i: -remaining.get(i, 0)):
                 amount = min(remaining.get(item_id, 0), source["available"][item_id], cap_left)
