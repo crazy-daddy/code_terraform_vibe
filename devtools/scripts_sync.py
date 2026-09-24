@@ -1127,7 +1127,7 @@ def sync_lib(lib_index: dict, opts: Options) -> set:
     Returns the set of lib_index keys actually (re)written -- including under
     --dry-run, as a preview of what would change -- so the caller can decide
     which currently-deployed scripts need relaunching (see
-    relaunch_lib_dependents()): unlike a machine script slot, a lib module has
+    warn_stale_lib_dependents()): unlike a machine script slot, a lib module has
     no slot of its own whose text changing would trigger sync_file()'s own
     --auto launch, so without this a lib-only fix silently never reaches any
     already-running script - it sits on disk correct but unread until
@@ -1345,7 +1345,7 @@ def lib_dependency_closure(lib_index: dict) -> dict:
     return closure
 
 
-def relaunch_lib_dependents(changed_keys: set, lib_index: dict, opts: Options, skip_stems: set) -> None:
+def warn_stale_lib_dependents(changed_keys: set, lib_index: dict, opts: Options, skip_stems: set) -> None:
     """Reports every currently-deployed script whose import closure reaches a
     lib module sync_lib() just changed -- it deliberately does NOT attempt to
     relaunch them (despite the name -- kept for now to avoid touching every
@@ -1404,7 +1404,7 @@ def relaunch_lib_dependents(changed_keys: set, lib_index: dict, opts: Options, s
 def sync_all(script_index: dict, lib_index: dict, opts: Options, on_lib_changed=None) -> int:
     """Full pass: mirror lib/, fill matched script slots, stage the rest.
 
-    on_lib_changed, when given, replaces the immediate relaunch_lib_dependents()
+    on_lib_changed, when given, replaces the immediate warn_stale_lib_dependents()
     call with on_lib_changed(changed_lib_keys, launched_stems) -- used by
     Watcher to debounce a burst of lib/ edits into one relaunch instead of one
     per file (see Watcher._note_lib_changed()). `once` (no callback) keeps the
@@ -1425,7 +1425,7 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options, on_lib_changed=
     if changed_lib_keys and on_lib_changed is not None:
         on_lib_changed(changed_lib_keys, launched_stems)
     else:
-        relaunch_lib_dependents(changed_lib_keys, lib_index, opts, launched_stems)
+        warn_stale_lib_dependents(changed_lib_keys, lib_index, opts, launched_stems)
     return written
 
 
@@ -1622,7 +1622,7 @@ class Watcher:
         self.repo_due = None
         self.last_tier_check = time.monotonic()
         # Debounced --auto relaunch state (see _note_lib_changed()/drain()):
-        # a lib/ edit doesn't fire relaunch_lib_dependents() immediately --
+        # a lib/ edit doesn't fire warn_stale_lib_dependents() immediately --
         # it accumulates here and pushes auto_launch_due out by
         # opts.auto_debounce seconds, so a burst of related lib/ edits (e.g.
         # touching both vehicle_mining.py and production.py for one fix)
@@ -1676,7 +1676,7 @@ class Watcher:
         if self.auto_launch_due is not None and self.auto_launch_due <= now:
             changed_keys, skip_stems = self.pending_lib_changes, self.pending_lib_skip_stems
             self.pending_lib_changes, self.pending_lib_skip_stems, self.auto_launch_due = set(), set(), None
-            relaunch_lib_dependents(changed_keys, self.lib_index, self.opts, skip_stems)
+            warn_stale_lib_dependents(changed_keys, self.lib_index, self.opts, skip_stems)
         # Cheap periodic re-check so a tier advance (new tech unlocked
         # mid-session) is picked up even with no repo-side file change.
         if now - self.last_tier_check > 5.0:

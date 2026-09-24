@@ -276,7 +276,8 @@ class FleetUpgradeCoordinator:
             return None
         candidates.sort()
         _, drone_id, role, engine = candidates[0]
-        self._patch("drones", drone_id, state="ordered", target_kind=target_kind, role=role, engine=engine, new_id=None)
+        old_name = getattr(drones[drone_id], "name", "") or ""
+        self._patch("drones", drone_id, state="ordered", target_kind=target_kind, role=role, engine=engine, old_name=old_name, new_id=None)
         self.log.print(f"[fleet_upgrade] Drone '{drone_id}' ({role}, {engine}) -> '{target_kind}'.")
         return f"{drone_id}: ordering {target_kind}"
 
@@ -440,6 +441,12 @@ class FleetUpgradeCoordinator:
             if not lineage.get("fitted"):
                 status = fleet_status.get(new_id) or {}
                 return f"{old_id}: {new_id} fitting modules ({status.get('state', '?')})"
+            # The old drone is undeployed by now, so its display name is free.
+            old_name = entry.get("old_name")
+            if old_name and old_name != old_id:
+                res = computer.rename(new_id, old_name)
+                if res.status != "ok":
+                    self.log.debug(f"[fleet_upgrade] rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
             self._drop("drones", old_id)
             self.log.print(f"[fleet_upgrade] Drone swap done: '{old_id}' -> '{new_id}' ({kind}).")
             return f"{old_id} -> {new_id} done"

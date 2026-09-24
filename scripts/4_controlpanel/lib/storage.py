@@ -404,6 +404,71 @@ def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False)
     return moved_total
 
 
+# OutputSlot.send() rejections that mean "Inventory has no room for this"
+# (docs/types/storage_and_inventory.md) -- the only cases
+# drain_port_inventory_first() falls back to a Warehouse for.
+INVENTORY_FULL_STATUSES = ("partial", "target_full", "slots_full")
+
+
+def drain_port_inventory_first(port, outpost=None):
+    """
+    Sends every stack staged in `port` (a Smelter/Fabricator output) to the
+    home Inventory, and only when Inventory has no room (INVENTORY_FULL_STATUSES)
+    sends the rest of that stack to a local Warehouse via
+    drain_port_to_storage(). Inventory stays the normal destination: a
+    Warehouse-held input costs the consumer an Auto Feeder hop on take_item().
+    But a finished item stuck in an output buffer stalls the machine outright,
+    and is invisible to take_item() entirely -- found live with Inventory at
+    36/36 slots (data-bearing Oil Tanks, one slot each): Fabricator output
+    bins filled and every recipe behind them stalled. take_item() already
+    rotates through Warehouses, so Supply Docks and Fabricators still find a
+    fallback-stored item. INVENTORY_ONLY_ITEM_IDS fall back too: a stall is
+    worse, and the rebalance sweep only moves items away from Inventory, so
+    such an item waits in the Warehouse until someone takes it.
+
+    Reconnects the port to "inventory" before each send, since a previous
+    fallback leaves it pointed at a Warehouse.
+
+    Returns [(item_id, moved, destination, status, message), ...] per stack,
+    destination "inventory" or "warehouse"; a stack neither accepted is
+    reported with moved 0 and the Inventory send's status/message.
+    """
+    results = []
+    if not port or not hasattr(port, "stacks"):
+        return results
+    try:
+        stacks = port.stacks()
+    except Exception:
+        return results
+
+    for stack in stacks:
+        item_id = getattr(stack, "id", None)
+        count = getattr(stack, "count", 0)
+        if not item_id or count <= 0:
+            continue
+        try:
+            if not hasattr(port, "connected_id") or port.connected_id() != "inventory":
+                port.connect("inventory")
+            res = port.send(item_id, count)
+        except Exception as error:
+            results.append((item_id, 0, "inventory", "exception", str(error)))
+            continue
+        status = getattr(res, "status", None)
+        moved = getattr(res, "moved", 0) or 0
+        if moved > 0:
+            results.append((item_id, moved, "inventory", status, getattr(res, "message", "")))
+        if status not in INVENTORY_FULL_STATUSES:
+            if moved <= 0:
+                results.append((item_id, 0, "inventory", status, getattr(res, "message", "")))
+            continue
+        fallback = drain_port_to_storage(port, outpost=outpost, include=lambda i, wanted=item_id: i == wanted, allow_partial=True)
+        if fallback > 0:
+            results.append((item_id, fallback, "warehouse", "ok", ""))
+        elif moved <= 0:
+            results.append((item_id, 0, "inventory", status, getattr(res, "message", "")))
+    return results
+
+
 def consolidate_cross_warehouse_stock(outpost=None):
     """
     Calls `.compact()` on every discovered Warehouse/Large Warehouse at

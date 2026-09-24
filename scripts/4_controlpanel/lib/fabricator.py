@@ -1,7 +1,7 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
+from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
 from archive import archive
-from storage import take_item, total_stock, best_unload_target, drain_port_to_storage
+from storage import take_item, total_stock, best_unload_target, drain_port_to_storage, drain_port_inventory_first
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 import fluid_routing
@@ -299,6 +299,9 @@ class FabricatorController:
         # Computed once per pass, not per candidate (each is a stock walk).
         blueprint_items = blueprint_demand_items()
         upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items) if upgrade_items else set()
+        # Every Fabricator's output buffers + in-progress crafts, not just
+        # this one's output buffer -- see production.get_fabricator_pipeline().
+        pipeline = get_fabricator_pipeline()
 
         candidates = []
         for recipe in recipes:
@@ -311,11 +314,11 @@ class FabricatorController:
             # up -- an Inventory-only count would look artificially low and
             # over-produce past the real target.
             current = total_stock(recipe.output_item)
-            output_buffer = self.machine.get_output_count()
-            missing = max(0, target - current - output_buffer)
+            in_pipeline = pipeline.get(recipe.output_item, 0)
+            missing = max(0, target - current - in_pipeline)
             if missing > 0:
                 candidates.append((missing, recipe))
-                self.log.debug(f"[{self.name}] choose_recipe: candidate {recipe.output_item} target={target} current={current} output_buffer={output_buffer} -> missing={missing}")
+                self.log.debug(f"[{self.name}] choose_recipe: candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
 
         # Five priority tiers, biggest shortfall first within each:
         #   0. An item a manual order transitively needs as an INPUT (e.g.
@@ -416,18 +419,17 @@ class FabricatorController:
     def drain_output(self):
         if not hasattr(self.machine, "output"):
             return
-        for stack in self.machine.output.stacks():
-            result = self.machine.output.send(stack.id, stack.count)
-            if result.status == "no_connection":
-                reconnect = self.machine.output.connect("inventory")
-                self.connected_output = reconnect.status == "ok"
-                if self.connected_output:
-                    result = self.machine.output.send(stack.id, stack.count)
-            if result.status in ["ok", "partial"]:
-                self.log.print(f"[{self.name}] Sent {result.moved}x {stack.id} to Inventory.")
-                consume_manual_order(stack.id, result.moved)
-            elif result.status not in ["busy", "no_op"]:
-                self.log.level("warn").print(f"[{self.name}] Output notice: {result.status} - {result.message}")
+        # Inventory first, a Warehouse only when Inventory is full -- see
+        # storage.drain_port_inventory_first().
+        for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=getattr(self.machine, "outpost", None)):
+            if moved > 0:
+                if destination == "warehouse":
+                    self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
+                else:
+                    self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
+                consume_manual_order(item_id, moved)
+            elif status not in ["busy", "no_op"]:
+                self.log.level("warn").print(f"[{self.name}] Output notice: {status} - {message}")
 
     def drain_byproduct(self):
         """

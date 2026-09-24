@@ -916,31 +916,87 @@ def get_fabricator_targets(cache=None):
     return targets
 
 
-def get_fabricator_worker_count(recipe_id):
+def get_fabricator_worker_ids(recipe_id):
     """
-    How many discovered Fabricators currently have recipe_id selected
-    (get_recipe() == recipe_id) right now -- a live headcount, not an
+    Sorted ids of every discovered Fabricator currently holding recipe_id
+    (get_recipe() == recipe_id) right now -- a live roster, not an
     archive-tracked one, so it reflects joiners too (lib/fabricator.py's
     choose_recipe() lets a Fabricator "join" a recipe another one already
     holds the coordination claim on, when no other demanded recipe is
-    available -- see its pile-on fallback). Used to split crafts_remaining
-    fairly below: without this, every Fabricator working the same recipe
-    would each independently load_inputs() for the FULL remaining shortfall,
-    overshooting the target well before total_stock() catches up on the next
-    poll. Returns at least 1 (the caller itself, even if the network walk
-    finds nothing -- e.g. outpost_network unavailable).
+    available -- see its pile-on fallback). Sorted so every worker computes
+    the same order, which get_fabricator_active_recipe() uses to hand out
+    the split's remainder deterministically.
     """
-    count = 0
+    ids = []
     for fabricator_id in discover_fabricator_ids():
         candidate = _component(fabricator_id)
         if not candidate or not hasattr(candidate, "get_recipe"):
             continue
         try:
             if candidate.get_recipe() == recipe_id:
-                count += 1
+                ids.append(fabricator_id)
         except Exception:
             pass
-    return max(1, count)
+    return sorted(ids)
+
+
+def get_fabricator_worker_count(recipe_id):
+    """
+    How many discovered Fabricators currently have recipe_id selected -- see
+    get_fabricator_worker_ids(). Used to split crafts_remaining fairly below:
+    without this, every Fabricator working the same recipe would each
+    independently load_inputs() for the FULL remaining shortfall,
+    overshooting the target well before total_stock() catches up on the next
+    poll. Returns at least 1 (the caller itself, even if the network walk
+    finds nothing -- e.g. outpost_network unavailable).
+    """
+    return max(1, len(get_fabricator_worker_ids(recipe_id)))
+
+
+def get_fabricator_pipeline(cache=None):
+    """
+    {item_id: units} already finished or being finished inside ANY Fabricator
+    but not yet in storage: every Fabricator's output-buffer stacks, plus one
+    craft's output for each craft in progress (is_running()). Netted out of
+    every "still needed" figure alongside total_stock().
+
+    Used to be each Fabricator's OWN get_output_count() only. Peers' output
+    buffers and every in-progress craft were invisible, so each Fabricator on
+    a recipe kept building past the order (seen live: 7 surplus Oil Tank
+    (Medium) after vestibule_15). Worst when Inventory is full: finished
+    data-bearing items (oil tanks carry oilTons, one slot each) pile up in
+    output bins where only their own Fabricator counted them.
+
+    Memoized on `cache` (SourceCache) for the pass, like
+    get_fabricator_targets() -- get_material_demands() asks once per
+    Fabricator.
+    """
+    if cache is not None and cache._fabricator_pipeline is not None:
+        return dict(cache._fabricator_pipeline)
+    pipeline = {}
+    for fabricator_id in discover_fabricator_ids():
+        fabricator = _component(fabricator_id)
+        if not fabricator:
+            continue
+        try:
+            output = getattr(fabricator, "output", None)
+            if output and hasattr(output, "stacks"):
+                for stack in output.stacks():
+                    stack_item_id = getattr(stack, "id", None)
+                    if stack_item_id:
+                        pipeline[stack_item_id] = pipeline.get(stack_item_id, 0) + (getattr(stack, "count", 0) or 0)
+            if hasattr(fabricator, "is_running") and fabricator.is_running():
+                recipe_id = fabricator.get_recipe()
+                recipe = fabricator.find_recipe(recipe_id) if recipe_id and hasattr(fabricator, "find_recipe") else None
+                output_item = getattr(recipe, "output_item", None) if recipe else None
+                if output_item:
+                    pipeline[output_item] = pipeline.get(output_item, 0) + max(1, getattr(recipe, "output_count", 1))
+        except Exception:
+            pass
+    log.trace(f"get_fabricator_pipeline: {pipeline}")
+    if cache is not None:
+        cache._fabricator_pipeline = dict(pipeline)
+    return pipeline
 
 
 def get_smelter_worker_count(recipe_id):
@@ -972,11 +1028,16 @@ def get_smelter_worker_count(recipe_id):
 def get_fabricator_active_recipe(fabricator=None, cache=None):
     """Returns (recipe, crafts_remaining) for the Fabricator's selected recipe,
     where crafts_remaining covers the full remaining shortfall against its
-    output target/order (not just one craft's worth), divided evenly across
-    every Fabricator currently working this same recipe (see
-    get_fabricator_worker_count()) so several Fabricators piled onto one
+    output target/order (not just one craft's worth), net of stock and every
+    Fabricator's pipeline (get_fabricator_pipeline()), divided across every
+    Fabricator currently working this same recipe (see
+    get_fabricator_worker_ids()) so several Fabricators piled onto one
     large order split its remaining work instead of each independently
-    re-loading the full shortfall."""
+    re-loading the full shortfall. The split is floor-plus-remainder: the
+    first (crafts % workers) ids in sorted order get one extra craft, so the
+    shares sum to exactly crafts_remaining. A worker can get 0 and idles
+    until demand changes (the old ceil split gave every worker at least one
+    craft, up to workers-1 surplus per order)."""
     if fabricator is None:
         fabricator = _default_fabricator()
     if not fabricator or not hasattr(fabricator, "get_recipe") or not hasattr(fabricator, "list_recipes"):
@@ -991,16 +1052,21 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
         output_item = getattr(recipe, "output_item", None)
         output_count = max(1, getattr(recipe, "output_count", 1))
         current = _stock_fn(cache)(output_item)
-        output_buffer = fabricator.get_output_count() if hasattr(fabricator, "get_output_count") else 0
+        in_pipeline = get_fabricator_pipeline(cache).get(output_item, 0)
         target = get_fabricator_targets(cache).get(output_item, 0)
-        still_needed = max(0, target - current - output_buffer)
+        still_needed = max(0, target - current - in_pipeline)
         crafts_remaining = -(-still_needed // output_count)  # ceil division
-        worker_count = get_fabricator_worker_count(current_recipe_id)
-        if worker_count > 1:
+        fabricator_id = getattr(fabricator, "id", None)
+        worker_ids = get_fabricator_worker_ids(current_recipe_id)
+        if len(worker_ids) > 1:
             pre_split = crafts_remaining
-            crafts_remaining = -(-crafts_remaining // worker_count)  # ceil division -- an odd remainder goes to every worker equally rather than being dropped, converging (not undershooting) once demand nets back down on the next poll
-            log.debug(f"get_fabricator_active_recipe({getattr(fabricator, 'id', '?')}): recipe={current_recipe_id} split {pre_split} crafts across {worker_count} workers -> {crafts_remaining} each")
-        log.debug(f"get_fabricator_active_recipe({getattr(fabricator, 'id', '?')}): recipe={current_recipe_id} output={output_item} target={target} current={current} output_buffer={output_buffer} still_needed={still_needed} crafts_remaining={crafts_remaining}")
+            if fabricator_id in worker_ids:
+                share, extra = divmod(crafts_remaining, len(worker_ids))
+                crafts_remaining = share + (1 if worker_ids.index(fabricator_id) < extra else 0)
+            else:
+                crafts_remaining = -(-crafts_remaining // len(worker_ids))  # id unknown: old ceil split, overshoots at most workers-1
+            log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): recipe={current_recipe_id} split {pre_split} crafts across {len(worker_ids)} workers {worker_ids} -> {crafts_remaining} for this one")
+        log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} still_needed={still_needed} crafts_remaining={crafts_remaining}")
         return recipe, crafts_remaining
     except Exception:
         return None, 0
@@ -1321,6 +1387,7 @@ class SourceCache:
         self._stock_map = None
         self._building_stock = None  # {source_id: {item_id: units}}, filled alongside _stock_map
         self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
+        self._fabricator_pipeline = None  # get_fabricator_pipeline() memo -- see its docstring
 
     def _build_stock_map(self):
         log.trace("SourceCache._build_stock_map: one-shot stock scan across Inventory + Warehouses starting")

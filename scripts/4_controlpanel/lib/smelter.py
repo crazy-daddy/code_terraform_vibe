@@ -10,7 +10,7 @@
 # duplication.
 from archive import archive
 from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, smelter_recipe_peers
-from storage import take_item
+from storage import take_item, drain_port_inventory_first
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 
@@ -200,20 +200,23 @@ class SmelterController:
         return isinstance(shedded, list) and self.name in shedded
 
     def drain_output(self):
-        """Sends all finished ingots from output buffer to inventory."""
+        """Sends all finished ingots from output buffer to Inventory, or to a
+        Warehouse when Inventory is full (storage.drain_port_inventory_first())."""
         if not hasattr(self.smelter, "output"):
             return 0
 
-        out_count = self.smelter.get_output_count()
-        if out_count > 0:
-            self.ensure_connections()
-            for stack in self.smelter.output.stacks():
-                res = self.smelter.output.send(stack.id, stack.count)
-                if res.status in ["ok", "partial"]:
-                    moved = getattr(res, "moved", 0)
-                    self.log.print(f"[{self.name}] Sent {moved}x {stack.id} to Inventory.")
-                    return moved
-        return 0
+        total = 0
+        if self.smelter.get_output_count() > 0:
+            for item_id, moved, destination, status, message in drain_port_inventory_first(self.smelter.output, outpost=getattr(self.smelter, "outpost", None)):
+                if moved > 0:
+                    total += moved
+                    if destination == "warehouse":
+                        self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
+                    else:
+                        self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
+                else:
+                    self.log.debug(f"[{self.name}] drain_output: {item_id} not moved ({status} - {message})")
+        return total
 
     def log_outcome(self, reason, **detail):
         """Narrates why this step did or didn't load ore, via debug()."""
