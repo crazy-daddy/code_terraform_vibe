@@ -488,6 +488,11 @@ def consume_manual_order(item_id, quantity):
 # blueprint demand in lib/fabricator.py's choose_recipe() (building new
 # things beats upgrading working old ones), above everything else.
 UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
+# Requesters in UPGRADE_ORDERS_KEY that aren't drones. fleet_upgrade._prune()
+# drops every other entry whose drone no longer exists, so a standing order
+# from another script must be listed here. "field_keeper" = the Harvester's
+# field-machine kits (8_planting/lib/harvester_machines.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper",)
 
 
 def get_upgrade_orders():

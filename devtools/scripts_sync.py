@@ -248,6 +248,9 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
     (`state.planet.constructionBlueprints`) and are deliberately not counted,
     nor are placed machines still `isUnderConstruction` - only finished,
     actually deployed buildings count.
+    `plant_recipes` is the number of discovered seed recipes
+    (`state.planet.plants.discoveredRecipes`, the Flora journal), used by the
+    `plant_recipes` criterion (8_planting unlocks once all 15 are known).
     Also carries two fleet-upgrade handoff fields read from the same parse
     (see upgrade_fill_for()): `machine_types` ({machine id: typeId}) and
     `fleet_upgrade` (the `fleet.upgrade` Data Archive entry, stored in the
@@ -277,6 +280,7 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
                 mid: m.get("typeId") for mid, m in state.get("machines", {}).items()
                 if isinstance(m, dict)
             },
+            "plant_recipes": len(state.get("planet", {}).get("plants", {}).get("discoveredRecipes", []) or []),
             "fleet_upgrade": (state.get("notebook", {}).get("entries", {}).get(FLEET_UPGRADE_KEY) or {}).get("value"),
         }
     except (OSError, ValueError, KeyError):
@@ -457,6 +461,8 @@ def criteria_met(criteria: dict, state: Optional[dict]) -> bool:
     if not tech.issubset(state["unlockedTech"]):
         return False
     if "outpost_count" in criteria and state["outpost_count"] < criteria["outpost_count"]:
+        return False
+    if "plant_recipes" in criteria and state.get("plant_recipes", 0) < criteria["plant_recipes"]:
         return False
     counts = state["building_counts"]
     for type_id, minimum in criteria.get("buildings", {}).items():

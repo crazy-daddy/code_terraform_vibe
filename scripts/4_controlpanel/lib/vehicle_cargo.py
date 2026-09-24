@@ -16,6 +16,7 @@ import outpost_reagents
 import mining_reservations
 import logistics_requests
 import drill_sites
+import pump_salt
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -519,6 +520,8 @@ class VehicleCargoMixin:
         Mining Drills advertising in drill.status (lib/drill_sites.py), each
         net of what other haulers already reserved there. A drill with no
         recorded position (drill.positions) is skipped, warned about once.
+        Water Pumps holding byproduct salt (lib/pump_salt.py) are added when
+        salt is wanted, home pumps included.
         """
         home_id = getattr(self._host.home_outpost, "id", None)
         requests = logistics_requests.active_requests(curr_tick)
@@ -555,6 +558,13 @@ class VehicleCargoMixin:
                     self._unlocated_drills_warned.add(drill_id)
                 continue
             sources.append({"kind": "drill", "id": drill_id, "coords": coords, "available": available, "outpost": None})
+
+        if pump_salt.SALT_ITEM_ID in items:
+            for pump_id, entry in pump_salt.salt_sources(curr_tick).items():
+                taken = logistics_requests.reserved_from(pump_id, curr_tick, exclude_vehicle=self._host.name)
+                free = entry["available"] - taken.get(pump_salt.SALT_ITEM_ID, 0)
+                if free > 0:
+                    sources.append({"kind": "pump", "id": pump_id, "coords": entry["coords"], "available": {pump_salt.SALT_ITEM_ID: free}, "outpost": None})
 
         self._host.log.debug(f"[{self._host.name}] pull: {len(sources)} source(s) hold wanted items: " + ", ".join(f"{src['kind']}:{src['id']}={src['available']}" for src in sources))
         return sources
@@ -673,21 +683,29 @@ class VehicleCargoMixin:
         moved_by_item = {}
         coords = source["coords"]
         is_drill = source["kind"] == "drill"
+        is_pump = source["kind"] == "pump"
         self._host.publish_telemetry("OUTBOUND", f"pickup at {source['kind']} '{source['id']}'")
-        precision = drill_sites.DRILL_ARRIVAL_PRECISION_M if is_drill else 1.5
+        if is_drill:
+            precision = drill_sites.DRILL_ARRIVAL_PRECISION_M
+        elif is_pump:
+            precision = pump_salt.PUMP_ARRIVAL_PRECISION_M
+        else:
+            precision = 1.5
         if not self._host.drive_with_recharge(coords[0], coords[1], precision=precision):
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach '{source['id']}'; heading home with what's aboard.")
             return None
 
-        if is_drill:
+        if is_drill or is_pump:
+            # connect_to_drill()/take_from_drill() are plain port operations,
+            # valid for any pickup structure (drill or pump).
             if not drill_sites.connect_to_drill(self._host.vehicle.input, source["id"]):
-                self._host.log.level("warn").print(f"[{self._host.name}] Drill '{source['id']}' refused the connection at {coords}; check its drill.positions entry.")
+                self._host.log.level("warn").print(f"[{self._host.name}] {source['kind'].capitalize()} '{source['id']}' refused the connection at {coords}.")
                 for item_id, _amount in loads:
                     logistics_requests.reserve_pickup(self._host.name, home_id, item_id, 0, curr_tick, source_id=source["id"])
                 return moved_by_item
 
         for item_id, amount in loads:
-            if is_drill:
+            if is_drill or is_pump:
                 moved = drill_sites.take_from_drill(self._host.vehicle.input, item_id, amount)
             else:
                 moved = take_item(self._host.vehicle.input, item_id, amount, outpost=source["outpost"])
@@ -695,7 +713,7 @@ class VehicleCargoMixin:
             logistics_requests.reserve_pickup(self._host.name, home_id, item_id, moved, curr_tick, source_id=source["id"])
             moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
 
-        if not is_drill and self._host.find_charging_station(source["outpost"]) is not None:
+        if not (is_drill or is_pump) and self._host.find_charging_station(source["outpost"]) is not None:
             self._host.recharge_at_station(target_level=1.0)
         return moved_by_item
 

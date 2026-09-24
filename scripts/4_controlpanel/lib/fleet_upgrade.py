@@ -36,7 +36,7 @@ from drone_upgrade import DRONE_LOADOUTS_KEY, fleet_upgrade_state, update_fleet_
 from drone_energy import HOME_DEPOTS_KEY
 from drone_claims import DRONE_RECALL_KEY, MISSION_KEY
 from drone_depot import DEPOT_STATUS_KEY
-from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY
+from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole
 
 # Worst -> best, kit id -> the Depot typeId it deploys (lib/drone_energy.py).
@@ -557,6 +557,7 @@ class FleetUpgradeCoordinator:
             for k in gone:
                 archive.pop_entry(DRONE_LOADOUTS_KEY, k)
             orders = archive.get(UPGRADE_ORDERS_KEY, {})
-            dead = [k for k in (orders if isinstance(orders, dict) else {}) if k != REQUESTER and k not in drones]
+            dead = [k for k in (orders if isinstance(orders, dict) else {})
+                    if k != REQUESTER and k not in STANDING_ORDER_REQUESTERS and k not in drones]
             for k in dead:
                 archive.pop_entry(UPGRADE_ORDERS_KEY, k)
