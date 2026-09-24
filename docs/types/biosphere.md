@@ -24,28 +24,26 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"busy"`, `"input_empty"`, or `"invalid_specimen"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"busy"`, `"input_empty"`, `"invalid_specimen"`, `"output_full"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the analysis outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.info`
+##### `.info: AnalyzeInfo | None`
 
 Completed `AnalyzeInfo`, or `None` when analysis was rejected.
 
-- **Returns** `Optional[AnalyzeInfo]`
+- **Returns** `AnalyzeInfo | None`
 
 *Types / Biosphere*
-
----
 
 ## BioExtractionResult
 
@@ -53,28 +51,26 @@ Completed `AnalyzeInfo`, or `None` when analysis was rejected.
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"not_mounted"`, `"scrambled"`, `"busy"`, `"not_at_location"`, `"not_scanned"`, `"cooling"`, or `"no_cargo_space"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"not_mounted"`, `"scrambled"`, `"busy"`, `"not_at_location"`, `"not_scanned"`, `"cooling"`, `"no_cargo_space"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the biological extraction outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.extracted`
+##### `.extracted: float`
 
 Tons committed to drone cargo by this extraction; **0** for every rejection.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Types / Biosphere*
-
----
 
 ## BioScanResult
 
@@ -82,28 +78,26 @@ Tons committed to drone cargo by this extraction; **0** for every rejection.
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"not_mounted"`, `"scrambled"`, `"busy"`, or `"not_at_location"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"not_mounted"`, `"scrambled"`, `"busy"`, `"not_at_location"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the biological scan outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.scan`
+##### `.scan: LifeFormScanResult | None`
 
 Completed `LifeFormScanResult`, or `None` when the scan was rejected.
 
-- **Returns** `Optional[LifeFormScanResult]`
+- **Returns** `LifeFormScanResult | None`
 
 *Types / Biosphere*
-
----
 
 ## Cell
 
@@ -111,107 +105,105 @@ Completed `LifeFormScanResult`, or `None` when the scan was rejected.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Sector id, e.g. `"E13"` (row letter A-H + column 1-24). Parse it to compute the four orthogonal neighbors yourself: the grid hands you no `neighbors()` helper.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.plant`
+##### `.plant: str | None`
 
 Species id of the planted flora, such as `"sunpetal"`, or `None` when the cell has no plant. This is the species id, not the `"seed_sunpetal"` item id. An empty cell may still contain a provider or uncollected item, so also check `.status`. It matches `SeedRecipe.species` and the species part of `"seed:<species>"`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"sunpetal"`, `"shadeleaf"`, `"dewmoss"`, `"lonethorn"`, `"packfern"`, `"twinvine"`, `"spitebud"`, `"sunspur"`, `"glowvine"`, `"crowncap"`, `"pondmoss"`, `"saltbloom"`, `"brinethorn"`, `"saltmate"`, `"grandbloom"`
 
-##### `.growth`
+##### `.growth: float`
 
 Crop growth progress **0-1**. **1.0** means ready to harvest. Advances only while every requirement is met and pauses (never regresses) otherwise. Clearing the crop returns it to **0**; a partial Harvester harvest leaves the crop mature at **1.0** with its remaining forage.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.status`
+##### `.status: str`
 
 What occupies the sector or what its crop is doing: `"unknown"` until natural ground is scanned, `"empty"` (bare plantable ground), `"item"` (an uncollected surface item), `"base"` (the Harvester depot), `"provider"` (field equipment), `"growing"`, `"stalled"`, or `"mature"`. Player-created plants and providers remain visible. Only `"empty"` accepts planting or deployment.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"unknown"`, `"empty"`, `"item"`, `"base"`, `"growing"`, `"stalled"`, `"mature"`, `"provider"`
 
-##### `.lit`
+##### `.lit: bool`
 
 `True` while the cell has an active 24-hour Harvester light treatment or a powered Grow Lamp covers it. Satisfies the **Light** requirement; **Shade** plants need this `False`.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.watered`
+##### `.watered: bool`
 
 `True` while the cell has an active 24-hour Harvester water treatment, or while a powered, supplied Sprinkler covers it. Satisfies the **Water** requirement. A plant pauses when neither source is active.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.salted`
+##### `.salted: bool`
 
 `True` while the cell has an active 24-hour Harvester salt treatment, or while a powered, supplied Dispenser covers it. Satisfies the **Salt** requirement. A plant pauses when neither source is active.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.manual_light_remaining`
+##### `.manual_light_remaining: float`
 
 Hours remaining on the Harvester-applied light treatment, in the **0-24** range. This excludes Grow Lamp coverage. Each successful `light()` resets it to **24 hours**, replacing any remaining time.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.manual_water_remaining`
+##### `.manual_water_remaining: float`
 
 Hours remaining on the Harvester-applied water treatment, in the **0-24** range. This excludes Sprinkler coverage. Each successful `water()` resets it to **24 hours**, replacing any remaining time.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.manual_salt_remaining`
+##### `.manual_salt_remaining: float`
 
 Hours remaining on the Harvester-applied salt treatment, in the **0-24** range. This excludes Dispenser coverage. Each successful `dispense_salt()` resets it to **24 hours**, replacing any remaining time.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.fertilized`
+##### `.fertilized: bool`
 
 `True` while any Fertilizer dose remains on this cell. `False` when undosed or fully drained.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.fertilizer_remaining`
+##### `.fertilizer_remaining: float`
 
 Hours of Fertilizer effect remaining. Each applied unit adds **8 hours**; reads **0** when none remains.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.fertilizer_tier`
+##### `.fertilizer_tier: int`
 
 Active Fertilizer tier: **1**, **2**, or **3**. Reads **0** when no Fertilizer remains.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.accelerated`
+##### `.accelerated: bool`
 
 `True` while any Growth Accelerant dose remains on this cell. `False` when undosed or fully drained.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.accelerant_remaining`
+##### `.accelerant_remaining: float`
 
 Hours of Growth Accelerant effect remaining. Each applied unit adds **8 hours**; reads **0** when none remains.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.forage`
+##### `.forage: int`
 
 Whole **forage** banked by this crop. It rises with visible growth while requirements are met, includes diversity and field bonuses, and freezes at `growth == 1.0`. The Harvester moves as much as Inventory can hold and leaves any remainder on the crop. A Crop Automator moves what fits in its output, discards the remainder, and clears the cell; a completely full output blocks the job without changing the crop. Forage feeds Wildlife production and Plant Terraformer batches.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Biosphere*
-
----
 
 ## LifeFormScanResult
 
@@ -223,27 +215,25 @@ Whole **forage** banked by this crop. It rises with visible growth while require
 
 ### Properties
 
-##### `.coord`
+##### `.coord: list[int]`
 
 `[x, y]` whole-number coordinate of the scanned location.
 
-- **Returns** `[number, number]`
+- **Returns** `list[int]`
 
-##### `.life_forms`
+##### `.life_forms: list[LifeFormSample]`
 
 List of `LifeFormSample` entries: 0-3 items per tile. Empty list means "scanned, nothing here."
 
-- **Returns** `list<LifeFormSample>`
+- **Returns** `list[LifeFormSample]`
 
-##### `.is_empty`
+##### `.is_empty: bool`
 
 `True` if no life forms found at this tile.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 *Types / Biosphere*
-
----
 
 ## LifeFormSample
 
@@ -251,42 +241,40 @@ List of `LifeFormSample` entries: 0-3 items per tile. Empty list means "scanned,
 
 ### Properties
 
-##### `.type`
+##### `.type: str`
 
 Life-form item id (e.g. `"ice_algae"`, `"snow_moss"`).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ice_algae"`, `"snow_moss"`, `"frost_lichen"`, `"cold_spores"`, `"ice_crust"`, `"frost_fungus"`, `"sea_algae"`, `"tide_moss"`, `"shore_lichen"`, `"brine_plankton"`, `"salt_crust"`, `"coral_fungus"`, `"vent_algae"`, `"steam_moss"`, `"heat_lichen"`, `"hot_spores"`, `"heat_crust"`, `"vent_fungus"`, `"sulfur_moss"`, `"cinder_lichen"`, `"ash_spores"`, `"lava_algae"`, `"magma_crust"`, `"black_fungus"`, `"cave_moss"`, `"stone_lichen"`, `"crystal_spores"`, `"deep_algae"`, `"stone_mat"`, `"cave_fungus"`
 
-##### `.tons`
+##### `.tons: float`
 
 Tons of this life-form available at the tile at scan time (peak value, not current state).
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.remaining_tons`
+##### `.remaining_tons: float`
 
 Tons currently available. Partial drone harvests reduce this; it returns to `.tons` after the coordinate's cooldown.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.rarity`
+##### `.rarity: str`
 
 Rarity tier: `"common"`, `"uncommon"`, or `"rare"`. Determines both essence produced per ton at the Essence Liquifier and the cooldown after extraction.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"common"`, `"uncommon"`, `"rare"`
 
-##### `.biome`
+##### `.biome: str`
 
 Native biome this species belongs to: `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, or `"deep"`. Fixed per species (never the terrain it grows on), and exactly the biome whose Essence Liquifier consumes it. Same value as `nocturna.life_form_biome(sample.type)`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, `"deep"`
 
 *Types / Biosphere*
-
----
 
 ## PlantRequirement
 
@@ -294,23 +282,21 @@ Native biome this species belongs to: `"frozen"`, `"coastal"`, `"geothermal"`, `
 
 ### Properties
 
-##### `.kind`
+##### `.kind: str`
 
 Cultivation condition: `"light"`, `"shade"`, `"water"`, `"salt"`, `"spacer"`, `"cluster"`, `"companion"`, or `"antagonist"`. Every entry in `SeedRecipe.requirements` is required; combined species expose multiple entries.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"light"`, `"shade"`, `"water"`, `"salt"`, `"spacer"`, `"cluster"`, `"companion"`, `"antagonist"`
 
-##### `.species`
+##### `.species: str | None`
 
 Related species key for relational conditions: the required neighbor for `"companion"`, or the forbidden neighbor for `"antagonist"`. `None` for all other kinds.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"sunpetal"`, `"shadeleaf"`, `"dewmoss"`, `"lonethorn"`, `"packfern"`, `"twinvine"`, `"spitebud"`, `"sunspur"`, `"glowvine"`, `"crowncap"`, `"pondmoss"`, `"saltbloom"`, `"brinethorn"`, `"saltmate"`, `"grandbloom"`
 
 *Types / Biosphere*
-
----
 
 ## PortableBioExtractor
 
@@ -318,7 +304,7 @@ Related species key for relational conditions: the required neighbor for `"compa
 
 ### Methods
 
-##### `.extract()`
+##### `.extract() → BioExtractionResult`
 
 Yielding harvest at the discovered permanent biosite under a hovering drone. The drone stays occupied until completion, including across a script stop and restart. The module has a 25 t chamber for one life-form type; Cargo Pods add capacity. Partial depletion persists and cooldown starts only when the site is empty.
 
@@ -341,15 +327,13 @@ Yielding harvest at the discovered permanent biosite under a hovering drone. The
 
 *Types / Biosphere*
 
----
-
 ## PortableBioScanner
 
 **Returned by:** self.bio_scanner (drones)
 
 ### Methods
 
-##### `.scan()`
+##### `.scan() → BioScanResult`
 
 Yielding scan at the hovering drone's current whole-number coordinate. A valid non-site coordinate completes with an empty biological scan. Repeat scans are free.
 
@@ -369,68 +353,64 @@ Yielding scan at the hovering drone's current whole-number coordinate. A valid n
 
 *Types / Biosphere*
 
----
-
 ## SeedRecipe
 
 **Returned by:** self.recipes() (Seed Maker)
 
 ### Properties
 
-##### `.tier`
+##### `.tier: int`
 
 Production tier for this discovered Seed Maker recipe. Seed recipes are Tier 1 because their inputs are harvested source materials.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.species`
+##### `.species: str`
 
 Bare flora species id this recipe produces, such as `"sunpetal"`. It matches `Cell.plant` and identifies the biological species, not the physical seed item used by planting commands.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"sunpetal"`, `"shadeleaf"`, `"dewmoss"`, `"lonethorn"`, `"packfern"`, `"twinvine"`, `"spitebud"`, `"sunspur"`, `"glowvine"`, `"crowncap"`, `"pondmoss"`, `"saltbloom"`, `"brinethorn"`, `"saltmate"`, `"grandbloom"`
 
-##### `.seed_id`
+##### `.seed_id: str`
 
 Physical seed item id produced by this recipe, such as `"seed_sunpetal"`. Pass this value to the Harvester's `load_seed()` and `plant()`, or to a Crop Automator's `plant()` after loading the same item into its input.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"seed_sunpetal"`, `"seed_shadeleaf"`, `"seed_dewmoss"`, `"seed_lonethorn"`, `"seed_packfern"`, `"seed_twinvine"`, `"seed_spitebud"`, `"seed_sunspur"`, `"seed_glowvine"`, `"seed_crowncap"`, `"seed_pondmoss"`, `"seed_saltbloom"`, `"seed_brinethorn"`, `"seed_saltmate"`, `"seed_grandbloom"`
 
-##### `.blend`
+##### `.blend: list[str]`
 
 The exact list of 3 life-form ids that yields this seed (e.g. `["ice_algae", "sea_algae", "vent_moss"]`). Order doesn't matter: combine these three again to reproduce the seed.
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.requirements`
+##### `.requirements: list[PlantRequirement]`
 
 Lists every cultivation condition as a `PlantRequirement`. Each entry has a `.kind` and optional `.species`, identifying required companions or forbidden antagonists. Every listed requirement must be satisfied for growth to advance.
 
-- **Returns** `list<PlantRequirement>`
+- **Returns** `list[PlantRequirement]`
 
-##### `.requirement`
+##### `.requirement: str`
 
 Compact summary of the requirement kinds, e.g. `"light"`, `"light+water"`, or `"salt+companion"`. Use `.requirements` for programmable layout decisions because this summary intentionally omits the companion/antagonist species identity.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"light"`, `"shade"`, `"water"`, `"spacer"`, `"cluster"`, `"companion"`, `"antagonist"`, `"light+spacer"`, `"light+water"`, `"shade+cluster"`, `"water+cluster"`, `"salt"`, `"salt+spacer"`, `"salt+companion"`, `"light+water+spacer"`
 
-##### `.growth_time`
+##### `.growth_time: float`
 
 Hours of met-requirement time to reach maturity (`growth == 1.0`). Longer-growing species are the harder, higher-value ones; growth only advances while all requirements hold.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.base_yield`
+##### `.base_yield: int`
 
 Whole forage units this species yields before diversity, treatment, and field bonuses. Compare this with `.growth_time` and `.requirements` when choosing a crop.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Biosphere*
-
----
 
 ## SeedResult
 
@@ -438,33 +418,31 @@ Whole forage units this species yields before diversity, treatment, and field bo
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"seed_found"`, `"sludge"`, `"locked"`, `"busy"`, `"missing_life_forms"`, or `"output_full"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"seed_found"`, `"sludge"`, `"locked"`, `"busy"`, `"missing_life_forms"`, `"output_full"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the combine trial outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.seed_id`
+##### `.seed_id: str | None`
 
 Stable seed item id deposited into output, or `None` when no seed was produced.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"seed_sunpetal"`, `"seed_shadeleaf"`, `"seed_dewmoss"`, `"seed_lonethorn"`, `"seed_packfern"`, `"seed_twinvine"`, `"seed_spitebud"`, `"seed_sunspur"`, `"seed_glowvine"`, `"seed_crowncap"`, `"seed_pondmoss"`, `"seed_saltbloom"`, `"seed_brinethorn"`, `"seed_saltmate"`, `"seed_grandbloom"`
 
-##### `.species`
+##### `.species: str | None`
 
 Stable discovered flora species id, or `None` when no seed was produced.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"sunpetal"`, `"shadeleaf"`, `"dewmoss"`, `"lonethorn"`, `"packfern"`, `"twinvine"`, `"spitebud"`, `"sunspur"`, `"glowvine"`, `"crowncap"`, `"pondmoss"`, `"saltbloom"`, `"brinethorn"`, `"saltmate"`, `"grandbloom"`
 
 *Types / Built-in Modules*
-
----

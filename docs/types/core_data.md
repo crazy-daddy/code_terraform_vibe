@@ -9,7 +9,6 @@ Complete property specifications, descriptions, units, and return types from the
 - [`PointOfInterest`](#pointofinterest) (CORE DATA)
 - [`Position`](#position) (CORE DATA)
 - [`ScriptCommand`](#scriptcommand) (CORE DATA)
-- [`Start Here*`](#start-here) (*GUIDE)
 
 ---
 
@@ -19,33 +18,31 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Properties
 
-##### `.min_x`
+##### `.min_x: float`
 
 Minimum X coordinate (meters).
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.max_x`
+##### `.max_x: float`
 
 Maximum X coordinate (meters).
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.min_y`
+##### `.min_y: float`
 
 Minimum Y coordinate (meters).
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.max_y`
+##### `.max_y: float`
 
 Maximum Y coordinate (meters).
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Types / Core Data*
-
----
 
 ## Component
 
@@ -53,21 +50,19 @@ Maximum Y coordinate (meters).
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Programmatic identifier of this component.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.type_id`
+##### `.type_id: str`
 
 Which kind of component this is, as the stable type id ("bio_lab", "rover", "drone_small"). Every component of the same kind shares it, so a library function can branch on what it was handed. The same token machine-type queries accept, so `outpost.buildings(self.type_id)` lists this machine's siblings. Use `.id` for which individual one this is.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Core Data*
-
----
 
 ## PointOfInterest
 
@@ -75,34 +70,32 @@ Which kind of component this is, as the stable type id ("bio_lab", "rover", "dro
 
 ### Properties
 
-##### `.x`
+##### `.x: int`
 
 Whole-number X coordinate (meters from base) of this contact. Pass straight to a Rover/Pioneer `self.nav.set_target(p.x, p.y)` or a drone `self.go_to(p.x, p.y)`.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.y`
+##### `.y: int`
 
 Whole-number Y coordinate (meters from base) of this contact.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.scanned`
+##### `.scanned: bool`
 
-`True` once you've resolved this contact: a Rover/Pioneer sonar **survey** for a productive non-biomass site, a drone **bio-scan** that logged life at a biomass site, or a sonar **scan** that discovered an inert contact. `False` is your work list: the "?" is still unidentified. Filter `if not p.scanned:` to find the sites left to visit.
+`True` once you've resolved this contact: a Rover/Pioneer sonar **survey** for a productive non-biomass site, a drone **bio-scan** at a biomass site, or a sonar **scan** for an inert contact. `False` is your work list. Filter `if not p.scanned:` for the sites left to visit, and pair it with the sweep's blocked contacts: one your scanner cannot identify stays `False` after a sweep that succeeded, so a plain retry loop returns to it.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.kind`
+##### `.kind: str`
 
 What the contact is: but **`"unknown"` until `.scanned` is True**. Once resolved it reads `"mineral"`, `"biomass"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, or `"inert"`. A sonar `scan()` only places the contact on the map; a productive site stays `"unknown"` until you drive to it and `survey()` it, and a biomass site until a drone bio-scans it. Only inert contacts resolve from the scan alone.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"unknown"`, `"mineral"`, `"biomass"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
 *Types / Core Data*
-
----
 
 ## Position
 
@@ -110,29 +103,27 @@ What the contact is: but **`"unknown"` until `.scanned` is True**. Once resolved
 
 ### Properties
 
-##### `.x`
+##### `.x: float`
 
 X coordinate in meters from base for this position snapshot.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Y coordinate in meters from base for this position snapshot.
 
-- **Returns** `number`
+- **Returns** `float`
 
 ### Methods
 
-##### `.__iter__()`
+##### `.__iter__() → Iterator[float]`
 
 Iterate over `x`, then `y`, so this position can be unpacked or passed to `list()`.
 
-- **Returns** `iterator<number>`
+- **Returns** `Iterator[float]`
 
 *Types / Core Data*
-
----
 
 ## ScriptCommand
 
@@ -140,43 +131,41 @@ Iterate over `x`, then `y`, so this position can be unpacked or passed to `list(
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique command id assigned when the command entered this script's queue.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Command name, such as `"return_base"`. Your script decides what each name means.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.args`
+##### `.args: dict[str, JsonValue]`
 
 JSON-safe argument dict sent with the command. Use `.get(key, default)` for optional arguments.
 
-- **Returns** `dict`
+- **Returns** `dict[str, JsonValue]`
 
-##### `.source`
+##### `.source: str`
 
 Where the command came from: `"editor"`, `"script"`, `"signal"`, or `"system"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"editor"`, `"script"`, `"signal"`, `"system"`
 
-##### `.created_at`
+##### `.created_at: float`
 
 Creation bookkeeping value: a supplied real-world timestamp in milliseconds, otherwise the enqueueing simulation tick, or **0** when neither was supplied. For gameplay timing, use `.tick`.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.tick`
+##### `.tick: int | None`
 
 Game tick when the command was queued, or `None` if not available.
 
-- **Returns** `Optional[number]`
+- **Returns** `int | None`
 
 *Types / World & Sites*
-
----

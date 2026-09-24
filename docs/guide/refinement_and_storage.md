@@ -33,5 +33,3 @@ if input_link.status == "ok" and output_link.status == "ok" and recipe.status ==
 `self.input.flush()` returns `TransferResult`; `.moved` is the number of units permanently discarded. On processing machines it also cancels current progress. Call it intentionally.
 
 *Guide / Production & Logistics*
-
----

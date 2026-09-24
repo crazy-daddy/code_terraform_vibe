@@ -24,5 +24,3 @@ The console shows your output and any errors. Sensor readings update as you acti
 See the **Code Editor** DOCS page for the full set of editor shortcuts (rename, autocomplete, parameter hints, find/replace, debug stepping).
 
 *Guide / Start Here*
-
----

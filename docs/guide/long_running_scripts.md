@@ -67,6 +67,4 @@ Before transferring, buying, loading, or queuing something, inspect what is alre
 
 Machine contents are world state, but ordinary script variables belong to one run. Use the **Data Archive** when automation must remember learned data, checkpoints, or decisions across script stops and game loads. Use **Command Results** for the general result contract and **Loops & Scripts** for loop and pacing basics.
 
-*Guide / Tutorials*
-
----
+*Guide / Start Here*

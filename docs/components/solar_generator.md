@@ -31,7 +31,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
@@ -39,7 +39,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ### Methods
 
-##### `.set_tilt(degrees)` *(self only)*
+##### `.set_tilt(degrees: float) → ActionResult` *(self only)*
 
 Set the panel tilt angle in degrees. Range is **0°** (flat) to **90°** (vertical); values outside are clamped. A well-tuned tracker holds output near its maximum throughout the day; a fixed tilt wastes a large fraction.
 
@@ -47,7 +47,7 @@ Set the panel tilt angle in degrees. Range is **0°** (flat) to **90°** (vertic
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `degrees` | `number` | Panel tilt in degrees |
+| `degrees` | `float` | Panel tilt in degrees |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -59,13 +59,13 @@ Set the panel tilt angle in degrees. Range is **0°** (flat) to **90°** (vertic
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.tilt()`
+##### `.tilt() → float`
 
 Current panel tilt setpoint in degrees (**0-90**). Returns the value the script last wrote via `self.set_tilt(...)`, or the default rest angle for an idle panel. Use to verify your sweep loop or to step a tilt search against the previous value.
 
 - **Returns** Number (degrees, 0-90): the current panel tilt setpoint.
 
-##### `.get_output()`
+##### `.get_output() → float`
 
 Current power output in watts for this specific generator. Returns **0** if powered off. Computed live from sun elevation vs panel tilt, use it to verify the tracker is holding peak (compare current output against the panel's rated max).
 

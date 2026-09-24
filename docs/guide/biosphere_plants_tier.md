@@ -31,9 +31,9 @@ Each upgrade pack improves one deployed provider. Both machines keep the same fo
 | Tier | Forage factor on its own | Power per provider | Sprinkler Water use |
 | --- | ---: | ---: | ---: |
 | Mk I | ×1 | 5 W | 2 t/h |
-| Mk II | ×2 | 25 W | 10 t/h |
-| Mk III | ×4 | 100 W | 200 t/h |
-| Mk IV | ×8 | 500 W | 1,000 t/h |
+| Mk II | ×2 | 25 W | 4 t/h |
+| Mk III | ×4 | 100 W | 8 t/h |
+| Mk IV | ×8 | 500 W | 16 t/h |
 
 Power draw applies while enabled. A Sprinkler consumes Water while supplied, even with no crops beside it. The crop must require the provider's service: a Grow Lamp boosts light-requiring crops and a Sprinkler boosts water-requiring crops. All of the crop's other requirements must also be met. Providers must be powered, enabled, and supplied. The Dispenser stays at Mk I and supplies salt with no yield bonus.
 
@@ -58,5 +58,3 @@ At **2,000 t Biomass**, fabricate and deploy one or more **Plant Terraformers** 
 > The complete flow is: discover seeds, load and plant, maintain conditions, diversify, harvest and clear, replant, then transfer Forage into the Terraformer.
 
 *Guide / World & Infrastructure*
-
----

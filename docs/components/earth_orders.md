@@ -24,25 +24,25 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.list_orders()`
+##### `.list_orders() → list[Order]`
 
 Current contractor campaign Orders as a stable list of `Order` objects. These orders never expire and disappear from this list when fully shipped. Empty means no contractor shipment is currently available. See `Order`.
 
 - **Returns** List of current contractor campaign `Order` objects.
 
-##### `.list_upcoming_orders()`
+##### `.list_upcoming_orders() → list[Order]`
 
 Plan future production and reward paths with upcoming contractor campaign Orders, in campaign declaration order, preserving each contractor's queue sequence. Excludes current orders, completed orders, and Weekly Earth Orders. Upcoming orders cannot be assigned to Supply Docks until they become current. See `Order`.
 
 - **Returns** List of future campaign `Order` objects with status `"upcoming"`, in campaign declaration order. Empty when no upcoming campaign orders remain.
 
-##### `.list_weekly_orders()`
+##### `.list_weekly_orders() → list[Order]`
 
 The current five Weekly Earth Orders, including offers already fulfilled during this cycle. Returns an empty list until an eligible production chain is available. Weekly objects have `.kind == "weekly"`, `.expires_day`, no contractor, credits-only rewards, and `.status` of `"active"` or `"completed"`. The whole list is replaced every seven days.
 
 - **Returns** The current five Weekly Earth `Order` objects, including offers already fulfilled this cycle; an empty list until an eligible production chain is available.
 
-##### `.get_order(order_id)`
+##### `.get_order(order_id: str) → Order | None`
 
 Look up a specific Earth Order by id, including upcoming campaign orders for planning. Upcoming orders cannot be assigned to Supply Docks until they become current. Unknown or expired weekly ids return `None`; weekly completions remain visible only until their board refreshes. See `Order`.
 
@@ -50,11 +50,11 @@ Look up a specific Earth Order by id, including upcoming campaign orders for pla
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `order_id` | `string` | Earth Order id from `list_orders()`, `list_upcoming_orders()`, `list_weekly_orders()`, or `completed_orders()` |
+| `order_id` | `str` | Earth Order id from `list_orders()`, `list_upcoming_orders()`, `list_weekly_orders()`, or `completed_orders()` |
 
 - **Returns** Campaign `Order` with status `"upcoming"`, `"active"`, or `"completed"`, or a Weekly Earth Order from the current board. Unknown or expired weekly ids return `None`. Bio Order ids are read from a Bio Exchange.
 
-##### `.completed_orders()`
+##### `.completed_orders() → list[Order]`
 
 Permanent contractor campaign history, ordered by completion time (oldest first). Weekly completions stay on the current Weekly board and are intentionally excluded from this ledger.
 

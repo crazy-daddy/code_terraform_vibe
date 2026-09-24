@@ -17,7 +17,7 @@ Watch Nocturna change in real time. Bring the exterior camera online and watch t
 
 ##### Ship Computer `research_computer` *(Unlocked)*
 
-Computer dashboard access. Unlocks the Ship → Computer page: a dashboard for system status, script management, the Playground, achievements, and notifications. Further research adds more Computer tabs, starting with the Library.
+Computer dashboard access. Unlocks the Ship → Computer page: a dashboard for system status, script management, the Playground, achievements, and notifications. It also opens the `computer` component to scripts, so deploying, undeploying, decommissioning, and renaming can run from code instead of a button. Further research adds more Computer tabs, starting with the Library.
 
 | Field | Value |
 | --- | --- |
@@ -71,7 +71,7 @@ Unlocks Orders and Supply Dock purchasing. A long-range logistics protocol for E
 
 ##### Outpost Construction `research_outpost_hub` *(Unlocked)*
 
-Found new sites across the planet. Unlocks the Outpost Kit in the shop. Founding still requires Constructor Module research plus a Constructor-equipped Pioneer: place an Outpost blueprint in Plan Mode or with `construction_blueprint.plan_structure("outpost", x, y)`, load the kit into Pioneer cargo, then build it. Each outpost begins with a soft capacity of **20** buildings. Expanded Outpost Infrastructure later raises every outpost's capacity by **5**. Marginal kit prices are based on founded expansion outposts plus unbuilt Outpost Kits held in physical storage: **15,000 cr**, **30,000 cr**, **50,000 cr**, **75,000 cr**, **110,000 cr**, **200,000 cr**, **350,000 cr**, **550,000 cr**, **800,000 cr**, then **1,000,000 cr** for every later kit.
+Found new sites across the planet. Unlocks the Outpost Kit in the shop. Founding also needs Constructor Module research and a Constructor-equipped Pioneer to build the blueprint. Each outpost holds a soft **20** buildings, which Outpost Expansion later raises by **5**. Each kit costs more than the last, **15,000 cr** to **1,000,000 cr**, priced on founded expansion outposts plus unbuilt Outpost Kits held in physical storage.
 
 | Field | Value |
 | --- | --- |
@@ -87,7 +87,7 @@ Heavy manufacturing access. Unlocks the Fabricator in the Shop. This industrial 
 | Threshold | Terraform Index 130,000 |
 | Tech id | fabricator_unlock |
 
-##### Cartography `research_cartography` *(Not yet unlocked)*
+##### Cartography `research_cartography` *(Unlocked)*
 
 Annotate the Planet Map. Adds map markers: named, colored annotations you place in Plan Mode or from any script with `get_component("markers")`. Markers are notes, not construction. They cost nothing, need no Pioneer, and appear the moment you place them, so a survey script can record what it found where it found it.
 
@@ -96,7 +96,7 @@ Annotate the Planet Map. Adds map markers: named, colored annotations you place 
 | Threshold | Terraform Index 140,000 |
 | Tech id | cartography_unlock |
 
-##### Control Room `research_custom_panels` *(Not yet unlocked)*
+##### Control Room `research_custom_panels` *(Unlocked)*
 
 Create script-driven control panels. Opens the Control Room, a top-level page for script-driven dashboard cards. Build clocks, fleet boards, vent-cycle timelines, and recovery controls with drawing and input APIs.
 
@@ -105,7 +105,7 @@ Create script-driven control panels. Opens the Control Room, a top-level page fo
 | Threshold | Terraform Index 150,000 |
 | Tech id | custom_panels_unlock |
 
-##### Basic Drone Operations `research_drones` *(Not yet unlocked)*
+##### Basic Drone Operations `research_drones` *(Unlocked)*
 
 Open aerial logistics before the biosphere era. Unlocks the drone system and its fleet dashboard, the Vehicles / Drones / Support roster under the Planet Map. Electric drones fly up to **300 m/h** and consume **5 Wh/h** at full throttle; burn rises with throttle squared. Drone hardware still requires blueprint recipes earned through Earth Orders. Fabricated facilities and chassis deploy from Inventory into outposts; field Mining Drills use Planet Map blueprints placed in Plan Mode or by script.
 
@@ -114,7 +114,7 @@ Open aerial logistics before the biosphere era. Unlocks the drone system and its
 | Threshold | Terraform Index 180,000 |
 | Tech id | drones_unlock |
 
-##### Biosphere `research_biosphere` *(Not yet unlocked)*
+##### Biosphere `research_biosphere` *(Unlocked)*
 
 Unlocks biomass supply chain. Unlocks the **Biomass tier** supply chain and makes the Portable Bio Scanner, Portable Bio Extractor, Essence Liquifier, and Biomass Mixer available in the Shop. Scan biome tiles, extract life-form samples, and run them through the chain to produce biomass.
 
@@ -123,7 +123,7 @@ Unlocks biomass supply chain. Unlocks the **Biomass tier** supply chain and make
 | Threshold | Terraform Index 210,000 |
 | Tech id | biosphere_unlock |
 
-##### Bigger Stacks `research_high_density_storage` *(Not yet unlocked)*
+##### Bigger Stacks `research_high_density_storage` *(Unlocked)*
 
 Every inventory slot holds twice as much. Rebuilds the shelving at Nocturna Base so each slot takes a taller stack. Items that stack now go up to **20 per slot** instead of **10**. Equipment, modules, and other one-off items still take a slot each. This changes Base Inventory only, not vehicle cargo, Storage Bins, or Warehouses.
 
@@ -132,7 +132,7 @@ Every inventory slot holds twice as much. Rebuilds the shelving at Nocturna Base
 | Threshold | Terraform Index 250,000 |
 | Tech id | high_density_storage_unlock |
 
-##### Weather Program `research_weather_program` *(Not yet unlocked)*
+##### Weather Program `research_weather_program` *(Unlocked)*
 
 Track storms and treasure signals. Unlocks the **Weather Network**, installs one free completed Weather Station and its building slot at Nocturna Base, and makes additional stations available in the Shop. Observe local storms, handle live transmissions, and publish optional results to the Signal Board.
 
@@ -141,7 +141,7 @@ Track storms and treasure signals. Unlocks the **Weather Network**, installs one
 | Threshold | Terraform Index 330,000 |
 | Tech id | weather_program_unlock |
 
-##### Fast Feeders `research_fast_feeders` *(Not yet unlocked)*
+##### Fast Feeders `research_fast_feeders` *(Unlocked)*
 
 Twice the item-transfer throughput. Reduces the duration of every timed discrete-item transfer by **50%**. Machine endpoints remain occupied until the faster handling cycle finishes. Fluids and manual world actions are unaffected.
 
@@ -149,6 +149,15 @@ Twice the item-transfer throughput. Reduces the duration of every timed discrete
 | --- | --- |
 | Threshold | Terraform Index 400,000 |
 | Tech id | fast_feeders_unlock |
+
+##### Bulk Orders `research_bulk_orders` *(Not yet unlocked)*
+
+Double the weekly board. Earth starts placing bulk weekly contracts. Every Weekly Earth Order asks for **twice** the goods and pays **twice** the credits, raising the board's combined payout ceiling from **20,000 cr** to **40,000 cr**. The change applies from the next refresh, so orders already on the board keep their original size.
+
+| Field | Value |
+| --- | --- |
+| Threshold | Terraform Index 500,000 |
+| Tech id | bulk_orders_unlock |
 
 ##### Cargo Expansion `research_cargo_expansion` *(Not yet unlocked)*
 
@@ -224,7 +233,7 @@ Builds Planet Map blueprints. Unlocks the Constructor Module for the Pioneer in 
 | Threshold | Temperature 10 |
 | Tech id | constructor_module_unlock |
 
-##### Battery Holder `research_battery_holder_small` *(Not yet unlocked)*
+##### Battery Holder `research_battery_holder_small` *(Unlocked)*
 
 Portable battery bay access. Unlocks the Small Battery Holder in the shop. Adds a **1**-bay portable battery mount for modular vehicles, essential for any expedition away from the Vehicle Charging Station.
 
@@ -233,7 +242,7 @@ Portable battery bay access. Unlocks the Small Battery Holder in the shop. Adds 
 | Threshold | Temperature 12 |
 | Tech id | battery_holder_small_unlock |
 
-##### Heat Generator Mk II `research_heat_mk2_pack` *(Not yet unlocked)*
+##### Heat Generator Mk II `research_heat_mk2_pack` *(Unlocked)*
 
 Higher heat output. Unlocks the Heat Generator Mk II Upgrade Pack in the shop. Retrofits a Mk I heater to Mk II for higher output.
 
@@ -242,7 +251,7 @@ Higher heat output. Unlocks the Heat Generator Mk II Upgrade Pack in the shop. R
 | Threshold | Temperature 80 |
 | Tech id | heat_mk2_pack_unlock |
 
-##### Bioluminescent Infusion `research_luminizer` *(Not yet unlocked)*
+##### Bioluminescent Infusion `research_luminizer` *(Unlocked)*
 
 Unlocks the Bio Luminizer. Unlocks the Bio Luminizer in the shop, the coastal machine that tunes a bioluminescent fragment's glow to an order's exact target color. Coastal Bio Orders require infused fragments.
 
@@ -251,7 +260,7 @@ Unlocks the Bio Luminizer. Unlocks the Bio Luminizer in the shop, the coastal ma
 | Threshold | Temperature 90 |
 | Tech id | luminizer_unlock |
 
-##### Medium Battery Holder `research_battery_holder_medium` *(Not yet unlocked)*
+##### Medium Battery Holder `research_battery_holder_medium` *(Unlocked)*
 
 Double-bay battery mount access. Unlocks the Medium Battery Holder in the shop. Two bays for portable batteries, a compact range upgrade for modular vehicles.
 
@@ -260,7 +269,7 @@ Double-bay battery mount access. Unlocks the Medium Battery Holder in the shop. 
 | Threshold | Temperature 280 |
 | Tech id | battery_holder_medium_unlock |
 
-##### Outpost Expansion `research_outpost_expansion` *(Not yet unlocked)*
+##### Outpost Expansion `research_outpost_expansion` *(Unlocked)*
 
 Increase every outpost's building capacity by 5. Raises the soft building capacity of every current and future outpost by **5**. Nocturna Base increases from **25** to **30** buildings, and founded outposts increase from **20** to **25**. Buildings beyond the new cap still incur the normal overcrowding penalty.
 
@@ -269,7 +278,7 @@ Increase every outpost's building capacity by 5. Raises the soft building capaci
 | Threshold | Temperature 400 |
 | Tech id | outpost_expansion_unlock |
 
-##### Large Battery `research_large_battery` *(Not yet unlocked)*
+##### Large Battery `research_large_battery` *(Unlocked)*
 
 5× grid storage in one cell. Unlocks the Large Battery in the Shop: **2,500 Wh** of base-station storage, five times the base cell. One unit replaces a cluster of Small Batteries.
 
@@ -278,7 +287,7 @@ Increase every outpost's building capacity by 5. Raises the soft building capaci
 | Threshold | Temperature 700 |
 | Tech id | large_battery_unlock |
 
-##### Deep-Sea Conditioning `research_bio_conditioner` *(Not yet unlocked)*
+##### Deep-Sea Conditioning `research_bio_conditioner` *(Unlocked)*
 
 Unlocks the Bio Conditioner. Unlocks the Bio Conditioner in the shop, the deep machine that quality-control-inspects a fragment through a 5-stage accept/reject gauntlet against a published rulebook. Deep Bio Orders require conditioned fragments. Power-only, no fluids or materials.
 
@@ -287,7 +296,7 @@ Unlocks the Bio Conditioner. Unlocks the Bio Conditioner in the shop, the deep m
 | Threshold | Temperature 1,200 |
 | Tech id | bio_conditioner_unlock |
 
-##### Oil Generator `research_oil_generator` *(Not yet unlocked)*
+##### Oil Generator `research_oil_generator` *(Unlocked)*
 
 High-density oil-burning power. Unlocks the Oil Generator in the shop. Burns oil to produce up to **700 W** from one machine (several times a Steam Turbine's peak) with full throttle control via script. Consumes **8 t/h** at full output.
 
@@ -370,7 +379,16 @@ Vehicle charging access. Unlocks the Vehicle Charging Station in the Shop. Mk I 
 | Threshold | Oxygen 9 |
 | Tech id | charging_station_unlock |
 
-##### Sport Nav `research_nav_sport` *(Not yet unlocked)*
+##### Industrial Drill `research_drill_industrial` *(Unlocked)*
+
+Hardness-3 extraction access. Unlocks the Industrial Drill module in the shop. Extracts minerals up to hardness 3, which adds Titanium, Cobalt and Lead in the mid ring and Rare Earth in the outer ring. Faster dig time than the basic drill, higher power draw.
+
+| Field | Value |
+| --- | --- |
+| Threshold | Oxygen 30 |
+| Tech id | drill_industrial_unlock |
+
+##### Sport Nav `research_nav_sport` *(Unlocked)*
 
 High-performance drivetrain access. Unlocks the Sport Nav module in the shop. One Sport Nav gives 2× top speed with 2.6× movement power draw compared with Basic Nav in the same rig, about 1.3× battery use per meter at full throttle. Further Sport Navs stack at a rising cost, especially on loaded long-haul routes.
 
@@ -379,7 +397,7 @@ High-performance drivetrain access. Unlocks the Sport Nav module in the shop. On
 | Threshold | Oxygen 50 |
 | Tech id | nav_sport_unlock |
 
-##### Vehicle Charging Station Mk II `research_charging_station_mk2_pack` *(Not yet unlocked)*
+##### Vehicle Charging Station Mk II `research_charging_station_mk2_pack` *(Unlocked)*
 
 Second bay; pools to 120 W solo. Unlocks the Vehicle Charging Station Mk II Upgrade Pack in the shop. Retrofits a deployed station to Mk II, adding a second charging bay.
 
@@ -388,7 +406,7 @@ Second bay; pools to 120 W solo. Unlocks the Vehicle Charging Station Mk II Upgr
 | Threshold | Oxygen 60 |
 | Tech id | charging_station_mk2_pack_unlock |
 
-##### Oxygen Generator Mk II `research_oxygen_mk2_pack` *(Not yet unlocked)*
+##### Oxygen Generator Mk II `research_oxygen_mk2_pack` *(Unlocked)*
 
 Higher oxygen output. Unlocks the Oxygen Generator Mk II Upgrade Pack in the shop. Retrofits a Mk I oxygen generator to Mk II for higher output.
 
@@ -397,16 +415,7 @@ Higher oxygen output. Unlocks the Oxygen Generator Mk II Upgrade Pack in the sho
 | Threshold | Oxygen 75 |
 | Tech id | oxygen_mk2_pack_unlock |
 
-##### Industrial Drill `research_drill_industrial` *(Not yet unlocked)*
-
-Hardness-3 extraction access. Unlocks the Industrial Drill module in the shop. Extracts hardness-3 minerals (Rare Earth) from the outer ring. Faster dig time than the basic drill, higher power draw.
-
-| Field | Value |
-| --- | --- |
-| Threshold | Oxygen 100 |
-| Tech id | drill_industrial_unlock |
-
-##### Warehouse `research_warehouse` *(Not yet unlocked)*
+##### Warehouse `research_warehouse` *(Unlocked)*
 
 Bulk-storage building. Unlocks the Warehouse in the shop. A **10,000-unit** multi-material depot: **5** material-locked slots of **2,000** each. Use it as a buffer for drone deliveries and large vehicle hauls.
 
@@ -415,7 +424,7 @@ Bulk-storage building. Unlocks the Warehouse in the shop. A **10,000-unit** mult
 | Threshold | Oxygen 150 |
 | Tech id | warehouse_unlock |
 
-##### Verified Contractor `research_verified_contractor` *(Not yet unlocked)*
+##### Verified Contractor `research_verified_contractor` *(Unlocked)*
 
 New contract batch access. Your terraforming output has passed Earth's vetting threshold. A second batch of contracts (denser puzzles, higher rewards) routes to your terminal. Adds new tiers to the Contractor Reputation ladder.
 
@@ -424,7 +433,7 @@ New contract batch access. Your terraforming output has passed Earth's vetting t
 | Threshold | Oxygen 300 |
 | Tech id | verified_contractor_unlock |
 
-##### Volcanic Forge-Casting `research_bio_caster` *(Not yet unlocked)*
+##### Volcanic Forge-Casting `research_bio_caster` *(Unlocked)*
 
 Unlocks the Bio Caster. Unlocks the Bio Caster in the shop, the volcanic machine that heat-casts a fragment with fabricated materials. Volcanic Bio Orders require forged fragments.
 
@@ -433,7 +442,7 @@ Unlocks the Bio Caster. Unlocks the Bio Caster in the shop, the volcanic machine
 | Threshold | Oxygen 350 |
 | Tech id | bio_caster_unlock |
 
-##### Liquid Tank `research_liquid_tank` *(Not yet unlocked)*
+##### Liquid Tank `research_liquid_tank` *(Unlocked)*
 
 Buffer any one liquid. Unlocks the Liquid Tank in the Shop, a passive **100**-ton buffer that latches to the first liquid it receives (water, oil, or any biome essence) and holds only that fluid until drained.
 
@@ -442,7 +451,7 @@ Buffer any one liquid. Unlocks the Liquid Tank in the Shop, a passive **100**-to
 | Threshold | Oxygen 400 |
 | Tech id | liquid_tank_unlock |
 
-##### Waste Processing `research_garbage_disposal` *(Not yet unlocked)*
+##### Waste Processing `research_garbage_disposal` *(Unlocked)*
 
 Programmable destruction for unwanted items and fluids. Unlocks the **Waste Processor Kit recipe**. The machine permanently destroys one selected stream: any item through its feeder input, any liquid through `liquid_in`, or any gas through `gas_in`. This provides an explicit overflow path for tar, surplus water, and unwanted gases without recovering power or materials. Fabricate the kit at a Fabricator; its script selects and enables the active mode.
 
@@ -451,7 +460,7 @@ Programmable destruction for unwanted items and fluids. Unlocks the **Waste Proc
 | Threshold | Oxygen 1,400 |
 | Tech id | garbage_disposal_unlock |
 
-##### Petroleum Survey `research_petroleum_survey` *(Not yet unlocked)*
+##### Petroleum Survey `research_petroleum_survey` *(Unlocked)*
 
 Oil wells visible to Deep Sonar. Unlocks survey of subsurface oil deposits and the **Oil Pump recipe**. **Deep Sonar required**: oil wells are a hidden layer for the late-tier sonar. Fabricate an Oil Pump at a Fabricator, deploy it on a surveyed well, and pipe oil to base for power generation and refining.
 
@@ -460,7 +469,7 @@ Oil wells visible to Deep Sonar. Unlocks survey of subsurface oil deposits and t
 | Threshold | Oxygen 1,500 |
 | Tech id | petroleum_survey_unlock |
 
-##### Large Battery Holder `research_battery_holder_large` *(Not yet unlocked)*
+##### Large Battery Holder `research_battery_holder_large` *(Unlocked)*
 
 Triple-bay battery mount access. Unlocks the Large Battery Holder in the shop. Three bays, enough capacity to sustain Heavy Drill power draw on long edge-ring expeditions.
 
@@ -469,7 +478,7 @@ Triple-bay battery mount access. Unlocks the Large Battery Holder in the shop. T
 | Threshold | Oxygen 1,800 |
 | Tech id | battery_holder_large_unlock |
 
-##### Large Cargo Rack `research_cargo_rack_large` *(Not yet unlocked)*
+##### Large Cargo Rack `research_cargo_rack_large` *(Unlocked)*
 
 Triple-bin cargo mount access. Unlocks the Large Cargo Rack in the shop. Three bins for maximum haul capacity on large mining runs.
 
@@ -478,9 +487,9 @@ Triple-bin cargo mount access. Unlocks the Large Cargo Rack in the shop. Three b
 | Threshold | Oxygen 2,000 |
 | Tech id | cargo_rack_large_unlock |
 
-##### Heavy Drill `research_drill_heavy` *(Not yet unlocked)*
+##### Heavy Drill `research_drill_heavy` *(Unlocked)*
 
-Hardness-4 extraction access. Unlocks the Heavy Drill module in the shop. The only drill that can extract hardness-4 Neutronium, required for Mk III fabrication.
+Hardness-4 extraction access. Unlocks the Heavy Drill module in the shop. Extracts minerals up to hardness 4, so it cuts every mineral on the planet and is the only drill that can take Neutronium, required for Mk III fabrication.
 
 | Field | Value |
 | --- | --- |
@@ -561,7 +570,7 @@ Drilling hardware access. Unlocks Drill modules in the shop. Extract raw ore fro
 | Threshold | Pressure 0.2 |
 | Tech id | deep_extraction_unlock |
 
-##### Pressure Generator Mk II `research_pressure_mk2_pack` *(Not yet unlocked)*
+##### Pressure Generator Mk II `research_pressure_mk2_pack` *(Unlocked)*
 
 Higher pressure output. Unlocks the Pressure Generator Mk II Upgrade Pack in the shop. Retrofits a Mk I pressure generator to Mk II for higher output.
 
@@ -570,7 +579,16 @@ Higher pressure output. Unlocks the Pressure Generator Mk II Upgrade Pack in the
 | Threshold | Pressure 1.2 |
 | Tech id | pressure_mk2_pack_unlock |
 
-##### Geological Survey `research_geological_survey` *(Not yet unlocked)*
+##### Wide Sonar `research_sonar_wide` *(Unlocked)*
+
+Mid-ring survey hardware access. Unlocks the Wide Sonar module in the shop. Extends scan range to **180 m** and detects minerals up to hardness 3, including Titanium, Cobalt and Rare Earth, out in the mid and outer rings.
+
+| Field | Value |
+| --- | --- |
+| Threshold | Pressure 1.8 |
+| Tech id | sonar_wide_unlock |
+
+##### Geological Survey `research_geological_survey` *(Unlocked)*
 
 Sonar detects thermal vents. Extends the Sonar Module to detect thermal vents alongside mining sites. Surveyed vents are added to the Journal with their own readings, so you can find where steam can be tapped.
 
@@ -579,16 +597,16 @@ Sonar detects thermal vents. Extends the Sonar Module to detect thermal vents al
 | Threshold | Pressure 2 |
 | Tech id | geological_survey_unlock |
 
-##### Thermal Cap `research_thermal_cap` *(Not yet unlocked)*
+##### Thermal Cap `research_thermal_cap` *(Unlocked)*
 
-Capture steam from vents. Unlocks the Thermal Cap and its **Thermal Cap Kit** recipe. Fabricate the kit at a Fabricator, then use a Constructor-equipped Pioneer to build the Cap on a surveyed thermal vent from a Planet Map blueprint. The Cap captures Steam during the vent's active phase and releases it to explicitly connected destinations; remote destinations also need a compatible completed Gas Pipe route. A chamber that reaches **100%** blows away all stored Steam, so its script must release, route, or relieve pressure. Place the blueprint in Plan Mode or with `construction_blueprint.plan_structure("thermal_cap", x, y)`.
+Capture steam from vents. Unlocks the Thermal Cap and its **Thermal Cap Kit** recipe. Fabricate the kit at a Fabricator, then build the Cap on a surveyed thermal vent. It captures Steam while the vent is active and releases it to connected destinations over a completed Gas Pipe route. At **100%** the chamber blows away all stored Steam, so its script must release, route, or relieve the pressure.
 
 | Field | Value |
 | --- | --- |
 | Threshold | Pressure 2.5 |
 | Tech id | thermal_cap_unlock |
 
-##### Gas Tank `research_steam_tank` *(Not yet unlocked)*
+##### Gas Tank `research_steam_tank` *(Unlocked)*
 
 Buffer one gas between machines. Unlocks the Gas Tank in the Shop, a passive **5000**-ton buffer that latches to the first gas it receives (steam, ammonia, swamp gas, or any gas) and holds only that gas until drained.
 
@@ -597,7 +615,7 @@ Buffer one gas between machines. Unlocks the Gas Tank in the Shop, a passive **5
 | Threshold | Pressure 2.75 |
 | Tech id | steam_tank_unlock |
 
-##### Steam Turbine `research_steam_turbine` *(Not yet unlocked)*
+##### Steam Turbine `research_steam_turbine` *(Unlocked)*
 
 Steam into grid power. Unlocks the Steam Turbine in the Shop. At full throttle it consumes **90 t/h Steam** and produces **108 W**; a script controls the throttle.
 
@@ -606,7 +624,7 @@ Steam into grid power. Unlocks the Steam Turbine in the Shop. At full throttle i
 | Threshold | Pressure 3 |
 | Tech id | steam_turbine_unlock |
 
-##### Medium Cargo Rack `research_cargo_rack_medium` *(Not yet unlocked)*
+##### Medium Cargo Rack `research_cargo_rack_medium` *(Unlocked)*
 
 Double-bin cargo mount access. Unlocks the Medium Cargo Rack and Heavy Portable Bin in the shop. Two bins for larger hauls per run, with room for a second mineral.
 
@@ -615,16 +633,7 @@ Double-bin cargo mount access. Unlocks the Medium Cargo Rack and Heavy Portable 
 | Threshold | Pressure 4.5 |
 | Tech id | cargo_rack_medium_unlock |
 
-##### Wide Sonar `research_sonar_wide` *(Not yet unlocked)*
-
-Mid-ring survey hardware access. Unlocks the Wide Sonar module in the shop. Extends scan range to **180 m** and detects minerals up to hardness 3, including Titanium, Cobalt and Rare Earth, out in the mid and outer rings.
-
-| Field | Value |
-| --- | --- |
-| Threshold | Pressure 6 |
-| Tech id | sonar_wide_unlock |
-
-##### Hydrology Survey `research_hydrology_survey` *(Not yet unlocked)*
+##### Hydrology Survey `research_hydrology_survey` *(Unlocked)*
 
 Water wells visible to sonar. Unlocks survey of subsurface water deposits and the **Water Pump recipe**. Sonar scans now reveal water wells across the map. Wells produce continuous water at their yield tier (1× / 2× / 3×). Fabricate a Water Pump at a Fabricator, deploy it on a surveyed well, and pipe the output to base.
 
@@ -633,16 +642,16 @@ Water wells visible to sonar. Unlocks survey of subsurface water deposits and th
 | Threshold | Pressure 30 |
 | Tech id | hydrology_survey_unlock |
 
-##### Deep Sonar `research_sonar_deep` *(Not yet unlocked)*
+##### Deep Sonar `research_sonar_deep` *(Unlocked)*
 
-Edge-ring survey hardware access. Unlocks the Deep Sonar module in the shop. Extends scan range to **280 m** and detects hardness-4 minerals (Neutronium) at the edge ring. Also deepens thermal/exotic survey detail and is required to reveal oil wells after **Petroleum Survey**.
+Edge-ring survey hardware access. Unlocks the Deep Sonar module in the shop. Extends scan range to **280 m** and detects minerals up to hardness 4, which adds Neutronium at the edge ring. Also deepens thermal/exotic survey detail and is required to reveal oil wells after **Petroleum Survey**.
 
 | Field | Value |
 | --- | --- |
 | Threshold | Pressure 60 |
 | Tech id | sonar_deep_unlock |
 
-##### Gene Sequencing `research_dna_sequencer` *(Not yet unlocked)*
+##### Gene Sequencing `research_dna_sequencer` *(Unlocked)*
 
 Unlocks the DNA Sequencer. Unlocks the DNA Sequencer in the shop, the geothermal machine that reads and rewrites fragment DNA. Geothermal Bio Orders require fragments engineered to carry specific genes.
 
@@ -651,7 +660,7 @@ Unlocks the DNA Sequencer. Unlocks the DNA Sequencer in the shop, the geothermal
 | Threshold | Pressure 120 |
 | Tech id | dna_sequencer_unlock |
 
-##### Prime Contractor `research_prime_contractor` *(Not yet unlocked)*
+##### Prime Contractor `research_prime_contractor` *(Unlocked)*
 
 Top contract batch access. Unlocks three difficult contracts in the atmosphere-era program. Completing them contributes to Contractor Reputation; the final contract batch arrives with Smart Contractor.
 
@@ -680,16 +689,16 @@ Nuclear-era pressure tier, fuelled by rods. Unlocks the **Pressure Upgrade Pack 
 
 ### Biomass
 
-##### Seed Maker `research_seed_maker` *(Not yet unlocked)*
+##### Seed Maker `research_seed_maker` *(Unlocked)*
 
-Combine life-forms into seeds. Opens the **Plants** tier and unlocks the **Seed Maker Kit recipe**. The machine consumes **1 t each of three different harvested life forms** to test a viable-seed recipe. Most `combine()` results have `.status == "sludge"` and produce no item; the working recipes are unique to this planet. Fabricate the kit at a Fabricator, deploy it from Inventory to an outpost, then plant the seeds you find into your Harvester field.
+Combine life-forms into seeds. Opens the **Plants** tier and unlocks the **Seed Maker Kit recipe**. The machine consumes **1 t each of three different harvested life forms** to test for a viable seed. Most combinations come out as sludge and produce nothing; the recipes that work are unique to this planet. Plant the seeds you find into your Harvester field.
 
 | Field | Value |
 | --- | --- |
 | Threshold | Biomass 500 |
 | Tech id | seed_maker_unlock |
 
-##### Plant Terraformer `research_plant_terraformer` *(Not yet unlocked)*
+##### Plant Terraformer `research_plant_terraformer` *(Unlocked)*
 
 Turn harvested Forage into Plants progress. Unlocks the **Plant Terraformer Kit recipe** at **2,000 t Biomass**. It is the only machine that creates permanent Plants km². Feed it harvested Forage, then satisfy the cumulative phase ladder with Water, Salt, Fertilizer, and Growth Accelerant. Fabricate its kit, deploy it at an outpost, connect its supplies, and enable it from its script. Build as many as your harvest can feed.
 
@@ -698,7 +707,7 @@ Turn harvested Forage into Plants progress. Unlocks the **Plant Terraformer Kit 
 | Threshold | Biomass 2,000 |
 | Tech id | plant_terraformer_unlock |
 
-##### Heavy Portable Battery `research_heavy_portable_battery` *(Not yet unlocked)*
+##### Heavy Portable Battery `research_heavy_portable_battery` *(Unlocked)*
 
 High-capacity vehicle cell access. Unlocks the Heavy Portable Battery in the shop. A **100 Wh** portable cell, double a standard battery, that drops into any vehicle holder bay to sustain long-haul fleets far from the Vehicle Charging Station.
 
@@ -707,7 +716,7 @@ High-capacity vehicle cell access. Unlocks the Heavy Portable Battery in the sho
 | Threshold | Biomass 3,000 |
 | Tech id | heavy_portable_battery_unlock |
 
-##### Smart Contractor `research_smart_contractor` *(Not yet unlocked)*
+##### Smart Contractor `research_smart_contractor` *(Unlocked)*
 
 Final contract batch access. Your Biomass recovery has opened Earth's final contractor channel. Unlocks Beat the System, Core Sample, and Lattice, the three hardest programming contracts, and completes the Contractor Reputation ladder.
 

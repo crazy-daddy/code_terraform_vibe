@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.lookup(item_id)`
+##### `.lookup(item_id: str) → ItemInfo | None`
 
 Return an `ItemInfo` with `.id`, `.name`, `.category`, `.stackable`, `.biome`, `.rarity`, and `.production_tier`. Categories distinguish `"mineral"`, `"refined"`, `"crafted"`, `"agriculture"`, `"life_form"`, `"field_resource"`, `"biology_sample"`, `"reagent"`, `"equipment"`, `"module"`, `"portable"`, `"upgrade_pack"`, and `"construction_kit"`. Production tier is `None` for source items and biome and rarity are `None` when they do not apply. An unknown item id returns `None`.
 
@@ -32,7 +32,7 @@ Return an `ItemInfo` with `.id`, `.name`, `.category`, `.stackable`, `.biome`, `
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to identify |
+| `item_id` | `str` | Item id to identify |
 
 - **Returns** `ItemInfo` with identity metadata, or `None` for an unknown item id.
 

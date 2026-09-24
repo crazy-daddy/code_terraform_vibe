@@ -34,7 +34,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.gas_out`
+##### `.gas_out: FluidPort`
 
 Fluid output for the buffered gas. This port may declare one destination with `self.gas_out.connect("Chlorine Tank")`; additional consumers may connect their own compatible input ports to this Cap. Because the Cap is a field structure, every destination needs a compatible completed Gas Pipe component reaching the Cap and the destination. `connected_to()` reports only this port's own declaration; `flow_rate()` reports total live release. See `FluidPort`.
 
@@ -42,37 +42,37 @@ Fluid output for the buffered gas. This port may declare one destination with `s
 
 ### Methods
 
-##### `.deposit()`
+##### `.deposit() → ExoticDeposit | None`
 
 The `ExoticDeposit` this cap is bolted to, `.id`, `position()`, `fluid()`, `current_phase()`, cycle timing. Field availability is gated by the sonar tier that last surveyed the deposit: basic reveals phase only, wide adds rates, deep adds cycle timing. `None` if the cap isn't on a deposit. Use `deposit.current_phase()` to check whether the source is active. See `ExoticDeposit`.
 
 - **Returns** `ExoticDeposit` attached to this cap, or `None`. Its cycle, survey and collector methods read live state on each call: keep the object and call its methods for fresh readings. The `.surveyed` property remains a creation-time snapshot.
 
-##### `.capture_rate()`
+##### `.capture_rate() → float`
 
 Exotic gas captured from the deposit on the last flow tick in t/h. **0** during the deposit's dormant phase, or when the buffer is full and holding (see `is_venting()`). Already factors in current phase and buffer headroom, read it instead of computing from the deposit's rate. Updates once per flow tick.
 
 - **Returns** Number: exotic gas captured from the deposit this tick in t/h. **0** during the deposit's dormant phase, or when the buffer is full and holding (see `is_venting()`).
 
-##### `.is_venting()`
+##### `.is_venting() → bool`
 
 `True` if active gas production exceeded the capture buffer's available space on the last flow tick. The excess is held upstream without losing gas. Dormancy returns `False` even with a full buffer, as does loss of power. This is a capture-space limit, unlike `is_stalled()`, which reports a blocked release. Open `self.set_throttle(...)` toward a tank with room.
 
 - **Returns** Boolean: `True` if active gas production exceeded the capture buffer's available space on the last flow tick. The excess is held upstream, not lost. `False` during dormancy even if the buffer is full, or when unpowered. Open `set_throttle(...)` to a tank with room.
 
-##### `.is_stalled()`
+##### `.is_stalled() → bool`
 
 `True` if, on the last flow tick, the powered cap had an open throttle and buffered gas available for release but could transfer none across its connected routes. An empty buffer, closed throttle, or lack of power does not report a stall.
 
 - **Returns** Boolean: `True` if, on the last flow tick, the powered cap had `throttle > 0` and buffered gas available for release but could transfer none across its connected routes. `False` when unpowered, the throttle is closed, or the buffer has no gas to release.
 
-##### `.throttle()`
+##### `.throttle() → float`
 
 Current release-valve setting, `0.0` (holding) to `1.0` (wide open). Read it back after `set_throttle(...)`.
 
 - **Returns** Number (**0-1**): current release-valve setting.
 
-##### `.set_throttle(t)` *(self only)*
+##### `.set_throttle(t: float) → ActionResult` *(self only)*
 
 Open the cap's release valve in the `0.0 to 1.0` range (clamped). `0` holds the buffer; `1.0` releases gas across reachable connected destinations as fast as buffer supply, headroom, and throughput allow. This script-owned setpoint resets to `0` when the script stops, ends, or errors. `[self only]`
 
@@ -80,7 +80,7 @@ Open the cap's release valve in the `0.0 to 1.0` range (clamped). `0` holds the 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `t` | `number` | Release-valve fraction in the **0-1** range |
+| `t` | `float` | Release-valve fraction in the **0-1** range |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

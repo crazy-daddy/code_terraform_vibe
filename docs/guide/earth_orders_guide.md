@@ -2,64 +2,37 @@
 
 ## Earth Orders
 
-Read Earth's current orders, future campaign requirements and rewards, and completed campaign history through `get_component("orders")`. Supply Dock scripts can use campaign and Weekly Orders to decide what to ship, while dashboards can show progress. Scripts cannot create or cancel Earth Orders. Bio Orders come from a Bio Exchange instead.
+Earth requests materials through **contractor campaign orders** and the separate **Weekly Earth Orders** board. Both use Supply Docks and the same `Order` API. Orders are supply lines; Contracts are puzzles.
 
-**Returned by:** `get_component("orders")`
+### Contractor campaign orders
 
-**Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
+Helios Orbital, Spire Research, and Vestibule Logistics each expose the first unfinished order in their authored queue. These orders never expire. `orders.list_orders()` returns only the three current contractor slots, and completed campaign orders enter the permanent Completed Orders ledger. Contractor Reputation can increase their credit payout, and some campaign orders unlock technology or recipes.
 
-### Properties
+### Planning ahead
 
-##### `.id`
+The Order Manifest and `orders.list_upcoming_orders()` reveal upcoming campaign requirements and rewards. The list preserves campaign declaration order, including each contractor's queue sequence, and excludes current orders, completed orders, and Weekly Earth Orders. Use `.contractor_id` to focus on one reward path. `orders.get_order(id)` also reads an upcoming order directly.
 
-Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
+Upcoming orders have `.status == "upcoming"` and empty `.shipped` counts. Their credit rewards are quoted at your current reputation and may increase before fulfillment. Reading an order does not make it assignable: Supply Docks still accept only current orders.
 
-- **Returns** String
+### Weekly Earth Orders
 
-##### `.name`
+The Weekly Orders tab is a dedicated full-width board with **five** progressive offers. It waits until you have uncovered an eligible mining or production chain, so `orders.list_weekly_orders()` can initially be empty. Once available, higher production tiers appear as your save uncovers their chains, and unavailable tiers fall back to earlier materials. An offer is an opportunity, not a guaranteed weekly completion: a known chain may still require machinery or infrastructure you have not built yet. The board starts on the day that an eligible chain appears and refreshes as a whole when its **seventh later day begins**. For example, a board created on Day 40 refreshes when Day 47 begins.
 
-Human-readable display name. Prefer `.id` for scripts that need to survive renames.
+Weekly orders are credits-only. Their combined base payout stays at or below **20,000 credits**, or **40,000 credits** once **Bulk Orders** research doubles the board, Contractor Reputation does not multiply it, and fulfilled weekly rows remain visible until refresh. They do not enter the permanent campaign ledger. Read the board with `orders.list_weekly_orders()`; weekly objects have `.kind == "weekly"`, an `.expires_day`, and no contractor.
 
-- **Returns** String
+At refresh, every unfinished weekly order and all shipped progress expire permanently. Supply Docks assigned to the old board are unassigned and disabled. Cargo that was loaded but had not shipped remains inside its dock. The game posts a warning toast only when at least one unit actually shipped toward an unfinished weekly order; assigning or loading a dock without shipping stays silent. The toast remains available in **Computer > Notifications**, and scheduled refreshes do not create navigation badges.
 
-### Methods
+### Supply Dock workflow
 
-##### `.list_orders()`
+1. **Pick an order.** Read `orders.list_orders()` or `orders.list_weekly_orders()`, then call `self.set_order(order.id)`.
+2. **Load it.** Iterate `self.current_order().requires` and call `self.input.take(item_id, count)`. The dock refuses overshoot.
+3. **Enable dispatch.** Call `self.set_enabled(True)`. Several docks may serve the same order and share shipped progress.
+4. **React to release.** Completion or weekly expiry clears `current_order()` and disables dispatch, so the script must choose again and re-enable.
 
-Current contractor campaign Orders as a stable list of `Order` objects. These orders never expire and disappear from this list when fully shipped. Empty means no contractor shipment is currently available. See `Order`.
+Each dock dispatches continuously at `self.dispatch_rate()` units/h. `self.current_dispatch()` reports the item leaving now and `self.dispatch_progress()` reports the next-unit fraction. Loaded units always remain physical cargo. `clear_order()` releases the assignment but leaves those units in the dock; a different `set_order(...)` produces an `ActionResult` with `.status == "cargo_present"` until a local machine or vehicle drains them.
 
-- **Returns** List of current contractor campaign `Order` objects.
+### Rewards and identity
 
-##### `.list_upcoming_orders()`
+Credits and unlocks apply automatically when the final required unit lands. Recipe rewards unlock the named recipe at its stated machine. Technology rewards make the named upgrade pack available for purchase in the Shop; they do not place a free pack in Inventory. Campaign objects have `.kind == "campaign"`, contractor identity, and no expiry. Weekly objects have `.kind == "weekly"`, `contractor_id == None`, `contractor_name == None`, and a board expiry day. Use `orders.get_order(id)` for upcoming or current orders and permanent campaign completions; unknown or expired weekly ids return `None`.
 
-Plan future production and reward paths with upcoming contractor campaign Orders, in campaign declaration order, preserving each contractor's queue sequence. Excludes current orders, completed orders, and Weekly Earth Orders. Upcoming orders cannot be assigned to Supply Docks until they become current. See `Order`.
-
-- **Returns** List of future campaign `Order` objects with status `"upcoming"`, in campaign declaration order. Empty when no upcoming campaign orders remain.
-
-##### `.list_weekly_orders()`
-
-The current five Weekly Earth Orders, including offers already fulfilled during this cycle. Returns an empty list until an eligible production chain is available. Weekly objects have `.kind == "weekly"`, `.expires_day`, no contractor, credits-only rewards, and `.status` of `"active"` or `"completed"`. The whole list is replaced every seven days.
-
-- **Returns** The current five Weekly Earth `Order` objects, including offers already fulfilled this cycle; an empty list until an eligible production chain is available.
-
-##### `.get_order(order_id)`
-
-Look up a specific Earth Order by id, including upcoming campaign orders for planning. Upcoming orders cannot be assigned to Supply Docks until they become current. Unknown or expired weekly ids return `None`; weekly completions remain visible only until their board refreshes. See `Order`.
-
-*Parameters*
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `order_id` | `string` | Earth Order id from `list_orders()`, `list_upcoming_orders()`, `list_weekly_orders()`, or `completed_orders()` |
-
-- **Returns** Campaign `Order` with status `"upcoming"`, `"active"`, or `"completed"`, or a Weekly Earth Order from the current board. Unknown or expired weekly ids return `None`. Bio Order ids are read from a Bio Exchange.
-
-##### `.completed_orders()`
-
-Permanent contractor campaign history, ordered by completion time (oldest first). Weekly completions stay on the current Weekly board and are intentionally excluded from this ledger.
-
-- **Returns** List of Earth `Order` objects already delivered, in order of completion.
-
-*Components / Logistics & Orders*
-
----
+*Guide / Automation Systems*

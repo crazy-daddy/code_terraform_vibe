@@ -34,19 +34,19 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.input`
+##### `.input: InputSlot`
 
 The input slot for life-form samples native to this outpost's biome. Machine and storage sources must share the outpost. Inventory works only at home; remote Liquifiers receive samples from local storage. A wrong-biome sample is rejected without being moved.
 
 - **Returns** `InputSlot` for life-form samples native to this outpost's biome. Wrong-biome samples are rejected without being moved; `eject(...)` recovers staged samples to an explicit local destination.
 
-##### `.frozen_essence_out`
+##### `.frozen_essence_out: FluidPort`
 
 This machine has exactly one essence output, named for its outpost biome: `frozen_essence_out`, `coastal_essence_out`, `geothermal_essence_out`, `volcanic_essence_out`, or `deep_essence_out`. It is a `FluidPort`. Connect it to a local Liquid Tank or matching Mixer input. A remote peer relationship also needs a completed conflict-free Liquid Pipe route between both locations. Example: `self.frozen_essence_out.connect("liquid_tank_1")`.
 
@@ -54,32 +54,32 @@ This machine has exactly one essence output, named for its outpost biome: `froze
 
 ### Methods
 
-##### `.essence_rate()`
+##### `.essence_rate() → float`
 
 Current biome essence output, in **t/h**. At 100% outpost efficiency, the Essence Liquifier has a base **1 t/h** life-form intake. This readout applies both outpost efficiency and the loaded life form's rarity yield (common **×5**, uncommon **×10**, rare **×25**), and reads **0** when the machine cannot run or buffer its next whole output.
 
 - **Returns** Number, current biome essence output in t/h.
 
-##### `.yield_multiplier()`
+##### `.yield_multiplier() → float`
 
 Unscaled essence tons produced per ton of the life form currently in the input bin: **5** for a common life form, **10** uncommon, **25** rare. Returns **0** when the input is empty. At 100% outpost efficiency, `essence_rate()` equals this multiplier while the machine is powered, fed, and able to buffer its next whole output; overcrowding can reduce the actual output rate.
 
 - **Returns** Number: essence tons produced per ton of the life form currently loaded (**5** common / **10** uncommon / **25** rare), or **0** when the input is empty.
 
-##### `.is_stalled()`
+##### `.is_stalled() → bool`
 
 `True` whenever `stall_reason()` is not `"ok"`: no valid host biome, no input, or insufficient output room for the next whole rarity-scaled yield. Use `stall_reason()` for the specific cause.
 
 - **Returns** Boolean. `True` whenever `stall_reason()` is not `"ok"`.
 
-##### `.stall_reason()`
+##### `.stall_reason() → str`
 
 Why the Liquifier is idle, as a string you can branch on: `"no_biome"` (the machine has no valid host outpost), `"no_input"` (input bin empty, feed it native-biome life forms), `"output_full"` (the next whole rarity-scaled yield cannot fit and a configured output cannot drain right now), `"unconnected"` (the next whole yield cannot fit and the essence output has no effective peer relationship), or `"ok"` (running, ready, or able to buffer the next whole yield). More specific than `is_stalled()`.
 
 - **Returns** String: one of `"ok"`, `"no_biome"`, `"no_input"`, `"output_full"`, `"unconnected"`. The specific reason the Liquifier is idle.
 - **Possible values** `"ok"`, `"no_biome"`, `"no_input"`, `"output_full"`, `"unconnected"`
 
-##### `.biome()`
+##### `.biome() → str | None`
 
 Returns the biome the host outpost sits in: `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, or `"deep"`. Returns `None` when the machine has no valid outpost. This determines which life-form items the Essence Liquifier will accept; wrong-biome items are rejected by the input port.
 

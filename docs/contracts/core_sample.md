@@ -12,39 +12,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.cores`
+##### `.cores: list[list[int | None]]`
 
 The 10 damaged cores, as a list of byte lists. A byte destroyed in transit reads as None: recover it from the construction rules.
 
-- **Returns** `list`
+- **Returns** `list[list[int | None]]`
 
-##### `.device`
+##### `.device: CoreDevice`
 
 The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
 
@@ -52,15 +52,13 @@ The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
 
 *Types / Contracts*
 
----
-
 ## CoreDevice
 
 **Returned by:** .device
 
 ### Methods
 
-##### `.submit(index, bytes)`
+##### `.submit(index: int, bytes: list[int]) → ActionResult`
 
 Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or element types raise `TypeError`; a fractional or out-of-range index, wrong list length, or numeric value outside the **0-255** range raises `ValueError`. A rejected submission does not lock the slot.
 
@@ -68,8 +66,8 @@ Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or el
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Whole-number core slot, 0-9 |
-| `bytes` | `list` | The rebuilt core as a list of whole-number bytes in the **0-255** range |
+| `index` | `int` | Whole-number core slot, 0-9 |
+| `bytes` | `list[int]` | The rebuilt core as a list of whole-number bytes in the **0-255** range |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -89,24 +87,22 @@ Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or el
 | `TypeError` | CoreDevice.submit() requires a numeric index and a list containing only numeric bytes. |
 | `ValueError` | CoreDevice.submit() requires a whole-number slot in the **0-9** range and a correctly sized list of whole-number bytes in the **0-255** range. |
 
-##### `.recovered()`
+##### `.recovered() → int`
 
 How many of the 10 cores are locked in the current script run. A fresh run starts at 0.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.target()`
+##### `.target() → int`
 
 The number of cores you must recover to complete the contract: 10.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.token()`
+##### `.token() → str`
 
 The passcode to transmit: a non-empty string once recovered() reaches target(), otherwise an empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----

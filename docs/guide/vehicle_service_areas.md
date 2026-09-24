@@ -37,5 +37,3 @@ After `brake()`, cargo transfer, charging, and hardware service can use the matc
 Drones use explicit station docking. A drone at a field Mining Drill must have completed its route before it can load ore.
 
 *Guide / Automation Systems*
-
----

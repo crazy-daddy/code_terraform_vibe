@@ -61,8 +61,6 @@ Vehicle handoffs additionally require both vehicles stopped within about 2 m. In
 
 *Guide / Production & Logistics*
 
----
-
 ## Battery Holder
 
 A **Battery Holder** is a module that mounts in a modular vehicle's Universal slot and hosts **Portable Battery** items. The holder itself stores no energy; it is a rack. The contained batteries hold the charge.
@@ -95,8 +93,6 @@ Each holder occupies **1 Universal slot** on a compatible modular vehicle. Mount
 
 *Guide / Production & Logistics*
 
----
-
 ## Cargo Rack
 
 A **Cargo Rack** is a module that mounts in a modular vehicle's Universal slot and hosts **Portable Storage Bin** items. The rack itself stores nothing; it is a frame. The contained bins hold the materials.
@@ -126,8 +122,6 @@ Each rack occupies **1 Universal slot** on a compatible modular vehicle. Mount/u
 
 *Guide / Production & Logistics*
 
----
-
 ## Portable Battery
 
 A **Portable Battery** is a rechargeable cell that installs into a Battery Holder's internal slot. Shop-purchased cells arrive at **100% charge**. Installed, the cell transfers its stored Wh into the vehicle's shared battery pool.
@@ -142,8 +136,6 @@ All installed batteries discharge together as one pool. Individual `.wh()` track
 Install or uninstall at base or any outpost.
 
 *Guide / Production & Logistics*
-
----
 
 ## Portable Storage Bin
 
@@ -161,5 +153,3 @@ The first unit loaded into the bin latches that id; subsequent units must match.
 Install/uninstall at base or any outpost.
 
 *Guide / World & Infrastructure*
-
----

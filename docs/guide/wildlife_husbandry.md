@@ -10,7 +10,7 @@ Call `set_revival_target(creature_id)` first and branch on its `ActionResult`. I
 
 ### Relocate an established colony
 
-The colony belongs to its species, not its enclosure. Undeploying an established colony's Habitat leaves that colony awaiting housing while its population, life stage, brood progress, Insight history, and bonuses remain intact. Its Wildlife and species-breadth contributions pause until it is rehoused. From an empty Habitat, call `result = self.rehouse(creature_id)` and branch on the returned `ActionResult`. The same call can transfer a colony directly from another deployed Habitat. The destination's current capacity must fit the whole colony; `"insufficient_capacity"` moves nothing.
+The colony belongs to its species, not its enclosure. Undeploying an established colony's Habitat leaves that colony awaiting housing while its population, life stage, brood progress, Insight history, and bonuses remain intact. Its population and species breadth keep counting; only its breeding pauses until it is rehoused. From an empty Habitat, call `result = self.rehouse(creature_id)` and branch on the returned `ActionResult`. The same call can transfer a colony directly from another deployed Habitat. The destination's current capacity must fit the whole colony; `"insufficient_capacity"` moves nothing.
 
 ### Feed is automatic
 
@@ -69,5 +69,3 @@ print(result.status, result.message)
 Then refill with the required gas and resume regulation. For liquid, use `set_liquid_intake(0)` and `purge_reserve("liquid")`. Each purge destroys only the chosen enclosure reserve and clears its fluid identity. It preserves the other reserve, feed, colony progress, inlet buffers, connections, and intake settings. `purge_intake("gas_in")` or `purge_intake("liquid_in")` remains the separate tool for clearing an inlet that holds the wrong fluid.
 
 *Guide / World & Infrastructure*
-
----

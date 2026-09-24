@@ -33,5 +33,3 @@ Visual tools and script calls enforce the same research. Outposts have two gates
 Keep plans small until the first one works. One blueprint plus the exact material it asks for is easier to debug than a whole remote base. Once you trust the loop, scale up to outposts, pipes, power lines, pumps, and field extractors. Internal outpost machines, including drone facilities, deploy directly from Inventory and never appear as map blueprints.
 
 *Guide / Tutorials*
-
----

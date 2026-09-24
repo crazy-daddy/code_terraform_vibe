@@ -33,31 +33,31 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `self.specimen`
+##### `self.specimen: Specimen | None`
 
 The `Specimen` in the lab chamber right now, exposed as `self.specimen`, or `None`. Read `self.specimen.stage` to distinguish `"collected"` from `"analyzed"`. Before analysis its identifying fields are hidden; after analysis its `fragment_id`, `rarity`, and `recipe` are populated.
 
 - **Returns** The `Specimen` currently in the chamber, with `.stage` `"collected"` or `"analyzed"`, or `None` if empty.
 
-##### `self.loaded_reagents`
+##### `self.loaded_reagents: dict[str, int]`
 
-Dict `{reagent_id: qty}` of reagents staged for the next `extract()`. Iterate `.items()` to inspect.
+A dict `{reagent_id: qty}` of reagents staged for the next `extract()`. Iterate `.items()` to inspect.
 
-- **Returns** Dict `{reagent_id: qty}` of reagents staged for the next `extract()`.
+- **Returns** A dict `{reagent_id: qty}` of reagents staged for the next `extract()`.
 
-##### `self.input`
+##### `self.input: InputSlot`
 
 The `InputSlot` for scripted reagent routing. It holds one reagent item id at a time and stays latched to that id until `load()` consumes the remaining units or `flush()` discards them. `stacks()` lists property-distinct variants and does not mean the port accepts multiple reagent types. Connect Inventory only at Nocturna Base; at another outpost connect a same-outpost Storage Bin/Warehouse. Call `take(...)` before `load(...)`.
 
 - **Returns** `InputSlot` for scripted reagent routing. Inventory is available only at Nocturna Base; remote Labs use a local Storage Bin or Warehouse. Recover an unneeded staged reagent with `eject(...)`.
 
-##### `self.output`
+##### `self.output: OutputSlot`
 
 The `OutputSlot` for extracted property-bearing samples and unloaded reagents. Connect any eligible local item store and drain it with `send(...)`.
 
@@ -65,7 +65,7 @@ The `OutputSlot` for extracted property-bearing samples and unloaded reagents. C
 
 ### Methods
 
-##### `self.take_from(collector)` *(self only)*
+##### `self.take_from(collector: Component | IdRecord) → ActionResult` *(self only)*
 
 Pull the specimen out of a Bio Collector's cargo into this lab's specimen chamber. The source Collector must be at the same outpost as this Lab; pass an explicit collector reference: `self.take_from(get_component("bio_collector_1"))`.
 
@@ -73,7 +73,7 @@ Pull the specimen out of a Bio Collector's cargo into this lab's specimen chambe
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `collector` | `any` | A `bio_collector` component reference, or a dictionary or class instance with its string `id` field. The collector must still exist in the same outpost; cargo is read from the current collector. |
+| `collector` | `Component \| IdRecord` | A `bio_collector` component reference, or a dictionary or class instance with its string `id` field. The collector must still exist in the same outpost; cargo is read from the current collector. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -93,7 +93,7 @@ Pull the specimen out of a Bio Collector's cargo into this lab's specimen chambe
 | `"invalid_source"` | rejection | The supplied component is not a valid Bio Collector. |
 | `"output_full"` | rejection | Finished work is waiting for space in this machine's output, so nothing else can start. Free the output and the wait ends on its own. |
 
-##### `self.analyze()` *(self only)*
+##### `self.analyze() → AnalyzeResult` *(self only)*
 
 Identify the lab's current fragment and reveal its extraction recipe. Analysis takes **~0.1 h** in every biome; the script pauses until it finishes. A successful analysis adds the fragment to `journal.cataloged_fragments(planet_id)`. Creature identity stays hidden until all five fragments are cataloged, then the creature appears in `journal.cataloged_creatures(planet_id)`.
 
@@ -111,7 +111,7 @@ Identify the lab's current fragment and reveal its extraction recipe. Analysis t
 | `"input_empty"` | rejection | The Bio Lab has no specimen to analyze. |
 | `"invalid_specimen"` | rejection | The loaded specimen has no recognizable fragment identity and cannot be analyzed. |
 
-##### `self.load(reagent_id, qty, properties=None, property_match=None)` *(self only)*
+##### `self.load(reagent_id: str, qty: int, properties: ItemProperties | None = None, property_match: str | None = None) → ActionResult` *(self only)*
 
 Stage a whole-number reagent quantity for the next `extract()` by consuming it from `self.input`. `self.load("alkaline_buffer", 4)`. Reagents are sold by the `shop`; both UI purchases and `shop.buy(reagent_id)` place them in base Inventory. Optional `properties` and `property_match` select a specific item identity using the standard any, subset, or exact convention. Fractional or negative quantities raise an argument error. Calling `extract()` with a mismatched recipe destroys the loaded reagents.
 
@@ -119,10 +119,10 @@ Stage a whole-number reagent quantity for the next `extract()` by consuming it f
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `reagent_id` | `string` | Reagent item id to load from the connected input. |
-| `qty` | `number` | Whole-number reagent units to load |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `reagent_id` | `str` | Reagent item id to load from the connected input. |
+| `qty` | `int` | Whole-number reagent units to load |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -141,7 +141,7 @@ Stage a whole-number reagent quantity for the next `extract()` by consuming it f
 | `"insufficient_input"` | rejection | The input does not contain the required quantity. |
 | `"output_full"` | rejection | Finished work is waiting for space in this machine's output, so nothing else can start. Free the output and the wait ends on its own. |
 
-##### `self.unload_reagents()` *(self only)*
+##### `self.unload_reagents() → ActionResult` *(self only)*
 
 Stage all loaded reagents in `self.output` without touching the specimen. Use this when you staged the wrong recipe.
 
@@ -158,7 +158,7 @@ Stage all loaded reagents in `self.output` without touching the specimen. Use th
 | `"busy"` | transient | The Bio Lab is currently taking, analyzing, or extracting. |
 | `"output_full"` | rejection | The output has no capacity for the loaded reagents; the reagents remain loaded. |
 
-##### `self.extract()` *(self only)*
+##### `self.extract() → ActionResult` *(self only)*
 
 Consume `loaded_reagents` and place **1 sample** of the analyzed specimen in `self.output`, preserving its exact properties. Extraction takes **~0.1 + 0.05 × units h** in every biome; the script pauses until it finishes.
 
@@ -178,7 +178,7 @@ Consume `loaded_reagents` and place **1 sample** of the analyzed specimen in `se
 | `"not_analyzed"` | rejection | The loaded specimen has not been analyzed. |
 | `"invalid_specimen"` | rejection | The loaded specimen has no recognizable fragment identity. |
 
-##### `self.discard()` *(self only)*
+##### `self.discard() → ActionResult` *(self only)*
 
 Drop the current specimen and stage any loaded reagents in `self.output`. Use it after `analyze()` reveals a fragment you do not need.
 

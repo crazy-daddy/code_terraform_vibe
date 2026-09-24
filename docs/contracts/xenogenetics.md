@@ -8,44 +8,42 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.earth_ref`
+##### `.earth_ref: list[str]`
 
 50 known Earth gene sequences (list of strings).
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.samples`
+##### `.samples: list[str]`
 
 1000 collected DNA samples (list of strings).
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
 *Types / Contracts*
-
----

@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.deploy(item_id, outpost=None)`
+##### `.deploy(item_id: str, outpost: str | Outpost | None = None) → ComputerDeployResult`
 
 Deploy one unit of an inventory item into an outpost, defaulting to home. The machine lands with no script and does nothing until you attach one, exactly as a hand-placed machine does. A machine that the outpost's subnet cannot yet carry lands powered off.
 
@@ -32,8 +32,8 @@ Deploy one unit of an inventory item into an outpost, defaulting to home. The ma
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Inventory item id of the machine, vehicle, or drone kit to deploy. |
-| `outpost` | `any` | Target outpost id, name, or `Outpost`. Omit for the home outpost. |
+| `item_id` | `str` | Inventory item id of the machine, vehicle, or drone kit to deploy. |
+| `outpost` | `str \| Outpost \| None` | Target outpost id, name, or `Outpost`. Omit for the home outpost. |
 
 - **Returns** `ComputerDeployResult`
 - **Result fields** `.status`, `.message`
@@ -54,7 +54,7 @@ Deploy one unit of an inventory item into an outpost, defaulting to home. The ma
 | `"missing_drone_station"` | rejection | The target outpost has no drone station to assemble a drone at. |
 | `"drone_station_full"` | rejection | Every drone station bay at the target outpost is occupied. |
 
-##### `.undeploy(machine)`
+##### `.undeploy(machine: str | Component) → ActionResult`
 
 Remove a deployed machine, vehicle, or drone and return its kit, mounted modules, contained items, and tier upgrade packs to Inventory. Stored cargo blocks removal, so empty it first. Authored scripts survive as detached records. Field equipment is recovered by its Harvester and map structures by a Pioneer, not here.
 
@@ -62,7 +62,7 @@ Remove a deployed machine, vehicle, or drone and return its kit, mounted modules
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `machine` | `any` | Machine id, name, or component to remove. Its hardware returns to Inventory. |
+| `machine` | `str \| Component` | Machine id, name, or component to remove. Its hardware returns to Inventory. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -82,7 +82,7 @@ Remove a deployed machine, vehicle, or drone and return its kit, mounted modules
 | `"construction_dependency"` | rejection | Another construction job depends on this job. |
 | `"inventory_full"` | rejection | Inventory has no capacity for the result. |
 
-##### `.decommission(outpost)`
+##### `.decommission(outpost: str | Outpost) → ActionResult`
 
 Remove a founded outpost and return its Outpost Kit to Inventory. The outpost must hold no machines; nothing is cascade-destroyed. Pipes, power lines, and bridges that touched it stay on the map for a Pioneer to reclaim. The home outpost is permanent.
 
@@ -90,7 +90,7 @@ Remove a founded outpost and return its Outpost Kit to Inventory. The outpost mu
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `outpost` | `any` | Outpost id, name, or `Outpost` to remove. It must hold no machines. |
+| `outpost` | `str \| Outpost` | Outpost id, name, or `Outpost` to remove. It must hold no machines. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -108,7 +108,7 @@ Remove a founded outpost and return its Outpost Kit to Inventory. The outpost mu
 | `"construction_dependency"` | rejection | Another construction job depends on this job. |
 | `"inventory_full"` | rejection | Inventory has no capacity for the result. |
 
-##### `.rename(target, name)`
+##### `.rename(target: str | Component | Outpost, name: str) → ActionResult`
 
 Set the display name of a machine or outpost. Names are unique across every machine, outpost, and panel. Ids never change, so saved references keep working.
 
@@ -116,8 +116,8 @@ Set the display name of a machine or outpost. Names are unique across every mach
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `target` | `any` | Machine or outpost id, name, or component to rename. |
-| `name` | `string` | New display name. Must be unique across machines, outposts, and panels. |
+| `target` | `str \| Component \| Outpost` | Machine or outpost id, name, or component to rename. |
+| `name` | `str` | New display name. Must be unique across machines, outposts, and panels. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

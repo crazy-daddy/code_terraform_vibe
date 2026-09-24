@@ -2,7 +2,7 @@
 
 > **Category:** Biosphere | **Component Name:** Dispenser
 
-Salts the four orthogonally adjacent field cells (directly above, below, left, and right) while powered, supplied, and enabled.
+Salts the four orthogonally adjacent field cells (directly above, below, left, and right) while powered, supplied, and enabled. Scripts find it with `outpost.harvesting_machines()`.
 
 | Field | Value |
 | --- | --- |
@@ -34,7 +34,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.input`
+##### `.input: InputSlot`
 
 Loads salt from a storage bin or other source. Connect a source with `self.input.connect(name)`, then pull salt with `self.input.take("salt", count)`. See `InputSlot`.
 
@@ -42,7 +42,7 @@ Loads salt from a storage bin or other source. Connect a source with `self.input
 
 ### Methods
 
-##### `.set_enabled(enabled)` *(self only)*
+##### `.set_enabled(enabled: bool) → ActionResult` *(self only)*
 
 Command salting on or off. Power loss pauses the script but preserves this setpoint; stopping the machine script resets it to `False`.
 
@@ -50,7 +50,7 @@ Command salting on or off. Power loss pauses the script but preserves this setpo
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `enabled` | `boolean` | Whether this script commands salting. |
+| `enabled` | `bool` | Whether this script commands salting. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -62,44 +62,44 @@ Command salting on or off. Power loss pauses the script but preserves this setpo
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.is_enabled()`
+##### `.is_enabled() → bool`
 
 `True` when the running script has commanded salting on.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_active()`
+##### `.is_active() → bool`
 
 `True` when commanded on with power and salt available.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_supplied()`
+##### `.is_supplied() → bool`
 
 `True` when the dispenser is commanded on, powered, and has salt in its input buffer. If disabled, unpowered, or empty, covered cells lose `salted`.
 
 - **Returns** Boolean: `True` when the dispenser is placed, commanded on, powered, and has salt in its input buffer. `False` when unplaced, disabled, unpowered, or empty; covered cells then lose `salted` and their plants pause.
 
-##### `.status()`
+##### `.status() → str`
 
 Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, `"no_salt"`, or `"active"`.
 
 - **Returns** Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, `"no_salt"`, or `"active"`.
 - **Possible values** `"not_placed"`, `"disabled"`, `"no_power"`, `"no_salt"`, `"active"`
 
-##### `.buffer()`
+##### `.buffer() → float`
 
 Fraction of the onboard salt buffer currently filled (**0-1**). It drops while dosing cells and refills through `self.input`.
 
 - **Returns** Number (**0-1**): fraction of the onboard salt buffer currently filled. Drops as the dispenser doses cells; refilled by feeding salt into `self.input`. **0** means empty (covered cells lose `salted`).
 
-##### `.tier()`
+##### `.tier() → int`
 
 Always **1**. The Dispenser ships at Mk I and has no upgrade pack; salt providers don't tier, so every deployed Dispenser reads **1**.
 
 - **Returns** Number: always **1**. The Dispenser ships at Mk I and has no upgrade pack; salt providers don't tier. Reads **1** for every deployed Dispenser.
 
-##### `.position()`
+##### `.position() → str`
 
 Grid sector occupied by this dispenser, such as `"E14"`.
 

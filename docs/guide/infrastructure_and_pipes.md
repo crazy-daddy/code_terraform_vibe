@@ -70,8 +70,6 @@ Pipe segment cost is based on route length, approximately one segment per 10 met
 
 *Guide / World & Infrastructure*
 
----
-
 ## Thermal Vents
 
 ### Overview
@@ -99,41 +97,6 @@ Under-release and the chamber climbs. At **100%** it overpressurizes and blows o
 - Construction Blueprint, queued build work
 
 *Guide / World & Infrastructure*
-
----
-
-## Water & Oil Wells
-
-### Overview
-
-The planet has deterministic **water wells** and **oil wells**. Water is steady; oil pulses between active and dormant phases.
-
-Water wells produce **10 / 20 / 30 t/h** by yield tier. Active oil wells produce **8 / 16 / 24 t/h** and **0** while dormant.
-
-### Reading wells in scripts
-
-```
-scan = self.sonar.scan()
-if scan.status == "ok":
-  for contact in scan.sites:
-    if contact.kind() == "water" or contact.kind() == "oil":
-      survey = self.sonar.survey(contact)
-      if survey.status == "ok":
-        site = survey.site
-        print(site.id, site.kind(), site.yield_tier(), site.flow_rate())
-      else:
-        print(survey.message)
-else:
-  print(scan.message)
-```
-
-`scan()` returns `SonarScanResult`; `survey()` returns `SurveyResult`. Their payload fields are available only for the appropriate `.status`.
-
-A deployed Pump starts at throttle **0**. Connect its output port, check the connection `ActionResult`, then set throttle. Local targets transfer directly; remote targets use a completed Liquid Pipe route. A Pump exposes its bound well through the read-only `well()` query.
-
-*Guide / Reference*
-
----
 
 ## Tier 3 Progression
 
@@ -224,4 +187,34 @@ Degradation is a normal running state. The machine doesn't stop; output continue
 
 *Guide / World & Infrastructure*
 
----
+## Water & Oil Wells
+
+### Overview
+
+The planet has deterministic **water wells** and **oil wells**. Water is steady; oil pulses between active and dormant phases.
+
+Water wells produce **10 / 20 / 30 t/h** by yield tier. Active oil wells produce **8 / 16 / 24 t/h** and **0** while dormant.
+
+### Reading wells in scripts
+
+```
+scan = self.sonar.scan()
+if scan.status == "ok":
+  for contact in scan.sites:
+    if contact.kind() == "water" or contact.kind() == "oil":
+      survey = self.sonar.survey(contact)
+      if survey.status == "ok":
+        site = survey.site
+        if site.kind() == "water" or site.kind() == "oil":
+          print(site.id, site.kind(), site.yield_tier(), site.flow_rate())
+      else:
+        print(survey.message)
+else:
+  print(scan.message)
+```
+
+`scan()` returns `SonarScanResult`; `survey()` returns `SurveyResult`. Their payload fields are available only for the appropriate `.status`.
+
+A deployed Pump starts at throttle **0**. Connect its output port, check the connection `ActionResult`, then set throttle. Local targets transfer directly; remote targets use a completed Liquid Pipe route. A Pump exposes its bound well through the read-only `well()` query.
+
+*Guide / Reference*

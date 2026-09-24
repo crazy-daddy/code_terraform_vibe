@@ -2,7 +2,7 @@
 
 > **Category:** Vehicles & Modules | **Component Name:** Sonar Module
 
-Finds and surveys world sites through `self.sonar`. A scan checks the area around the vehicle; driving alone does not scan. Use `get_component("nocturna").points_of_interest()` to find unscanned "?" markers, travel near one, then call `scan()` and `survey(site)`. Basic Sonar reaches **50 m** and minerals up to hardness **1**; Wide reaches **180 m** and hardness **3**; Deep reaches **280 m** and hardness **4**. Research unlocks thermal vents, wells, and exotic deposits. Results are saved in the Journal. Local Harvester sectors, biological sites, and radiation fields use different scanners.
+Finds and surveys world sites through `self.sonar`. A scan checks the area around the vehicle; driving alone does not scan. Use `get_component("nocturna").points_of_interest()` to find unscanned "?" markers, travel near one, then call `scan()` and `survey(site)`. Each sonar reveals its hardness limit and everything below it: Basic **50 m**, hardness **1**; Wide **180 m**, hardness **3** (adds Titanium and Cobalt); Deep **280 m**, hardness **4**. Research unlocks thermal vents, wells, and exotic deposits. Results are saved in the Journal. Local Harvester sectors, biological sites, and radiation fields use different scanners.
 
 **Returned by:** `self.sonar`
 
@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.scan()` *(self only)*
+##### `.scan() → SonarScanResult` *(self only)*
 
 Sweep for compatible `Site`s within range of the vehicle's current position. Contact types include `MiningSite`, `ThermalVent`, `WaterWell`, `OilWell`, `ExoticDeposit`, and `GeologicalAnomaly`. A completed sweep updates the Journal with newly classified contacts.
 
@@ -50,7 +50,7 @@ Sweep for compatible `Site`s within range of the vehicle's current position. Con
 | --- | --- |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.survey(site)` *(self only)*
+##### `.survey(site: str | Site | IdRecord) → SurveyResult` *(self only)*
 
 Reveal the details available for a productive `Site`. Pass either its string id or a `Site` from `scan()`. A repeat survey is free and instant unless a better sonar tier can reveal more. Inert `GeologicalAnomaly` contacts are already resolved by scanning.
 
@@ -58,7 +58,7 @@ Reveal the details available for a productive `Site`. Pass either its string id 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `site` | `any` | A site id (string), a `Site` from `scan().sites`, or a dictionary or class instance with its string `id` field. The site must still be discovered, in range, and within this sonar's capability. |
+| `site` | `str \| Site \| IdRecord` | A site id (string), a `Site` from `scan().sites`, or a dictionary or class instance with its string `id` field. The site must still be discovered, in range, and within this sonar's capability. |
 
 - **Returns** `SurveyResult`
 - **Result fields** `.status`, `.message`
@@ -84,7 +84,7 @@ Reveal the details available for a productive `Site`. Pass either its string id 
 | `ValueError` | survey() requires a non-empty site id or a Site object. |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.range()`
+##### `.range() → float`
 
 Current sonar range in meters.
 
@@ -96,7 +96,7 @@ Current sonar range in meters.
 | --- | --- |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.hardness_limit()`
+##### `.hardness_limit() → int`
 
 Maximum mineral hardness this sonar can identify.
 
@@ -108,7 +108,7 @@ Maximum mineral hardness this sonar can identify.
 | --- | --- |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.tier()`
+##### `.tier() → str`
 
 Survey-depth tier granted by this sonar: `"basic"` / `"wide"` / `"deep"`. Controls how much of a thermal vent or exotic deposit is revealed by `survey()`; `"deep"` is also required for oil-well discovery.
 

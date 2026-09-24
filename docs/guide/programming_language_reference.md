@@ -6,17 +6,26 @@ Complete syntax, standard library, and language reference for Code: Terraform Py
 
 ## Variables
 
-Store values for later use. No type declarations needed.
+Variables store values that you can use later.
 
-```python
+```
 x = 10
 name = "oxygen"
 active = True
 ```
 
-*Language / Basics*
+You can use variables in expressions:
 
----
+```
+a = 5
+b = 3
+result = a + b
+print(result)
+```
+
+Output: 8
+
+*Guide / Programming*
 
 ## Operators
 
@@ -90,8 +99,6 @@ if result is None:
 
 *Guide / Programming*
 
----
-
 ## Numbers
 
 ### Overview
@@ -128,6 +135,15 @@ x % 1 == 0         # True if x is whole
 
 Use `isinstance(x, "number")` when you only care that a value is numeric at all, and `int(x)` to chop a value to a whole number (`int(3.7)` is `3`).
 
+### Numbers in parameter types
+
+DOCS, hover and signature help write each parameter's type the way Python does, and there `int` and `float` say what a parameter accepts rather than which view a value has:
+
+- `count: int` takes a whole value however you wrote it (`2.0` is fine) and refuses one with a decimal part (`2.5` raises)
+- `x: float` takes any number, whole or not
+
+This is Python's own convention: wherever a `float` is expected, an `int` is accepted too.
+
 ### Precision
 
 Decimal numbers use standard floating-point arithmetic, so tiny rounding can show up:
@@ -158,28 +174,50 @@ Choose the tolerance from what the value represents, such as meters, Wh, or a **
 
 *Guide / Programming*
 
----
-
 ## Print
 
-Output text to the console.
+Use print() to output normal text to the console.
 
-```python
+```
 print("Hello")
 print(42)
-print("Temp:", temp, "°C")
 ```
 
-*Language / Basics*
+You can print multiple values separated by spaces:
 
----
+```
+temp = -63
+print("Temperature:", temp, "°C")
+```
+
+Use warn() for monitor messages you want to stand out in the persistent console without showing a toast:
+
+```
+if self.efficiency() < 100:
+  warn("oxygen generator below 100% efficiency")
+```
+
+Use debug() for noisy telemetry you only want while tuning a script. Debug lines are hidden from ALL unless you enable debug output from the console options menu:
+
+```
+debug("target", target_sector, "heat", self.get_heat())
+```
+
+The console can show THIS SCRIPT, ALL output, WARNINGS, or ERRORS.
+
+*Guide / Programming*
 
 ## Self & Components
 
 Most scripts in Code: Terraform run **inside a machine**. A Scanner script runs inside the Scanner; a Bio Lab script runs inside the Lab. Inside that script, `self` means **this machine**.
 
 ```
+# Scanner script
 scan = self.scan("E14")
+```
+
+```
+# Bio Lab script
 analysis = self.analyze()
 if analysis.status == "ok":
   info = analysis.info
@@ -219,7 +257,93 @@ Stable ids such as `"bio_collector_1"` are safest for long-running scripts. Disp
 
 *Guide / Programming*
 
----
+## If / Elif / Else
+
+Branching is how a script reacts to what it reads. A chain starts with `if`, adds any number of `elif` branches, and may end with `else`.
+
+```
+temp = get_component("thermometer").get_value()
+
+if temp > 20:
+  print("Warm")
+elif temp > 0:
+  print("Above freezing")
+elif temp > -40:
+  print("Cold")
+else:
+  print("Dangerously cold")
+```
+
+The first branch whose condition is true runs, and every branch after it is skipped. That is why the order matters: write the most specific condition first. Reversing the chain above would print `Cold` for every temperature below 20, because `temp > -40` is already true by then.
+
+`elif` is not the same as a second `if`. A chain picks exactly one branch; separate `if` statements each get tested, so more than one can run.
+
+```
+# One of these runs.
+if level > 80:
+  self.set_throttle(0)
+elif level < 20:
+  self.set_throttle(1)
+
+# Both of these can run.
+if level > 80:
+  print("high")
+if level > 50:
+  print("over half")
+```
+
+`else` is optional. Leave it off when there is nothing to do in the remaining case.
+
+### What counts as true
+
+A condition is any expression. Comparisons and `and` / `or` / `not` are covered on the **Operators** page. A bare value works too, and these are the ones that count as false:
+
+- `False` and `None`
+- the number `0`
+- an empty string, list, tuple, dict, or set
+
+Everything else is true, so `if result.sites:` reads as "if the scan found any sites".
+
+```
+result = self.sonar.scan()
+if result.sites:
+  print("found", len(result.sites))
+else:
+  print("nothing in range")
+```
+
+Use `is None` rather than `== None`, and be careful with a value that can legitimately be `0`: `if count:` treats a real count of zero as false, while `if count is not None:` does not.
+
+### Branching on a result
+
+Commands return a result object with a `.status` field. Do not test the result itself, because the object is true even when its status reports a rejection. Compare the status instead, and let the chain name each outcome:
+
+```
+result = self.input.take("iron_ore", 10)
+
+if result.status == "ok":
+  print("took", result.moved)
+elif result.status == "partial":
+  print("only got", result.moved)
+else:
+  print("failed:", result.message)
+```
+
+Every status a command can return is listed in its DOCS entry, so the chain can be written before the script is ever run.
+
+### Choosing a value inline
+
+When both branches only pick a value, the inline form is shorter than four lines:
+
+```
+mode = "day" if sun > 0 else "night"
+```
+
+### When to use Match / Case instead
+
+A long chain that tests the same value over and over is what `match` is for. Reach for it when branching on the shape of a value or on many fixed alternatives, and see the **Match / Case** page. Keep `if` / `elif` / `else` for ranges, combined conditions, and anything testing more than one value.
+
+*Guide / Programming*
 
 ## Loops & Scripts
 
@@ -252,24 +376,46 @@ See **Long-Running Scripts** for designing loops that re-read machine state and 
 
 *Guide / Programming*
 
----
-
 ## Match / Case
 
-Branch on the shape of a value. Supports literal cases, `_` wildcard, variable captures, `|` alternatives, `if` guards, list/tuple patterns with `*rest`, and dict-style patterns. An unguarded capture or `_` always matches and must be the final reachable case; a guard may still fall through. Mapping-pattern keys must be unique (`True` and `1` count as the same key). Dict-style patterns also work with fixed result objects, e.g. `result = self.input.take("iron_ore", 10)` followed by `case {"status": "ok", "moved": moved}:`.
+`match` lets a script branch on the shape of a value instead of writing a long chain of `if` checks.
 
-```python
-result = self.input.take("iron_ore", 10)
-match result:
-    case {"status": "ok", "moved": moved}:
-        print("moved", moved)
-    case {"status": status, "message": message}:
-        print(status, message)
+```
+packet = ["ore", 12]
+
+match packet:
+  case ["ore", amount] if amount > 0:
+    print("ore", amount)
+  case ["ice", amount]:
+    print("ice", amount)
+  case _:
+    print("unknown packet")
 ```
 
-*Language / Data Structures*
+### Patterns
 
----
+- Literal patterns: `case "ok":`, `case 0:`, `case True:`, `case None:`
+- Wildcard: `case _:`
+- Captures: `case amount:`
+- Alternatives: `case "busy" | "cooling":`
+- Guards: `case [kind, amount] if amount > 0:`
+- List/tuple patterns: `case [x, y]:`, `case [head, *rest]:`
+- Dict patterns: `case {"status": "ok", "value": value}:`
+
+Dict-style patterns also match result objects by field name:
+
+```
+result = self.input.take("iron_ore", 10)
+match result:
+  case {"status": "ok", "moved": moved}:
+    print("moved", moved)
+  case {"status": reason, "message": message}:
+    warn(reason, message)
+```
+
+Class patterns such as `case Thing(x):` are not part of the interpreter. Use list, tuple, dict, literal, and field-name patterns instead.
+
+*Guide / Programming*
 
 ## Conversion Functions
 
@@ -301,8 +447,6 @@ while row < 8:
 ```
 
 *Guide / Programming*
-
----
 
 ## Strings & F-strings
 
@@ -355,51 +499,212 @@ if sector not in visited:
 
 *Guide / Programming*
 
----
-
 ## Regular Expressions
 
-Import the built-in `re` module for pattern matching, captures, replacements, and regex-based splitting. It works without Shared Library research and returns `Match` objects from `search`, `match`, and `fullmatch`. Pair it with raw strings (`r"..."`) so you don't have to double every backslash in a pattern.
+Use the built-in `re` module when plain string methods are not enough: matching a pattern, extracting groups, replacing variable-shaped text, or splitting on several separators.
 
-```python
+`re` is a built-in module. It works without Shared Library research, but you import it so your script clearly signals that it is using regular expressions:
+
+```
 import re
 
-m = re.search(r"ore_(\d+)", "ore_42")
-if m:
-    print(m.group(1))
+text = "ore_42 at E13"
+match = re.search("ore_(\d+)", text)
+if match:
+  print(match.group(1))  # 42
 ```
 
-*Language / Basics*
+### Match helpers
 
----
+- `re.search(pattern, string, flags=0)`, find the first match anywhere
+- `re.match(pattern, string, flags=0)`, match only at the start
+- `re.fullmatch(pattern, string, flags=0)`, match the whole string
+
+These return a `Match` object, or `None` when there is no match.
+
+```
+import re
+
+m = re.fullmatch("([A-Z])(\d+)", "E13")
+if m is not None:
+  print(m.group(0))  # E13
+  print(m.group(1))  # E
+  print(m.group(2))  # 13
+  print(m.span())   # (0, 3)
+```
+
+`Match.group(0)` is the whole match. Capturing groups start at `1`. `Match.groups()` returns all captured groups as a tuple.
+
+### Lists and replacements
+
+```
+import re
+
+print(re.findall("\d+", "A12 B7"))
+print(re.split("[,;]\s*", "iron, ice; quartz"))
+print(re.sub("ore_(\d+)", "ore-\\1", "ore_42"))
+```
+
+`re.findall()` returns strings when the pattern has no groups, one captured value when it has one group, or tuples when it has multiple groups. `re.sub()` replacement text supports numeric backreferences such as `\\1` and `\\g<1>`.
+
+### Flags
+
+Flags are module constants. Combine them with `|`:
+
+```
+import re
+
+flags = re.IGNORECASE | re.MULTILINE
+print(re.findall("^ore", "Ore\nice", flags))
+```
+
+Available flags:
+
+- `re.IGNORECASE` / `re.I`
+- `re.MULTILINE` / `re.M`
+- `re.DOTALL` / `re.S`
+
+### Syntax note
+
+Code: Terraform exposes a Python-shaped `re` API backed by a linear-time pattern engine. Common patterns like `\d+`, `[A-Z]+`, `.*`, `^`, `$`, groups `(...)`, and alternation `a|b` are supported. Backtracking-only features such as lookaround and pattern backreferences are not supported. Replacement backreferences in `re.sub()` remain supported.
+
+Patterns are capped at **512** characters. Quantified groups such as `(a+)+` are safe to use because matching does not backtrack.
+
+*Guide / Programming*
 
 ## Lists & Tuples
 
-Ordered collections and fixed pairs of values.
+Lists are ordered collections. Create with brackets. Tuples are fixed ordered collections; create them with parentheses when you want a stable pair, coordinate, or small record:
 
-```python
-readings = [10, 20, 30]
+```
+items = [1, 2, 3]
+empty = []
+mixed = ["hello", 42, True]
 point = (12, 8)
-print(point[0])
-readings.append(40)
+single = (42,)
 ```
 
-*Language / Data Structures*
+Access by index (0-based, negative from end):
 
----
+```
+first = items[0]  # 1
+last = items[-1]  # 3
+x = point[0]    # 12
+```
+
+Slicing with step:
+
+```
+items[1:3]   # [2, 3]
+items[::2]   # [1, 3], every other
+items[::-1]  # [3, 2, 1], reversed
+point[:]    # (12, 8)
+```
+
+List comprehension, build lists concisely:
+
+```
+squares = [x * x for x in range(10)]
+evens = [x for x in range(20) if x % 2 == 0]
+```
+
+Tuple unpacking and multiple assignment:
+
+```
+a, b, c = [1, 2, 3]
+first, second = ("hello", "world")
+
+
+def choose_route():
+  return "E14", ["E13", "E14"]
+
+target, route = choose_route()
+
+routes = [(0, "nav_module"), (1, "cargo_rack")]
+for slot, item in routes:
+  print(slot, item)
+```
+
+### List methods
+
+- `.append(value)`, add to end
+- `.pop()`, remove and return last item
+- `.insert(index, value)`, insert at position
+- `.remove(value)`, remove first occurrence
+- `.index(value)`, find position of value
+- `.count(value)`, count occurrences
+- `.sort()`, sort in place
+- `.reverse()`, reverse in place
+- `.copy()`, shallow copy
+- `.extend(list_or_tuple)`, add all items from another sequence
+- `.clear()`, remove all items
+- `.length`, number of items
+
+Tuples are immutable. They support indexing, slicing, `.index(value)`, `.count(value)`, `.length`, `len()`, and `for` loops.
+
+*Guide / Programming*
 
 ## Dictionaries
 
-Key-value pairs for named data.
+Dictionaries store key-value pairs. Keys can be any hashable value: strings, numbers, booleans, `None`, or tuples made only of hashable values. String keys are the most common for game data:
 
-```python
-planet = {"name": "Mars", "temp": -63}
-print(planet["name"])
+```
+data = {"name": "Crystal", "value": 300}
+empty = dict()
 ```
 
-*Language / Data Structures*
+Access and modify:
 
----
+```
+print(data["name"])    # Crystal
+data["quality"] = "high"
+coords = {}
+coords[(0, 0)] = "base"
+```
+
+Check if a key exists:
+
+```
+if "name" in data:
+  print(data["name"])
+```
+
+Iterate:
+
+```
+for key in data.keys():
+  print(key, data[key])
+
+for pair in data.items():
+  key = pair[0]
+  val = pair[1]
+  print(f"{key}: {val}")
+```
+
+### Merge
+
+Use `left | right` to make a new merged dictionary. Use `left |= right` to update the existing dictionary in place. When the same key appears in both, the right-hand value wins.
+
+```
+thing = {"a": 1, "b": 2}
+other = {"a": 3, "c": 4}
+print(thing | other) # {"a": 3, "b": 2, "c": 4}
+```
+
+### Methods
+
+- `.keys()`, list of all keys
+- `.values()`, list of all values
+- `.items()`, list of [key, value] pairs
+- `.get(key, default)`, get value or default if missing
+- `.has(key)`, check if key exists
+- `.pop(key, default)`, remove key and return value
+- `.popitem()`, remove and return the last inserted [key, value] pair
+- `.update(dict)`, merge another dict in
+- `.setdefault(key, default)`, get or set default
+- `.clear()`, remove all entries
+
+*Guide / Programming*
 
 ## Built-in Functions Overview
 
@@ -471,9 +776,13 @@ These functions are always available.
 ### Modules
 
 - `import random`, random-number helpers
-- `from functools import reduce`, reducer helper as a module import
+- `from functools import reduce`, reducer helper as a module import, plus `partial` for pre-bound callables and `lru_cache` / `cache` for memoization
 - `import re`, regular expressions: `search`, `match`, `fullmatch`, `findall`, `sub`, and `split`
-- `from dataclasses import dataclass, field`, generated record-class construction and field configuration
+- `from dataclasses import dataclass, field`, generated record-class construction and field configuration, plus `asdict`, `astuple`, `fields`, `replace`, `is_dataclass`, and the `MISSING` sentinel
+- `import json`, JSON text: `dumps` and `loads`
+- `import heapq`, priority queues: `heappush`, `heappop`, `heappushpop`, `heapreplace`, `heapify`, `nsmallest`, and `nlargest`
+- `import traceback`, where a caught exception came from: `print_exc` and `format_exc`
+- `from enum import Enum, auto`, named sets of constants: `Enum`, `IntEnum`, `StrEnum`, `Flag`, `IntFlag`, `auto`, and the `unique` and `verify` checks
 
 ### Timing
 
@@ -484,8 +793,6 @@ These functions are always available.
 - `hash(value)`, hash a string, number, bool, `None`, tuple-of-hashables, or class instance (identity by default, `__hash__` when defined)
 
 *Guide / Programming*
-
----
 
 ## Exceptions
 
@@ -552,7 +859,7 @@ class LowBattery(Exception):
     self.level = level
 
 def check(rover):
-  level = rover.battery.percent()
+  level = round(rover.battery.level() * 100)
   if level < 20:
     raise LowBattery(level)
 
@@ -565,8 +872,6 @@ except LowBattery as err:
 `class Empty(Exception): pass` is enough for a class with no extra data: `Empty("no cargo")` stores the message on `.args` and `str(err)` returns it. A bare `raise Empty` creates the object with no arguments. `except Exception as err:` catches every class derived from `Exception`, including yours, and `isinstance(err, LowBattery)` and `issubclass(LowBattery, Exception)` walk the hierarchy. Override `__str__` when the console text should differ from the message argument. Pick the closest built-in base so generic handlers keep working, and keep the message specific enough that the console tells you where the problem came from.
 
 *Guide / Programming*
-
----
 
 ## Utility Helpers
 
@@ -675,15 +980,13 @@ For the exhaustive list and exact signatures, open **Built-in Functions**.
 
 *Guide / Programming*
 
----
-
 ## Imports & Libraries
 
 Imports have several precise kinds: executable built-in modules, typing-only support modules, compiler directives, the explicit shared root, and your own Library scripts. Library scripts unlock with **Shared Library** research; the built-in and support namespaces do not require that research.
 
 ### Executable built-in modules
 
-Use `import random`, then `random.randint(1, 10)`, `from functools import reduce` for reducer-style algorithms, `import re` for regular expressions, or `from dataclasses import dataclass, field` for generated record classes. You can also call `random()`, `rand()`, `randint(min, max)`, and `reduce(fn, iterable, initializer?)` directly as global helpers. Regex helpers stay on the `re` module so pattern-matching code is explicit; `dataclass` and `field` likewise require their standard module import.
+Use `import random`, then `random.randint(1, 10)`, `import re` for regular expressions, `import json` to turn records into text and back, `import heapq` for priority queues, `import traceback` to find out where an exception you caught came from, `from enum import Enum, IntEnum, StrEnum, Flag, auto` for named sets of constants, `from functools import reduce, partial, lru_cache, cache` for reducer-style algorithms, pre-bound callables and memoization, or `from dataclasses import dataclass, field` for generated record classes, with `asdict`, `astuple`, `fields`, `replace`, `is_dataclass` and the `MISSING` sentinel alongside them. You can also call `random()`, `rand()`, `randint(min, max)`, and `reduce(fn, iterable, initializer?)` directly as global helpers. Everything else stays on its own module so the code says where it came from: regex helpers on `re`, and `dataclass` and `field` likewise require their standard module import.
 
 ### Typing and editor support
 
@@ -691,7 +994,7 @@ Use `import random`, then `random.randint(1, 10)`, `from functools import reduce
 
 `from __future__ import annotations` is a compiler directive, not a normal binding. Put future directives at the beginning of a module, after an optional module docstring and before ordinary statements. The directive itself creates no `annotations` name.
 
-`__builtins__` is the explicit import view of the shared interpreter and game root, for example `from __builtins__ import len, get_component`. Script-owner locals such as `self` and `panel` are not part of that shared module. The generated `builtins` and `code_terraform` stubs exist only for external-editor type checking and cannot be imported by a running game script.
+`__builtins__` is the explicit import view of the shared interpreter and game root, for example `from __builtins__ import len, get_component`. Script-owner locals such as `self` and `panel` are not part of that shared module. Game type names such as `Smelter`, `Battery`, and `Component` are part of it too, as annotation-only names: `from __builtins__ import Smelter` binds `Smelter` wherever a type is named. An annotation needs no import, because annotations never run; a place that does run, such as a `TypedDict` field dictionary or a type alias, does need it. In an external editor those names are already in scope and need no import at all. Every machine is a `Component` at runtime, so branch on `type_id` when you need to tell one kind from another; there is no per-machine class to pass to `isinstance`. The generated `builtins` and `code_terraform` stubs exist only for external-editor type checking and cannot be imported by a running game script.
 
 ### Player Libraries
 
@@ -739,8 +1042,6 @@ Library scripts run in their own shared scope. Built-ins and top-level game func
 Function docstrings from imported libraries show in hover and autocomplete, so shared helpers can document their own parameters, return values, exceptions, and fixed result contracts.
 
 *Guide / Programming*
-
----
 
 ## Docstrings
 
@@ -816,8 +1117,6 @@ while True:
 For function-level help, put the docstring immediately under `def`. For variant summaries, put it at the top of the file before any code.
 
 *Guide / Programming*
-
----
 
 ## Writing Classes
 
@@ -941,6 +1240,63 @@ A dataclass remains an ordinary user-class instance. It does not become a dict a
 
 The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, and `weakref_slot=False` may be passed, but their `True` behavior is not supported. `match_args`, `ClassVar`, `InitVar`, `MISSING`, `KW_ONLY`, `Field`, `FrozenInstanceError`, `is_dataclass`, `asdict`, `astuple`, `replace`, `fields`, `make_dataclass`, and public `__dataclass_fields__` introspection are not supported. Annotation types otherwise stay erased and are not enforced. Canonical `ClassVar` and `InitVar` annotations are recognized only so the decorator can reject those unsupported field forms clearly; all other fields come from executed annotated names.
 
+### Controlling construction with __new__
+
+Building an instance has two steps. `__new__` decides **which object exists**, then `__init__` fills it in. Most classes only need `__init__`; reach for `__new__` when `Cls(...)` should hand back an object it already has.
+
+```
+class Settings:
+  _instance = None
+  def __new__(cls):
+    if cls._instance is None:
+      cls._instance = super().__new__(cls)
+    return cls._instance
+  def __init__(self):
+    self.rate = 5
+
+print(Settings() is Settings())  # True, always the same object
+```
+
+`__new__` takes the class as its first parameter (`cls`, not `self`) and must **return** the object. `super().__new__(cls)` makes a fresh one. Return an object of another type and `__init__` is skipped entirely, which is how a constructor can hand back a subclass.
+
+> `__new__` must answer immediately: it cannot `sleep()` or take world actions. Allocation only picks the object; put the work in `__init__`, which can still do both.
+
+### Answering unknown attributes with __getattr__
+
+`__getattr__(self, name)` runs only when a name was **not** found the normal way, so it never slows down or shadows a real attribute:
+
+```
+class Readings:
+  def __init__(self, values):
+    self.values = values
+  def __getattr__(self, name):
+    if name in self.values:
+      return self.values[name]
+    raise AttributeError(name)
+
+r = Readings({"pressure": 91})
+print(r.pressure)   # 91
+```
+
+Raising `AttributeError` is how you say a name really is missing, and it is what `hasattr()` and `getattr(obj, name, default)` look for. Like operator dunders, `__getattr__` must be pure.
+
+### Registering subclasses with __init_subclass__
+
+`__init_subclass__` runs on a **base** each time a subclass is defined, which is the plain way to keep a registry:
+
+```
+class Job:
+  registry = []
+  def __init_subclass__(cls):
+    Job.registry.append(cls)
+
+class Haul(Job): pass
+class Scan(Job): pass
+print(len(Job.registry))  # 2
+```
+
+It receives the new class as `cls` and never fires for the class that defines it.
+
 ### When to use a class
 
 - **Class**, custom initialization, inheritance, or operator overloading.
@@ -950,15 +1306,13 @@ The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, 
 
 ### What's not supported
 
-Reasonably-full Python classes, with these deliberate exclusions:
+Reasonably-full Python classes, with these deliberate exclusions. Defining any of them is reported as an error naming the method, so nothing you write is silently ignored:
 
 - Metaclasses, `__slots__`, `abc` / `@abstractmethod`.
-- The general descriptor protocol, only `@property` is exposed.
-- `__new__`, `__del__`.
-- Dynamic attribute hooks: `__getattr__`, `__setattr__`, `__delattr__`.
+- The general descriptor protocol (`__get__`, `__set__`, `__delete__`, `__set_name__`), only `@property` is exposed.
+- `__del__`. Scripts have no reference counting and their memory is released all at once when the script stops, so a finalizer could never run at a meaningful moment. Release things in a method you call yourself.
+- `__setattr__`, `__delattr__`, `__getattribute__`. Attribute assignment always stores directly; use a `@property` setter to run code when a value changes, and `__getattr__` for names the class does not already have.
 - `for` advances `__iter__` / `__next__` and generators lazily, so `break` works with an endless iterator. Operations that need the entire result, such as `list(...)`, remain bounded by the collection limit.
 - A class that defines `__eq__` without defining `__hash__` is unhashable, matching Python. Define an integer-returning `__hash__` to use equality-aware instances as dict/set keys. Classes that define neither use identity hashing and also work as keys.
 
 *Guide / Editor & Tools*
-
----

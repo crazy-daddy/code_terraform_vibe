@@ -12,33 +12,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.archive`
+##### `.archive: Archive`
 
 The scrambled data archive.
 
@@ -46,29 +46,27 @@ The scrambled data archive.
 
 *Types / Contracts*
 
----
-
 ## Archive
 
 **Returned by:** .archive
 
 ### Properties
 
-##### `.rows`
+##### `.rows: int`
 
 Number of rows in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.cols`
+##### `.cols: int`
 
 Number of columns in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.flip(row, col)`
+##### `.flip(row: int, col: int) → str`
 
 Reveal and return the word at a whole-number grid cell. Wrong argument types raise `TypeError`; fractional, non-finite, or out-of-bounds coordinates raise `ValueError`.
 
@@ -76,10 +74,10 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `number` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `number` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
+| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Raises*
 
@@ -89,5 +87,3 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 | `ValueError` | Archive.flip() requires finite whole-number coordinates inside the archive grid. |
 
 *Types / Contracts*
-
----

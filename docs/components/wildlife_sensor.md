@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.get_value()`
+##### `.get_value() → int`
 
 Returns the current Wildlife population count as a number, summed from established Habitat colonies.
 

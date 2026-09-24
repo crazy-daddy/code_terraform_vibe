@@ -103,7 +103,7 @@ Deploys a station that charges electric drones, refuels heli drones, and rescues
 
 ##### Mining Drill Kit `mining_drill_kit`
 
-Deploys a hardness-1 Mining Drill producing **25 t/h** at standard purity and drawing **10 W** while extracting.
+Deploys a Mining Drill that cuts deposits up to hardness 1, producing **25 t/h** at standard purity and drawing **10 W** while extracting.
 
 | Field | Value |
 | --- | --- |
@@ -113,7 +113,7 @@ Deploys a hardness-1 Mining Drill producing **25 t/h** at standard purity and dr
 
 ##### Industrial Mining Drill Kit `mining_drill_industrial_kit`
 
-Deploys a hardness-3 Industrial Mining Drill producing **75 t/h** at standard purity and drawing **35 W** while extracting.
+Deploys an Industrial Mining Drill that cuts deposits up to hardness 3, producing **75 t/h** at standard purity and drawing **35 W** while extracting.
 
 | Field | Value |
 | --- | --- |
@@ -124,7 +124,7 @@ Deploys a hardness-3 Industrial Mining Drill producing **75 t/h** at standard pu
 
 ##### Heavy Mining Drill Kit `mining_drill_heavy_kit`
 
-Deploys a hardness-4 Heavy Mining Drill producing **200 t/h** at standard purity and drawing **100 W** while extracting.
+Deploys a Heavy Mining Drill that cuts deposits up to hardness 4, every mineral on the planet, producing **200 t/h** at standard purity and drawing **100 W** while extracting.
 
 | Field | Value |
 | --- | --- |

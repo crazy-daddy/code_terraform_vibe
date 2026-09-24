@@ -15,7 +15,7 @@ Blueprint unlocks by completing the Bio Order **Eruption-Zone Capstone**.
 | Power | 30 W |
 | Production tier | T2 |
 
-##### Raw Cryofluid + Tar → Cryofluid `refine_cryofluid` *(Not yet unlocked)*
+##### Raw Cryofluid + Tar → Cryofluid `refine_cryofluid` *(Unlocked)*
 
 2× Tar and 4 t Raw Cryofluid → 4 t Cryofluid
 Blueprint unlocks by completing the Bio Order **Cryofluid Refinement Protocol**.
@@ -37,7 +37,7 @@ Blueprint unlocks by completing the Bio Order **Geothermal Grand Compendium**.
 | Power | 48 W |
 | Production tier | T2 |
 
-##### Raw Quicksilver + Tar → Quicksilver `refine_quicksilver` *(Not yet unlocked)*
+##### Raw Quicksilver + Tar → Quicksilver `refine_quicksilver` *(Unlocked)*
 
 5× Tar and 4 t Raw Quicksilver → 4 t Quicksilver
 Blueprint unlocks by completing the Bio Order **Abyssal Grand Compendium**.

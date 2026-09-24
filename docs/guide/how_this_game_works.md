@@ -23,5 +23,3 @@ Gameplay commands consistently return a result object: branch on `result.status`
 Start with one machine. Store every important command result. Check `.status`; print `.message` while learning. Once a tiny script behaves, make it loop. Once one loop behaves, connect it to another system.
 
 *Guide / Tutorials*
-
----

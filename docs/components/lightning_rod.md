@@ -34,13 +34,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.input`
+##### `.input: InputSlot`
 
 The rod's material slot. Feed it Storm Glass with your ordinary logistics, then spend one with `repair()` to restore full condition.
 
@@ -48,31 +48,31 @@ The rod's material slot. Feed it Storm Glass with your ordinary logistics, then 
 
 ### Methods
 
-##### `.bank()`
+##### `.bank() → float`
 
 Wh currently banked, **0** up to `capacity()`. Rises only when a strike lands within catch range of this rod; falls automatically when its grid is short and the batteries are empty. It never charges from grid surplus.
 
 - **Returns** Number: Wh currently banked, **0** up to `capacity()`. Fills only when a thunderstorm strike lands within catch range of this rod; drains automatically when its grid runs short and the batteries are empty. Never charges from grid surplus.
 
-##### `.capacity()`
+##### `.capacity() → float`
 
 Bank capacity in Wh, several times a base battery. Query this instead of hardcoding the number.
 
 - **Returns** Number: bank capacity in Wh.
 
-##### `.last_strike()`
+##### `.last_strike() → float`
 
 Hour timestamp of the last strike from which this rod accepted energy, or **-1** if none. A strike that adds no energy, for example when the bank is full or integrity is zero, does not update this record. Compare with the clock's current time to see how long it has been since energy was last captured.
 
 - **Returns** Number: hour timestamp of the last strike from which this rod accepted energy, or **-1** if none. A strike that adds no energy, for example when the bank is full or integrity is zero, does not update this record.
 
-##### `.integrity()`
+##### `.integrity() → float`
 
 This rod's condition from **0** to **1**, which is also its capture efficiency. Continuous corrosion lowers it by **0.05 per day**; strikes do not cause separate damage. A rod at **0.5** banks half of every strike it catches, and one at **0** banks nothing while still standing and still repairable.
 
 - **Returns** Number (**0-1**): this rod's condition, which is also its capture efficiency. A rod at **0.5** banks half of every strike it catches; at **0** it banks nothing and still stands.
 
-##### `.repair()` *(self only)*
+##### `.repair() → ActionResult` *(self only)*
 
 Restore this rod to full condition. If it is worn, one call consumes **1 Storm Glass** from its input and sets condition to **1**. At full condition, no material is consumed. Without Storm Glass in the input, condition does not change.
 

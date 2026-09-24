@@ -36,19 +36,19 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.input`
+##### `.input: InputSlot`
 
 Loads ore into the Smelter. At home it can use Inventory; remote Smelters must connect a local Storage Bin or Warehouse. Pull material with `self.input.take(item_id, count)`. Failed transfers leave the source cargo unchanged. Requires **Auto Feeders** research. See `InputSlot`.
 
 - **Returns** InputSlot: `connect()`, `take()`, `eject()`, `flush()`, `count()`, `capacity()`, `connected_to()`
 
-##### `.output`
+##### `.output: OutputSlot`
 
 Sends refined material out of the Smelter. At home it can use Inventory; remote Smelters must connect a local Storage Bin or Warehouse. Send material with `self.output.send(item_id, count)`. Failed transfers leave the output unchanged. Requires **Auto Feeders** research. See `OutputSlot`.
 
@@ -56,13 +56,13 @@ Sends refined material out of the Smelter. At home it can use Inventory; remote 
 
 ### Methods
 
-##### `.list_recipes()`
+##### `.list_recipes() → list[Recipe]`
 
 Every recipe this smelter has been given a blueprint for. Returns Recipe objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, and `.power_draw`. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually run today. Day-1 starts with `"smelt_iron_ingot"` only; more arrive as blueprints unlock.
 
 - **Returns** List of unlocked Recipe objects. Each has `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, and `.power_draw`.
 
-##### `.find_recipe(recipe_id)`
+##### `.find_recipe(recipe_id: str) → Recipe | None`
 
 Find one unlocked recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine.
 
@@ -70,11 +70,11 @@ Find one unlocked recipe by id without looping through `list_recipes()`. Returns
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `recipe_id` | `string` | Smelter recipe id |
+| `recipe_id` | `str` | Smelter recipe id |
 
 - **Returns** The matching unlocked `Recipe`, or `None` if this Smelter cannot currently run that id.
 
-##### `.set_recipe(recipe_or_id)` *(self only)*
+##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
 Select which recipe the smelter should run. Call `self.set_recipe("smelt_iron_ingot")` or pass a Recipe from `list_recipes()`.
 
@@ -82,7 +82,7 @@ Select which recipe the smelter should run. Call `self.set_recipe("smelt_iron_in
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `recipe_or_id` | `any` | Recipe id, a `Recipe` object, or a dictionary or class instance with a string `id` field. The recipe must belong to this machine and be unlocked. |
+| `recipe_or_id` | `str \| Recipe \| IdRecord` | Recipe id, a `Recipe` object, or a dictionary or class instance with a string `id` field. The recipe must belong to this machine and be unlocked. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -99,7 +99,7 @@ Select which recipe the smelter should run. Call `self.set_recipe("smelt_iron_in
 | `"busy"` | transient | The component is already performing another operation. |
 | `"material_mismatch"` | rejection | The existing material does not match the requested material. |
 
-##### `.clear_recipe()` *(self only)*
+##### `.clear_recipe() → ActionResult` *(self only)*
 
 Unset the current recipe and leave the smelter idle. Empty latched buffers clear back to no material.
 
@@ -115,38 +115,38 @@ Unset the current recipe and leave the smelter idle. Empty latched buffers clear
 | `"busy"` | transient | The component is already performing another operation. |
 | `"material_present"` | rejection | Existing material prevents the requested configuration change. |
 
-##### `.get_recipe()`
+##### `.get_recipe() → str`
 
 Current recipe id as a string, or the empty string if no recipe is set. Use after `set_recipe()` to confirm, or to gate other logic (`if self.get_recipe() == "": ...`).
 
 - **Returns** String (recipe id, or empty string if none set)
 - **Possible values** `""`, `"smelt_iron_ingot"`, `"smelt_glass"`, `"smelt_titanium_ingot"`, `"smelt_cobalt_ingot"`, `"smelt_rare_earth_core"`, `"smelt_neutronium_bar"`, `"smelt_lead_ingot"`
 
-##### `.get_recipe_inputs()`
+##### `.get_recipe_inputs() → dict[str, int]`
 
 Input requirements for the current recipe as a dict `{item_id: count_per_craft}`. Returns an empty dict if no recipe is set.
 
-- **Returns** Dict (item_id → count per craft), or empty dict if no recipe is set
+- **Returns** A dict (item_id → count per craft), or empty dict if no recipe is set
 
-##### `.is_running()`
+##### `.is_running() → bool`
 
 `True` while the smelter is actively processing a unit. Use before `set_recipe()` to avoid the `"busy"` rejection: `if not self.is_running(): self.set_recipe(new_id)`. Stays `True` across ticks until the unit completes.
 
 - **Returns** Boolean
 
-##### `.get_progress()`
+##### `.get_progress() → float`
 
 Progress toward the next completed unit (**0-1**). Resets to **0** when a unit completes and a new one starts. Useful for progress bars and scripts that want to detect completions by watching the value drop.
 
 - **Returns** Number (**0-1**)
 
-##### `.get_input_count()`
+##### `.get_input_count() → int`
 
 Units currently in the input buffer, waiting to be smelted. Check before `self.input.take(...)` to avoid overfilling, or to decide whether to pull more.
 
 - **Returns** Number (units in input buffer)
 
-##### `.get_output_count()`
+##### `.get_output_count() → int`
 
 Units currently in the output buffer, waiting to be drained. Check before `self.output.send(...)`, if high, unload downstream first; if low, let processing catch up.
 

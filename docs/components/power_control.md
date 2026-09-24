@@ -24,13 +24,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.grids()`
+##### `.grids() → list[PowerGrid]`
 
 Returns every independent power grid on the planet as a fresh list of `PowerGrid` snapshots. Isolated completed outposts and field structures appear as their own grids, so scripts do not need to guess or hardcode grid ids.
 
 - **Returns** Fresh list of every independent `PowerGrid` snapshot on the planet.
 
-##### `.grid(target_id)`
+##### `.grid(target_id: str) → PowerGrid | None`
 
 Finds the grid containing `target_id`, which may be an outpost, building, or field power-structure id. Pass a returned grid's `.anchor_id` to look it up again. Returns `None` for an unknown, mobile, under-construction, non-grid, or currently unmapped target.
 
@@ -38,9 +38,9 @@ Finds the grid containing `target_id`, which may be an outpost, building, or fie
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `target_id` | `string` | Outpost, building, or field power-structure instance id |
+| `target_id` | `str` | Outpost, building, or field power-structure instance id |
 
-- **Returns** `Optional[PowerGrid]`
+- **Returns** `PowerGrid | None`
 - **None means** `None` means the target is unknown, mobile, under construction, not a building or field power structure, or not part of a completed power grid.
 
 *Outcomes*
@@ -49,13 +49,13 @@ Finds the grid containing `target_id`, which may be an outpost, building, or fie
 | --- | --- |
 | `None` | `None` means the target is unknown, mobile, under construction, not a building or field power structure, or not part of a completed power grid. |
 
-##### `.total()`
+##### `.total() → PowerSummary`
 
 Returns a planet-wide `PowerSummary` across every independent grid. Conventional battery storage and Lightning reserve remain separate so automation can decide which supply it is relying on.
 
 - **Returns** Planet-wide `PowerSummary` snapshot across every independent grid.
 
-##### `.is_powered(machine_id)`
+##### `.is_powered(machine_id: str) → bool`
 
 Returns `True` when the named machine is currently switched on. Unknown machine ids return `False`, so this is safe to call before deciding whether to send a breaker command.
 
@@ -63,11 +63,11 @@ Returns `True` when the named machine is currently switched on. Unknown machine 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `machine_id` | `string` | Machine instance id |
+| `machine_id` | `str` | Machine instance id |
 
 - **Returns** Boolean: `True` when the named machine is powered on.
 
-##### `.can_power_off(machine_id)`
+##### `.can_power_off(machine_id: str) → bool`
 
 Returns `True` when the named machine exists and has a visible breaker toggle. Terraforming machines and many production machines can usually be switched; batteries, passive tanks, mobile units, and ship equipment usually cannot.
 
@@ -75,11 +75,11 @@ Returns `True` when the named machine exists and has a visible breaker toggle. T
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `machine_id` | `string` | Machine instance id |
+| `machine_id` | `str` | Machine instance id |
 
 - **Returns** Boolean: `True` when the named machine exposes a breaker/power toggle.
 
-##### `.set_powered(machine_id, on)`
+##### `.set_powered(machine_id: str, on: bool) → ActionResult`
 
 Send the same breaker command as clicking the machine card toggle. `power.set_powered("o2gen_1", False)` switches a machine off; `True` switches it back on. Switching off pauses scripts attached to that machine and preserves their setpoints; switching back on resumes only scripts that were paused by the power-off.
 
@@ -87,8 +87,8 @@ Send the same breaker command as clicking the machine card toggle. `power.set_po
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `machine_id` | `string` | Machine instance id |
-| `on` | `boolean` | `True` powers on; `False` powers off |
+| `machine_id` | `str` | Machine instance id |
+| `on` | `bool` | `True` powers on; `False` powers off |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

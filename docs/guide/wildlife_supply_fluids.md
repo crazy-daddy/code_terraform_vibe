@@ -47,5 +47,3 @@ The refined gas/liquid flows into a Gas/Liquid Tank. Your Habitat script meters 
 A freshly-founded colony needs only **feed**. Mid-stage colonies add a **basic gas/liquid**. Thriving colonies can demand **rare refined exotics**, which pushes you into farther prospecting and heavier refining. Research **Exotic Husbandry** unlocks survey/cap/tap + Refiner for uncommon exotics. **Deep Exotics** unlocks at **500,000 Wildlife** and opens the rarest extraction and refining. An early legendary colony may pause at its rare-fluid transition until the broader menagerie reaches that total; this is recoverable and costs no population. Read the Habitat's exact next-stage methods and grow other species while preparing the rare supply.
 
 *Guide / World & Infrastructure*
-
----

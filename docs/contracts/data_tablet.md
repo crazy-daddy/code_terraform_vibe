@@ -12,41 +12,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.tablet`
+##### `.tablet: DataTablet`
 
 The data tablet scanner.
 
 - **Returns** `DataTablet`
 
 *Types / Contracts*
-
----
 
 ## DataTablet
 
@@ -58,21 +56,21 @@ The data tablet scanner.
 
 ### Properties
 
-##### `.rows`
+##### `.rows: int`
 
 Number of rows in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.cols`
+##### `.cols: int`
 
 Number of columns in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.probe(row, col)`
+##### `.probe(row: int, col: int) → ProbeResult`
 
 Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-number `.distance`. Wrong argument types raise `TypeError`; fractional or out-of-bounds coordinates raise `ValueError`.
 
@@ -80,8 +78,8 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `number` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `number` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
+| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
 
 - **Returns** `ProbeResult`
 
@@ -94,26 +92,22 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 
 *Types / Contracts*
 
----
-
 ## ProbeResult
 
 **Returned by:** tablet.probe()
 
 ### Properties
 
-##### `.char`
+##### `.char: str`
 
 Character at this cell.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.distance`
+##### `.distance: int`
 
 Whole-number Manhattan distance (steps) to the nearest message cell. 0 means this cell IS a message cell.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Contracts*
-
----

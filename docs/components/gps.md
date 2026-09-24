@@ -28,43 +28,43 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.planet()`
+##### `.planet() → Nocturna`
 
 Returns the current planet component. Use `gps.planet().id` for stable ids such as `"nocturna"` when calling Journal APIs, and `gps.planet().get_name()` for the display name `"Nocturna"`.
 
 - **Returns** `Nocturna` planet component: use `.id` for stable journal ids and `.get_name()` for display.
 
-##### `.site_name()`
+##### `.site_name() → str`
 
 Returns the current outpost's display name. `"Nocturna Base"` for the home outpost (default, players can rename); `"Outpost 1"`, `"Outpost 2"`, ... for player-founded outposts.
 
 - **Returns** String (current outpost name, e.g. "Nocturna Base")
 
-##### `.coords()`
+##### `.coords() → list[int]`
 
 Returns the current outpost's world coordinates as a **2-element list** `[x, y]`. The home outpost sits at `[0, 0]`; founded outposts carry the position the player chose in Plan mode.
 
 - **Returns** List [x, y] (current outpost coordinates)
 
-##### `.buildings_used()`
+##### `.buildings_used() → int`
 
 Returns the number of buildings deployed at the **current** outpost. Sensors, mobile units, structural hubs, and POI extraction machines don't count, only shop-purchased deployable buildings.
 
 - **Returns** Number (buildings deployed at the current outpost)
 
-##### `.buildings_capacity()`
+##### `.buildings_capacity() → int`
 
 Returns the soft building threshold at the current outpost. Each counted building above it reduces productive and service throughput. Nocturna Base has a few extra starter slots; founded outposts use the standard threshold.
 
 - **Returns** Number (soft building threshold at the current outpost)
 
-##### `.is_full()`
+##### `.is_full() → bool`
 
 Returns `True` when the current outpost has reached or exceeded its soft building threshold. The threshold itself does not block ordinary deployment.
 
 - **Returns** Boolean (true if the soft building threshold is reached or exceeded)
 
-##### `.is_home()`
+##### `.is_home() → bool`
 
 Returns `True` when the current outpost is the home outpost (the one the player started at, default name `"Nocturna Base"`). Useful for branching on whether you're managing the spawn site versus a remote outpost.
 

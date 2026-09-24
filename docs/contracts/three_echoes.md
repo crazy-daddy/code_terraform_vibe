@@ -12,33 +12,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.broadcast`
+##### `.broadcast: ThreeEchoesBroadcast`
 
 The intercepted broadcast: three frequency fragments.
 
@@ -46,32 +46,28 @@ The intercepted broadcast: three frequency fragments.
 
 *Types / Contracts*
 
----
-
 ## ThreeEchoesBroadcast
 
 **Returned by:** .broadcast
 
 ### Properties
 
-##### `.freq_a`
+##### `.freq_a: str`
 
 Ordered fragment containing the 1st, 4th, 7th, and later every-third characters of the original signal.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.freq_b`
+##### `.freq_b: str`
 
 Ordered fragment containing the 2nd, 5th, 8th, and later every-third characters of the original signal.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.freq_c`
+##### `.freq_c: str`
 
 Ordered fragment containing the 3rd, 6th, 9th, and later every-third characters of the original signal.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----

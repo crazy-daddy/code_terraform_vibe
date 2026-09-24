@@ -39,5 +39,3 @@ Use the Planet Map to follow highlighted connected pieces and the Power dashboar
 - Constructor Module, executing Planet Map jobs
 
 *Guide / World & Infrastructure*
-
----

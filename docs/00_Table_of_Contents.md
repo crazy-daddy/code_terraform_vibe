@@ -7,7 +7,7 @@ Master navigation guide to all modular documentation in `docs/`.
 ## ⚡ Quick References
 - **[AI Cheatsheet](AI_CHEATSHEET.md)**: High-density quick reference for formulas, setpoints, hardware catalog, and IPC protocols.
 - **[Component Master Index](INDEX.md)**: Complete alphabetical index of all documentation files.
-- **[Full DOCS Manual](Code-Terraform-DOCS-Manual.md)**: Complete monolithic exported manual.
+- **Full DOCS Manual** (`Code-Terraform-DOCS-Manual-<build>.md`, gitignored): complete monolithic in-game export; the split files below are regenerated from it with `devtools/split_docs_manual.py`. Current build: see [README](README.md).
 
 ---
 
@@ -41,16 +41,16 @@ Master navigation guide to all modular documentation in `docs/`.
 
 ---
 
-## 📖 5. Tutorials & Guides (`docs/guide/` - 37 files)
-- **Core Loop & Basics**: [Getting Started](guide/getting_started.md) | [First Steps](guide/first_steps.md) | [How This Game Works](guide/how_this_game_works.md) | [Long-Running Scripts](guide/long_running_scripts.md)
+## 📖 5. Tutorials & Guides (`docs/guide/` - 42 files)
+- **Core Loop & Basics**: [Getting Started](guide/getting_started.md) | [FAQ](guide/faq.md) | [Components Overview](guide/components_overview.md) | [First Steps](guide/first_steps.md) | [How This Game Works](guide/how_this_game_works.md) | [Long-Running Scripts](guide/long_running_scripts.md)
 - **Power & Terraforming**: [Power & Terraforming Machines](guide/power_and_terraforming.md) | [Power Networks](guide/power_networks.md) | [Batteries & Charging](guide/batteries_and_charging.md)
 - **Logistics & Vehicles**: [First Harvesting Route](guide/first_harvesting_route.md) | [First Pioneer](guide/first_pioneer.md) | [Vehicle Service Areas](guide/vehicle_service_areas.md) | [Drone Operations](guide/drone_operations_guide.md)
 - **Economy & Contracts**: [Choosing Credit Path](guide/choosing_credit_path.md) | [Contracts Tutorial](guide/contracts_tutorial.md) | [Contract System Guide](guide/contract_system_guide.md) | [Earth Orders](guide/earth_orders_guide.md)
 - **Production & Biology**: [First Biology Loop](guide/first_biology_loop.md) | [Refinement & Storage](guide/refinement_and_storage.md) | [Expanding Production](guide/expanding_production.md) | [Plant Terraformer](guide/plant_terraformer_guide.md)
 - **Infrastructure**: [First Outpost](guide/first_outpost.md) | [Infrastructure & Pipes](guide/infrastructure_and_pipes.md) | [Flow Networks & Fluids](guide/flow_networks_fluids.md) | [Input & Output Ports](guide/input_and_output_ports.md) | [Plan Mode](guide/plan_mode.md)
-- **IPC & Diagnostics**: [Signal Bus](guide/signal_bus_guide.md) | [Data Archive](guide/data_archive_guide.md) | [Errors & Console](guide/errors_and_console.md) | [Command Results](guide/command_results.md)
-- **Biosphere & Wildlife**: [Biomass Tier](guide/biosphere_biomass_tier.md) | [Plants Tier](guide/biosphere_plants_tier.md) | [Wildlife Overview](guide/wildlife_overview.md) | [Wildlife Husbandry](guide/wildlife_husbandry.md) | [Wildlife Progression](guide/wildlife_progression.md) | [Wildlife Supply Fluids](guide/wildlife_supply_fluids.md)
-- **Programming & Tools**: [Programming & Language Reference](guide/programming_language_reference.md) | [Editor & Tools](guide/editor_and_tools.md) | [Built-in Functions & Commands](guide/builtins_and_commands.md)
+- **IPC & Diagnostics**: [Signal Bus](guide/signal_bus_guide.md) | [Data Archive](guide/data_archive_guide.md) | [Map Markers](guide/map_markers_guide.md) | [Errors & Console](guide/errors_and_console.md) | [Command Results](guide/command_results.md)
+- **Biosphere & Wildlife**: [Biomass Tier](guide/biosphere_biomass_tier.md) | [Plants Tier](guide/biosphere_plants_tier.md) | [Wildlife Overview](guide/wildlife_overview.md) | [Wildlife Husbandry](guide/wildlife_husbandry.md) | [Wildlife Progression](guide/wildlife_progression.md) | [Wildlife Supply Fluids](guide/wildlife_supply_fluids.md) | [Weather System](guide/weather_system.md)
+- **Programming & Tools**: [Programming Guide](guide/programming_language_reference.md) | [Language Reference](guide/language_reference.md) | [Editor & Tools](guide/editor_and_tools.md) | [Built-in Functions & Commands](guide/builtins_and_commands.md)
 
 ---
 

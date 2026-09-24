@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.get_value()`
+##### `.get_value() → float`
 
 Returns total biomass tonnage on the planet as a number. `0` before any Biomass Mixer has produced.
 

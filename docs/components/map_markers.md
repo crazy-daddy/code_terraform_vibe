@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.place(id, x, y, label="", icon="pin", color="accent", note="")`
+##### `.place(id: str, x: float, y: float, label: str = "", icon: str = "pin", color: str = "accent", note: str = "") → ActionResult`
 
 Create or rewrite one marker. Reusing an id moves and restyles that marker instead of adding a second one, so a script that restarts after a save does not fill the map with duplicates. Coordinates are world meters and keep their fractions. Organize families of markers by id prefix, and include the controlling machine in the prefix, as in `"survey.rover_1."`, so two scripts cannot overwrite each other.
 
@@ -32,13 +32,13 @@ Create or rewrite one marker. Reusing an id moves and restyles that marker inste
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `id` | `string` | Stable marker id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. Reusing an id rewrites that marker. |
-| `x` | `number` | World x coordinate in meters. Fractions are kept exactly. |
-| `y` | `number` | World y coordinate in meters. Fractions are kept exactly. |
-| `label` | `string` | Display text, up to 48 characters. Empty shows the id instead. |
-| `icon` | `string` | Marker glyph. |
-| `color` | `string` | Marker color. |
-| `note` | `string` | Longer note shown on hover and in the Markers list, up to 240 characters. |
+| `id` | `str` | Stable marker id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. Reusing an id rewrites that marker. |
+| `x` | `float` | World x coordinate in meters. Fractions are kept exactly. |
+| `y` | `float` | World y coordinate in meters. Fractions are kept exactly. |
+| `label` | `str` | Display text, up to 48 characters. Empty shows the id instead. |
+| `icon` | `str` | Marker glyph. |
+| `color` | `str` | Marker color. |
+| `note` | `str` | Longer note shown on hover and in the Markers list, up to 240 characters. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -57,7 +57,7 @@ Create or rewrite one marker. Reusing an id moves and restyles that marker inste
 | `"invalid_text"` | rejection | The supplied text is longer than the field allows. |
 | `"limit_reached"` | rejection | The collection already holds its maximum number of entries. |
 
-##### `.get(id)`
+##### `.get(id: str) → Marker | None`
 
 Read one marker by id.
 
@@ -65,7 +65,7 @@ Read one marker by id.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `id` | `string` | Marker id to look up. |
+| `id` | `str` | Marker id to look up. |
 
 - **Returns** The `Marker` with that id, or `None` when no marker uses it.
 
@@ -75,7 +75,7 @@ Read one marker by id.
 | --- | --- |
 | `ValueError` | The marker id must be 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
 
-##### `.list(prefix="")`
+##### `.list(prefix: str = "") → list[Marker]`
 
 Read markers as a list sorted by id. Pass a prefix such as `"build."` to read one family. Loop the result to route a vehicle: `for m in markers.list("build."): self.nav.set_target(m.x, m.y)`.
 
@@ -83,7 +83,7 @@ Read markers as a list sorted by id. Pass a prefix such as `"build."` to read on
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `prefix` | `string` | Optional id prefix such as `"survey.rover_1."`. |
+| `prefix` | `str` | Optional id prefix such as `"survey.rover_1."`. |
 
 - **Returns** List of `Marker` values sorted by id, optionally narrowed to one id prefix. Empty prefix returns every marker.
 
@@ -93,7 +93,7 @@ Read markers as a list sorted by id. Pass a prefix such as `"build."` to read on
 | --- | --- |
 | `ValueError` | The marker prefix must use letters, numbers, `_`, `.`, `:`, or `-` and be at most 64 characters. |
 
-##### `.remove(id)`
+##### `.remove(id: str) → ActionResult`
 
 Delete one marker by id.
 
@@ -101,7 +101,7 @@ Delete one marker by id.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `id` | `string` | Marker id to delete. |
+| `id` | `str` | Marker id to delete. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -115,7 +115,7 @@ Delete one marker by id.
 | `"not_found"` | rejection | The requested object, target, or record does not exist. |
 | `"invalid_key"` | rejection | The supplied key is invalid. |
 
-##### `.clear(prefix)`
+##### `.clear(prefix: str) → CountResult`
 
 Delete a whole family of markers by id prefix, then place the current ones again to keep a family in step with what your script now believes. The prefix is required: `markers.clear("")` deletes every marker on the planet, including the ones you placed by hand, and nothing records who placed what.
 
@@ -123,7 +123,7 @@ Delete a whole family of markers by id prefix, then place the current ones again
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `prefix` | `string` | Id prefix to delete. Pass `""` to delete every marker, including the ones you placed by hand. |
+| `prefix` | `str` | Id prefix to delete. Pass `""` to delete every marker, including the ones you placed by hand. |
 
 - **Returns** `CountResult`
 - **Result fields** `.status`, `.message`

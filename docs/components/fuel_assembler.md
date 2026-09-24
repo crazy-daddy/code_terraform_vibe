@@ -36,19 +36,19 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.input`
+##### `.input: InputSlot`
 
 Receives Raw Uranium only from a Lead Cask and lead plates from an ordinary compatible local source. The port has one source relationship at a time, so reconnect it between materials.
 
 - **Returns** `InputSlot`: stage Raw Uranium and lead plates. Raw Uranium may enter only from a Lead Cask; reconnect the one-source input to an ordinary local source for lead plates. While idle, recover ordinary items to local freight and hot cargo to a compatible Lead Cask with `eject(...)`.
 
-##### `.output`
+##### `.output: OutputSlot`
 
 Output port. Fuel Rods are hot and only a Lead Cask (or their exact Supply Dock order) accepts them. Nuclear Batteries are ordinary fabricated products and may go to compatible local storage or home Inventory.
 
@@ -56,13 +56,13 @@ Output port. Fuel Rods are hot and only a Lead Cask (or their exact Supply Dock 
 
 ### Methods
 
-##### `.list_recipes()`
+##### `.list_recipes() → list[Recipe]`
 
 Unlocked recipes this machine can run, including each recipe's derived `.tier`. The Fuel Rod recipe arrives through Vestibule's queue; the Nuclear Battery recipe arrives through Helios's queue.
 
 - **Returns** List of unlocked `Recipe` entries this machine can run, including each recipe's derived `.tier`.
 
-##### `.find_recipe(recipe_id)`
+##### `.find_recipe(recipe_id: str) → Recipe | None`
 
 Find one unlocked fuel recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine.
 
@@ -70,11 +70,11 @@ Find one unlocked fuel recipe by id without looping through `list_recipes()`. Re
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `recipe_id` | `string` | Fuel Assembler recipe id |
+| `recipe_id` | `str` | Fuel Assembler recipe id |
 
 - **Returns** The matching unlocked `Recipe`, or `None` if this Fuel Assembler cannot currently run that id.
 
-##### `.set_recipe(recipe_or_id)` *(self only)*
+##### `.set_recipe(recipe_or_id: str | Recipe | IdRecord) → ActionResult` *(self only)*
 
 Select a Fuel Rod or Nuclear Battery recipe by id or by passing a Recipe from `list_recipes()`.
 
@@ -82,7 +82,7 @@ Select a Fuel Rod or Nuclear Battery recipe by id or by passing a Recipe from `l
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `recipe_or_id` | `any` | Fuel recipe id, a `Recipe` object, or a dictionary or class instance with a string `id` field. The recipe must belong to this machine and be unlocked. |
+| `recipe_or_id` | `str \| Recipe \| IdRecord` | Fuel recipe id, a `Recipe` object, or a dictionary or class instance with a string `id` field. The recipe must belong to this machine and be unlocked. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -99,7 +99,7 @@ Select a Fuel Rod or Nuclear Battery recipe by id or by passing a Recipe from `l
 | `"busy"` | transient | The component is already performing another operation. |
 | `"material_mismatch"` | rejection | The existing material does not match the requested material. |
 
-##### `.clear_recipe()` *(self only)*
+##### `.clear_recipe() → ActionResult` *(self only)*
 
 Release the recipe once the current craft is idle and the output buffer is drained.
 
@@ -115,38 +115,38 @@ Release the recipe once the current craft is idle and the output buffer is drain
 | `"busy"` | transient | The component is already performing another operation. |
 | `"material_present"` | rejection | Existing material prevents the requested configuration change. |
 
-##### `.get_recipe()`
+##### `.get_recipe() → str`
 
 The committed recipe id, empty when none.
 
 - **Returns** Current recipe id, or empty string when none is set.
 - **Possible values** `""`, `"craft_fuel_rod"`, `"craft_nuclear_battery"`
 
-##### `.get_recipe_inputs()`
+##### `.get_recipe_inputs() → dict[str, int]`
 
 Input requirements for the committed recipe as a dict `{item_id: count_per_craft}`. Returns an empty dict when no recipe is committed.
 
-- **Returns** Dict (`item_id` → count consumed per craft), or an empty dict if no recipe is set.
+- **Returns** A dict (`item_id` → count consumed per craft), or an empty dict if no recipe is set.
 
-##### `.is_running()`
+##### `.is_running() → bool`
 
 `True` while a craft is actually advancing, power, inputs, and output space all present.
 
 - **Returns** Boolean: a craft is advancing this tick.
 
-##### `.get_progress()`
+##### `.get_progress() → float`
 
 Current craft progress **0-1**. Progress survives power cuts and resumes.
 
 - **Returns** Number **0-1**: current craft progress.
 
-##### `.get_stockpile()`
+##### `.get_stockpile() → dict[str, int]`
 
 Staged inputs by item id, `{"raw_uranium": 12, "lead_plate": 4}`-shaped dict.
 
-- **Returns** Dict: staged input materials by item id.
+- **Returns** A dict of staged input materials by item id.
 
-##### `.get_output_count()`
+##### `.get_output_count() → int`
 
 Finished products for the selected recipe waiting in the small output buffer.
 

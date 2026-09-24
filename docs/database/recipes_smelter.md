@@ -15,7 +15,7 @@ Available from the start.
 | Power | 20 W |
 | Production tier | T0 |
 
-##### Silicon → Glass `smelt_glass` *(Not yet unlocked)*
+##### Silicon → Glass `smelt_glass` *(Unlocked)*
 
 1× Silicon → 1× Glass
 Blueprint unlocks by completing the order **Spire, Silicon Bootstrap**.
@@ -37,7 +37,7 @@ Blueprint unlocks by completing the order **Helios, Iron Bootstrap**.
 | Power | 28 W |
 | Production tier | T0 |
 
-##### Cobalt → Cobalt Ingot `smelt_cobalt_ingot` *(Not yet unlocked)*
+##### Cobalt → Cobalt Ingot `smelt_cobalt_ingot` *(Unlocked)*
 
 1× Cobalt → 1× Cobalt Ingot
 Blueprint unlocks by completing the order **Spire, Avionics Run**.
@@ -48,7 +48,7 @@ Blueprint unlocks by completing the order **Spire, Avionics Run**.
 | Power | 28 W |
 | Production tier | T0 |
 
-##### Rare Earth → Rare Earth Core `smelt_rare_earth_core` *(Not yet unlocked)*
+##### Rare Earth → Rare Earth Core `smelt_rare_earth_core` *(Unlocked)*
 
 1× Rare Earth → 1× Rare Earth Core
 Blueprint unlocks by completing the order **Spire, Control Run**.
@@ -70,7 +70,7 @@ Blueprint unlocks by completing the order **Spire, Polymer Optics Run**.
 | Power | 45 W |
 | Production tier | T0 |
 
-##### Lead Ore → Lead Ingot `smelt_lead_ingot` *(Not yet unlocked)*
+##### Lead Ore → Lead Ingot `smelt_lead_ingot` *(Unlocked)*
 
 1× Lead Ore → 1× Lead Ingot
 Blueprint unlocks by completing the order **Helios, Lead Survey Stock**.

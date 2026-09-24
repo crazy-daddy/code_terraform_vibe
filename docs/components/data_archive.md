@@ -24,16 +24,16 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.set(key, value)`
+##### `.set(key: str, value: JsonValue) → ActionResult`
 
-Store a JSON-safe value under a named key. The archive holds up to 512 entries; each value supports 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key.
+Store a JSON-safe value under a named key. Dictionaries inside the value must use string keys. The archive holds up to 512 entries; each value supports 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `value` | `any` | JSON-safe value, up to 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key |
+| `key` | `str` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `value` | `JsonValue` | JSON-safe value, up to 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -48,7 +48,7 @@ Store a JSON-safe value under a named key. The archive holds up to 512 entries; 
 | `"entry_limit"` | rejection | The archive has reached its entry limit. |
 | `"invalid_value"` | rejection | The supplied value is invalid. |
 
-##### `.transaction(key, default, updater)`
+##### `.transaction(key: str, default: JsonValue, updater: Callable) → ActionResult`
 
 Atomically transform one stored value within the same archive value limits. The updater may be any pure callable; it receives the latest value or supplied default and cannot sleep, yield, or mutate the world.
 
@@ -56,9 +56,9 @@ Atomically transform one stored value within the same archive value limits. The 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `default` | `any` | JSON-safe value within the archive value limits, used when the key is missing |
-| `updater` | `any` | Pure callable that receives the current value and returns the next value within the archive value limits |
+| `key` | `str` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `default` | `JsonValue` | JSON-safe value within the archive value limits, used when the key is missing |
+| `updater` | `Callable` | Pure callable that receives the current value and returns the next value within the archive value limits |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -74,7 +74,7 @@ Atomically transform one stored value within the same archive value limits. The 
 | `"invalid_value"` | rejection | The supplied value is invalid. |
 | `"busy"` | transient | The component is already performing another operation. |
 
-##### `.get(key, default=None)`
+##### `.get(key: str, default: JsonValue = None) → JsonValue`
 
 Read a stored value by key. If the key is missing, returns the optional default argument; if no default is provided, returns `None`. Reading does not consume or modify the entry.
 
@@ -82,8 +82,8 @@ Read a stored value by key. If the key is missing, returns the optional default 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `default` | `any` | Returned when the key is missing |
+| `key` | `str` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `default` | `JsonValue` | Returned when the key is missing |
 
 - **Returns** Stored value, the optional default, or `None`.
 
@@ -93,7 +93,7 @@ Read a stored value by key. If the key is missing, returns the optional default 
 | --- | --- |
 | `ValueError` | The archive key must be 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
 
-##### `.has(key)`
+##### `.has(key: str) → bool`
 
 Return `True` when the archive contains the key, otherwise `False`.
 
@@ -101,7 +101,7 @@ Return `True` when the archive contains the key, otherwise `False`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `key` | `str` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
 - **Returns** Boolean: `True` when the archive contains the key.
 
@@ -111,7 +111,7 @@ Return `True` when the archive contains the key, otherwise `False`.
 | --- | --- |
 | `ValueError` | The archive key must be 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
 
-##### `.delete(key)`
+##### `.delete(key: str) → ActionResult`
 
 Remove one key.
 
@@ -119,7 +119,7 @@ Remove one key.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `key` | `str` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -133,7 +133,7 @@ Remove one key.
 | `"not_found"` | rejection | The requested object, target, or record does not exist. |
 | `"invalid_key"` | rejection | The supplied key is invalid. |
 
-##### `.keys(prefix="")`
+##### `.keys(prefix: str = "") → list[str]`
 
 Return archive keys as a sorted list. Pass a prefix such as `"rover."` to list only matching keys.
 
@@ -141,7 +141,7 @@ Return archive keys as a sorted list. Pass a prefix such as `"rover."` to list o
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `prefix` | `string` | Optional key prefix using the archive key character set |
+| `prefix` | `str` | Optional key prefix using the archive key character set |
 
 - **Returns** Sorted list of archive keys, optionally filtered by prefix.
 
@@ -151,7 +151,7 @@ Return archive keys as a sorted list. Pass a prefix such as `"rover."` to list o
 | --- | --- |
 | `ValueError` | The archive prefix must use letters, numbers, `_`, `.`, `:`, or `-` and be at most 96 characters. |
 
-##### `.clear(prefix="")`
+##### `.clear(prefix: str = "") → CountResult`
 
 Remove archived entries. With no prefix it clears the whole archive; with a prefix it clears matching keys.
 
@@ -159,7 +159,7 @@ Remove archived entries. With no prefix it clears the whole archive; with a pref
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `prefix` | `string` | Optional key prefix using the archive key character set |
+| `prefix` | `str` | Optional key prefix using the archive key character set |
 
 - **Returns** `CountResult`
 - **Result fields** `.status`, `.message`

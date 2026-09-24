@@ -35,19 +35,19 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.input`
+##### `.input: InputSlot`
 
 `InputSlot` for this station's local stockpile. Connect `"inventory"` or a machine or storage source at the same outpost, then call `self.input.take(item_id, count)`. `self.input.flush()` discards the station stockpile. Stock at another Drone Depot is not visible here.
 
 - **Returns** InputSlot: `connect()`, `take()`, `eject()`, `flush()`, `count()`, `capacity()`, `connected_to()`.
 
-##### `.output`
+##### `.output: OutputSlot`
 
 `OutputSlot` for this station's local stockpile. Connect `"inventory"` or a machine or storage target at the same outpost, then call `self.output.send(item_id, count)`. Move cargo between outposts with a drone; stations do not share stock.
 
@@ -55,31 +55,31 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ### Methods
 
-##### `.get_docked()`
+##### `.get_docked() → list[str]`
 
 List of drone ids currently docked at this Depot, in stable id order. Read each drone's state with `get_component(id)`.
 
 - **Returns** List of drone instance ids currently docked at this Depot, in stable id order.
 
-##### `.bay_count()`
+##### `.bay_count() → int`
 
 Total bays at this station: **1** (basic) / **2** (medium) / **4** (large).
 
 - **Returns** Number: total bays at this station (**1** / **2** / **4** depending on tier).
 
-##### `.bays_occupied()`
+##### `.bays_occupied() → int`
 
 Bays currently occupied by docked drones. When equal to `bay_count`, arriving drones queue in airspace.
 
 - **Returns** Number: bays currently occupied by docked drones.
 
-##### `.slots_used()`
+##### `.slots_used() → int`
 
 How many distinct materials the stockpile currently holds. One material is one slot no matter how many units of it are stored, so **50** units of one material fills a single slot.
 
 - **Returns** Number: distinct materials currently held. Each material occupies one slot regardless of how many units of it are stored.
 
-##### `.slot_capacity()`
+##### `.slot_capacity() → int`
 
 How many distinct materials this depot can hold at once. A depot is a transfer proxy, not a warehouse: when every slot is taken, a `cargo.unload()` of a new material moves **0** units and reports that no slot is free, even while units remain free. Drain a material out to release its slot.
 

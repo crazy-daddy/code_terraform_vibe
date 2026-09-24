@@ -2,7 +2,7 @@
 
 > **Category:** Biosphere | **Component Name:** Sprinkler
 
-Waters the four orthogonally adjacent field cells (directly above, below, left, and right) while powered, supplied, and enabled.
+Waters the four orthogonally adjacent field cells (directly above, below, left, and right) while powered, supplied, and enabled. Scripts find it with `outpost.harvesting_machines()`.
 
 | Field | Value |
 | --- | --- |
@@ -35,7 +35,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.water_in`
+##### `.water_in: FluidPort`
 
 Supplies water from a connected source. Call `self.water_in.connect(...)` with the source's stable machine id or display name. A remote source also needs a completed conflict-free Liquid Pipe route between both locations. See `FluidPort` for level, capacity, flow, and connection queries.
 
@@ -43,7 +43,7 @@ Supplies water from a connected source. Call `self.water_in.connect(...)` with t
 
 ### Methods
 
-##### `.set_enabled(enabled)` *(self only)*
+##### `.set_enabled(enabled: bool) → ActionResult` *(self only)*
 
 Command watering on or off. Power loss pauses the script but preserves this setpoint; stopping the machine script resets it to `False`.
 
@@ -51,7 +51,7 @@ Command watering on or off. Power loss pauses the script but preserves this setp
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `enabled` | `boolean` | Whether this script commands watering. |
+| `enabled` | `bool` | Whether this script commands watering. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -63,44 +63,44 @@ Command watering on or off. Power loss pauses the script but preserves this setp
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.is_enabled()`
+##### `.is_enabled() → bool`
 
 `True` when the running script has commanded watering on.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_active()`
+##### `.is_active() → bool`
 
 `True` when commanded on with power and water available.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_supplied()`
+##### `.is_supplied() → bool`
 
 `True` when the sprinkler is commanded on, powered, and has water in its `water_in` buffer. If disabled, unpowered, or dry, covered cells lose `watered`.
 
 - **Returns** Boolean: `True` when the sprinkler is placed, commanded on, powered, and has water in its `water_in` buffer. `False` when unplaced, disabled, unpowered, or dry; covered cells then lose `watered` and their plants pause.
 
-##### `.status()`
+##### `.status() → str`
 
 Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, `"no_water"`, or `"active"`.
 
 - **Returns** Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, `"no_water"`, or `"active"`.
 - **Possible values** `"not_placed"`, `"disabled"`, `"no_power"`, `"no_water"`, `"active"`
 
-##### `.buffer()`
+##### `.buffer() → float`
 
 Fraction of the onboard water buffer currently filled (**0-1**). It drops while watering and refills from the connected `water_in` source.
 
 - **Returns** Number (**0-1**): fraction of the onboard water buffer currently filled. Drops as the sprinkler waters; refilled by the connected `water_in` flow source. **0** means dry (covered cells lose `watered`).
 
-##### `.tier()`
+##### `.tier() → int`
 
-Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output, draw **5/25/100/500 W**, and consume **2/10/200/1,000 t/h Water** while active.
+Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output, draw **5/25/100/500 W**, and consume **2/4/8/16 t/h Water** while active.
 
 - **Returns** Number (**1-4**), the deployed tier. Higher tiers boost the output of plants they cover and drink more water and power; tier up by fabricating and applying a Sprinkler upgrade pack.
 
-##### `.position()`
+##### `.position() → str`
 
 Grid sector occupied by this sprinkler, such as `"E14"`.
 

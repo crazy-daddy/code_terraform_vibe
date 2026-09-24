@@ -24,13 +24,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.list_planets()`
+##### `.list_planets() → list[Planet]`
 
 Every available transmission destination as a list of `Planet` objects (each with `.id`, `.name`, etc.). Call once at script start to see what is available; pass a returned `.id` to `connect(id)`.
 
 - **Returns** List of Planet objects
 
-##### `.connect(planet)`
+##### `.connect(planet: str) → ActionResult`
 
 Open a channel to the planet with the given id: `result = transmitter.connect("earth")`. The id must be lowercase (from `list_planets()`). Read `transmitter.get_info().target` after success. Connection lasts only for the current script run, if your script restarts, `connect()` again before `transmit()`.
 
@@ -38,7 +38,7 @@ Open a channel to the planet with the given id: `result = transmitter.connect("e
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `planet` | `string` | Planet id to connect to |
+| `planet` | `str` | Planet id to connect to |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -51,7 +51,7 @@ Open a channel to the planet with the given id: `result = transmitter.connect("e
 | `"ok"` | success | The operation completed successfully. |
 | `"not_found"` | rejection | The requested object, target, or record does not exist. |
 
-##### `.disconnect()`
+##### `.disconnect() → ActionResult`
 
 Close the current script-run channel. This does not affect contracts or any other script; it only clears this Transmitter object's active target so later `transmit()` calls must `connect()` again.
 
@@ -65,13 +65,13 @@ Close the current script-run channel. This does not affect contracts or any othe
 | --- | --- | --- |
 | `"ok"` | success | The Transmitter's current script-run channel is disconnected. |
 
-##### `.get_info()`
+##### `.get_info() → TransmitterInfo`
 
 Current connection status. Returns an object with `.connected` (boolean) and `.target` (connected planet id, or `"none"`). Use as a guard before `transmit()`: `if transmitter.get_info().connected: transmitter.transmit(...)`.
 
 - **Returns** Object { connected, target }
 
-##### `.transmit(key, value)`
+##### `.transmit(key: str, value: JsonValue) → ActionResult`
 
 Send a named value to the connected planet with `transmitter.transmit(key, value)`. Opening sensor telemetry is unavailable until the power and sensor onboarding steps are complete and the uplink step is active. For sensor readings, use the name requested by Earth, such as `"current_temperature"`. For contract answers, use `self.contract.id`. The data arrives in the same tick.
 
@@ -79,8 +79,8 @@ Send a named value to the connected planet with `transmitter.transmit(key, value
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `string` | A sensor-telemetry key such as `"current_temperature"` (what the opening uplink asks for), or a contract id read from `self.contract.id` inside a contract script. |
-| `value` | `any` | The reading or computed answer to send. |
+| `key` | `str` | A sensor-telemetry key such as `"current_temperature"` (what the opening uplink asks for), or a contract id read from `self.contract.id` inside a contract script. |
+| `value` | `JsonValue` | The reading or computed answer to send. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

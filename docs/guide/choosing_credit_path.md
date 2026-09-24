@@ -25,5 +25,3 @@ After Auto Feeders unlock, Biology changes from one manual workbench flow into t
 Start with manual Biology if you want the simplest first payout. Choose Harvesting for visible automation or Contracts for a focused logic problem. Automate the full Biology chain when you want a more advanced multi-machine project. All four approaches remain valid ways to earn early credits.
 
 *Guide / Tutorials*
-
----

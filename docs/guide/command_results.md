@@ -69,5 +69,3 @@ Do not assume that every timed system waits in the same way. The command descrip
 Wrong argument types and documented malformed values can raise precise exceptions such as `TypeError` or `ValueError`. Ordinary mutable world conditions use the result statuses listed for that command. Open the command's DOCS entry for its exact statuses, payload fields, timing, and exceptions. See **Long-Running Scripts** for using these results in automation that remains safe after a game load.
 
 *Guide / Start Here*
-
----

@@ -280,7 +280,7 @@ Upgrades one Grow Lamp to Mk III: **4×** base Forage yield on its own (**+300%*
 
 ##### Sprinkler Mk II Upgrade Pack `sprinkler_upgrade_pack_mk2`
 
-Upgrades one Sprinkler to Mk II: **2×** base Forage yield on its own (**+100%**), **25 W** draw while enabled, and **10 t/h Water** use while supplied. The bonus applies during growth to crops that require water in the four orthogonally adjacent cells, while the sprinkler is powered, enabled, and supplied. Coverage and growth speed stay the same. Only the strongest covering sprinkler counts; its bonus adds to other yield bonuses.
+Upgrades one Sprinkler to Mk II: **2×** base Forage yield on its own (**+100%**), **25 W** draw while enabled, and **4 t/h Water** use while supplied. The bonus applies during growth to crops that require water in the four orthogonally adjacent cells, while the sprinkler is powered, enabled, and supplied. Coverage and growth speed stay the same. Only the strongest covering sprinkler counts; its bonus adds to other yield bonuses.
 
 | Field | Value |
 | --- | --- |
@@ -289,7 +289,7 @@ Upgrades one Sprinkler to Mk II: **2×** base Forage yield on its own (**+100%**
 
 ##### Sprinkler Mk III Upgrade Pack `sprinkler_upgrade_pack_mk3`
 
-Upgrades one Sprinkler to Mk III: **4×** base Forage yield on its own (**+300%**), **100 W** draw while enabled, and **200 t/h Water** use while supplied. The bonus applies during growth to crops that require water in the four orthogonally adjacent cells, while the sprinkler is powered, enabled, and supplied. Coverage and growth speed stay the same. Only the strongest covering sprinkler counts; its bonus adds to other yield bonuses.
+Upgrades one Sprinkler to Mk III: **4×** base Forage yield on its own (**+300%**), **100 W** draw while enabled, and **8 t/h Water** use while supplied. The bonus applies during growth to crops that require water in the four orthogonally adjacent cells, while the sprinkler is powered, enabled, and supplied. Coverage and growth speed stay the same. Only the strongest covering sprinkler counts; its bonus adds to other yield bonuses.
 
 | Field | Value |
 | --- | --- |

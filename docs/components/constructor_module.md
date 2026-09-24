@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.execute(blueprint_id)` *(self only)*
+##### `.execute(blueprint_id: str) → ActionResult` *(self only)*
 
 Pick up one Construction job from the shared planning queue and build or deconstruct it. Plan Mode and `get_component("construction_blueprint")` create equivalent jobs. Drive the Pioneer within interaction range of `blueprint.position` first, and use `get_component("construction_blueprint").pending_constructions()` to see what's ready. A Pioneer performs only one field action at a time. Stop, power loss, leaving the site, rescue, or removing the Constructor Module pauses paid work without losing its progress or materials. Resume the same id from `get_component("construction_blueprint").paused_constructions()`.
 
@@ -32,7 +32,7 @@ Pick up one Construction job from the shared planning queue and build or deconst
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `blueprint_id` | `string` | Blueprint id from `get_component("construction_blueprint").pending_constructions()`, `.active_constructions()`, or `.paused_constructions()`. |
+| `blueprint_id` | `str` | Blueprint id from `get_component("construction_blueprint").pending_constructions()`, `.active_constructions()`, or `.paused_constructions()`. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

@@ -25,5 +25,3 @@ Four early approaches teach different skills. Harvesting and Contracts sit side 
 Every credit feeds back into the Shop. More machines means more terraforming progress.
 
 *Guide / Start Here*
-
----

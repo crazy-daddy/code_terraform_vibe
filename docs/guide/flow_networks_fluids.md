@@ -19,7 +19,9 @@ Players connect machine ports to machines, never ports to pipe ids:
 ```
 # Water Pump script
 self.water_out.connect("bio_caster_1")
+```
 
+```
 # Equivalent when written in the Bio Caster script
 self.water_in.connect("water_pump_1")
 ```
@@ -173,5 +175,3 @@ A machine with a missing, stale, or unfinished outpost location fails closed. It
 - Wells, water and oil source behavior
 
 *Guide / World & Infrastructure*
-
----

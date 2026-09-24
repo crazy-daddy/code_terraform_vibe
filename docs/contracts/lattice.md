@@ -12,33 +12,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.grid`
+##### `.grid: LatticeGrid`
 
 The alien deep-scan lattice. Probe only proven-clear cells to map the volatile nodes; a trip blocks further probes until the grid is reset. See LatticeGrid.
 
@@ -46,33 +46,31 @@ The alien deep-scan lattice. Probe only proven-clear cells to map the volatile n
 
 *Types / Contracts*
 
----
-
 ## LatticeGrid
 
 **Returned by:** .grid
 
 ### Methods
 
-##### `.width()`
+##### `.width() → int`
 
 The grid width in cells (32).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.height()`
+##### `.height() → int`
 
 The grid height in cells (32).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.start()`
+##### `.start() → list[int]`
 
 A guaranteed-clear foothold cell, returned as `[x, y]`. Probe it first to get a reading and begin the deduction.
 
-- **Returns** `list<number>`
+- **Returns** `list[int]`
 
-##### `.reset()`
+##### `.reset() → ActionResult`
 
 Clear a tripped fault so probing can continue in the same script run. The hidden board and guaranteed-clear starting cell do not change.
 
@@ -86,7 +84,7 @@ Clear a tripped fault so probing can continue in the same script run. The hidden
 | --- | --- | --- |
 | `"ok"` | success | The lattice fault was cleared. The hidden board and starting cell are unchanged. |
 
-##### `.probe(x, y)`
+##### `.probe(x: int, y: int) → LatticeProbeResult`
 
 Probe a proven clear whole-number cell. The reading is the whole-number count of neighboring volatile nodes in the **0-8** range. Tripping a node faults the lattice until `reset()` is called. Wrong argument types raise `TypeError`; fractional, non-finite, or out-of-bounds coordinates raise `ValueError` without tripping an intact lattice.
 
@@ -94,8 +92,8 @@ Probe a proven clear whole-number cell. The reading is the whole-number count of
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | Whole-number column, 0-31 |
-| `y` | `number` | Whole-number row, 0-31 |
+| `x` | `int` | Whole-number column, 0-31 |
+| `y` | `int` | Whole-number row, 0-31 |
 
 - **Returns** `LatticeProbeResult`
 - **Result fields** `.status`, `.message`
@@ -118,33 +116,29 @@ Probe a proven clear whole-number cell. The reading is the whole-number count of
 
 *Types / Contracts*
 
----
-
 ## LatticeProbeResult
 
 **Returned by:** LatticeGrid.probe()
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"node_tripped"`, or `"lattice_tripped"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"node_tripped"`, `"lattice_tripped"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the probe outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reading`
+##### `.reading: int | None`
 
 Whole-number neighboring-node count in the **0-8** range when `.status == "ok"`; otherwise `None`.
 
-- **Returns** `Optional[number]`
+- **Returns** `int | None`
 
 *Types / Contracts*
-
----

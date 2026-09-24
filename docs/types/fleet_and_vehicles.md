@@ -29,34 +29,32 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Properties
 
-##### `.x`
+##### `.x: int`
 
 Whole-number X coordinate (meters from base) of the unidentified contact, matching the `"?"` marker on the map.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.y`
+##### `.y: int`
 
 Whole-number Y coordinate (meters from base) of the unidentified contact.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.reason`
+##### `.reason: str`
 
 Why this sonar could not identify the contact. `"wrong_scanner"` needs a different instrument entirely, such as a drone bio-scan for a biomass contact. `"too_hard"` exceeds the mounted sonar's hardness limit, `"tier_too_low"` needs a higher sonar tier, and `"research_required"` needs a classification technology that is not unlocked.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"wrong_scanner"`, `"too_hard"`, `"tier_too_low"`, `"research_required"`
 
-##### `.message`
+##### `.message: str`
 
 Readable explanation of `.reason`, suitable for printing straight to the console.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## CollectResult
 
@@ -64,34 +62,32 @@ Readable explanation of `.reason`, suitable for printing straight to the console
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 Stable collection outcome: `"ok"`, `"moving"`, `"busy"`, `"nothing_here"`, `"no_cargo_space"`, or `"scrambled"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"moving"`, `"busy"`, `"nothing_here"`, `"no_cargo_space"`, `"scrambled"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the exact collection outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.item_id`
+##### `.item_id: str | None`
 
 Stable id of the collected material, or `None` when no material was collected.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.collected`
+##### `.collected: int`
 
 Whole-number units committed to drone cargo by this call.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## ConstructorModule
 
@@ -99,7 +95,7 @@ Whole-number units committed to drone cargo by this call.
 
 ### Methods
 
-##### `.execute(blueprint_id)`
+##### `.execute(blueprint_id: str) → ActionResult`
 
 Execute a Plan Mode construction or deconstruction blueprint. Drive the Pioneer within interaction range of `blueprint.position`, then pass a blueprint id from `get_component("construction_blueprint").pending_constructions()`, `.active_constructions()`, or `.paused_constructions()`. Yielding. One Pioneer performs one field action at a time. Stop, power loss, leaving the site, rescue, or removing the Constructor Module pauses paid work without losing progress or materials. The owning Pioneer can rejoin active work, including after save/load; another Pioneer cannot steal an owned job.
 
@@ -107,7 +103,7 @@ Execute a Plan Mode construction or deconstruction blueprint. Drive the Pioneer 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `blueprint_id` | `string` | Pending, active, or paused blueprint id from the construction_blueprint queue. |
+| `blueprint_id` | `str` | Pending, active, or paused blueprint id from the construction_blueprint queue. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -134,15 +130,13 @@ Execute a Plan Mode construction or deconstruction blueprint. Drive the Pioneer 
 
 *Types / Fleet & Vehicles*
 
----
-
 ## DrillModule
 
 **Returned by:** self.drill (vehicles)
 
 ### Methods
 
-##### `.mine()`
+##### `.mine() → ActionResult`
 
 Drill one unit while stationary.
 
@@ -164,11 +158,11 @@ Drill one unit while stationary.
 | `"not_enough_power"` | rejection | The available energy is below the operation's requirement. |
 | `"busy"` | transient | The component is already performing another operation. |
 
-##### `.hardness_limit()`
+##### `.hardness_limit() → int`
 
 Max mineral hardness this drill can extract (**1** basic, **3** Industrial, **4** Heavy). A stale captured module reference raises `ReferenceError`.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Raises*
 
@@ -176,11 +170,11 @@ Max mineral hardness this drill can extract (**1** basic, **3** Industrial, **4*
 | --- | --- |
 | `ReferenceError` | This DrillModule reference is stale because its module is no longer mounted. Read self.drill again after mounting a drill. |
 
-##### `.speed_multiplier()`
+##### `.speed_multiplier() → float`
 
 Drill-time multiplier (**1.0** basic, **0.75** Industrial, **0.6** Heavy: lower is faster). A stale captured module reference raises `ReferenceError`.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -189,8 +183,6 @@ Drill-time multiplier (**1.0** basic, **0.75** Industrial, **0.6** Heavy: lower 
 | `ReferenceError` | This DrillModule reference is stale because its module is no longer mounted. Read self.drill again after mounting a drill. |
 
 *Types / Fleet & Vehicles*
-
----
 
 ## DroneBattery
 
@@ -198,11 +190,11 @@ Drill-time multiplier (**1.0** basic, **0.75** Industrial, **0.6** Heavy: lower 
 
 ### Methods
 
-##### `.level()`
+##### `.level() → float`
 
 Current charge in Wh across mounted Battery Packs. Raises `ReferenceError` when this drone does not have an electric powertrain.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -210,11 +202,11 @@ Current charge in Wh across mounted Battery Packs. Raises `ReferenceError` when 
 | --- | --- |
 | `ReferenceError` | This drone does not currently have an electric powertrain and mounted Battery Pack. |
 
-##### `.capacity()`
+##### `.capacity() → float`
 
 Total charge capacity in Wh. Raises `ReferenceError` when this drone does not have an electric powertrain.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -222,11 +214,11 @@ Total charge capacity in Wh. Raises `ReferenceError` when this drone does not ha
 | --- | --- |
 | `ReferenceError` | This drone does not currently have an electric powertrain and mounted Battery Pack. |
 
-##### `.percent()`
+##### `.percent() → float`
 
 Charge as a fraction **0-1** (`level / capacity`). Raises `ReferenceError` when this drone does not have an electric powertrain.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -236,33 +228,31 @@ Charge as a fraction **0-1** (`level / capacity`). Raises `ReferenceError` when 
 
 *Types / Fleet & Vehicles*
 
----
-
 ## DroneCargo
 
 **Returned by:** self.cargo (drones)
 
 ### Methods
 
-##### `.count()`
+##### `.count() → int`
 
 Total units across every Cargo Pod plus the Bio Extractor chamber.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Total physical capacity summed over every container: each mounted Cargo Pod (Small **100**, Medium **250**, Large **500**) plus the Bio Extractor's **25 t** chamber. Shield Plating halves each pod's capacity.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.contents()`
+##### `.contents() → dict[str, int]`
 
-Dict mapping `item_id` → unit count for every material currently in cargo. Iterate with `.keys()` / `.items()`.
+A dict mapping `item_id` → unit count for every material currently in cargo. Iterate with `.keys()` / `.items()`.
 
-- **Returns** `dict<number>`
+- **Returns** `dict[str, int]`
 
-##### `.space_for(item_id)`
+##### `.space_for(item_id: str) → int`
 
 Free room for this specific material. **Each Cargo Pod holds one material**, so a pod counts only if it is empty or already holds `item_id`; the Bio Extractor's 25 t chamber counts only for life forms. Returns **0** for a material with no empty or matching pod, even while other pods still have room for their own materials.
 
@@ -270,17 +260,17 @@ Free room for this specific material. **Each Cargo Pod holds one material**, so 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to size remaining room for |
+| `item_id` | `str` | Item id to size remaining room for |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.full()`
+##### `.full() → bool`
 
 `True` when `count() >= capacity()`. A drone may still be unable to load a new item type when every pod is committed, even if `full()` is `False`; use `space_for(item_id)` for a specific item.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.load(item_id, count, properties=None, property_match=None)`
+##### `.load(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Move up to whole-number `count` units into this drone's cargo, retaining exact properties. Loads from the docked Drone Depot stockpile or a field Mining Drill after the drone finishes its route there. Hot cargo loads from a local Lead Cask and requires Shield Plating.
 
@@ -288,10 +278,10 @@ Move up to whole-number `count` units into this drone's cargo, retaining exact p
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to load |
-| `count` | `number` | Whole-number maximum units to load |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `item_id` | `str` | Item id to load |
+| `count` | `int` | Whole-number maximum units to load |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -316,7 +306,7 @@ Move up to whole-number `count` units into this drone's cargo, retaining exact p
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
-##### `.unload(item_id, count, properties=None, property_match=None)`
+##### `.unload(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Move up to whole-number `count` units from this drone's cargo into its docked Drone Depot, retaining exact properties. Hot cargo unloads into a compatible Lead Cask.
 
@@ -324,10 +314,10 @@ Move up to whole-number `count` units from this drone's cargo into its docked Dr
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to unload |
-| `count` | `number` | Whole-number maximum units to unload |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `item_id` | `str` | Item id to unload |
+| `count` | `int` | Whole-number maximum units to unload |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -351,7 +341,7 @@ Move up to whole-number `count` units from this drone's cargo into its docked Dr
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
-##### `.discard(item_id, count, properties=None, property_match=None)`
+##### `.discard(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → DiscardResult`
 
 Permanently destroy up to whole-number `count` units from this drone's cargo. This jettison needs no station and a drained pod unlatches for a new material.
 
@@ -359,10 +349,10 @@ Permanently destroy up to whole-number `count` units from this drone's cargo. Th
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to destroy |
-| `count` | `number` | Whole-number maximum units to destroy |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `item_id` | `str` | Item id to destroy |
+| `count` | `int` | Whole-number maximum units to destroy |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `DiscardResult`
 - **Result fields** `.status`, `.message`
@@ -382,19 +372,17 @@ Permanently destroy up to whole-number `count` units from this drone's cargo. Th
 
 *Types / Fleet & Vehicles*
 
----
-
 ## DroneOilTank
 
 **Returned by:** self.oil_tank (heli drones)
 
 ### Methods
 
-##### `.level()`
+##### `.level() → float`
 
 Current oil in tons across mounted Oil Tanks. Raises `ReferenceError` when this drone does not have a heli powertrain.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -402,11 +390,11 @@ Current oil in tons across mounted Oil Tanks. Raises `ReferenceError` when this 
 | --- | --- |
 | `ReferenceError` | This drone does not currently have a heli powertrain. |
 
-##### `.capacity()`
+##### `.capacity() → float`
 
 Total oil capacity in tons. Raises `ReferenceError` when this drone does not have a heli powertrain.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -414,11 +402,11 @@ Total oil capacity in tons. Raises `ReferenceError` when this drone does not hav
 | --- | --- |
 | `ReferenceError` | This drone does not currently have a heli powertrain. |
 
-##### `.percent()`
+##### `.percent() → float`
 
 Oil as a fraction **0-1**. Raises `ReferenceError` when this drone does not have a heli powertrain.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -427,8 +415,6 @@ Oil as a fraction **0-1**. Raises `ReferenceError` when this drone does not have
 | `ReferenceError` | This drone does not currently have a heli powertrain. |
 
 *Types / Fleet & Vehicles*
-
----
 
 ## Fleet
 
@@ -442,27 +428,25 @@ Oil as a fraction **0-1**. Raises `ReferenceError` when this drone does not have
 
 ### Methods
 
-##### `.vehicles()`
+##### `.vehicles() → list[VehicleRef]`
 
 All owned ground vehicles as read-only `VehicleRef` snapshots. Use `.id` when passing a vehicle to station APIs; call `vehicles()` again for fresh ref fields, or `get_component(ref.id)` for the live vehicle API.
 
-- **Returns** `list<VehicleRef>`
+- **Returns** `list[VehicleRef]`
 
-##### `.drones()`
+##### `.drones() → list[DroneRef]`
 
 All owned drones as read-only `DroneRef` snapshots. Use `.id` when passing a drone to station/recovery APIs; call `drones()` again for fresh ref fields, or `get_component(ref.id)` for the live drone API.
 
-- **Returns** `list<DroneRef>`
+- **Returns** `list[DroneRef]`
 
-##### `.mobile_units()`
+##### `.mobile_units() → list[MobileUnitRef]`
 
 All owned vehicles and drones in one snapshot list. Use `.category` to branch between `"vehicle"` and `"drone"`; re-query for fresh positions/status.
 
-- **Returns** `list<MobileUnitRef>`
+- **Returns** `list[MobileUnitRef]`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## DroneRef
 
@@ -470,130 +454,128 @@ All owned vehicles and drones in one snapshot list. Use `.category` to branch be
 
 ### Properties
 
-##### `.category`
+##### `.category: str`
 
 Always `"drone"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"drone"`
 
-##### `.id`
+##### `.id: str`
 
 Stable component id. Use with `get_component(id)` or pass it to Drone Service Station and Depot APIs.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Display name when this ref was returned.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.kind`
+##### `.kind: str`
 
 Drone chassis id.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"drone_small"`, `"drone_medium"`, `"drone_large"`
 
-##### `.engine`
+##### `.engine: str`
 
 `"electric"`, `"heli"`, or empty string if no thruster is mounted.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `""`, `"electric"`, `"heli"`
 
-##### `.status`
+##### `.status: str`
 
 Activity/status string when this ref was returned.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"idle"`, `"traveling"`, `"charging"`, `"refueling"`, `"waiting_service"`, `"waiting_oil"`, `"waiting_bay"`, `"being_rescued"`, `"holding_weather"`, `"scrambled"`, `"stalled_no_battery"`, `"stalled_no_oil"`, `"stalled_no_route"`
 
-##### `.x`
+##### `.x: float`
 
 X coordinate in meters from base when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Y coordinate in meters from base when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.current_station`
+##### `.current_station: str`
 
 Station id when this ref was returned, or empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.is_docked`
+##### `.is_docked: bool`
 
 `True` if the drone was parked at a drone station when this ref was returned.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.battery_level`
+##### `.battery_level: float | None`
 
 Electric drone charge fraction **0-1** when this ref was returned, or `None` for heli drones.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.battery_wh`
+##### `.battery_wh: float | None`
 
 Electric drone charge in Wh when this ref was returned, or `None` for heli drones.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.battery_capacity`
+##### `.battery_capacity: float | None`
 
 Electric drone charge capacity in Wh, or `None` for heli drones.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.oil_level`
+##### `.oil_level: float | None`
 
 Heli drone oil fraction **0-1** when this ref was returned, or `None` for electric drones.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.oil_tons`
+##### `.oil_tons: float | None`
 
 Heli drone oil in tons when this ref was returned, or `None` for electric drones.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.oil_capacity`
+##### `.oil_capacity: float | None`
 
 Heli drone oil capacity in tons, or `None` for electric drones.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.is_being_rescued`
+##### `.is_being_rescued: bool`
 
 `True` if a Drone Service Station rescue was active for this drone when this ref was returned.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.rescue_status`
+##### `.rescue_status: str`
 
 Rescue status when this ref was returned: `"none"`, `"outbound"`, `"charging"`, `"carrying"`, or `"returning"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"none"`, `"outbound"`, `"charging"`, `"carrying"`, `"returning"`
 
 ### Methods
 
-##### `.position()`
+##### `.position() → Position`
 
 Position snapshot from when this ref was returned.
 
 - **Returns** `Position`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## MobileUnitRef
 
@@ -601,81 +583,79 @@ Position snapshot from when this ref was returned.
 
 ### Properties
 
-##### `.category`
+##### `.category: str`
 
 `"vehicle"` or `"drone"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"vehicle"`, `"drone"`
 
-##### `.id`
+##### `.id: str`
 
 Stable component id. Use with `get_component(id)` or station APIs.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Display name when this ref was returned.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.kind`
+##### `.kind: str`
 
 Unit type, e.g. `"rover"`, `"pioneer"`, or a drone chassis id.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"rover"`, `"pioneer"`, `"drone_small"`, `"drone_medium"`, `"drone_large"`
 
-##### `.status`
+##### `.status: str`
 
 Activity/status string when this ref was returned.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"idle"`, `"moving"`, `"stranded"`, `"scanning"`, `"surveying"`, `"drilling"`, `"discarding"`, `"constructing"`, `"transferring"`, `"charging"`, `"queued"`, `"being_rescued"`, `"traveling"`, `"refueling"`, `"waiting_service"`, `"waiting_oil"`, `"waiting_bay"`, `"holding_weather"`, `"scrambled"`, `"stalled_no_battery"`, `"stalled_no_oil"`, `"stalled_no_route"`
 
-##### `.x`
+##### `.x: float`
 
 X coordinate in meters from base when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Y coordinate in meters from base when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.is_docked`
+##### `.is_docked: bool`
 
 `True` if the unit was parked at a service point/station when this ref was returned.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_being_rescued`
+##### `.is_being_rescued: bool`
 
 `True` if a rescue/recovery mission owned this unit when this ref was returned.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.rescue_status`
+##### `.rescue_status: str`
 
 Rescue status when this ref was returned: `"none"`, `"outbound"`, `"charging"`, `"carrying"`, or `"returning"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"none"`, `"outbound"`, `"charging"`, `"carrying"`, `"returning"`
 
 ### Methods
 
-##### `.position()`
+##### `.position() → Position`
 
 Position snapshot from when this ref was returned.
 
 - **Returns** `Position`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## VehicleRef
 
@@ -683,97 +663,97 @@ Position snapshot from when this ref was returned.
 
 ### Properties
 
-##### `.category`
+##### `.category: str`
 
 Always `"vehicle"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"vehicle"`
 
-##### `.id`
+##### `.id: str`
 
 Stable component id. Use with `get_component(id)` or `charging_station.dispatch_rescue(id)`.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Display name when this ref was returned.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.kind`
+##### `.kind: str`
 
 `"rover"` or `"pioneer"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"rover"`, `"pioneer"`
 
-##### `.status`
+##### `.status: str`
 
 Current vehicle activity when this ref was returned.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"idle"`, `"moving"`, `"stranded"`, `"scanning"`, `"surveying"`, `"drilling"`, `"discarding"`, `"constructing"`, `"transferring"`, `"charging"`, `"queued"`, `"being_rescued"`
 
-##### `.x`
+##### `.x: float`
 
 X coordinate in meters from base when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Y coordinate in meters from base when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.battery_level`
+##### `.battery_level: float`
 
 Battery fraction **0-1** when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.battery_wh`
+##### `.battery_wh: float`
 
 Battery charge in Wh when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.battery_capacity`
+##### `.battery_capacity: float`
 
 Maximum battery capacity in Wh.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.is_docked`
+##### `.is_docked: bool`
 
 `True` if the vehicle was parked inside an outpost's **2 by 2-tile footprint**, including the **~2 m** service margin, when this ref was returned. A moving or merely stopped vehicle with an active route is not docked.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.docked_at`
+##### `.docked_at: str`
 
 Outpost id when this ref was returned, or empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.is_being_rescued`
+##### `.is_being_rescued: bool`
 
 `True` if a Vehicle Charging Station rescue was active for this vehicle when this ref was returned.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.rescue_status`
+##### `.rescue_status: str`
 
 Rescue status when this ref was returned: `"none"`, `"outbound"`, `"charging"`, or `"returning"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"none"`, `"outbound"`, `"charging"`, `"returning"`
 
 ### Methods
 
-##### `.position()`
+##### `.position() → Position`
 
 Position snapshot from when this ref was returned.
 
@@ -781,48 +761,44 @@ Position snapshot from when this ref was returned.
 
 *Types / Fleet & Vehicles*
 
----
-
 ## MountSlot
 
 **Returned by:** self.modules() on rover / pioneer
 
 ### Properties
 
-##### `.index`
+##### `.index: int`
 
 Slot position on the chassis, 0-indexed.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.type`
+##### `.type: str`
 
 Slot's type: determines which modules fit (`nav`, `sonar_basic`, `drill_basic`, `universal`, `thruster`, or `drone_module`).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"nav"`, `"sonar_basic"`, `"drill_basic"`, `"universal"`, `"thruster"`, `"drone_module"`
 
-##### `.module_id`
+##### `.module_id: str | None`
 
 Module id currently mounted in this slot, or `None` if empty.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.internal_count`
+##### `.internal_count: int`
 
 Number of internal slots this mounted module exposes. `0` for non-container modules.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.internal_items`
+##### `.internal_items: list[str | None]`
 
 List of item ids currently installed in this module's internal slots. `None` entries mark empty internal slots.
 
-- **Returns** `list<Optional[string]>`
+- **Returns** `list[str | None]`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## NavModule
 
@@ -830,7 +806,7 @@ List of item ids currently installed in this module's internal slots. `None` ent
 
 ### Methods
 
-##### `.set_target(x, y)`
+##### `.set_target(x: float, y: float) → ActionResult`
 
 Set target coordinates to drive toward.
 
@@ -838,8 +814,8 @@ Set target coordinates to drive toward.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | Target X coordinate |
-| `y` | `number` | Target Y coordinate |
+| `x` | `float` | Target X coordinate |
+| `y` | `float` | Target Y coordinate |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -855,7 +831,7 @@ Set target coordinates to drive toward.
 | `"out_of_bounds"` | rejection | The requested position lies outside the valid world bounds. |
 | `"busy"` | transient | The component is already performing another operation. |
 
-##### `.set_throttle(power)`
+##### `.set_throttle(power: float) → ActionResult`
 
 Set throttle (0.0-1.0; clamped).
 
@@ -863,7 +839,7 @@ Set throttle (0.0-1.0; clamped).
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `power` | `number` | Throttle power (0.0-1.0) |
+| `power` | `float` | Throttle power (0.0-1.0) |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -877,13 +853,13 @@ Set throttle (0.0-1.0; clamped).
 | `"not_mounted"` | rejection | The required module is not mounted. |
 | `"busy"` | transient | The component is already performing another operation. |
 
-##### `.throttle()`
+##### `.throttle() → float`
 
 Current throttle setpoint (**0.0-1.0**). Returns the value the script last wrote via `set_throttle(...)`. Distinct from `get_speed()`: `throttle()` is intent (does not change tick-to-tick); `get_speed()` is what the vehicle actually moved last tick.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.brake()`
+##### `.brake() → ActionResult`
 
 Stop the vehicle (throttle set to 0).
 
@@ -898,19 +874,19 @@ Stop the vehicle (throttle set to 0).
 | `"ok"` | success | The operation completed successfully. |
 | `"not_mounted"` | rejection | The required module is not mounted. |
 
-##### `.get_position()`
+##### `.get_position() → Position`
 
 Vehicle position as a `Position` object with `.x` and `.y`.
 
 - **Returns** `Position`
 
-##### `.get_speed()`
+##### `.get_speed() → float`
 
 Vehicle speed in m/h.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.get_distance_to(x, y)`
+##### `.get_distance_to(x: float, y: float) → float`
 
 Distance (meters) from the vehicle to the given point. Arrival loops need a tolerance, normally `> 2`, rather than exact zero. When the next action targets a building, route to its `BuildingRef.position`.
 
@@ -918,20 +894,18 @@ Distance (meters) from the vehicle to the given point. Arrival loops need a tole
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | Target X coordinate |
-| `y` | `number` | Target Y coordinate |
+| `x` | `float` | Target X coordinate |
+| `y` | `float` | Target Y coordinate |
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.speed_multiplier()`
+##### `.speed_multiplier() → float`
 
 Top-speed multiplier: **1.0** basic, or **1 + mounted Sport Nav count** on Pioneer. Speed only; range still depends on battery, throttle, cargo load, and movement draw.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## SonarModule
 
@@ -939,9 +913,9 @@ Top-speed multiplier: **1.0** basic, or **1 + mounted Sport Nav count** on Pione
 
 ### Methods
 
-##### `.scan()`
+##### `.scan() → SonarScanResult`
 
-Point-sweep for nearby sites. A completed sweep can find no compatible contacts. Mineral contacts obey sonar range and hardness; thermal, water, oil, and exotic contacts also require matching research. The sweep updates the Journal with newly classified sites. A stale captured module reference raises `ReferenceError`.
+Point-sweep for nearby sites. A completed sweep can find no compatible contacts. Mineral contacts obey sonar range and hardness; thermal, water, oil, and exotic contacts also require matching research. A sweep that succeeded can still leave a contact unidentified: it is reported separately, with its coordinates and a reason, and stays unscanned until the right instrument reaches it. The sweep updates the Journal with newly classified sites. A stale captured module reference raises `ReferenceError`.
 
 - **Returns** `SonarScanResult`
 - **Result fields** `.status`, `.message`
@@ -965,7 +939,7 @@ Point-sweep for nearby sites. A completed sweep can find no compatible contacts.
 | --- | --- |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.survey(site)`
+##### `.survey(site: str | Site | IdRecord) → SurveyResult`
 
 Reveal the details available for a productive site. An inert `GeologicalAnomaly` is already resolved, so surveying it is free. Re-surveying is also free unless a deeper sonar tier can reveal more. Malformed site values raise `ValueError`; a stale captured module reference raises `ReferenceError`.
 
@@ -973,7 +947,7 @@ Reveal the details available for a productive site. An inert `GeologicalAnomaly`
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `site` | `any` | Site id string or a `Site` from `scan()` |
+| `site` | `str \| Site \| IdRecord` | Site id string or a `Site` from `scan()` |
 
 - **Returns** `SurveyResult`
 - **Result fields** `.status`, `.message`
@@ -999,11 +973,11 @@ Reveal the details available for a productive site. An inert `GeologicalAnomaly`
 | `ValueError` | survey() requires a non-empty site id or a Site object. |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.range()`
+##### `.range() → float`
 
 Sonar range in meters (**50** basic, **180** Wide, **280** Deep). A stale captured module reference raises `ReferenceError`.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Raises*
 
@@ -1011,11 +985,11 @@ Sonar range in meters (**50** basic, **180** Wide, **280** Deep). A stale captur
 | --- | --- |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.hardness_limit()`
+##### `.hardness_limit() → int`
 
 Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Deep). A stale captured module reference raises `ReferenceError`.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Raises*
 
@@ -1023,11 +997,11 @@ Max mineral hardness this sonar can identify (**1** basic, **3** Wide, **4** Dee
 | --- | --- |
 | `ReferenceError` | This SonarModule reference is stale because its module is no longer mounted. Read self.sonar again after mounting a sonar. |
 
-##### `.tier()`
+##### `.tier() → str`
 
 Survey-depth tier granted by the mounted sonar: `"basic"` / `"wide"` / `"deep"`. Determines thermal/exotic survey detail; `"deep"` is also required to discover oil wells once **Petroleum Survey** is unlocked. A stale captured module reference raises `ReferenceError`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"basic"`, `"wide"`, `"deep"`
 
 *Raises*
@@ -1038,42 +1012,38 @@ Survey-depth tier granted by the mounted sonar: `"basic"` / `"wide"` / `"deep"`.
 
 *Types / Fleet & Vehicles*
 
----
-
 ## SonarScanResult
 
 **Returned by:** SonarModule.scan()
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 Stable sweep outcome. An empty `.sites` list with `"ok"` is a completed sweep with no contacts requiring player action.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"too_hard"`, `"tier_too_low"`, `"research_required"`, `"wrong_scanner"`, `"busy"`, `"no_power"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the sweep outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.sites`
+##### `.sites: list[Site]`
 
-Sites resolved by this completed sweep; empty when no compatible site was returned.
+Sites resolved by this completed sweep; empty when no compatible site was returned. Contacts the sweep detected but could not identify are in `.blocked` instead, never here.
 
-- **Returns** `list<Site>`
+- **Returns** `list[Site]`
 
-##### `.blocked`
+##### `.blocked: list[BlockedContact]`
 
 Contacts the sweep detected but this sonar cannot identify, nearest first, and empty when everything in range was identified. A contact appears here instead of in `.sites`, so the two lists never overlap. Each entry carries `.x`, `.y`, a `.reason` code, and a readable `.message`. This is how a script tells an unreachable contact apart from empty ground: `.status` describes the sweep itself and stays `"ok"` whenever any site was identified.
 
-- **Returns** `list<BlockedContact>`
+- **Returns** `list[BlockedContact]`
 
 *Types / Fleet & Vehicles*
-
----
 
 ## SurveyResult
 
@@ -1081,25 +1051,23 @@ Contacts the sweep detected but this sonar cannot identify, nearest first, and e
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"busy"`, `"not_discovered"`, `"research_required"`, `"tier_too_low"`, `"out_of_range"`, `"too_hard"`, or `"no_power"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"busy"`, `"not_discovered"`, `"research_required"`, `"tier_too_low"`, `"out_of_range"`, `"too_hard"`, `"no_power"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable, exact explanation of the survey outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.site`
+##### `.site: Site | None`
 
 Surveyed concrete `Site`, or `None` when the survey was rejected.
 
-- **Returns** `Optional[Site]`
+- **Returns** `Site | None`
 
 *Types / Infrastructure & Fluids*
-
----

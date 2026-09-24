@@ -22,15 +22,13 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Methods
 
-##### `.transmissions()`
+##### `.transmissions() → list[SignalTransmission]`
 
 Raw transmissions audible to this powered station right now. More than one event may be present. Ordering is stable, but copies sharing a packet number are not ordered by validity. The receiver stores no history.
 
-- **Returns** `list<SignalTransmission>`
+- **Returns** `list[SignalTransmission]`
 
 *Types / Weather & Sky*
-
----
 
 ## SignalTransmission
 
@@ -38,64 +36,62 @@ Raw transmissions audible to this powered station right now. More than one event
 
 ### Properties
 
-##### `.event_id`
+##### `.event_id: str`
 
 Event id shared by every packet and noise duplicate.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.number`
+##### `.number: int`
 
 Declared packet number. Different copies may declare the same number.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.total`
+##### `.total: int`
 
 Declared packet count for the event.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.channel`
+##### `.channel: str`
 
 Channel on which this copy is heard.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"broadcast"`, `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, `"deep"`
 
-##### `.data`
+##### `.data: str`
 
 Encoded movement record `event_id|number|total|dx|dy`. Numbered records form a movement sequence beginning at `(0, 0)`; `dx` and `dy` are that record's signed movement offsets, and the sequence endpoint is the event coordinate.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.checksum`
+##### `.checksum: int`
 
 Checksum supplied with the transmission: the full sum of every character's ASCII code in `.data`, with no modulo reduction.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.emitted_at_gh`
+##### `.emitted_at_gh: float`
 
 Storm-start world-clock timestamp shared by every valid and noisy copy in this event.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.expires_at_gh`
+##### `.expires_at_gh: float`
 
 World-clock timestamp when this event's live listening window closes.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.source_station_id`
+##### `.source_station_id: str`
 
 Physical Weather Station hearing this copy.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Weather & Sky*
-
----
 
 ## Storm
 
@@ -103,64 +99,64 @@ Physical Weather Station hearing this copy.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable storm id.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Cell-center x at this report's observation time, m.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Cell-center y at this report's observation time, m.
 
-- **Returns** `number`
+- **Returns** `float`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 `"dust"` or `"thunder"`. Dust events transmit a Raw Uranium aftermath message. Thunder charges eligible Lightning Rods and may produce a Storm Glass message.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"dust"`, `"thunder"`
 
-##### `.radius_m()`
+##### `.radius_m() → float`
 
 Cell radius in m. A heli drone on a straight route holds once its current position is inside the cell; it does not automatically route around it. Electric drones fly through.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.speed()`
+##### `.speed() → float`
 
 Travel speed in m/h.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.heading()`
+##### `.heading() → list[float]`
 
 Unit travel direction as `[dx, dy]`.
 
-- **Returns** `[number, number]`
+- **Returns** `list[float]`
 
-##### `.intensity()`
+##### `.intensity() → float`
 
 Observed strength **0-1** at report time.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.expires_in()`
+##### `.expires_in() → float`
 
 Live hours remaining before this observed cell dissipates.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.eta_to(x, y)`
+##### `.eta_to(x: float, y: float) → float | None`
 
 Hours until the cell's edge reaches the point. **0** when the point is already inside the cell; `None` when the track never gets there before dissipating.
 
@@ -168,14 +164,12 @@ Hours until the cell's edge reaches the point. **0** when the point is already i
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | World x, m. |
-| `y` | `number` | World y, m. |
+| `x` | `float` | World x, m. |
+| `y` | `float` | World y, m. |
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
 *Types / Weather & Sky*
-
----
 
 ## WeatherEventForecast
 
@@ -183,42 +177,40 @@ Hours until the cell's edge reaches the point. **0** when the point is already i
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable event id shared with the active Storm and later signal transmissions.
 
-- **Returns** `string`
+- **Returns** `str`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 Broad event family: `"dust"` or `"thunder"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"dust"`, `"thunder"`
 
-##### `.arrival_window()`
+##### `.arrival_window() → list[float]`
 
 `[earliest, latest]` hours after this report's observation time when the cell should enter coverage.
 
-- **Returns** `[number, number]`
+- **Returns** `list[float]`
 
-##### `.corridor()`
+##### `.corridor() → Zone`
 
 Coarse predicted travel corridor as a `Zone`; it is storm information, never the hidden aftermath path.
 
 - **Returns** `Zone`
 
-##### `.intensity_range()`
+##### `.intensity_range() → list[float]`
 
 Observed forecast range `[low, high]`, each **0-1**.
 
-- **Returns** `[number, number]`
+- **Returns** `list[float]`
 
 *Types / Weather & Sky*
-
----
 
 ## WeatherReport
 
@@ -226,53 +218,51 @@ Observed forecast range `[low, high]`, each **0-1**.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable report id for provenance and logging.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.source_id`
+##### `.source_id: str`
 
 Physical Weather Station id that made this report.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.observed_at_gh`
+##### `.observed_at_gh: float`
 
 World-clock timestamp when the report was measured.
 
-- **Returns** `number`
+- **Returns** `float`
 
 ### Methods
 
-##### `.age_gh()`
+##### `.age_gh() → float`
 
 Live age of this immutable report in world-clock hours.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.coverage()`
+##### `.coverage() → Zone`
 
 The station's local coverage as a `Zone` frozen at observation time.
 
 - **Returns** `Zone`
 
-##### `.active()`
+##### `.active() → list[Storm]`
 
 List of active `Storm` snapshots inside local coverage at observation time.
 
-- **Returns** `list<Storm>`
+- **Returns** `list[Storm]`
 
-##### `.forecast()`
+##### `.forecast() → list[WeatherEventForecast]`
 
 Local `WeatherEventForecast` entries expected to enter coverage within **8 world-clock hours**, or **24** after Weather Forecasting research.
 
-- **Returns** `list<WeatherEventForecast>`
+- **Returns** `list[WeatherEventForecast]`
 
 *Types / Weather & Sky*
-
----
 
 ## WeatherSignalBoard
 
@@ -280,7 +270,7 @@ Local `WeatherEventForecast` entries expected to enter coverage within **8 world
 
 ### Methods
 
-##### `.reveal(transmission)`
+##### `.reveal(transmission: SignalTransmission | TransmissionRecord) → ActionResult`
 
 Publish one transmission into its declared numbered slot. A different event replaces this station's current board. An already-published slot for the same event is left unchanged. The board checks shape and bounds, not meaning or checksum validity.
 
@@ -288,7 +278,7 @@ Publish one transmission into its declared numbered slot. A different event repl
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `transmission` | `any` | A `SignalTransmission`, a saved dictionary such as `vars(signal)`, or a class instance with the same fields. Requires string `event_id`, `channel`, and `data`, plus whole-number `number` and `total` within the signal slot limits. Optional string `source_station_id` defaults to this station when omitted. |
+| `transmission` | `SignalTransmission \| TransmissionRecord` | A `SignalTransmission`, a saved dictionary such as `vars(signal)`, or a class instance with the same fields. Requires string `event_id`, `channel`, and `data`, plus whole-number `number` and `total` within the signal slot limits. Optional string `source_station_id` defaults to this station when omitted. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -303,7 +293,7 @@ Publish one transmission into its declared numbered slot. A different event repl
 | `"duplicate"` | rejection | That entry is already present and nothing was added or changed. |
 | `"invalid_type"` | rejection | The supplied value does not carry the required API type and provenance. |
 
-##### `.reject(transmission)`
+##### `.reject(transmission: SignalTransmission | TransmissionRecord) → ActionResult`
 
 Add one to the supplied event's refusal count without opening a slot. A different event replaces this station's current board.
 
@@ -311,7 +301,7 @@ Add one to the supplied event's refusal count without opening a slot. A differen
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `transmission` | `any` | A `SignalTransmission`, a saved dictionary such as `vars(signal)`, or a class instance with the same fields and validation as `reveal()`. |
+| `transmission` | `SignalTransmission \| TransmissionRecord` | A `SignalTransmission`, a saved dictionary such as `vars(signal)`, or a class instance with the same fields and validation as `reveal()`. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -325,7 +315,7 @@ Add one to the supplied event's refusal count without opening a slot. A differen
 | `"no_power"` | transient | The component has no available power. |
 | `"invalid_type"` | rejection | The supplied value does not carry the required API type and provenance. |
 
-##### `.resolve(event_id, info)`
+##### `.resolve(event_id: str, info: dict[str, object]) → ActionResult`
 
 Publish up to **6** labelled rows for an event. A different event replaces this station's current board. The board displays supplied values without validating them.
 
@@ -333,8 +323,8 @@ Publish up to **6** labelled rows for an event. A different event replaces this 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `event_id` | `string` | Event id the rows describe. |
-| `info` | `any` | String-keyed dictionary of labels and display values. |
+| `event_id` | `str` | Event id the rows describe. |
+| `info` | `dict[str, object]` | String-keyed dictionary of labels and display values. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -348,7 +338,7 @@ Publish up to **6** labelled rows for an event. A different event replaces this 
 | `"no_power"` | transient | The component has no available power. |
 | `"invalid_type"` | rejection | The supplied value does not carry the required API type and provenance. |
 
-##### `.clear()`
+##### `.clear() → ActionResult`
 
 Clear the board, its rejection count, and any published conclusion.
 
@@ -363,7 +353,7 @@ Clear the board, its rejection count, and any published conclusion.
 | `"ok"` | success | The operation completed successfully. |
 | `"no_power"` | transient | The component has no available power. |
 
-##### `.status()`
+##### `.status() → WeatherSignalBoardStatus`
 
 This station's current board publication metadata.
 
@@ -371,42 +361,38 @@ This station's current board publication metadata.
 
 *Types / Weather & Sky*
 
----
-
 ## WeatherSignalBoardStatus
 
 **Returned by:** weather_station.signal_board.status()
 
 ### Properties
 
-##### `.has_input`
+##### `.has_input: bool`
 
 Whether this station has published a Signal Board value.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.published_at_gh`
+##### `.published_at_gh: float | None`
 
 Publication timestamp, or `None` with no input.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.freshness`
+##### `.freshness: str`
 
 `"no_input"`, `"fresh"`, or `"stale"`. A publication becomes stale after **2 world-clock hours**.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"no_input"`, `"fresh"`, `"stale"`
 
-##### `.event_id`
+##### `.event_id: str`
 
 Event shown on this station's board, or an empty string with no input.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Weather & Sky*
-
----
 
 ## WeatherStrike
 
@@ -414,39 +400,37 @@ Event shown on this station's board, or an empty string with no input.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable observed-strike id.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.event_id`
+##### `.event_id: str`
 
 Thunderstorm event id.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.observed_at_gh`
+##### `.observed_at_gh: float`
 
 World-clock hour when the strike landed.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.energy_wh`
+##### `.energy_wh: float`
 
 Electrical energy carried by the strike in Wh.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.caught`
+##### `.caught: bool`
 
 Whether an eligible Lightning Rod banked this strike.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 *Types / Weather & Sky*
-
----
 
 ## Zone
 
@@ -454,7 +438,7 @@ Whether an eligible Lightning Rod banked this strike.
 
 ### Methods
 
-##### `.intersect(other)`
+##### `.intersect(other: Zone) → Zone`
 
 Keep only the geometry shared by both zones.
 
@@ -462,11 +446,11 @@ Keep only the geometry shared by both zones.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Another `Zone`. |
+| `other` | `Zone` | Another `Zone`. |
 
 - **Returns** `Zone`
 
-##### `.union(other)`
+##### `.union(other: Zone) → Zone`
 
 Keep everything covered by either zone.
 
@@ -474,11 +458,11 @@ Keep everything covered by either zone.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Another `Zone`. |
+| `other` | `Zone` | Another `Zone`. |
 
 - **Returns** `Zone`
 
-##### `.subtract(other)`
+##### `.subtract(other: Zone) → Zone`
 
 Remove the other zone's geometry from this zone.
 
@@ -486,11 +470,11 @@ Remove the other zone's geometry from this zone.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Another `Zone`. |
+| `other` | `Zone` | Another `Zone`. |
 
 - **Returns** `Zone`
 
-##### `.diff(other)`
+##### `.diff(other: Zone) → Zone`
 
 Keep geometry present in only one of the two zones.
 
@@ -498,23 +482,23 @@ Keep geometry present in only one of the two zones.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Another `Zone`. |
+| `other` | `Zone` | Another `Zone`. |
 
 - **Returns** `Zone`
 
-##### `.center()`
+##### `.center() → list[float] | None`
 
 Centroid as `[x, y]` in m, or `None` for an empty zone. This describes visible storm geometry, not its hidden aftermath.
 
-- **Returns** `Optional[[number, number]]`
+- **Returns** `list[float] | None`
 
-##### `.area()`
+##### `.area() → float`
 
 Covered area in m².
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.contains(x, y)`
+##### `.contains(x: float, y: float) → bool`
 
 `True` when the point is inside the zone.
 
@@ -522,15 +506,13 @@ Covered area in m².
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | World x, m. |
-| `y` | `number` | World y, m. |
+| `x` | `float` | World x, m. |
+| `y` | `float` | World y, m. |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_empty()`
+##### `.is_empty() → bool`
 
 `True` when the zone covers nothing.
 
-- **Returns** `boolean`
-
----
+- **Returns** `bool`

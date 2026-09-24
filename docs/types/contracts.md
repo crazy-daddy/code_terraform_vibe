@@ -65,35 +65,33 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
 *Types / Contracts*
-
----
 
 ## BeatTheSystemContract
 
@@ -107,33 +105,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.arbiter`
+##### `.arbiter: Arbiter`
 
 The alien Arbiter. It takes an immediate win, otherwise blocks your immediate win, otherwise prefers centre, then corners, then edges; tied choices are random.
 
@@ -141,15 +139,13 @@ The alien Arbiter. It takes an immediate win, otherwise blocks your immediate wi
 
 *Types / Contracts*
 
----
-
 ## Arbiter
 
 **Returned by:** .arbiter
 
 ### Methods
 
-##### `.new_game()`
+##### `.new_game() → ActionResult`
 
 Start a fresh 3×3 game on an empty board; you move first. After a finished game this call pauses about half a second before the next board is ready.
 
@@ -164,7 +160,7 @@ Start a fresh 3×3 game on an empty board; you move first. After a finished game
 | `"ok"` | success | The operation completed successfully. |
 | `"in_progress"` | transient | The operation is still in progress. |
 
-##### `.restart()`
+##### `.restart() → ActionResult`
 
 Abandon any game in progress and start fresh; you move first. Abandoning a game mid-play counts as a non-win and resets your current-run streak to 0. Like new_game(), it pauses about half a second between games.
 
@@ -178,7 +174,7 @@ Abandon any game in progress and start fresh; you move first. Abandoning a game 
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.play(cell)`
+##### `.play(cell: int) → ActionResult`
 
 Place your mark in a whole-number cell in the **0-8** range (row-major), then the Arbiter responds. Three marks in a row, column, or diagonal wins. A non-number cell raises `TypeError`; a non-finite, fractional, or out-of-range cell raises `ValueError` before game state is considered.
 
@@ -186,7 +182,7 @@ Place your mark in a whole-number cell in the **0-8** range (row-major), then th
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `cell` | `number` | Whole-number board cell to mark, 0-8 |
+| `cell` | `int` | Whole-number board cell to mark, 0-8 |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -210,40 +206,38 @@ Place your mark in a whole-number cell in the **0-8** range (row-major), then th
 | `TypeError` | Arbiter.play() requires a numeric cell. |
 | `ValueError` | Arbiter.play() requires a finite whole-number cell in the **0-8** range. |
 
-##### `.board()`
+##### `.board() → list[str]`
 
 The 9 board cells as a list, index 0-8 row-major. Each cell is "" (empty), "you", or "arbiter".
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.result()`
+##### `.result() → str`
 
 Current game outcome: "ongoing", "win", "loss", "draw", or "no_game" (no game started yet).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ongoing"`, `"win"`, `"loss"`, `"draw"`, `"no_game"`
 
-##### `.streak()`
+##### `.streak() → int`
 
 Consecutive wins in the current script run. Resets to 0 on a loss, draw, abandonment, or fresh script run.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.target()`
+##### `.target() → int`
 
 The consecutive-win count needed to complete the contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.token()`
+##### `.token() → str`
 
 The passcode to transmit: a non-empty string once streak() reaches target(), otherwise an empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----
 
 ## BuriedFiveContract
 
@@ -257,53 +251,51 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.transmission`
+##### `.transmission: list[str]`
 
 The scrambled transmission: a list of single-character tokens.
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.analyzer`
+##### `.analyzer: Analyzer`
 
 The recovered analyzer device: collapses a group of five tokens into the single token they were expanded from.
 
 - **Returns** `Analyzer`
 
-##### `.layers`
+##### `.layers: int`
 
 Whole-number count of five-fold wrapping layers applied to the transmission.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Contracts*
-
----
 
 ## Analyzer
 
@@ -311,7 +303,7 @@ Whole-number count of five-fold wrapping layers applied to the transmission.
 
 ### Methods
 
-##### `.read(group)`
+##### `.read(group: list[str]) → str`
 
 Read a list of exactly five string tokens and return the single token they were expanded from. A non-list argument or non-string element raises `TypeError`; the wrong length or an unrecognized group raises `ValueError`.
 
@@ -319,9 +311,9 @@ Read a list of exactly five string tokens and return the single token they were 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `group` | `list` | Five-string-token group to collapse |
+| `group` | `list[str]` | Five-string-token group to collapse |
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Raises*
 
@@ -332,8 +324,6 @@ Read a list of exactly five string tokens and return the single token they were 
 
 *Types / Contracts*
 
----
-
 ## ColdBootContract
 
 Extends `Contract`
@@ -342,41 +332,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.program`
+##### `.program: list[int]`
 
 The artifact's bytecode: a list of whole numbers. Copy it before running: `memory = list(program)`.
 
-- **Returns** `list<number>`
+- **Returns** `list[int]`
 
 *Types / Contracts*
-
----
 
 ## CoreSampleContract
 
@@ -390,39 +378,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.cores`
+##### `.cores: list[list[int | None]]`
 
 The 10 damaged cores, as a list of byte lists. A byte destroyed in transit reads as None: recover it from the construction rules.
 
-- **Returns** `list`
+- **Returns** `list[list[int | None]]`
 
-##### `.device`
+##### `.device: CoreDevice`
 
 The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
 
@@ -430,15 +418,13 @@ The reconstruction device: submit your rebuilt cores to it. See CoreDevice.
 
 *Types / Contracts*
 
----
-
 ## CoreDevice
 
 **Returned by:** .device
 
 ### Methods
 
-##### `.submit(index, bytes)`
+##### `.submit(index: int, bytes: list[int]) → ActionResult`
 
 Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or element types raise `TypeError`; a fractional or out-of-range index, wrong list length, or numeric value outside the **0-255** range raises `ValueError`. A rejected submission does not lock the slot.
 
@@ -446,8 +432,8 @@ Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or el
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Whole-number core slot, 0-9 |
-| `bytes` | `list` | The rebuilt core as a list of whole-number bytes in the **0-255** range |
+| `index` | `int` | Whole-number core slot, 0-9 |
+| `bytes` | `list[int]` | The rebuilt core as a list of whole-number bytes in the **0-255** range |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -467,27 +453,25 @@ Submit a rebuilt core for whole-number slot `index` (0-9). Wrong container or el
 | `TypeError` | CoreDevice.submit() requires a numeric index and a list containing only numeric bytes. |
 | `ValueError` | CoreDevice.submit() requires a whole-number slot in the **0-9** range and a correctly sized list of whole-number bytes in the **0-255** range. |
 
-##### `.recovered()`
+##### `.recovered() → int`
 
 How many of the 10 cores are locked in the current script run. A fresh run starts at 0.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.target()`
+##### `.target() → int`
 
 The number of cores you must recover to complete the contract: 10.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.token()`
+##### `.token() → str`
 
 The passcode to transmit: a non-empty string once recovered() reaches target(), otherwise an empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----
 
 ## CorruptedArchiveContract
 
@@ -501,33 +485,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.archive`
+##### `.archive: Archive`
 
 The scrambled data archive.
 
@@ -535,29 +519,27 @@ The scrambled data archive.
 
 *Types / Contracts*
 
----
-
 ## Archive
 
 **Returned by:** .archive
 
 ### Properties
 
-##### `.rows`
+##### `.rows: int`
 
 Number of rows in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.cols`
+##### `.cols: int`
 
 Number of columns in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.flip(row, col)`
+##### `.flip(row: int, col: int) → str`
 
 Reveal and return the word at a whole-number grid cell. Wrong argument types raise `TypeError`; fractional, non-finite, or out-of-bounds coordinates raise `ValueError`.
 
@@ -565,10 +547,10 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `number` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `number` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
+| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Raises*
 
@@ -579,8 +561,6 @@ Reveal and return the word at a whole-number grid cell. Wrong argument types rai
 
 *Types / Contracts*
 
----
-
 ## CrosstalkContract
 
 Extends `Contract`
@@ -589,53 +569,51 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.input_x`
+##### `.input_x: str`
 
 First intercepted signal: a string of letters with 0s and 1s scattered through. Some bits are decoys.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.input_y`
+##### `.input_y: str`
 
 Second intercepted signal: same shape as input_x.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.min_length`
+##### `.min_length: int`
 
 Minimum palindrome length for a bit to count: a bit qualifies only if the letters mirror to this span centred on it.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Contracts*
-
----
 
 ## DataTabletContract
 
@@ -649,41 +627,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.tablet`
+##### `.tablet: DataTablet`
 
 The data tablet scanner.
 
 - **Returns** `DataTablet`
 
 *Types / Contracts*
-
----
 
 ## DataTablet
 
@@ -695,21 +671,21 @@ The data tablet scanner.
 
 ### Properties
 
-##### `.rows`
+##### `.rows: int`
 
 Number of rows in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.cols`
+##### `.cols: int`
 
 Number of columns in the grid.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.probe(row, col)`
+##### `.probe(row: int, col: int) → ProbeResult`
 
 Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-number `.distance`. Wrong argument types raise `TypeError`; fractional or out-of-bounds coordinates raise `ValueError`.
 
@@ -717,8 +693,8 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `row` | `number` | Whole-number grid row, 0 to rows - 1 |
-| `col` | `number` | Whole-number grid column, 0 to cols - 1 |
+| `row` | `int` | Whole-number grid row, 0 to rows - 1 |
+| `col` | `int` | Whole-number grid column, 0 to cols - 1 |
 
 - **Returns** `ProbeResult`
 
@@ -731,29 +707,25 @@ Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-numb
 
 *Types / Contracts*
 
----
-
 ## ProbeResult
 
 **Returned by:** tablet.probe()
 
 ### Properties
 
-##### `.char`
+##### `.char: str`
 
 Character at this cell.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.distance`
+##### `.distance: int`
 
 Whole-number Manhattan distance (steps) to the nearest message cell. 0 means this cell IS a message cell.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Contracts*
-
----
 
 ## DriftingSignalContract
 
@@ -767,33 +739,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.device`
+##### `.device: SlabDevice`
 
 The recovered slab contraption.
 
@@ -801,23 +773,19 @@ The recovered slab contraption.
 
 *Types / Contracts*
 
----
-
 ## SlabDevice
 
 **Returned by:** .device
 
 ### Properties
 
-##### `.slabs`
+##### `.slabs: str`
 
 Current state of the letter slabs. Uppercase letters, spaces preserved.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----
 
 ## LatticeContract
 
@@ -831,33 +799,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.grid`
+##### `.grid: LatticeGrid`
 
 The alien deep-scan lattice. Probe only proven-clear cells to map the volatile nodes; a trip blocks further probes until the grid is reset. See LatticeGrid.
 
@@ -865,33 +833,31 @@ The alien deep-scan lattice. Probe only proven-clear cells to map the volatile n
 
 *Types / Contracts*
 
----
-
 ## LatticeGrid
 
 **Returned by:** .grid
 
 ### Methods
 
-##### `.width()`
+##### `.width() → int`
 
 The grid width in cells (32).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.height()`
+##### `.height() → int`
 
 The grid height in cells (32).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.start()`
+##### `.start() → list[int]`
 
 A guaranteed-clear foothold cell, returned as `[x, y]`. Probe it first to get a reading and begin the deduction.
 
-- **Returns** `list<number>`
+- **Returns** `list[int]`
 
-##### `.reset()`
+##### `.reset() → ActionResult`
 
 Clear a tripped fault so probing can continue in the same script run. The hidden board and guaranteed-clear starting cell do not change.
 
@@ -905,7 +871,7 @@ Clear a tripped fault so probing can continue in the same script run. The hidden
 | --- | --- | --- |
 | `"ok"` | success | The lattice fault was cleared. The hidden board and starting cell are unchanged. |
 
-##### `.probe(x, y)`
+##### `.probe(x: int, y: int) → LatticeProbeResult`
 
 Probe a proven clear whole-number cell. The reading is the whole-number count of neighboring volatile nodes in the **0-8** range. Tripping a node faults the lattice until `reset()` is called. Wrong argument types raise `TypeError`; fractional, non-finite, or out-of-bounds coordinates raise `ValueError` without tripping an intact lattice.
 
@@ -913,8 +879,8 @@ Probe a proven clear whole-number cell. The reading is the whole-number count of
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | Whole-number column, 0-31 |
-| `y` | `number` | Whole-number row, 0-31 |
+| `x` | `int` | Whole-number column, 0-31 |
+| `y` | `int` | Whole-number row, 0-31 |
 
 - **Returns** `LatticeProbeResult`
 - **Result fields** `.status`, `.message`
@@ -937,8 +903,6 @@ Probe a proven clear whole-number cell. The reading is the whole-number count of
 
 *Types / Contracts*
 
----
-
 ## RelayHackContract
 
 Extends `Contract`
@@ -951,33 +915,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.lock`
+##### `.lock: RelayLock`
 
 The relay lock to crack.
 
@@ -985,29 +949,27 @@ The relay lock to crack.
 
 *Types / Contracts*
 
----
-
 ## RelayLock
 
 **Returned by:** .lock
 
 ### Properties
 
-##### `.tumblers`
+##### `.tumblers: int`
 
 Number of tumblers (6).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.range`
+##### `.range: int`
 
 Range per tumbler (100 = 0-99).
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.intercept(code)`
+##### `.intercept(code: list[int]) → list[bool]`
 
 Test a list of exactly 6 whole-number values in the **0-99** range and return one True/False value per tumbler. Wrong argument types raise `TypeError`; wrong list length, non-finite or fractional values, and values outside the range raise `ValueError`.
 
@@ -1015,9 +977,9 @@ Test a list of exactly 6 whole-number values in the **0-99** range and return on
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `code` | `list` | Candidate list of 6 whole numbers, each 0-99 |
+| `code` | `list[int]` | Candidate list of 6 whole numbers, each 0-99 |
 
-- **Returns** `list[boolean]`
+- **Returns** `list[bool]`
 
 *Raises*
 
@@ -1027,8 +989,6 @@ Test a list of exactly 6 whole-number values in the **0-99** range and return on
 | `ValueError` | The contract probe received a value, shape, or coordinate outside its documented domain. |
 
 *Types / Contracts*
-
----
 
 ## SealedVaultContract
 
@@ -1042,41 +1002,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.vault`
+##### `.vault: Vault`
 
 The sealed vault passage system. Its position resets to (0, 0) at the start of each contract script run; the maze layout stays fixed.
 
 - **Returns** `Vault`
 
 *Types / Contracts*
-
----
 
 ## Vault
 
@@ -1088,21 +1046,21 @@ The sealed vault passage system. Its position resets to (0, 0) at the start of e
 
 ### Properties
 
-##### `.position`
+##### `.position: VaultPosition`
 
 Current cell as a `VaultPosition` snapshot with `.row` and `.col`. Store it when you need to remember an old cell; read `vault.position` again after `move()` to get the new cell.
 
 - **Returns** `VaultPosition`
 
-##### `.size`
+##### `.size: int`
 
 Side length of the (square) maze grid. The maze is `size`×`size` cells; the start is `(0, 0)` and the exit is `(size - 1, size - 1)`.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.move(direction)`
+##### `.move(direction: str) → ActionResult`
 
 Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non-string direction raises `TypeError`; an unknown direction raises `ValueError` without moving.
 
@@ -1110,7 +1068,7 @@ Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `direction` | `string` | Direction to step. |
+| `direction` | `str` | Direction to step. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -1131,7 +1089,7 @@ Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non
 | `TypeError` | Vault.move() requires a string direction. |
 | `ValueError` | Vault.move() accepts only north, south, east, or west. |
 
-##### `.escape()`
+##### `.escape() → VaultEscapeResult`
 
 Open the vault from its exit cell.
 
@@ -1148,37 +1106,33 @@ Open the vault from its exit cell.
 
 *Types / Contracts*
 
----
-
 ## VaultPosition
 
 **Returned by:** vault.position
 
 ### Properties
 
-##### `.row`
+##### `.row: int`
 
 Row coordinate.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.col`
+##### `.col: int`
 
 Column coordinate.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.__iter__()`
+##### `.__iter__() → Iterator[int]`
 
 Iterate over `row`, then `col`, so this position can be unpacked or passed to `list()`.
 
-- **Returns** `iterator<number>`
+- **Returns** `Iterator[int]`
 
 *Types / Contracts*
-
----
 
 ## TerminalBreachContract
 
@@ -1192,41 +1146,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.terminal`
+##### `.terminal: AlienTerminal`
 
 The alien security terminal.
 
 - **Returns** `AlienTerminal`
 
 *Types / Contracts*
-
----
 
 ## AlienTerminal
 
@@ -1238,15 +1190,15 @@ The alien security terminal.
 
 ### Properties
 
-##### `.length`
+##### `.length: int`
 
 Whole-number code length (15).
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.guess(digits)`
+##### `.guess(digits: list[int]) → GuessResult`
 
 Test a list of exactly 15 whole-number digits in the **1-5** range and return `GuessResult`. Exact-position matches are removed first; `.misplaced` then counts shared remaining occurrences without over-counting duplicates. Wrong argument or element types raise `TypeError`; wrong length, fractional values, or out-of-range digits raise `ValueError`.
 
@@ -1254,7 +1206,7 @@ Test a list of exactly 15 whole-number digits in the **1-5** range and return `G
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `digits` | `list` | Candidate list of 15 whole-number digits, each 1-5 |
+| `digits` | `list[int]` | Candidate list of 15 whole-number digits, each 1-5 |
 
 - **Returns** `GuessResult`
 
@@ -1267,29 +1219,25 @@ Test a list of exactly 15 whole-number digits in the **1-5** range and return `G
 
 *Types / Contracts*
 
----
-
 ## GuessResult
 
 **Returned by:** terminal.guess()
 
 ### Properties
 
-##### `.correct`
+##### `.correct: int`
 
 Number of digits in the correct position.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.misplaced`
+##### `.misplaced: int`
 
 Number of correct digits in wrong positions.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Contracts*
-
----
 
 ## TheLoomContract
 
@@ -1303,47 +1251,45 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.loom`
+##### `.loom: Loom`
 
 The recovered alien loom, your probe tool. Call `loom.weave(a, b)` to learn how it braids two strings into one.
 
 - **Returns** `Loom`
 
-##### `.record`
+##### `.record: str`
 
 A 42-character woven record made from two equal-length 21-character threads. Reverse the loom's rule to un-weave it; one thread is the message.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----
 
 ## Loom
 
@@ -1351,7 +1297,7 @@ A 42-character woven record made from two equal-length 21-character threads. Rev
 
 ### Methods
 
-##### `.weave(a, b)`
+##### `.weave(a: str, b: str) → str`
 
 Braid two strings into one and return it. Each character is one token. Deterministic: the same inputs always weave the same way, so probe it freely. A non-string argument raises `TypeError`; either input longer than 30 characters raises `ValueError`. The loom only weaves forward; build the reverse yourself.
 
@@ -1359,10 +1305,10 @@ Braid two strings into one and return it. Each character is one token. Determini
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `a` | `string` | First input string |
-| `b` | `string` | Second input string |
+| `a` | `str` | First input string |
+| `b` | `str` | Second input string |
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Raises*
 
@@ -1372,8 +1318,6 @@ Braid two strings into one and return it. Each character is one token. Determini
 | `ValueError` | Loom.weave() accepts at most 30 characters in each input. |
 
 *Types / Contracts*
-
----
 
 ## ThreeEchoesContract
 
@@ -1387,33 +1331,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.broadcast`
+##### `.broadcast: ThreeEchoesBroadcast`
 
 The intercepted broadcast: three frequency fragments.
 
@@ -1421,35 +1365,31 @@ The intercepted broadcast: three frequency fragments.
 
 *Types / Contracts*
 
----
-
 ## ThreeEchoesBroadcast
 
 **Returned by:** .broadcast
 
 ### Properties
 
-##### `.freq_a`
+##### `.freq_a: str`
 
 Ordered fragment containing the 1st, 4th, 7th, and later every-third characters of the original signal.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.freq_b`
+##### `.freq_b: str`
 
 Ordered fragment containing the 2nd, 5th, 8th, and later every-third characters of the original signal.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.freq_c`
+##### `.freq_c: str`
 
 Ordered fragment containing the 3rd, 6th, 9th, and later every-third characters of the original signal.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----
 
 ## XenogeneticsContract
 
@@ -1459,47 +1399,45 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.earth_ref`
+##### `.earth_ref: list[str]`
 
 50 known Earth gene sequences (list of strings).
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.samples`
+##### `.samples: list[str]`
 
 1000 collected DNA samples (list of strings).
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
 *Types / Contracts*
-
----
 
 ## ContractScript
 
@@ -1507,13 +1445,13 @@ Contract status: 'available' or 'completed'.
 
 ### Properties
 
-##### `.name`
+##### `.name: str`
 
 Script name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.contract`
+##### `.contract: Contract`
 
 The contract object with ID, name, reward, and contract-specific API.
 
@@ -1521,36 +1459,32 @@ The contract object with ID, name, reward, and contract-specific API.
 
 *Types / Contracts*
 
----
-
 ## LatticeProbeResult
 
 **Returned by:** LatticeGrid.probe()
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"node_tripped"`, or `"lattice_tripped"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"node_tripped"`, `"lattice_tripped"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the probe outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reading`
+##### `.reading: int | None`
 
 Whole-number neighboring-node count in the **0-8** range when `.status == "ok"`; otherwise `None`.
 
-- **Returns** `Optional[number]`
+- **Returns** `int | None`
 
 *Types / Contracts*
-
----
 
 ## VaultEscapeResult
 
@@ -1558,25 +1492,23 @@ Whole-number neighboring-node count in the **0-8** range when `.status == "ok"`;
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"` or `"not_at_exit"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"not_at_exit"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the escape outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.key`
+##### `.key: str | None`
 
 Vault key string when `.status == "ok"`; otherwise `None`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
 *Types / Built-in Types*
-
----

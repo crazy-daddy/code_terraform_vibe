@@ -27,51 +27,51 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Immutable instance id (e.g. `"outpost_home"`, `"outpost_1"`). Stable for the life of the save: use this in scripts that need to outlive renames.
 
-- **Returns** `string`
+- **Returns** `str`
 
 ### Methods
 
-##### `.name()`
+##### `.name() → str`
 
 Display name. Defaults to `"Nocturna Base"` for the home outpost or a generated `"Outpost N"` name for founded outposts; freely renameable from the Computer System tab. Mutable: prefer `id` when persistence matters.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.coords()`
+##### `.coords() → list[int]`
 
 World coordinates of the outpost anchor as `[x, y]`. Home outpost sits at `[0, 0]`; founded outposts carry the position chosen in Plan mode.
 
-- **Returns** `[number, number]`
+- **Returns** `list[int]`
 
-##### `.buildings_used()`
+##### `.buildings_used() → int`
 
 Number of buildings deployed at this outpost. Sensors, mobile units, structural hubs, and POI extraction don't count.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.buildings_capacity()`
+##### `.buildings_capacity() → int`
 
 Soft building threshold at this outpost. Each counted building above it reduces productive and service throughput. Nocturna Base has a few extra starter slots; founded outposts use the standard threshold.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.is_full()`
+##### `.is_full() → bool`
 
 Returns `True` when this outpost has reached or exceeded its soft building threshold. The threshold itself does not block ordinary deployment.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_home()`
+##### `.is_home() → bool`
 
 Returns `True` when this is the home outpost (default name `"Nocturna Base"`).
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.buildings(type_id?)`
+##### `.buildings(type_id?: str) → list[BuildingRef]`
 
 Fresh list of `BuildingRef` snapshots: one entry per building deployed here. Pass a `type_id` (e.g. `"storage_bin"`) to filter, or omit for every building. Each ref carries `.id` / `.name` / `.type_id` / `.outpost` / `.powered` / `.position`: for type-specific live reads (`count()`, `material()`, `recipe`, etc.) call `get_component(ref.id)` to reach the full component API.
 
@@ -79,11 +79,11 @@ Fresh list of `BuildingRef` snapshots: one entry per building deployed here. Pas
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `type_id` | `string` | Optional. Machine type id to filter by (e.g. "storage_bin"). Omit to return every building at this outpost. |
+| `type_id` | `str` | Optional. Machine type id to filter by (e.g. "storage_bin"). Omit to return every building at this outpost. |
 
-- **Returns** `list<BuildingRef>`
+- **Returns** `list[BuildingRef]`
 
-##### `.harvesting_machines(type_id?)`
+##### `.harvesting_machines(type_id?: str) → list[HarvestingMachineRef]`
 
 Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on this outpost's Harvesting field. Currently only the home outpost, Nocturna Base, has that field, so founded outposts return an empty list. Includes Grow Lamps, Sprinklers, Dispensers, and Crop Automators, which occupy field cells but do not use building capacity or appear in `buildings()`. It does not include the mobile Harvester, crops, loose items, Water Wells, or other POI extractors. Pass a `type_id` to filter, or omit it for all four fixed machine types. Use `get_component(ref.id)` for type-specific live reads.
 
@@ -91,13 +91,11 @@ Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on th
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `type_id` | `string` | Optional fixed Harvesting-field machine type id: `"grow_lamp"`, `"sprinkler"`, `"dispenser"`, or `"crop_automator"`. Omit it to return every fixed machine deployed on the field. |
+| `type_id` | `str` | Optional fixed Harvesting-field machine type id: `"grow_lamp"`, `"sprinkler"`, `"dispenser"`, or `"crop_automator"`. Omit it to return every fixed machine deployed on the field. |
 
-- **Returns** `list<HarvestingMachineRef>`
+- **Returns** `list[HarvestingMachineRef]`
 
 *Types / World & Sites*
-
----
 
 ## OutpostNetwork
 
@@ -109,19 +107,19 @@ Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on th
 
 ### Methods
 
-##### `.outposts()`
+##### `.outposts() → list[OutpostRef]`
 
 All owned outposts as read-only `OutpostRef` snapshots, including home. Use `.id` when passing an outpost to another API; call `outposts()` again when you need fresh counts/names.
 
-- **Returns** `list<OutpostRef>`
+- **Returns** `list[OutpostRef]`
 
-##### `.home()`
+##### `.home() → OutpostRef`
 
 The home outpost as an `OutpostRef` snapshot.
 
 - **Returns** `OutpostRef`
 
-##### `.nearest(x, y)`
+##### `.nearest(x: float, y: float) → OutpostRef`
 
 Nearest owned outpost to the given world coordinate as an `OutpostRef` snapshot.
 
@@ -129,14 +127,12 @@ Nearest owned outpost to the given world coordinate as an `OutpostRef` snapshot.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | World X coordinate |
-| `y` | `number` | World Y coordinate |
+| `x` | `float` | World X coordinate |
+| `y` | `float` | World Y coordinate |
 
 - **Returns** `OutpostRef`
 
 *Types / World & Sites*
-
----
 
 ## OutpostRef
 
@@ -149,76 +145,76 @@ Nearest owned outpost to the given world coordinate as an `OutpostRef` snapshot.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Immutable outpost id, e.g. `"outpost_home"` or `"outpost_1"`. Use it with `get_component(id)` or APIs that need a stable target.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Display name at the time this ref was returned.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: int`
 
 World X coordinate of the outpost footprint's top-left anchor, in meters from base. For an at-building action, route to that building's `BuildingRef.position` instead.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.y`
+##### `.y: int`
 
 World Y coordinate of the outpost footprint's top-left anchor, in meters from base. For an at-building action, route to that building's `BuildingRef.position` instead.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.is_home`
+##### `.is_home: bool`
 
 `True` for the home outpost.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.biome`
+##### `.biome: str`
 
 Biome this outpost sits in: one of `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, `"deep"`. Derived from the outpost's location. A building reaches its own biome via `self.outpost.biome`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, `"deep"`
 
-##### `.buildings_used`
+##### `.buildings_used: int`
 
 Buildings deployed at this outpost when this ref was returned.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.buildings_capacity`
+##### `.buildings_capacity: int`
 
 Soft building threshold at this outpost when this ref was returned. Buildings above it reduce productive and service throughput.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.is_full`
+##### `.is_full: bool`
 
 `True` when this outpost had reached or exceeded its soft building threshold at the time this ref was returned. The threshold itself does not block ordinary deployment.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 ### Methods
 
-##### `.position()`
+##### `.position() → Position`
 
 Top-left anchor of the outpost footprint as a `Position` snapshot. This identifies the outpost, not a particular building's docking point.
 
 - **Returns** `Position`
 
-##### `.coords()`
+##### `.coords() → list[int]`
 
 Top-left anchor of the outpost footprint as `[x, y]`. Use `buildings()` and `BuildingRef.position` when routing to a particular service building.
 
-- **Returns** `[number, number]`
+- **Returns** `list[int]`
 
-##### `.buildings(type_id?)`
+##### `.buildings(type_id?: str) → list[BuildingRef]`
 
 Fresh list of `BuildingRef` snapshots: one entry per building deployed here. Pass a `type_id` (e.g. `"storage_bin"`) to filter, or omit for every building. Each ref carries `.id` / `.name` / `.type_id` / `.outpost` / `.powered` / `.position`: for type-specific live reads (`count()`, `material()`, `recipe`, etc.) call `get_component(ref.id)` to reach the full component API.
 
@@ -226,11 +222,11 @@ Fresh list of `BuildingRef` snapshots: one entry per building deployed here. Pas
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `type_id` | `string` | Optional. Machine type id to filter by (e.g. "storage_bin"). Omit to return every building at this outpost. |
+| `type_id` | `str` | Optional. Machine type id to filter by (e.g. "storage_bin"). Omit to return every building at this outpost. |
 
-- **Returns** `list<BuildingRef>`
+- **Returns** `list[BuildingRef]`
 
-##### `.harvesting_machines(type_id?)`
+##### `.harvesting_machines(type_id?: str) → list[HarvestingMachineRef]`
 
 Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on this outpost's Harvesting field. Currently only the home outpost, Nocturna Base, has that field, so founded outposts return an empty list. Includes Grow Lamps, Sprinklers, Dispensers, and Crop Automators, which occupy field cells but do not use building capacity or appear in `buildings()`. It does not include the mobile Harvester, crops, loose items, Water Wells, or other POI extractors. Pass a `type_id` to filter, or omit it for all four fixed machine types. Use `get_component(ref.id)` for type-specific live reads.
 
@@ -238,13 +234,11 @@ Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on th
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `type_id` | `string` | Optional fixed Harvesting-field machine type id: `"grow_lamp"`, `"sprinkler"`, `"dispenser"`, or `"crop_automator"`. Omit it to return every fixed machine deployed on the field. |
+| `type_id` | `str` | Optional fixed Harvesting-field machine type id: `"grow_lamp"`, `"sprinkler"`, `"dispenser"`, or `"crop_automator"`. Omit it to return every fixed machine deployed on the field. |
 
-- **Returns** `list<HarvestingMachineRef>`
+- **Returns** `list[HarvestingMachineRef]`
 
 *Types / World & Sites*
-
----
 
 ## BuildingRef
 
@@ -252,51 +246,49 @@ Fresh list of `HarvestingMachineRef` snapshots for fixed machines deployed on th
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable component id. Use with `get_component(id)` to reach the full machine API (counts, recipes, materials, etc.).
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Display name when this ref was returned (e.g. `"Iron Ore Bin"`). For fresh names or live machine state, call `get_component(id)`.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.type_id`
+##### `.type_id: str`
 
 Machine type id, e.g. `"storage_bin"`, `"smelter"`, `"solar_generator"`. Stable forever; use this for branching logic.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.outpost_id`
+##### `.outpost_id: str`
 
 Id of the outpost this building is deployed at.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.outpost`
+##### `.outpost: OutpostRef | None`
 
 Snapshot back-reference to the owning outpost as an `OutpostRef` (or `None` if the link can't be resolved).
 
-- **Returns** `Optional[OutpostRef]`
+- **Returns** `OutpostRef | None`
 
-##### `.powered`
+##### `.powered: bool`
 
 `True` when the building's power toggle was on as this ref was returned. For live power/production reads, call `get_component(id)`.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.position`
+##### `.position: list[float]`
 
 World coordinates as `[x, y]`. For most buildings this is the deploy anchor; doesn't move.
 
-- **Returns** `[number, number]`
+- **Returns** `list[float]`
 
 *Types / World & Sites*
-
----
 
 ## HarvestingMachineRef
 
@@ -304,40 +296,38 @@ World coordinates as `[x, y]`. For most buildings this is the deploy anchor; doe
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable component id. Use with `get_component(id)` to reach the full Grow Lamp, Sprinkler, Dispenser, or Crop Automator API.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Display name when this ref was returned. Call `get_component(id)` for current machine state.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.type_id`
+##### `.type_id: str`
 
 Fixed Harvesting-field machine type id: `"grow_lamp"`, `"sprinkler"`, `"dispenser"`, or `"crop_automator"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"grow_lamp"`, `"sprinkler"`, `"dispenser"`, `"crop_automator"`
 
-##### `.powered`
+##### `.powered: bool`
 
 `True` when the machine's power toggle was on as this ref was returned. Call `get_component(id)` for live status and supply reads.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.position`
+##### `.position: str`
 
 Harvesting-field sector occupied by the fixed machine, such as `"B22"`.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / World & Sites*
-
----
 
 ## Planet
 
@@ -345,27 +335,25 @@ Harvesting-field sector occupied by the fixed machine, such as `"B22"`.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Planet id: pass this to transmitter.connect().
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.description`
+##### `.description: str`
 
 Short planet description.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / World & Sites*
-
----
 
 ## ScanResult
 
@@ -373,40 +361,38 @@ Short planet description.
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 Stable outcome code. Scanner results use `"ok"` / `"empty"`; Harvester results can also report `"holding"`, `"overheated"`, `"moving"` (in transit), `"busy"` (occupied by another action), or `"collecting"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"empty"`, `"holding"`, `"overheated"`, `"moving"`, `"busy"`, `"collecting"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the scan or collection outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.id`
+##### `.id: str`
 
 Item ID at the scanned sector (empty string if nothing).
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Item display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.value`
+##### `.value: float`
 
 Credit value of the item.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Types / World & Sites*
-
----
 
 ## Site
 
@@ -425,54 +411,52 @@ Credit value of the item.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique site identifier.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Site X coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Site Y coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.surveyed`
+##### `.surveyed: bool`
 
 Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
-##### `.position()`
+##### `.position() → Position`
 
 `Position` snapshot with `.x` / `.y` world coordinates.
 
 - **Returns** `Position`
 
 *Types / World & Sites*
-
----
 
 ## ExoticDeposit
 
@@ -482,131 +466,129 @@ Extends `Site`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique site identifier.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Site X coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Site Y coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.surveyed`
+##### `.surveyed: bool`
 
 Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
-##### `.position()`
+##### `.position() → Position`
 
 `Position` snapshot with `.x` / `.y` world coordinates.
 
 - **Returns** `Position`
 
-##### `.fluid()`
+##### `.fluid() → str | None`
 
 Fluid id this deposit emits, e.g. `"ammonia"` (common, usable direct) or `"raw_chlorine"` (rare, needs the Refiner). `None` until `surveyed`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"ammonia"`, `"swamp_gas"`, `"raw_sulfur_gas"`, `"raw_chlorine"`, `"brine"`, `"raw_cryofluid"`, `"raw_quicksilver"`
 
-##### `.medium()`
+##### `.medium() → str | None`
 
 `"gas"` (tap with an **Exotic Gas Cap**) or `"liquid"` (tap with an **Exotic Spring Tap**). `None` until `surveyed`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"gas"`, `"liquid"`
 
-##### `.rarity()`
+##### `.rarity() → str | None`
 
 `"common"` emits the usable fluid with no refining; `"uncommon"` and `"rare"` emit a raw feedstock the Refiner converts with tar. Rarer deposits are sparser and stay dormant longer. `None` until `surveyed`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"common"`, `"uncommon"`, `"rare"`
 
-##### `.survey_level()`
+##### `.survey_level() → str | None`
 
 Highest survey tier achieved on this deposit: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held Site objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"basic"`, `"wide"`, `"deep"`
 
-##### `.current_phase()`
+##### `.current_phase() → str | None`
 
 The deposit's phase right now: `"active"` (emitting) or `"dormant"` (idle). Reads live: poll it from a held Site object and it follows the cycle. Returns `None` before the deposit is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"active"`, `"dormant"`
 
-##### `.cycle_active_minutes()`
+##### `.cycle_active_minutes() → float | None`
 
 Duration of the active phase in minutes. Requires **deep** survey: returns `None` otherwise.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.cycle_dormant_minutes()`
+##### `.cycle_dormant_minutes() → float | None`
 
 Duration of the dormant phase in minutes (rare deposits stay dormant longest). Requires **deep** survey: returns `None` otherwise.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.next_phase_in()`
+##### `.next_phase_in() → float | None`
 
 Game-minutes until the next phase flip. Reads live: poll it in a control loop to act before dormancy hits. Requires **deep** survey: returns `None` otherwise. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.base_rate()`
+##### `.base_rate() → float | None`
 
 Peak output rate during the active phase (t/h). Requires **wide** survey: returns `None` at basic.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.current_rate()`
+##### `.current_rate() → float | None`
 
 Output rate right now (t/h: **0** during dormant). Reads live. Requires **wide** survey: returns `None` at basic. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.has_cap()`
+##### `.has_cap() → bool`
 
 Boolean: `True` if an Exotic Gas Cap or Exotic Spring Tap is currently deployed on this deposit. Reads live. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.cap_id()`
+##### `.cap_id() → str`
 
 Machine id of the currently deployed cap/tap, or empty string when none is present. Reads live. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / World & Sites*
-
----
 
 ## GeologicalAnomaly
 
@@ -616,54 +598,52 @@ Extends `Site`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique site identifier.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Site X coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Site Y coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.surveyed`
+##### `.surveyed: bool`
 
 Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
-##### `.position()`
+##### `.position() → Position`
 
 `Position` snapshot with `.x` / `.y` world coordinates.
 
 - **Returns** `Position`
 
 *Types / World & Sites*
-
----
 
 ## MiningSite
 
@@ -673,74 +653,72 @@ Extends `Site`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique site identifier.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Site X coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Site Y coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.surveyed`
+##### `.surveyed: bool`
 
 Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.item_id`
+##### `.item_id: str | None`
 
 Item id this site yields when drilled (e.g. `"iron_ore"`, `"silicon"`). `None` until `surveyed`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"iron_ore"`, `"silicon"`, `"titanium"`, `"cobalt"`, `"rare_earth"`, `"neutronium"`, `"lead_ore"`
 
-##### `.hardness`
+##### `.hardness: int | None`
 
 Hardness rating (**1-4**): gates drill compatibility. `None` until `surveyed`.
 
-- **Returns** `Optional[number]`
+- **Returns** `int | None`
 
-##### `.purity`
+##### `.purity: str | None`
 
 Yield multiplier tier: `"standard"` (**1×**) / `"rich"` (**2×**) / `"pure"` (**3×**). `None` until `surveyed`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"standard"`, `"rich"`, `"pure"`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
-##### `.position()`
+##### `.position() → Position`
 
 `Position` snapshot with `.x` / `.y` world coordinates.
 
 - **Returns** `Position`
 
 *Types / World & Sites*
-
----
 
 ## OilWell
 
@@ -750,79 +728,77 @@ Extends `Site`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique site identifier.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Site X coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Site Y coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.surveyed`
+##### `.surveyed: bool`
 
 Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
-##### `.position()`
+##### `.position() → Position`
 
 `Position` snapshot with `.x` / `.y` world coordinates.
 
 - **Returns** `Position`
 
-##### `.yield_tier()`
+##### `.yield_tier() → str | None`
 
 One of `"standard"` (**1×**) / `"rich"` (**2×**) / `"pure"` (**3×**). `None` until surveyed. Checks current survey progress, except on a pre-survey sonar result, which keeps returning `None`; obtain a new object after surveying.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"standard"`, `"rich"`, `"pure"`
 
-##### `.flow_rate()`
+##### `.flow_rate() → float | None`
 
 Peak tons of oil per hour. **8 / 16 / 24** for standard / rich / pure. Oil wells pulse through active and dormant phases: a dormant well delivers nothing at any throttle (read the pump's `well_active()`). `None` until surveyed. Reads live, except on a pre-survey sonar result, which keeps returning `None`; obtain a new object after surveying.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.has_pump()`
+##### `.has_pump() → bool`
 
 Boolean: `True` if an Oil Pump is currently deployed on this well. A pre-survey sonar result always returns `False`; obtain a new object after surveying for live readings.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.pump_id()`
+##### `.pump_id() → str`
 
 Current machine id of the Oil Pump deployed on this well, or empty string when no pump is present. A pre-survey sonar result always returns empty string; obtain a new object after surveying for live readings.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / World & Sites*
-
----
 
 ## ThermalVent
 
@@ -832,110 +808,108 @@ Extends `Site`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique site identifier.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Site X coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Site Y coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.surveyed`
+##### `.surveyed: bool`
 
 Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
-##### `.position()`
+##### `.position() → Position`
 
 `Position` snapshot with `.x` / `.y` world coordinates.
 
 - **Returns** `Position`
 
-##### `.survey_level()`
+##### `.survey_level() → str | None`
 
 Highest survey tier achieved on this vent: `"basic"` / `"wide"` / `"deep"`, or `None` if not yet surveyed. Reads live: a deeper re-survey upgrades held Site objects too. Higher tiers unlock more fields below. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"basic"`, `"wide"`, `"deep"`
 
-##### `.cycle_active_minutes()`
+##### `.cycle_active_minutes() → float | None`
 
 Duration of the active phase in minutes. Requires **deep** survey: returns `None` otherwise.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.cycle_dormant_minutes()`
+##### `.cycle_dormant_minutes() → float | None`
 
 Duration of the dormant phase in minutes. Requires **deep** survey: returns `None` otherwise.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.current_phase()`
+##### `.current_phase() → str | None`
 
 The vent's phase right now: `"active"` or `"dormant"`. Reads live: poll it from a held Site object and it follows the cycle. Returns `None` before the vent is surveyed. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"active"`, `"dormant"`
 
-##### `.next_phase_in()`
+##### `.next_phase_in() → float | None`
 
 Game-minutes until the next phase flip. Reads live: poll it in a control loop to act before dormancy hits. Requires **deep** survey: returns `None` otherwise. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.base_steam_rate()`
+##### `.base_steam_rate() → float | None`
 
 Peak steam rate during active phase (t/h). Requires **wide** survey: returns `None` at basic.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.current_steam_rate()`
+##### `.current_steam_rate() → float | None`
 
 Steam rate right now (t/h: **0** during dormant phase). Reads live. Requires **wide** survey: returns `None` at basic. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.has_cap()`
+##### `.has_cap() → bool`
 
 Boolean: `True` if a Thermal Cap is currently deployed on this vent. Reads live. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.cap_id()`
+##### `.cap_id() → str`
 
 Machine id of the currently deployed Thermal Cap, or empty string when no cap is present. Reads live. A pre-survey sonar result stays unrevealed; obtain a new object after surveying.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / World & Sites*
-
----
 
 ## WaterWell
 
@@ -945,76 +919,74 @@ Extends `Site`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Unique site identifier.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.x`
+##### `.x: float`
 
 Site X coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.y`
+##### `.y: float`
 
 Site Y coordinate in meters from base.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.surveyed`
+##### `.surveyed: bool`
 
 Survey flag captured when this object was returned; resolved inert contacts also report `True`. The property never updates. Mining-site fields are snapshots. Well, vent and exotic-deposit methods read live, except on pre-survey sonar results: those keep their hidden values, so obtain a new object after surveying.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 ### Methods
 
-##### `.kind()`
+##### `.kind() → str`
 
 One of `"mineral"` / `"thermal"` / `"water"` / `"oil"` / `"exotic"` / `"inert"`. Use it to narrow to the concrete subtype: after `if site.kind() == "mineral":` the editor surfaces `MiningSite`-specific fields on `site`. `"inert"` means sonar resolved a physical formation with no extractable signal.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"thermal"`, `"water"`, `"oil"`, `"exotic"`, `"inert"`
 
-##### `.position()`
+##### `.position() → Position`
 
 `Position` snapshot with `.x` / `.y` world coordinates.
 
 - **Returns** `Position`
 
-##### `.yield_tier()`
+##### `.yield_tier() → str | None`
 
 One of `"standard"` (**1×**) / `"rich"` (**2×**) / `"pure"` (**3×**). `None` until surveyed. Checks current survey progress, except on a pre-survey sonar result, which keeps returning `None`; obtain a new object after surveying. Wells reveal fully on basic survey.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"standard"`, `"rich"`, `"pure"`
 
-##### `.flow_rate()`
+##### `.flow_rate() → float | None`
 
 Tons of water per hour this well produces. **10 / 20 / 30** for standard / rich / pure. `None` until surveyed. Reads live, except on a pre-survey sonar result, which keeps returning `None`; obtain a new object after surveying.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
-##### `.has_pump()`
+##### `.has_pump() → bool`
 
 Boolean: `True` if a Water Pump is currently deployed on this well. A pre-survey sonar result always returns `False`; obtain a new object after surveying for live readings.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.pump_id()`
+##### `.pump_id() → str`
 
 Current machine id of the Water Pump deployed on this well, or empty string when no pump is present. A pre-survey sonar result always returns empty string; obtain a new object after surveying for live readings.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Storage & Inventory*
-
----

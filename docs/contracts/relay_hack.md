@@ -12,33 +12,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.lock`
+##### `.lock: RelayLock`
 
 The relay lock to crack.
 
@@ -46,29 +46,27 @@ The relay lock to crack.
 
 *Types / Contracts*
 
----
-
 ## RelayLock
 
 **Returned by:** .lock
 
 ### Properties
 
-##### `.tumblers`
+##### `.tumblers: int`
 
 Number of tumblers (6).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.range`
+##### `.range: int`
 
 Range per tumbler (100 = 0-99).
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.intercept(code)`
+##### `.intercept(code: list[int]) → list[bool]`
 
 Test a list of exactly 6 whole-number values in the **0-99** range and return one True/False value per tumbler. Wrong argument types raise `TypeError`; wrong list length, non-finite or fractional values, and values outside the range raise `ValueError`.
 
@@ -76,9 +74,9 @@ Test a list of exactly 6 whole-number values in the **0-99** range and return on
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `code` | `list` | Candidate list of 6 whole numbers, each 0-99 |
+| `code` | `list[int]` | Candidate list of 6 whole numbers, each 0-99 |
 
-- **Returns** `list[boolean]`
+- **Returns** `list[bool]`
 
 *Raises*
 
@@ -88,5 +86,3 @@ Test a list of exactly 6 whole-number values in the **0-99** range and return on
 | `ValueError` | The contract probe received a value, shape, or coordinate outside its documented domain. |
 
 *Types / Contracts*
-
----

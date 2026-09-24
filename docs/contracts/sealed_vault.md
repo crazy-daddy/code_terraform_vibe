@@ -12,41 +12,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.vault`
+##### `.vault: Vault`
 
 The sealed vault passage system. Its position resets to (0, 0) at the start of each contract script run; the maze layout stays fixed.
 
 - **Returns** `Vault`
 
 *Types / Contracts*
-
----
 
 ## Vault
 
@@ -58,21 +56,21 @@ The sealed vault passage system. Its position resets to (0, 0) at the start of e
 
 ### Properties
 
-##### `.position`
+##### `.position: VaultPosition`
 
 Current cell as a `VaultPosition` snapshot with `.row` and `.col`. Store it when you need to remember an old cell; read `vault.position` again after `move()` to get the new cell.
 
 - **Returns** `VaultPosition`
 
-##### `.size`
+##### `.size: int`
 
 Side length of the (square) maze grid. The maze is `size`×`size` cells; the start is `(0, 0)` and the exit is `(size - 1, size - 1)`.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.move(direction)`
+##### `.move(direction: str) → ActionResult`
 
 Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non-string direction raises `TypeError`; an unknown direction raises `ValueError` without moving.
 
@@ -80,7 +78,7 @@ Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `direction` | `string` | Direction to step. |
+| `direction` | `str` | Direction to step. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -101,7 +99,7 @@ Step one cell in `direction`: `"north"`, `"south"`, `"east"`, or `"west"`. A non
 | `TypeError` | Vault.move() requires a string direction. |
 | `ValueError` | Vault.move() accepts only north, south, east, or west. |
 
-##### `.escape()`
+##### `.escape() → VaultEscapeResult`
 
 Open the vault from its exit cell.
 
@@ -118,37 +116,33 @@ Open the vault from its exit cell.
 
 *Types / Contracts*
 
----
-
 ## VaultPosition
 
 **Returned by:** vault.position
 
 ### Properties
 
-##### `.row`
+##### `.row: int`
 
 Row coordinate.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.col`
+##### `.col: int`
 
 Column coordinate.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.__iter__()`
+##### `.__iter__() → Iterator[int]`
 
 Iterate over `row`, then `col`, so this position can be unpacked or passed to `list()`.
 
-- **Returns** `iterator<number>`
+- **Returns** `Iterator[int]`
 
 *Types / Contracts*
-
----
 
 ## VaultEscapeResult
 
@@ -156,25 +150,23 @@ Iterate over `row`, then `col`, so this position can be unpacked or passed to `l
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"` or `"not_at_exit"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"not_at_exit"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the escape outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.key`
+##### `.key: str | None`
 
 Vault key string when `.status == "ok"`; otherwise `None`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
 *Types / Built-in Types*
-
----

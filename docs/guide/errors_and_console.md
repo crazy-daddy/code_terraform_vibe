@@ -29,5 +29,3 @@ A `"busy"` status means the machine is finishing another timed action, not that 
 Store the result of an important command, inspect `.status` and `.message`, then read any payload fields only for statuses that provide them. Use **Trace** when you want to see where the script is parked, and **Debug** when you need to inspect variables directly.
 
 *Guide / Tutorials*
-
----

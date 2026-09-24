@@ -40,5 +40,3 @@ shop.buy("solar_generator")
 ```
 
 *Guide / Automation Systems*
-
----

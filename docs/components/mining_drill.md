@@ -2,7 +2,7 @@
 
 > **Category:** Production & Storage | **Component Name:** Mining Drill
 
-Mk I static drill for hardness-1 deposits: 25 t/h at standard purity and 10 W while extracting.
+Mk I static drill for deposits up to hardness 1 (Iron, Silicon): 25 t/h at standard purity and 10 W while extracting.
 
 | Field | Value |
 | --- | --- |
@@ -36,7 +36,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.output`
+##### `.output: PickupOutputSlot`
 
 `PickupOutputSlot` exposing the Drill's stockpile through `count()`, `capacity()`, and `stacks()`. A physically present Rover or Pioneer pulls through its own input; a drone flies with `go_to_drill()` and loads with `cargo.load()`. The Drill has no direct item-routing methods.
 
@@ -44,7 +44,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.drill_rate()`
+##### `.drill_rate() → float`
 
 Mineral extraction rate in t/h right now: the full rate while drilling, and **0** whenever the drill is powered off, has no deposit under it, cannot cut the deposit's hardness, or its stockpile is full. Adjusted for site purity and drill tier.
 

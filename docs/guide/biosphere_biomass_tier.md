@@ -33,5 +33,3 @@ Nothing is shared between outposts. Move life forms with drones, and move essenc
 Plants and Wildlife are the next Biosphere pillars.
 
 *Guide / World & Infrastructure*
-
----

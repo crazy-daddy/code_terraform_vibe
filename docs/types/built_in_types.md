@@ -11,6 +11,8 @@ Complete property specifications, descriptions, units, and return types from the
 - [`slice`](#slice) (BUILT-IN TYPES)
 - [`str`](#str) (BUILT-IN TYPES)
 - [`tuple`](#tuple) (BUILT-IN TYPES)
+- [`CacheInfo`](#cacheinfo) (BUILT-IN MODULES)
+- [`Field`](#field) (BUILT-IN MODULES)
 - [`Match`](#match) (BUILT-IN MODULES)
 
 ---
@@ -21,33 +23,33 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Properties
 
-##### `.length`
+##### `.length: int`
 
 Number of key-value pairs. Same as `len(d)`. Property: no parens.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.keys()`
+##### `.keys() → list[K]`
 
 Return a list of all keys, in insertion order.
 
-- **Returns** `list`
+- **Returns** `list[K]`
 
-##### `.values()`
+##### `.values() → list[V]`
 
 Return a list of all values, in insertion order.
 
-- **Returns** `list`
+- **Returns** `list[V]`
 
-##### `.items()`
+##### `.items() → list[tuple[K, V]]`
 
 Return a list of `(key, value)` tuples, in insertion order. Common pattern: `for k, v in d.items(): ...`.
 
-- **Returns** `list`
+- **Returns** `list[tuple[K, V]]`
 
-##### `.has(key, /)`
+##### `.has(key: K, /) → bool`
 
 `True` if `key` is in the dictionary. Equivalent to Python's `key in d`. Use this for safe membership tests before subscript.
 
@@ -55,11 +57,11 @@ Return a list of `(key, value)` tuples, in insertion order. Common pattern: `for
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `any` | Key to check |
+| `key` | `K` | Key to check |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.get(key, default=None, /)`
+##### `.get(key: K, default: V | None = None, /) → V`
 
 Return the value for `key`, or `default` (`None` if omitted) if the key is missing. Never raises for a missing hashable key; an unhashable key still raises `TypeError`, matching Python.
 
@@ -67,12 +69,12 @@ Return the value for `key`, or `default` (`None` if omitted) if the key is missi
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `any` | Key to look up |
-| `default` | `any` | Value to return if missing |
+| `key` | `K` | Key to look up |
+| `default` | `V \| None` | Value to return if missing |
 
-- **Returns** `any`
+- **Returns** `V`
 
-##### `.pop(key, default?, /)`
+##### `.pop(key: K, default?: V, /) → V`
 
 Remove `key` and return its value. Raises if the key isn't present unless a `default` is provided: in that case the missing-key path returns `default` and the dict is unchanged. Matches Python's `dict.pop(k, default)`.
 
@@ -80,18 +82,18 @@ Remove `key` and return its value. Raises if the key isn't present unless a `def
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `any` | Key to remove |
-| `default` | `any` | Value to return if the key is missing |
+| `key` | `K` | Key to remove |
+| `default` | `V` | Value to return if the key is missing |
 
-- **Returns** `any`
+- **Returns** `V`
 
-##### `.popitem()`
+##### `.popitem() → tuple[K, V]`
 
 Remove and return the last inserted `(key, value)` pair. Raises if the dictionary is empty. Insertion order is deterministic, but use this only when consuming a dict as a stack is what you intend.
 
-- **Returns** `tuple`
+- **Returns** `tuple[K, V]`
 
-##### `.setdefault(key, default=None, /)`
+##### `.setdefault(key: K, default: V | None = None, /) → V`
 
 Return `d[key]` if it exists; otherwise set `d[key] = default` and return `default`. Useful for building grouped collections.
 
@@ -99,12 +101,12 @@ Return `d[key]` if it exists; otherwise set `d[key] = default` and return `defau
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `key` | `any` | Key |
-| `default` | `any` | Value to set if missing |
+| `key` | `K` | Key |
+| `default` | `V \| None` | Value to set if missing |
 
-- **Returns** `any`
+- **Returns** `V`
 
-##### `.update(other?, /, **kwargs)`
+##### `.update(other?: dict[K, V] | Iterable[tuple[K, V]], /, **kwargs: V) → None`
 
 Merge entries into this dict, overwriting matching keys. Accepts another dict, an iterable of `(key, value)` pairs, keyword args, OR a combination: `d.update(other, a=1, b=2)`. Mutates in place.
 
@@ -112,17 +114,18 @@ Merge entries into this dict, overwriting matching keys. Accepts another dict, a
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Dict or iterable of (key, value) pairs |
+| `other` | `dict[K, V] \| Iterable[tuple[K, V]]` | A dict, or an iterable of (key, value) pairs |
+| `kwargs` | `V` | More entries, by keyword (`speed=2`) |
 
 - **Returns** `None`
 
-##### `.copy()`
+##### `.copy() → dict[K, V]`
 
 Return a shallow copy of the dictionary. Top-level keys/values are duplicated to a fresh dict; nested mutable values (lists, dicts) are shared with the original.
 
-- **Returns** `dict`
+- **Returns** `dict[K, V]`
 
-##### `.clear()`
+##### `.clear() → None`
 
 Remove all entries.
 
@@ -130,29 +133,27 @@ Remove all entries.
 
 *Types / Built-in Types*
 
----
-
 ## generator
 
 **Returned by:** calling a function containing `yield` · generator expressions
 
 ### Properties
 
-##### `.__name__`
+##### `.__name__: str`
 
 Name of the generator function that created this generator.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.__qualname__`
+##### `.__qualname__: str`
 
 Qualified name of the generator function that created this generator.
 
-- **Returns** `string`
+- **Returns** `str`
 
 ### Methods
 
-##### `.send(value)`
+##### `.send(value: object) → T`
 
 Resume the generator and make `value` the result of its paused `yield`. Returns the next yielded value. Sending a non-`None` value before the first yield raises `TypeError`; completion raises `StopIteration`.
 
@@ -160,11 +161,11 @@ Resume the generator and make `value` the result of its paused `yield`. Returns 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `value` | `any` | Value delivered to the paused yield |
+| `value` | `object` | Value delivered to the paused yield |
 
-- **Returns** `any`
+- **Returns** `T`
 
-##### `.throw(exception)`
+##### `.throw(exception: BaseException | type) → T`
 
 Raise an exception at the generator's paused `yield`. Returns the next value if the generator catches it and yields again; otherwise the exception propagates.
 
@@ -172,31 +173,29 @@ Raise an exception at the generator's paused `yield`. Returns the next value if 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `exception` | `any` | Exception instance or exception class |
+| `exception` | `BaseException \| type` | Exception instance or exception class |
 
-- **Returns** `any`
+- **Returns** `T`
 
-##### `.close()`
+##### `.close() → None`
 
 Stop the generator by raising `GeneratorExit` at its paused yield. `finally` cleanup runs before this returns. A generator that yields while closing raises `RuntimeError`.
 
 - **Returns** `None`
 
-##### `.__iter__()`
+##### `.__iter__() → generator`
 
 Return this generator. Generators are one-shot iterators.
 
 - **Returns** `generator`
 
-##### `.__next__()`
+##### `.__next__() → T`
 
 Resume the generator with `None` and return its next yielded value. Completion raises `StopIteration`.
 
-- **Returns** `any`
+- **Returns** `T`
 
 *Types / Built-in Types*
-
----
 
 ## list
 
@@ -204,15 +203,15 @@ Resume the generator with `None` and return its next yielded value. Completion r
 
 ### Properties
 
-##### `.length`
+##### `.length: int`
 
 Number of items in the list. Same as `len(lst)`. Property: no parens.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.append(item, /)`
+##### `.append(item: T, /) → None`
 
 Add `item` to the end of the list. Returns `None`. Mutates in place. Raises if the list would exceed the interpreter's max-length cap.
 
@@ -220,11 +219,11 @@ Add `item` to the end of the list. Returns `None`. Mutates in place. Raises if t
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to append |
+| `item` | `T` | Value to append |
 
 - **Returns** `None`
 
-##### `.pop(index=-1, /)`
+##### `.pop(index: int = -1, /) → T`
 
 Remove and return one element. Default removes the last (`pop()`). Pass an integer index to remove a specific item: `lst.pop(0)` removes the first, `lst.pop(-1)` removes the last. Negative indices count from the end. Empty list or out-of-range index raises an error. Non-integer index raises.
 
@@ -232,11 +231,11 @@ Remove and return one element. Default removes the last (`pop()`). Pass an integ
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Position to remove (default: -1, the last item) |
+| `index` | `int` | Position to remove (default: -1, the last item) |
 
-- **Returns** `any`
+- **Returns** `T`
 
-##### `.remove(item, /)`
+##### `.remove(item: T, /) → None`
 
 Remove the first occurrence of `item` by value. Raises if not found. Use `.index(item)` first if you need to check.
 
@@ -244,11 +243,11 @@ Remove the first occurrence of `item` by value. Raises if not found. Use `.index
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to remove |
+| `item` | `T` | Value to remove |
 
 - **Returns** `None`
 
-##### `.insert(index, item, /)`
+##### `.insert(index: int, item: T, /) → None`
 
 Insert `item` at position `index`, shifting later items right. `insert(0, x)` puts `x` at the front. Out-of-range indices clamp to the ends (no error). Raises if the list would exceed the max-length cap.
 
@@ -256,12 +255,12 @@ Insert `item` at position `index`, shifting later items right. `insert(0, x)` pu
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Position |
-| `item` | `any` | Value |
+| `index` | `int` | Position |
+| `item` | `T` | Value |
 
 - **Returns** `None`
 
-##### `.index(item, start=0, end=None, /)`
+##### `.index(item: T, start: int = 0, end?: int, /) → int`
 
 Return the index of the first occurrence of `item`. Optional `start` and `end` restrict the search to a slice (Python-style: negative indices count from the end, clamped to bounds). Raises if not found within the range.
 
@@ -269,13 +268,13 @@ Return the index of the first occurrence of `item`. Optional `start` and `end` r
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to find |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `item` | `T` | Value to find |
+| `start` | `int` | Start index (default 0) |
+| `end` | `int` | End index, exclusive (default length) |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.count(item, /)`
+##### `.count(item: T, /) → int`
 
 Count occurrences of `item` in the list. Equality is by value (numbers, strings, booleans compared deeply).
 
@@ -283,29 +282,36 @@ Count occurrences of `item` in the list. Equality is by value (numbers, strings,
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to count |
+| `item` | `T` | Value to count |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.sort(*, key=None, reverse=False)`
+##### `.sort(*, key: Callable | None = None, reverse: bool = False) → None`
 
 Sort the list **in place** using `<` between mutually comparable keys. With `key=None` (the default), each value is its own key. Numeric and boolean keys compare across that family, strings compare lexicographically, and user objects may define the exact rich-comparison slots needed by `<`; unsupported pairs raise. `key=` is called once per item and must be **pure**: it cannot suspend the script or mutate game state. `reverse` is truth-tested, and the finite input is handled eagerly within the interpreter's collection limit.
 
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `Callable \| None` | Function returning the value to compare for each item |
+| `reverse` | `bool` | `True` to sort from largest to smallest |
+
 - **Returns** `None`
 
-##### `.reverse()`
+##### `.reverse() → None`
 
 Reverse the list in place. Returns `None`.
 
 - **Returns** `None`
 
-##### `.copy()`
+##### `.copy() → list[T]`
 
 Return a shallow copy of the list. Modifying the copy does not affect the original; nested mutable items are shared.
 
-- **Returns** `list`
+- **Returns** `list[T]`
 
-##### `.extend(iterable, /)`
+##### `.extend(iterable: Iterable[T], /) → None`
 
 Append every item from another finite iterable to the end of this list. Mutates in place. Raises if the result would exceed the max-length cap.
 
@@ -313,11 +319,11 @@ Append every item from another finite iterable to the end of this list. Mutates 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `iterable` | `any` | Finite iterable of items to append |
+| `iterable` | `Iterable[T]` | Finite iterable of items to append |
 
 - **Returns** `None`
 
-##### `.clear()`
+##### `.clear() → None`
 
 Remove all items. Returns `None`. Equivalent to `lst[:] = []`.
 
@@ -325,23 +331,21 @@ Remove all items. Returns `None`. Equivalent to `lst[:] = []`.
 
 *Types / Built-in Types*
 
----
-
 ## set
 
 **Returned by:** set literals `{1, 2}` · `set(iterable)` · set algebra operators
 
 ### Properties
 
-##### `.length`
+##### `.length: int`
 
 Number of unique members. Same as `len(s)`. Property: no parens.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.add(item, /)`
+##### `.add(item: T, /) → None`
 
 Add `item` to the set. No effect if already present. The item may be any hashable value, including tuples of hashables and properly hashable user-class instances.
 
@@ -349,11 +353,11 @@ Add `item` to the set. No effect if already present. The item may be any hashabl
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to add |
+| `item` | `T` | Value to add |
 
 - **Returns** `None`
 
-##### `.remove(item, /)`
+##### `.remove(item: T, /) → None`
 
 Remove `item`. Raises if not present. Use `.discard()` for the safe form.
 
@@ -361,11 +365,11 @@ Remove `item`. Raises if not present. Use `.discard()` for the safe form.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to remove |
+| `item` | `T` | Value to remove |
 
 - **Returns** `None`
 
-##### `.discard(item, /)`
+##### `.discard(item: T, /) → None`
 
 Remove `item` if present. No error if absent.
 
@@ -373,29 +377,29 @@ Remove `item` if present. No error if absent.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to remove |
+| `item` | `T` | Value to remove |
 
 - **Returns** `None`
 
-##### `.pop()`
+##### `.pop() → T`
 
 Remove and return an arbitrary element. Order is deterministic (insertion order) but scripts shouldn't rely on it. Raises if the set is empty.
 
-- **Returns** `any`
+- **Returns** `T`
 
-##### `.clear()`
+##### `.clear() → None`
 
 Remove all members.
 
 - **Returns** `None`
 
-##### `.copy()`
+##### `.copy() → set[T]`
 
 Return a shallow copy.
 
-- **Returns** `set`
+- **Returns** `set[T]`
 
-##### `.has(item, /)`
+##### `.has(item: T, /) → bool`
 
 `True` if `item` is in the set. Equivalent to Python's `item in s`.
 
@@ -403,29 +407,47 @@ Return a shallow copy.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to check |
+| `item` | `T` | Value to check |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.union(*others)`
+##### `.union(*others: Iterable[T]) → set[T]`
 
 Return a new set with members from this set and every finite iterable in `others`. With no arguments, returns a copy.
 
-- **Returns** `set`
+*Parameters*
 
-##### `.intersection(*others)`
+| Name | Type | Description |
+| --- | --- | --- |
+| `others` | `Iterable[T]` | Other collections |
+
+- **Returns** `set[T]`
+
+##### `.intersection(*others: Iterable[T]) → set[T]`
 
 Return a new set containing members shared with every finite iterable in `others`. With no arguments, returns a copy.
 
-- **Returns** `set`
+*Parameters*
 
-##### `.difference(*others)`
+| Name | Type | Description |
+| --- | --- | --- |
+| `others` | `Iterable[T]` | Other collections |
+
+- **Returns** `set[T]`
+
+##### `.difference(*others: Iterable[T]) → set[T]`
 
 Return a new set without members found in any finite iterable in `others`. With no arguments, returns a copy.
 
-- **Returns** `set`
+*Parameters*
 
-##### `.symmetric_difference(other, /)`
+| Name | Type | Description |
+| --- | --- | --- |
+| `others` | `Iterable[T]` | Other collections |
+
+- **Returns** `set[T]`
+
+##### `.symmetric_difference(other: Iterable[T], /) → set[T]`
 
 Return a new set with members in exactly one of this set and the finite iterable `other`. Same as `a ^ b`.
 
@@ -433,29 +455,47 @@ Return a new set with members in exactly one of this set and the finite iterable
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Finite iterable |
+| `other` | `Iterable[T]` | Finite iterable |
 
-- **Returns** `set`
+- **Returns** `set[T]`
 
-##### `.update(*others)`
+##### `.update(*others: Iterable[T]) → None`
 
 Add every member from each finite iterable in `others`. Mutates in place; with no arguments, does nothing.
 
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `others` | `Iterable[T]` | Other collections |
+
 - **Returns** `None`
 
-##### `.intersection_update(*others)`
+##### `.intersection_update(*others: Iterable[T]) → None`
 
 Keep only members shared with every finite iterable in `others`. Mutates in place; with no arguments, does nothing.
 
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `others` | `Iterable[T]` | Other collections |
+
 - **Returns** `None`
 
-##### `.difference_update(*others)`
+##### `.difference_update(*others: Iterable[T]) → None`
 
 Remove members found in any finite iterable in `others`. Mutates in place; with no arguments, does nothing.
 
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `others` | `Iterable[T]` | Other collections |
+
 - **Returns** `None`
 
-##### `.symmetric_difference_update(other, /)`
+##### `.symmetric_difference_update(other: Iterable[T], /) → None`
 
 Replace this set with members in exactly one of this set and the finite iterable `other`.
 
@@ -463,11 +503,11 @@ Replace this set with members in exactly one of this set and the finite iterable
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Finite iterable |
+| `other` | `Iterable[T]` | Finite iterable |
 
 - **Returns** `None`
 
-##### `.issubset(other, /)`
+##### `.issubset(other: Iterable[T], /) → bool`
 
 `True` if every member of this set is also in the finite iterable `other`. Same as `a <= b` for sets.
 
@@ -475,11 +515,11 @@ Replace this set with members in exactly one of this set and the finite iterable
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Finite iterable |
+| `other` | `Iterable[T]` | Finite iterable |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.issuperset(other, /)`
+##### `.issuperset(other: Iterable[T], /) → bool`
 
 `True` if this set contains every member of the finite iterable `other`. Same as `a >= b` for sets.
 
@@ -487,11 +527,11 @@ Replace this set with members in exactly one of this set and the finite iterable
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Finite iterable |
+| `other` | `Iterable[T]` | Finite iterable |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.isdisjoint(other, /)`
+##### `.isdisjoint(other: Iterable[T], /) → bool`
 
 `True` if this set and the finite iterable `other` share no members.
 
@@ -499,13 +539,11 @@ Replace this set with members in exactly one of this set and the finite iterable
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `other` | `any` | Finite iterable |
+| `other` | `Iterable[T]` | Finite iterable |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 *Types / Built-in Types*
-
----
 
 ## slice
 
@@ -513,27 +551,25 @@ Replace this set with members in exactly one of this set and the finite iterable
 
 ### Properties
 
-##### `.start`
+##### `.start: float | None`
 
 Start bound, or `None` when omitted. For `slice(stop)`, `.start` is `None` and `.stop` is the argument.
 
-- **Returns** `any`
+- **Returns** `float | None`
 
-##### `.stop`
+##### `.stop: float | None`
 
 Stop bound, or `None` when omitted.
 
-- **Returns** `any`
+- **Returns** `float | None`
 
-##### `.step`
+##### `.step: float | None`
 
 Step bound, or `None` when omitted. Sequence indexing rejects a step of `0`.
 
-- **Returns** `any`
+- **Returns** `float | None`
 
 *Types / Built-in Types*
-
----
 
 ## str
 
@@ -541,27 +577,27 @@ Step bound, or `None` when omitted. Sequence indexing rejects a step of `0`.
 
 ### Properties
 
-##### `.length`
+##### `.length: int`
 
 Number of characters in the string. Same as `len(s)`. Property: no parens.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.upper()`
+##### `.upper() → str`
 
 Return a copy with all characters in uppercase.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.lower()`
+##### `.lower() → str`
 
 Return a copy with all characters in lowercase.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.strip(chars=None, /)`
+##### `.strip(chars: str | None = None, /) → str`
 
 Return a copy with whitespace (or `chars` if given) trimmed from both ends. Passing `None` explicitly is the same as omitting `chars`. `chars` is treated as a SET of characters to strip, not a substring: `"...hello...".strip(".")` → `"hello"`.
 
@@ -569,11 +605,11 @@ Return a copy with whitespace (or `chars` if given) trimmed from both ends. Pass
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `chars` | `string` | Characters to strip, or None for whitespace |
+| `chars` | `str \| None` | Characters to strip, or None for whitespace |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.lstrip(chars=None, /)`
+##### `.lstrip(chars: str | None = None, /) → str`
 
 Like `strip()` but only trims from the left end. Passing `None` explicitly selects whitespace trimming.
 
@@ -581,11 +617,11 @@ Like `strip()` but only trims from the left end. Passing `None` explicitly selec
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `chars` | `string` | Characters to strip, or None for whitespace |
+| `chars` | `str \| None` | Characters to strip, or None for whitespace |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.rstrip(chars=None, /)`
+##### `.rstrip(chars: str | None = None, /) → str`
 
 Like `strip()` but only trims from the right end. Passing `None` explicitly selects whitespace trimming.
 
@@ -593,11 +629,11 @@ Like `strip()` but only trims from the right end. Passing `None` explicitly sele
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `chars` | `string` | Characters to strip, or None for whitespace |
+| `chars` | `str \| None` | Characters to strip, or None for whitespace |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.split(sep=None, maxsplit=-1)`
+##### `.split(sep: str | None = None, maxsplit: int = -1) → list[str]`
 
 Split into substrings. With `sep=None`, every Python whitespace character separates words, runs collapse, and leading/trailing whitespace is ignored unless a finite `maxsplit` leaves it in the unsplit remainder. With a non-empty string separator, matches are literal and empty fields are preserved. Both parameters accept keyword form.
 
@@ -605,12 +641,12 @@ Split into substrings. With `sep=None`, every Python whitespace character separa
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sep` | `any` | Non-empty string separator or None for whitespace |
-| `maxsplit` | `number` | Maximum splits (default -1) |
+| `sep` | `str \| None` | Non-empty string separator or None for whitespace |
+| `maxsplit` | `int` | Maximum splits (default -1) |
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.splitlines(keepends=False)`
+##### `.splitlines(keepends: bool = False) → list[str]`
 
 Split on Python line boundaries, including `\n`, `\r\n`, `\r`, vertical tab, form feed, Unicode NEL, and Unicode line/paragraph separators. Trailing boundaries do not add an extra empty item. Pass `keepends=True` to retain each boundary.
 
@@ -618,11 +654,11 @@ Split on Python line boundaries, including `\n`, `\r\n`, `\r`, vertical tab, for
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `keepends` | `boolean` | Keep line-boundary characters |
+| `keepends` | `bool` | Keep line-boundary characters |
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.join(iterable, /)`
+##### `.join(iterable: Iterable[str], /) → str`
 
 Concatenate every string in a finite `iterable`, inserting this string as the separator between them. `",".join(["a", "b", "c"])` → `"a,b,c"`. All items must be strings.
 
@@ -630,11 +666,11 @@ Concatenate every string in a finite `iterable`, inserting this string as the se
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `iterable` | `any` | Finite iterable of strings |
+| `iterable` | `Iterable[str]` | Finite iterable of strings |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.find(substring, start=0, end=None, /)`
+##### `.find(substring: str, start: int | None = 0, end: int | None = None, /) → int`
 
 Return the lowest index where `substring` appears, or `-1` if not found. Optional `start` and `end` restrict the search to a slice. Negative indices count from the end.
 
@@ -642,13 +678,13 @@ Return the lowest index where `substring` appears, or `-1` if not found. Optiona
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `substring` | `string` | Substring to find |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `substring` | `str` | Substring to find |
+| `start` | `int \| None` | Start index (default 0) |
+| `end` | `int \| None` | End index, exclusive (default length) |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.index(substring, start=0, end=None, /)`
+##### `.index(substring: str, start: int | None = 0, end: int | None = None, /) → int`
 
 Like `find()`, but raises an error if the substring isn't present. Use `find()` if you want `-1` instead of an error.
 
@@ -656,13 +692,13 @@ Like `find()`, but raises an error if the substring isn't present. Use `find()` 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `substring` | `string` | Substring to find |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `substring` | `str` | Substring to find |
+| `start` | `int \| None` | Start index (default 0) |
+| `end` | `int \| None` | End index, exclusive (default length) |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.replace(old, new, count=-1, /)`
+##### `.replace(old: str, new: str, count: int = -1, /) → str`
 
 Return a copy with every occurrence of `old` replaced by `new`. Optional `count` limits the number of replacements: `s.replace("a", "b", 1)` only replaces the first.
 
@@ -670,13 +706,13 @@ Return a copy with every occurrence of `old` replaced by `new`. Optional `count`
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `old` | `string` | Substring to find |
-| `new` | `string` | Replacement string |
-| `count` | `number` | Max replacements (default: all) |
+| `old` | `str` | Substring to find |
+| `new` | `str` | Replacement string |
+| `count` | `int` | Max replacements (default: all) |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.startswith(prefix, start=0, end=None, /)`
+##### `.startswith(prefix: str | tuple[str, ...], start: int | None = 0, end: int | None = None, /) → bool`
 
 `True` if the string starts with `prefix`. `prefix` can be a single string OR a tuple containing only strings: `"abc".startswith(("ab", "xy"))` → `True`. Optional `start` / `end` restrict the check to a slice (negative indices count from the end).
 
@@ -684,13 +720,13 @@ Return a copy with every occurrence of `old` replaced by `new`. Optional `count`
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `prefix` | `string` | String or tuple of strings |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `prefix` | `str \| tuple[str, ...]` | String or tuple of strings |
+| `start` | `int \| None` | Start index (default 0) |
+| `end` | `int \| None` | End index, exclusive (default length) |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.endswith(suffix, start=0, end=None, /)`
+##### `.endswith(suffix: str | tuple[str, ...], start: int | None = 0, end: int | None = None, /) → bool`
 
 `True` if the string ends with `suffix`. Accepts a single string OR a tuple containing only strings. Optional `start` / `end` restrict the check to a slice: useful for checking suffixes inside a larger string without rebuilding.
 
@@ -698,13 +734,13 @@ Return a copy with every occurrence of `old` replaced by `new`. Optional `count`
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `suffix` | `string` | String or tuple of strings |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `suffix` | `str \| tuple[str, ...]` | String or tuple of strings |
+| `start` | `int \| None` | Start index (default 0) |
+| `end` | `int \| None` | End index, exclusive (default length) |
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.count(substring, start=0, end=None, /)`
+##### `.count(substring: str, start: int | None = 0, end: int | None = None, /) → int`
 
 Count non-overlapping occurrences of `substring`. Optional `start` and `end` restrict the search to a slice. Empty `substring` returns length + 1.
 
@@ -712,13 +748,13 @@ Count non-overlapping occurrences of `substring`. Optional `start` and `end` res
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `substring` | `string` | Substring to count |
-| `start` | `number` | Start index |
-| `end` | `number` | End index, exclusive |
+| `substring` | `str` | Substring to count |
+| `start` | `int \| None` | Start index |
+| `end` | `int \| None` | End index, exclusive |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.zfill(width, /)`
+##### `.zfill(width: int, /) → str`
 
 Pad with leading zeros to at least `width` characters. A leading `+` or `-` sign is preserved.
 
@@ -726,11 +762,11 @@ Pad with leading zeros to at least `width` characters. A leading `+` or `-` sign
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `width` | `number` | Target width |
+| `width` | `int` | Target width |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.center(width, fill=" ", /)`
+##### `.center(width: int, fill: str = " ", /) → str`
 
 Center the string within `width` characters, padding both sides with `fill` (default space). `fill` must be a single character.
 
@@ -738,12 +774,12 @@ Center the string within `width` characters, padding both sides with `fill` (def
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `width` | `number` | Target width |
-| `fill` | `string` | Fill character (default space) |
+| `width` | `int` | Target width |
+| `fill` | `str` | Fill character (default space) |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.ljust(width, fill=" ", /)`
+##### `.ljust(width: int, fill: str = " ", /) → str`
 
 Left-justify within `width` characters, padding the right with `fill`.
 
@@ -751,12 +787,12 @@ Left-justify within `width` characters, padding the right with `fill`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `width` | `number` | Target width |
-| `fill` | `string` | Fill character (default space) |
+| `width` | `int` | Target width |
+| `fill` | `str` | Fill character (default space) |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.rjust(width, fill=" ", /)`
+##### `.rjust(width: int, fill: str = " ", /) → str`
 
 Right-justify within `width` characters, padding the left with `fill`.
 
@@ -764,78 +800,78 @@ Right-justify within `width` characters, padding the left with `fill`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `width` | `number` | Target width |
-| `fill` | `string` | Fill character (default space) |
+| `width` | `int` | Target width |
+| `fill` | `str` | Fill character (default space) |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.title()`
+##### `.title() → str`
 
 Return a titlecased copy: each run of cased characters starts with its Unicode titlecase mapping and continues in lowercase.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.capitalize()`
+##### `.capitalize() → str`
 
 Return a copy with the first character titlecased and the rest lowercased.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.casefold()`
+##### `.casefold() → str`
 
 Apply Python-compatible Unicode case folding for caseless comparison. Functionally `.lower()` for ASCII and stronger for many Unicode characters.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.swapcase()`
+##### `.swapcase() → str`
 
 Swap the case of every character (lowercase ↔ uppercase).
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.isdigit()`
+##### `.isdigit() → bool`
 
 `True` if the string is non-empty and contains only Unicode digit characters, including decimal and compatibility digits.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.isalpha()`
+##### `.isalpha() → bool`
 
 `True` if the string is non-empty and contains only Unicode letters.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.isalnum()`
+##### `.isalnum() → bool`
 
 `True` if the string is non-empty and contains only Unicode letters or numbers.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.isspace()`
+##### `.isspace() → bool`
 
 `True` if the string is non-empty and contains only whitespace characters.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.islower()`
+##### `.islower() → bool`
 
 `True` if the string has at least one cased character and every cased character is lowercase.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.isupper()`
+##### `.isupper() → bool`
 
 `True` if the string has at least one cased character and every cased character is uppercase.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.istitle()`
+##### `.istitle() → bool`
 
 `True` when the string contains at least one cased character and each run of cased characters begins with an uppercase or Unicode titlecase character, followed only by lowercase characters. Characters without case separate the runs.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.rfind(substring, start=0, end=None, /)`
+##### `.rfind(substring: str, start: int | None = 0, end: int | None = None, /) → int`
 
 Return the highest index where `substring` appears, or `-1` if not found. Mirror of `find()` from the right: useful for parsing the last separator of a string.
 
@@ -843,13 +879,13 @@ Return the highest index where `substring` appears, or `-1` if not found. Mirror
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `substring` | `string` | Substring to find |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `substring` | `str` | Substring to find |
+| `start` | `int \| None` | Start index (default 0) |
+| `end` | `int \| None` | End index, exclusive (default length) |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.rindex(substring, start=0, end=None, /)`
+##### `.rindex(substring: str, start: int | None = 0, end: int | None = None, /) → int`
 
 Like `rfind()`, but raises if the substring isn't present.
 
@@ -857,19 +893,26 @@ Like `rfind()`, but raises if the substring isn't present.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `substring` | `string` | Substring to find |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `substring` | `str` | Substring to find |
+| `start` | `int \| None` | Start index (default 0) |
+| `end` | `int \| None` | End index, exclusive (default length) |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.format(*args, **kwargs)`
+##### `.format(*args: object, **kwargs: object) → str`
 
 Replace placeholders with arguments. Auto-numbered `{}` consumes the next positional arg, explicit `{0}`/`{1}` reference specific positionals, and `{name}` looks up a keyword arg: `"hi {name}".format(name="world")` → `"hi world"`. For format specs / conversions (`{x:>10}`, `{x!r}`), prefer f-strings.
 
-- **Returns** `string`
+*Parameters*
 
-##### `.partition(sep, /)`
+| Name | Type | Description |
+| --- | --- | --- |
+| `args` | `object` | Values for the numbered `{}` fields |
+| `kwargs` | `object` | Values for the named fields, by keyword (`name="world"`) |
+
+- **Returns** `str`
+
+##### `.partition(sep: str, /) → tuple[str, str, str]`
 
 Split into three parts at the first occurrence of non-empty `sep`: `(before, sep, after)`. If `sep` isn't found, returns `(original, "", "")`.
 
@@ -877,11 +920,11 @@ Split into three parts at the first occurrence of non-empty `sep`: `(before, sep
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sep` | `string` | Non-empty separator |
+| `sep` | `str` | Non-empty separator |
 
-- **Returns** `[string, string, string]`
+- **Returns** `tuple[str, str, str]`
 
-##### `.rpartition(sep, /)`
+##### `.rpartition(sep: str, /) → tuple[str, str, str]`
 
 Like `partition()` but splits at the LAST occurrence of non-empty `sep`. If not found, returns `("", "", original)`.
 
@@ -889,11 +932,11 @@ Like `partition()` but splits at the LAST occurrence of non-empty `sep`. If not 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sep` | `string` | Non-empty separator |
+| `sep` | `str` | Non-empty separator |
 
-- **Returns** `[string, string, string]`
+- **Returns** `tuple[str, str, str]`
 
-##### `.removeprefix(prefix, /)`
+##### `.removeprefix(prefix: str, /) → str`
 
 Return a copy with `prefix` stripped from the start (only if present). Safer than slicing when you're not sure if the prefix is there.
 
@@ -901,11 +944,11 @@ Return a copy with `prefix` stripped from the start (only if present). Safer tha
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `prefix` | `string` | Prefix to remove |
+| `prefix` | `str` | Prefix to remove |
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.removesuffix(suffix, /)`
+##### `.removesuffix(suffix: str, /) → str`
 
 Return a copy with `suffix` stripped from the end (only if present).
 
@@ -913,13 +956,11 @@ Return a copy with `suffix` stripped from the end (only if present).
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `suffix` | `string` | Suffix to remove |
+| `suffix` | `str` | Suffix to remove |
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Built-in Types*
-
----
 
 ## tuple
 
@@ -927,15 +968,15 @@ Return a copy with `suffix` stripped from the end (only if present).
 
 ### Properties
 
-##### `.length`
+##### `.length: int`
 
 Number of items in the tuple. Same as `len(t)`. Property: no parens.
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.index(item, start=0, end=None, /)`
+##### `.index(item: T, start: int = 0, end?: int, /) → int`
 
 Return the index of the first occurrence of `item`. Optional `start` and `end` restrict the search to a slice. Raises if not found within the range.
 
@@ -943,13 +984,13 @@ Return the index of the first occurrence of `item`. Optional `start` and `end` r
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to find |
-| `start` | `number` | Start index (default 0) |
-| `end` | `number` | End index, exclusive (default length) |
+| `item` | `T` | Value to find |
+| `start` | `int` | Start index (default 0) |
+| `end` | `int` | End index, exclusive (default length) |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.count(item, /)`
+##### `.count(item: T, /) → int`
 
 Count occurrences of `item` in the tuple.
 
@@ -957,13 +998,93 @@ Count occurrences of `item` in the tuple.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item` | `any` | Value to count |
+| `item` | `T` | Value to count |
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Biosphere*
 
----
+## CacheInfo
+
+**Returned by:** `functools.lru_cache(fn).cache_info()` · `functools.cache(fn).cache_info()`
+
+### Properties
+
+##### `.hits: int`
+
+Calls answered from the cache
+
+- **Returns** `int`
+
+##### `.misses: int`
+
+Calls that had to run the function
+
+- **Returns** `int`
+
+##### `.maxsize: int`
+
+How many results this cache keeps before dropping the least recently used one
+
+- **Returns** `int`
+
+##### `.currsize: int`
+
+How many results are stored right now
+
+- **Returns** `int`
+
+*Types / Built-in Modules*
+
+## Field
+
+**Returned by:** `dataclasses.fields()`
+
+### Properties
+
+##### `.name: str`
+
+Field name as declared
+
+- **Returns** `str`
+
+##### `.default: object`
+
+The field's default value, or `MISSING` when it has none
+
+- **Returns** `object`
+
+##### `.default_factory: Callable`
+
+The zero-argument function that builds this field's default, or `MISSING` when there is none
+
+- **Returns** `Callable`
+
+##### `.init: bool`
+
+True when the field is a parameter of the generated constructor
+
+- **Returns** `bool`
+
+##### `.repr: bool`
+
+True when the field appears in the generated text form
+
+- **Returns** `bool`
+
+##### `.compare: bool`
+
+True when the field takes part in equality and ordering
+
+- **Returns** `bool`
+
+##### `.kw_only: bool`
+
+True when the field must be passed by name
+
+- **Returns** `bool`
+
+*Types / Built-in Modules*
 
 ## Match
 
@@ -971,21 +1092,21 @@ Count occurrences of `item` in the tuple.
 
 ### Properties
 
-##### `.pattern`
+##### `.pattern: str`
 
 The regular expression pattern string that produced this match.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.string`
+##### `.string: str`
 
 The string that was searched.
 
-- **Returns** `string`
+- **Returns** `str`
 
 ### Methods
 
-##### `.group(index=0)`
+##### `.group(index: int = 0) → str | None`
 
 Return the matched text for group `index`. Group `0` is the whole match. Optional groups that did not match return `None`; an out-of-range group raises.
 
@@ -993,11 +1114,11 @@ Return the matched text for group `index`. Group `0` is the whole match. Optiona
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Capture group index; default 0 |
+| `index` | `int` | Capture group index; default 0 |
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.groups(default=None)`
+##### `.groups(default: object = None) → tuple[str | None, ...]`
 
 Return a tuple of captured groups, excluding group `0`. Groups that did not match use `default`, which is `None` if omitted.
 
@@ -1005,11 +1126,11 @@ Return a tuple of captured groups, excluding group `0`. Groups that did not matc
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `default` | `any` | Value for unmatched optional groups |
+| `default` | `object` | Value for unmatched optional groups |
 
-- **Returns** `tuple`
+- **Returns** `tuple[str | None, ...]`
 
-##### `.start(index=0)`
+##### `.start(index: int = 0) → int`
 
 Start character index for the group. Unmatched optional groups return `-1`.
 
@@ -1017,11 +1138,11 @@ Start character index for the group. Unmatched optional groups return `-1`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Capture group index; default 0 |
+| `index` | `int` | Capture group index; default 0 |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.end(index=0)`
+##### `.end(index: int = 0) → int`
 
 End character index for the group. Unmatched optional groups return `-1`.
 
@@ -1029,11 +1150,11 @@ End character index for the group. Unmatched optional groups return `-1`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Capture group index; default 0 |
+| `index` | `int` | Capture group index; default 0 |
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.span(index=0)`
+##### `.span(index: int = 0) → tuple[int, ...]`
 
 Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`.
 
@@ -1041,10 +1162,8 @@ Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `number` | Capture group index; default 0 |
+| `index` | `int` | Capture group index; default 0 |
 
-- **Returns** `tuple<number>`
+- **Returns** `tuple[int, ...]`
 
 *Types / Exploration*
-
----

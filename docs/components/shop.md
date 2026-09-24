@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.sell(item_id, quantity=1)`
+##### `.sell(item_id: str, quantity: int = 1) → SaleResult`
 
 Sell a positive whole-number `quantity` of `item_id`, defaulting to **1**. The complete quantity is removed from the lowest-indexed matching Inventory slots in one transaction; if Inventory contains fewer units, nothing is sold. Battery products refund their charge percentage, with a **50% minimum**; fully charged batteries refund their full normal value. Use the Inventory page when you need to choose one exact battery instance.
 
@@ -32,8 +32,8 @@ Sell a positive whole-number `quantity` of `item_id`, defaulting to **1**. The c
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to sell |
-| `quantity` | `number` | Positive whole-number units to sell; defaults to 1 |
+| `item_id` | `str` | Item id to sell |
+| `quantity` | `int` | Positive whole-number units to sell; defaults to 1 |
 
 - **Returns** `SaleResult`
 - **Result fields** `.status`, `.message`
@@ -55,7 +55,7 @@ Sell a positive whole-number `quantity` of `item_id`, defaulting to **1**. The c
 | `ValueError` | `quantity` must be greater than zero. |
 | `OverflowError` | `quantity` must fit within the supported whole-number range. |
 
-##### `.sell_all(item_id)`
+##### `.sell_all(item_id: str) → SaleResult`
 
 Sell every unit of `item_id` currently in Inventory in one transaction. There is no per-unit cooldown. Each battery product is valued from its own retained charge, with a **50% minimum** and full normal value at full charge.
 
@@ -63,7 +63,7 @@ Sell every unit of `item_id` currently in Inventory in one transaction. There is
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to sell every stack of |
+| `item_id` | `str` | Item id to sell every stack of |
 
 - **Returns** `SaleResult`
 - **Result fields** `.status`, `.message`
@@ -77,7 +77,7 @@ Sell every unit of `item_id` currently in Inventory in one transaction. There is
 | `"not_sellable"` | rejection | The requested item cannot be sold. |
 | `"no_stock"` | rejection | Inventory does not contain the requested quantity of the item. |
 
-##### `.buy(item_id, quantity=1)`
+##### `.buy(item_id: str, quantity: int = 1) → ActionResult`
 
 Buy a positive whole-number `quantity` of `item_id`, defaulting to **1**. The complete quantity must be affordable and fit in base Inventory; otherwise nothing is charged or delivered. Purchases are placed in base Inventory, not delivered directly to a machine or remote outpost.
 
@@ -85,8 +85,8 @@ Buy a positive whole-number `quantity` of `item_id`, defaulting to **1**. The co
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Shop item id (machine kit, module, pack, reagent, or equipment) |
-| `quantity` | `number` | Positive whole-number units to buy; defaults to 1 |
+| `item_id` | `str` | Shop item id (machine kit, module, pack, reagent, or equipment) |
+| `quantity` | `int` | Positive whole-number units to buy; defaults to 1 |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -110,7 +110,7 @@ Buy a positive whole-number `quantity` of `item_id`, defaulting to **1**. The co
 | `ValueError` | `quantity` must be greater than zero. |
 | `OverflowError` | `quantity` must fit within the supported whole-number range. |
 
-##### `.get_catalogue()`
+##### `.get_catalogue() → list[ShopItem]`
 
 Every available catalogue entry as a list of `{id, name, cost}` objects. Use to pick a target dynamically or to show a filtered picker in a script. The Earth shop never runs out of catalogue items; entries hidden by tech gates don't appear.
 

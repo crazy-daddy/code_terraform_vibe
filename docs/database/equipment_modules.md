@@ -15,7 +15,7 @@ Basic mobility drivetrain for surface vehicles.
 
 ##### Sonar Module `sonar_module`
 
-Basic sonar: 50 m point sweeps, hardness-1 minerals, basic survey detail.
+Basic sonar: 50 m point sweeps, minerals up to hardness 1, basic survey detail.
 
 | Field | Value |
 | --- | --- |
@@ -43,7 +43,7 @@ High-performance drivetrain for a Pioneer's universal slot. One Sport Nav gives 
 
 ##### Wide Sonar `sonar_module_wide`
 
-Pioneer universal-slot sonar: 180 m point sweeps, hardness-3 minerals, wider survey detail.
+Pioneer universal-slot sonar: 180 m point sweeps, minerals up to hardness 3, wider survey detail.
 
 | Field | Value |
 | --- | --- |
@@ -53,7 +53,7 @@ Pioneer universal-slot sonar: 180 m point sweeps, hardness-3 minerals, wider sur
 
 ##### Deep Sonar `sonar_module_deep`
 
-Pioneer universal-slot sonar: 280 m point sweeps, hardness-4 minerals, deepest survey detail.
+Pioneer universal-slot sonar: 280 m point sweeps, minerals up to hardness 4, deepest survey detail.
 
 | Field | Value |
 | --- | --- |

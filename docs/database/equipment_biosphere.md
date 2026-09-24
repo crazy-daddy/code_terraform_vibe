@@ -138,7 +138,7 @@ Upgrades one Grow Lamp to Mk IV: **8×** base Forage yield on its own (**+700%**
 
 ##### Sprinkler Upgrade Pack Mk IV `sprinkler_upgrade_pack_mk4`
 
-Upgrades one Sprinkler to Mk IV: **8×** base Forage yield on its own (**+700%**), **500 W** draw while enabled, and **1,000 t/h Water** use while supplied. The bonus applies during growth to crops that require water in the four orthogonally adjacent cells, while the sprinkler is powered, enabled, and supplied. Coverage and growth speed stay the same. Only the strongest covering sprinkler counts; its bonus adds to other yield bonuses.
+Upgrades one Sprinkler to Mk IV: **8×** base Forage yield on its own (**+700%**), **500 W** draw while enabled, and **16 t/h Water** use while supplied. The bonus applies during growth to crops that require water in the four orthogonally adjacent cells, while the sprinkler is powered, enabled, and supplied. Coverage and growth speed stay the same. Only the strongest covering sprinkler counts; its bonus adds to other yield bonuses.
 
 | Field | Value |
 | --- | --- |

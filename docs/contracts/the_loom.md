@@ -12,47 +12,45 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.loom`
+##### `.loom: Loom`
 
 The recovered alien loom, your probe tool. Call `loom.weave(a, b)` to learn how it braids two strings into one.
 
 - **Returns** `Loom`
 
-##### `.record`
+##### `.record: str`
 
 A 42-character woven record made from two equal-length 21-character threads. Reverse the loom's rule to un-weave it; one thread is the message.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----
 
 ## Loom
 
@@ -60,7 +58,7 @@ A 42-character woven record made from two equal-length 21-character threads. Rev
 
 ### Methods
 
-##### `.weave(a, b)`
+##### `.weave(a: str, b: str) → str`
 
 Braid two strings into one and return it. Each character is one token. Deterministic: the same inputs always weave the same way, so probe it freely. A non-string argument raises `TypeError`; either input longer than 30 characters raises `ValueError`. The loom only weaves forward; build the reverse yourself.
 
@@ -68,10 +66,10 @@ Braid two strings into one and return it. Each character is one token. Determini
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `a` | `string` | First input string |
-| `b` | `string` | Second input string |
+| `a` | `str` | First input string |
+| `b` | `str` | Second input string |
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Raises*
 
@@ -81,5 +79,3 @@ Braid two strings into one and return it. Each character is one token. Determini
 | `ValueError` | Loom.weave() accepts at most 30 characters in each input. |
 
 *Types / Contracts*
-
----

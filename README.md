@@ -29,6 +29,7 @@ scripts/                    # source of truth for every deployable script and li
 devtools/
   scripts_sync.py            # syncs scripts/ into a live save folder's script slots
   dap_client.py              # minimal Debug Adapter Protocol client, used by scripts_sync.py --auto
+  split_docs_manual.py       # regenerates docs/ split files from a new in-game DOCS Manual export
   _migrate_from_root.py      # one-off migration script (kept for reference)
 
 docs/                        # authoritative game API reference (components, models, database)

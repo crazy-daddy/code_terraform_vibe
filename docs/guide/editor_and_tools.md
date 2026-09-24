@@ -37,7 +37,7 @@ The editor can jump straight to matching DOCS entries while you write:
 
 - **Hover over any method or function name**, a tooltip shows the signature, a one-line description, and the return type. Works on `self.X`, `self.X.Y`, top-level API calls (`get_component`, `sleep`, `print`), builtins (`len`, `range`, etc.), component methods accessed via `get_component(id).method`, and user-defined functions with docstrings.
 - **`Cmd+click` (macOS) / `Ctrl+click` (Windows/Linux) on any method, function, component id, or variable**, opens DOCS and jumps directly to that entry, with the specific method highlighted for a second or two so you can see exactly where you landed. Works like "Go to Definition" in a professional IDE, but the target is the DOCS page since the game APIs don't have a source file.
-- **Autocomplete as you type** (`Ctrl+Space` to force it), suggestions are type-aware. After `self.` you'll see only the methods and sub-objects available on your machine. After `self.battery.` you'll see only the Battery sub-object's API. String arguments offer known-valid values (component ids, bin names, mineral ids) where available.
+- **Autocomplete as you type** (`Ctrl+Space` to force it), suggestions are type-aware. Move through the list with `↓` and `↑`, `Enter` inserts the highlighted one, and Tab takes the first match. Those three keys are yours to change in **Settings → Keybinds**, under Editor. After `self.` you'll see only the methods and sub-objects available on your machine. After `self.battery.` you'll see only the Battery sub-object's API. String arguments offer known-valid values (component ids, bin names, mineral ids) where available.
 - **Parameter hints inside `(...)`**, as you type `self.drill.mine(`, a hint shows each parameter's name, type, and description.
 - **`F2` to rename** a symbol (variable, user function, parameter). Renames every whole-word occurrence in the current script, skipping strings and comments. Reserved names (keywords, `self`, builtins) can't be renamed.
 
@@ -65,8 +65,6 @@ The console window shows output from all unmuted scripts. Use `CLEAR` to empty i
 
 *Guide / Editor & Tools*
 
----
-
 ## Vim Mode
 
 ### Overview
@@ -90,8 +88,6 @@ These ex-commands are wired to the game's real save and window controls:
 Prefer your actual vim setup? See the External Editor page, your scripts live as real files on disk that you can edit in any editor, full vim included, and the game picks up changes live.
 
 *Guide / Editor & Tools*
-
----
 
 ## Script Commands
 
@@ -149,8 +145,6 @@ while True:
 
 *Guide / Editor & Tools*
 
----
-
 ## Script Variants
 
 Variants are named script snapshots you can reuse across a fleet without copying code by hand.
@@ -192,9 +186,19 @@ A top-of-file `"""docstring"""` or first-line `#` comment becomes the variant de
 
 Compatible family sharing is explicit machine metadata, not a guess based on names or appearance. If different scripting contracts need common helper functions, put those helpers in a Library script and import them instead of forcing those machines into one variant family.
 
-*Guide / Editor & Tools*
+### Unassigned scripts
 
----
+Undeploying or deconstructing a machine stops its script. Authored code stays in **Computer > Scripts > Unassigned**, with its notes, private Main, selected variant, and run history. **Current** shows assigned scripts by default; **All** includes both views.
+
+Unassigned scripts cannot run. Use their actions menu to **Copy to machine**, **Copy to Playground**, or **Delete**. You can select several unassigned scripts for deletion. Deletion removes their private data but keeps shared machine variants.
+
+**Copy to machine** uses a compatible machine slot and keeps its existing ID. It stops the target and preserves the previous code in Variants before replacing Main. Compatibility requires a recorded former machine type and slot; older unassigned scripts without that information can still be reviewed and copied to Playground.
+
+**Copy to Playground** creates a new named document without replacing Scratch or running the code. The original script stays available with all its metadata. Copied code is unchanged, including machine IDs and `self` references.
+
+Machine IDs are never recycled by deleting an unassigned script.
+
+*Guide / Editor & Tools*
 
 ## Debug Mode
 
@@ -274,8 +278,6 @@ You do not need to pin anything to inspect the current frame. When the script pa
 Debug mode is a read-only-plus-pause tool. Enabling Debug on one script **cannot affect another script's behavior**. Breakpoints, exception pauses, step state, and watch inspection are stored per-script, turning debug on a heater script has zero impact on an oxygen generator script running in parallel.
 
 *Guide / Editor & Tools*
-
----
 
 ## Control Room
 
@@ -372,8 +374,6 @@ No `sleep()` needed, the interpreter paces the loop automatically. The panel rep
 
 *Guide / Editor & Tools*
 
----
-
 ## External Editor
 
 Your scripts are saved as `.py` files on disk. You can edit them in any text editor, VS Code, Sublime, Notepad++, or anything else.
@@ -406,6 +406,8 @@ Each machine or panel script uses the same filename shown in the in-game editor,
 - `CODE-TERRAFORM-IDE.txt`: the setup guide, with the exact language-server path on your machine and editor configurations.
 - `*.pyi` and `pyrightconfig.codeterraform.json`: fallback stubs for generic Python editors (see below).
 - `.codeterraform/`: transient files the editor and the game exchange while a command runs (Run, Stop, Library operations, debugging). Safe to ignore.
+- `codeterraform-fleet.json`: the machine panel's data (owners, scripts and their status). Do not edit.
+- `.vscode/settings.json`, `.zed/settings.json`, `.gitignore`: written once if missing and yours afterwards. The first folds the helper files under one collapsed row in VS Code's Explorer and hides the transient folder; the second makes the game's server Zed's Python server and formatter for this folder only; the third ignores everything machine-specific or regenerated, so `git init` here tracks your scripts, Libraries, `user_stubs.py` and your own configuration.
 - `*.codeterraform-retired-<token>.bak`: recovery archives. The game keeps one whenever a file is renamed, deleted, replaced or in conflict, so an editor that writes through a stale handle can never lose code. They are yours to delete whenever you like; `*.codeterraform-write.bak` is the crash-safety copy of an atomic write and disappears by itself.
 - Only each script's running source is a file. The **Variants** and **Notes** tabs live in the save, not in this folder, so named variants cannot be listed, switched or edited from outside the game.
 
@@ -428,6 +430,18 @@ Keep this save open and the game unpaused. In VS Code, open a machine, panel, or
 Shift+F5 or closing the debug session disconnects and leaves the script running. Use **Stop Script in Game** to stop it. Watches and the Debug Console accept read-only expressions; they cannot execute world actions or assign variables. Save your files first. To run changed main-script code, use **Run Script in Game** before attaching again. Apply edited Libraries in the game and resolve any source conflicts. If you enabled **Pause When Inactive**, turn it off when you want execution to continue while the game is minimized.
 
 Other editors with a Debug Adapter Protocol client can launch `node /path/to/debug-adapter.cjs`. That file lives beside the installed `server.cjs`. Use a `launch` request to attach and run an idle script, or `attach` to inspect an existing runtime. Set `workspace` to this save's scripts directory and `script` to the script's file path. The adapter uses standard input/output. It needs Node.js 20 or later outside VS Code.
+
+### Formatting with Ruff
+
+Format Document, Format Selection and format on save work on game scripts in VS Code and in every other editor that uses the game's language server. The server is the formatter and Ruff is the engine: it runs the Ruff you already have (the VS Code Ruff extension's own binary, `ruff` on PATH, or a pipx, uv or cargo install) and hands back only the lines that changed, so your cursor and folds stay put. A `ruff.toml`, `.ruff.toml` or `pyproject.toml` in the scripts folder applies; without one you get Ruff's default, Black-compatible style. Nothing is downloaded: when Ruff is missing, the format action says how to get it, and in VS Code offers to install the Ruff extension. Ruff's own extension cannot format game files directly, because they use the Code Terraform language mode that keeps Pylance from flagging `self` and the game builtins.
+
+### Coloring, rename, references and Outline
+
+Game files get semantic coloring the way Python files do: variables, parameters, functions, classes, methods, properties, imported modules and the script's `self` or `panel`, all from the same analysis that answers completion. An identifier the analysis cannot place keeps its plain grammar color rather than a guessed one. Rename Symbol (F2 in VS Code) follows the same scoping rules as the in-game editor, refuses the same reserved names, and stays inside the one file; Find All References and the Outline, breadcrumbs and Go to Symbol views use the same source. Cross-file rename is not offered.
+
+### The Machines panel in VS Code
+
+The Code Terraform view in the activity bar lists this save's outposts and machines, each with its scripts and their live status (running, paused, error with the line, idle, unpowered), plus Panels, Contracts and Libraries. Click a script to open it; use the inline Run and Stop actions or the context menu's Debug. The panel reads `codeterraform-fleet.json`, which the game rewrites whenever a script starts, stops or fails, so it stays current while the save is open.
 
 ### Other editors
 
@@ -479,9 +493,16 @@ Sublime Text (LSP package, `LSP.sublime-settings`):
 
 On Windows, write the path with forward slashes inside these configurations.
 
-### Fallback stubs
+### Zed
 
-PyCharm requires an LSP integration capable of launching this server. Its ordinary Python checker does not model the game's owner globals or runtime restrictions. There is no bundled PyCharm plugin. Generic editors can still use the generated `.pyi` files for partial API help; this fallback does not provide full game-aware analysis.
+Zed has no one-click install for an extension outside its registry, so the game's extension is installed once from the source the game ships: install Rust with rustup (rustup.rs; Zed builds with the `cargo` your shell finds first, and rustup's carries the WebAssembly target), then in Zed run **zed: install dev extension** and choose `<app-data>/external-ide/zed/code-terraform` (**Open in Zed** in Settings > Editor > External Editor writes that folder, and **Show Extension Package** opens the folder beside it). Zed compiles it in a few seconds; after a game update, run the same command on the same folder again. The Settings row shows whether Zed lists the extension. Then open a save's scripts folder in Zed, or choose **Open in Zed**, and trust the folder when Zed asks. The extension reads `codeterraform-workspace.json` in the folder you opened and starts the game's installed server with Zed's own Node; the folder's `.zed/settings.json` makes that server Zed's Python server and formatter for this folder only.
+
+### PyCharm
+
+**Set Up PyCharm** in Settings > Editor > External Editor installs the game's own Code Terraform plugin, and the LSP4IJ plugin it builds on, into PyCharm and opens the scripts folder there. Close PyCharm first: its plugins can only change while it is not running, and the button says so if it is. Approve the third-party plugin once when PyCharm asks. Node.js 20 or later must be installed, because PyCharm supplies no Node and the language server and the debugger run on it; the setup says so when it is missing, and the executable can be set in PyCharm's **Settings > Tools > Code Terraform**. After that everything is in the editor. Completion, diagnostics, hover, signatures, definitions, rename, symbols, formatting through Ruff (install Ruff so it is on PATH) and semantic coloring come from the game's server, and PyCharm's own Python inspections stay off for game scripts, so `self` and the game builtins are never underlined. The **Code Terraform** tool window holds the Machines view, every script with its status and Run, Stop and Debug, and Game Output, the game's log with tracebacks linked to their lines; Run, Stop and Debug also sit in the gutter of every script. Debugging needs no configuration: Debug starts the game's debug adapter for that script, with breakpoints, stepping and variables in PyCharm's Debug tool window. The line under the button reports whether the plugin is installed and current; after a game update, Set Up PyCharm (with PyCharm closed) updates it. The **?** beside the button has the manual steps: LSP4IJ from the Marketplace, then **Install Plugin from Disk...** with the zip the game keeps under its app-data folder (**Show Extension Package** opens the folder that holds it).
+## Fallback stubs
+
+Generic editors can still use the generated `.pyi` files for partial API help; this fallback does not provide full game-aware analysis.
 
 `pyrightconfig.codeterraform.json` is the generated fallback configuration. New `pyrightconfig.json` files extend it so you can add your own overrides. Byte-identical old generated defaults migrate automatically. Customized configurations are preserved; to adopt updated defaults, add `"extends": "./pyrightconfig.codeterraform.json"` to your config and retain the overrides you need. PyCharm does not read Pyright configuration; mark `lib/` as a Sources Root for its own Library import resolution.
 
@@ -504,12 +525,8 @@ If an external edit collides with a dirty in-game buffer, the game first saves B
 
 *Guide / Editor & Tools*
 
----
-
 ## Keyboard Shortcuts
 
 Every application-level keyboard shortcut the game uses. Click any customizable binding in the Keybinds settings tab to change it. For multi-line cursors, hold `Alt` (`Option` on macOS) and drag in the editor.
 
 *Guide / Automation Systems*
-
----

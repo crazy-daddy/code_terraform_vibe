@@ -34,19 +34,19 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.steam_in`
+##### `.steam_in: FluidPort`
 
 Steam input port. Connect a Thermal Cap or a steam-latched Gas Tank. Its 250 t internal buffer is consumed by condensation after the grid powers the machine.
 
 - **Returns** `FluidPort` accepting steam from a Thermal Cap or Gas Tank.
 
-##### `.water_out`
+##### `.water_out: FluidPort`
 
 Clean-water output port. Connect a Liquid Tank, Large Liquid Tank, Plant Terraformer, Sprinkler, or other water consumer. Its 250 t internal buffer backpressures condensation when full.
 
@@ -54,38 +54,38 @@ Clean-water output port. Connect a Liquid Tank, Large Liquid Tank, Plant Terrafo
 
 ### Methods
 
-##### `.condensation_rate()`
+##### `.condensation_rate() → float`
 
 Clean water produced on the last simulation tick in t/h. Full throttle reaches **250 t/h** when the steam input has supply, the water output has room, and the host outpost is not overcrowded.
 
 - **Returns** Number: clean water produced on the last tick in t/h.
 
-##### `.efficiency()`
+##### `.efficiency() → float`
 
 Fraction of the throttle's requested condensation completed on the last tick (**0.0-1.0**). Low values mean the steam input ran short or the water output filled before the tick completed.
 
 - **Returns** Number (**0-1**): fraction of requested condensation completed.
 
-##### `.is_stalled()`
+##### `.is_stalled() → bool`
 
 `True` when throttle is above zero and the current fluid state blocks condensation because `steam_in` is empty or `water_out` is full. This is derived immediately from both ports; use `status()` to distinguish the blockers.
 
 - **Returns** Boolean: `True` when steam is empty or the water buffer is full while throttle is open.
 
-##### `.status()`
+##### `.status() → str`
 
 Current actionable state: `"idle"`, `"no_power"`, `"no_steam"`, `"output_full"`, or `"running"`. This is derived live from throttle, power, and both fluid buffers. Once throttle is **0**, it reports `"idle"`; inspect port levels to decide when to reopen it.
 
 - **Returns** One of `"idle"`, `"no_power"`, `"no_steam"`, `"output_full"`, or `"running"`.
 - **Possible values** `"idle"`, `"no_power"`, `"no_steam"`, `"output_full"`, `"running"`
 
-##### `.throttle()`
+##### `.throttle() → float`
 
 Current condensation setpoint (**0.0-1.0**). It scales steam use, water output, and power draw linearly.
 
 - **Returns** Number (**0-1**): current condensation setpoint.
 
-##### `.set_throttle(t)` *(self only)*
+##### `.set_throttle(t: float) → ActionResult` *(self only)*
 
 Set condensation from **0.0-1.0** (clamped). **0** idles with no conversion or variable draw. **1.0** requests **250 t/h** and **150 W**. Draw follows the throttle even when steam is empty or the output is full, so set **0** to save power while blocked. This script-owned setpoint resets to **0** when the script stops, ends, or errors. Call from this Condenser's own script.
 
@@ -93,7 +93,7 @@ Set condensation from **0.0-1.0** (clamped). **0** idles with no conversion or v
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `t` | `number` | Condensation rate fraction in the **0-1** range. |
+| `t` | `float` | Condensation rate fraction in the **0-1** range. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

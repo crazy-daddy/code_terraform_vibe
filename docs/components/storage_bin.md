@@ -32,7 +32,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
@@ -40,7 +40,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ### Methods
 
-##### `.count(item_id)`
+##### `.count(item_id: str) → int`
 
 Units of `item_id` currently stored. Returns **0** when the bin is empty or latched to another item. Inventory, Warehouses, and Lead Casks expose the same `count(item_id)` query.
 
@@ -48,35 +48,35 @@ Units of `item_id` currently stored. Returns **0** when the bin is empty or latc
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to count |
+| `item_id` | `str` | Item id to count |
 
 - **Returns** Number: units of that item currently stored.
 
-##### `.get_capacity()`
+##### `.get_capacity() → int`
 
 Maximum units the bin holds, **500** by default. Queryable rather than hardcoded so a retune doesn't break scripts. Use `fill_percent()` when you need the current fill ratio.
 
 - **Returns** Number (units max)
 
-##### `.get_material()`
+##### `.get_material() → str`
 
 Currently latched material id, or the empty string if the bin is empty (and therefore accepts any material on the next deposit). Use to check a bin's material before routing transfers: `if bin.get_material() in ("", "iron_ore"): # safe to deposit iron`.
 
 - **Returns** String (item id, or empty string if bin is empty)
 
-##### `.stacks()`
+##### `.stacks() → list[ItemStack]`
 
 Lists the item variants stored in this bin as `ItemStack` values. Items with the same id but different properties remain separate. Call it again when you need current contents.
 
 - **Returns** List of property-distinct `ItemStack` snapshots currently stored.
 
-##### `.is_empty()`
+##### `.is_empty() → bool`
 
 `True` if the bin holds nothing. An empty bin has no material lock, any material can take the slot on the next deposit. Different from `has_space(0)` which is always `True`.
 
 - **Returns** Boolean
 
-##### `.has_space(amount)`
+##### `.has_space(amount: int) → bool`
 
 `True` if the bin has room for whole-number `amount` more units. Use before a transfer to avoid partial moves.
 
@@ -84,23 +84,23 @@ Lists the item variants stored in this bin as `ItemStack` values. Items with the
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `amount` | `number` | Whole-number units of free capacity required |
+| `amount` | `int` | Whole-number units of free capacity required |
 
 - **Returns** Boolean
 
-##### `.space()`
+##### `.space() → int`
 
 Free units of capacity remaining. Sizes a transfer in one call: `n = bin.space()`, then move up to `n`.
 
 - **Returns** Number (free units remaining)
 
-##### `.fill_percent()`
+##### `.fill_percent() → float`
 
 Fraction full in the range **0-1**. Common threshold for rebalance scripts: `if bin.fill_percent() < 0.2: # route more here`.
 
 - **Returns** Number (**0-1**)
 
-##### `.transfer_from_inventory(item_id, count, properties=None, property_match=None)`
+##### `.transfer_from_inventory(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units of `item_id` from Inventory into the bin, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property dict selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items.
 
@@ -108,10 +108,10 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to pull from inventory |
-| `count` | `number` | Whole-number max units to transfer |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `item_id` | `str` | Item id to pull from inventory |
+| `count` | `int` | Whole-number max units to transfer |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -136,7 +136,7 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
-##### `.transfer_to_inventory(count, properties=None, property_match=None)`
+##### `.transfer_to_inventory(count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move up to whole-number `count` units back to Inventory, preserving exact properties. The call waits for the feeder cycle to finish, and the bin cannot start another transfer during that cycle. A property dict selects a subset by default. Pass `"exact"` as `property_match` for a full identity, including `None` for propertyless items. If the bin drains completely, its item-id latch clears.
 
@@ -144,9 +144,9 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `count` | `number` | Whole-number max units to transfer |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `count` | `int` | Whole-number max units to transfer |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -169,7 +169,7 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
-##### `.transfer_to(target, item_id, count, properties=None, property_match=None)`
+##### `.transfer_to(target: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Requires **Auto Feeders** research. Move up to whole-number `count` units of `item_id` from this storage endpoint to another Storage Bin, Warehouse, Large Warehouse, Lead Cask, or Inventory. Pass a storage building's display name or instance id, or `"inventory"`. Inventory participates only at **Nocturna Base**. The call waits for the physical store's feeder cycle to finish, and every participating storage building remains busy during that cycle. Exact item properties are preserved; optional `properties` and `property_match` select a variant. The calling script may run anywhere, but cargo never crosses outpost boundaries through this method.
 
@@ -177,11 +177,11 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `target` | `string` | Display name or instance id of another storage endpoint at the same outpost |
-| `item_id` | `string` | Item id to move |
-| `count` | `number` | Whole-number max units to transfer |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `target` | `str` | Display name or instance id of another storage endpoint at the same outpost |
+| `item_id` | `str` | Item id to move |
+| `count` | `int` | Whole-number max units to transfer |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`

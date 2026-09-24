@@ -12,33 +12,33 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.device`
+##### `.device: SlabDevice`
 
 The recovered slab contraption.
 
@@ -46,20 +46,16 @@ The recovered slab contraption.
 
 *Types / Contracts*
 
----
-
 ## SlabDevice
 
 **Returned by:** .device
 
 ### Properties
 
-##### `.slabs`
+##### `.slabs: str`
 
 Current state of the letter slabs. Uppercase letters, spaces preserved.
 
-- **Returns** `string`
+- **Returns** `str`
 
 *Types / Contracts*
-
----

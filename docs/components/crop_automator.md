@@ -2,7 +2,7 @@
 
 > **Category:** Biosphere | **Component Name:** Crop Automator
 
-Queues harvest, plant, and treatment jobs across up to 24 other cells in a centered 5 by 5 service area, then executes one job at a time with a short pause between them.
+Queues harvest, plant, and treatment jobs across up to 24 other cells in a centered 5 by 5 service area, then executes one job at a time with a short pause between them. Scripts find it with `outpost.harvesting_machines()`.
 
 | Field | Value |
 | --- | --- |
@@ -35,13 +35,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.input`
+##### `.input: InputSlot`
 
 Standard multi-material `InputSlot` accepting species seeds, Fertilizer Mk I/II/III, and Growth Accelerant.
 
 - **Returns** `InputSlot`
 
-##### `.output`
+##### `.output: OutputSlot`
 
 Standard `OutputSlot` containing collected Forage. Send to a local destination through this slot, or let a local Plant Terraformer pull from it through its standard input. Every route uses normal timed transfers.
 
@@ -49,7 +49,7 @@ Standard `OutputSlot` containing collected Forage. Send to a local destination t
 
 ### Methods
 
-##### `.harvest(sector)` *(self only)*
+##### `.harvest(sector: str) → JobReceipt` *(self only)*
 
 Submit one harvest job for a covered sector. Submission is immediate; valid field work later takes **0.1 hours**. Missing output space pauses this FIFO head without bypassing it. A target mismatch is terminal, takes no work time, and advances the queue.
 
@@ -57,7 +57,7 @@ Submit one harvest job for a covered sector. Submission is immediate; valid fiel
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sector` | `string` | One of the cells in the automator's service area. |
+| `sector` | `str` | One of the cells in the automator's service area. |
 
 - **Returns** `JobReceipt`
 - **Result fields** `.status`, `.message`
@@ -78,7 +78,7 @@ Submit one harvest job for a covered sector. Submission is immediate; valid fiel
 | --- | --- |
 | `ValueError` | The sector argument is not a valid field sector id. |
 
-##### `.plant(sector, seed_id)` *(self only)*
+##### `.plant(sector: str, seed_id: str) → JobReceipt` *(self only)*
 
 Submit one planting job with a specific species seed. Submission is immediate and does not require the seed to be loaded yet. The serial executor pauses at this FIFO head until the seed is present, then spends **0.1 hours** and rechecks the target before committing.
 
@@ -86,8 +86,8 @@ Submit one planting job with a specific species seed. Submission is immediate an
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sector` | `string` | One of the cells in the automator's service area. |
-| `seed_id` | `string` | A species-specific seed item id. |
+| `sector` | `str` | One of the cells in the automator's service area. |
+| `seed_id` | `str` | A species-specific seed item id. |
 
 - **Returns** `JobReceipt`
 - **Result fields** `.status`, `.message`
@@ -109,7 +109,7 @@ Submit one planting job with a specific species seed. Submission is immediate an
 | --- | --- |
 | `ValueError` | The sector argument is not a valid field sector id. |
 
-##### `.apply(sector, item_id)` *(self only)*
+##### `.apply(sector: str, item_id: str) → JobReceipt` *(self only)*
 
 Submit one Fertilizer Mk I/II/III or Growth Accelerant job. Submission is immediate and does not require the material to be loaded yet. The serial executor pauses at this FIFO head until the material is present, then spends **0.1 hours** and rechecks the target before committing.
 
@@ -117,8 +117,8 @@ Submit one Fertilizer Mk I/II/III or Growth Accelerant job. Submission is immedi
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sector` | `string` | One of the cells in the automator's service area. |
-| `item_id` | `string` | Fertilizer Mk I/II/III or Growth Accelerant. |
+| `sector` | `str` | One of the cells in the automator's service area. |
+| `item_id` | `str` | Fertilizer Mk I/II/III or Growth Accelerant. |
 
 - **Returns** `JobReceipt`
 - **Result fields** `.status`, `.message`
@@ -140,13 +140,13 @@ Submit one Fertilizer Mk I/II/III or Growth Accelerant job. Submission is immedi
 | --- | --- |
 | `ValueError` | The sector argument is not a valid field sector id. |
 
-##### `.position()`
+##### `.position() → str`
 
 Grid sector occupied by this automator. Jobs can target up to 24 other cells in its centered 5 by 5 service area.
 
 - **Returns** The automator's own field sector. Jobs can target up to 24 other cells in its centered 5 by 5 service area.
 
-##### `.cell(sector)`
+##### `.cell(sector: str) → Cell | None`
 
 Read one sector inside this automator's service area as a `Cell` snapshot, covering plant, status, growth, conditions, and remaining treatment hours. The addressable set is exactly the set `harvest()`, `plant()`, and `apply()` accept, so a sector this returns `None` for is one no job can target either.
 
@@ -154,9 +154,9 @@ Read one sector inside this automator's service area as a `Cell` snapshot, cover
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `sector` | `string` | One of the cells in the automator's service area. |
+| `sector` | `str` | One of the cells in the automator's service area. |
 
-- **Returns** `Optional[Cell]`
+- **Returns** `Cell | None`
 - **None means** `None` means this automator cannot address that sector: it is outside the service area, or not a valid field sector.
 
 *Outcomes*
@@ -165,24 +165,24 @@ Read one sector inside this automator's service area as a `Cell` snapshot, cover
 | --- | --- |
 | `None` | `None` means this automator cannot address that sector: it is outside the service area, or not a valid field sector. |
 
-##### `.cells()`
+##### `.cells() → list[Cell]`
 
 Read every sector this automator serves as a list of `Cell` snapshots, for sweeping the whole service area in one pass. Unscanned natural ground reports status `"unknown"`.
 
 - **Returns** List of the `Cell` snapshots this automator serves, one per addressable sector. Empty while the automator is not placed on the field.
 
-##### `.status()`
+##### `.status() → str`
 
 Exact executor state: `"not_placed"`, `"no_power"`, `"working"`, `"no_seed"`, `"no_material"`, `"output_full"`, `"results_full"`, or `"idle"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"not_placed"`, `"no_power"`, `"working"`, `"no_seed"`, `"no_material"`, `"output_full"`, `"results_full"`, `"idle"`
 
-##### `.current_job()`
+##### `.current_job() → CropJob | None`
 
 Active FIFO head as a `CropJob`, including action, target, progress, and blocker. Returns `None` while idle.
 
-- **Returns** `Optional[CropJob]`
+- **Returns** `CropJob | None`
 - **None means** `None` means the Crop Automator has no active job.
 
 *Outcomes*
@@ -191,25 +191,25 @@ Active FIFO head as a `CropJob`, including action, target, progress, and blocker
 | --- | --- |
 | `None` | `None` means the Crop Automator has no active job. |
 
-##### `.get_queue()`
+##### `.get_queue() → list[CropJob]`
 
 Snapshot of pending `CropJob` values in exact FIFO order (first in, first out). The active job is reported separately by `current_job()`.
 
-- **Returns** `list<CropJob>`
+- **Returns** `list[CropJob]`
 
-##### `.queue_count()`
+##### `.queue_count() → int`
 
 Total unfinished jobs, counting the active job and every pending job. Maximum **50**.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.result_count()`
+##### `.result_count() → int`
 
 Completed terminal results waiting in the result inbox. At **50**, execution pauses until results are consumed.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.next_result()` *(self only)*
+##### `.next_result() → CropJobResult` *(self only)*
 
 Consume the oldest terminal result. An empty inbox is reported without changing machine state.
 
@@ -235,7 +235,7 @@ Consume the oldest terminal result. An empty inbox is reported without changing 
 | `"invalid_seed"` | rejection | The planting job referred to an invalid species seed. |
 | `"invalid_material"` | rejection | The treatment job referred to an unsupported material. |
 
-##### `.cancel_job(job_id)` *(self only)*
+##### `.cancel_job(job_id: int) → ActionResult` *(self only)*
 
 Cancel one active or pending job by id. Canceling active work discards only its progress; inputs and field state remain unchanged.
 
@@ -243,7 +243,7 @@ Cancel one active or pending job by id. Canceling active work discards only its 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `job_id` | `number` | Job id returned by harvest(), plant(), or apply(). |
+| `job_id` | `int` | Job id returned by harvest(), plant(), or apply(). |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -256,7 +256,7 @@ Cancel one active or pending job by id. Canceling active work discards only its 
 | `"ok"` | success | The operation completed successfully. |
 | `"not_found"` | rejection | The requested object, target, or record does not exist. |
 
-##### `.move_job(job_id, position)` *(self only)*
+##### `.move_job(job_id: int, position: int) → ActionResult` *(self only)*
 
 Move one unfinished job to a one-based execution position, counting the active job first and then pending jobs. Reordering only pending work preserves active progress. While a job is active, changing which job is first preempts the arm: the displaced job keeps its id and request, loses its progress, and creates no terminal result. Position **1** is first; `queue_count()` is the last position.
 
@@ -264,8 +264,8 @@ Move one unfinished job to a one-based execution position, counting the active j
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `job_id` | `number` | Stable id of an active or pending job. |
-| `position` | `number` | One-based execution position across the active and pending jobs. |
+| `job_id` | `int` | Stable id of an active or pending job. |
+| `position` | `int` | One-based execution position across the active and pending jobs. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -279,7 +279,7 @@ Move one unfinished job to a one-based execution position, counting the active j
 | `"not_found"` | rejection | No active or pending job has the supplied id. |
 | `"invalid"` | rejection | The supplied position is outside the one-based range from **1** through `queue_count()`. |
 
-##### `.clear_queue()` *(self only)*
+##### `.clear_queue() → CountResult` *(self only)*
 
 Cancel the active job and every pending job. Completed results remain available through `next_result()`.
 

@@ -28,13 +28,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.get_value()`
+##### `.get_value() → int`
 
 Current unstable repair reading as an integer. If the value is odd, add **1**; if it is even, use it unchanged. After repair, this method returns real atmospheric pressure in kPa.
 
 - **Returns** Number (unstable repair reading; kPa after repair)
 
-##### `.stabilize(value)`
+##### `.stabilize(value: float) → ActionResult`
 
 Start the black-box stabilization suite with the corrected even reading: `result = self.stabilize(corrected_value)`. The suite then checks the whole script against several readings. A fully correct suite repairs the sensor; failed test cases remain visible in the console.
 
@@ -42,7 +42,7 @@ Start the black-box stabilization suite with the corrected even reading: `result
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `value` | `number` | Stabilization value to test |
+| `value` | `float` | Stabilization value to test |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

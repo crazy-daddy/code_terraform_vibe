@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.send(channel, value)`
+##### `.send(channel: str, value: JsonValue) → SendResult`
 
 Add a JSON-safe value to a named channel queue. Keep the send receipt to identify or cancel that exact request later, even when several requests contain identical values. Channel ids may contain letters, numbers, `_`, `.`, `:`, and `-`. Use queues for work items that should be handled once.
 
@@ -32,8 +32,8 @@ Add a JSON-safe value to a named channel queue. Keep the send receipt to identif
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `value` | `any` | JSON-safe value, up to 8 nested levels, 1,024 total values, and 4,096 characters per string |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `value` | `JsonValue` | JSON-safe value, up to 8 nested levels, 1,024 total values, and 4,096 characters per string |
 
 - **Returns** `SendResult`
 - **Result fields** `.status`, `.message`
@@ -50,7 +50,7 @@ Add a JSON-safe value to a named channel queue. Keep the send receipt to identif
 | `"id_exhausted"` | rejection | No additional stable message ids are available. No message was queued. |
 | `"invalid_value"` | rejection | The supplied value violates the Signal Bus value rules. No message was queued. |
 
-##### `.receive(channel, message_id=None)`
+##### `.receive(channel: str, message_id: int | None = None) → ReceiveResult`
 
 Take one queued message. Omit `message_id` or pass `None` to take the oldest, or supply a message id to take exactly that job. Selection and removal happen together, so only one competing receiver can take it. Other queued messages keep their order, and broadcasts are preserved. Use `pending()` to choose work by priority, location, or capability before receiving it.
 
@@ -58,8 +58,8 @@ Take one queued message. Omit `message_id` or pass `None` to take the oldest, or
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `message_id` | `number` | Positive whole-number message id from `pending()` or a successful `send()` receipt. Omit or pass `None` to receive the oldest message. An id selects that exact message, never its position in the queue. |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `message_id` | `int \| None` | Positive whole-number message id from `pending()` or a successful `send()` receipt. Omit or pass `None` to receive the oldest message. An id selects that exact message, never its position in the queue. |
 
 - **Returns** `ReceiveResult`
 - **Result fields** `.status`, `.message`
@@ -82,7 +82,7 @@ Take one queued message. Omit `message_id` or pass `None` to take the oldest, or
 | `ValueError` | `message_id` must be greater than zero. |
 | `OverflowError` | `message_id` must fit within the supported integer range. |
 
-##### `.wait(channel)`
+##### `.wait(channel: str) → ReceiveResult`
 
 Wait for and take the oldest queued message. If the queue is empty, only this script pauses until work is available; the game and other scripts keep running. Messages already queued are taken immediately. Broadcasts do not satisfy the wait. Pausing preserves the wait, and stopping the script abandons it without consuming a message.
 
@@ -90,7 +90,7 @@ Wait for and take the oldest queued message. If the queue is empty, only this sc
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. A valid missing channel waits for its first queued message. |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. A valid missing channel waits for its first queued message. |
 
 - **Returns** `ReceiveResult`
 - **Result fields** `.status`, `.message`
@@ -103,7 +103,7 @@ Wait for and take the oldest queued message. If the queue is empty, only this sc
 | `"ok"` | success | One message was removed from the queue and returned. Without a message id it was the oldest; with an id it was exactly the requested message. |
 | `"invalid_channel"` | rejection | The supplied channel id is outside the Signal Bus naming rules. |
 
-##### `.wait_any(channels)`
+##### `.wait_any(channels: list[str]) → WaitAnyResult`
 
 Wait for and take one queued message from any listed channel. Channels listed first have priority whenever work is selected; each channel keeps its oldest-first order. If every queue is empty, only this script waits. Broadcasts do not satisfy the wait. The channel list is copied when called, and repeated names are considered once at their first position. Pausing preserves the wait; stopping abandons it without taking work.
 
@@ -111,7 +111,7 @@ Wait for and take one queued message from any listed channel. Channels listed fi
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channels` | `list` | List of 1-128 channel-id strings, in priority order. Each id has 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. Missing channels may receive work later. Repeated names keep their first position. |
+| `channels` | `list[str]` | List of 1-128 channel-id strings, in priority order. Each id has 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. Missing channels may receive work later. Repeated names keep their first position. |
 
 - **Returns** `WaitAnyResult`
 - **Result fields** `.status`, `.message`
@@ -131,7 +131,7 @@ Wait for and take one queued message from any listed channel. Channels listed fi
 | `TypeError` | channels must be a list containing only channel-id strings. |
 | `ValueError` | channels must contain 1-128 entries. |
 
-##### `.wait_broadcast(channel)`
+##### `.wait_broadcast(channel: str) → WaitBroadcastResult`
 
 Wait for the next broadcast on a channel. Every script already waiting captures that publication, including a repeated value or None. Existing broadcasts do not satisfy a new wait. Only this script pauses; queued messages remain untouched. The first publication is retained even if another broadcast follows or the channel is cleared. Pausing retains that signal for resume; stopping abandons the wait.
 
@@ -139,7 +139,7 @@ Wait for the next broadcast on a channel. Every script already waiting captures 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. A valid missing channel can be watched without creating it. Only successful broadcasts on this channel satisfy the wait. |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`. A valid missing channel can be watched without creating it. Only successful broadcasts on this channel satisfy the wait. |
 
 - **Returns** `WaitBroadcastResult`
 - **Result fields** `.status`, `.message`
@@ -152,7 +152,7 @@ Wait for the next broadcast on a channel. Every script already waiting captures 
 | `"ok"` | success | The first successful broadcast published after this call was captured without consuming shared state. Every script already waiting receives its own copy. |
 | `"invalid_channel"` | rejection | The supplied channel id is outside the Signal Bus naming rules. |
 
-##### `.pending(channel)`
+##### `.pending(channel: str) → list[CommsMessage]`
 
 Inspect all waiting messages on a channel in receive order without consuming them. Use the snapshot to display pending work in a Control Room card or total outstanding requests. Each message and its nested value are copied; editing the returned list or messages does not change the Signal Bus. Broadcasts and messages already received are excluded. Read again to refresh the snapshot.
 
@@ -160,7 +160,7 @@ Inspect all waiting messages on a channel in receive order without consuming the
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
 - **Returns** List of copied CommsMessage entries in receive order, oldest first. Empty when no messages are waiting, including a missing channel or one with only a broadcast.
 
@@ -170,7 +170,7 @@ Inspect all waiting messages on a channel in receive order without consuming the
 | --- | --- |
 | `ValueError` | The channel id must be 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
 
-##### `.cancel(channel, message_id)`
+##### `.cancel(channel: str, message_id: int) → ActionResult`
 
 Cancel one waiting message using its send receipt's `.message_id` or its `.id` from `pending(channel)`. Use it to remove an obsolete request or add a Cancel button to a Control Room job board. Other messages keep their ids, values, and receive order, including messages sent after the snapshot. The latest broadcast is preserved. Cancellation only removes queued work; it cannot stop a worker that has already received the message.
 
@@ -178,8 +178,8 @@ Cancel one waiting message using its send receipt's `.message_id` or its `.id` f
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `message_id` | `number` | Positive whole-number message id from a successful `send()` receipt or `pending(channel)`, not a position in the queue. |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `message_id` | `int` | Positive whole-number message id from a successful `send()` receipt or `pending(channel)`, not a position in the queue. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -201,7 +201,7 @@ Cancel one waiting message using its send receipt's `.message_id` or its `.id` f
 | `ValueError` | `message_id` must be greater than zero. |
 | `OverflowError` | `message_id` must fit within the supported integer range. |
 
-##### `.update(channel, message_id, value)`
+##### `.update(channel: str, message_id: int, value: JsonValue) → ActionResult`
 
 Replace the complete value of one waiting message. Use its send receipt or an id from `pending()` to edit a delivery, priority, or destination from a script or Control Room card. The id, queue position, original sender, and send time stay unchanged. Replacement happens in one operation and works even when the queue is full. Messages already received cannot be edited. Read `pending()` again to refresh an earlier snapshot.
 
@@ -209,9 +209,9 @@ Replace the complete value of one waiting message. Use its send receipt or an id
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `message_id` | `number` | Positive whole-number id of a waiting message, from a successful `send()` receipt or `pending(channel)`. This identifies a message, not its position in the queue. |
-| `value` | `any` | Complete replacement JSON-safe value, up to 8 nested levels, 1,024 total values, and 4,096 characters per string or dictionary key. Dictionary fields are replaced, not merged. |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `message_id` | `int` | Positive whole-number id of a waiting message, from a successful `send()` receipt or `pending(channel)`. This identifies a message, not its position in the queue. |
+| `value` | `JsonValue` | Complete replacement JSON-safe value, up to 8 nested levels, 1,024 total values, and 4,096 characters per string or dictionary key. Dictionary fields are replaced, not merged. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -234,16 +234,16 @@ Replace the complete value of one waiting message. Use its send receipt or an id
 | `ValueError` | `message_id` must be greater than zero. |
 | `OverflowError` | `message_id` must fit within the supported integer range. |
 
-##### `.broadcast(channel, value)`
+##### `.broadcast(channel: str, value: JsonValue) → ActionResult`
 
-Store a channel's latest JSON-safe value without consuming queue slots. Use broadcasts for shared telemetry like fleet mode, target sector, or current priority.
+Store a channel's latest JSON-safe value without consuming queue slots. Dictionaries must use string keys. Use broadcasts for shared telemetry like fleet mode, target sector, or current priority.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `value` | `any` | JSON-safe value, up to 8 nested levels, 1,024 total values, and 4,096 characters per string |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `value` | `JsonValue` | JSON-safe value, up to 8 nested levels, 1,024 total values, and 4,096 characters per string |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -258,7 +258,7 @@ Store a channel's latest JSON-safe value without consuming queue slots. Use broa
 | `"channel_limit"` | rejection | The maximum number of communication channels has been reached. |
 | `"invalid_value"` | rejection | The supplied value is invalid. |
 
-##### `.latest(channel)`
+##### `.latest(channel: str) → JsonValue`
 
 Return the most recent value broadcast on a channel, or `None` if the channel has no latest value. Reading latest does not consume it.
 
@@ -266,7 +266,7 @@ Return the most recent value broadcast on a channel, or `None` if the channel ha
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
 - **Returns** Latest broadcast value on the channel, or `None` if nothing has been broadcast.
 
@@ -276,7 +276,7 @@ Return the most recent value broadcast on a channel, or `None` if the channel ha
 | --- | --- |
 | `ValueError` | The channel id must be 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
 
-##### `.latest_info(channel)`
+##### `.latest_info(channel: str) → BroadcastInfo | None`
 
 Inspect the latest broadcast, who published it, and how long ago it was updated. Use the snapshot to detect outdated worker reports or show freshness in a Control Room card. Reading does not consume messages or change the channel. Read again to refresh the value and age.
 
@@ -284,7 +284,7 @@ Inspect the latest broadcast, who published it, and how long ago it was updated.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
 - **Returns** A BroadcastInfo snapshot with value, sender, and age_seconds, or `None` when the channel has no broadcast. Missing saved sender or timestamp information is `None` in the corresponding field.
 
@@ -294,7 +294,7 @@ Inspect the latest broadcast, who published it, and how long ago it was updated.
 | --- | --- |
 | `ValueError` | The channel id must be 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
 
-##### `.queue_size(channel)`
+##### `.queue_size(channel: str) → int`
 
 Number of queued messages waiting on the channel.
 
@@ -302,7 +302,7 @@ Number of queued messages waiting on the channel.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
 - **Returns** Number of queued messages on the channel.
 
@@ -312,13 +312,13 @@ Number of queued messages waiting on the channel.
 | --- | --- |
 | `ValueError` | The channel id must be 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
 
-##### `.channels()`
+##### `.channels() → list[str]`
 
 All channel ids that currently have queued messages or a latest broadcast value.
 
 - **Returns** List of channel ids with queued or broadcast state.
 
-##### `.clear(channel)`
+##### `.clear(channel: str) → CountResult`
 
 Remove a channel's queued messages and latest broadcast.
 
@@ -326,7 +326,7 @@ Remove a channel's queued messages and latest broadcast.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `channel` | `string` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
+| `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
 - **Returns** `CountResult`
 - **Result fields** `.status`, `.message`

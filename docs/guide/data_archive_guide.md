@@ -2,177 +2,63 @@
 
 ## Data Archive
 
-Stores JSON-safe data that survives script restarts and save/load. Access the Data Archive with `get_component("notebook")` after its research unlocks. Use Libraries to share code and the Signal Bus to share temporary live state.
+### Overview
 
-**Returned by:** `get_component("notebook")`
+Data Archive is persistent shared knowledge for scripts. Libraries share code, Signal Bus shares live coordination, and Data Archive stores learned data across script stops, saves, and reloads.
 
-**Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
+Data Archive unlocks with **Data Archive** research. Before that, `get_component("notebook")` returns `None`.
 
-### Properties
+### Store and read
 
-##### `.id`
+```
+notebook = get_component("notebook")
+fuel_table = {"slow": 0.8, "cruise": 1.0, "fast": 1.7}
+written = notebook.set("rover.fuel_table", fuel_table)
+if written.status != "ok":
+  print(written.message)
 
-Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
+saved = notebook.get("rover.fuel_table", {})
+print(saved["cruise"])
+```
 
-- **Returns** String
+`set()` is a gameplay command and returns `ActionResult`. `get()`, `has()`, and `keys()` are read-only queries and return their natural values directly.
 
-##### `.name`
+### Atomic updates
 
-Human-readable display name. Prefer `.id` for scripts that need to survive renames.
+`transaction(key, default, updater)` atomically reads, updates, and writes one key. It returns `ActionResult`; `.status == "busy"` means another transaction already owns that key.
 
-- **Returns** String
+```
+def add_one(count):
+  return count + 1
 
-### Methods
+result = notebook.transaction("stats.samples", 0, add_one)
+if result.status != "ok":
+  print(result.message)
+```
 
-##### `.set(key, value)`
+Updaters must be small pure functions: no `sleep()`, yielding actions, or world-mutating API calls.
 
-Store a JSON-safe value under a named key. The archive holds up to 512 entries; each value supports 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key.
+### Manage entries
 
-*Parameters*
+In **Computer > Data Archive**, use **View** to inspect or copy a complete value, **Edit** to change it, or **New entry** to add a key. The value field uses JSON: strings are quoted, and booleans and empty values use `true`, `false`, and `null`. Manual edits have the same storage limits as scripts and record your commander name as the writer.
 
-| Name | Type | Description |
-| --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `value` | `any` | JSON-safe value, up to 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key |
+**Save** replaces the complete value only if the entry has not changed since you opened it. A conflicting script or window update preserves your draft; **Copy value** copies it and **Refresh value** opens the current stored value. Scripts continue running and may write again after a successful manual save.
 
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
+```
+deleted = notebook.delete("rover.old_table")
+if deleted.status == "not_found":
+  print(deleted.message)
 
-*Outcomes*
+cleared = notebook.clear("scratch.")
+print(cleared.status, cleared.count)
+```
 
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
-| `"invalid_key"` | rejection | The supplied key is invalid. |
-| `"entry_limit"` | rejection | The archive has reached its entry limit. |
-| `"invalid_value"` | rejection | The supplied value is invalid. |
+`delete()` returns `ActionResult`. `clear()` returns `CountResult`, whose `.count` is the exact number of entries removed.
 
-##### `.transaction(key, default, updater)`
+### Value rules
 
-Atomically transform one stored value within the same archive value limits. The updater may be any pure callable; it receives the latest value or supplied default and cannot sleep, yield, or mutate the world.
+Values must be JSON-safe: `None`, booleans, finite numbers, strings, lists/tuples, and dictionaries with string keys. Each stored value may contain up to **8** nested levels, **16,384** total nodes, and **4,096** characters per string or dictionary key. The root value, every contained value, and every list, tuple, or dictionary container each count as one node; dictionary keys do not. The exact result statuses are `"ok"`, `"invalid_key"`, `"entry_limit"`, `"invalid_value"`, `"not_found"`, and `"busy"`; every applicable command returns a precise `.message`. The **512**-entry limit and transaction contention are programmatically distinct.
 
-*Parameters*
+Name keys by subsystem, such as `"rover.fuel_table"` or `"plants.recipe_scores"`. Use Signal Bus for live coordination and Data Archive for knowledge you want to keep.
 
-| Name | Type | Description |
-| --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `default` | `any` | JSON-safe value within the archive value limits, used when the key is missing |
-| `updater` | `any` | Pure callable that receives the current value and returns the next value within the archive value limits |
-
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
-| `"invalid_key"` | rejection | The supplied key is invalid. |
-| `"entry_limit"` | rejection | The archive has reached its entry limit. |
-| `"invalid_value"` | rejection | The supplied value is invalid. |
-| `"busy"` | transient | The component is already performing another operation. |
-
-##### `.get(key, default=None)`
-
-Read a stored value by key. If the key is missing, returns the optional default argument; if no default is provided, returns `None`. Reading does not consume or modify the entry.
-
-*Parameters*
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-| `default` | `any` | Returned when the key is missing |
-
-- **Returns** Stored value, the optional default, or `None`.
-
-*Raises*
-
-| Exception | Condition |
-| --- | --- |
-| `ValueError` | The archive key must be 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
-
-##### `.has(key)`
-
-Return `True` when the archive contains the key, otherwise `False`.
-
-*Parameters*
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-
-- **Returns** Boolean: `True` when the archive contains the key.
-
-*Raises*
-
-| Exception | Condition |
-| --- | --- |
-| `ValueError` | The archive key must be 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-`, and cannot be a reserved object-field name. |
-
-##### `.delete(key)`
-
-Remove one key.
-
-*Parameters*
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `key` | `string` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
-
-- **Returns** `ActionResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** None
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The operation completed successfully. |
-| `"not_found"` | rejection | The requested object, target, or record does not exist. |
-| `"invalid_key"` | rejection | The supplied key is invalid. |
-
-##### `.keys(prefix="")`
-
-Return archive keys as a sorted list. Pass a prefix such as `"rover."` to list only matching keys.
-
-*Parameters*
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `prefix` | `string` | Optional key prefix using the archive key character set |
-
-- **Returns** Sorted list of archive keys, optionally filtered by prefix.
-
-*Raises*
-
-| Exception | Condition |
-| --- | --- |
-| `ValueError` | The archive prefix must use letters, numbers, `_`, `.`, `:`, or `-` and be at most 96 characters. |
-
-##### `.clear(prefix="")`
-
-Remove archived entries. With no prefix it clears the whole archive; with a prefix it clears matching keys.
-
-*Parameters*
-
-| Name | Type | Description |
-| --- | --- | --- |
-| `prefix` | `string` | Optional key prefix using the archive key character set |
-
-- **Returns** `CountResult`
-- **Result fields** `.status`, `.message`
-- **Success payload** `.count`
-
-*Outcomes*
-
-| Status | Kind | Meaning |
-| --- | --- | --- |
-| `"ok"` | success | The command affected `.count` entries or units. |
-| `"no_op"` | success | The command affected no entries or units. |
-| `"invalid_key"` | rejection | The supplied key is invalid. |
-
-*Components / Logistics & Orders*
-
----
+*Guide / Automation Systems*

@@ -32,19 +32,19 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.signal_board`
+##### `.signal_board: WeatherSignalBoard`
 
 This station's programmable Weather display. `reveal()` publishes a transmission into a numbered slot, `reject()` counts a refused copy, and `resolve()` publishes labelled values. The board displays what your script supplies without interpreting it.
 
 - **Returns** This station's optional player-authored board. It displays supplied transmissions and labelled values without interpreting them.
 
-##### `.signal_receiver`
+##### `.signal_receiver: SignalReceiver`
 
 Live receiver. `transmissions()` returns only the raw copies audible to this powered station now and stores no history. Dust reception uses local biome channels; thunder reception broadcasts.
 
@@ -52,7 +52,7 @@ Live receiver. `transmissions()` returns only the raw copies audible to this pow
 
 ### Methods
 
-##### `.observe()` *(self only)*
+##### `.observe() → WeatherReport` *(self only)*
 
 Measure one immutable local report. The station refreshes at most once per world-clock hour; faster calls return the same report id. The report includes local coverage, active storm snapshots, and a local forecast reaching 8 world-clock hours ahead, or 24 once Weather Forecasting is researched. It never contains an aftermath coordinate.
 
@@ -64,13 +64,13 @@ Measure one immutable local report. The station refreshes at most once per world
 | --- | --- |
 | `RuntimeError` | The Weather Station is unfinished or unpowered, so no observation can be recorded. |
 
-##### `.last_report()`
+##### `.last_report() → WeatherReport | None`
 
 Read the last measured report without taking a new observation. This is useful for startup recovery and stale-data handling; `None` means this station has never completed `observe()`.
 
 - **Returns** The last local `WeatherReport`, or `None` before the first successful observation. The snapshot remains readable while stale or unpowered.
 
-##### `.strikes()`
+##### `.strikes() → list[WeatherStrike]`
 
 Return this station's bounded strike history. Each `WeatherStrike` includes its event id, observation time, energy, and whether a Lightning Rod banked it. Exact strike positions and Storm Glass eligibility are not included. Only strikes this station physically observed are returned.
 

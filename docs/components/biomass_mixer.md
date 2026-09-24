@@ -38,37 +38,37 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.frozen_essence_in`
+##### `.frozen_essence_in: FluidPort`
 
 Input port for Frozen Essence. Wire with `self.frozen_essence_in.connect(...)`. See `FluidPort`.
 
 - **Returns** `FluidPort` for Frozen Essence input.
 
-##### `.coastal_essence_in`
+##### `.coastal_essence_in: FluidPort`
 
 Input port for Coastal Essence. Wire with `self.coastal_essence_in.connect(...)`. See `FluidPort`.
 
 - **Returns** `FluidPort` for Coastal Essence input.
 
-##### `.geothermal_essence_in`
+##### `.geothermal_essence_in: FluidPort`
 
 Input port for Geothermal Essence. Wire with `self.geothermal_essence_in.connect(...)`. See `FluidPort`.
 
 - **Returns** `FluidPort` for Geothermal Essence input.
 
-##### `.volcanic_essence_in`
+##### `.volcanic_essence_in: FluidPort`
 
 Input port for Volcanic Essence. Wire with `self.volcanic_essence_in.connect(...)`. See `FluidPort`.
 
 - **Returns** `FluidPort` for Volcanic Essence input.
 
-##### `.deep_essence_in`
+##### `.deep_essence_in: FluidPort`
 
 Input port for Deep Essence. Wire with `self.deep_essence_in.connect(...)`. See `FluidPort`.
 
@@ -76,43 +76,43 @@ Input port for Deep Essence. Wire with `self.deep_essence_in.connect(...)`. See 
 
 ### Methods
 
-##### `.biomass_rate()`
+##### `.biomass_rate() → float`
 
 Biomass tons produced last tick, in **t/h**. Sum across every Biomass Mixer on the planet = total biomass production rate.
 
 - **Returns** Number, biomass produced last tick in t/h.
 
-##### `.active_essences()`
+##### `.active_essences() → int`
 
 Number of essence input buffers currently carrying supply (**0-5**). The current phase decides the minimum required by `required_essences()`. Extra balanced essence types can increase output.
 
 - **Returns** Number: count of essence input buffers that currently have supply (0-5).
 
-##### `.mixing_essences()`
+##### `.mixing_essences() → int`
 
 Number of supplied essence types selected for the strongest balanced mix on the last tick (**0-5**). The Mixer evaluates every diversity level from the phase minimum upward, so a weak extra feed can never reduce output.
 
 - **Returns** Number (**0-5**), the count of supplied essence types selected for the strongest balanced mix last tick.
 
-##### `.tier()`
+##### `.tier() → int`
 
 Installed Mixer tier: **1** for Mk I or **2** for Mk II. Mk II produces **4.5×** biomass while consuming only **2.4×** as much of every selected essence, with **5×** power draw, so it yields **87.5%** more biomass per ton of essence.
 
 - **Returns** Number, installed Mixer tier: **1** (Mk I) or **2** (Mk II).
 
-##### `.is_stalled()`
+##### `.is_stalled() → bool`
 
 `True` if the mixer is powered and fewer input buffers contain usable essence than the current Biomass phase requires. Buffered essence counts even without new inflow. `False` when unpowered or enough essence types are available. Connect each missing essence input to a compatible source and complete a remote Liquid Pipe route where needed; Biomass phases only advance and never drop.
 
 - **Returns** Boolean: `True` if the mixer is powered and fewer input buffers contain usable essence than the current Biomass phase requires. Buffered essence counts even without new inflow. `False` when unpowered or enough essence types are available.
 
-##### `.phase()`
+##### `.phase() → int`
 
 The global Biomass phase (**1-6**), derived from cumulative biomass tons, using the same thresholds as the Sensors phase badge. The phase sets the minimum essence diversity but does not directly multiply output.
 
 - **Returns** Number (**1-6**), the global Biomass phase derived from cumulative biomass tons. It sets the minimum required essence diversity.
 
-##### `.required_essences()`
+##### `.required_essences() → int`
 
 How many distinct biome essences must be supplied this phase (**1-5**, equal to the phase, capped at 5). Below this the Mixer stalls. Supplying more can raise output when the larger mix is balanced enough.
 

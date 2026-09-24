@@ -22,27 +22,25 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Properties
 
-##### `.value`
+##### `.value: JsonValue`
 
 A copy of this broadcast's value, including `None` if that was the value published. From `latest_info()` it is the latest value; from `wait_broadcast()` it is the first publication captured by that wait.
 
-- **Returns** `any`
+- **Returns** `JsonValue`
 
-##### `.sender`
+##### `.sender: str | None`
 
 Who published this broadcast, or `None` if the saved broadcast has no sender information.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.age_seconds`
+##### `.age_seconds: float | None`
 
 Simulation seconds since this broadcast, sampled when `latest_info()` is read or `wait_broadcast()` resumes. Uses the same time base as `sleep()` and `clock.elapsed_seconds()`; pausing the simulation freezes the age. `None` means the timestamp is missing or invalid. The returned age is a snapshot.
 
-- **Returns** `Optional[number]`
+- **Returns** `float | None`
 
 *Types / Orders & Comms*
-
----
 
 ## CommsMessage
 
@@ -50,33 +48,31 @@ Simulation seconds since this broadcast, sampled when `latest_info()` is read or
 
 ### Properties
 
-##### `.id`
+##### `.id: int`
 
 Monotonic message id assigned by the Signal Bus.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.sender`
+##### `.sender: str`
 
 Script owner id that sent the message.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.tick`
+##### `.tick: int`
 
 Game tick when the message was sent.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.value`
+##### `.value: JsonValue`
 
 JSON-safe message value: `None`, boolean, number, string, list, or dict with string keys.
 
-- **Returns** `any`
+- **Returns** `JsonValue`
 
 *Types / Orders & Comms*
-
----
 
 ## DockSlot
 
@@ -84,27 +80,25 @@ JSON-safe message value: `None`, boolean, number, string, list, or dict with str
 
 ### Properties
 
-##### `.index`
+##### `.index: int`
 
 Zero-based slot index (**0-4**): stable across calls.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.item_id`
+##### `.item_id: str | None`
 
 Item id currently occupying this slot, or `None` if the slot is empty.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.count`
+##### `.count: int`
 
 Units currently stored in this slot.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Orders & Comms*
-
----
 
 ## Order
 
@@ -112,85 +106,83 @@ Units currently stored in this slot.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Immutable Earth Order id. Useful for logs and dashboards; Supply Dock scripts use it to identify the order currently assigned to their dock.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Pre-translated display name of the Earth Order.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.requires`
+##### `.requires: dict[str, int]`
 
-Dict `{item_id: count}` of what Earth is demanding. Use `.keys()`, `.values()`, `.items()`, or index directly: `order.requires["iron_ore"]`.
+A dict `{item_id: count}` of what Earth is demanding. Use `.keys()`, `.values()`, `.items()`, or index directly: `order.requires["iron_ore"]`.
 
-- **Returns** `dict<number>`
+- **Returns** `dict[str, int]`
 
-##### `.shipped`
+##### `.shipped: dict[str, int]`
 
-Dict `{item_id: count}` of how many units of each item have already landed. Empty for upcoming orders. Use `.get(item_id, 0)` to read safely.
+A dict `{item_id: count}` of how many units of each item have already landed. Empty for upcoming orders. Use `.get(item_id, 0)` to read safely.
 
-- **Returns** `dict<number>`
+- **Returns** `dict[str, int]`
 
-##### `.reward_credits`
+##### `.reward_credits: int`
 
 Credit payout. Upcoming and active campaign orders quote the payout at your current contractor reputation; the final payout may change as reputation grows. Completed campaign orders report the recorded payout. Weekly rewards are fixed.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.reward_kind`
+##### `.reward_kind: str | None`
 
 Variable-reward kind: `"recipe"` / `"tech"`, or `None` for credits-only.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"recipe"`, `"tech"`
 
-##### `.reward_label`
+##### `.reward_label: str | None`
 
 Pre-translated description of the variable reward, or `None` for credits-only Earth Orders.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.status`
+##### `.status: str`
 
 `"upcoming"` for a future campaign order available for planning, `"active"` for a current order available for fulfillment, or `"completed"` once delivered. Weekly Earth Orders are never `"upcoming"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"upcoming"`, `"active"`, `"completed"`
 
-##### `.kind`
+##### `.kind: str`
 
 Order source: `"campaign"` or `"weekly"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"campaign"`, `"weekly"`
 
-##### `.expires_day`
+##### `.expires_day: int | None`
 
 Day when a Weekly Earth Order expires, or `None` for contractor campaign orders.
 
-- **Returns** `Optional[number]`
+- **Returns** `int | None`
 
-##### `.contractor_id`
+##### `.contractor_id: str | None`
 
 Id of the issuing contractor, or `None` for Weekly Earth Orders. Stable across saves and useful for branching on specific campaign partners.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"helios_orbital"`, `"spire_research"`, `"vestibule_logistics"`
 
-##### `.contractor_name`
+##### `.contractor_name: str | None`
 
 Pre-translated issuing contractor name, or `None` for Weekly Earth Orders.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
 *Types / Orders & Comms*
-
----
 
 ## ReceiveResult
 
@@ -198,28 +190,26 @@ Pre-translated issuing contractor name, or `None` for Weekly Earth Orders.
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"` when a queued message was consumed; `"empty"` when no id was requested and the queue was empty; `"not_found"` when the requested id was absent; or `"invalid_channel"` for an invalid channel id.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"empty"`, `"not_found"`, `"invalid_channel"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the receive outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.packet`
+##### `.packet: CommsMessage | None`
 
 The consumed `CommsMessage` when `status == "ok"`, otherwise `None`. When a message id was requested, this packet has that exact id.
 
-- **Returns** `Optional[CommsMessage]`
+- **Returns** `CommsMessage | None`
 
 *Types / Orders & Comms*
-
----
 
 ## SendResult
 
@@ -227,28 +217,26 @@ The consumed `CommsMessage` when `status == "ok"`, otherwise `None`. When a mess
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 Send outcome. `"ok"` means a message was queued; every other outcome means no message was sent.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"invalid_channel"`, `"channel_limit"`, `"queue_full"`, `"id_exhausted"`, `"invalid_value"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the send outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.message_id`
+##### `.message_id: int | None`
 
 The queued message's positive integer id when `status == "ok"`, or `None` when no message was sent. Matches `.id` in `pending()` and `receive().packet`. Use it with `receive()`, `cancel()`, or `update()` to target that exact request.
 
-- **Returns** `Optional[number]`
+- **Returns** `int | None`
 
 *Types / Orders & Comms*
-
----
 
 ## TransmitterInfo
 
@@ -256,22 +244,20 @@ The queued message's positive integer id when `status == "ok"`, or `None` when n
 
 ### Properties
 
-##### `.connected`
+##### `.connected: bool`
 
 True if connected to a target.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.target`
+##### `.target: str`
 
 Connected planet id, or `"none"` when disconnected.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"none"`
 
 *Types / Orders & Comms*
-
----
 
 ## WaitAnyResult
 
@@ -279,34 +265,32 @@ Connected planet id, or `"none"` when disconnected.
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"` when one queued message was consumed, or `"invalid_channel"` when any listed channel id is invalid. Valid empty queues keep waiting.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"invalid_channel"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the wait outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.channel`
+##### `.channel: str | None`
 
 The channel the consumed message came from when `status == "ok"`; otherwise `None`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.packet`
+##### `.packet: CommsMessage | None`
 
 The consumed `CommsMessage` when `status == "ok"`; otherwise `None`. Its id, sender, tick, and copied value belong to the selected channel.
 
-- **Returns** `Optional[CommsMessage]`
+- **Returns** `CommsMessage | None`
 
 *Types / Orders & Comms*
-
----
 
 ## WaitBroadcastResult
 
@@ -314,25 +298,23 @@ The consumed `CommsMessage` when `status == "ok"`; otherwise `None`. Its id, sen
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"` when a new broadcast was captured, or `"invalid_channel"` for an invalid channel id. A valid channel keeps waiting until a new broadcast arrives.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"invalid_channel"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the broadcast wait outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.broadcast`
+##### `.broadcast: BroadcastInfo | None`
 
 The captured `BroadcastInfo` when `status == "ok"`; otherwise `None`. It contains the publication's copied value, sender, and age when the script resumes.
 
-- **Returns** `Optional[BroadcastInfo]`
+- **Returns** `BroadcastInfo | None`
 
 *Types / Panels*
-
----

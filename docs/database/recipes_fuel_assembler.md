@@ -15,7 +15,7 @@ Blueprint unlocks by completing the order **Vestibule, Hot Freight Proof**.
 | Power | 1,800 W |
 | Production tier | T2 |
 
-##### Nuclear Battery `craft_nuclear_battery` *(Not yet unlocked)*
+##### Nuclear Battery `craft_nuclear_battery` *(Unlocked)*
 
 4× Raw Uranium and 3× Lead Plate → 1× Nuclear Battery
 Blueprint unlocks by completing the order **Helios, Reactor Vessel Chain**.

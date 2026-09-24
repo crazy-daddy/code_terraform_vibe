@@ -6,7 +6,7 @@ A Pioneer is the first vehicle that turns remote plans into built infrastructure
 
 ### What makes it different
 
-A Rover explores and mines. A Pioneer builds. The chassis is only the carrier; mounted modules decide what it can actually do.
+The Rover is the introductory vehicle. A Pioneer does the same field work, mining included, and does it better and faster, and it is the only chassis that can build. The chassis is only the carrier; mounted modules decide what it can actually do.
 
 For early expansion, look for four module families:
 
@@ -24,5 +24,3 @@ Before trying to found an outpost, practice with a small job: put a simple bluep
 The Info tab explains the module APIs available through `self`. Plan Mode shows material requirements before placement. Query `get_component("construction_blueprint").pending_constructions()` for the queued `Construction` snapshots; every one exposes `required_item` and `required_count` to scripts.
 
 *Guide / Tutorials*
-
----

@@ -38,33 +38,31 @@ Complete property specifications, descriptions, units, and return types from the
 
 ### Methods
 
-##### `.level()`
+##### `.level() → float`
 
 Charge level as a fraction, **0-1**.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.wh()`
+##### `.wh() → float`
 
 Current charge in Wh (across all batteries).
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.capacity()`
+##### `.capacity() → float`
 
 Maximum capacity in Wh.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.holders()`
+##### `.holders() → list[Holder]`
 
 List of every Battery Holder currently mounted on the vehicle. Empty for the Rover (sealed battery).
 
-- **Returns** `list<Holder>`
+- **Returns** `list[Holder]`
 
 *Types / Storage & Inventory*
-
----
 
 ## Holder
 
@@ -72,40 +70,38 @@ List of every Battery Holder currently mounted on the vehicle. Empty for the Rov
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Holder module id, e.g. `"battery_holder_medium"`.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.size`
+##### `.size: str`
 
 Holder size: `"small"` / `"medium"` / `"large"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"small"`, `"medium"`, `"large"`
 
-##### `.capacity`
+##### `.capacity: float`
 
 Rated Wh across every battery in this holder.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.wh`
+##### `.wh: float`
 
 Current Wh in this holder (pool level × rated capacity).
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.batteries`
+##### `.batteries: list[PortableBattery | None]`
 
 List indexed by internal slot: each entry is a `PortableBattery` object, or `None` for an empty slot.
 
-- **Returns** `list<Optional[PortableBattery]>`
+- **Returns** `list[PortableBattery | None]`
 
 *Types / Storage & Inventory*
-
----
 
 ## PortableBattery
 
@@ -113,36 +109,34 @@ List indexed by internal slot: each entry is a `PortableBattery` object, or `Non
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Portable battery item id: `"portable_battery"` or `"heavy_portable_battery"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"portable_battery"`, `"heavy_portable_battery"`
 
 ### Methods
 
-##### `.level()`
+##### `.level() → float`
 
 Charge level as a fraction, **0-1**.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.wh()`
+##### `.wh() → float`
 
 Current charge in Wh.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.capacity()`
+##### `.capacity() → float`
 
 Rated capacity in Wh.
 
-- **Returns** `number`
+- **Returns** `float`
 
 *Types / Storage & Inventory*
-
----
 
 ## Cargo
 
@@ -154,37 +148,37 @@ Rated capacity in Wh.
 
 ### Methods
 
-##### `.count()`
+##### `.count() → int`
 
 Total units currently carried by the vehicle.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Total units the vehicle can carry in its integrated hold or installed Cargo Racks.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.stacks()`
+##### `.stacks() → list[ItemStack]`
 
 Snapshot of every property-distinct `ItemStack` in the vehicle's cargo. Use this to distinguish variants that share an item id.
 
-- **Returns** `list<ItemStack>`
+- **Returns** `list[ItemStack]`
 
-##### `.full()`
+##### `.full() → bool`
 
 `True` when the integrated hold or every installed cargo bin is full. A Pioneer without installed bins is also full.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.racks()`
+##### `.racks() → list[Rack]`
 
 List of every Cargo Rack currently mounted. Empty for the Rover.
 
-- **Returns** `list<Rack>`
+- **Returns** `list[Rack]`
 
-##### `.compact()`
+##### `.compact() → TransferResult`
 
 On a Pioneer, consolidate equal item ids into the fewest installed Portable Bins that can hold them. Property-distinct variants remain intact, and the planner preserves the fullest compatible bins to minimize physical movement. Requires **Auto Feeders**, waits for time proportional to the units repositioned, and holds the Pioneer stationary as a material endpoint during that cycle. This does not change which bin `send()` drains first.
 
@@ -203,7 +197,7 @@ On a Pioneer, consolidate equal item ids into the fewest installed Portable Bins
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 
-##### `.discard(rack_index)`
+##### `.discard(rack_index: int) → DiscardResult`
 
 Permanently jettison everything in the whole-number, zero-based `rack_index`. On a Rover, which has no racks, `self.cargo.discard(0)` addresses the integrated hold. An already-empty hold or rack finishes immediately; destroying cargo takes **1 hour** and pauses the script. This is the vehicle cargo destruction API.
 
@@ -211,7 +205,7 @@ Permanently jettison everything in the whole-number, zero-based `rack_index`. On
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `rack_index` | `number` | Whole-number zero-based index among mounted Cargo Racks (0 = the integrated hold on a Rover) |
+| `rack_index` | `int` | Whole-number zero-based index among mounted Cargo Racks (0 = the integrated hold on a Rover) |
 
 - **Returns** `DiscardResult`
 - **Result fields** `.status`, `.message`
@@ -228,8 +222,6 @@ Permanently jettison everything in the whole-number, zero-based `rack_index`. On
 
 *Types / Storage & Inventory*
 
----
-
 ## Rack
 
 **Returned by:** self.cargo.racks()
@@ -240,28 +232,26 @@ Permanently jettison everything in the whole-number, zero-based `rack_index`. On
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Rack module id, e.g. `"cargo_rack_medium"`.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.size`
+##### `.size: str`
 
 Rack size: `"small"` / `"medium"` / `"large"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"small"`, `"medium"`, `"large"`
 
-##### `.bins`
+##### `.bins: list[Bin | None]`
 
 List indexed by internal slot: each entry is a `Bin` object, or `None` for an empty slot.
 
-- **Returns** `list<Optional[Bin]>`
+- **Returns** `list[Bin | None]`
 
 *Types / Storage & Inventory*
-
----
 
 ## Bin
 
@@ -269,40 +259,38 @@ List indexed by internal slot: each entry is a `Bin` object, or `None` for an em
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Portable bin item id: `"portable_bin"` or `"heavy_portable_bin"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"portable_bin"`, `"heavy_portable_bin"`
 
-##### `.capacity`
+##### `.capacity: int`
 
 Rated units: **25** basic, **50** heavy.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.count`
+##### `.count: int`
 
 Current units stored.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.item_id`
+##### `.item_id: str | None`
 
 Assigned item id (mineral, ingot, component: anything the bin holds), or `None` if the bin is empty/unassigned.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.stacks`
+##### `.stacks: list[ItemStack]`
 
 Property-distinct `ItemStack` snapshots in this portable bin. Equal ids with different properties remain separate entries.
 
-- **Returns** `list<ItemStack>`
+- **Returns** `list[ItemStack]`
 
 *Types / Storage & Inventory*
-
----
 
 ## DiscardResult
 
@@ -310,34 +298,32 @@ Property-distinct `ItemStack` snapshots in this portable bin. Equal ids with dif
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 Stable discard outcome code.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"partial"`, `"empty"`, `"busy"`, `"invalid_rack"`, `"no_op"`, `"invalid_properties"`, `"invalid_property_match"`, `"source_changed"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the discard outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.requested`
+##### `.requested: int`
 
 Whole-number units requested or observed for destruction.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.discarded`
+##### `.discarded: int`
 
 Whole-number units permanently destroyed.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Storage & Inventory*
-
----
 
 ## InputSlot
 
@@ -345,7 +331,7 @@ Whole-number units permanently destroyed.
 
 ### Methods
 
-##### `.connect(name)`
+##### `.connect(name: str) → ActionResult`
 
 Set a compatible item source by stable id or display name. Two stationary endpoints must share an outpost. A Rover or Pioneer is reachable from any outpost, but only while it is parked inside this machine's service area. Field-extractor pickup outputs can be pulled only by a Rover or Pioneer. A drone's cargo moves through its Drone Depot. `"inventory"` is a freight source only while the endpoint is at Nocturna Base; remote stationary ports use local Storage Bins, Warehouses, or machine buffers.
 
@@ -353,7 +339,7 @@ Set a compatible item source by stable id or display name. Two stationary endpoi
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | Stable id or display name of a compatible item source, or inventory |
+| `name` | `str` | Stable id or display name of a compatible item source, or inventory |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -370,7 +356,7 @@ Set a compatible item source by stable id or display name. Two stationary endpoi
 | `"unsupported_source"` | rejection | The selected component does not expose a compatible item source. |
 | `"source_is_vehicle"` | rejection | The requested source is a drone. Drone cargo moves through its Drone Depot. |
 
-##### `.disconnect()`
+##### `.disconnect() → ActionResult`
 
 Clear the current source connection. Does not move or discard buffered items; use `eject(...)` to recover them or `flush()` to destroy them.
 
@@ -384,19 +370,19 @@ Clear the current source connection. Does not move or discard buffered items; us
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.connected_to()`
+##### `.connected_to() → str`
 
 Display name of the currently connected source, or empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.connected_id()`
+##### `.connected_id() → str`
 
 Stable id of the currently connected source, or empty string. `connect()` accepts an id or a display name, so compare against this when you need the identity to match what you passed: `connected_to()` answers with the renameable name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.take(item_id, count, properties=None, property_match=None)`
+##### `.take(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Take up to whole-number `count` units of `item_id` from the connected source. A property dict selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are always retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
@@ -404,10 +390,10 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to take |
-| `count` | `number` | Whole-number max units to take |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `item_id` | `str` | Item id to take |
+| `count` | `int` | Whole-number max units to take |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -454,7 +440,7 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 | `"target_moving"` | transient | The destination vehicle must stop before cargo can be handed off. |
 | `"out_of_range"` | rejection | The vehicles are outside cargo handoff range. |
 
-##### `.eject(destination, item_id, count, properties=None, property_match=None)`
+##### `.eject(destination: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `"inventory"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard any, subset, or exact selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
@@ -462,11 +448,11 @@ Recover up to whole-number `count` units of `item_id` from this buffer without c
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `destination` | `string` | Stable id or display name of a local compatible freight destination, or inventory |
-| `item_id` | `string` | Item id to recover |
-| `count` | `number` | Whole-number max units to recover |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `destination` | `str` | Stable id or display name of a local compatible freight destination, or inventory |
+| `item_id` | `str` | Item id to recover |
+| `count` | `int` | Whole-number max units to recover |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -508,7 +494,7 @@ Recover up to whole-number `count` units of `item_id` from this buffer without c
 | `"target_complete"` | rejection | The destination has completed its work and no longer accepts materials. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
-##### `.flush()`
+##### `.flush() → TransferResult`
 
 Permanently discard everything currently buffered in this input port. Flushed items are not returned to inventory. On processing machines, flushing also cancels any in-progress craft.
 
@@ -523,27 +509,25 @@ Permanently discard everything currently buffered in this input port. Flushed it
 | `"ok"` | success | Moved all `.moved` requested units. |
 | `"no_op"` | success | No units were requested, so no state changed. |
 
-##### `.count()`
+##### `.count() → int`
 
 Total units currently in this port's buffer.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Maximum units this port's buffer can hold.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.stacks()`
+##### `.stacks() → list[ItemStack]`
 
 Snapshot list of property-distinct `ItemStack` values currently buffered. Two entries may have the same id when their properties differ.
 
-- **Returns** `list<ItemStack>`
+- **Returns** `list[ItemStack]`
 
 *Types / Storage & Inventory*
-
----
 
 ## ItemInfo
 
@@ -551,54 +535,52 @@ Snapshot list of property-distinct `ItemStack` values currently buffered. Two en
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable item id.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Localized item display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.category`
+##### `.category: str`
 
 Stable category used to distinguish materials, biological items, and equipment kinds.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"mineral"`, `"refined"`, `"crafted"`, `"agriculture"`, `"life_form"`, `"field_resource"`, `"biology_sample"`, `"reagent"`, `"equipment"`, `"module"`, `"portable"`, `"upgrade_pack"`, `"construction_kit"`
 
-##### `.stackable`
+##### `.stackable: bool`
 
 `True` when multiple units share one inventory stack; `False` when each unit occupies its own slot.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.biome`
+##### `.biome: str | None`
 
 Native biome for a life form or biology sample; `None` when biome does not apply.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"frozen"`, `"coastal"`, `"geothermal"`, `"volcanic"`, `"deep"`
 
-##### `.rarity`
+##### `.rarity: str | None`
 
 Rarity for a life form or biology sample; `None` when rarity does not apply.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"common"`, `"uncommon"`, `"rare"`, `"legendary"`
 
-##### `.production_tier`
+##### `.production_tier: int | None`
 
 Lowest production tier that creates this item, or `None` when it is a raw, harvested, purchased, or otherwise source item. Smelter products are Tier 0.
 
-- **Returns** `Optional[number]`
+- **Returns** `int | None`
 
 *Types / Storage & Inventory*
-
----
 
 ## ItemResult
 
@@ -606,28 +588,26 @@ Lowest production tier that creates this item, or `None` when it is a raw, harve
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"empty"`, `"inventory_full"`, or `"invalid_slot"`, narrowed further by the command that returned it.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"empty"`, `"inventory_full"`, `"invalid_slot"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the item operation.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.item_id`
+##### `.item_id: str | None`
 
 Stable id of the item moved or destroyed, or `None` when no item changed.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
 *Types / Storage & Inventory*
-
----
 
 ## ItemStack
 
@@ -635,27 +615,25 @@ Stable id of the item moved or destroyed, or `None` when no item changed.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable item id shared by every unit in this stack.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.count`
+##### `.count: int`
 
 Whole-number units with this exact property identity.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.properties`
+##### `.properties: ItemProperties | None`
 
 Exact property dict for this item, or `None` for an ordinary commodity. Items with different properties form separate stacks and never merge.
 
-- **Returns** `Optional[dict]`
+- **Returns** `ItemProperties | None`
 
 *Types / Storage & Inventory*
-
----
 
 ## OutputSlot
 
@@ -663,7 +641,7 @@ Exact property dict for this item, or `None` for an ordinary commodity. Items wi
 
 ### Methods
 
-##### `.connect(name)`
+##### `.connect(name: str) → ActionResult`
 
 Set a compatible item destination by stable id or display name. Two stationary endpoints must share an outpost. A Rover or Pioneer is reachable from any outpost, but only while it is parked inside this machine's service area. A drone's cargo moves through its Drone Depot. `"inventory"` is a freight destination only while the endpoint is at Nocturna Base; remote stationary ports use local Storage Bins, Warehouses, or machine inputs.
 
@@ -671,7 +649,7 @@ Set a compatible item destination by stable id or display name. Two stationary e
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | Stable id or display name of a compatible item destination, or inventory |
+| `name` | `str` | Stable id or display name of a compatible item destination, or inventory |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -688,7 +666,7 @@ Set a compatible item destination by stable id or display name. Two stationary e
 | `"unsupported_target"` | rejection | The selected component does not expose a compatible item destination. |
 | `"target_is_vehicle"` | rejection | The requested destination is a drone. Drone cargo moves through its Drone Depot. |
 
-##### `.disconnect()`
+##### `.disconnect() → ActionResult`
 
 Clear the current target connection. Does not move or discard buffered output.
 
@@ -702,19 +680,19 @@ Clear the current target connection. Does not move or discard buffered output.
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.connected_to()`
+##### `.connected_to() → str`
 
 Display name of the currently connected target, or empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.connected_id()`
+##### `.connected_id() → str`
 
 Stable id of the currently connected target, or empty string. `connect()` accepts an id or a display name, so compare against this when you need the identity to match what you passed: `connected_to()` answers with the renameable name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.send(item_id, count, properties=None, property_match=None)`
+##### `.send(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Send up to whole-number `count` units of `item_id` to the connected target. A property dict selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are preserved. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
@@ -722,10 +700,10 @@ Send up to whole-number `count` units of `item_id` to the connected target. A pr
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to send |
-| `count` | `number` | Whole-number max units to send |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `item_id` | `str` | Item id to send |
+| `count` | `int` | Whole-number max units to send |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -772,27 +750,25 @@ Send up to whole-number `count` units of `item_id` to the connected target. A pr
 | `"target_moving"` | transient | The destination vehicle must stop before cargo can be handed off. |
 | `"out_of_range"` | rejection | The vehicles are outside cargo handoff range. |
 
-##### `.count()`
+##### `.count() → int`
 
 Total units currently in this port's buffer.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Maximum units this port's buffer can hold.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.stacks()`
+##### `.stacks() → list[ItemStack]`
 
 Snapshot list of property-distinct `ItemStack` values currently buffered. Use `.properties` to inspect and select variants before `send()`.
 
-- **Returns** `list<ItemStack>`
+- **Returns** `list[ItemStack]`
 
 *Types / Storage & Inventory*
-
----
 
 ## PickupOutputSlot
 
@@ -800,27 +776,25 @@ Snapshot list of property-distinct `ItemStack` values currently buffered. Use `.
 
 ### Methods
 
-##### `.count()`
+##### `.count() → int`
 
 Total item units waiting for carrier pickup.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Maximum item units this pickup stockpile can hold.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.stacks()`
+##### `.stacks() → list[ItemStack]`
 
 Snapshot list of property-distinct `ItemStack` values waiting for carrier pickup.
 
-- **Returns** `list<ItemStack>`
+- **Returns** `list[ItemStack]`
 
 *Types / Storage & Inventory*
-
----
 
 ## Recipe
 
@@ -828,95 +802,93 @@ Snapshot list of property-distinct `ItemStack` values waiting for carrier pickup
 
 ### Properties
 
-##### `.tier`
+##### `.tier: int`
 
 Derived production tier. Smelter foundations are Tier 0; every other recipe is one tier above its deepest manufactured input.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.id`
+##### `.id: str`
 
 Recipe id (e.g. `"smelt_iron_ingot"`). Stable across saves: use to compare recipes or pass back to `set_recipe(...)`.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Pre-translated display name of the recipe.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.inputs`
+##### `.inputs: dict[str, int]`
 
-Dict `{item_id: count}` of materials consumed per run. Iterate via `.keys()`, `.values()`, `.items()`, or index: `recipe.inputs["iron_ore"]`.
+A dict `{item_id: count}` of materials consumed per run. Iterate via `.keys()`, `.values()`, `.items()`, or index: `recipe.inputs["iron_ore"]`.
 
-- **Returns** `dict<number>`
+- **Returns** `dict[str, int]`
 
-##### `.output_item`
+##### `.output_item: str`
 
 Product id produced per run: an item id for discrete recipes or a fluid id for fluid-output recipes such as the Refiner.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.output_count`
+##### `.output_count: int`
 
 Amount of `output_item` produced per run: whole units for an item or tons for a fluid.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.duration_game_hours`
+##### `.duration_game_hours: float`
 
 Cycle duration in hours at full efficiency, including the querying Feed Maker's Mk tier. Inputs, power and output space must be available; overcrowding and blocked output can extend actual completion time.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.power_draw`
+##### `.power_draw: float`
 
 Watts the machine draws while this recipe is running.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.fluid_inputs`
+##### `.fluid_inputs: dict[str, float]`
 
-Dict `{port_name: tons_per_run}` of fluid consumed when one run completes (`"water_in"` etc.). Empty dict for recipes with no fluid input.
+A dict `{port_name: tons_per_run}` of fluid consumed when one run completes (`"water_in"` etc.). Empty dict for recipes with no fluid input.
 
-- **Returns** `dict<number>`
+- **Returns** `dict[str, float]`
 
-##### `.input_fluid`
+##### `.input_fluid: str | None`
 
 Concrete fluid id required by a generic input port, or `None` when the port itself already identifies the fluid. Refiner recipes use this to distinguish raw feedstocks on `gas_in` / `liquid_in`.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"raw_sulfur_gas"`, `"raw_cryofluid"`, `"raw_chlorine"`, `"raw_quicksilver"`
 
-##### `.fluid_outputs`
+##### `.fluid_outputs: dict[str, float]`
 
-Dict `{port_name: tons_per_run}` of fluid deposited when one run completes. Empty dict for item-output recipes; Refiner recipes identify `gas_out` or `liquid_out` here.
+A dict `{port_name: tons_per_run}` of fluid deposited when one run completes. Empty dict for item-output recipes; Refiner recipes identify `gas_out` or `liquid_out` here.
 
-- **Returns** `dict<number>`
+- **Returns** `dict[str, float]`
 
-##### `.output_fluid`
+##### `.output_fluid: str | None`
 
 Concrete fluid id produced through a generic output port, or `None` for item-output recipes. Equal to `output_item` for current fluid-only Refiner recipes.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 - **Possible values** `"sulfur_gas"`, `"cryofluid"`, `"chlorine"`, `"quicksilver"`
 
-##### `.byproduct_item`
+##### `.byproduct_item: str | None`
 
 Item id of the byproduct, or `None` if this recipe has no byproduct.
 
-- **Returns** `Optional[string]`
+- **Returns** `str | None`
 
-##### `.byproduct_count`
+##### `.byproduct_count: int`
 
 Units of `byproduct_item` produced per run; **0** for recipes with no byproduct.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Storage & Inventory*
-
----
 
 ## SaleResult
 
@@ -924,40 +896,38 @@ Units of `byproduct_item` produced per run; **0** for recipes with no byproduct.
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 `"ok"`, `"not_sellable"`, or `"no_stock"`.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"not_sellable"`, `"no_stock"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable explanation of the sale outcome.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.item_id`
+##### `.item_id: str`
 
 Stable item id requested for sale.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.units`
+##### `.units: int`
 
 Whole-number units removed from Inventory.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.credits`
+##### `.credits: int`
 
 Whole-number credits earned by this sale.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Storage & Inventory*
-
----
 
 ## ShopItem
 
@@ -965,27 +935,25 @@ Whole-number credits earned by this sale.
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Item ID (used for buying).
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Item display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.cost`
+##### `.cost: int`
 
 Price in credits.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Storage & Inventory*
-
----
 
 ## Slot
 
@@ -993,63 +961,61 @@ Price in credits.
 
 ### Properties
 
-##### `.slot`
+##### `.slot: int`
 
 Slot index number.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.id`
+##### `.id: str`
 
 Item ID (empty string if slot is empty).
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Item display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.value`
+##### `.value: float`
 
 Credit value per item.
 
-- **Returns** `number`
+- **Returns** `float`
 
-##### `.count`
+##### `.count: int`
 
 Stack count in this slot.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.properties`
+##### `.properties: ItemProperties | None`
 
 Exact property dict for this stack, or `None` for an ordinary item. Pass it to property-aware transfer and capacity methods.
 
-- **Returns** `Optional[dict]`
+- **Returns** `ItemProperties | None`
 
-##### `.genes`
+##### `.genes: list[str]`
 
 The genes a held **geothermal** fragment carries, e.g. `["cold_tolerance", "pressure_tolerance"]`: read it straight from inventory without loading the DNA Sequencer. A spliced fragment carries exactly the set you engineered; a raw fragment carries its natural genes. Empty for non-geothermal items.
 
-- **Returns** `list<string>`
+- **Returns** `list[str]`
 
-##### `.glow`
+##### `.glow: list[int] | None`
 
 Per-instance bioluminescent glow `[r,g,b]` (0-255) for a held **coastal** fragment. `None` for any other item.
 
-- **Returns** `Optional[[number, number, number]]`
+- **Returns** `list[int] | None`
 
-##### `.spliced`
+##### `.spliced: bool`
 
 `True` if this is an engineered (already gene-spliced) geothermal fragment: a further DNA Sequencer alter would destroy it. `False` for raw items.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
 *Types / Storage & Inventory*
-
----
 
 ## TransferResult
 
@@ -1057,34 +1023,32 @@ Per-instance bioluminescent glow `[r,g,b]` (0-255) for a held **coastal** fragme
 
 ### Properties
 
-##### `.status`
+##### `.status: str`
 
 Stable result code for scripts to check. `.message` explains what happened.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"ok"`, `"partial"`, `"no_op"`, `"already_compact"`, `"research_required"`, `"busy"`, `"invalid_properties"`, `"invalid_property_match"`, `"no_connection"`, `"inventory_not_local"`, `"source_missing"`, `"source_under_construction"`, `"source_is_vehicle"`, `"source_not_local"`, `"not_at_source"`, `"unsupported_source"`, `"source_wrong_material"`, `"source_empty"`, `"source_reserved"`, `"source_changed"`, `"buffer_full"`, `"slots_full"`, `"target_missing"`, `"target_under_construction"`, `"target_is_vehicle"`, `"target_not_local"`, `"not_at_target"`, `"unsupported_target"`, `"target_wrong_material"`, `"wrong_biome"`, `"needs_plating"`, `"cask_missing"`, `"target_unconfigured"`, `"mixed_materials"`, `"hot_cargo_requires_cask"`, `"cask_accepts_hot_only"`, `"order_item_not_required"`, `"order_slots_full"`, `"order_fulfilled"`, `"target_full"`, `"target_complete"`, `"target_changed"`, `"same_endpoint"`, `"same_storage"`, `"same_vehicle"`, `"source_moving"`, `"target_moving"`, `"out_of_range"`
 
-##### `.message`
+##### `.message: str`
 
 Player-readable, contextual explanation of this exact outcome. Suitable for logs and player-facing diagnostics.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.requested`
+##### `.requested: int`
 
 Whole-number units requested by the call. For parameterless `flush()` or `compact()`, this is the buffered or repositioned amount observed by the operation.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.moved`
+##### `.moved: int`
 
 Whole-number units actually transferred, repositioned, or destroyed. Always **0** for rejected outcomes.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Storage & Inventory*
-
----
 
 ## VehicleInputSlot
 
@@ -1092,7 +1056,7 @@ Whole-number units actually transferred, repositioned, or destroyed. Always **0*
 
 ### Methods
 
-##### `.connect(name)`
+##### `.connect(name: str) → ActionResult`
 
 Set a compatible cargo source by stable id or display name. A Rover or Pioneer must be parked inside a stationary source's service area. Field Mining Drill and Water Pump stockpiles support carrier pickup. Vehicle handoffs require both vehicles to be stopped and nearby. `"inventory"` is available only while parked at Nocturna Base; remote outposts use local Storage Bins, Warehouses, or machine buffers.
 
@@ -1100,7 +1064,7 @@ Set a compatible cargo source by stable id or display name. A Rover or Pioneer m
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `name` | `string` | Stable id or display name of a compatible cargo source, or inventory |
+| `name` | `str` | Stable id or display name of a compatible cargo source, or inventory |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -1116,7 +1080,7 @@ Set a compatible cargo source by stable id or display name. A Rover or Pioneer m
 | `"unsupported_source"` | rejection | The selected component does not expose a compatible item source. |
 | `"source_is_vehicle"` | rejection | The requested source is a drone. Drone cargo moves through its Drone Depot. |
 
-##### `.disconnect()`
+##### `.disconnect() → ActionResult`
 
 Clear the current cargo source connection. This does not move or discard cargo.
 
@@ -1130,19 +1094,19 @@ Clear the current cargo source connection. This does not move or discard cargo.
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.connected_to()`
+##### `.connected_to() → str`
 
 Display name of the currently connected cargo source, or empty string.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.connected_id()`
+##### `.connected_id() → str`
 
 Stable id of the currently connected cargo source, or empty string. `connect()` accepts an id or display name, so compare against this when identity must survive renaming.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.take(item_id, count, properties=None, property_match=None)`
+##### `.take(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Load up to whole-number `count` units of `item_id` into vehicle cargo from the connected source. A property dict selects stacks containing that subset by default. Pass `"exact"` as the fourth argument for one full identity; `None, "exact"` selects only propertyless items. `"any"` ignores properties. Exact source properties are retained. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
@@ -1150,10 +1114,10 @@ Load up to whole-number `count` units of `item_id` into vehicle cargo from the c
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to load |
-| `count` | `number` | Whole-number max units to load |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `item_id` | `str` | Item id to load |
+| `count` | `int` | Whole-number max units to load |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`
@@ -1200,27 +1164,25 @@ Load up to whole-number `count` units of `item_id` into vehicle cargo from the c
 | `"target_moving"` | transient | The destination vehicle must stop before cargo can be handed off. |
 | `"out_of_range"` | rejection | The vehicles are outside cargo handoff range. |
 
-##### `.count()`
+##### `.count() → int`
 
 Total units currently carried in the vehicle's cargo.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Maximum units the vehicle's cargo can hold.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.stacks()`
+##### `.stacks() → list[ItemStack]`
 
 Snapshot list of property-distinct `ItemStack` values currently carried. Two entries may have the same id when their properties differ.
 
-- **Returns** `list<ItemStack>`
+- **Returns** `list[ItemStack]`
 
 *Types / Storage & Inventory*
-
----
 
 ## WarehouseSlot
 
@@ -1228,36 +1190,34 @@ Snapshot list of property-distinct `ItemStack` values currently carried. Two ent
 
 ### Properties
 
-##### `.index`
+##### `.index: int`
 
 Slot index (0-based).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.item`
+##### `.item: str`
 
 Item id this slot holds (empty string if the slot is empty).
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.count`
+##### `.count: int`
 
 Units currently in this slot.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.capacity`
+##### `.capacity: int`
 
 This slot's capacity (units).
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.properties`
+##### `.properties: ItemProperties | None`
 
 Exact property dict for the item variant in this physical slot, or `None` when the slot is empty or holds an ordinary item.
 
-- **Returns** `Optional[dict]`
+- **Returns** `ItemProperties | None`
 
 *Types / Fleet & Vehicles*
-
----

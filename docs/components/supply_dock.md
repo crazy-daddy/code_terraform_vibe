@@ -32,13 +32,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `.input`
+##### `.input: InputSlot`
 
 Load only what the active Order still needs with `connect(...)` and `take(...)`, or push from a parked cargo vehicle. Excess stays at the source, and active-order cargo stays reserved. After `clear_order()` or completion, use `eject(destination, item_id, count)` to recover leftovers to Inventory at Nocturna Base or local freight elsewhere. `flush()` destroys loaded cargo. Requires **Auto Feeders** research. See `InputSlot`.
 
@@ -46,19 +46,19 @@ Load only what the active Order still needs with `connect(...)` and `take(...)`,
 
 ### Methods
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Total units still owed across every item of the active Order (the dock's remaining demand). Returns **0** when no Order is assigned. Use as the upper bound for how much you still need to load + ship.
 
 - **Returns** Number: total units still owed across the active Order; **0** when idle.
 
-##### `.total()`
+##### `.total() → int`
 
 Sum of units currently loaded across every slot. Compare to `capacity()` to see how much more the dock still needs to ingest; `total() == 0` means every slot is empty.
 
 - **Returns** Number: current units summed across every slot.
 
-##### `.count(item_id)`
+##### `.count(item_id: str) → int`
 
 Units of `item_id` currently held across the dock's slots. Returns **0** if the dock holds none of that item. Use before loading more to avoid redundant `take()` calls: `if self.count("iron_ore") < 20: self.input.take("iron_ore", 20)`.
 
@@ -66,23 +66,23 @@ Units of `item_id` currently held across the dock's slots. Returns **0** if the 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to count |
+| `item_id` | `str` | Item id to count |
 
 - **Returns** Number: units of `item_id` currently in any slot.
 
-##### `.slots()`
+##### `.slots() → list[DockSlot]`
 
 The dock's physical slots as a list of `DockSlot` objects (`.index`, `.item_id`, `.count`). Always **5** entries, indexed **0-4**; slots not opened by the current Order have `.item_id == None` and `.count == 0`. See `DockSlot`.
 
 - **Returns** List of `DockSlot` objects: one per physical slot (indexes **0-4**).
 
-##### `.current_order()`
+##### `.current_order() → Order | None`
 
 Returns this dock's active Earth `Order`, or `None` if no Earth Order is assigned. Flips to `None` automatically when the Earth Order completes. Use it to read `.requires` and `.shipped` before deciding what to load.
 
 - **Returns** `Order` currently assigned to this dock, or `None`.
 
-##### `.set_order(order_id)` *(self only)*
+##### `.set_order(order_id: str) → ActionResult` *(self only)*
 
 Assign an Earth Order to this dock. Discover ids with `orders.list_orders()` or `orders.list_weekly_orders()`, then pass one to `self.set_order(id)`. Several docks may serve the **same** order and share shipped progress. Cargo is physical: drain this dock through a local machine or vehicle before switching orders.
 
@@ -90,7 +90,7 @@ Assign an Earth Order to this dock. Discover ids with `orders.list_orders()` or 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `order_id` | `string` | Earth Order id from `orders.list_orders()` or `orders.list_weekly_orders()`. |
+| `order_id` | `str` | Earth Order id from `orders.list_orders()` or `orders.list_weekly_orders()`. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -105,7 +105,7 @@ Assign an Earth Order to this dock. Discover ids with `orders.list_orders()` or 
 | `"completed"` | success | The requested order is already completed and cannot be assigned again. |
 | `"cargo_present"` | rejection | Existing cargo prevents the requested configuration change. |
 
-##### `.clear_order()` *(self only)*
+##### `.clear_order() → ActionResult` *(self only)*
 
 Release this dock's assignment and stop dispatch. Loaded cargo stays inside the dock. Recover it directly with `self.input.eject(destination, item_id, count)`, or by connecting a local machine or vehicle input to this Supply Dock.
 
@@ -119,7 +119,7 @@ Release this dock's assignment and stop dispatch. Loaded cargo stays inside the 
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.set_enabled(on)` *(self only)*
+##### `.set_enabled(on: bool) → ActionResult` *(self only)*
 
 Toggle the continuous dispatcher. `True` resumes shipping; `False` pauses it. Loading is unaffected either way, the input port still accepts material. **Auto-flips off** when the assigned order completes; the script must re-enable after the next `set_order` call.
 
@@ -127,7 +127,7 @@ Toggle the continuous dispatcher. `True` resumes shipping; `False` pauses it. Lo
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `on` | `boolean` | `True` to resume dispatch, `False` to pause |
+| `on` | `bool` | `True` to resume dispatch, `False` to pause |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -139,25 +139,25 @@ Toggle the continuous dispatcher. `True` resumes shipping; `False` pauses it. Lo
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.is_enabled()`
+##### `.is_enabled() → bool`
 
 `True` while the dispatcher is active. It becomes `False` after `set_enabled(False)` or when the assigned Order completes. A new dock starts enabled, so assigning an Order while cargo is loaded begins shipping immediately.
 
 - **Returns** Boolean: `True` when the dispatcher is active, `False` after `set_enabled(False)`. Newly deployed docks default to enabled.
 
-##### `.dispatch_rate()`
+##### `.dispatch_rate() → float`
 
 The dispatcher's current effective throughput in **units/h**, already including throughput research and any outpost overcrowding penalty. The base rate is **25** (one unit every **2.4** minutes); **Bulk Logistics II** multiplies it by **4**, and **Bulk Logistics III** by **16**. Multiply this returned value by hours elapsed to predict how much the dock will ship.
 
 - **Returns** Number: current dispatcher throughput in **units/h**.
 
-##### `.current_dispatch()`
+##### `.current_dispatch() → str | None`
 
 The `item_id` the dispatcher is currently emitting, or `None` when idle (no power, no Order, dispatcher paused via `set_enabled(False)`, or no shippable unit loaded). Useful for scripts that want to know which material is flowing right now.
 
 - **Returns** String item id currently being dispatched, or `None` when the dock is idle (no order, dispatcher paused, or no shippable unit loaded).
 
-##### `.dispatch_progress()`
+##### `.dispatch_progress() → float`
 
 Fraction **0-1** of the current unit's accumulator toward emission. Holds at **0** while the dock has nothing shippable loaded, the charge starts when a shippable unit lands. Drives the perimeter-clock animation on the dock card; scripts can use it to estimate "next launch in X hours."
 

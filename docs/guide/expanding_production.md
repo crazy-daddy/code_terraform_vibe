@@ -16,5 +16,3 @@ After the first outpost, progression depends on both expansion and upgrades. Mk 
 With one outpost, later phases usually run slowly. Add outposts when travel time, footprint space, or local power becomes the bottleneck. If progress jumps too far from one machine-tier swap alone, that is economy tuning feedback worth reporting.
 
 *Guide / Programming*
-
----

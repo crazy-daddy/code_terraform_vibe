@@ -24,7 +24,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.plan_structure(kind, x, y, rotation=0)`
+##### `.plan_structure(kind: str, x: float, y: float, rotation: int = 0) → BlueprintPlanResult`
 
 Create one point-structure construction ghost from script coordinates. Supported kinds are `"outpost"`, `"thermal_cap"`, `"water_pump"`, `"oil_pump"`, `"exotic_gas_cap"`, `"exotic_spring_tap"`, `"mining_drill"`, `"mining_drill_industrial"`, and `"mining_drill_heavy"`. Drill kinds require their matching Earth Order kit recipe. Coordinates snap to the map grid. Extraction structures snap to the exact matching surveyed feature, while Outposts use the snapped footprint anchor. The optional clockwise rotation is `0`, `90`, `180`, or `270`. The ghost enters the shared queue immediately; a Pioneer still constructs it later.
 
@@ -32,10 +32,10 @@ Create one point-structure construction ghost from script coordinates. Supported
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `kind` | `string` | Point blueprint kind. |
-| `x` | `number` | World x coordinate. |
-| `y` | `number` | World y coordinate. |
-| `rotation` | `number` | Optional clockwise rotation: 0, 90, 180, or 270 degrees. |
+| `kind` | `str` | Point blueprint kind. |
+| `x` | `float` | World x coordinate. |
+| `y` | `float` | World y coordinate. |
+| `rotation` | `int` | Optional clockwise rotation: 0, 90, 180, or 270 degrees. |
 
 - **Returns** `BlueprintPlanResult`
 - **Result fields** `.status`, `.message`
@@ -58,7 +58,7 @@ Create one point-structure construction ghost from script coordinates. Supported
 | `"clearance"` | rejection | The requested structure footprint crosses an Outpost or physical-anomaly clearance boundary. |
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
 
-##### `.plan_pipe(medium, x1, y1, x2, y2)`
+##### `.plan_pipe(medium: str, x1: float, y1: float, x2: float, y2: float) → BlueprintPlanResult`
 
 Create pipe construction jobs from script coordinates. Requires Constructor Module research. `medium` is `"gas"`, `"liquid"`, or a registered fluid id such as `"steam"`, `"water"`, or `"oil"`. Coordinates snap to tile-center lanes. A field structure uses its site coordinates. An internal outpost machine uses its owning outpost as the utility anchor, so route to a point in `building.outpost`'s footprint, such as `[building.outpost.x, building.outpost.y]`, not to the vehicle docking point in `building.position`. Existing matching pieces are reused automatically.
 
@@ -66,11 +66,11 @@ Create pipe construction jobs from script coordinates. Requires Constructor Modu
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `medium` | `string` | `"gas"` / `"liquid"`, or any registered fluid id. |
-| `x1` | `number` | World x coordinate of the route start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
-| `y1` | `number` | World y coordinate of the route start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
-| `x2` | `number` | World x coordinate of the route end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
-| `y2` | `number` | World y coordinate of the route end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
+| `medium` | `str` | `"gas"` / `"liquid"`, or any registered fluid id. |
+| `x1` | `float` | World x coordinate of the route start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
+| `y1` | `float` | World y coordinate of the route start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
+| `x2` | `float` | World x coordinate of the route end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
+| `y2` | `float` | World y coordinate of the route end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
 
 - **Returns** `BlueprintPlanResult`
 - **Result fields** `.status`, `.message`
@@ -88,7 +88,7 @@ Create pipe construction jobs from script coordinates. Requires Constructor Modu
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
 | `"already_exists"` | success | The matching infrastructure route already exists, so no blueprint was created. |
 
-##### `.plan_power_line(x1, y1, x2, y2)`
+##### `.plan_power_line(x1: float, y1: float, x2: float, y2: float) → BlueprintPlanResult`
 
 Create power-line construction jobs from script coordinates. Requires Constructor Module research. Coordinates snap to tile-center lanes; off-axis paths choose the valid L-shaped elbow with the least new construction. A field structure uses its site coordinates. An internal outpost machine uses its owning outpost as the utility anchor, so route to a point in `building.outpost`'s footprint, such as `[building.outpost.x, building.outpost.y]`, not to the vehicle docking point in `building.position`. Existing matching pieces are reused automatically.
 
@@ -96,10 +96,10 @@ Create power-line construction jobs from script coordinates. Requires Constructo
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x1` | `number` | World x coordinate of the line start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
-| `y1` | `number` | World y coordinate of the line start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
-| `x2` | `number` | World x coordinate of the line end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
-| `y2` | `number` | World y coordinate of the line end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
+| `x1` | `float` | World x coordinate of the line start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
+| `y1` | `float` | World y coordinate of the line start. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
+| `x2` | `float` | World x coordinate of the line end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.x`. |
+| `y2` | `float` | World y coordinate of the line end. For an internal outpost machine, use a point in its owning outpost footprint, such as `building.outpost.y`. |
 
 - **Returns** `BlueprintPlanResult`
 - **Result fields** `.status`, `.message`
@@ -116,7 +116,7 @@ Create power-line construction jobs from script coordinates. Requires Constructo
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
 | `"already_exists"` | success | The matching infrastructure route already exists, so no blueprint was created. |
 
-##### `.plan_bridge(medium, x, y, axis)`
+##### `.plan_bridge(medium: str, x: float, y: float, axis: str) → BlueprintPlanResult`
 
 Create one utility bridge job from script coordinates. Requires Constructor Module research. `medium` is `"gas"`, `"liquid"`, `"power"`, or a registered fluid id. `x`/`y` are the bridge center tile and `axis` is `"horizontal"` or `"vertical"`.
 
@@ -124,10 +124,10 @@ Create one utility bridge job from script coordinates. Requires Constructor Modu
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `medium` | `string` | `"gas"`, `"liquid"`, `"power"`, or any registered fluid id. |
-| `x` | `number` | World x coordinate of the bridge tile. |
-| `y` | `number` | World y coordinate of the bridge tile. |
-| `axis` | `string` | `"horizontal"` or `"vertical"`. |
+| `medium` | `str` | `"gas"`, `"liquid"`, `"power"`, or any registered fluid id. |
+| `x` | `float` | World x coordinate of the bridge tile. |
+| `y` | `float` | World y coordinate of the bridge tile. |
+| `axis` | `str` | `"horizontal"` or `"vertical"`. |
 
 - **Returns** `BlueprintPlanResult`
 - **Result fields** `.status`, `.message`
@@ -145,7 +145,7 @@ Create one utility bridge job from script coordinates. Requires Constructor Modu
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
 | `"already_exists"` | success | The matching infrastructure route already exists, so no blueprint was created. |
 
-##### `.mark_deconstruct(x, y, layer="auto", target_id="")`
+##### `.mark_deconstruct(x: float, y: float, layer: str = "auto", target_id: str = "") → BlueprintPlanResult`
 
 Mark built infrastructure or a normal map building at the coordinate for deconstruction. Requires Constructor Module research. Base and Outposts are protected. When several independent map layers overlap, choose the `"building"`, `"gas"`, `"liquid"`, or `"power"` layer; the default `"auto"` requires an unambiguous target. At a same-layer junction, provide the optional exact target id. A Pioneer still executes the job with `self.constructor.execute(id)` at the job's reported `position`.
 
@@ -153,10 +153,10 @@ Mark built infrastructure or a normal map building at the coordinate for deconst
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | World x coordinate of the target tile. |
-| `y` | `number` | World y coordinate of the target tile. |
-| `layer` | `string` | Optional target layer. Use `"building"`, `"gas"`, `"liquid"`, or `"power"` when several layers overlap; `"auto"` selects the first target on an unambiguous tile. |
-| `target_id` | `string` | Optional exact machine or infrastructure id used to resolve same-layer junctions. |
+| `x` | `float` | World x coordinate of the target tile. |
+| `y` | `float` | World y coordinate of the target tile. |
+| `layer` | `str` | Optional target layer. Use `"building"`, `"gas"`, `"liquid"`, or `"power"` when several layers overlap; `"auto"` selects the first target on an unambiguous tile. |
+| `target_id` | `str` | Optional exact machine or infrastructure id used to resolve same-layer junctions. |
 
 - **Returns** `BlueprintPlanResult`
 - **Result fields** `.status`, `.message`
@@ -175,7 +175,7 @@ Mark built infrastructure or a normal map building at the coordinate for deconst
 | `"invalid_layer"` | rejection | A deconstruction layer must be "auto", "building", "gas", "liquid", or "power". |
 | `"blocked"` | rejection | The requested construction or deconstruction is blocked by existing or planned infrastructure. |
 
-##### `.cancel(blueprint_id)`
+##### `.cancel(blueprint_id: str) → ActionResult`
 
 Cancel a queued, active, or paused construction blueprint by id. Unpaid jobs cancel immediately. A paid job keeps its material at the build site: park a Pioneer there to recover it into cargo. A failed recovery leaves the job and material intact.
 
@@ -183,7 +183,7 @@ Cancel a queued, active, or paused construction blueprint by id. Unpaid jobs can
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `blueprint_id` | `string` | Blueprint id from `.pending_constructions()`, `.active_constructions()`, or `.paused_constructions()`. |
+| `blueprint_id` | `str` | Blueprint id from `.pending_constructions()`, `.active_constructions()`, or `.paused_constructions()`. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -199,19 +199,19 @@ Cancel a queued, active, or paused construction blueprint by id. Unpaid jobs can
 | `"no_cargo_space"` | rejection | Cargo has no compatible space for the result. |
 | `"construction_dependency"` | rejection | Another construction job depends on this job. |
 
-##### `.pending_constructions()`
+##### `.pending_constructions() → list[Construction]`
 
-Returns blueprints awaiting a worker as `list<Construction>`. Drawn pipe/power paths and marked deconstruction targets are split into independent jobs, usually in placement order. Pass each `c.id` to `self.constructor.execute(c.id)` to build or deconstruct it. Read `c.required_item` and `c.required_count` to load the exact cargo before executing; never infer material from `c.kind`. Filter by `c.kind` to specialize a Pioneer's role, then use `c.medium` to distinguish `"gas"`, `"liquid"`, and `"power"` utility jobs. Point structures have `c.medium == None`; see `Construction.kind` for the full kind list.
+Returns blueprints awaiting a worker as `list[Construction]`. Drawn pipe/power paths and marked deconstruction targets are split into independent jobs, usually in placement order. Pass each `c.id` to `self.constructor.execute(c.id)` to build or deconstruct it. Read `c.required_item` and `c.required_count` to load the exact cargo before executing; never infer material from `c.kind`. Filter by `c.kind` to specialize a Pioneer's role, then use `c.medium` to distinguish `"gas"`, `"liquid"`, and `"power"` utility jobs. Point structures have `c.medium == None`; see `Construction.kind` for the full kind list.
 
 - **Returns** List of `Construction` snapshots awaiting a worker. Each has `.id`, `.kind`, `.medium`, `.position`, `.progress`, `.required_item`, `.required_count`. Iterate and pass `c.id` to `self.constructor.execute(c.id)` to build or deconstruct it.
 
-##### `.active_constructions()`
+##### `.active_constructions() → list[Construction]`
 
 Returns blueprints currently being built (a Pioneer is working). Useful for monitor scripts, read `c.progress` to see how far along.
 
 - **Returns** List of `Construction` snapshots currently being built or removed (a Pioneer is working). Re-query for fresh `.progress`.
 
-##### `.paused_constructions()`
+##### `.paused_constructions() → list[Construction]`
 
 Returns blueprints started then abandoned (worker died, ran out of fuel, or script stopped). Any Pioneer can resume by navigating to `c.position` and calling `self.constructor.execute(c.id)`.
 

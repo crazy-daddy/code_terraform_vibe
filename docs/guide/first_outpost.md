@@ -23,5 +23,3 @@ Place the outpost footprint first. Plan Mode gives visual placement feedback; th
 A single home base becomes slow later. The outpost step is when terraforming becomes geographic: more build areas, more machines, more local power, and eventually networks that connect distant production.
 
 *Guide / Tutorials*
-
----

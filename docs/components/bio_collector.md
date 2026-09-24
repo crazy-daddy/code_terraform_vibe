@@ -31,13 +31,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
 - **Returns** `OutpostRef` for the outpost where this building is deployed.
 
-##### `self.cargo`
+##### `self.cargo: Specimen | None`
 
 The collected `Specimen` waiting for transfer, or `None` if the slot is empty. Pre-analyze, `cargo.fragment_id` / `cargo.rarity` / `cargo.recipe` are `None`; `cargo.coords` and `cargo.distance` are always available.
 
@@ -45,13 +45,13 @@ The collected `Specimen` waiting for transfer, or `None` if the slot is empty. P
 
 ### Methods
 
-##### `self.scan()`
+##### `self.scan() → list[FragmentLocation]`
 
 Lists fragment locations in this outpost's biome, nearest first. Each `FragmentLocation` includes `coords`, distance, and whether it has been cataloged. Cataloged locations also reveal their fragment id, name, and rarity; unknown locations leave those details as `None`. To identify an unknown location, collect it with `bio_collector.collect(location.coords)` and analyze it at a Bio Lab. Recipes and creature identity are not revealed here. Analyzed fragments also appear in `journal.cataloged_fragments(...)`.
 
 - **Returns** List of `FragmentLocation`: every fragment in this outpost's biome with coords, straight-line distance, and `cataloged` (`True` after that fragment has been analyzed). Cataloged results expose `.fragment_id`, `.name`, and `.rarity`; unknown results keep them as `None`. Recipes and creature identity stay hidden. Sorted nearest-first.
 
-##### `self.collect(coords)` *(self only)*
+##### `self.collect(coords: list[float]) → ActionResult` *(self only)*
 
 Retrieve the fragment at `coords` from `scan()` and place it in the collector's cargo slot. The trip takes **~0.1-0.3 h** in every biome, depending on distance; the script pauses until collection finishes.
 
@@ -59,7 +59,7 @@ Retrieve the fragment at `coords` from `scan()` and place it in the collector's 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `coords` | `list` | World coordinates `[x, y]` from `scan()`. |
+| `coords` | `list[float]` | World coordinates `[x, y]` from `scan()`. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -75,7 +75,7 @@ Retrieve the fragment at `coords` from `scan()` and place it in the collector's 
 | `"invalid_coords"` | rejection | The supplied coordinates are invalid. |
 | `"no_fragment"` | rejection | No fragment is available for the operation. |
 
-##### `self.discard()` *(self only)*
+##### `self.discard() → ActionResult` *(self only)*
 
 Discard the specimen currently held in collector cargo. Use this when the collector picked up a specimen you do not want to send to a Bio Lab.
 

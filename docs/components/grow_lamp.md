@@ -2,7 +2,7 @@
 
 > **Category:** Biosphere | **Component Name:** Grow Lamp
 
-Lights the four orthogonally adjacent field cells (directly above, below, left, and right) while powered and enabled.
+Lights the four orthogonally adjacent field cells (directly above, below, left, and right) while powered and enabled. Scripts find it with `outpost.harvesting_machines()`.
 
 | Field | Value |
 | --- | --- |
@@ -36,7 +36,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.set_enabled(enabled)` *(self only)*
+##### `.set_enabled(enabled: bool) → ActionResult` *(self only)*
 
 Command the lamp on or off. Power loss pauses the script but preserves this setpoint; stopping the machine script resets it to `False`.
 
@@ -44,7 +44,7 @@ Command the lamp on or off. Power loss pauses the script but preserves this setp
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `enabled` | `boolean` | Whether this script commands the lamp to light its cells. |
+| `enabled` | `bool` | Whether this script commands the lamp to light its cells. |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`
@@ -56,38 +56,38 @@ Command the lamp on or off. Power loss pauses the script but preserves this setp
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 
-##### `.is_enabled()`
+##### `.is_enabled() → bool`
 
 `True` when the running script has commanded this lamp on.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_active()`
+##### `.is_active() → bool`
 
 `True` when the lamp is commanded on and has power.
 
-- **Returns** `boolean`
+- **Returns** `bool`
 
-##### `.is_supplied()`
+##### `.is_supplied() → bool`
 
 `True` when the lamp is commanded on, powered, and actively lighting its covered cells. If disabled or unpowered, covered cells lose `lit` and their plants pause.
 
 - **Returns** Boolean: `True` when the lamp is placed, commanded on, powered, and actively lighting its covered cells. `False` when unplaced, disabled, or unpowered; covered cells then lose `lit` and their plants pause.
 
-##### `.status()`
+##### `.status() → str`
 
 Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, or `"active"`.
 
 - **Returns** Exact operating state: `"not_placed"` after placement recovery, `"disabled"` when the script command is off, `"no_power"` when commanded on but unpowered, or `"active"` while lighting.
 - **Possible values** `"not_placed"`, `"disabled"`, `"no_power"`, `"active"`
 
-##### `.tier()`
+##### `.tier() → int`
 
 Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output and draw **5/25/100/500 W** while active.
 
 - **Returns** Number (**1-4**), the deployed tier. Higher tiers boost the output of plants they cover and draw far more power; tier up by fabricating and applying a Grow Lamp upgrade pack.
 
-##### `.position()`
+##### `.position() → str`
 
 Grid sector occupied by this lamp, such as `"E14"`.
 

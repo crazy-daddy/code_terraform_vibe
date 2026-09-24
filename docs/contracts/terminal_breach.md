@@ -12,41 +12,39 @@ Extends `Contract`
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Contract ID (used for transmitting answers).
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"relay_hack"`, `"xenogenetics"`, `"corrupted_archive"`, `"sealed_vault"`, `"data_tablet"`, `"terminal_breach"`, `"drifting_signal"`, `"cold_boot"`, `"three_echoes"`, `"buried_five"`, `"the_loom"`, `"crosstalk"`, `"beat_the_system"`, `"core_sample"`, `"lattice"`
 
-##### `.name`
+##### `.name: str`
 
 Contract display name.
 
-- **Returns** `string`
+- **Returns** `str`
 
-##### `.reward`
+##### `.reward: int`
 
 Credit reward for completing this contract.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.status`
+##### `.status: str`
 
 Contract status: 'available' or 'completed'.
 
-- **Returns** `string`
+- **Returns** `str`
 - **Possible values** `"available"`, `"completed"`
 
-##### `.terminal`
+##### `.terminal: AlienTerminal`
 
 The alien security terminal.
 
 - **Returns** `AlienTerminal`
 
 *Types / Contracts*
-
----
 
 ## AlienTerminal
 
@@ -58,15 +56,15 @@ The alien security terminal.
 
 ### Properties
 
-##### `.length`
+##### `.length: int`
 
 Whole-number code length (15).
 
-- **Returns** `number`
+- **Returns** `int`
 
 ### Methods
 
-##### `.guess(digits)`
+##### `.guess(digits: list[int]) → GuessResult`
 
 Test a list of exactly 15 whole-number digits in the **1-5** range and return `GuessResult`. Exact-position matches are removed first; `.misplaced` then counts shared remaining occurrences without over-counting duplicates. Wrong argument or element types raise `TypeError`; wrong length, fractional values, or out-of-range digits raise `ValueError`.
 
@@ -74,7 +72,7 @@ Test a list of exactly 15 whole-number digits in the **1-5** range and return `G
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `digits` | `list` | Candidate list of 15 whole-number digits, each 1-5 |
+| `digits` | `list[int]` | Candidate list of 15 whole-number digits, each 1-5 |
 
 - **Returns** `GuessResult`
 
@@ -87,26 +85,22 @@ Test a list of exactly 15 whole-number digits in the **1-5** range and return `G
 
 *Types / Contracts*
 
----
-
 ## GuessResult
 
 **Returned by:** terminal.guess()
 
 ### Properties
 
-##### `.correct`
+##### `.correct: int`
 
 Number of digits in the correct position.
 
-- **Returns** `number`
+- **Returns** `int`
 
-##### `.misplaced`
+##### `.misplaced: int`
 
 Number of correct digits in wrong positions.
 
-- **Returns** `number`
+- **Returns** `int`
 
 *Types / Contracts*
-
----

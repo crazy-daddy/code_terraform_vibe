@@ -7,9 +7,31 @@ Vehicles run on batteries. A parked vehicle costs nothing, battery only drains d
 ### What drains battery
 
 - **Moving**, the main cost. The Rover gets much worse at high speeds; the Pioneer is more efficient, but top speed still costs extra watt-hours per meter.
-- **Drilling**, draws **10-30 W** while the drill is running, depending on the drill variant (basic / Industrial / Heavy).
+- **Drilling**, draws **10-30 W** while the drill is running, depending on the drill variant (basic / Industrial / Heavy). Watts are the rate and watt-hours are the amount used: **10 W** for one hour uses **10 Wh**, and for **15** minutes uses **2.5 Wh**. See **What mining costs** below.
 - **Sonar**, a small flat cost (**0.5-2 Wh**, by sonar tier) per scan or survey.
 - **Stationary**, free. No drain.
+
+### What mining costs
+
+Each `self.drill.mine()` digs **1** unit, and the drill draws its power for the whole dig, so one unit costs **drill watts × mining time**. Mining time is the mineral's base time, multiplied by the drill's speed multiplier, divided by the site's purity.
+
+| Mineral | Base time per unit |
+| --- | --- |
+| Iron, Silicon | 15 min |
+| Lead | 18 min |
+| Titanium, Cobalt | 20 min |
+| Rare Earth | 25 min |
+| Neutronium | 30 min |
+
+A **rich** site digs **2×** as fast and a **pure** site **3×** as fast as a standard one.
+
+| Drill | Power | Speed multiplier | Iron, standard site | Iron, pure site |
+| --- | --- | --- | --- | --- |
+| Basic | 10 W | 1.0× | 15 min, 2.5 Wh | 5 min, 0.83 Wh |
+| Industrial | 20 W | 0.75× | 11.25 min, 3.75 Wh | 3.75 min, 1.25 Wh |
+| Heavy | 30 W | 0.6× | 9 min, 4.5 Wh | 3 min, 1.5 Wh |
+
+A faster drill finishes sooner but uses more energy per unit. `mine()` does not start a dig the battery cannot finish.
 
 ### The Rover's battery
 
@@ -46,5 +68,3 @@ A dead battery **pauses** the current route while the script is still running; i
 - Write a fleet manager that auto-dispatches rescues before vehicles are dead.
 
 *Guide / Production & Logistics*
-
----

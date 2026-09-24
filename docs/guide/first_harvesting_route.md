@@ -21,5 +21,3 @@ You do not need pathfinding. A fixed sweep across adjacent grid cells can collec
 Start with one short trip that reaches a known area, collects something, stores it, and leaves it ready to sell from Inventory. Then extend the sweep or add smarter choices.
 
 *Guide / Tutorials*
-
----

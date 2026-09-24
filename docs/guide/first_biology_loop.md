@@ -35,5 +35,3 @@ Every gameplay command returns a result object. Branch on `.status`, use `.messa
 Properties belong to each item stack and survive supported transfers. Bio Orders come from a Bio Exchange, not the Earth Supply Dock orders component. Subtract both `.delivered` and `.in_transit` when planning production. See **Long-Running Scripts** for the restart-safe loop pattern used by unattended automation.
 
 *Guide / Tutorials*
-
----

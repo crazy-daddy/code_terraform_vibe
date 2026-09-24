@@ -2,43 +2,18 @@
 
 ## Contracts
 
-Earth posts contracts, engineering tasks they need done on the planet. You write code to solve them and transmit the answer.
+Contracts are Earth-side programming jobs. They are closer to puzzle problems than factory automation.
 
-Each contract has:
+### What makes them different
 
-- A briefing explaining what Earth needs
-- Input data in self.contract
-- A reward in credits
+A machine script usually changes the planet. A contract script reads the contract data, computes an answer, and sends it back. The reward comes from correctness, not from keeping a production loop running. Contract state is contained, and a wrong answer is safe to inspect and retry.
 
-To complete a contract:
+### How to approach one
 
-1. Go to the Contracts page and open one with View Contract
-2. Read the briefing in the Info tab
-3. Print self.contract to see available input fields
-4. Transmit the answer via the transmitter:
+Read the briefing first. Then inspect the available contract data from the script. Work out the answer in small steps and print intermediate values while you are learning the shape of the data. When the answer is ready, use the transmitter workflow described in the contract and DOCS.
 
-```
-c = self.contract
-print(c)
+### Difficulty
 
-transmitter = get_component("transmitter")
-transmitter.connect("earth")
-transmitter.transmit(c.id, answer)
-```
+Contracts and Harvesting test different skills, so neither is universally harder. Contracts avoid routes, heat, cargo, and multi-machine recovery, but ask for more abstract reasoning with loops and collections. They are a good choice when you want a focused coding puzzle and a bigger one-time payout. If a contract feels too abstract, leave it and build the base for a while; it will still be there later.
 
-If your answer is correct, you get paid immediately.
-
-Commander and Shop are also accessible:
-
-```
-me = get_component("me")
-print(me.get_credits())
-
-shop = get_component("shop")
-shop.sell("soil_sample")
-shop.buy("solar_generator")
-```
-
-*Guide / Automation Systems*
-
----
+*Guide / Tutorials*

@@ -28,13 +28,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.get_value()`
+##### `.get_value() → float`
 
 Before repair, read raw voltage from the uncalibrated probe as a small decimal value. This is not yet a ppt reading; compare it with a known reference to calculate the calibration factor. After repair, read the current atmospheric oxygen level in ppt directly.
 
 - **Returns** Number (raw voltage before repair; atmospheric oxygen in ppt after repair)
 
-##### `.calibrate(value)`
+##### `.calibrate(value: float) → ActionResult`
 
 Start the black-box calibration suite with the processed value: `result = self.calibrate(raw_value * factor)`. The suite then checks the whole script against several readings. A fully correct suite repairs the sensor; failed test cases remain visible in the console.
 
@@ -42,7 +42,7 @@ Start the black-box calibration suite with the processed value: `result = self.c
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `value` | `number` | Calibration value to test |
+| `value` | `float` | Calibration value to test |
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

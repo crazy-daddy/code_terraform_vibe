@@ -32,7 +32,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
@@ -40,7 +40,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ### Methods
 
-##### `.count(item_id)`
+##### `.count(item_id: str) → int`
 
 Units of `item_id` held across every slot. Returns **0** if no slot holds it. Inventory, Storage Bins, and Lead Casks expose the same query. `wh.count("iron_ore")`.
 
@@ -48,47 +48,47 @@ Units of `item_id` held across every slot. Returns **0** if no slot holds it. In
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to count |
+| `item_id` | `str` | Item id to count |
 
 - **Returns** Number: units of that item across all slots.
 
-##### `.total()`
+##### `.total() → int`
 
 Total units across all slots (every material combined). For one material use `count(item_id)`.
 
 - **Returns** Number: total units across every slot.
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Total capacity across all physical slots. A Warehouse returns **10,000** (**5** × **2,000**); a Large Warehouse returns **30,000** (**15** × **2,000**). Query this value instead of hardcoding a tier.
 
 - **Returns** Number: total capacity across all slots.
 
-##### `.fill_percent()`
+##### `.fill_percent() → float`
 
 Fraction full across the whole warehouse, `total() / capacity()`, in the range **0-1**.
 
 - **Returns** Number (**0-1**).
 
-##### `.is_empty()`
+##### `.is_empty() → bool`
 
 `True` if every slot is empty.
 
 - **Returns** Boolean.
 
-##### `.materials()`
+##### `.materials() → list[str]`
 
 List of item ids currently stored (one entry per material with units in a slot). Iterate it: `for m in wh.materials():`.
 
 - **Returns** List of item ids currently stored.
 
-##### `.stacks()`
+##### `.stacks() → list[ItemStack]`
 
 Lists the item variants stored across all physical slots as `ItemStack` values. Items with the same id but different properties occupy separate slots. Call it again when you need current contents.
 
 - **Returns** List of property-distinct `ItemStack` snapshots across all physical slots.
 
-##### `.space_for(item_id, properties=None)`
+##### `.space_for(item_id: str, properties: ItemProperties | None = None) → int`
 
 How many more units of one exact item variant fit **right now**, using room in matching-identity slots plus every empty slot. Omit `properties` for ordinary propertyless items, or pass the full `.properties` dict returned by `stacks()`. This never counts room belonging to a different property variant.
 
@@ -96,12 +96,12 @@ How many more units of one exact item variant fit **right now**, using room in m
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id to size remaining room for |
-| `properties` | `any` | Full property dict for the variant, or None for propertyless items |
+| `item_id` | `str` | Item id to size remaining room for |
+| `properties` | `ItemProperties \| None` | Full property dict for the variant, or None for propertyless items |
 
 - **Returns** Number: units of that exact item variant that fit right now.
 
-##### `.has_space(item_id, amount, properties=None)`
+##### `.has_space(item_id: str, amount: int, properties: ItemProperties | None = None) → bool`
 
 `True` if at least whole-number `amount` more units of that exact item variant fit. Omit `properties` for propertyless items or pass the full property dict. Use before a transfer to avoid partial moves.
 
@@ -109,19 +109,19 @@ How many more units of one exact item variant fit **right now**, using room in m
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Item id |
-| `amount` | `number` | Whole-number units required |
-| `properties` | `any` | Full property dict for the variant, or None for propertyless items |
+| `item_id` | `str` | Item id |
+| `amount` | `int` | Whole-number units required |
+| `properties` | `ItemProperties \| None` | Full property dict for the variant, or None for propertyless items |
 
 - **Returns** Boolean.
 
-##### `.slots()`
+##### `.slots() → list[WarehouseSlot]`
 
 Every physical slot as a `WarehouseSlot` record with `.index`, `.item`, `.count`, `.capacity`, and `.properties`. Property-distinct variants use distinct slots.
 
 - **Returns** List of `WarehouseSlot` records with `.index`, `.item`, `.count`, `.capacity`, and exact `.properties` identity.
 
-##### `.compact()`
+##### `.compact() → TransferResult`
 
 Requires **Auto Feeders** research. Consolidate every exact item variant into the fewest Warehouse slots that can hold it. The smallest redundant stacks move into larger compatible stacks, minimizing physical handling; equal item ids with different properties always remain separate. The call waits for time proportional to the units repositioned and locks this Warehouse as a material endpoint for the cycle. Port transfers and manual Biology actions using this Warehouse wait until that cycle finishes.
 
@@ -142,7 +142,7 @@ Requires **Auto Feeders** research. Consolidate every exact item variant into th
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 
-##### `.transfer_to(target, item_id, count, properties=None, property_match=None)`
+##### `.transfer_to(target: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Requires **Auto Feeders** research. Move up to whole-number `count` units of `item_id` from this storage endpoint to another Storage Bin, Warehouse, Large Warehouse, Lead Cask, or Inventory. Pass a storage building's display name or instance id, or `"inventory"`. Inventory participates only at **Nocturna Base**. The call waits for the physical store's feeder cycle to finish, and every participating storage building remains busy during that cycle. Exact item properties are preserved; optional `properties` and `property_match` select a variant. The calling script may run anywhere, but cargo never crosses outpost boundaries through this method.
 
@@ -150,11 +150,11 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `target` | `string` | Display name or instance id of another storage endpoint at the same outpost |
-| `item_id` | `string` | Item id to move |
-| `count` | `number` | Whole-number max units to transfer |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `target` | `str` | Display name or instance id of another storage endpoint at the same outpost |
+| `item_id` | `str` | Item id to move |
+| `count` | `int` | Whole-number max units to transfer |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`

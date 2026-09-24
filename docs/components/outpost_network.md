@@ -24,19 +24,19 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.outposts()`
+##### `.outposts() → list[OutpostRef]`
 
 All owned outposts as `OutpostRef` snapshots. Each ref includes `.id`, `.name`, `.x`, `.y`, `.is_home`, `.buildings_used`, `.buildings_capacity`, and `.is_full`. The coordinates are the top-left footprint anchor, not a particular building's docking point.
 
 - **Returns** List of `OutpostRef` snapshots. Re-query for fresh names/building counts.
 
-##### `.home()`
+##### `.home() → OutpostRef`
 
 The home outpost as an `OutpostRef`.
 
 - **Returns** `OutpostRef` snapshot
 
-##### `.nearest(x, y)`
+##### `.nearest(x: float, y: float) → OutpostRef`
 
 Nearest owned outpost to the given world coordinate. Useful before routing a vehicle home to recharge or choosing where a constructor should stage.
 
@@ -44,8 +44,8 @@ Nearest owned outpost to the given world coordinate. Useful before routing a veh
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `x` | `number` | World X coordinate |
-| `y` | `number` | World Y coordinate |
+| `x` | `float` | World X coordinate |
+| `y` | `float` | World Y coordinate |
 
 - **Returns** Nearest `OutpostRef` snapshot
 

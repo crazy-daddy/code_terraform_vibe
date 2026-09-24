@@ -34,7 +34,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 - **Returns** String
 
-##### `.outpost`
+##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
@@ -42,7 +42,7 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 ### Methods
 
-##### `.count(item_id)`
+##### `.count(item_id: str) → int`
 
 Units of `item_id` currently casked. Returns **0** when the cask is empty or latched to the other hot item. Inventory, Storage Bins, and Warehouses expose the same `count(item_id)` query.
 
@@ -50,30 +50,30 @@ Units of `item_id` currently casked. Returns **0** when the cask is empty or lat
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `item_id` | `string` | Hot item id to count |
+| `item_id` | `str` | Hot item id to count |
 
 - **Returns** Number: units of that hot item currently casked.
 
-##### `.fill_percent()`
+##### `.fill_percent() → float`
 
 Fill fraction **0-1**, watch your strategic reserve.
 
 - **Returns** Number (**0-1**).
 
-##### `.capacity()`
+##### `.capacity() → int`
 
 Maximum hot units (**100**).
 
 - **Returns** Number: maximum capacity (**100**).
 
-##### `.material()`
+##### `.material() → str`
 
 What the cask is latched to, `"raw_uranium"`, `"fuel_rod"`, or empty. One material per cask, like every stock bin.
 
 - **Returns** String: `"raw_uranium"`, `"fuel_rod"`, or empty when unassigned. Casks accept ONLY hot items; everything else refuses them.
 - **Possible values** `""`, `"raw_uranium"`, `"fuel_rod"`
 
-##### `.transfer_to(target, item_id, count, properties=None, property_match=None)`
+##### `.transfer_to(target: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Requires **Auto Feeders** research. Move up to whole-number `count` units of `item_id` from this storage endpoint to another Storage Bin, Warehouse, Large Warehouse, Lead Cask, or Inventory. Pass a storage building's display name or instance id, or `"inventory"`. Inventory participates only at **Nocturna Base**. The call waits for the physical store's feeder cycle to finish, and every participating storage building remains busy during that cycle. Exact item properties are preserved; optional `properties` and `property_match` select a variant. The calling script may run anywhere, but cargo never crosses outpost boundaries through this method.
 
@@ -81,11 +81,11 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `target` | `string` | Display name or instance id of another storage endpoint at the same outpost |
-| `item_id` | `string` | Item id to move |
-| `count` | `number` | Whole-number max units to transfer |
-| `properties` | `any` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
-| `property_match` | `string` | Optional selection mode: any, subset, or exact |
+| `target` | `str` | Display name or instance id of another storage endpoint at the same outpost |
+| `item_id` | `str` | Item id to move |
+| `count` | `int` | Whole-number max units to transfer |
+| `properties` | `ItemProperties \| None` | Optional property dict, matched as a subset by default. Omitted or `None` matches any properties; use `None` with `property_match="exact"` to select propertyless items only. |
+| `property_match` | `str \| None` | Optional selection mode: any, subset, or exact |
 
 - **Returns** `TransferResult`
 - **Result fields** `.status`, `.message`

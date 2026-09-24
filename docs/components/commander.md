@@ -24,13 +24,13 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 ### Methods
 
-##### `.get_name()`
+##### `.get_name() → str`
 
 Your commander name as a string. Set during initial character creation (or default). Use for personalized dashboard messages.
 
 - **Returns** String
 
-##### `.get_credits()`
+##### `.get_credits() → int`
 
 Current credit balance. Changes when `shop.buy()` / `shop.sell()` run, Bio Exchanges pay out, contract transmissions succeed, and Orders complete. Use as a gate before expensive `shop.buy()` calls.
 

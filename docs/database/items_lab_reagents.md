@@ -12,7 +12,6 @@ Lab reagent used in many specimen analyses.
 | --- | --- |
 | Sells for | 1 cr |
 | Shop price | 1 cr |
-| Component docs | Bio Lab |
 
 ##### Cryo-Solvent `cryo_solvent`
 
@@ -22,7 +21,6 @@ Lab reagent for deep-frozen specimens.
 | --- | --- |
 | Sells for | 2 cr |
 | Shop price | 2 cr |
-| Component docs | Bio Lab |
 
 ##### Protein Marker `protein_marker`
 
@@ -32,7 +30,6 @@ Lab reagent for identifying rare species.
 | --- | --- |
 | Sells for | 40 cr |
 | Shop price | 40 cr |
-| Component docs | Bio Lab |
 
 ##### Chelating Agent `chelating_agent`
 
@@ -42,7 +39,6 @@ Lab reagent for processing metal-rich specimens.
 | --- | --- |
 | Sells for | 200 cr |
 | Shop price | 200 cr |
-| Component docs | Bio Lab |
 
 ##### Enzyme Solution `enzyme_solution`
 
@@ -52,6 +48,5 @@ Lab reagent for analyzing living-tissue specimens.
 | --- | --- |
 | Sells for | 1,000 cr |
 | Shop price | 1,000 cr |
-| Component docs | Bio Lab |
 
 *Database / Fluids*

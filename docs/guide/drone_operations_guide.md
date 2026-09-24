@@ -37,5 +37,3 @@ Use stable ids when passing a drone to station and recovery APIs. Use `self.carg
 - Flow Networks and Refinement, oil supply for heli drones
 
 *Guide / Production & Logistics*
-
----
