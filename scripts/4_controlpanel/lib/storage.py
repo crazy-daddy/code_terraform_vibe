@@ -39,6 +39,19 @@ BIGGER_STACKS_SIZE = 20
 #     cargo racks, portable batteries/bins/scanners) that has to be in
 #     Inventory to equip a newly-built or refitted Pioneer/Rover.
 NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable")
+# Explicit ids on top of the categories above: drone hardware must also sit in
+# Inventory -- computer.deploy() takes Depot kits and chassis from there, and
+# drone.couple() takes modules from there (docs/components/drone.md). Listed
+# by id since their item_catalog categories aren't documented; the fleet
+# upgrade (lib/fleet_upgrade.py) orders and consumes these.
+INVENTORY_ONLY_ITEM_IDS = (
+    "drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large",
+    "drone_small", "drone_medium", "drone_large",
+    "electric_thruster", "heli_thruster", "battery_pack",
+    "cargo_pod_small", "cargo_pod_medium", "cargo_pod_large",
+    "oil_tank_small", "oil_tank_medium", "oil_tank_large",
+    "portable_bio_scanner", "portable_bio_extractor", "shield_plating",
+)
 
 
 def _component(component_id):
@@ -451,6 +464,8 @@ def _must_stay_in_inventory(item_id):
     NON_WAREHOUSABLE_CATEGORIES -- equipment that deploys straight from
     Inventory, or vehicle-slot gear needed to equip a Pioneer/Rover -- so the
     inventory manager sweep must leave it alone."""
+    if item_id in INVENTORY_ONLY_ITEM_IDS:
+        return True
     catalog = _component("item_catalog")
     if not catalog or not hasattr(catalog, "lookup"):
         return False

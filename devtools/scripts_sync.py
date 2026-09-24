@@ -86,6 +86,7 @@ import re
 import shutil
 import sys
 import time
+import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -142,7 +143,7 @@ DEFAULT_PULL = "synctool-pull"      # game file -> copied back into scripts/
 
 SHORT_HELP = (
     "Sync the tiered scripts/ tree into a Code: Terraform save's script directory.\n\n"
-    "Commands: status | once | watch | resolve-preview. Run `<command> --help` for its "
+    "Commands: status | once | watch | resolve-preview | register-libs. Run `<command> --help` for its "
     "options, or see the module docstring in devtools/scripts_sync.py for the full "
     "tiering/matching rules.\n\n"
     "--auto (once/watch) launches filled/updated slots in-game via DAP - off by default, "
@@ -247,6 +248,10 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
     (`state.planet.constructionBlueprints`) and are deliberately not counted,
     nor are placed machines still `isUnderConstruction` - only finished,
     actually deployed buildings count.
+    Also carries two fleet-upgrade handoff fields read from the same parse
+    (see upgrade_fill_for()): `machine_types` ({machine id: typeId}) and
+    `fleet_upgrade` (the `fleet.upgrade` Data Archive entry, stored in the
+    save under `state.notebook.entries[key].value`, or None).
     Returns None if the save's state file can't be found or parsed - callers
     treat that as "nothing unlocked", i.e. tier 0.
     """
@@ -268,6 +273,11 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
                 m.get("typeId") for m in state.get("machines", {}).values()
                 if isinstance(m, dict) and not m.get("isUnderConstruction", False)
             ),
+            "machine_types": {
+                mid: m.get("typeId") for mid, m in state.get("machines", {}).items()
+                if isinstance(m, dict)
+            },
+            "fleet_upgrade": (state.get("notebook", {}).get("entries", {}).get(FLEET_UPGRADE_KEY) or {}).get("value"),
         }
     except (OSError, ValueError, KeyError):
         return None
@@ -497,6 +507,31 @@ def tier_chain(scripts_dir: Path, active_tier: str) -> list:
     return list(reversed(tiers[: idx + 1]))
 
 
+# Tier from which every lib module is deployed, not just the active tier's
+# chain (see lib_chain()). 2_libunlock = the game's Library research.
+LIB_UNLOCK_TIER_NUMBER = 2
+
+
+def lib_chain(scripts_dir: Path, active_tier: str) -> list:
+    """Search order for lib/ modules: the active tier's chain (active tier down
+    to 0_cold_boot), then - once the save is at 2_libunlock or later - every
+    HIGHER tier in ascending order.
+
+    A module defined at or below the active tier resolves exactly as before,
+    so a higher tier's override of an existing module (today only
+    5_steampower/lib/power.py) stays gated behind its tier. A module that only
+    exists in a higher tier is deployed anyway, from the lowest tier defining
+    it: it does nothing until its machines exist, and deploying it early lets
+    one entrypoint (panel_4.py's Biomass Mixer gate) serve every tier instead
+    of needing a per-tier copy."""
+    chain = tier_chain(scripts_dir, active_tier)
+    number = tier_number(active_tier)
+    if number is None or number < LIB_UNLOCK_TIER_NUMBER:
+        return chain
+    tiers = discover_tiers(scripts_dir)
+    return chain + tiers[tiers.index(active_tier) + 1:]
+
+
 # -------------------------------------------------------------------- mapping
 def base_name(stem: str) -> str:
     """`bio_lab_1` -> `bio_lab`. Slot numbers differ between source and save."""
@@ -625,7 +660,7 @@ def build_index(scripts_dir: Path, active_tier: str):
                 conflicts.setdefault(("CROSS-CATEGORY", key), []).extend([script_index[key], path])
             else:
                 script_index[key] = path
-    lib_index, lib_conflicts = resolve_category(scripts_dir, chain, LIB_CATEGORY)
+    lib_index, lib_conflicts = resolve_category(scripts_dir, lib_chain(scripts_dir, active_tier), LIB_CATEGORY)
     conflicts.update(lib_conflicts)
     return script_index, lib_index, conflicts
 
@@ -770,6 +805,83 @@ def load_params_cache() -> dict:
 def save_params_cache(cache: dict) -> None:
     PARAMS_CACHE.parent.mkdir(parents=True, exist_ok=True)
     PARAMS_CACHE.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding="utf-8", newline="\n")
+
+
+# Fleet upgrade handoff (scripts/4_controlpanel/lib/fleet_upgrade.py): when
+# the in-game coordinator replaces a drone with a bigger chassis, the new
+# drone gets a new id and an empty script slot. The coordinator writes the
+# swap to the Data Archive key below BEFORE deploying (state "announced"),
+# then records `lineage[new_id] = {"from": old_id, ...}` right after. Both
+# reach the save file on the next autosave (~30 s), and upgrade_fill_for()
+# uses them to fill the new slot with the old drone's parameters instead of
+# prompting. Interim: reading the save for this is tracked for retirement in
+# TODO.md.
+FLEET_UPGRADE_KEY = "fleet.upgrade"
+UPGRADE_SLOT_KEY = "drone"  # match_key() of the only slots a drone swap creates
+UPGRADE_PENDING_STATES = ("announced", "swapping")
+
+# Slots upgrade_fill_for() said to hold (save not caught up yet). `watch`
+# re-queues these every few seconds; `once` just reports them.
+HELD_SLOTS: set = set()
+
+
+def upgrade_fill_for(save_dir: Path, stem: str):
+    """How sync_file() should treat an empty slot with respect to a fleet upgrade.
+
+    Returns ("inherit", old_id, params) when the slot is a replacement drone
+    (lineage names it, or it is a new drone slot of the kind the one pending
+    announced swap deploys), ("hold", reason, None) when the save file is too
+    old to tell yet, else ("normal", None, None)."""
+    state = read_save_state(save_dir)
+    if not state:
+        return ("normal", None, None)
+    upgrade = state.get("fleet_upgrade") or {}
+    if not isinstance(upgrade, dict):
+        return ("normal", None, None)
+    lineage = upgrade.get("lineage") or {}
+    entry = lineage.get(stem) if isinstance(lineage, dict) else None
+    if isinstance(entry, dict) and entry.get("from"):
+        return ("inherit", entry["from"], entry.get("params") or {})
+    if match_key(stem) != UPGRADE_SLOT_KEY:
+        return ("normal", None, None)
+
+    machine_type = (state.get("machine_types") or {}).get(stem)
+    drones = upgrade.get("drones") or {}
+    pending = [
+        (old_id, e) for old_id, e in (drones.items() if isinstance(drones, dict) else [])
+        if isinstance(e, dict) and e.get("state") in UPGRADE_PENDING_STATES and e.get("new_id") in (None, stem)
+    ]
+    if machine_type is None:
+        # The slot exists (workspace state) but the save predates its machine:
+        # an announced swap could still be on its way. Wait for the next save.
+        return ("hold", "machine not in save yet (waiting for the next autosave)", None)
+    if len(pending) == 1:
+        old_id, e = pending[0]
+        if machine_type == e.get("target_kind"):
+            return ("inherit", old_id, e.get("params") or {})
+        return ("normal", None, None)  # a hand-deployed drone of another kind
+    return ("normal", None, None)
+
+
+def inherit_placeholders(save_dir: Path, stem: str, old_id: str, params: dict, placeholders: list, dry_run: bool) -> dict:
+    """Answers for a replacement drone's placeholders, never prompting: the old
+    slot's cached answers first, then the params the old drone stored in the
+    archive before its swap, then the template defaults. Cached under the new
+    slot too (not under --dry-run)."""
+    cache = load_params_cache()
+    old_cache = cache.get("%s/%s" % (save_dir.name, old_id), {})
+    answers = {}
+    for name, default in placeholders:
+        if name in old_cache:
+            answers[name] = old_cache[name]
+        elif name in params and params[name] is not None:
+            answers[name] = str(params[name])
+        else:
+            answers[name] = default
+    if not dry_run:
+        cache["%s/%s" % (save_dir.name, stem)] = dict(answers)
+        save_params_cache(cache)
+    return answers
 
 
 def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run: bool) -> dict:
@@ -963,9 +1075,20 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
     param_note = None
     placeholders = find_placeholders(body)
     if placeholders:
-        answers = resolve_placeholders(opts.save_dir, path.stem, placeholders, opts.dry_run)
+        mode, old_id, params = upgrade_fill_for(opts.save_dir, path.stem)
+        if mode == "hold":
+            if path not in HELD_SLOTS:
+                typer.echo("  hold  %-28s %s" % (path.name, old_id))
+            HELD_SLOTS.add(path)
+            return False
+        HELD_SLOTS.discard(path)
+        if mode == "inherit":
+            answers = inherit_placeholders(opts.save_dir, path.stem, str(old_id), params or {}, placeholders, opts.dry_run)
+            param_note = "inherited from %s: %s" % (old_id, ", ".join("%s=%s" % kv for kv in answers.items()))
+        else:
+            answers = resolve_placeholders(opts.save_dir, path.stem, placeholders, opts.dry_run)
+            param_note = "params: %s" % ", ".join("%s=%s" % kv for kv in answers.items())
         body = render_placeholders(body, answers)
-        param_note = "params: %s" % ", ".join("%s=%s" % kv for kv in answers.items())
 
     note = None
     if opts.renumber:
@@ -1032,6 +1155,143 @@ def sync_lib(lib_index: dict, opts: Options) -> set:
             ok("  lib   %-28s <- %s" % (dest.name, show(source)))
             changed.add(key)
     return changed
+
+
+# ------------------------------------------------ library registration hook
+# A lib module written to the save's lib/ folder is NOT seen by the game until
+# it is registered as a Library (in game: Computer -> Library -> + New, same
+# name; the game then picks up the file already on disk). The VS Code
+# extension's "Import File as Game Library" command does exactly that through
+# the game's external-command channel, reverse-read from the bundled
+# language server (server.cjs, `codeterraform/gameCommand` handler):
+#   .codeterraform/command.lock   exclusive-create lock, stale after 30 s
+#   .codeterraform/command.json   {version: 1, requestId, issuedAt (ms),
+#                                  session (from codeterraform-workspace.json),
+#                                  action: "create-library", name, source}
+#                                 written as command.json.<requestId>.tmp, then renamed
+#   .codeterraform/command-result.json  polled for {requestId, ok, ...} (20 s)
+# The same channel carries "run"/"stop"/"rename-library" (see
+# docs/AI_CHEATSHEET.md section 8). register_new_libraries() sends one
+# create-library per deployed lib module the game does not list yet.
+COMMAND_DIR = ".codeterraform"
+COMMAND_LOCK_STALE_S = 30.0
+COMMAND_LOCK_WAIT_S = 35.0
+COMMAND_RESULT_TIMEOUT_S = 20.0
+MAX_LIBRARY_SOURCE = 200_000  # interpreter.maxSourceLength in server.cjs
+
+# Library names registered (or found already registered) by this process, so a
+# `watch` sweep does not resend before the game refreshes the workspace file.
+_REGISTERED_LIBS: set = set()
+
+
+def registered_library_names(save_dir: Path) -> Optional[set]:
+    """Stems of every Library the game has registered (context.libraryScripts),
+    or None when the workspace file is unreadable (game never opened this save)."""
+    context = read_workspace_context(save_dir)
+    if context is None:
+        return None
+    names = set()
+    for info in (context.get("libraryScripts") or {}).values():
+        name = str(info.get("name") or "")
+        names.add(name[:-3] if name.endswith(".py") else name)
+    return names
+
+
+def workspace_session(save_dir: Path) -> Optional[dict]:
+    """The live game session block of codeterraform-workspace.json (top level,
+    beside `context`), required on every external command. None if missing."""
+    path = save_dir / WORKSPACE_JSON
+    try:
+        with path.open(encoding="utf-8") as fh:
+            session = json.load(fh).get("session")
+    except (OSError, ValueError):
+        return None
+    return session if isinstance(session, dict) and session.get("id") else None
+
+
+def send_game_command(save_dir: Path, action: str, **fields) -> dict:
+    """Sends one external command to the running game and waits for its
+    result. Returns the result dict ({"ok": bool, ...}) or {"ok": False,
+    "reason": ...} when the game did not answer (not running / save not open)."""
+    session = workspace_session(save_dir)
+    if session is None:
+        return {"ok": False, "reason": "no_session"}
+    cmd_dir = save_dir / COMMAND_DIR
+    cmd_dir.mkdir(exist_ok=True)
+    lock = cmd_dir / "command.lock"
+    deadline = time.monotonic() + COMMAND_LOCK_WAIT_S
+    while True:
+        try:
+            if time.time() - lock.stat().st_mtime > COMMAND_LOCK_STALE_S:
+                lock.unlink()
+        except OSError:
+            pass
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            if time.monotonic() > deadline:
+                return {"ok": False, "reason": "busy"}
+            time.sleep(0.2)
+    request_id = str(uuid.uuid4())
+    tmp = cmd_dir / ("command.json.%s.tmp" % request_id)
+    try:
+        payload = {"version": 1, "requestId": request_id, "issuedAt": int(time.time() * 1000),
+                   "session": session, "action": action}
+        payload.update(fields)
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(tmp, cmd_dir / "command.json")
+        result_path = cmd_dir / "command-result.json"
+        end = time.monotonic() + COMMAND_RESULT_TIMEOUT_S
+        while time.monotonic() < end:
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                if result.get("requestId") == request_id and isinstance(result.get("ok"), bool):
+                    return result
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.1)
+        return {"ok": False, "reason": "unconfirmed"}
+    finally:
+        for path in (tmp, lock):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def register_new_libraries(lib_index: dict, opts: Options) -> int:
+    """Registers every deployed lib module the game does not list as a Library
+    yet (create-library with the deployed source). Returns how many were
+    registered. Needs the game running with this save open; otherwise it
+    warns and the next sync retries."""
+    registered = registered_library_names(opts.save_dir)
+    if registered is None:
+        return 0
+    missing = sorted(k for k in lib_index if k not in registered and k not in _REGISTERED_LIBS)
+    done = 0
+    for key in missing:
+        path = opts.save_dir / "lib" / ("%s.py" % key)
+        body = read(path) if path.exists() else None
+        if body is None:
+            continue
+        if opts.dry_run:
+            ok("  would register %-19s as a game Library" % key)
+            continue
+        if len(body) > MAX_LIBRARY_SOURCE:
+            warn("  skip  %-28s %d chars, over the game's %d source limit" % (key, len(body), MAX_LIBRARY_SOURCE))
+            continue
+        result = send_game_command(opts.save_dir, "create-library", name=key, source=body)
+        reason = result.get("reason") or result.get("status") or result.get("message")
+        if result.get("ok") or reason == "duplicate_name":
+            _REGISTERED_LIBS.add(key)
+            ok("  reg   %-28s registered as a game Library%s" % (key, "" if result.get("ok") else " (already known)"))
+            done += 1
+        else:
+            warn("  reg   %-28s not registered (%s) - is the game running with this save open? Result: %s" % (key, reason, result))
+            if reason in ("no_session", "unconfirmed", "busy"):
+                break  # game unreachable: do not wait 20 s per remaining module
+    return done
 
 
 def parse_module_imports(text: str) -> set:
@@ -1153,6 +1413,7 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options, on_lib_changed=
     """
     materialized = materialize_missing_slots(opts)
     changed_lib_keys = sync_lib(lib_index, opts)
+    register_new_libraries(lib_index, opts)
     written = materialized + len(changed_lib_keys)
     launched_stems: set = set()
     for path in sorted(opts.save_dir.glob("*.py")):
@@ -1193,8 +1454,7 @@ def write_resolved_preview(scripts_dir: Path, active_tier: str, save_dir: Path) 
     Pyright can resolve `from lib.x import ...` for source under scripts/,
     where there is no single lib/ directory to point at directly. Also
     refreshes the game-API stubs (see write_resolved_stubs)."""
-    chain = tier_chain(scripts_dir, active_tier)
-    lib_index, conflicts = resolve_category(scripts_dir, chain, LIB_CATEGORY)
+    lib_index, conflicts = resolve_category(scripts_dir, lib_chain(scripts_dir, active_tier), LIB_CATEGORY)
     report_conflicts(conflicts)
     dest_dir = RESOLVED_PREVIEW_DIR / "lib"
     if dest_dir.is_dir():
@@ -1302,7 +1562,13 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
             state = ("marked %r -> " % opts.magic if marked else "empty -> ") + "would fill from %s" % show(source)
             names = find_placeholders(read(source) or "")
             if names:
-                state += "  (asks for: %s)" % ", ".join(n for n, _ in names)
+                mode, old_id, _ = upgrade_fill_for(opts.save_dir, path.stem)
+                if mode == "inherit":
+                    state += "  (inherits params from %s, no questions)" % old_id
+                elif mode == "hold":
+                    state += "  (held: %s)" % old_id
+                else:
+                    state += "  (asks for: %s)" % ", ".join(n for n, _ in names)
         typer.echo("  %-28s %s" % (path.name, state))
     typer.echo("")
 
@@ -1331,6 +1597,20 @@ def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Optional[Path] = S
     save = resolve_save(save_dir)
     active_tier = resolve_active_tier(scripts_dir, save, force_tier)
     write_resolved_preview(scripts_dir, active_tier, save)
+
+
+@app.command(name="register-libs")
+def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
+                  dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt):
+    """Register every deployed lib/ module the game does not know yet as a game Library (nothing else)."""
+    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, DEFAULT_MAGIC, DEFAULT_PULL, force_tier, False)
+    _, lib_index, _ = build_index(opts.scripts_dir, opts.active_tier)
+    registered = registered_library_names(opts.save_dir)
+    if registered is None:
+        err("Cannot read %s - open this save in the game first." % WORKSPACE_JSON)
+        raise typer.Exit(1)
+    typer.echo("Deployed lib modules not registered in game: %s" % (", ".join(sorted(k for k in lib_index if k not in registered)) or "none"))
+    typer.echo("Registered %d." % register_new_libraries(lib_index, opts))
 
 
 class Watcher:
@@ -1418,6 +1698,11 @@ class Watcher:
             # real write into the watched save_dir) and flows into the
             # normal self.pending fill path - no extra handling needed here.
             materialize_missing_slots(self.opts)
+            # Slots held for a fleet-upgrade handoff (upgrade_fill_for()):
+            # the save file sits outside the watched directory, so nothing
+            # fires when the next autosave lands. Retry them on this cadence.
+            for held in list(HELD_SLOTS):
+                self.pending.setdefault(held, now)
         if self.repo_due is not None and self.repo_due <= now:
             self.repo_due = None
             self.rebuild()

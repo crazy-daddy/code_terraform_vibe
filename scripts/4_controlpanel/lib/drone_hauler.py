@@ -425,6 +425,8 @@ class DroneHaulerMixin:
 
         self._release_all()
         self._host.clear_mission()
+        # Docked and empty: the one moment couple()/uncouple() can run.
+        self._host.maintain_modules_at_depot()
         self._host.leave_station()
         self._host.log.debug(f"[{self._host.name}] Delivery to '{dest_id}' complete; reservations released.")
         return True
@@ -468,6 +470,9 @@ class DroneHaulerMixin:
         while True:
             try:
                 if self._host.handle_recall_if_active():
+                    sleep(poll_interval)
+                    continue
+                if self._host.handle_upgrade_request_if_active():
                     sleep(poll_interval)
                     continue
                 if self._host.is_stranded() or self._host.drone.is_being_rescued():

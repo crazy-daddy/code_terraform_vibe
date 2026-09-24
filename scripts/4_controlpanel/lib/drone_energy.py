@@ -23,6 +23,7 @@
 # VehicleEnergyMixin's sonar/mining budget terms.
 
 from archive import archive
+from drone_upgrade import retiring_depot_ids
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,6 +41,11 @@ DRONE_SERVICE_TYPE_ID = "drone_service_station"
 # _return_and_unload(), recall) fell back to (0.0, 0.0) with no depot id at
 # all (bug found 2026-09-22 via a drone recall flying toward world origin).
 DRONE_DEPOT_TYPE_ID = "drone_station"
+# Every Depot size: outpost.buildings(type_id) matches one exact typeId, and
+# the Medium/Large kits deploy distinct types (decompiled simworker's machine
+# catalog; confirmed live for drone_station_large at Outpost 5). Their
+# instance/script ids differ again: drone_station_med_N / drone_station_lrg_N.
+DRONE_DEPOT_TYPE_IDS = (DRONE_DEPOT_TYPE_ID, "drone_station_medium", "drone_station_large")
 
 # 5.0 Wh/h at 300 m/h full-throttle burn -> flat Wh/meter-per-throttle rate.
 DRONE_WH_PER_METER_PER_THROTTLE = 5.0 / 300.0  # ~0.01667 Wh/m at throttle 1.0
@@ -216,7 +222,7 @@ def _extract_coords(pos):
 def discover_drone_buildings(type_id):
     """
     Standalone: every deployed building of type_id (drone_service_station or
-    drone_depot) across every owned outpost, as
+    drone_depot; a tuple of type ids matches any of them) across every owned outpost, as
     [{"id": str, "name": str, "coords": (x, y), "outpost": OutpostRef|None,
     "outpost_id": str}, ...]. Mirrors
     vehicle_energy.py's get_all_charging_stations() discovery shape, but
@@ -226,6 +232,7 @@ def discover_drone_buildings(type_id):
     """
     refs = []
     found_ids = set()
+    type_ids = type_id if isinstance(type_id, (tuple, list)) else (type_id,)
     network = get_component("outpost_network")
     if network and hasattr(network, "outposts"):
         try:
@@ -235,10 +242,12 @@ def discover_drone_buildings(type_id):
         for outpost in outposts:
             if not hasattr(outpost, "buildings"):
                 continue
-            try:
-                buildings = outpost.buildings(type_id)
-            except Exception:
-                continue
+            buildings = []
+            for t_id in type_ids:
+                try:
+                    buildings.extend(outpost.buildings(t_id))
+                except Exception:
+                    continue
             for b in buildings:
                 b_id = getattr(b, "id", "")
                 if not b_id or b_id in found_ids:
@@ -262,7 +271,12 @@ def discover_drone_services():
 
 
 def discover_drone_depots():
-    return discover_drone_buildings(DRONE_DEPOT_TYPE_ID)
+    """Every Drone Depot drones may use: all sizes, minus the ones a fleet
+    upgrade is retiring (lib/drone_upgrade.py), so homes, deliveries and
+    recalls move to the replacement while the old one drains."""
+    depots = discover_drone_buildings(DRONE_DEPOT_TYPE_IDS)
+    retiring = retiring_depot_ids()
+    return [d for d in depots if d["id"] not in retiring] if retiring else depots
 
 
 class DroneEnergyMixin:

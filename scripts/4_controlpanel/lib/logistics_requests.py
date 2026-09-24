@@ -46,7 +46,8 @@ PICKUP_STALE_TICKS = 36000
 # requester's own target raises it (retain_amount()).
 LIFEFORM_STASH_CAP_T = 25
 
-DRONE_DEPOT_TYPE_ID = "drone_station"  # typeId, not the "Drone Depot" display name -- see lib/drone_energy.py
+# typeIds, not the "Drone Depot" display name; one per Depot size -- see lib/drone_energy.py
+DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")
 
 # Accepted DESTINATION_OUTPOST_ID values that mean "pick up anywhere, bring to
 # my HOME_BASE" (lib/pioneer.py run()).
@@ -233,10 +234,12 @@ def local_depots(outpost):
     """Resolved Drone Depots at `outpost` (an OutpostRef)."""
     if not outpost or not hasattr(outpost, "buildings"):
         return []
-    try:
-        refs = outpost.buildings(DRONE_DEPOT_TYPE_ID)
-    except Exception:
-        return []
+    refs = []
+    for type_id in DRONE_DEPOT_TYPE_IDS:
+        try:
+            refs.extend(outpost.buildings(type_id))
+        except Exception:
+            continue
     depots = []
     for ref in refs:
         try:

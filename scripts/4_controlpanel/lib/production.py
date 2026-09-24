@@ -433,6 +433,72 @@ def consume_manual_order(item_id, quantity):
         pass
 
 
+# Fleet hardware upgrade orders (lib/fleet_upgrade.py, lib/drone_upgrade.py):
+# ONE shared dict {requester_id: {item_id: quantity}} (CLAUDE.md rule 7), so
+# each requester -- the coordinator, or a drone wanting a bigger Cargo Pod --
+# owns and clears only its own entry. Quantities are "keep at least this many
+# in stock" floors, summed across requesters. Ranked below manual orders AND
+# blueprint demand in lib/fabricator.py's choose_recipe() (building new
+# things beats upgrading working old ones), above everything else.
+UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
+
+
+def get_upgrade_orders():
+    """{item_id: quantity} summed across every requester's entry in UPGRADE_ORDERS_KEY."""
+    stored = archive.get(UPGRADE_ORDERS_KEY, {})
+    if not isinstance(stored, dict):
+        return {}
+    totals = {}
+    for items in stored.values():
+        if not isinstance(items, dict):
+            continue
+        for item_id, qty in items.items():
+            if isinstance(qty, (int, float)) and qty > 0:
+                totals[item_id] = totals.get(item_id, 0) + int(qty)
+    return totals
+
+
+def set_upgrade_order(requester, items):
+    """Replaces requester's upgrade order with items ({item_id: qty}); empty or None
+    clears it. Plain read first, so an unchanged order costs no archive write."""
+    wanted = {i: int(q) for i, q in (items or {}).items() if q and q > 0}
+    stored = archive.get(UPGRADE_ORDERS_KEY, {})
+    current = stored.get(requester) if isinstance(stored, dict) else None
+    if (current or {}) == wanted:
+        return
+
+    def updater(orders):
+        if not isinstance(orders, dict):
+            orders = {}
+        if wanted:
+            orders[requester] = wanted
+        else:
+            orders.pop(requester, None)
+        return orders
+
+    archive.transaction(UPGRADE_ORDERS_KEY, {}, updater)
+
+
+def fabricator_unlocked_outputs(cache=None):
+    """Set of item ids the default Fabricator can craft today (list_recipes()
+    only lists unlocked recipes, docs/components/fabricator.md)."""
+    if cache is not None:
+        recipes = cache.fabricator_recipes()
+    else:
+        fabricator = _default_fabricator()
+        try:
+            recipes = fabricator.list_recipes() if fabricator and hasattr(fabricator, "list_recipes") else []
+        except Exception:
+            recipes = []
+    return {getattr(r, "output_item", None) for r in recipes} - {None}
+
+
+def blueprint_demand_items(cache=None):
+    """Item ids any pending/paused Construction Blueprint needs, directly or via
+    the recipe cascade (_cascade_blueprint_demand()). choose_recipe()'s tier 2."""
+    return set(_cascade_blueprint_demand(cache).keys())
+
+
 def _stock_fn(cache):
     """cache.stock when a SourceCache is threaded through, else the uncached
     storage.total_stock() -- lets every demand helper below take an optional
@@ -517,10 +583,11 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=No
     return targets
 
 
-def get_manual_order_blocking_items(fabricator_outputs):
+def get_manual_order_blocking_items(fabricator_outputs, orders=None):
     """
     Set of Fabricator-output item_ids that an active manual build order
-    (get_manual_orders()) transitively needs as an INPUT -- e.g. machine_frame
+    (get_manual_orders(), or the `orders` dict given instead -- e.g.
+    get_upgrade_orders()) transitively needs as an INPUT -- e.g. machine_frame
     when a manual order asks for drone_service_station_kit -- excluding the
     manually-ordered item itself. Same shortfall-only breadth-first walk as
     _cascade_fabricator_output_demand(), just seeded from manual orders only
@@ -537,7 +604,7 @@ def get_manual_order_blocking_items(fabricator_outputs):
     themselves in choose_recipe()'s priority order, since the manual order
     is provably stuck without them first.
     """
-    manual_items = get_manual_orders()
+    manual_items = get_manual_orders() if orders is None else orders
     frontier = {item_id: qty for item_id, qty in manual_items.items() if item_id in fabricator_outputs}
     blocking = set()
     depth = 0
@@ -712,6 +779,12 @@ def get_fabricator_targets(cache=None):
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
             log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which "
                   f"doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
+
+    # Fleet upgrade orders (get_upgrade_orders()): same max() fold as manual
+    # orders; their lower priority is again choose_recipe()'s job.
+    for item_id, quantity in get_upgrade_orders().items():
+        targets[item_id] = max(targets.get(item_id, 0), quantity)
+        log.trace(f"get_fabricator_targets: fleet upgrade order raises target for {item_id} -> {targets[item_id]}")
 
     for dock, order in _all_dock_orders():
         if not hasattr(order, "requires"):

@@ -10,6 +10,7 @@
 #   - drone_claims.py: exclusive biosite claims + scout empty-POI cache + mission persistence
 #   - drone_cargo.py: cargo accounting/load-unload + home-biome filtering
 #   - drone_scout.py / drone_mining.py / drone_hauler.py: role loops
+#   - drone_upgrade.py: fleet-upgrade handshake, new-chassis fitting, in-place module upgrades
 #
 # Electric and heli drones: the engine is auto-detected at startup
 # (drone_energy.py detect_engine()) and every energy figure is in that
@@ -23,6 +24,7 @@ from drone_cargo import DroneCargoMixin
 from drone_scout import DroneScoutMixin
 from drone_mining import DroneMiningMixin
 from drone_hauler import DroneHaulerMixin
+from drone_upgrade import DroneUpgradeMixin, inherited_params
 from tree_console import TreeConsole
 from version_guard import validate_game_version
 
@@ -35,6 +37,7 @@ class DroneController(
     DroneScoutMixin,
     DroneMiningMixin,
     DroneHaulerMixin,
+    DroneUpgradeMixin,
 ):
     """
     Unified base controller for autonomous electric drones. Resolves
@@ -77,6 +80,20 @@ class DroneController(
         self.plated = False
         self.detect_engine()
 
+        # A drone that replaced an older one in a fleet upgrade inherits that
+        # drone's script variables for any left at their default (None) --
+        # see lib/drone_upgrade.py inherited_params().
+        inherited = inherited_params(self.name) or {}
+        if home_depot is None and inherited.get("HOME_DEPOT") not in (None, "", "None"):
+            home_depot = inherited["HOME_DEPOT"]
+        if cruise_throttle is None and inherited.get("CRUISE_THROTTLE") not in (None, "", "None"):
+            try:
+                cruise_throttle = float(inherited["CRUISE_THROTTLE"])
+            except (TypeError, ValueError):
+                pass
+        if inherited:
+            self.log.debug(f"[{self.name}] Replacement drone; inherited script variables {inherited} -> home_depot={home_depot!r}, cruise_throttle={cruise_throttle!r}.")
+
         # HOME_DEPOT script variable: depot id/display name (hardwired to that
         # depot) or outpost id (any free depot there). None = auto (archived
         # pin, else nearest depot's outpost). See resolve_home_depot().
@@ -84,9 +101,13 @@ class DroneController(
         self.home_depot_pool: "str | None" = None
         self.resolve_home()
 
+        # Kept separately from the effective value: a fleet upgrade hands the
+        # override (not the fleet default) on to the replacement drone.
+        self.cruise_throttle_override = cruise_throttle
         self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
 
         self.state = "INIT"
+        self.role = None  # set by run() once detected; published in telemetry for lib/fleet_upgrade.py
         self.current_target = None
         self.current_target_key = None
         # {module_attr: status} from detect_role()'s one-time live probe.
@@ -167,6 +188,7 @@ class DroneController(
             "engine": self.engine,
             "level": round(lvl, 2),
             "target": target_desc or (self.current_target.get("name") if self.current_target else "none"),
+            "role": self.role,
             "tick": self.get_current_tick(),
         }
         wrote = fleet_status.publish(self.name, telemetry)
@@ -256,8 +278,15 @@ class DroneController(
         to the matching loop. role_override forces a specific role, required
         when both/neither module is mounted (see detect_role()).
         """
+        # A replacement chassis (lib/fleet_upgrade.py) arrives bare: fit its
+        # loadout before anything tries to read modules. Stays docked until
+        # it has enough to fly (see fit_loadout_if_new()).
+        while not self.fit_loadout_if_new():
+            self.publish_telemetry("AWAITING_MODULES")
+            sleep(30.0)
         self.detect_engine()  # re-read: modules may have been swapped while recalled
         role = self.detect_role(role_override)
+        self.role = role
         if role is None:
             self.log.level("warn").print(f"[{self.name}] No role-defining module (bio_scanner/bio_extractor) or Cargo Pod mounted; cannot start. Mount one via couple() at a Drone Depot, or pass run(role_override=...).")
             # Deliberately stays docked: modules can only be coupled at a

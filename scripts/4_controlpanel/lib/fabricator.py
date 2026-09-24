@@ -1,7 +1,7 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
+from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
 from archive import archive
-from storage import take_item, total_stock, best_unload_target
+from storage import take_item, total_stock, best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 import fluid_routing
@@ -276,6 +276,10 @@ class FabricatorController:
             pass
         if item_id in get_manual_orders():
             return "manual build order"
+        if item_id in blueprint_demand_items():
+            return "construction blueprint demand"
+        if item_id in get_upgrade_orders():
+            return "fleet upgrade order"
         _, order = find_dock_order_requiring(item_id)
         if order:
             return f"Supply Dock Order {getattr(order, 'name', getattr(order, 'id', 'active'))}"
@@ -284,6 +288,7 @@ class FabricatorController:
     def choose_recipe(self):
         targets = get_fabricator_targets()
         manual_items = get_manual_orders()
+        upgrade_items = get_upgrade_orders()
         try:
             recipes = self.machine.list_recipes()
         except Exception:
@@ -291,6 +296,9 @@ class FabricatorController:
 
         fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
         blocking_items = get_manual_order_blocking_items(fabricator_outputs)
+        # Computed once per pass, not per candidate (each is a stock walk).
+        blueprint_items = blueprint_demand_items()
+        upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items) if upgrade_items else set()
 
         candidates = []
         for recipe in recipes:
@@ -309,7 +317,7 @@ class FabricatorController:
                 candidates.append((missing, recipe))
                 self.log.debug(f"[{self.name}] choose_recipe: candidate {recipe.output_item} target={target} current={current} output_buffer={output_buffer} -> missing={missing}")
 
-        # Three priority tiers, biggest shortfall first within each:
+        # Five priority tiers, biggest shortfall first within each:
         #   0. An item a manual order transitively needs as an INPUT (e.g.
         #      machine_frame under a manual drone_service_station_kit order) --
         #      see production.get_manual_order_blocking_items(). The manual
@@ -323,7 +331,13 @@ class FabricatorController:
         #      operator asking for "2x drone (small)" right now shouldn't
         #      wait behind whichever recipe happens to have the biggest
         #      shortfall this poll.
-        #   2. Everything else, biggest shortfall first.
+        #   2. Construction Blueprint demand (production.blueprint_demand_items())
+        #      -- building new things beats upgrading working old ones.
+        #   3. A fleet upgrade order (production.get_upgrade_orders(): Depot
+        #      kits, bigger drone chassis/modules, lib/fleet_upgrade.py) or an
+        #      input it is blocked on.
+        #   4. Everything else (Earth Orders, Supply Dock, stock targets),
+        #      biggest shortfall first.
         # Skip anything currently blocked on an unavailable input (e.g.
         # unsurveyed titanium) so the Fabricator keeps building whatever else
         # it actually can. Also skip a recipe another Fabricator already
@@ -337,7 +351,11 @@ class FabricatorController:
                 return 0
             if output_item in manual_items:
                 return 1
-            return 2
+            if output_item in blueprint_items:
+                return 2
+            if output_item in upgrade_items or output_item in upgrade_blocking:
+                return 3
+            return 4
         candidates.sort(key=lambda pair: (_priority_tier(pair[1]), -pair[0]))
         blocked = []
         sourceable = []
@@ -352,7 +370,7 @@ class FabricatorController:
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
                 output_item = getattr(recipe, "output_item", None)
-                tier_reason = "blocking a manual order's own input" if output_item in blocking_items else ("manual order" if output_item in manual_items else "biggest sourceable shortfall")
+                tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall")[_priority_tier(recipe)]
                 self.log.debug(f"[{self.name}] choose_recipe: claimed '{recipe_id}' (missing={missing}, {tier_reason})")
                 return recipe
             # another Fabricator already has a fresh claim on this one -- try
@@ -410,6 +428,33 @@ class FabricatorController:
                 consume_manual_order(stack.id, result.moved)
             elif result.status not in ["busy", "no_op"]:
                 self.log.level("warn").print(f"[{self.name}] Output notice: {result.status} - {result.message}")
+
+    def drain_byproduct(self):
+        """
+        Empties the byproduct buffer (tar from lubricant/plastic/rubber --
+        docs/components/fabricator.md) into Inventory or a local Warehouse.
+        The recipe stalls once this 20-unit buffer can't take the next
+        craft's byproduct, independent of .output, so drain_output() alone
+        isn't enough. Drained every step (not only when full) so a craft never
+        waits on it; allow_partial lets it trickle into a nearly full Warehouse.
+        """
+        port = getattr(self.machine, "byproduct", None)
+        if not port or not hasattr(port, "stacks"):
+            return
+        try:
+            staged = sum(getattr(s, "count", 0) or 0 for s in port.stacks())
+        except Exception:
+            return
+        if staged <= 0:
+            return
+        moved = drain_port_to_storage(port, outpost=getattr(self.machine, "outpost", None), allow_partial=True)
+        if moved > 0:
+            self.log.print(f"[{self.name}] Drained {moved}x byproduct to storage.")
+        capacity = port.capacity() if hasattr(port, "capacity") else 0
+        left = staged - moved
+        self.log.debug(f"[{self.name}] drain_byproduct: staged={staged} moved={moved} left={left} capacity={capacity}")
+        if capacity and left >= capacity:
+            self.log.level("warn").print(f"[{self.name}] Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
 
     def load_inputs(self, recipe):
         # Fill the stockpile with enough for several crafts at once (not just
@@ -508,6 +553,7 @@ class FabricatorController:
     def step(self):
         self.ensure_connection()
         self.drain_output()
+        self.drain_byproduct()
         self.eject_excess_inputs()
 
         if self.is_shedded():

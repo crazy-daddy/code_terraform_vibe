@@ -27,7 +27,8 @@ from tree_console import TreeConsole
 #      (lib/biomass_mixer.py); that is an independent peer link and needs no
 #      coordination here.
 
-DRONE_DEPOT_TYPE_ID = "drone_station"  # typeId, not the "Drone Depot" display name -- see lib/drone_energy.py
+# typeIds, not the "Drone Depot" display name; one per Depot size -- see lib/drone_energy.py
+DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")
 
 # Only take() once the input bin has at least this much room. take() blocks
 # for time proportional to units moved, so topping up one sample at a time
@@ -123,10 +124,12 @@ class EssenceLiquifierController:
         outpost = getattr(self.liquifier, "outpost", None)
         if not outpost or not hasattr(outpost, "buildings"):
             return []
-        try:
-            refs = outpost.buildings(DRONE_DEPOT_TYPE_ID)
-        except Exception:
-            return []
+        refs = []
+        for type_id in DRONE_DEPOT_TYPE_IDS:
+            try:
+                refs.extend(outpost.buildings(type_id))
+            except Exception:
+                continue
         depots = []
         for ref in refs:
             try:

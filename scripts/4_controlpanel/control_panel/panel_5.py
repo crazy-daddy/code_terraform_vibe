@@ -17,6 +17,10 @@
 # that's a Pioneer-only upgrade-request mechanism (lib/vehicle_upgrade.py)
 # with no drone counterpart.
 #
+# Fleet upgrade switch + status line (lib/fleet_upgrade.py, run by panel_4.py):
+# the switch only writes fleet.upgrade["enabled"]; the coordinator reads it
+# each cycle. A drone mid-swap shows an "upgrading" pill on its row.
+#
 # Recommended card size: 2 columns x 1 row for small fleets, 2 x 2 once you
 # have more than ~6 drones -- same sizing guidance as panel_2.py (FLEET).
 # NOTE: this is a NEW Custom Panel, not yet placed in the live Control Room --
@@ -31,6 +35,7 @@
 from archive import archive
 from drone_claims import is_drone_recalled, set_drone_recalled
 from drone_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
+from drone_upgrade import fleet_upgrade_state, set_upgrade_enabled
 
 KIND_COLORS = {
     "drone_small": "text-muted",
@@ -62,6 +67,18 @@ while True:
     slider_value = panel.slider("drone_default_cruise_throttle", 24, 54, slider_w, current_default_throttle, f"cruise throttle {current_default_throttle * 100:.0f}%")
     if slider_value != current_default_throttle:
         archive.set(DEFAULT_CRUISE_THROTTLE_KEY, slider_value)
+
+    # Fleet upgrade (lib/fleet_upgrade.py): on/off switch + the coordinator's
+    # current one-line status, top right.
+    upgrade_state = fleet_upgrade_state()
+    upgrade_enabled = bool(upgrade_state.get("enabled", True))
+    upgrade_x = max(slider_w + 48, width - 250)
+    upgrade_on = panel.switch("fleet_upgrade_enabled", upgrade_x, 46, upgrade_enabled, "auto-upgrade")
+    if upgrade_on != upgrade_enabled:
+        set_upgrade_enabled(upgrade_on)
+    panel.draw_text(upgrade_x, 84, str(upgrade_state.get("status", "idle"))[:40], 10, "text-secondary")
+    upgrading = {k for k, e in (upgrade_state.get("drones") or {}).items() if isinstance(e, dict) and e.get("state") != "blocked"}
+    upgrading |= {e.get("new_id") for e in (upgrade_state.get("drones") or {}).values() if isinstance(e, dict) and e.get("new_id")}
 
     fleet = get_component("fleet")
     drones = fleet.drones() if fleet and hasattr(fleet, "drones") else []
@@ -156,3 +173,5 @@ while True:
                 panel.pill(status_x, badge_y, rescue, "warning")
             elif switch_on:
                 panel.pill(status_x, badge_y, "recalled", "warning")
+            elif drone_id in upgrading:
+                panel.pill(status_x, badge_y, "upgrading", "accent")

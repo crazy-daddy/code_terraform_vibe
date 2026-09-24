@@ -23,6 +23,7 @@ from storage import discover_storage_buildings, warehouse_stock, drain_port_to_s
 import logistics_requests
 from tree_console import TreeConsole
 from version_guard import validate_game_version
+from drone_upgrade import retiring_depot_ids
 
 # One shared dict {depot_id: telemetry} (not one key per depot, CLAUDE.md
 # rule 7). Old per-depot "drone_depot.status.<id>" keys are purged by
@@ -264,7 +265,27 @@ class DroneDepotController:
         archive.set_entry(DEPOT_STATUS_KEY, self.name, telemetry)
         self.log.trace(f"[{self.name}] publish_telemetry() exit: bays {bays_occupied}/{bay_count}, slots {slots_used}/{slot_capacity}.")
 
+    def drain_everything(self):
+        """
+        Retiring Depot (a fleet upgrade is replacing it, lib/fleet_upgrade.py):
+        empties the whole stockpile, life forms included, into local storage.
+        computer.undeploy() refuses a Depot with cargo_present, and a life
+        form left for the Liquifier could otherwise pin it forever.
+        """
+        outpost = getattr(self.station, "outpost", None)
+        port = getattr(self.station, "output", None)
+        if not outpost or not port:
+            return 0
+        moved = drain_port_to_storage(port, outpost=outpost, allow_partial=True)
+        if moved > 0:
+            self.log.print(f"[{self.name}] Retiring: drained {moved} unit(s) to local storage.")
+        return moved
+
     def step(self):
+        if self.name in retiring_depot_ids():
+            self.drain_everything()
+            self.publish_telemetry()
+            return
         self.drain_freight()
         self.stage_life_forms()
         self.wire_output_to_liquifier()

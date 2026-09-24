@@ -48,11 +48,18 @@
 #   - Cross-warehouse stock consolidation, every outpost, once per cycle.
 #   - Outpost-founding -> resource marker auto-reassignment
 #     (lib/outpost_mining.py's reevaluate_unassigned_near_outpost()).
+#   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py), every
+#     MIXER_GATE_TICK_INTERVAL (a paused Mixer can't wake itself, so an
+#     always-on script must). Idles until a Mixer exists. The module lives in
+#     the 5_steampower lib, but scripts_sync deploys new-only lib modules at
+#     every tier from 2_libunlock on, so this one panel serves every tier.
 #   - Supply Dock order-assignment planning across every discovered dock
 #     (lib/supply_dock.py's plan_dock_assignments() -- the central "decider"
 #     so multiple docks share/split Earth Orders instead of each redundantly
 #     scanning the order board and independently guessing; see
 #     docs/AI_CHEATSHEET.md #2a-0-5).
+#   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
+#     chassis swaps to the best unlocked tier, one at a time, once per cycle.
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController no
 # longer do any of this themselves -- it's a hard dependency on this script
 # running (see legacy/README.md for pre-Control-Room saves). The manual
@@ -62,10 +69,12 @@
 
 from archive import archive
 from power import PowerGridManager
+from biomass_mixer_gate import MixerGate
 from storage import rebalance_inventory_to_warehouses, consolidate_cross_warehouse_stock, reclaim_inventory_only_items_from_warehouses
 from version_guard import version_mismatch
 import outpost_mining
 import supply_dock
+from fleet_upgrade import FleetUpgradeCoordinator
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
@@ -79,11 +88,16 @@ AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 # ~1s and 10s at 10 ticks/sec (see lib/archive_cleaner.py's documented tick rate).
 SOLAR_TICK_INTERVAL = 10
 STORAGE_TICK_INTERVAL = 100
+MIXER_GATE_TICK_INTERVAL = 10
 
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
+last_mixer_gate_tick = 0
+mixer_gate = None           # MixerGate, created lazily once power_control is available
+mixer_gate_summary = "no Mixers"
 grid_count = 0              # last solar-sync grid census; carries over on ticks solar_due is False
+fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state lives in archive)
 
 while True:
     clock = get_component("clock")
@@ -93,6 +107,7 @@ while True:
         current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
         solar_due = (last_solar_tick == 0) or (current_tick - last_solar_tick >= SOLAR_TICK_INTERVAL)
         storage_due = (last_storage_tick == 0) or (current_tick - last_storage_tick >= STORAGE_TICK_INTERVAL)
+        mixer_gate_due = (last_mixer_gate_tick == 0) or (current_tick - last_mixer_gate_tick >= MIXER_GATE_TICK_INTERVAL)
 
         if solar_due:
             last_solar_tick = current_tick
@@ -120,6 +135,19 @@ while True:
                         del grid_managers[stale_anchor]
             except Exception as e:
                 print(f"[AUTOMATION] Grid supervision error: {e}")
+
+        if mixer_gate_due:
+            last_mixer_gate_tick = current_tick
+            try:
+                if mixer_gate is None and power:
+                    mixer_gate = MixerGate(power=power, clock=clock)
+                if mixer_gate is not None:
+                    gate_states = mixer_gate.step(current_tick)
+                    if gate_states:
+                        paused = sum(1 for st in gate_states.values() if st.get("state") == "pause")
+                        mixer_gate_summary = f"{len(gate_states)} Mixer(s), {paused} paused"
+            except Exception as e:
+                print(f"[AUTOMATION] Mixer gate error: {e}")
 
         if storage_due:
             last_storage_tick = current_tick
@@ -172,6 +200,12 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Supply Dock planning error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned")
+            upgrade_summary = "fleet upgrade idle"
+            try:
+                upgrade_summary = fleet_upgrader.step(current_tick)
+            except Exception as e:
+                print(f"[AUTOMATION] Fleet upgrade error: {e}")
+
+            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned, {upgrade_summary}, {mixer_gate_summary}")
 
     sleep(1.0)

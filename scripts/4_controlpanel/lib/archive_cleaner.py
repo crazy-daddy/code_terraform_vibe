@@ -60,11 +60,12 @@ MISSION_KEYS = {
     "drone.mission": "drone.mission:",
 }
 
-# Shared machine-status dicts {building_id: telemetry} -> building type_id,
+# Shared machine-status dicts {building_id: telemetry} -> building type_id(s),
 # pruned of buildings no longer found on the outpost network. Literal
 # strings, not imports: the Liquifier/Mixer modules live in a later tier.
+# Drone Depots span three typeIds, one per size (lib/drone_energy.py).
 MACHINE_STATUS_KEYS = {
-    "drone_depot.status": "drone_station",
+    "drone_depot.status": ("drone_station", "drone_station_medium", "drone_station_large"),
     "essence_liquifier.status": "essence_liquifier",
     "biomass_mixer.status": "biomass_mixer",
 }
@@ -714,8 +715,9 @@ class ArchiveCleaner:
                 if not self.dry_run:
                     self.archive.delete(key)
                 continue
+            type_ids = type_id if isinstance(type_id, tuple) else (type_id,)
             try:
-                live = {str(b) for b, _ in discover_network_buildings(type_id, resolve=False)}
+                live = {str(b) for t_id in type_ids for b, _ in discover_network_buildings(t_id, resolve=False)}
             except Exception as e:
                 self.log(f"  [WARN] Discovering '{type_id}' failed: {e}; skipping '{key}'.")
                 continue

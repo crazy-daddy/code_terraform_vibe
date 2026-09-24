@@ -181,6 +181,10 @@ class DroneMiningMixin:
                     sleep(poll_interval)
                     continue
 
+                if self._host.handle_upgrade_request_if_active():
+                    sleep(poll_interval)
+                    continue
+
                 self._host.cleanup_stale_biosite_claims()
 
                 # Resume an in-progress mission after a script reload. A
@@ -404,6 +408,9 @@ class DroneMiningMixin:
             self._host.log.debug(f"[{self._host.name}] Depot full; parking at drone_service to charge, next unload attempt in {self.DEPOT_FULL_RETRY_TICKS} ticks.")
 
         self._host.release_biosite_claim()
+        if unloaded >= 0 and self._host.cargo_count() == 0:
+            # Docked and empty: the one moment couple()/uncouple() can run.
+            self._host.maintain_modules_at_depot()
         # Leave the berth now, even with no next mining target picked yet --
         # a miner otherwise sits docked here between trips, occupying a bay
         # a peer drone (or this one, on a later retry) may be waiting in
