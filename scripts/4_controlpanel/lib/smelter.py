@@ -121,6 +121,7 @@ class SmelterController:
         of racing another smelter for the same one.
         """
         current_tick = self.get_current_tick()
+        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
         def updater(claims):
             claims = dict(claims or {})
@@ -135,7 +136,7 @@ class SmelterController:
                 # vehicle_claims.py uses for the same edge case.
                 if current_tick == 0 or age <= SMELTER_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
-                self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
+                notes.append(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
             claims[recipe_id] = {"smelter": self.name, "tick": current_tick}
             return claims
 
@@ -144,6 +145,8 @@ class SmelterController:
         except Exception:
             self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
             return True  # can't verify; don't block production over an archive hiccup
+        for note in notes:
+            self.log.debug(note)
 
         claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
         owner = (claims.get(recipe_id) or {}).get("smelter")

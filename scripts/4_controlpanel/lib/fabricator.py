@@ -77,6 +77,7 @@ class FabricatorController:
     def claim_recipe(self, recipe_id):
         """Claims recipe_id for this Fabricator, or refreshes its own existing claim. See lib/smelter.py's claim_recipe() -- identical shape/reasoning, separate archive key."""
         current_tick = self.get_current_tick()
+        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
         def updater(claims):
             claims = dict(claims or {})
@@ -87,7 +88,7 @@ class FabricatorController:
                 age = current_tick - existing.get("tick", 0)
                 if current_tick == 0 or age <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
-                self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('fabricator')}' is stale (age={age} > {FABRICATOR_RECIPE_CLAIM_STALE_TICKS}), taking over")
+                notes.append(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('fabricator')}' is stale (age={age} > {FABRICATOR_RECIPE_CLAIM_STALE_TICKS}), taking over")
             claims[recipe_id] = {"fabricator": self.name, "tick": current_tick}
             return claims
 
@@ -96,6 +97,8 @@ class FabricatorController:
         except Exception:
             self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
             return True  # can't verify; don't block production over an archive hiccup
+        for note in notes:
+            self.log.debug(note)
 
         claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
         owner = (claims.get(recipe_id) or {}).get("fabricator")

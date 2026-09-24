@@ -217,6 +217,7 @@ class DroneClaimsMixin:
         docstring). Returns True if claim successfully acquired.
         """
         claimed = [False]
+        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
         curr_tick = self._host.get_current_tick()
 
         def updater(claims):
@@ -229,9 +230,9 @@ class DroneClaimsMixin:
                 if claim_owner != self._host.name:
                     if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
                         claimed[0] = False
-                        self._host.log.debug(f"[{self._host.name}] claim_biosite('{target_key}'): lost -- held by '{claim_owner}' (age={claim_age} ticks < stale threshold {self.CLAIM_STALE_TICKS}).")
+                        notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): lost -- held by '{claim_owner}' (age={claim_age} ticks < stale threshold {self.CLAIM_STALE_TICKS}).")
                         return claims
-                    self._host.log.debug(f"[{self._host.name}] claim_biosite('{target_key}'): existing claim by '{claim_owner}' is stale (age={claim_age} ticks >= {self.CLAIM_STALE_TICKS}); taking over.")
+                    notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): existing claim by '{claim_owner}' is stale (age={claim_age} ticks >= {self.CLAIM_STALE_TICKS}); taking over.")
             claims[target_key] = {
                 "drone": self._host.name,
                 "coords": target_info.get("coords", (0, 0)),
@@ -239,10 +240,14 @@ class DroneClaimsMixin:
                 "tick": curr_tick,
             }
             claimed[0] = True
-            self._host.log.debug(f"[{self._host.name}] claim_biosite('{target_key}'): won at tick {curr_tick}.")
+            notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): won at tick {curr_tick}.")
             return claims
 
-        archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
+        if not archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater):
+            claimed[0] = False
+            notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): {BIOSITE_CLAIMS_KEY} write rejected; treating as lost.")
+        for note in notes:
+            self._host.log.debug(note)
         return claimed[0]
 
     def refresh_biosite_claim(self, target_key):
@@ -259,23 +264,27 @@ class DroneClaimsMixin:
 
     def release_biosite_claim(self, target_key=None):
         """Releases claim on target_key, or every claim owned by this drone."""
+        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
+
         def updater(claims):
             if not isinstance(claims, dict):
                 return {}
             if target_key:
                 if target_key in claims and claims[target_key].get("drone") == self._host.name:
                     del claims[target_key]
-                    self._host.log.debug(f"[{self._host.name}] release_biosite_claim('{target_key}'): released.")
+                    notes.append(f"[{self._host.name}] release_biosite_claim('{target_key}'): released.")
                 else:
-                    self._host.log.debug(f"[{self._host.name}] release_biosite_claim('{target_key}'): not owned by this drone; no-op.")
+                    notes.append(f"[{self._host.name}] release_biosite_claim('{target_key}'): not owned by this drone; no-op.")
             else:
                 keys_to_remove = [k for k, v in claims.items() if isinstance(v, dict) and v.get("drone") == self._host.name]
                 for k in keys_to_remove:
                     del claims[k]
-                self._host.log.debug(f"[{self._host.name}] release_biosite_claim(all): released {len(keys_to_remove)} claim(s): {keys_to_remove}.")
+                notes.append(f"[{self._host.name}] release_biosite_claim(all): released {len(keys_to_remove)} claim(s): {keys_to_remove}.")
             return claims
 
         archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
+        for note in notes:
+            self._host.log.debug(note)
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
@@ -338,6 +347,7 @@ class DroneClaimsMixin:
         """
         curr_tick = self._host.get_current_tick()
         key = f"{int(x)}_{int(y)}"
+        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
         def updater(cache):
             if not isinstance(cache, dict):
@@ -348,8 +358,10 @@ class DroneClaimsMixin:
                 oldest = sorted(cache.items(), key=lambda kv: kv[1])[:overflow]
                 for k, _ in oldest:
                     del cache[k]
-                self._host.log.debug(f"[{self._host.name}] mark_poi_empty: cache overflow ({SCOUTED_EMPTY_POI_MAX_ENTRIES} cap), evicted {overflow} oldest entries.")
+                notes.append(f"[{self._host.name}] mark_poi_empty: cache overflow ({SCOUTED_EMPTY_POI_MAX_ENTRIES} cap), evicted {overflow} oldest entries.")
             return cache
 
         archive.transaction(SCOUTED_EMPTY_POI_KEY, {}, updater)
+        for note in notes:
+            self._host.log.debug(note)
         self._host.log.debug(f"[{self._host.name}] mark_poi_empty({int(x)}, {int(y)}): recorded confirmed-empty at tick {curr_tick}.")

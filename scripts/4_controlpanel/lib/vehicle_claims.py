@@ -176,6 +176,7 @@ class VehicleClaimsMixin:
         Returns True if claim successfully acquired, False otherwise.
         """
         claimed = [False]
+        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
         curr_tick = self._host.get_current_tick()
 
         def updater(claims):
@@ -190,10 +191,10 @@ class VehicleClaimsMixin:
 
                 if claim_owner != self._host.name:
                     if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                        self._host.log.debug(f"[{self._host.name}] claim_target('{target_key}'): lost -- held by '{claim_owner}', age={claim_age} ticks (< CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}, curr_tick={curr_tick}).")
+                        notes.append(f"[{self._host.name}] claim_target('{target_key}'): lost -- held by '{claim_owner}', age={claim_age} ticks (< CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}, curr_tick={curr_tick}).")
                         claimed[0] = False
                         return claims
-                    self._host.log.debug(f"[{self._host.name}] claim_target('{target_key}'): stale claim from '{claim_owner}' (age={claim_age} ticks >= CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}) -- taking over.")
+                    notes.append(f"[{self._host.name}] claim_target('{target_key}'): stale claim from '{claim_owner}' (age={claim_age} ticks >= CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}) -- taking over.")
 
             claims[target_key] = {
                 "rover": self._host.name,
@@ -206,7 +207,11 @@ class VehicleClaimsMixin:
             claimed[0] = True
             return claims
 
-        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
+        if not archive.transaction(SURVEY_CLAIMS_KEY, {}, updater):
+            claimed[0] = False
+            notes.append(f"[{self._host.name}] claim_target('{target_key}'): {SURVEY_CLAIMS_KEY} write rejected.")
+        for note in notes:
+            self._host.log.debug(note)
         self._host.log.debug(f"[{self._host.name}] claim_target('{target_key}'): {'won' if claimed[0] else 'lost'} the race.")
         return claimed[0]
 
