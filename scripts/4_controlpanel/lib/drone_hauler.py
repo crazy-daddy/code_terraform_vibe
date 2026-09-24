@@ -97,8 +97,27 @@ class DroneHaulerMixin:
             deficits = {i: u for i, u in deficits.items() if u > 0}
             if deficits:
                 dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots, "deficits": deficits})
+        self._warn_if_home_has_no_depot(outposts, depots_by_outpost)
         self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}={d['deficits']}" for d in dests) or "none"))
         return dests
+
+    def _warn_if_home_has_no_depot(self, outposts, depots_by_outpost):
+        """
+        Home is only a haul destination if it owns a Drone Depot. A depot next
+        to base but inside another outpost doesn't count, so raw-ore demand at
+        home (e.g. the standing ore buffer) silently never becomes a job.
+        Warns once per run, then keeps the reason in the debug trail.
+        """
+        home = next((o for o in outposts.values() if getattr(o, "is_home", False)), None)
+        if home is None or home.id in depots_by_outpost:
+            return
+        raw = {i: u for i, u in get_raw_material_demands().items() if u > 0}
+        if not raw:
+            return
+        if not getattr(self, "_home_no_depot_warned", False):
+            self._host.log.level("warn").print(f"[{self._host.name}] '{home.id}' needs raw ore {raw} but has no Drone Depot; floating haulers can't deliver there. Depots found at: {sorted(k for k in depots_by_outpost if k) or 'none'}.")
+            self._home_no_depot_warned = True
+        self._host.log.debug(f"[{self._host.name}] haul: '{home.id}' skipped as destination (no Drone Depot) despite raw-ore demand {raw}.")
 
     def _drill_sources(self, items, curr_tick):
         """Advertised drills holding any of `items` with a known position, net of other haulers' reservations."""
@@ -149,13 +168,14 @@ class DroneHaulerMixin:
         via_dest = self._host.distance_between(prev_coords, dest_coords) + self._host.distance_between(dest_coords, coords)
         return via_dest > 0 and direct <= HAUL_CHAIN_MAX_DETOUR_RATIO * via_dest
 
-    def _plan_route_for(self, dest, sources, capacity, start):
+    def _plan_route_for(self, dest, sources, capacity, start, first=None):
         """
-        Greedy nearest-neighbour drill route for one destination: largest
-        deficits first per stop, up to capacity / HAUL_MAX_STOPS_PER_TRIP,
-        chained stops only when not "behind" the destination. Per-item room
-        is capped by cargo.space_for() (one material per pod); the live
-        load corrects any over-optimism. Returns [(source, [(item, n), ...]), ...].
+        Greedy nearest-neighbour drill route for one destination, starting at
+        `first` (else the nearest useful drill): largest deficits first per
+        stop, up to capacity / HAUL_MAX_STOPS_PER_TRIP, chained stops only
+        when not "behind" the destination. Per-item room is capped by
+        cargo.space_for() (one material per pod); the live load corrects any
+        over-optimism. Returns [(source, [(item, n), ...]), ...].
         """
         remaining = dict(dest["deficits"])
         cap_left = capacity
@@ -166,6 +186,8 @@ class DroneHaulerMixin:
             useful = [s for s in pool if any(remaining.get(i, 0) > 0 for i in s["available"])]
             if route:
                 useful = [s for s in useful if self._chain_worthwhile(pos, s["coords"], dest["coords"])]
+            elif first is not None:
+                useful = [s for s in useful if s["id"] == first["id"]]
             if not useful:
                 break
             source = min(useful, key=lambda s: self._host.distance_between(pos, s["coords"]))
@@ -192,6 +214,19 @@ class DroneHaulerMixin:
         except Exception:
             return 0
 
+    def _candidate_routes(self, dests, sources, capacity, start):
+        """
+        (dest, route) for every destination x every useful first drill. Only
+        trying the nearest drill first let a small nearby deficit (28 iron)
+        hide a big one further out (2000 neutronium) whose drill is "behind"
+        the destination, so never chainable -- same fix as the Pioneer's
+        _plan_pull_route() trying every first stop. Scoring picks the winner.
+        """
+        for dest in dests:
+            firsts = [s for s in sources if any(dest["deficits"].get(i, 0) > 0 for i in s["available"])]
+            for first in firsts:
+                yield dest, self._plan_route_for(dest, sources, capacity, start, first=first)
+
     def _plan_haul_job(self, curr_tick):
         """
         Best job network-wide, or None: for every destination, plan a drill
@@ -200,6 +235,7 @@ class DroneHaulerMixin:
         first when the chosen job needs more than is aboard.
         Returns {"dest", "route", "units", "fuel"}.
         """
+        seen = logistics_requests.pickups_snapshot()  # before any demand/stock read; see claim_pickups()
         dests = self._haul_destinations(curr_tick)
         if not dests:
             return None
@@ -221,12 +257,11 @@ class DroneHaulerMixin:
         start = self._host.position()
 
         best, best_score = None, 0.0
-        for dest in dests:
-            route = self._plan_route_for(dest, sources, capacity, start)
+        for dest, route in self._candidate_routes(dests, sources, capacity, start):
             units = sum(n for _s, loads in route for _i, n in loads)
             wanted = min(HAUL_MIN_LOAD_UNITS, sum(dest["deficits"].values()))
             if not route or units < wanted:
-                self._host.log.debug(f"[{self._host.name}] haul: '{dest['outpost_id']}' plan {units} unit(s) < minimum {wanted}; skipped.")
+                self._host.log.debug(f"[{self._host.name}] haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
                 continue
             points = [start] + [s["coords"] for s, _l in route] + [dest["coords"]]
             meters = sum(self._host.distance_between(points[i], points[i + 1]) for i in range(len(points) - 1))
@@ -237,7 +272,7 @@ class DroneHaulerMixin:
             score = units / (meters + HAUL_TRIP_OVERHEAD_M)
             self._host.log.debug(f"[{self._host.name}] haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, score {score:.3f}.")
             if score > best_score:
-                best, best_score = {"dest": dest, "route": route, "units": units, "fuel": fuel}, score
+                best, best_score = {"dest": dest, "route": route, "units": units, "fuel": fuel, "seen": seen}, score
         return best
 
     # ------------------------------------------------------------ reservations / mission
@@ -511,16 +546,45 @@ class DroneHaulerMixin:
                 self._host.log.level("error").print(f"[{self._host.name}] Hauler exception: {error}")
             sleep(poll_interval)
 
+    def _claim_route(self, job, curr_tick):
+        """
+        Reserves the planned route atomically (logistics_requests.claim_pickups()),
+        trimmed by whatever other haulers reserved since planning. Returns the
+        route with granted amounts, or None when too little is left to be
+        worth the trip (then nothing stays reserved and the next cycle replans).
+        """
+        dest = job["dest"]
+        dest_id = dest["outpost_id"]
+        legs = [(source["id"], item_id, amount) for source, loads in job["route"] for item_id, amount in loads]
+        granted = logistics_requests.claim_pickups(self._host.name, dest_id, legs, job.get("seen", {}), curr_tick)
+        grant_by_leg = {(s, i): g for s, i, g in granted}
+        route = []
+        for source, loads in job["route"]:
+            kept = [(i, grant_by_leg.get((source["id"], i), 0)) for i, _n in loads]
+            kept = [(i, n) for i, n in kept if n > 0]
+            if kept:
+                route.append((source, kept))
+        units = sum(n for _s, loads in route for _i, n in loads)
+        wanted = min(HAUL_MIN_LOAD_UNITS, sum(dest["deficits"].values()))
+        if units < job["units"]:
+            self._host.log.debug(f"[{self._host.name}] haul: another hauler reserved part of this job since planning; {job['units']} -> {units} unit(s).")
+        if not route or units < wanted:
+            self._host.log.debug(f"[{self._host.name}] haul: {units} unit(s) left after claim < minimum {wanted}; dropping job, replanning next cycle.")
+            logistics_requests.release_pickups(self._host.name)
+            return None
+        return route
+
     def _run_job(self, job, curr_tick):
         dest = job["dest"]
         dest_id = dest["outpost_id"]
-        route = job["route"]
+        route = self._claim_route(job, curr_tick)
+        if not route:
+            return
         planned = {}
         legs = []
         for source, loads in route:
             legs.append(source["id"] + " (" + ", ".join(f"{n}x {i}" for i, n in loads) + ")")
             for item_id, amount in loads:
-                logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, amount, curr_tick, source_id=source["id"])
                 planned[item_id] = planned.get(item_id, 0) + amount
         self._reserve_yield(dest["outpost"], planned, curr_tick)
         self._save_haul_mission(dest_id)

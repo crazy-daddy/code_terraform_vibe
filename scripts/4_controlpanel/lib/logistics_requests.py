@@ -172,6 +172,82 @@ def reserve_pickup(vehicle_name, dest_outpost_id, item_id, units, curr_tick=None
     log.debug(f"reserve_pickup({key!r}): {units}x {item_id}.")
 
 
+def pickups_snapshot():
+    """
+    Current logistics.pickups. Take one BEFORE planning a trip and pass it to
+    claim_pickups(), which then only has to account for what other haulers
+    reserved after this point.
+    """
+    raw = archive.get(PICKUPS_KEY, {})
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _other_units(pickups, vehicle_name, tick, match):
+    """{(field value, item_id): units} over fresh entries of OTHER vehicles, grouped by match ("source" or "dest")."""
+    totals = {}
+    for entry in pickups.values():
+        if not _is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("vehicle") == vehicle_name:
+            continue
+        group = (entry.get(match), entry.get("item_id"))
+        totals[group] = totals.get(group, 0) + (entry.get("units", 0) or 0)
+    return totals
+
+
+def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
+    """
+    Atomically reserves a planned trip. `legs` is [(source_id, item_id, units)],
+    planned against `seen` (pickups_snapshot() taken before planning). Inside
+    one transaction, every leg is trimmed by what other haulers reserved
+    since `seen`, both from the same source and towards the same destination.
+    Without this, two haulers that plan on the same tick (e.g. all scripts
+    restarting together on save load) both see the same free stock and demand,
+    and both take all of it.
+
+    Returns [(source_id, item_id, granted_units)] in leg order; a leg granted
+    0 is not reserved.
+    """
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    granted = []
+
+    def updater(pickups):
+        if not isinstance(pickups, dict):
+            pickups = {}
+        del granted[:]
+        src_before = _other_units(seen, vehicle_name, tick, "source")
+        src_now = _other_units(pickups, vehicle_name, tick, "source")
+        dest_before = _other_units(seen, vehicle_name, tick, "dest")
+        dest_now = _other_units(pickups, vehicle_name, tick, "dest")
+        dest_cut = {}
+        for (dest, item_id), units in dest_now.items():
+            if dest == dest_outpost_id:
+                dest_cut[item_id] = max(0, units - dest_before.get((dest, item_id), 0))
+        src_cut = {g: max(0, units - src_before.get(g, 0)) for g, units in src_now.items()}
+        for source_id, item_id, units in legs:
+            cut_src = src_cut.get((source_id, item_id), 0)
+            cut_dest = dest_cut.get(item_id, 0)
+            grant = max(0, int(units) - max(cut_src, cut_dest))
+            # What this leg gave up counts against both cuts, so later legs
+            # aren't trimmed twice for the same competing reservation.
+            given_up = int(units) - grant
+            src_cut[(source_id, item_id)] = max(0, cut_src - given_up)
+            dest_cut[item_id] = max(0, cut_dest - given_up)
+            key = pickup_key(vehicle_name, dest_outpost_id, item_id, source_id)
+            if grant > 0:
+                pickups[key] = {"vehicle": vehicle_name, "dest": dest_outpost_id, "source": source_id, "item_id": item_id, "units": grant, "tick": tick}
+            else:
+                pickups.pop(key, None)
+            granted.append((source_id, item_id, grant))
+        return pickups
+
+    if not archive.transaction(PICKUPS_KEY, {}, updater):
+        log.debug(f"claim_pickups({vehicle_name!r} -> {dest_outpost_id!r}): {PICKUPS_KEY} write rejected; nothing reserved.")
+        return [(source_id, item_id, 0) for source_id, item_id, _u in legs]
+    trimmed = [(s, i, u, g) for (s, i, u), (_s, _i, g) in zip(legs, granted) if g < u]
+    if trimmed:
+        log.debug(f"claim_pickups({vehicle_name!r} -> {dest_outpost_id!r}): trimmed by newer reservations: " + ", ".join(f"{s}:{i} {u}->{g}" for s, i, u, g in trimmed))
+    return list(granted)
+
+
 def release_pickups(vehicle_name):
     """Drops every pickup reservation owned by vehicle_name (after delivery), plus any stale entries."""
     tick = _now_tick()

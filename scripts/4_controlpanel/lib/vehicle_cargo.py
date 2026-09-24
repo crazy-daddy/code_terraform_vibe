@@ -771,6 +771,7 @@ class VehicleCargoMixin:
                     continue
 
                 curr_tick = self._host.get_current_tick()
+                seen = logistics_requests.pickups_snapshot()  # before any demand/stock read; see claim_pickups()
                 deficits = self._pull_deficits(curr_tick)
                 if not deficits:
                     if not self._host.is_at_base():
@@ -790,12 +791,26 @@ class VehicleCargoMixin:
                     sleep(poll_interval)
                     continue
 
+                # Atomic claim: trimmed by whatever another hauler reserved
+                # since `seen` (e.g. two haulers planning on the same tick).
+                granted = logistics_requests.claim_pickups(self._host.name, home_id, [(src["id"], i, a) for src, loads in route for i, a in loads], seen, curr_tick)
+                grant_by_leg = {(s, i): g for s, i, g in granted}
+                route = [(src, [(i, grant_by_leg.get((src["id"], i), 0)) for i, _a in loads if grant_by_leg.get((src["id"], i), 0) > 0]) for src, loads in route]
+                route = [(src, loads) for src, loads in route if loads]
+                claimed = sum(a for _src, loads in route for _i, a in loads)
+                if claimed < planned:
+                    self._host.log.debug(f"[{self._host.name}] pull: another hauler reserved part of this trip since planning; {planned} -> {claimed} unit(s).")
+                if not route or claimed < wanted:
+                    self._host.log.debug(f"[{self._host.name}] pull: {claimed} unit(s) left after claim < minimum {wanted}; replanning next cycle.")
+                    logistics_requests.release_pickups(self._host.name)
+                    sleep(poll_interval)
+                    continue
+
                 legs = []
                 planned_totals = {}
                 for source, loads in route:
                     legs.append(source["id"] + " (" + ", ".join(str(a) + "x " + i for i, a in loads) + ")")
                     for item_id, amount in loads:
-                        logistics_requests.reserve_pickup(self._host.name, home_id, item_id, amount, curr_tick, source_id=source["id"])
                         planned_totals[item_id] = planned_totals.get(item_id, 0) + amount
                 self._reserve_pull_yield(planned_totals, curr_tick)
                 self._host.log.start(f"[{self._host.name}] Pull trip: " + " -> ".join(legs))
