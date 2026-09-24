@@ -32,7 +32,8 @@ if TYPE_CHECKING:
 #    "depots": {old_depot_id: {...}},       # swap state per Depot (fleet_upgrade.py)
 #    "retiring_depots": [old_depot_id],     # hidden from drones while they drain
 #    "drones": {old_drone_id: {...}},       # swap state per drone
-#    "lineage": {new_drone_id: {"from", "role", "engine", "kind", "params", "fitted"}}}
+#    "lineage": {new_drone_id: {"from", "role", "engine", "kind", "params", "fitted"}},
+#    "warehouse_swap": {...}, "warehouse_status": str}  # lib/warehouse_upgrade.py
 FLEET_UPGRADE_KEY = "fleet.upgrade"
 # {drone_id: {"kind": chassis, "slots": {"0": thruster, "1": module_id or None, ...}}}
 DRONE_LOADOUTS_KEY = "drone.loadouts"
