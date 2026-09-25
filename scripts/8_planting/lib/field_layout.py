@@ -24,13 +24,14 @@
 #     day, so 8 is what one Harvester sustains. Machines unlocked before
 #     automation (lamp, sprinkler, dispenser) only save hand-care time, which
 #     isn't worth a rebuild, so the starter has no machine cells.
-#   full (FULL_LAYOUT): the whole 8 x 24 field. A diversity garden with all
-#     15 species (x15) in columns 1-5, then a fill (FIELD_FILL), worked by
-#     Crop Automators. Grown in Crop Automator chunks (full_layout()), sized
-#     to what the Plant Terraformers can use. Fills:
-#       "crowncap" (default): solid Crowncap blocks. 60 Forage / 48 h on
-#         every cell = 1.25 Forage per cell-hour, no machines, power or
-#         water (Crowncap only needs shade and its cluster).
+#   full: the whole 8 x 24 field, worked by Crop Automators and grown in
+#     automator chunks (full_layout()), sized to what the Plant Terraformers
+#     can use. A diversity garden with all 15 species (x15) in columns 1-5
+#     plus a fill (FIELD_FILL):
+#       "crowncap" (default, most of the game): CROWNCAP_GARDEN + solid
+#         Crowncap, 10 Crop Automators (CROWNCAP_AUTOMATORS). 60 Forage /
+#         48 h on every cell = 1.25 Forage per cell-hour, no machines, power
+#         or water (Crowncap only needs shade and its cluster).
 #       "grandbloom": the checkerboard of FULL_LAYOUT, every gap a Grow
 #         Lamp or Sprinkler. 150 / 72 h on half the cells = 1.04 per
 #         cell-hour at Mk I, but x3 from Mk II lamps + sprinklers (x12 cap
@@ -147,8 +148,28 @@ FILL_SPECIES = {"crowncap": "crowncap", "grandbloom": "grandbloom"}
 # crowncap fill keeps these checkerboard Grandblooms, with their machines,
 # for x15 diversity. C7 sits between Crop Automator C6 and the lamp/sprinkler
 # cells around it, inside chunk 1.
-FILL_KEEP = ("C7",)
-GARDEN_COLS = 5            # columns 1..GARDEN_COLS of FULL_LAYOUT are the diversity garden
+# Crowncap-phase garden (columns 1-5), found by an offline search that
+# maximised the whole field's Forage/h: it costs 14.6 Forage/h (x1, before
+# diversity) against pure Crowncap, one Crowncap cell more than the best
+# garden allowed to spread over 8 columns, but it fits under the first two
+# Crop Automators (C3, F3), so chunk 1 needs 2 of them. 1 Grow Lamp lights
+# SS, SU, GV, GB and no shade plant; 5 Sprinklers water GV, GB, DW and each
+# pondmoss cell; 2 Dispensers salt SB, SM, BT. CC cells are Crowncap fill
+# inside the garden; "." cells must stay empty (next to a spacer).
+CROWNCAP_GARDEN = """
+SP SH PF PF CC
+CC CC PF PF CC
+CC CC CA SU CC
+SB DS SS GL GV
+SM .  .  GB SK
+DS BT CA SK DW
+.  SK PM PM TV
+LT SK PM PM SK
+"""
+# Crop Automators outside the Crowncap garden: rows C and F, every 5th
+# column, so 10 automators (2 in the garden) cover all 192 cells.
+CROWNCAP_AUTOMATORS = ("C8", "F8", "C13", "F13", "C18", "F18", "C23", "F23")
+GARDEN_COLS = 5            # columns 1..GARDEN_COLS are the diversity garden (both fills)
 AUTOMATOR_RADIUS = 2       # centred 5 x 5 service area
 
 # Forage per hour a Plant Terraformer consumes: one batch per 3 h cycle.
@@ -414,39 +435,38 @@ def _full_parts(fill=None):
     """
     (plants {sector: species}, machines {sector: kind}, garden set) of the
     whole field for `fill` (FIELD_FILL by default). "grandbloom" is
-    FULL_LAYOUT as drawn. "crowncap" keeps the garden, its machines and the
-    Crop Automators and plants Crowncap on every other cell outside the
-    garden, except the base pad, cells a kept Grow Lamp lights (shade) and
-    cells beside a kept spacer; Crowncaps left with fewer than two Crowncap
-    neighbours are dropped. Only machines a kept plant needs stay.
+    FULL_LAYOUT as drawn. "crowncap" is CROWNCAP_GARDEN in columns 1-5, the
+    CROWNCAP_AUTOMATORS, and Crowncap on every other cell except the base
+    pad, cells a Grow Lamp lights (shade) and cells beside a spacer;
+    Crowncaps left with fewer than two Crowncap neighbours are dropped.
     """
     fill = fill or FIELD_FILL
-    plants = place_block(parse_block(FULL_LAYOUT), 1)
-    machines = place_block(parse_machines(FULL_LAYOUT), 1)
-    garden = set(s for s in plants if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS)
     if fill == "grandbloom":
+        plants = place_block(parse_block(FULL_LAYOUT), 1)
+        machines = place_block(parse_machines(FULL_LAYOUT), 1)
+        garden = set(s for s in plants if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS)
         return plants, machines, garden
     species = FILL_SPECIES.get(fill, "crowncap")
-    garden_plants = {s: plants[s] for s in garden}
-    for s in FILL_KEEP:
-        if s in plants:
-            garden_plants[s] = plants[s]
-    garden_machines = _needed_machines(garden_plants, machines)
+    garden_plants = place_block(parse_block(CROWNCAP_GARDEN), 1)
+    machines = place_block(parse_machines(CROWNCAP_GARDEN), 1)
+    for s in CROWNCAP_AUTOMATORS:
+        machines[s] = "crop_automator"
     rules = rules_from_published({})
-    lit = set(n for m, k in garden_machines.items() if k == "grow_lamp" for n in neighbours(m))
-    cas = {s: k for s, k in machines.items() if k == "crop_automator"}
-    out = dict(garden_plants)
+    lit = set(n for m, k in machines.items() if k == "grow_lamp" for n in neighbours(m))
+    beside_spacer = set(n for p, sp in garden_plants.items() if "spacer" in kinds(rules, sp) for n in neighbours(p))
+    fill_cells = {}
     for s in all_sectors():
-        if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS or s == FULL_LAYOUT_BASE or s in garden_plants:
+        if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS or s == FULL_LAYOUT_BASE:
             continue
-        if s in garden_machines or s in cas or s in lit:
+        if s in machines or s in lit or s in beside_spacer:
             continue
-        if any(n in garden_plants and "spacer" in kinds(rules, garden_plants[n]) for n in neighbours(s)):
-            continue
-        out[s] = species
-    fill_cells = _prune_clusters({s: sp for s, sp in out.items() if s not in garden_plants}, species)
-    out = dict(garden_plants, **fill_cells)
-    return out, dict(garden_machines, **cas), garden
+        fill_cells[s] = species
+    # Crowncap drawn inside the garden counts as a partner for the fill next to it.
+    both = _prune_clusters(dict({k: v for k, v in garden_plants.items() if v == species}, **fill_cells), species)
+    out = dict(garden_plants)
+    out.update({k: v for k, v in both.items() if k not in garden_plants})
+    garden = set(s for s in out if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS)
+    return out, machines, garden
 
 
 def _automators_in_order(machines):
@@ -493,10 +513,11 @@ def full_layout(chunks, fill=None):
         area |= set(automator_area(ca))
     cells = {s: sp for s, sp in plants.items() if s in garden or s in area}
     # A chunk edge can cut a fill cluster: drop fill cells left without two partners.
+    # (Crowncap drawn inside the garden is fill too: its partners may lie outside.)
     fill_species = FILL_SPECIES.get(fill or FIELD_FILL)
-    if fill_species and fill_species in ("crowncap",):
-        fill_cells = _prune_clusters({k: v for k, v in cells.items() if k not in garden}, fill_species)
-        cells = dict({k: v for k, v in cells.items() if k in garden}, **fill_cells)
+    if fill_species == "crowncap":
+        fill_cells = _prune_clusters({k: v for k, v in cells.items() if v == fill_species}, fill_species)
+        cells = dict({k: v for k, v in cells.items() if v != fill_species}, **fill_cells)
     reserved = {ca: "crop_automator" for ca in cas}
     reserved.update(_needed_machines(cells, machines))
     return cells, reserved, sorted(garden)

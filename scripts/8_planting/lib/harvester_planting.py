@@ -7,9 +7,12 @@
 #   1. "starter" (the 2 x 4 block) until Field Automation is researched.
 #      Never rebuilt (machines unlocked earlier aren't worth it; an older
 #      stored layout without "mode" counts as starter).
-#   2. "full" with the crowncap fill: garden + solid Crowncap, grown in Crop
-#      Automator chunks as the Plant Terraformers' Forage demand rises
-#      (only grows).
+#   2. "full" with the crowncap fill: garden + solid Crowncap over the whole
+#      field right away (no machines, power or water; Crowncap Forage and life
+#      forms are never wasted). Outside the garden only Crop Automators plant
+#      and harvest: one Harvester can't keep up with 170 cells, so a fill cell
+#      stays empty until its automator is in (kits bought by
+#      harvester_machines.py).
 #   3. "full" with the grandbloom fill (checkerboard), once Mk II+ lamps and
 #      sprinklers (and the power/water for ~75 machines) make it pay. The
 #      operator switches by setting the Data Archive key `plant.field_fill`
@@ -35,7 +38,10 @@ if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
 LAYOUT_KEY = "plant.layout"
-LAYOUT_VERSION = 3           # recorded only; rebuilds follow mode and chunks
+# Bump when field_layout changes what a full layout looks like: a stored full
+# layout from an older version is rebuilt once (starter layouts never are).
+# 4 = CROWNCAP_GARDEN (replaced the FULL_LAYOUT garden + FILL_KEEP C7).
+LAYOUT_VERSION = 4
 TERRAFORMER_KEY = "plant.terraformer"
 FIELD_FILL_KEY = "plant.field_fill"   # operator override: "crowncap" | "grandbloom"
 
@@ -86,7 +92,14 @@ class HarvesterPlantingMixin:
         return fill if fill in field_layout.FILL_SPECIES else field_layout.FIELD_FILL
 
     def desired_chunks(self, fill=None):
-        """Full-layout chunks the Plant Terraformers' Forage demand calls for (at least 1)."""
+        """
+        Full-layout chunks: the whole field for the crowncap fill, else what
+        the Plant Terraformers' Forage demand calls for (at least 1; the
+        grandbloom fill needs a powered, watered machine per plant).
+        """
+        fill = fill or self.field_fill()
+        if fill == "crowncap":
+            return field_layout.full_chunk_count(fill)
         demand = field_layout.terraformer_demand(archive.get(TERRAFORMER_KEY, {}))
         return field_layout.chunks_for_demand(demand, self.load_rules(), fill or self.field_fill())
 
@@ -112,7 +125,8 @@ class HarvesterPlantingMixin:
         mode, fill, chunks = self.wanted_layout(stored)
         stored_mode = stored.get("mode") or "starter"
         same_fill = mode == "starter" or stored.get("fill", "grandbloom") == fill
-        if stored.get("cells") and stored_mode == mode and same_fill and (mode == "starter" or int(stored.get("chunks") or 0) >= chunks):
+        current = mode == "starter" or int(stored.get("version") or 0) >= LAYOUT_VERSION
+        if stored.get("cells") and stored_mode == mode and same_fill and current and (mode == "starter" or int(stored.get("chunks") or 0) >= chunks):
             self.layout_mode = stored_mode
             self.reserved = dict(stored.get("reserved") or {})
             self.garden = list(stored.get("garden") or [])
@@ -163,16 +177,25 @@ class HarvesterPlantingMixin:
     def harvester_layout(self, active, rules):
         """
         The part of `active` the Harvester plants itself. Starter: all of it.
-        Full: cells no deployed Crop Automator serves, and outside the garden
-        only once their machines are in (a checkerboard Grandbloom has no
-        hand-care fallback worth the walk).
+        Full: garden cells no deployed Crop Automator serves. Fill cells are
+        automator work only: the Harvester can't keep up with a whole field.
         """
         if self.layout_mode != "full":
             return active
         automated = self._host.automated_cells()
         garden = set(self.garden or [])
-        return {s: sp for s, sp in active.items()
-                if s not in automated and (s in garden or self._host.services_ready(s, sp, rules))}
+        return {s: sp for s, sp in active.items() if s in garden and s not in automated}
+
+    def seed_layout(self, active):
+        """
+        The part of `active` that gets planted soon, so seed demand covers it:
+        starter all of it; full the garden plus cells a deployed Crop
+        Automator serves (fill cells without one stay empty).
+        """
+        if self.layout_mode != "full":
+            return active
+        scope = set(self.garden or []) | self._host.automated_cells()
+        return {s: sp for s, sp in active.items() if s in scope}
 
     def clear_targets(self, layout, cells):
         """Growing/stalled plants in the layout's way (mature ones get harvested instead)."""

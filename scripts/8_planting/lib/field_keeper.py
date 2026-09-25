@@ -10,16 +10,17 @@
 #
 # Each step re-reads cells() and does the single most urgent task, cheapest
 # route (heat) first within a priority:
-#   1. care tour: once any treatment drops below CARE_REFRESH_H, every
+#   1. full layout: deploy a machine kit (Grow Lamp / Sprinkler / Dispenser /
+#      Crop Automator) on its reserved cell. First: every machine takes care
+#      work off the Harvester for good, and behind care it never ran
+#   2. care tour: once any treatment drops below CARE_REFRESH_H, every
 #      treatment below CARE_BATCH_H is renewed in one tour, so renewals line
 #      up and the field needs fewer separate trips. Ahead of harvesting: a
 #      lapsed treatment stalls growth, a mature crop just waits
-#   2. harvest a mature crop (Forage lands in home Inventory)
-#   3. uproot a growing plant in the layout's way (after a layout change;
+#   3. harvest a mature crop (Forage lands in home Inventory)
+#   4. uproot a growing plant in the layout's way (after a layout change;
 #      the seed goes back to Inventory)
-#   4. plant an open layout cell whose seed is at home (staged into Inventory)
-#   5. full layout: deploy a machine kit (Grow Lamp / Sprinkler / Dispenser /
-#      Crop Automator) on its reserved cell
+#   5. plant an open layout cell whose seed is at home (staged into Inventory)
 # In the full layout, cells a deployed Crop Automator serves are its work
 # (lib/crop_automator.py): the Harvester only plants and harvests the rest.
 #   6. with heat headroom: pave a path cell (carry a loose item there, or
@@ -193,7 +194,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if not force and curr_tick - self._last_publish_tick < PUBLISH_INTERVAL_TICKS:
             return
         self._last_publish_tick = curr_tick
-        now, rotation = self.seed_demand(active, cells, rules)
+        now, rotation = self.seed_demand(self.seed_layout(active), cells, rules)
         for seed_id, n in self.paving_seed_demand(layout, cells, rules, len(spare_items)).items():
             now[seed_id] = now.get(seed_id, 0) + n
         self.publish_seed_demand(now, rotation, curr_tick)
@@ -273,7 +274,19 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # Something left in the held slot (e.g. after a restart) goes back to Inventory.
         self.store_held_if_any()
 
-        # 1. Care tour first: a lapsed treatment stalls growth, while a mature
+        # 1. Full layout: deploy a field machine whose kit is at home. Ahead
+        #    of care: each machine takes a treatment (or, for a Crop
+        #    Automator, a whole 5 x 5 area) off the Harvester for good, and
+        #    behind care/planting it never ran (hand care kept it busy).
+        targets = self.deploy_targets(cells)
+        if targets:
+            target = self.nearest(list(targets), cells)
+            self.log.debug(f"[{self.name}] {len(targets)} machine cell(s) ready; cheapest {target} ({targets[target]}).")
+            if self.move_to(target):
+                self.deploy_here(targets[target])
+            return
+
+        # 2. Care tour first: a lapsed treatment stalls growth, while a mature
         #    crop just waits with its Forage banked. Harvest-first starved care
         #    (7 plants stalled for a whole day with crops always mature).
         batch = self.care_targets(cells, rules, CARE_BATCH_H)
@@ -288,7 +301,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             self.care_batch.pop(target, None)
             return
 
-        # 2. Harvest (paused for a while after Inventory reported full).
+        # 3. Harvest (paused for a while after Inventory reported full).
         if self.inventory_full_tick is not None and curr_tick - self.inventory_full_tick >= INVENTORY_FULL_RETRY_TICKS:
             self.inventory_full_tick = None
         if self.inventory_full_tick is None:
@@ -302,7 +315,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
                     self.care_current(rules)
                 return
 
-        # 3. Clear plants in the layout's way (old layout after a version bump).
+        # 4. Clear plants in the layout's way (old layout after a version bump).
         targets = self.clear_targets(layout, cells)
         if targets:
             target = self.nearest(targets, cells)
@@ -311,7 +324,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
                 self.plant_if_open(mine)
             return
 
-        # 4. Plant.
+        # 5. Plant.
         targets = self.plant_targets(mine, cells)
         if targets:
             by_sector = dict(targets)
@@ -319,15 +332,6 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             self.log.debug(f"[{self.name}] {len(targets)} plantable cell(s); cheapest {target} ({by_sector[target]}, planned in {_now_tick() - curr_tick} ticks).")
             if self.move_to(target) and self.plant_here(by_sector[target]):
                 self.care_current(rules)
-            return
-
-        # 5. Full layout: deploy a field machine whose kit is at home.
-        targets = self.deploy_targets(cells)
-        if targets:
-            target = self.nearest(list(targets), cells)
-            self.log.debug(f"[{self.name}] {len(targets)} machine cell(s) ready; cheapest {target} ({targets[target]}).")
-            if self.move_to(target):
-                self.deploy_here(targets[target])
             return
 
         # 6. With heat headroom: pave a path cell, else sweep a loose item.
