@@ -5,11 +5,9 @@ from version_guard import validate_game_version
 # Pure closed-loop sun tracking -- Power Grid supervision (brownout
 # load-shedding, day/night calibration) is owned centrally by panel_1.py's
 # AUTOMATION section (lib/power.py's PowerGridManager, one instance per grid),
-# not by any individual solar generator -- see docs/AI_CHEATSHEET.md. There is
-# no Master/Follower election here any more: with a single always-running
-# process (the Control Room panel) already doing the supervision once per
-# grid, having every generator independently re-elect the same answer every
-# tick was pure duplication.
+# not by any individual solar generator -- see docs/AI_CHEATSHEET.md. With
+# supervision centralized in the Control Room panel, each generator handles
+# only sun tracking.
 
 
 class SolarController:

@@ -16,20 +16,12 @@ import fluid_routing
 FABRICATOR_RECIPE_CLAIM_STALE_TICKS = 600
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
-# load_inputs() used to request its ENTIRE remaining batch (required_per_craft
-# * crafts_remaining, up to several dozen units) in one take_item() call --
-# found from a real case: two Fabricators both needing Glass, one polled
-# first and took() the whole available stock (e.g. 44 units) in a single
-# transfer, leaving the other at 0 with nothing left to grab even though
-# demand called for splitting it. Capping each take_item() call to this many
-# units bounds any single grab. The main fix for sharing a contested source
-# fairly is now lib/production.py's craft_prefill_units() -- see
-# load_inputs()'s own comment -- which keeps every Fabricator's total ask
-# small and recipe-scaled instead of racing for the full shortfall; this
-# constant remains as a simple per-call ceiling on top of that. Supply Dock
-# deliberately does NOT use either (see lib/supply_dock.py) -- it has no
-# sibling competing for the same order's materials, so there's nothing to
-# share fairly with.
+# load_inputs() caps each take_item() call to this many units, preventing
+# any single Fabricator from hoarding contested stock. Fair sharing across
+# multiple Fabricators is coordinated by lib/production.py's craft_prefill_units()
+# (see load_inputs()'s own comment), which keeps every Fabricator's total ask
+# small and recipe-scaled. Supply Dock does NOT use either (see lib/supply_dock.py)
+# -- it has no competing sibling for the same order's materials.
 FABRICATOR_LOAD_CHUNK_SIZE = 10
 
 # ensure_fluid_connections() drives one fluid_routing.FluidInputRouter per
@@ -390,23 +382,17 @@ class FabricatorController:
         if blocked:
             self.log.level("warn").print(f"[{self.name}] Skipping unreachable recipe(s) for now: {', '.join(blocked)}.")
 
-        # Every demanded, sourceable recipe is already claimed by a different
-        # Fabricator -- with only ONE demanded recipe (a single large order),
-        # that used to mean every other Fabricator just sat idle forever
-        # instead of ever helping, since there was never a second demanded
-        # recipe for them to fall back to. Joining the biggest-shortfall
+        # Every demanded, sourceable recipe is already claimed by another
+        # Fabricator. For a single large order, joining the biggest-shortfall
         # sourceable recipe anyway (without holding the claim -- claim_recipe()
-        # already refused it above) splits that one order's remaining work
-        # across every idle Fabricator instead of leaving them idle while a
-        # single Fabricator works through the whole shortfall alone.
+        # already refused it above) distributes the work across idle Fabricators.
         # get_fabricator_active_recipe() divides crafts_remaining by how many
         # Fabricators currently have this same recipe selected, so joining
-        # doesn't also cause every joiner to independently load the FULL
-        # remaining shortfall (see production.py).
+        # doesn't cause every joiner to independently load the FULL remaining
+        # shortfall (see production.py).
         # Only join while there are more crafts left than Fabricators already
-        # on it: the split rounds UP, so every joiner builds at least one
-        # craft. Found live: a 1x drone_service_station_kit manual order had
-        # 3-4 Fabricators joined, each building one kit -- 3-4x overshoot.
+        # on it: the split rounds UP, so every joiner builds at least one craft.
+        # Without this check, a 1-craft order gets one craft per joiner.
         current_recipe_id = self.machine.get_recipe() if hasattr(self.machine, "get_recipe") else None
         for missing, recipe in sourceable:
             recipe_id = getattr(recipe, "id", "?")

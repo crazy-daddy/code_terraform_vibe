@@ -149,16 +149,11 @@ def plan_dock_assignments(clock=None):
             swallowed("supply_dock.plan_dock_assignments: dock.dispatch_rate", error)
 
     # Shared across every can_fulfill_order() call in this pass (every
-    # candidate order below, plus each dock's current order) -- see
-    # SourceCache's docstring in lib/production.py. Without it, this single
-    # planning pass used to re-run Smelter/Fabricator discovery + list_recipes()
-    # and the outpost.buildings() fluid scan from scratch per order/dock,
-    # which is what made this function take ~10s -- even after SourceCache cut
-    # that to ~2s, a call this slow running inside the Control Room script's
-    # own per-tick loop (at the time, panel_1.py) was found to wedge that
-    # Custom Panel's rendering outright, which is why the automation work is
-    # now a headless calculator (panel_7.py) with its UI moved to panel_1.py
-    # (see panel_7.py's module docstring).
+    # candidate order below, plus each dock's current order) to avoid
+    # redundant discovery + list_recipes() calls -- see SourceCache's
+    # docstring in lib/production.py. Even cached, a pass takes ~2 s, so this
+    # must never run inside a per-tick UI loop: it runs from the headless
+    # control_panel/panel_4.py (live slot panel_7.py).
     cache = SourceCache()
 
     candidates = []

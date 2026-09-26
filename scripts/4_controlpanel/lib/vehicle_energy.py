@@ -23,9 +23,9 @@
 # Rover (RoverController overrides wh_per_meter_at_throttle()/
 # max_safe_throttle_for_leg() in lib/rover.py -- see there):
 #   Wh/meter = ROVER_WH_PER_METER_PER_THROTTLE * throttle
-# Developer-confirmed (Spyros - CT Dev, in-game Discord #playtest-chat,
-# 2026-08-28): "the rover is very simple wh = distance x throttle x 0.2" --
-# deliberately independent of active_modules/cargo_units/nav multipliers,
+# Developer-confirmed (CT Dev, in-game Discord #playtest-chat, 2026-08-28):
+# "the rover is very simple wh = distance x throttle x 0.2" -- deliberately
+# independent of active_modules/cargo_units/nav multipliers,
 # unlike Pioneer. Note this is linear in throttle (implying power scales as
 # throttle^2 at Rover's fixed 100 m/h-per-throttle speed), not the throttle^1.5
 # curve above, so it is a genuinely different model, not a parameterization of
@@ -446,12 +446,8 @@ class VehicleEnergyMixin:
         Max units of item_id affordable on the battery currently on board, for
         a round trip to target_coords and back to the nearest charging station
         from there -- an upfront energy-based trip size (mine exactly what's
-        affordable) rather than a cargo-capacity assumption. With mining
-        outposts stockpiling ahead of demand, mine-till-full-then-recharge-
-        and-resume trips (mine_until_full_or_exhausted()) are no longer the
-        common case, so this replaces cargo.capacity() as the default
-        estimate wherever one's needed -- mine_until_full_or_exhausted() still
-        exists as a safety net if the real trip runs richer/leaner than
+        affordable) replacing cargo-capacity assumptions. mine_until_full_or_exhausted()
+        still exists as a safety net if the real trip runs richer/leaner than
         estimated.
 
         Solves calculate_trip_energy()'s own budget equation directly for

@@ -1,9 +1,7 @@
 # Control Room production card: live Smelter/Fabricator/Supply Dock roster.
 # Discovers every deployed instance of each (production.discover_smelter_ids()/
 # discover_fabricator_ids()/discover_supply_dock_ids()) rather than assuming a
-# single "smelter_1"/"fabricator_1"/"supply_dock_1" -- a second instance of any
-# of the three used to be entirely invisible to this card, mirroring the same
-# hardcoded-id bug production.py itself had until fixed alongside this card
+# single "smelter_1"/"fabricator_1"/"supply_dock_1" to avoid hardcoded-id issues
 # (see docs/AI_CHEATSHEET.md's Multi-Smelter/Multi-Fabricator/Multi-Dock notes).
 # Inventory removed on purpose -- storage gets its own dedicated card later
 # (with history graphs), this one is just live machine roster + status.

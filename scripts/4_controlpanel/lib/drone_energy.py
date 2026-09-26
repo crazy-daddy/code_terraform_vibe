@@ -34,18 +34,13 @@ DRONE_SERVICE_TYPE_ID = "drone_service_station"
 # The in-game building's typeId is "drone_station", NOT "drone_depot" --
 # "Drone Depot" is only the display name (docs/components/drone_depot.md's
 # own item/recipe ids confirm the real scheme: "drone_station_kit",
-# ship_computer.md's "missing_drone_station"/"drone_station_full"). Verified
-# against a live save's building record: {"typeId":"drone_station", ...}
-# under a "drone_station_2" instance id. Using "drone_depot" here silently
-# made outpost.buildings() match nothing, so get_all_drone_depots() was
-# always empty and every caller (home_coords/home_outpost resolution,
-# _return_and_unload(), recall) fell back to (0.0, 0.0) with no depot id at
-# all (bug found 2026-09-22 via a drone recall flying toward world origin).
+# ship_computer.md's "missing_drone_station"/"drone_station_full"). The
+# typeId must be exactly "drone_station" for outpost.buildings(type_id) to
+# match, so get_all_drone_depots() must use this constant, not "drone_depot".
 DRONE_DEPOT_TYPE_ID = "drone_station"
-# Every Depot size: outpost.buildings(type_id) matches one exact typeId, and
-# the Medium/Large kits deploy distinct types (decompiled simworker's machine
-# catalog; confirmed live for drone_station_large at Outpost 5). Their
-# instance/script ids differ again: drone_station_med_N / drone_station_lrg_N.
+# Every Depot size: outpost.buildings(type_id) matches one exact typeId.
+# Medium/Large kits deploy distinct types; instance/script ids differ:
+# drone_station_med_N / drone_station_lrg_N.
 DRONE_DEPOT_TYPE_IDS = (DRONE_DEPOT_TYPE_ID, "drone_station_medium", "drone_station_large")
 
 # 5.0 Wh/h at 300 m/h full-throttle burn -> flat Wh/meter-per-throttle rate.

@@ -6,7 +6,7 @@
 # Custom Panel is the only slot that can host an "always-on, not tied to one
 # building" process, which is why Supply Dock planning (below) ended up here
 # instead of on any one dock. But mixing that with UI rendering turned out to
-# be fragile: found live that a single iteration running long (e.g.
+# be fragile: a single iteration running long (e.g.
 # supply_dock.plan_dock_assignments() churning through several orders, ~2-10s
 # even after lib/production.py's SourceCache fix cut its cost down) wedges
 # that Custom Panel's rendering permanently -- confirmed via temporary debug

@@ -34,8 +34,7 @@ class ChargingStationController:
         Returns [{"id": str, "coords": (x, y)}, ...] for every deployed charging
         station. BuildingRef.position is a plain (x, y) tuple, but OutpostRef.position
         is a *method* (returns a Position snapshot) -- OutpostRef.x/.y are the plain
-        floats there. Mixing those up previously fed a bound method into (pos.x,
-        pos.y), throwing "'native_fn' object has no attribute 'x'" every cycle.
+        floats to use instead.
         """
         refs = []
 

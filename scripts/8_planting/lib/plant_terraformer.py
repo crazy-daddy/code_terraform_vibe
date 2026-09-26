@@ -52,7 +52,7 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 # Loader order (_take()): away from home, local Drone Depots first, then
 # Warehouses. At home, storage.take_item() -- for Forage that is clogged
 # Crop Automators first, then Inventory, Warehouses, then the other
-# automators (garden ones first within each; they no longer drain to
+# automators (garden ones first within each; Forage stays in their output, no drain to
 # storage) -- then Drone Depots. Home Forage stock (local_stock()) counts
 # the automator outputs too.
 #   - Forage: one full batch, only away from home -- the field's Harvester

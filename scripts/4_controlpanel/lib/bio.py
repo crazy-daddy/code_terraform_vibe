@@ -417,10 +417,10 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
     the Collector's options for no benefit.
 
     Takes an already-fetched `orders` list (exchange.orders()) rather than
-    `exchange` itself -- found live: exchange.orders() returns ~80 orders and isn't
-    free to call, so callers fetch it once per step() and thread it through every
-    helper that needs it instead of each fetching its own copy (see
-    docs/AI_CHEATSHEET.md Sec 1f for the ~20s/cycle this caused before that fix).
+    `exchange` itself -- exchange.orders() returns ~80 orders and is expensive
+    to call, so callers fetch it once per step() and thread it through every
+    helper that needs it instead of each fetching its own copy (per-helper
+    fetching costs ~20 s/cycle; see docs/AI_CHEATSHEET.md §1f).
 
     Shared by BioCollectorController (used to prefer harvesting this order's
     fragments over other incomplete orders') and every processor controller (each
@@ -972,11 +972,9 @@ class BioLabController:
             # for why the Lab (not just the Collector) needs this check: the
             # Collector's own "uncataloged discovery" harvesting picks up
             # specimens purely to identify a new location/fragment, with no
-            # demand behind them at all, and previously the Lab extracted
-            # every analyzed specimen unconditionally regardless of demand.
-            # analyze() already cataloged the fragment either way, so
-            # discarding here loses nothing but the reagent/output cost of an
-            # extraction nothing would ever collect.
+            # demand behind them at all. analyze() already cataloged the fragment
+            # either way, so discarding here loses nothing but the reagent/output
+            # cost of an extraction nothing would ever collect.
             if not loaded:
                 exchange = local_sibling(outpost, "bio_exchange")
                 my_biome = get_my_biome(self.machine)

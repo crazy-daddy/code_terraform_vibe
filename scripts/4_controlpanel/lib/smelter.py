@@ -1,13 +1,8 @@
 # Shared Library for Smelter Automation
-# Manages automated ore intake, recipe execution, finished metal extraction,
-# and intelligent power-down when idle to conserve grid energy. The
-# Inventory->Warehouse rebalance sweep (once per home outpost, not once per
-# Smelter) is owned centrally by the headless automation panel, not by any
-# individual Smelter instance -- see docs/AI_CHEATSHEET.md. There is no
-# Leader/Follower election here any more: with a single always-running
-# process (the Control Room panel) already doing the sweep once, having every
-# Smelter independently re-elect the same answer every tick was pure
-# duplication.
+# Manages automated ore intake, recipe execution, and finished metal extraction.
+# The Inventory->Warehouse rebalance sweep is owned centrally by the headless
+# automation panel, not by individual Smelter instances -- see
+# docs/AI_CHEATSHEET.md.
 from archive import archive
 from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, smelter_recipe_peers
 from storage import take_item, drain_port_inventory_first
@@ -25,17 +20,10 @@ from swallow import swallowed
 SMELTER_RECIPE_CLAIM_STALE_TICKS = 600
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 
-# Ore loading used to request up to a full 50-unit top-up in one take_item()
-# call -- with several smelters contested for the same ore, whichever polled
-# first could take the entire available stock in a single grab, leaving a
-# peer smelter at 0 even though demand called for splitting it (same real
-# case that motivated lib/fabricator.py's FABRICATOR_LOAD_CHUNK_SIZE, just
-# for ore instead of Fabricator ingredients). Capping each call to this many
-# units bounds any single grab (~2.5 s of Warehouse feeder lock). Fair
-# sharing of a contested ore is now step()'s fair-share cap (available ore +
-# peers' buffers, split across every Smelter on the recipe) together with the
-# recipe-scaled prefill cap (SMELTER_PREFILL_SECONDS); this constant remains
-# as a simple per-call ceiling on top of those.
+# Per-call ceiling on ore loading: bounds any single grab (~2.5 s of
+# Warehouse feeder lock). Fair sharing of contested ore is enforced by
+# step()'s fair-share cap (available ore + peers' buffers, split across
+# every Smelter on the recipe) together with recipe-scaled prefill cap.
 SMELTER_LOAD_CHUNK_SIZE = 10
 
 # Seconds of continuous crafting a Smelter's input buffer should cover --
@@ -52,9 +40,7 @@ SMELTER_PREFILL_SECONDS = 30
 # Each step's outcome is narrated via debug() (log_outcome()) -- "busy_all_sources"
 # = every holder answered busy but the Smelter kept working from its buffer
 # (harmless); "busy_starving" = every holder busy AND the buffer can't cover
-# the next craft while idle (real lost time). The former smelter.diag.<id>
-# archive key (time-weighted reason shares, used to tune this module) was
-# retired 2026-09-23; ArchiveCleaner.clean_retired_keys() deletes leftovers.
+# the next craft while idle (real lost time).
 #
 # Recipe switching hysteresis: see select_needed_ore()/switch_min_demand() --
 # a Smelter only leaves a still-demanded recipe for an unclaimed one whose
@@ -77,10 +63,8 @@ class SmelterController:
     craft loop against the same shared get_smelter_demands() numbers, but
     claims the recipe it's about to work (claim_recipe()) so two smelters don't
     both start the same recipe while a second simultaneously-demanded ore sits
-    untouched. The "inventory manager" sweep used to need a Leader election to
-    run only once per cycle instead of once per smelter -- it's now run
-    centrally by the headless automation panel (see module docstring), so no election is
-    needed here at all any more.
+    untouched. The "inventory manager" sweep runs centrally by the headless
+    automation panel (see module docstring), so no per-smelter election is needed.
     """
     RECIPE_MAP = {
         "iron_ore": "smelt_iron_ingot",
@@ -251,9 +235,8 @@ class SmelterController:
         self.ensure_connections()
 
         # One stock snapshot + one demand map for the whole step (see
-        # production.SourceCache) -- this step used to recompute
-        # get_material_demands() 2-3 times, each re-walking every target and
-        # total_stock() per item.
+        # production.SourceCache) -- single snapshot avoids redundant
+        # get_material_demands() walks and total_stock() calls.
         cache = SourceCache()
 
         # Step 1: Drain any completed products
@@ -362,12 +345,11 @@ class SmelterController:
             # lib/fabricator.py's crafts_remaining split.
             share = -(-demand_qty // worker_count)
             max_ore_for_share = (share * units_per_run + output_count - 1) // output_count
-            # Fair-share cap on what's actually AVAILABLE (found live: one
-            # Smelter grabbed every unit of a scarce silicon stock, leaving
-            # its peers idle): (ore in storage not reserved for a dock + ore
-            # already buffered by every peer on this recipe, this one
-            # included) // worker_count is the most any one of them should
-            # hold. Plentiful stock never binds; scarce stock splits evenly.
+            # Fair-share cap on what's actually AVAILABLE: (ore in storage
+            # not reserved for a dock + ore already buffered by every peer on
+            # this recipe, this one included) // worker_count is the most any
+            # one should hold. Prevents hoarding scarce stock; plentiful stock
+            # never binds.
             available = self.available_ore(ore_to_process, cache, dock_reserved)
             fair_total = (available + peers_buffered) // worker_count
             prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS)
@@ -544,11 +526,9 @@ class SmelterController:
                 self.log.debug(f"[{self.name}] select_needed_ore: candidate {getattr(recipe, 'id', '?')} via {ore} (demand={demands.get(output_item, 0)}, {'already buffered' if ore in buffered_ore else 'in stock'})")
                 break  # one matching ore is enough to consider this recipe a candidate
 
-        # Switching hysteresis (found live: iron/glass/titanium demand crossing
-        # back and forth cost Smelters 6-10% of their time in recipe_switch --
-        # each switch ejects the buffer, changes recipe and skips a step, even
-        # when the pull was a leftover demand of 3-22 units). While the current
-        # recipe is still demanded and sourceable:
+        # Switching hysteresis: recipe changes eject the buffer, change recipe
+        # and skip a step, so oscillating demand creates scheduling overhead.
+        # While the current recipe is still demanded and sourceable:
         #   1. keep it outright if this Smelter holds (or can take) its claim;
         #   2. a joiner may still move to an unclaimed recipe (spreading work
         #      across ores is the point of claims), but only one whose demand

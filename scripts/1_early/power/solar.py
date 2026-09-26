@@ -177,9 +177,7 @@ while True:
     # Deliberately runs before the Ship Computer gate below: powering a building on/off
     # goes through power_control, never through computer.deploy()/undeploy(). Ship
     # Computer (research_computer) doesn't unlock until 10,000 TP, which can trail
-    # behind 1.0 ppt Oxygen - nesting this under that gate (as it used to be) meant the
-    # Bio-Loop stayed powered off long after Auto Feeders unlocked, for a tech reason
-    # that was never actually a real dependency of this step.
+    # behind 1.0 ppt Oxygen, so this gate must run independently.
     pc = get_component("power_control")
     if pc and hasattr(pc, "set_powered"):
         for b in home.buildings():

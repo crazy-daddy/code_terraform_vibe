@@ -227,8 +227,8 @@ class RoverController(VehicleController):
 
         # Release the claim regardless of how this trip ended so the next
         # cycle always re-evaluates fresh demand instead of blindly resuming
-        # the same site forever (previously only an explicit recall or an
-        # unhandled exception ever cleared it).
+        # the same site forever.
+
         self.release_target_claim()
         if self.current_target_reserved:
             mining_reservations.release_yield(self.name)

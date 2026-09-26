@@ -14,9 +14,8 @@ handler's first line:
 
 A broad except can't tell "the game said no" (component missing/unpowered, a
 ValueError from the API) from "our code is wrong" (bad call signature, typo'd
-name, missing key). The second kind used to vanish silently -- e.g.
-OutputSlot.count("forage") raised TypeError (count() takes no item id), and
-every Crop Automator read as empty, starving both Plant Terraformers.
+name, missing key). The second kind must be logged to prevent silent failures
+where a bug hides behind a benign fallback.
 
 - Every caught error is logged at debug level, tagged with `where`
   ("module.function: call"). Consecutive identical errors at the same site

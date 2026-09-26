@@ -18,8 +18,8 @@
 # after the fact instead of requiring someone to watch console output live.
 # Each entry is stored as {"history": [...], "last_tick": N} -- the
 # last_tick lets lib/archive_cleaner.py's clean_profiling() tell an entry
-# nobody has updated in a long time (profiling.begin()/end() was removed
-# from that script) apart from one still being actively written to.
+# that's stale (script no longer calls profiling.begin()/end()) apart from
+# one still being actively written to.
 
 from archive import archive
 from tree_console import TreeConsole

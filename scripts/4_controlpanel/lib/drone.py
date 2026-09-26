@@ -202,19 +202,16 @@ class DroneController(
         caller must treat that as "cannot start".
 
         NOT a hasattr()-based probe, unlike PioneerController.detect_role().
-        Confirmed live (2026-09-22): self.drone always exposes .bio_scanner
-        AND .bio_extractor as attributes regardless of which (if either) is
-        actually mounted -- hasattr(self.drone, "bio_scanner") and
-        hasattr(self.drone, "bio_extractor") both returned True on a drone
-        carrying only a Bio Scanner, so hasattr can never tell "mounted"
-        from "not mounted" for these two. Drone also has no .modules() to
-        enumerate equipment generically (unlike Rover/Pioneer). The only
-        available signal is to actually call the module's own method once
-        and read whether the result's .status comes back "not_mounted" --
-        a real Literal value both PortableBioScanner.scan() and
-        PortableBioExtractor.extract() document (docs/models/
-        biology_models.md) -- or something else ("ok"/"busy"/"scrambled"/
-        "not_at_location"/... all mean the module IS present).
+        self.drone always exposes .bio_scanner and .bio_extractor as attributes
+        regardless of which (if either) is actually mounted, so hasattr() cannot
+        distinguish "mounted" from "not mounted" for these two. Drone also has no
+        .modules() to enumerate equipment generically (unlike Rover/Pioneer). The
+        only available signal is to call the module's own method once and read
+        whether the result's .status comes back "not_mounted" -- a real Literal
+        value both PortableBioScanner.scan() and PortableBioExtractor.extract()
+        document (docs/models/biology_models.md) -- or something else
+        ("ok"/"busy"/"scrambled"/"not_at_location"/... all mean the module IS
+        present).
 
         scan() is documented as a free, repeatable no-cost probe ("Repeat
         scans are free"), so calling it here is harmless. extract() has no

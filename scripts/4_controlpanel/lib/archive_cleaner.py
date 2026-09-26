@@ -43,10 +43,9 @@ RECALL_KEY = "vehicle.recall"
 # only deleted here, never by their former writers, so all migration cleanup
 # lives in one place. Add a prefix when a key family is retired.
 RETIRED_KEY_PREFIXES = (
-    "smelter.diag.",  # lib/smelter.py diagnostics, retired 2026-09-23
-    # Per-machine status keys, consolidated 2026-09-23 into the shared
-    # MACHINE_STATUS_KEYS dicts below. Payloads are rewritten every step(),
-    # so nothing needs migrating.
+    "smelter.diag.",  # lib/smelter.py diagnostics (retired)
+    # Per-machine status keys consolidated into the shared MACHINE_STATUS_KEYS
+    # dicts below. Payloads are rewritten every step(), so nothing needs migrating.
     "drone_depot.status.",
     "essence_liquifier.status.",
     "biomass_mixer.status.",
@@ -512,10 +511,7 @@ class ArchiveCleaner:
             # LEGACY_PIONEER_SPIRAL_KEY ("pioneer.survey_spiral") is fully dead
             # -- lib/vehicle_survey.py only reads/writes SURVEY_SPIRAL_KEY any
             # more, nothing else in the codebase references the legacy name --
-            # so there's no reason to keep writing a payload into it. Just
-            # retire it outright instead of the old set-then-immediately-
-            # delete (which only ever wrote a payload no one would read a
-            # moment before deleting it again).
+            # so just delete it outright.
             if self.archive.has(LEGACY_PIONEER_SPIRAL_KEY):
                 self.archive.delete(LEGACY_PIONEER_SPIRAL_KEY)
 
@@ -571,14 +567,11 @@ class ArchiveCleaner:
 
     def clean_calibration(self):
         """
-        Purges obsolete wh_per_meter calibration entries. Travel energy now uses
-        the developer-confirmed exact power/speed model (lib/vehicle_energy.py),
-        not an empirically-calibrated Wh/meter, so these archive keys are no
-        longer read or written by any vehicle script -- just leftover clutter
-        from before that change. Two historical key shapes existed: a dot-suffix
-        one (e.g. "<vehicle>.wh_per_meter") and an older colon-prefixed one from
-        an earlier iteration ("vehicle.wh_per_meter:<vehicle_id>", one key per
-        vehicle) -- both purged here.
+        Purges obsolete wh_per_meter calibration entries. Travel energy comes
+        from lib/vehicle_energy.py's power/speed model; no vehicle script reads
+        or writes these keys.
+        Two key formats exist: dot-suffix (e.g. "<vehicle>.wh_per_meter") and
+        colon-prefix ("vehicle.wh_per_meter:<vehicle_id>") -- both purged here.
         """
         self.log("\n--- Purging Obsolete Wh/m Calibration Entries ---")
         all_keys = self.archive.keys()
@@ -745,16 +738,13 @@ class ArchiveCleaner:
         """
         Purges per-grid power.shedded:<anchor>/power.night_wh:<anchor> entries
         whose grid anchor no longer exists -- e.g. two independent grids joined
-        via a new power line and elected a single Master, orphaning the old
-        per-grid keys forever otherwise. Skips entirely if grid discovery itself
-        failed (empty active_grid_anchors), same caution as clean_telemetry()'s
-        active_vehicles check -- never purge everything just because detection
-        came back empty. Also retires three now-obsolete keys outright:
-        power.night_duration (replaced by the fixed day-cycle schedule -- see
-        lib/power.py's NIGHT_DURATION_HOURS), power.last_night_wh (a dead key
-        from before the power.night_wh:<anchor> per-grid keying scheme), and
-        power.shedded_machines (an exact duplicate of power.shedded that nothing
-        ever actually read) -- none of these are written by current code any more.
+        via a new power line. Skips entirely if grid
+        discovery failed (empty active_grid_anchors), same caution as
+        clean_telemetry()'s active_vehicles check -- never purge everything
+        just because detection came back empty. Also purges three obsolete keys:
+        power.night_duration (use lib/power.py's NIGHT_DURATION_HOURS instead),
+        power.last_night_wh, and power.shedded_machines. None of these are
+        written by current code.
         """
         self.log("\n--- Checking Per-Grid Power State ---")
         purged = 0

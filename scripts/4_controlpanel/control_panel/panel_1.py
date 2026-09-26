@@ -4,17 +4,13 @@
 #
 # panel_7.py is the actual "always-on" worker (grid supervision, rebalance
 # sweep, outpost sync, Supply Dock planning) -- it runs headless, with no
-# panel.* calls of its own. Split out this way because mixing a per-tick
-# UI-rendering loop with a multi-second synchronous call
-# (supply_dock.plan_dock_assignments() churning through several orders) was
-# found live to wedge THIS card's own rendering permanently: the script kept
-# running fine underneath (confirmed via temporary debug prints -- iterations
-# kept completing every ~100ms) but the Custom Panel canvas stayed blank from
-# the first stall onward, with no error anywhere. panel_7.py publishes its
-# result summary to `archive` (AUTOMATION_SUMMARY_KEY below) for this card to
-# read and display instead -- same Archive-as-decoupling-channel pattern
-# CLAUDE.md calls for when a result can't be produced by the component that
-# has to display it.
+# panel.* calls of its own. Split out this way because a multi-second
+# synchronous call (supply_dock.plan_dock_assignments()) inside a per-tick
+# UI-rendering loop leaves the Custom Panel canvas blank permanently, while
+# the script keeps running underneath and no error is raised. panel_7.py publishes its result summary to
+# `archive` (AUTOMATION_SUMMARY_KEY below) for this card to read and display
+# instead -- same Archive-as-decoupling-channel pattern CLAUDE.md calls for
+# when a result can't be produced by the component that has to display it.
 #
 # Everything drawn here (STATUS's clock/power/storage/alerts, the version
 # gate, and the manual buttons) is either a cheap single-call component read

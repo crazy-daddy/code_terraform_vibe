@@ -139,13 +139,12 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
 
         A blueprint that is in NONE of those lists (while at least one of them
         could actually be read) is finished (or was removed), so it counts as
-        1.0. Found live: the game drops a completed blueprint from every list,
-        and this used to fall through to 0.0 -- so run_construction_loop()'s
-        "release the claim once progress >= 1.0" check never fired (121 of 124
-        build_* claims in one save pointed at finished jobs, each blocking a
-        second builder for up to CLAIM_STALE_TICKS), and the completing
-        execute() step read as negative progress, so calibrate_wh_per_progress()
-        ignored it. Stays 0.0 when the component or every list is unreadable.
+        1.0: the game drops a completed blueprint from every list. Without this,
+        run_construction_loop()'s "release the claim once progress >= 1.0"
+        check never fires (stale build_* claims block other builders for up to
+        CLAIM_STALE_TICKS), and the completing execute() step reads as negative
+        progress, so calibrate_wh_per_progress() ignores it. Stays 0.0 when the
+        component or every list is unreadable.
         """
         bp = get_component("construction_blueprint")
         if not bp:
@@ -846,8 +845,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
 
                 # Back at base -- release the claim regardless of how this trip
                 # ended so the next cycle always re-evaluates fresh demand
-                # instead of blindly resuming the same site forever (previously
-                # only an explicit recall ever cleared it).
+                # instead of blindly resuming the same site forever.
                 self.release_target_claim()
                 if self.current_target_reserved:
                     mining_reservations.release_yield(self.name)

@@ -175,9 +175,7 @@ class PowerGridManager:
         """Publishes currently shedded machines to the Data Archive for inter-process
         coordination -- e.g. a soft-shed SmelterController/FabricatorController
         (SOFT_SHED_PATTERNS above) checking it each step() to pause starting new
-        production. ("power.shedded_machines" used to also be
-        written here as a duplicate of "power.shedded" -- nothing ever read it; retired,
-        see ArchiveCleaner.clean_power_grid_state())."""
+        production (see ArchiveCleaner.clean_power_grid_state() for deprecated keys)."""
         shed_list = sorted(list(self.shedded_machines))
         archive.set("power.shedded", shed_list)
         if self.grid_anchor:
@@ -226,8 +224,8 @@ class PowerGridManager:
 
     def handle_sunrise(self, current_hour, grid_id_str):
         """Handles sunrise detection and historical overnight energy averaging.
-        Night duration itself is fixed (NIGHT_DURATION_HOURS) -- nothing to
-        calibrate here any more, just the actual Wh consumed overnight."""
+        Night duration itself is fixed (NIGHT_DURATION_HOURS); calibration tracks
+        the actual Wh consumed overnight."""
         if self.sunset_hour is not None and self.night_wh_accumulated > 10.0:
             hist_key = f"power.night_wh:{self.grid_anchor}" if self.grid_anchor else "power.night_wh"
             curr_hist = archive.get(hist_key, None)

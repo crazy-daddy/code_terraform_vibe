@@ -33,9 +33,9 @@ MOVE_HOURS = 0.5
 ACTION_HEAT_RESERVE = 9.0     # headroom kept before a field action (empty collect = +9)
 HOP_TIME_WEIGHT = 1.5         # route cost of one hop's 0.5 h, in heat units
 DEFAULT_MOVE_COST = 7.0       # entering a cell whose status has no measurement yet
-# Plant cells measured live at about +1 (2026-09-24): the game charges +7 only
-# for entering an empty cell. Unmeasured statuses (provider, base) start at
-# DEFAULT_MOVE_COST and are learned on the first visit.
+# Plant cells cost about +1; the game charges +7 for entering an empty cell.
+# Unmeasured statuses (provider, base) start at DEFAULT_MOVE_COST and are
+# learned on the first visit.
 MOVE_COST_SEED = {
     "item": 1.0, "empty": 7.0, "unknown": 7.0,
     "growing": 1.0, "stalled": 1.0, "mature": 1.0,

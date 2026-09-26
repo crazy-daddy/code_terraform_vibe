@@ -57,11 +57,10 @@ class BioLuminizerController:
         concentrate on the SAME order at the same time, rather than the
         Collector gathering for orders the Luminizer isn't even working on
         yet. See _focus_local_order()'s docstring for the full "prefer
-        stock we already have" reasoning and the live deadlock this also
-        incidentally used to cause (an untouched fragment stuck staged in
-        the Luminizer's own latched input while a different order was
-        selected -- self.input holds one item id at a time until
-        load()/flush() clears it).
+        stock we already have" reasoning. This prevents deadlock where an
+        untouched fragment stays staged in the Luminizer's latched input
+        while a different order was selected -- self.input holds one item id
+        at a time until load()/flush() clears it.
         """
         my_biome = get_my_biome(self.machine)
         return _focus_local_order(orders, snapshot, my_biome, fragment_id)

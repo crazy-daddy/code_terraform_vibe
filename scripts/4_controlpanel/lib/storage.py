@@ -106,8 +106,7 @@ def discover_storage_buildings(outpost=None, type_ids=STORAGE_TYPE_IDS):
 def total_stock(item_id, outpost=None):
     """inventory.count(item_id) + sum of warehouse.count(item_id) across every
     discovered Warehouse -- the single source of truth for "how much of this
-    item exists at all", used everywhere a demand calc used to only check
-    Inventory."""
+    item exists at all", including both home Inventory and remote Warehouses."""
     total = 0
     inventory = _component("inventory")
     if inventory and hasattr(inventory, "count"):
@@ -278,7 +277,7 @@ def crop_automator_forage(outpost=None):
         if not ca_id or not port or not hasattr(port, "stacks"):
             continue
         # OutputSlot.count() takes no item id (docs/types/storage_and_inventory.md):
-        # count("forage") raises, which used to hide every automator's Forage.
+        # must iterate stacks instead of calling count("forage").
         try:
             count = int(sum(s.count for s in port.stacks() if s.id == CROP_AUTOMATOR_ITEM_ID))
         except Exception as error:
@@ -513,10 +512,8 @@ def drain_port_inventory_first(port, outpost=None):
     drain_port_to_storage(). Inventory stays the normal destination: a
     Warehouse-held input costs the consumer an Auto Feeder hop on take_item().
     But a finished item stuck in an output buffer stalls the machine outright,
-    and is invisible to take_item() entirely -- found live with Inventory at
-    36/36 slots (data-bearing Oil Tanks, one slot each): Fabricator output
-    bins filled and every recipe behind them stalled. take_item() already
-    rotates through Warehouses, so Supply Docks and Fabricators still find a
+    and is invisible to take_item() entirely. take_item() already rotates
+    through Warehouses, so Supply Docks and Fabricators still find a
     fallback-stored item. INVENTORY_ONLY_ITEM_IDS fall back too: a stall is
     worse, and the rebalance sweep only moves items away from Inventory, so
     such an item waits in the Warehouse until someone takes it.
@@ -569,26 +566,13 @@ def drain_port_inventory_first(port, outpost=None):
 def consolidate_cross_warehouse_stock(outpost=None):
     """
     Calls `.compact()` on every discovered Warehouse/Large Warehouse at
-    `outpost` to pull a same-item stock split across more than one of them
-    back together. `.compact()` is NOT purely an intra-building operation
-    despite reading that way at a glance ("fewest Warehouse slots") -- its
-    own outcome table shares `transfer_to()`'s exact vocabulary
-    (`source_under_construction`/`source_changed`/`slots_full`/`target_full`),
-    which only makes sense if it pulls from *other* storage endpoints (a
-    "source") into the one it's called on. That also lines up with there
-    being no other reason for the game to expose it at all: with Auto
-    Feeders, a single Warehouse already adds to / draws from its
-    lowest-numbered occupied slot for a given item on its own, so a purely
-    intra-building `.compact()` would have nothing to ever actually do.
-    Confirmed by observing it consolidate stock that was split across
-    separate Warehouse buildings in-game, and by `.compact()` locking its
-    Warehouse as a material endpoint for the whole cycle -- exactly the
-    "busy while a transfer between buildings is in flight" cost a same-
-    building-only operation would have no reason to pay. Complements
-    best_unload_target()'s now-consolidation-aware routing for stock that
-    was already split before that fix landed (or split for any other
-    reason, e.g. a manual move). Returns total units moved across every
-    building.
+    `outpost` to consolidate same-item stock split across multiple buildings.
+    `.compact()` operates across buildings (its outcome vocabulary matches
+    `transfer_to()`'s multi-building statuses), not just within one building.
+    It locks its Warehouse as a material endpoint for the whole cycle, so
+    concurrent take_item() calls against it get "busy". Complements
+    best_unload_target()'s consolidation-aware routing. Returns total units
+    moved across every building.
     """
     moved_total = 0
     for building in discover_storage_buildings(outpost):
@@ -933,13 +917,10 @@ def rebalance_inventory_to_warehouses(outpost=None):
             continue
         warehouse_id, occupant_item, occupant_qty = occupant
 
-        # Slots still actually stuck in Inventory *right now* -- not slot_count,
-        # which is this item's slot footprint from the TOP of this iteration,
-        # before the direct-move loop above may have already moved part of it
-        # out. Using the stale full count here overstated how many Inventory
-        # slots this swap would free, so a swap that looked "worth it" against
-        # the ORIGINAL total could actually be a net loss (or wash) against
-        # what's genuinely left after a partial direct move already happened.
+        # Slots still actually stuck in Inventory right now (not the original
+        # slot_count, which may have been reduced by the direct-move loop above).
+        # The current value is needed to compute the real slots-freed vs
+        # slots-reclaimed trade-off for this swap.
         slots_freed = -(-remaining // stack_size)  # ceil division
         slots_reclaimed = -(-occupant_qty // stack_size)  # ceil division
         if slots_freed <= slots_reclaimed:

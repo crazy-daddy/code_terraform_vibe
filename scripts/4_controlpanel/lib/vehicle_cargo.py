@@ -232,7 +232,7 @@ class VehicleCargoMixin:
                 available = unmet
             else:
                 # No Shop delivery anywhere but home: real stock on hand is the
-                # hard ceiling, same as before this role was generalized.
+                # hard ceiling.
                 available = total_stock(item_id, outpost=self._host.home_outpost) - pulled.get(item_id, 0)
                 if available <= 0:
                     continue
@@ -331,16 +331,16 @@ class VehicleCargoMixin:
         directly with the right home_base/dest_outpost_id combo rather than
         going through a role-specific wrapper method). The vehicle is always
         stationed at its home_base (idles/recharges there between runs via
-        is_at_base()/return_to_base(), same as before) and drives out only to
+        is_at_base()/return_to_base()) and drives out only to
         dest_outpost_id, only when _outpost_haul_demand(dest_outpost_id) shows
         a deficit for something actually available at the stationed outpost
         (or buyable at the Shop, when stationed at home). Which end is "home"
         differs per role -- an ore-hauler stations at the mining outpost and
         delivers to dest_outpost_id=None (home); a reagent-hauler stations at
         home (home_base=None) and delivers to an explicit remote outpost id --
-        but the shape is otherwise identical, right down to "when the source is
-        home, missing stock gets bought at the Shop before loading" falling out
-        for free instead of needing its own method. What to haul is never
+        but the shape is otherwise identical, including "when the source is
+        home, missing stock gets bought at the Shop before loading". What to
+        haul is never
         decided at construction time -- only dest_outpost_id is fixed up front,
         and every other detail (which items, how much) is re-derived fresh each
         cycle from live demand (_outpost_haul_demand()), since there's no
@@ -403,13 +403,8 @@ class VehicleCargoMixin:
 
                     # Loading below needs the vehicle physically within the
                     # stationed outpost's service area to connect to its
-                    # Warehouse/Inventory -- unlike the no-demand idle branch
-                    # above, this path used to skip straight to loading
-                    # without ever driving here first, so a transporter
-                    # starting (or left) anywhere else -- e.g. still at the
-                    # destination after its last delivery -- would just fail
-                    # to load forever instead of returning to its stationed
-                    # outpost.
+                    # Warehouse/Inventory -- a transporter starting or left
+                    # anywhere else must return first.
                     if not self._host.is_at_base():
                         self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}' to load")
                         if not self._host.return_to_base():

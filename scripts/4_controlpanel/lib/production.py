@@ -97,18 +97,12 @@ SMELTER_TYPE_ID = "smelter"
 def discover_smelter_ids(outpost=None):
     """
     All Smelter building ids at outpost (default: home). Mirrors
-    storage.discover_storage_buildings()'s shape. Every demand-cascade
-    function below used to hard-fallback to the literal id "smelter_1" --
-    a correctness bug, not just an inefficiency, the moment a second Smelter
-    exists: raw-material demand and recipe-lookup would silently only ever
-    consult smelter_1's recipe set, so a second smelter's distinct recipes
-    (if any) would never drive mining at all. Recipe *availability* is
+    storage.discover_storage_buildings()'s shape. Recipe *availability* is
     tech-gated and identical across same-type buildings, so any one
     discovered smelter's list_recipes() is a representative stand-in
-    everywhere below that just needs "a" smelter, not "smelter_1"
-    specifically -- lib/smelter.py's own leader election (see
-    docs/AI_CHEATSHEET.md) is the place that actually cares which physical
-    smelter does what.
+    everywhere that just needs "a" smelter. Demand-cascade functions use
+    discovery, not a hardcoded id, so multiple Smelters on the network
+    each drive their own mining based on their unlocked recipes.
     """
     ids = []
     outpost = outpost or _home_outpost()
@@ -170,12 +164,9 @@ SUPPLY_DOCK_TYPE_ID = "supply_dock"
 def discover_supply_dock_ids(outpost=None):
     """
     All Supply Dock building ids at outpost (default: home). Same shape/reasoning
-    as discover_smelter_ids()/discover_fabricator_ids(): every demand-cascade
-    function below used to hard-fallback to the literal id "supply_dock_1" --
-    the same correctness bug class Phase A fixed for Smelter/Fabricator, just
-    not caught for Supply Dock at the time. A second dock's own active order
-    must count toward Fabricator targets/raw-material demand too, not just
-    whichever order supply_dock_1 happens to be running.
+    as discover_smelter_ids()/discover_fabricator_ids(). A second dock's own
+    active order must count toward Fabricator targets/raw-material demand, not
+    just whichever order the first dock is running.
     """
     ids = []
     outpost = outpost or _home_outpost()
@@ -1118,9 +1109,8 @@ def get_material_demands(cache=None):
     # fabricator_2 running craft_gas_pipe_segment (needs iron_ingot) never
     # registered any iron_ingot demand while fabricator_1 was busy on a
     # different recipe, so the Smelter never saw a reason to refine more,
-    # even with raw ore sitting in a Warehouse. Same hardcoded-single-instance
-    # bug class Phase A already fixed for Smelter/Fabricator/Supply Dock
-    # discovery elsewhere in this file.
+    # even with raw ore sitting in a Warehouse. So every discovered Fabricator
+    # counts here, like Smelter/Supply Dock discovery elsewhere in this file.
     fabricator_ids = discover_fabricator_ids() or ["fabricator_1"]
     for fabricator_id in fabricator_ids:
         fabricator = _component(fabricator_id)
@@ -1161,14 +1151,12 @@ def get_smelter_demands(cache=None):
     outputs (ingots, glass, ...), not just the direct inputs of whatever
     recipe a Fabricator happens to have selected right now.
 
-    Why this exists (found live: 400 drone_small + 200 drone_medium on manual
-    order, yet both iron Smelters trickled 1 ore per poll next to ~2000 iron
-    ore): get_material_demands() only registers ingot demand through
-    get_fabricator_active_recipe() -- already split per worker, and each
-    Fabricator's share netted against the FULL total_stock() independently --
-    while _cascade_fabricator_output_demand() deliberately stops at Smelter
-    outputs. A big order therefore showed up as ~1 ingot of demand, and the
-    Smelters ran one unit at a time.
+    get_material_demands() only sees ingot demand through each Fabricator's
+    get_fabricator_active_recipe() (already split per worker, each share
+    netted against the full total_stock() separately), and
+    _cascade_fabricator_output_demand() stops at Smelter outputs. So a large
+    order reads as ~1 ingot there. This walks the whole order tree instead,
+    so Smelters see the real ore demand.
 
     Gross-then-net-once:
       1. Every get_fabricator_targets() entry (manual orders, stock targets,
@@ -1348,9 +1336,9 @@ def get_raw_material_demands(smelter=None):
     # (lib/vehicle_mining.py's select_best_mining_target(reserve_demand=True)) or
     # haul delivery (lib/vehicle_cargo.py's run_haul_loop()) so a peer's
     # candidate search this cycle or later doesn't also chase a deficit
-    # that's already being fetched -- now that several Pioneers can mine the
-    # same POI, get_claims() alone no longer prevents that, and the same
-    # race applies across multiple mining-outpost haulers converging on the
+    # that's already being fetched. With several Pioneers mining the same POI,
+    # get_claims() alone cannot prevent concurrent dispatch -- the same race
+    # also applies across multiple mining-outpost haulers converging on the
     # same home buffer deficit. Only the home-demand path reads this:
     # outpost-stationed stockpile mining doesn't go through
     # get_raw_material_demands() at all, and is already self-bounded by its
@@ -1374,20 +1362,13 @@ class SourceCache:
     one-shot Inventory+Warehouse stock snapshot) plus the
     can_source_item()/can_source_fluid() results themselves.
 
-    Each of those lookups is a real call across the script/game boundary, not
-    a free local computation -- and callers that evaluate several
-    items/recipes/orders in one pass (Supply Dock's plan_dock_assignments()
-    across every order and dock, Fabricator's choose_recipe() across every
-    candidate recipe) used to re-run every one of them from scratch per item,
-    per recipe, and per order, which is what turned a single
-    can_fulfill_order() call into several real seconds. That in turn was found
-    to wedge panel_7.py's Custom Panel rendering outright whenever this ran
-    inside its per-tick loop (not just slow it down) -- see panel_7.py's
-    module docstring for why that script is now a headless calculator with no
-    panel.* calls of its own. Building one SourceCache per pass and threading
-    it through means each underlying game call happens at most once per pass,
-    and a sub-item shared by several recipes/orders (e.g. Steel) gets resolved
-    once instead of re-walked from scratch down every branch that needs it.
+    Each of those lookups is a real call across the script/game boundary.
+    Threading a shared SourceCache through multiple checks (Supply Dock's
+    plan_dock_assignments() across every order and dock, Fabricator's
+    choose_recipe() across every candidate recipe) means each underlying
+    game call happens at most once per pass. A sub-item shared by several
+    recipes/orders (e.g. Steel) gets resolved once instead of re-walked from
+    scratch down every branch.
 
     Discard it once the pass finishes -- it's a snapshot of build/tech state
     that can change between ticks, not something to hold onto across calls.

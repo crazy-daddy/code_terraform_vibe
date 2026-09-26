@@ -311,9 +311,8 @@ class VehicleSurveyMixin:
                 target_label = "resumed target"
             else:
                 # Two pools: fresh "?" contacts to scan, and already-classified
-                # sites whose survey() previously failed but may now succeed
-                # (upgraded sonar, new scan research) -- see
-                # unsurveyed_known_sites(). Merged into one distance-sorted
+                # sites that may now succeed after sonar/research upgrades
+                # (see unsurveyed_known_sites()). Merged into one distance-sorted
                 # route so the vehicle doesn't need a separate pass for each.
                 candidates = [
                     {"key": f"poi_{p.x}_{p.y}", "coords": (p.x, p.y), "label": "unscanned POI"}
