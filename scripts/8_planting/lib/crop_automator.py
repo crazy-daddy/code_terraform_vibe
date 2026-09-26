@@ -43,6 +43,7 @@ QUEUE_LIMIT = 45                   # the machine takes 50; leave room for a manu
 OUTPUT_DRAIN_ABOVE = 100           # drain Forage once the output holds at least this much
 JOB_FAIL_COOLDOWN_TICKS = 3000     # a cell whose job failed is left alone this long (~5 min)
 MAX_RESULTS_PER_STEP = 50          # the inbox holds at most 50
+SEED_PULL_BATCH = 10               # batch-load seeds into input to avoid per-job storage transfers
 
 
 def _position(ref):
@@ -123,6 +124,23 @@ class CropAutomatorController:
         shedded = archive.get("power.shedded", [])
         return isinstance(shedded, list) and self.name in shedded
 
+    def refresh_seed_demand_if_stale(self, curr_tick, layout_cells, rules, automators):
+        """Fallback: if Harvester is offline, first automator keeps plant.seed_demand fresh."""
+        if not automators or automators[0] != self.sector:
+            return
+        raw = archive.get(SEED_DEMAND_KEY, {})
+        if isinstance(raw, dict) and curr_tick - raw.get("tick", 0) < 3000:
+            return
+        rotation = {}
+        for sector, species in layout_cells.items():
+            seed_id = rules.get(species, {}).get("seed_id", "seed_" + species)
+            rotation[seed_id] = rotation.get(seed_id, 0) + 1
+        now = {}
+        for seed_id, count in rotation.items():
+            now[seed_id] = max(3, min(30, count // 6))
+        archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "tick": curr_tick})
+        self.log.debug(f"[{self.name}] Refreshed stale '{SEED_DEMAND_KEY}' as automator fallback.")
+
     # ----------------------------------------------------------------- jobs
 
     def consume_results(self, curr_tick):
@@ -149,18 +167,60 @@ class CropAutomatorController:
                 if sector:
                     self._failed[sector] = curr_tick
 
-    def queued_sectors(self):
-        out = set()
+    def queued_jobs_info(self):
+        """Returns (queued_sectors: set, committed_seeds: dict[seed_id, int], blocked_job: CropJob | None)."""
+        sectors = set()
+        committed = {}
+        blocked = None
         try:
             jobs = list(self.machine.get_queue() or [])
             current = self.machine.current_job()
             if current is not None:
                 jobs.append(current)
+                if getattr(current, "state", None) == "blocked" or getattr(current, "blocker", None):
+                    blocked = current
         except Exception:
-            return None
+            return None, {}, None
         for job in jobs:
-            out.add(getattr(job, "sector", None))
-        return out
+            s = getattr(job, "sector", None)
+            if s:
+                sectors.add(s)
+            if getattr(job, "action", None) == "plant":
+                item_id = getattr(job, "item_id", None)
+                if item_id:
+                    committed[item_id] = committed.get(item_id, 0) + 1
+        return sectors, committed, blocked
+
+    def seed_stock_in_port(self, seed_id):
+        """Physical seeds of seed_id currently inside the machine input port."""
+        port = getattr(self.machine, "input", None)
+        if not port:
+            return 0
+        try:
+            return sum(getattr(st, "count", 0) for st in port.stacks() if getattr(st, "id", None) == seed_id)
+        except Exception:
+            return 0
+
+    def unblock_queue(self, blocked_job):
+        """Resolves or cancels a blocked FIFO head job so the executor doesn't freeze."""
+        if blocked_job is None:
+            return
+        blocker = getattr(blocked_job, "blocker", None)
+        job_id = getattr(blocked_job, "id", None)
+        action = getattr(blocked_job, "action", "")
+        sector = getattr(blocked_job, "sector", "?")
+        item_id = getattr(blocked_job, "item_id", None)
+        self.log.level("warn").print(f"[{self.name}] Head job {job_id} ({action}@{sector}) blocked: {blocker}.")
+        if blocker == "no_seed" and item_id:
+            port = getattr(self.machine, "input", None)
+            if port and take_item(port, item_id, 1) > 0:
+                self.log.print(f"[{self.name}] Unblocked job {job_id}: loaded emergency seed '{item_id}'.")
+                return
+            if job_id is not None:
+                res = self.machine.cancel_job(job_id)
+                self.log.level("warn").print(f"[{self.name}] Canceled seed-starved plant job {job_id}@{sector} -> {getattr(res, 'status', '?')}.")
+        elif blocker == "output_full":
+            self.drain_output()
 
     def submit(self, method, *args):
         res = getattr(self.machine, method)(*args)
@@ -168,22 +228,6 @@ class CropAutomatorController:
         if status != "queued":
             self.log.debug(f"[{self.name}] {method}{args} -> {status}: {getattr(res, 'message', '')}")
         return status == "queued"
-
-    def ensure_seed(self, seed_id, need):
-        """Loads seeds into the input until `need` are there. Returns True if at least one is."""
-        port = getattr(self.machine, "input", None)
-        if not port:
-            return False
-        try:
-            have = sum(getattr(st, "count", 0) for st in port.stacks() if getattr(st, "id", None) == seed_id)
-        except Exception:
-            have = 0
-        if have < need:
-            moved = take_item(port, seed_id, need - have)
-            if moved:
-                self.log.debug(f"[{self.name}] Loaded {moved}x {seed_id} ({have} -> {have + moved}).")
-            have += moved
-        return have > 0
 
     def drain_output(self):
         port = getattr(self.machine, "output", None)
@@ -221,10 +265,12 @@ class CropAutomatorController:
         rules = field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
         deployed = self.deployed_machines()
         automators = [s for s, k in deployed.items() if k == "crop_automator"] or [self.sector]
+        self.refresh_seed_demand_if_stale(curr_tick, layout_cells, rules, automators)
         mine = self.owned_cells(layout_cells, automators)
-        queued = self.queued_sectors()
+        queued, committed_seeds, blocked_job = self.queued_jobs_info()
         if queued is None:
             return
+        self.unblock_queue(blocked_job)
         try:
             room = QUEUE_LIMIT - self.machine.queue_count()
         except Exception:
@@ -246,7 +292,9 @@ class CropAutomatorController:
             cell = cells.get(sector)
             status = getattr(cell, "status", "unknown")
             species = layout_cells[sector]
-            if status == "mature" and getattr(cell, "plant", None) == species:
+            plant = getattr(cell, "plant", None)
+            growth = getattr(cell, "growth", 0) or 0
+            if (status == "mature" or growth >= 1.0) and plant:
                 mature.append(sector)
             elif status in ("empty", "unknown"):
                 if self.services_ready(sector, species, rules, deployed):
@@ -266,10 +314,21 @@ class CropAutomatorController:
                 break
             species = layout_cells[sector]
             seed_id = (rules.get(species) or {}).get("seed_id") or "seed_" + species
-            if not self.ensure_seed(seed_id, 1):
+            in_port = self.seed_stock_in_port(seed_id)
+            in_flight = committed_seeds.get(seed_id, 0)
+            available = in_port - in_flight
+            if available < 1:
+                port = getattr(self.machine, "input", None)
+                if port:
+                    pulled = take_item(port, seed_id, SEED_PULL_BATCH)
+                    if pulled:
+                        self.log.debug(f"[{self.name}] Batch-loaded {pulled}x {seed_id}.")
+                        available += pulled
+            if available < 1:
                 continue
             if self.submit("plant", sector, seed_id):
                 room -= 1
+                committed_seeds[seed_id] = committed_seeds.get(seed_id, 0) + 1
         self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
         self.publish(curr_tick, mine, mature, open_cells, waiting)
 

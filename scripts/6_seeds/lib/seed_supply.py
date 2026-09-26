@@ -27,8 +27,8 @@ from version_guard import validate_game_version
 RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"
 
-SEED_SUPPLY_STASH_T = 30         # per-form request cap at the Seed Maker outpost
-SEED_BUFFER_PER_SPECIES = 1      # seeds per species kept when no Harvester publishes demand
+SEED_SUPPLY_STASH_T = 120        # per-form request cap at the Seed Maker outpost (supports bulk replanting)
+SEED_BUFFER_PER_SPECIES = 3      # seeds per species kept when no Harvester publishes demand
 SEED_DEMAND_STALE_TICKS = 6000   # ~10 min; older Harvester demand counts as absent
 SUPPLY_IDLE_POLL_SECONDS = 20.0  # nothing to make right now
 

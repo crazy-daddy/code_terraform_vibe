@@ -475,6 +475,38 @@ def _automators_in_order(machines):
     return sorted(cas, key=lambda s: ((sector_to_rc(s)[1] or 0), (sector_to_rc(s)[0] or 0)))
 
 
+def snake(sectors):
+    """`sectors` row by row, A first, alternating direction (A left to right, B right to left, ...)."""
+    def key(s):
+        r, c = sector_to_rc(s)
+        r = r or 0
+        c = c or 0
+        return (r, c if r % 2 == 0 else -c)
+    return sorted(sectors, key=key)
+
+
+def work_order(cells, reserved):
+    """
+    The full layout's build order as groups of sectors (plants and machine
+    cells together): group 0 is the garden (columns 1..GARDEN_COLS) in a
+    snake, row by row; then one group per Crop Automator outside the garden,
+    left to right, its own cell first and then the cells of its area not in
+    an earlier group, in a snake.
+    """
+    everything = set(cells) | set(reserved)
+    garden = [s for s in everything if (sector_to_rc(s)[1] or 0) <= GARDEN_COLS]
+    groups = [snake(garden)]
+    seen = set(garden)
+    for ca in _automators_in_order(reserved):
+        if ca in seen:
+            continue
+        area = [s for s in automator_area(ca) if s in everything and s not in seen and s != ca]
+        groups.append([ca] + snake(area))
+        seen |= set(area)
+        seen.add(ca)
+    return groups
+
+
 def _garden_automators(order, garden):
     """How many automators (in order) it takes to cover every garden plant."""
     covered = set()

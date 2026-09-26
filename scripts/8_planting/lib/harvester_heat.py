@@ -263,4 +263,6 @@ class HarvesterHeatMixin:
         for sector in path:
             if not self.hop(sector, statuses.get(sector)):
                 return False
+            if sector != target_sector:
+                self._host.work_on_pass(sector, statuses.get(sector))
         return self._host.get_position() == target_sector

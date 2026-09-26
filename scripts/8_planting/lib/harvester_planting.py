@@ -8,11 +8,13 @@
 #      Never rebuilt (machines unlocked earlier aren't worth it; an older
 #      stored layout without "mode" counts as starter).
 #   2. "full" with the crowncap fill: garden + solid Crowncap over the whole
-#      field right away (no machines, power or water; Crowncap Forage and life
-#      forms are never wasted). Outside the garden only Crop Automators plant
-#      and harvest: one Harvester can't keep up with 170 cells, so a fill cell
-#      stays empty until its automator is in (kits bought by
-#      harvester_machines.py).
+#      field (no machines, power or water; Crowncap Forage and life forms are
+#      never wasted). Built in field_layout.work_order(): the garden row by
+#      row in a snake, then the fill chunk by chunk (one Crop Automator area
+#      each). The Harvester plants only the garden and the next
+#      HARVESTER_FILL_CHUNKS fill chunk(s) without an automator; one
+#      Harvester can't keep up with 170 cells, so deployed automators (kits
+#      bought by harvester_machines.py) take the rest.
 #   3. "full" with the grandbloom fill (checkerboard), once Mk II+ lamps and
 #      sprinklers (and the power/water for ~75 machines) make it pay. The
 #      operator switches by setting the Data Archive key `plant.field_fill`
@@ -52,6 +54,11 @@ SEED_PREFETCH_GROWTH = 0.75
 PLANT_STATUSES = ("growing", "stalled", "mature")
 # Cell statuses a layout cell may still be planted from (after clearing an item).
 OPEN_STATUSES = ("empty", "unknown", "item")
+# Fill chunks (work_order() groups past the garden) the Harvester plants and
+# harvests itself ahead of their Crop Automator: one at a time, so the field
+# grows chunk by chunk without burying one Harvester in fill.
+HARVESTER_FILL_CHUNKS = 1
+
 # A cell whose load_seed/plant just failed is skipped this long (~5 min), so a
 # refusing cell can't pin the Harvester in a retry loop.
 PLANT_FAIL_COOLDOWN_TICKS = 3000
@@ -177,25 +184,45 @@ class HarvesterPlantingMixin:
     def harvester_layout(self, active, rules):
         """
         The part of `active` the Harvester plants itself. Starter: all of it.
-        Full: garden cells no deployed Crop Automator serves. Fill cells are
-        automator work only: the Harvester can't keep up with a whole field.
+        Full: cells no deployed Crop Automator serves, in the garden and in
+        the first HARVESTER_FILL_CHUNKS work_order() fill groups whose
+        automator isn't deployed yet. Later fill waits: the Harvester can't
+        keep up with a whole field.
         """
         if self.layout_mode != "full":
             return active
         automated = self._host.automated_cells()
-        garden = set(self.garden or [])
-        return {s: sp for s, sp in active.items() if s in garden and s not in automated}
+        deployed = set(self._host.deployed_automators())
+        groups = self._host.work_groups or []
+        scope = set(groups[0]) if groups else set(self.garden or [])
+        taken = 0
+        for group in groups[1:]:
+            if taken >= HARVESTER_FILL_CHUNKS:
+                break
+            if group[0] in deployed:
+                continue
+            scope |= set(group)
+            taken += 1
+        return {s: sp for s, sp in active.items() if s in scope and s not in automated}
 
-    def seed_layout(self, active):
+    def seed_layout(self, active, mine):
         """
         The part of `active` that gets planted soon, so seed demand covers it:
-        starter all of it; full the garden plus cells a deployed Crop
-        Automator serves (fill cells without one stay empty).
+        starter all of it; full the Harvester's cells (`mine`) plus cells a
+        deployed Crop Automator serves.
         """
         if self.layout_mode != "full":
             return active
-        scope = set(self.garden or []) | self._host.automated_cells()
-        return {s: sp for s, sp in active.items() if s in scope}
+        automated = self._host.automated_cells()
+        return {s: sp for s, sp in active.items() if s in mine or s in automated}
+
+    def build_rank(self):
+        """{sector: position} in work_order() (garden snake, then fill chunks)."""
+        rank = {}
+        for group in self._host.work_groups or []:
+            for s in group:
+                rank.setdefault(s, len(rank))
+        return rank
 
     def clear_targets(self, layout, cells):
         """Growing/stalled plants in the layout's way (mature ones get harvested instead)."""
@@ -236,8 +263,9 @@ class HarvesterPlantingMixin:
                 now[seed_id] = now.get(seed_id, 0) + 1
             elif plant == species and (status == "mature" or (getattr(cell, "growth", 0) or 0) >= SEED_PREFETCH_GROWTH):
                 now[seed_id] = now.get(seed_id, 0) + 1
-        for seed_id in rotation:
-            now[seed_id] = now.get(seed_id, 0) + SEED_BUFFER_PER_SPECIES
+        for seed_id, count in rotation.items():
+            buffer_n = max(SEED_BUFFER_PER_SPECIES, min(30, max(3, count // 6)))
+            now[seed_id] = now.get(seed_id, 0) + buffer_n
         return now, rotation
 
     def publish_seed_demand(self, now, rotation, curr_tick):
@@ -303,6 +331,30 @@ class HarvesterPlantingMixin:
         if not hasattr(self, "_plant_fail_ticks"):
             self._plant_fail_ticks = {}
         return self._plant_fail_ticks
+
+    def work_on_pass(self, sector, status):
+        """
+        Called by move_to() on every cell a route passes through (not its
+        target): harvests a mature crop and plants an open cell right there,
+        if the cell is one of the Harvester's own (harvester_layout()). The
+        hop is already paid for, and a plant costs a fraction of the +7 heat
+        an empty cell costs on every later pass.
+        """
+        h = self._host
+        species = (getattr(h, "step_mine", None) or {}).get(sector)
+        if not species or h.harvester.get_held():
+            return
+        if _now_tick() - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
+            return
+        if status == "mature":
+            if h.inventory_full_tick is not None or not self.harvest_here():
+                return
+            status = "empty"
+        if status in ("empty", "unknown") and h.stock_count("seed_" + species) >= 1:
+            h.log.debug(f"[{h.name}] Passing {sector}: planting {species} on the way.")
+            if self.plant_here(species):
+                rules = getattr(h, "_rules", None) or self.load_rules()
+                h.care_current(rules)
 
     def harvest_here(self):
         here = self._host.get_position()

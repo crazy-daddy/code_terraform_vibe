@@ -10,9 +10,11 @@
 #
 # Each step re-reads cells() and does the single most urgent task, cheapest
 # route (heat) first within a priority:
-#   1. full layout: deploy a machine kit (Grow Lamp / Sprinkler / Dispenser /
-#      Crop Automator) on its reserved cell. First: every machine takes care
-#      work off the Harvester for good, and behind care it never ran
+#   1. full layout: build in field_layout.work_order() (garden row by row in
+#      a snake, then the fill chunk by chunk): deploy a machine kit (Grow
+#      Lamp / Sprinkler / Dispenser / Crop Automator) on its reserved cell,
+#      or plant one of its own cells. First: every machine takes care work
+#      off the Harvester for good, and behind care it never ran
 #   2. care tour: once any treatment drops below CARE_REFRESH_H, every
 #      treatment below CARE_BATCH_H is renewed in one tour, so renewals line
 #      up and the field needs fewer separate trips. Ahead of harvesting: a
@@ -29,11 +31,15 @@
 #   7. wait where it stands (no trip back to the base pad: it costs heat and
 #      nothing needs the base)
 # Standing on a cell for any reason, every treatment below CARE_BATCH_H there
-# is renewed right away, since it costs no extra move.
+# is renewed right away, since it costs no extra move. Passing through a
+# layout cell on a route, a mature crop there is harvested and an open cell
+# planted if it is one of the Harvester's own cells
+# (harvester_planting.work_on_pass()): the next pass costs +1 heat, not +7.
 #
 # Telemetry: `plant.status` = {harvester_id: {...}} (one shared dict).
 
 from archive import archive
+import field_layout
 from harvesting import HarvesterController
 from harvester_heat import HarvesterHeatMixin
 from harvester_paving import HarvesterPavingMixin
@@ -96,6 +102,8 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.layout_mode = "starter"   # set by load_layout()
         self.reserved = {}             # {sector: machine kind}, set by load_layout()
         self.garden = []               # garden sectors, set by load_layout()
+        self.work_groups = []          # field_layout.work_order() of the full layout
+        self.step_mine = {}            # this step's harvester_layout(), for work_on_pass()
         self.step_machine_map = None   # deployed field machines, read once per step
         saved = archive.get(STATUS_KEY, {})
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
@@ -194,7 +202,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if not force and curr_tick - self._last_publish_tick < PUBLISH_INTERVAL_TICKS:
             return
         self._last_publish_tick = curr_tick
-        now, rotation = self.seed_demand(self.seed_layout(active), cells, rules)
+        now, rotation = self.seed_demand(self.seed_layout(active, self.step_mine), cells, rules)
         for seed_id, n in self.paving_seed_demand(layout, cells, rules, len(spare_items)).items():
             now[seed_id] = now.get(seed_id, 0) + n
         self.publish_seed_demand(now, rotation, curr_tick)
@@ -260,11 +268,13 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if not self._layout or curr_tick - self._layout_tick >= LAYOUT_RECHECK_TICKS:
             self._layout = self.load_layout(cells, rules)
             self._layout_tick = curr_tick
+            self.work_groups = field_layout.work_order(self._layout, self.reserved) if self.layout_mode == "full" else []
         layout = self._layout
         inactive = self.inactive_species(rules)
         active = self.active_layout(layout, rules, inactive)
         # The cells the Harvester plants itself (full layout: not automated).
         mine = self.harvester_layout(active, rules)
+        self.step_mine = mine
         # Loose items off the path: paving material, else swept up. Items on
         # the path are its +1-heat roads and stay put.
         roads = set(self.road_cells(layout))
@@ -274,17 +284,26 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # Something left in the held slot (e.g. after a restart) goes back to Inventory.
         self.store_held_if_any()
 
-        # 1. Full layout: deploy a field machine whose kit is at home. Ahead
-        #    of care: each machine takes a treatment (or, for a Crop
-        #    Automator, a whole 5 x 5 area) off the Harvester for good, and
-        #    behind care/planting it never ran (hand care kept it busy).
-        targets = self.deploy_targets(cells)
-        if targets:
-            target = self.nearest(list(targets), cells)
-            self.log.debug(f"[{self.name}] {len(targets)} machine cell(s) ready; cheapest {target} ({targets[target]}).")
-            if self.move_to(target):
-                self.deploy_here(targets[target])
-            return
+        # 1. Full layout: build (deploy a machine whose kit is at home, or
+        #    plant one of its own cells) in field_layout.work_order(): the
+        #    garden row by row in a snake, then the fill chunk by chunk.
+        #    Ahead of care: each machine takes a treatment (a Crop Automator a
+        #    whole 5 x 5 area) off the Harvester for good, and behind care it
+        #    never ran (hand care kept it busy).
+        if self.layout_mode == "full":
+            deploys = self.deploy_targets(cells)
+            build = dict(self.plant_targets(mine, cells))
+            build.update(deploys)
+            if build:
+                rank = self.build_rank()
+                target = min(build, key=lambda s: (rank.get(s, 1 << 30), s))
+                self.log.debug(f"[{self.name}] Build: {len(deploys)} machine / {len(build) - len(deploys)} plant cell(s) ready; next in order {target} ({build[target]}).")
+                if self.move_to(target):
+                    if target in deploys:
+                        self.deploy_here(deploys[target])
+                    elif self.plant_here(build[target]):
+                        self.care_current(rules)
+                return
 
         # 2. Care tour first: a lapsed treatment stalls growth, while a mature
         #    crop just waits with its Forage banked. Harvest-first starved care
