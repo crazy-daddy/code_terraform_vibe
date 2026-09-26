@@ -2,6 +2,7 @@ import fluid_routing
 import power
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Oil Generator automation: LAST-RESORT power only.
 #
@@ -63,8 +64,8 @@ OIL_TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank")
 def _notify(text, level="warn", duration=8.0):
     try:
         notify(text, level=level, duration_seconds=duration)
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("oil_generator._notify: notify", error)
 
 
 class OilGeneratorController:
@@ -91,8 +92,8 @@ class OilGeneratorController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("oil_generator.OilGeneratorController.get_current_tick: self.clock.tick", error)
         return 0
 
     # ------------------------------------------------------------------
@@ -119,7 +120,8 @@ class OilGeneratorController:
                 return False
             port = self.generator.oil_in
             return port.level() <= 0 and self.generator.oil_consumption() <= 0
-        except Exception:
+        except Exception as error:
+            swallowed("oil_generator.OilGeneratorController.is_starved: self.generator.throttle", error)
             return False
 
     def ensure_input_connection(self):
@@ -148,8 +150,8 @@ class OilGeneratorController:
         if self.power and hasattr(self.power, "grid"):
             try:
                 return self.power.grid(self.name)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("oil_generator.OilGeneratorController.get_grid: self.power.grid", error)
         return None
 
     def oil_deficit_share(self, grid):
@@ -161,8 +163,8 @@ class OilGeneratorController:
             # Members missing this generator: fall back to its own reading.
             try:
                 oil_total += self.generator.power_output()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("oil_generator.OilGeneratorController.oil_deficit_share: self.generator.power_output", error)
             oil_members.append(None)
         base_gen = getattr(grid, "generated", 0.0) - oil_total
         deficit = getattr(grid, "consumed", 0.0) - base_gen

@@ -18,6 +18,7 @@ from storage import total_stock
 from archive import archive
 import outpost_mining
 import mining_reservations
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -72,7 +73,8 @@ class VehicleMiningMixin:
             return True  # non-mining target (e.g. a POI survey) has no ore to mismatch against
         try:
             stacks = self._host.vehicle.cargo.stacks()
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_mining.VehicleMiningMixin.cargo_matches_target: self._host.vehicle.cargo.stacks", error)
             return True  # can't verify; don't block resumption over an unreadable stacks() call
         for stack in stacks:
             item_id = getattr(stack, "id", None)
@@ -102,7 +104,8 @@ class VehicleMiningMixin:
         if hasattr(self._host.vehicle, "drill") and hasattr(self._host.vehicle.drill, "hardness_limit"):
             try:
                 max_drill_hardness = self._host.vehicle.drill.hardness_limit()
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: self._host.vehicle.drill.hardness_limit", error)
                 max_drill_hardness = 1.0
         self._host.log.debug(
             f"[{self._host.name}] build_mineral_site_candidates(): demand={raw_demands}, max_drill_hardness={max_drill_hardness}, "
@@ -148,8 +151,8 @@ class VehicleMiningMixin:
                     "priority": priority,
                     "purity": getattr(site, "purity", None),
                 })
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: journal.surveyed_sites", error)
 
         self._host.log.debug(f"[{self._host.name}] build_mineral_site_candidates(): {len(candidates)} candidate(s) built.")
         return candidates
@@ -186,7 +189,8 @@ class VehicleMiningMixin:
         if hasattr(self._host.vehicle, "drill") and hasattr(self._host.vehicle.drill, "hardness_limit"):
             try:
                 max_drill_hardness = self._host.vehicle.drill.hardness_limit()
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: self._host.vehicle.drill.hardness_limit", error)
                 max_drill_hardness = 1.0
 
         unsupported_targets = self._host.get_unsupported_targets()
@@ -223,8 +227,8 @@ class VehicleMiningMixin:
                     "priority": 2,
                     "purity": getattr(site, "purity", None),
                 })
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("vehicle_mining.VehicleMiningMixin.build_local_stockpile_candidates: journal.surveyed_sites", error)
 
         self._host.log.debug(f"[{self._host.name}] build_local_stockpile_candidates('{outpost_id}'): {len(candidates)} candidate(s) built (under_target={under_target}).")
         return candidates
@@ -506,12 +510,12 @@ class VehicleMiningMixin:
                 self._host.log.level("error").print(f"[{self._host.name}] Stationed mining exception: {e}. Executing emergency failsafe brake.")
                 try:
                     self._host.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("vehicle_mining.VehicleMiningMixin.run_stationed_mining_loop: self._host.vehicle.nav.brake", error)
                 try:
                     self._host.release_target_claim()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("vehicle_mining.VehicleMiningMixin.run_stationed_mining_loop: self._host.release_target_claim", error)
                 sleep(5.0)
 
     def _stationed_mining_cycle(self, outpost_id):

@@ -1,6 +1,7 @@
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 from storage import take_item
 import fluid_routing
 import logistics_requests
@@ -135,8 +136,8 @@ class PlantTerraformerController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("plant_terraformer.PlantTerraformerController.get_current_tick: self.clock.tick", error)
         return 0
 
     # ------------------------------------------------------------ readings
@@ -282,7 +283,8 @@ class PlantTerraformerController:
     def _potency(self, item_id):
         try:
             return int(self.machine.fertilizer_potency(item_id))
-        except Exception:
+        except Exception as error:
+            swallowed("plant_terraformer.PlantTerraformerController._potency: self.machine.fertilizer_potency", error)
             return {"fertilizer_mk3": 50, "fertilizer_mk2": 30, "fertilizer": 10}.get(item_id, 0)
 
     def load_fertilizer(self, need_potency, held, requests):
@@ -353,7 +355,8 @@ class PlantTerraformerController:
             capacity = port.capacity() if hasattr(port, "capacity") else 0
             flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
             return flow == 0 and (not capacity or level < capacity)
-        except Exception:
+        except Exception as error:
+            swallowed("plant_terraformer.PlantTerraformerController._port_starved: port.level", error)
             return False
 
     def ensure_water(self, curr_tick):

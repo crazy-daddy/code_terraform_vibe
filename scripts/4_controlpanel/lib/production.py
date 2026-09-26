@@ -4,6 +4,7 @@ from storage import total_stock, discover_storage_buildings
 from outpost_mining import stock_target_for, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
+from swallow import swallowed
 import mining_reservations
 
 log = TreeConsole(module="production")
@@ -77,15 +78,16 @@ def _current_tick():
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production._current_tick: clock.tick", error)
     return 0
 
 
 def _component(component_id):
     try:
         return get_component(component_id)
-    except Exception:
+    except Exception as error:
+        swallowed("production._component: get_component", error)
         return None
 
 
@@ -116,8 +118,8 @@ def discover_smelter_ids(outpost=None):
                 b_id = getattr(building, "id", None)
                 if b_id:
                     ids.append(b_id)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.discover_smelter_ids: outpost.buildings", error)
     return ids
 
 
@@ -149,8 +151,8 @@ def discover_fabricator_ids(outpost=None):
                 b_id = getattr(building, "id", None)
                 if b_id:
                     ids.append(b_id)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.discover_fabricator_ids: outpost.buildings", error)
     return ids
 
 
@@ -183,8 +185,8 @@ def discover_supply_dock_ids(outpost=None):
                 b_id = getattr(building, "id", None)
                 if b_id:
                     ids.append(b_id)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.discover_supply_dock_ids: outpost.buildings", error)
     return ids
 
 
@@ -206,7 +208,8 @@ def _all_dock_orders():
             continue
         try:
             order = getattr(dock, "current_order")()
-        except Exception:
+        except Exception as error:
+            swallowed("production._all_dock_orders: getattr(dock, 'current_order')", error)
             continue
         if order:
             pairs.append((dock, order))
@@ -242,8 +245,8 @@ def _dock_order_remaining():
         try:
             for item_id in order.requires:
                 loaded[item_id] = loaded.get(item_id, 0) + dock.count(item_id)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production._dock_order_remaining: loaded.get", error)
 
     result = {}
     for order_id, order in orders_by_id.items():
@@ -254,8 +257,8 @@ def _dock_order_remaining():
                 item_id: required - shipped.get(item_id, 0) - loaded.get(item_id, 0)
                 for item_id, required in (getattr(order, "requires", {}) or {}).items()
             }
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production._dock_order_remaining: loaded_by_order.get", error)
     log.trace(f"_dock_order_remaining: {len(orders_by_id)} distinct active order(s) -> {result}")
     return result
 
@@ -344,7 +347,8 @@ def fluid_building_is_viable(fluid_key, type_id, building):
             return False
     try:
         return getattr(building, "fluid")() == expected
-    except Exception:
+    except Exception as error:
+        swallowed("production.fluid_building_is_viable: getattr(building, 'fluid')", error)
         return False
 
 
@@ -389,8 +393,8 @@ def can_source_fluid(fluid_key, cache=None):
                             break
                     if result:
                         break
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("production.can_source_fluid: network.outposts", error)
         if not result:
             log.trace(f"can_source_fluid({fluid_key}): no viable source among {type_ids}")
 
@@ -476,8 +480,8 @@ def consume_manual_order(item_id, quantity):
 
     try:
         archive.transaction(MANUAL_ORDERS_KEY, {}, updater)
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("production.consume_manual_order: archive.transaction", error)
 
 
 # Fleet hardware upgrade orders (lib/fleet_upgrade.py, lib/drone_upgrade.py):
@@ -540,7 +544,8 @@ def fabricator_unlocked_outputs(cache=None):
         fabricator = _default_fabricator()
         try:
             recipes = fabricator.list_recipes() if fabricator and hasattr(fabricator, "list_recipes") else []
-        except Exception:
+        except Exception as error:
+            swallowed("production.fabricator_unlocked_outputs: fabricator.list_recipes", error)
             recipes = []
     return {getattr(r, "output_item", None) for r in recipes} - {None}
 
@@ -573,7 +578,8 @@ def _recipe_inputs_for(item_id, cache=None):
                 continue
             try:
                 recipe_lists.append(list(component.list_recipes()))
-            except Exception:
+            except Exception as error:
+                swallowed("production._recipe_inputs_for: recipe_lists.append", error)
                 continue
     for recipes in recipe_lists:
         try:
@@ -583,7 +589,8 @@ def _recipe_inputs_for(item_id, cache=None):
                 output_count = max(1, getattr(recipe, "output_count", 1))
                 inputs = getattr(recipe, "inputs", {}) or {}
                 return {in_id: qty / output_count for in_id, qty in inputs.items()}
-        except Exception:
+        except Exception as error:
+            swallowed("production._recipe_inputs_for: inputs.items", error)
             continue
     return None
 
@@ -693,7 +700,8 @@ def _vehicle_cargo_counts(item_ids):
         return counts
     try:
         refs = fleet.vehicles()
-    except Exception:
+    except Exception as error:
+        swallowed("production._vehicle_cargo_counts: fleet.vehicles", error)
         return counts
     for ref in refs:
         vehicle = _component(getattr(ref, "id", None))
@@ -705,7 +713,8 @@ def _vehicle_cargo_counts(item_ids):
                 item_id = getattr(stack, "id", None)
                 if item_id in item_ids:
                     counts[item_id] = counts.get(item_id, 0) + (getattr(stack, "count", 0) or 0)
-        except Exception:
+        except Exception as error:
+            swallowed("production._vehicle_cargo_counts: cargo.stacks", error)
             continue
     return {k: v for k, v in counts.items() if v > 0}
 
@@ -755,8 +764,8 @@ def _cascade_blueprint_demand(cache=None):
                     if job_id:
                         seen_jobs.add(job_id)
                     frontier[item_id] = frontier.get(item_id, 0) + count
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("production._cascade_blueprint_demand: getter", error)
 
     # A constructor Pioneer loads a whole batch for chained jobs before
     # driving out, and every job stays pending until actually built -- so
@@ -839,7 +848,8 @@ def get_fabricator_targets(cache=None):
         fabricator = _default_fabricator()
         try:
             recipes = fabricator.list_recipes() if fabricator and hasattr(fabricator, "list_recipes") else []
-        except Exception:
+        except Exception as error:
+            swallowed("production.get_fabricator_targets: fabricator.list_recipes", error)
             recipes = []
     for recipe in recipes:
         output_item = getattr(recipe, "output_item", None)
@@ -940,8 +950,8 @@ def get_fabricator_worker_ids(recipe_id):
         try:
             if candidate.get_recipe() == recipe_id:
                 ids.append(fabricator_id)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_fabricator_worker_ids: candidate.get_recipe", error)
     return sorted(ids)
 
 
@@ -996,8 +1006,8 @@ def get_fabricator_pipeline(cache=None):
                 output_item = getattr(recipe, "output_item", None) if recipe else None
                 if output_item:
                     pipeline[output_item] = pipeline.get(output_item, 0) + max(1, getattr(recipe, "output_count", 1))
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_fabricator_pipeline: output.stacks", error)
     log.trace(f"get_fabricator_pipeline: {pipeline}")
     if cache is not None:
         cache._fabricator_pipeline = dict(pipeline)
@@ -1025,8 +1035,8 @@ def get_smelter_worker_count(recipe_id):
         try:
             if candidate.get_recipe() == recipe_id:
                 count += 1
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_smelter_worker_count: candidate.get_recipe", error)
     return max(1, count)
 
 
@@ -1073,7 +1083,8 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
             log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): recipe={current_recipe_id} split {pre_split} crafts across {len(worker_ids)} workers {worker_ids} -> {crafts_remaining} for this one")
         log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} still_needed={still_needed} crafts_remaining={crafts_remaining}")
         return recipe, crafts_remaining
-    except Exception:
+    except Exception as error:
+        swallowed("production.get_fabricator_active_recipe: fabricator.get_recipe", error)
         return None, 0
 
 
@@ -1128,8 +1139,8 @@ def get_material_demands(cache=None):
                 _add_demand(demands, item_id, missing)
                 if missing > 0:
                     log.trace(f"get_material_demands: {fabricator_id} recipe={getattr(recipe, 'id', '?')} needs {item_id} -> deficit={missing} (crafts_remaining={crafts_remaining})")
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_material_demands: fabricator.get_stockpile", error)
 
     # Every dock's active order is a current downstream shipping requirement.
     for order_id, remaining_by_item in _dock_order_remaining().items():
@@ -1217,8 +1228,8 @@ def get_smelter_demands(cache=None):
             for item_id, count in (fabricator.get_stockpile() or {}).items():
                 if item_id in gross:
                     staged[item_id] = staged.get(item_id, 0) + count
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_smelter_demands: (fabricator.get_stockpile() or {}).items", error)
 
     demands = {}
     for item_id, qty in gross.items():
@@ -1258,8 +1269,8 @@ def smelter_recipe_peers(recipe_id):
                 continue
             count += 1
             buffered += candidate.get_input_count() if hasattr(candidate, "get_input_count") else 0
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.smelter_recipe_peers: candidate.get_recipe", error)
     return max(1, count), buffered
 
 
@@ -1296,8 +1307,8 @@ def get_raw_material_demands(smelter=None):
                     _add_demand(refined_demands, input_id, deficit)
                     if deficit > 0:
                         log.trace(f"get_raw_material_demands: fabricator output {output_item} (need={output_need}) expands into refined {input_id} -> deficit={deficit}")
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_raw_material_demands: fabricator.list_recipes", error)
 
     # Only unlocked smelter recipes can create demand. Locked silicon recipes
     # therefore cannot cause either refining or rover mining.
@@ -1316,8 +1327,8 @@ def get_raw_material_demands(smelter=None):
                     _add_demand(raw_demands, raw_item, deficit)
                     if deficit > 0:
                         log.trace(f"get_raw_material_demands: smelter recipe {getattr(recipe, 'id', '?')} for {output_item} (need={output_need}) expands into raw {raw_item} -> deficit={deficit}")
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_raw_material_demands: smelter.list_recipes", error)
 
     # Standing home ore buffer: keep at least one Warehouse slot's worth
     # (outpost_mining.stock_target_for(), seed-once-editable) of every raw
@@ -1421,8 +1432,8 @@ class SourceCache:
                         count = getattr(stack, "count", 0)
                         totals[stack_item_id] = totals.get(stack_item_id, 0) + count
                         held[stack_item_id] = held.get(stack_item_id, 0) + count
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("production.SourceCache._build_stock_map: component.stacks", error)
         self._building_stock = per_building
         log.trace(f"SourceCache._build_stock_map: scanned {len(sources)} storage components, {len(totals)} distinct items")
         return totals
@@ -1451,7 +1462,8 @@ class SourceCache:
             component = _default_smelter()
             try:
                 self._smelter_recipes = list(component.list_recipes()) if component and hasattr(component, "list_recipes") else []
-            except Exception:
+            except Exception as error:
+                swallowed("production.SourceCache.smelter_recipes: component.list_recipes", error)
                 self._smelter_recipes = []
         return self._smelter_recipes
 
@@ -1460,7 +1472,8 @@ class SourceCache:
             component = _default_fabricator()
             try:
                 self._fabricator_recipes = list(component.list_recipes()) if component and hasattr(component, "list_recipes") else []
-            except Exception:
+            except Exception as error:
+                swallowed("production.SourceCache.fabricator_recipes: component.list_recipes", error)
                 self._fabricator_recipes = []
         return self._fabricator_recipes
 
@@ -1469,7 +1482,8 @@ class SourceCache:
             journal = _component("journal")
             try:
                 self._surveyed_sites = list(journal.surveyed_sites("nocturna")) if journal and hasattr(journal, "surveyed_sites") else []
-            except Exception:
+            except Exception as error:
+                swallowed("production.SourceCache.surveyed_sites: journal.surveyed_sites", error)
                 self._surveyed_sites = []
         return self._surveyed_sites
 
@@ -1481,7 +1495,8 @@ def _has_surveyed_mineral(item_id, cache):
             and getattr(site, "item_id", None) == item_id
             for site in cache.surveyed_sites()
         )
-    except Exception:
+    except Exception as error:
+        swallowed("production._has_surveyed_mineral: getattr(site, 'kind', lambda: '')", error)
         return False
 
 
@@ -1574,15 +1589,15 @@ def get_raw_material_reason(raw_item, smelter=None):
                     fabricator_inputs = fabricator.get_recipe_inputs() or {}
                     if output_item in fabricator_inputs:
                         return f"Fabricator via {getattr(recipe, 'id', 'Smelter')}"
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_raw_material_reason: smelter.list_recipes", error)
 
     if fabricator and hasattr(fabricator, "get_recipe_inputs"):
         try:
             if raw_item in (fabricator.get_recipe_inputs() or {}):
                 return f"Fabricator recipe {getattr(fabricator, 'get_recipe', lambda: 'active')()}"
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("production.get_raw_material_reason: fabricator.get_recipe_inputs", error)
 
     if total_stock(raw_item) > 0:
         return "existing storage demand"

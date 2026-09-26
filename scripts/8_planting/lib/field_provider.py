@@ -24,6 +24,7 @@ import fluid_routing
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 from storage import take_item
 from tree_console import TreeConsole
+from swallow import swallowed
 from version_guard import validate_game_version
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
@@ -70,14 +71,15 @@ class FieldProviderController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("field_provider.FieldProviderController.get_current_tick: self.clock.tick", error)
         return 0
 
     def sector(self):
         try:
             return self.machine.position()
-        except Exception:
+        except Exception as error:
+            swallowed("field_provider.FieldProviderController.sector: self.machine.position", error)
             return None
 
     # --------------------------------------------------------------- demand
@@ -137,7 +139,8 @@ class FieldProviderController:
             capacity = port.capacity() if hasattr(port, "capacity") else 0
             flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
             return flow == 0 and (not capacity or level < capacity)
-        except Exception:
+        except Exception as error:
+            swallowed("field_provider.FieldProviderController._port_starved: port.level", error)
             return False
 
     def ensure_water(self, curr_tick):
@@ -172,7 +175,8 @@ class FieldProviderController:
             return
         try:
             have = port.count()
-        except Exception:
+        except Exception as error:
+            swallowed("field_provider.FieldProviderController.ensure_salt: port.count", error)
             return
         if have >= DISPENSER_REFILL_BELOW:
             self.log.debug(f"[{self.name}] salt buffer {have} >= {DISPENSER_REFILL_BELOW}; no top-up.")
@@ -190,8 +194,8 @@ class FieldProviderController:
         try:
             if self.machine.is_enabled() == enabled:
                 return
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("field_provider.FieldProviderController.set_enabled: self.machine.is_enabled", error)
         res = self.machine.set_enabled(enabled)
         self.log.debug(f"[{self.name}] set_enabled({enabled}) -> {getattr(res, 'status', '?')}")
 
@@ -216,7 +220,8 @@ class FieldProviderController:
 
         try:
             status = self.machine.status()
-        except Exception:
+        except Exception as error:
+            swallowed("field_provider.FieldProviderController.step: self.machine.status", error)
             status = "?"
         if status != self._last_status:
             if enabled and status not in ("active", "?"):
@@ -232,7 +237,8 @@ class FieldProviderController:
         self._last_publish_tick = curr_tick
         try:
             buffer = round(float(self.machine.buffer()), 3)
-        except Exception:
+        except Exception as error:
+            swallowed("field_provider.FieldProviderController.publish: self.machine.buffer", error)
             buffer = None
         entry = {"kind": self.kind, "sector": self.sector(), "status": status,
                  "buffer": buffer, "enabled": enabled, "tick": curr_tick}

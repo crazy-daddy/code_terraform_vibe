@@ -14,6 +14,7 @@
 
 from bio import is_order_incomplete, is_local_order, get_my_biome, local_sibling
 from storage import discover_storage_buildings
+from swallow import swallowed
 
 # Resolve via the Luminizer's own outpost, not a hardcoded "bio_exchange_1" --
 # there can be more than one Bio Exchange in this save now (e.g. bio_exchange_4
@@ -64,7 +65,8 @@ else:
             continue
         try:
             stacks = component.stacks()
-        except Exception:
+        except Exception as error:
+            swallowed("bio_glow_diagnostic: component.stacks", error)
             continue
         for stack in stacks:
             item_id = getattr(stack, "id", None)
@@ -83,6 +85,7 @@ else:
                 try:
                     match = exchange.matches_order(item_id, properties)
                 except Exception as e:
+                    swallowed("bio_glow_diagnostic: exchange.matches_order", e)
                     match = f"error: {e}"
                 print(f"    matches {o.id} (target_glow={getattr(o, 'target_glow', None)})? {match}")
 

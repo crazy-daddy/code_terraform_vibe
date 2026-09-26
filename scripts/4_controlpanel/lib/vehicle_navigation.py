@@ -1,3 +1,4 @@
+from swallow import swallowed
 # Vehicle mixin: point-to-point driving, battery-floor enforcement, stall
 # recovery, and multi-stop recharge routing. Shared by Rover and Pioneer via
 # VehicleController (lib/vehicle.py).
@@ -24,7 +25,8 @@ class VehicleNavigationMixin:
         try:
             pos = self._host.vehicle.nav.get_position()
             return (pos.x, pos.y)
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_navigation.VehicleNavigationMixin.get_position: self._host.vehicle.nav.get_position", error)
             return self.assigned_slot_coords
 
     def distance_between(self, p1, p2):
@@ -66,8 +68,8 @@ class VehicleNavigationMixin:
         if clock and hasattr(clock, "real_seconds_per_hour"):
             try:
                 real_seconds_per_hour = clock.real_seconds_per_hour()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_navigation.VehicleNavigationMixin.drive_timeout_ticks: clock.real_seconds_per_hour", error)
 
         expected_real_seconds = (distance / speed_m_per_hour) * real_seconds_per_hour * safety_multiplier
         return max(min_ticks, int(expected_real_seconds * 10))

@@ -1,3 +1,4 @@
+from swallow import swallowed
 # Harvester mixin: heat-aware movement. Composed by FieldKeeperController
 # (lib/field_keeper.py); overrides HarvesterController's move_to()/cool_down().
 #
@@ -93,7 +94,8 @@ class HarvesterHeatMixin:
         clock = get_component("clock")
         try:
             self.real_seconds_per_hour = float(clock.real_seconds_per_hour()) if clock else 25.0
-        except Exception:
+        except Exception as error:
+            swallowed("harvester_heat.HarvesterHeatMixin.init_heat_model: clock.real_seconds_per_hour", error)
             self.real_seconds_per_hour = 25.0
 
     def heat_model(self):
@@ -106,7 +108,8 @@ class HarvesterHeatMixin:
     def heat_cap(self):
         try:
             return float(self._host.harvester.get_max_heat()) - HEAT_SAFETY
-        except Exception:
+        except Exception as error:
+            swallowed("harvester_heat.HarvesterHeatMixin.heat_cap: self._host.harvester.get_max_heat", error)
             return 100.0 - HEAT_SAFETY
 
     def move_cost(self, status):

@@ -10,6 +10,7 @@
 # read live.
 
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="pump_salt")
 
@@ -24,7 +25,8 @@ def _now_tick():
     try:
         clock = get_component("clock")
         return clock.tick() if clock else 0
-    except Exception:
+    except Exception as error:
+        swallowed("pump_salt._now_tick: get_component", error)
         return 0
 
 
@@ -50,7 +52,8 @@ def pump_positions(curr_tick=None):
             if site.kind() != "water" or not has_pump():
                 continue
             pump_id = get_pump_id()
-        except Exception:
+        except Exception as error:
+            swallowed("pump_salt.pump_positions: site.kind", error)
             continue
         if pump_id:
             pumps[pump_id] = [site.x, site.y]
@@ -68,7 +71,8 @@ def salt_at(pump_id):
         return 0
     try:
         return int(port.count())
-    except Exception:
+    except Exception as error:
+        swallowed("pump_salt.salt_at: port.count", error)
         return 0
 
 

@@ -5,6 +5,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from swallow import swallowed
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
 
@@ -75,7 +76,8 @@ def safe_get_component(name):
     """Safely retrieves a game component without raising exceptions."""
     try:
         return get_component(name)
-    except Exception:
+    except Exception as error:
+        swallowed("archive_cleaner.safe_get_component: get_component", error)
         return None
 
 
@@ -125,8 +127,8 @@ class ArchiveCleaner:
         if clock and hasattr(clock, "tick"):
             try:
                 return clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("archive_cleaner.ArchiveCleaner.get_current_tick: clock.tick", error)
         return 0
 
     def get_scanned_pois(self):

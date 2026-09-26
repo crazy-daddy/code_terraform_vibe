@@ -27,6 +27,7 @@
 from archive import archive
 from storage import warehouse_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="logistics_requests")
 
@@ -58,7 +59,8 @@ def _now_tick():
     try:
         clock = get_component("clock")
         return clock.tick() if clock else 0
-    except Exception:
+    except Exception as error:
+        swallowed("logistics_requests._now_tick: get_component", error)
         return 0
 
 
@@ -314,13 +316,15 @@ def local_depots(outpost):
     for type_id in DRONE_DEPOT_TYPE_IDS:
         try:
             refs.extend(outpost.buildings(type_id))
-        except Exception:
+        except Exception as error:
+            swallowed("logistics_requests.local_depots: refs.extend", error)
             continue
     depots = []
     for ref in refs:
         try:
             depot = get_component(ref.id)
-        except Exception:
+        except Exception as error:
+            swallowed("logistics_requests.local_depots: get_component", error)
             depot = None
         if depot:
             depots.append(depot)
@@ -336,7 +340,8 @@ def depot_stock(depot):
     try:
         for stack in port.stacks():
             stock[stack.id] = stock.get(stack.id, 0) + stack.count
-    except Exception:
+    except Exception as error:
+        swallowed("logistics_requests.depot_stock: port.stacks", error)
         return {}
     return stock
 
@@ -362,8 +367,8 @@ def outpost_stock(item_ids, outpost):
             if inventory:
                 for item_id in item_ids:
                     totals[item_id] += inventory.count(item_id)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("logistics_requests.outpost_stock: get_component", error)
         if CROP_AUTOMATOR_ITEM_ID in totals:
             totals[CROP_AUTOMATOR_ITEM_ID] += crop_automator_forage_total(outpost)
     return totals
@@ -425,7 +430,8 @@ def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude
     if getattr(outpost, "is_home", False):
         try:
             inventory = get_component("inventory")
-        except Exception:
+        except Exception as error:
+            swallowed("logistics_requests.outpost_free_stock: get_component", error)
             inventory = None
     free = {}
     for item_id in item_ids:
@@ -433,8 +439,8 @@ def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude
         if inventory is not None:
             try:
                 units += inventory.count(item_id)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("logistics_requests.outpost_free_stock: inventory.count", error)
         if item_id == CROP_AUTOMATOR_ITEM_ID and inventory is not None:
             units += crop_automator_forage_total(outpost)
         units -= own.get(item_id, {}).get("target", 0) + taken.get(item_id, 0)

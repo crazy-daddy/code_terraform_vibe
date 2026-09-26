@@ -1,6 +1,7 @@
 import fluid_routing
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid
@@ -82,8 +83,8 @@ class SteamTurbineController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("steam_turbine.SteamTurbineController.get_current_tick: self.clock.tick", error)
         return 0
 
     def _discover_candidates(self):
@@ -137,23 +138,24 @@ class SteamTurbineController:
             if not capacity:
                 return 0.0
             return port.level() / capacity
-        except Exception:
+        except Exception as error:
+            swallowed("steam_turbine.SteamTurbineController.buffer_fraction: port.capacity", error)
             return 0.0
 
     def get_grid(self):
         if self.power and hasattr(self.power, "grid"):
             try:
                 return self.power.grid(self.name)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("steam_turbine.SteamTurbineController.get_grid: self.power.grid", error)
         return None
 
     def is_night(self):
         if self.clock and hasattr(self.clock, "get_elevation"):
             try:
                 return self.clock.get_elevation() <= 0
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("steam_turbine.SteamTurbineController.is_night: self.clock.get_elevation", error)
         return False
 
     def choose_throttle(self):

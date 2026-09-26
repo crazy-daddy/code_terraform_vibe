@@ -8,6 +8,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="unsupported_markers")
 
@@ -18,7 +19,8 @@ MARKER_PREFIX = "unsupported."
 def _component(component_id):
     try:
         return get_component(component_id)
-    except Exception:
+    except Exception as error:
+        swallowed("unsupported_markers._component: get_component", error)
         return None
 
 
@@ -153,8 +155,8 @@ def clear_wrong_scanner_marker(x, y):
                 if getattr(res, "status", "") == "ok":
                     log.debug(f"clear_wrong_scanner_marker({target_x}, {target_y}): removed marker '{marker_id}' for resolved bio contact '{key}'.")
                     cleared = True
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("unsupported_markers.clear_wrong_scanner_marker: markers.remove", error)
     return cleared
 
 
@@ -187,8 +189,8 @@ def update_unsupported_markers(clear_previous=True):
     if journal and hasattr(journal, "discovered_sites"):
         try:
             journal_sites = journal.discovered_sites("nocturna") or []
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("unsupported_markers.update_unsupported_markers: journal.discovered_sites", error)
 
     # Clear previous markers if requested to stay in sync with archive
     if clear_previous:
@@ -233,8 +235,8 @@ def update_unsupported_markers(clear_previous=True):
                     log.debug(f"  Skipping '{key}': Journal shows ({coords[0]}, {coords[1]}) already bio-scanned; no marker needed.")
                     skipped_count += 1
                     continue
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("unsupported_markers.update_unsupported_markers: journal.has_scanned", error)
 
         icon, color, label, note = get_marker_style(reason, entry)
 

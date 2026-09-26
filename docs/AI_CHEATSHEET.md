@@ -88,6 +88,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Wildcard pattern matching helpers | `patterns.py` |
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
+| Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
 
 Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_4.py`, etc.) stay thin entrypoints: import + run controller from `lib/`. No own copies of tier lists, thresholds, budgeting formulas.
 
@@ -133,6 +134,30 @@ self.log.level("warn").print("Battery below safety floor, aborting trip")  # one
 - `color(c)` / `level(lvl)` set one-shot override (CSS color / `info`\|`warn`\|`error`\|`debug`\| custom) consumed by *next* `print`/`start`/`end`/`debug`/`trace` call only, then reset to instance default.
 - Every line still goes through `console.print(..., timestamp=True)` — keeps game time-of-day prefix, works with Console channel/level filters.
 - Reserve plain `warn`/`error` for real status changes player should notice without debug output; `debug()`/`trace()` purely detail, never attention-needing.
+
+### 0b. No Silent `except Exception` (`lib/swallow.py` `swallowed()`)
+
+Every broad handler that recovers (returns a default, `continue`s, keeps looping) calls `swallowed()` as its first line:
+
+```python
+from swallow import swallowed
+
+try:
+    count = port.count()
+except Exception as error:
+    swallowed("storage.crop_automator_forage: port.count", error)
+    continue
+```
+
+- `where` = `"module.Class.function: call"`. Append ` #2`, ` #3` when one function has several sites calling the same thing. It is the dedupe key, so keep it unique per site.
+- Every caught error → one **debug** line. Identical consecutive errors at one site are logged once, so a per-tick handler can't flood the log.
+- "Code bug" types (`TypeError`, `AttributeError`, `NameError`, `KeyError`, `IndexError`, `ZeroDivisionError`) → also one **warn** per site per script run, visible without debug output on. Exception: `AttributeError` on `NoneType`, which is how a missing component (a `None` from `get_component()`) usually surfaces.
+- Why: a broad except can't tell "game said no" from "our code is wrong". `OutputSlot.count("forage")` raised `TypeError` (`count()` takes no item id). The handler returned 0, every Crop Automator read as empty, and both Plant Terraformers starved without a single log line.
+- **Allowed to stay silent** (with a comment saying why):
+  - inside an `archive.transaction()` updater: any log call there rejects the transaction;
+  - `swallowed()` itself;
+  - narrow handlers that fully handle their case, e.g. `except (TypeError, ValueError)` around a `float()` parse with a fallback, or `except IndexError` as a loop escape.
+- Tiers without `lib/` (`0_cold_boot`, `1_early`) use a local `_swallowed()` stand-in (debug only) defined in the script itself.
 
 ---
 

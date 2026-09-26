@@ -23,6 +23,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="profiling")
 
@@ -44,7 +45,8 @@ def begin():
         return None
     try:
         return clock.tick()
-    except Exception:
+    except Exception as error:
+        swallowed("profiling.begin: clock.tick", error)
         return None
 
 
@@ -62,7 +64,8 @@ def end(name, start_tick, warn_threshold=SLOW_STEP_TICK_THRESHOLD, log_slow=True
         return None
     try:
         end_tick = clock.tick()
-    except Exception:
+    except Exception as error:
+        swallowed("profiling.end: clock.tick", error)
         return None
     delta = end_tick - start_tick
 

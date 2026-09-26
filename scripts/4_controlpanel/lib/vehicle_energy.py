@@ -53,6 +53,7 @@ def is_rover_chassis_for(vehicle):
     return str(name).startswith("rover")
 
 from archive import archive
+from swallow import swallowed
 
 # Building type id as returned by OutpostRef.buildings() / Machine.typeId
 # ("charging_station"), not the component doc name
@@ -124,8 +125,8 @@ def active_modules_count_for(vehicle):
                 1 for slot in vehicle.modules()
                 if getattr(slot, "module_id", None) and str(slot.module_id).startswith(ACTIVE_MODULE_ID_PREFIXES)
             )
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("vehicle_energy.active_modules_count_for: vehicle.modules", error)
     return sum(1 for attr in ("nav", "drill", "sonar", "constructor") if hasattr(vehicle, attr))
 
 
@@ -134,8 +135,8 @@ def cargo_units_count_for(vehicle):
     if hasattr(vehicle, "cargo") and hasattr(vehicle.cargo, "count"):
         try:
             return vehicle.cargo.count()
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("vehicle_energy.cargo_units_count_for: vehicle.cargo.count", error)
     return 0
 
 
@@ -144,8 +145,8 @@ def nav_speed_multiplier_for(vehicle):
     if hasattr(vehicle, "nav") and hasattr(vehicle.nav, "speed_multiplier"):
         try:
             return float(vehicle.nav.speed_multiplier())
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("vehicle_energy.nav_speed_multiplier_for: vehicle.nav.speed_multiplier", error)
     return 1.0
 
 
@@ -195,13 +196,13 @@ def mine_wh_per_unit_for(vehicle, item_id, purity=None):
         if hasattr(drill, "speed_multiplier"):
             try:
                 speed_mult = float(drill.speed_multiplier())
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_energy.mine_wh_per_unit_for: drill.speed_multiplier", error)
         if hasattr(drill, "hardness_limit"):
             try:
                 hardness_limit = int(drill.hardness_limit())
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_energy.mine_wh_per_unit_for: drill.hardness_limit", error)
     power_w = DRILL_POWER_W_BY_HARDNESS_LIMIT.get(hardness_limit, DEFAULT_DRILL_POWER_W)
     purity_divisor = PURITY_DIVISOR.get(str(purity or "standard"), 1.0)
     time_hours = (base_minutes / 60.0) * speed_mult / purity_divisor
@@ -338,7 +339,8 @@ class VehicleEnergyMixin:
             cap = self._host.vehicle.battery.capacity()
             lvl = self._host.vehicle.battery.level()
             return wh, cap, lvl
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_energy.VehicleEnergyMixin.get_battery: self._host.vehicle.battery.wh", error)
             return 0.0, 100.0, 0.0
 
     def wh_per_meter_at_throttle(self, throttle, cargo_units=None):
@@ -640,7 +642,8 @@ class VehicleEnergyMixin:
         if outpost_net and hasattr(outpost_net, "outposts"):
             try:
                 outposts = outpost_net.outposts()
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_energy.VehicleEnergyMixin.get_all_charging_stations: outpost_net.outposts", error)
                 outposts = []
 
             for op in outposts:
@@ -648,7 +651,8 @@ class VehicleEnergyMixin:
                     continue
                 try:
                     buildings = op.buildings(CHARGING_STATION_TYPE_ID)
-                except Exception:
+                except Exception as error:
+                    swallowed("vehicle_energy.VehicleEnergyMixin.get_all_charging_stations: op.buildings", error)
                     continue
                 for b in buildings:
                     b_id = getattr(b, "id", "")
@@ -704,8 +708,8 @@ class VehicleEnergyMixin:
                 for outpost in network.outposts():
                     if getattr(outpost, "id", None) == outpost_id:
                         return outpost
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_energy.VehicleEnergyMixin.get_outpost_ref: network.outposts", error)
         return None
 
     def find_charging_station(self, outpost):
@@ -722,8 +726,8 @@ class VehicleEnergyMixin:
             for b in outpost.buildings(CHARGING_STATION_TYPE_ID):
                 if self._host.extract_coords(getattr(b, "position", None)):
                     return b
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("vehicle_energy.VehicleEnergyMixin.find_charging_station: outpost.buildings", error)
         return None
 
     def get_home_slot_coords(self):
@@ -747,8 +751,8 @@ class VehicleEnergyMixin:
                 coords = self._host.home_outpost.coords()
                 if coords:
                     return (float(coords[0]), float(coords[1]))
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_energy.VehicleEnergyMixin.get_home_slot_coords: self._host.home_outpost.coords", error)
         return (0.0, 0.0)
 
     def recharge_at_station(self, target_level=1.0, station_coords=None, station_id=None):
@@ -799,8 +803,8 @@ class VehicleEnergyMixin:
             try:
                 docked_fn = getattr(cs, "get_docked")
                 is_docked = self._host.name in docked_fn()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: docked_fn", error)
 
         if not is_docked:
             # drive_to() already short-circuits instantly when already within
@@ -816,8 +820,8 @@ class VehicleEnergyMixin:
         if hasattr(self._host.vehicle, "nav"):
             try:
                 self._host.vehicle.nav.brake()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: self._host.vehicle.nav.brake", error)
 
         sleep(0.5)
         self._host.publish_telemetry("CHARGING")
@@ -856,10 +860,10 @@ class VehicleEnergyMixin:
                             self._host.log.level("warn").print(f"[{self._host.name}] Advisory: Vehicle is docked, but charging station '{station_id}' has not queued it yet. Ensure '{st_script}' is running!")
                             try:
                                 notify(f"[{self._host.name}] Docked and waiting. Ensure '{st_script}' is running!", level="info", duration_seconds=8.0)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                            except Exception as error:
+                                swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: notify", error)
+                except Exception as error:
+                    swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: get_docked_fn", error)
 
             sleep(2.0)
 

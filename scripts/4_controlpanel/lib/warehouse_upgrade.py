@@ -38,6 +38,7 @@
 
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
 from tree_console import TreeConsole
+from swallow import swallowed
 
 SMALL_TYPE_ID = "warehouse"
 LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id
@@ -83,7 +84,8 @@ def _shape(text):
 def _component(component_id):
     try:
         return get_component(component_id)
-    except Exception:
+    except Exception as error:
+        swallowed("warehouse_upgrade._component: get_component", error)
         return None
 
 
@@ -99,7 +101,8 @@ class WarehouseUpgrader:
         network = _component("outpost_network")
         try:
             return network.outposts() if network else []
-        except Exception:
+        except Exception as error:
+            swallowed("warehouse_upgrade.WarehouseUpgrader._outposts: network.outposts", error)
             return []
 
     def _outpost(self, outpost_id):
@@ -108,28 +111,32 @@ class WarehouseUpgrader:
     def _ids_of(self, outpost, type_id):
         try:
             return sorted(getattr(ref, "id", "") for ref in outpost.buildings(type_id) if getattr(ref, "id", ""))
-        except Exception:
+        except Exception as error:
+            swallowed("warehouse_upgrade.WarehouseUpgrader._ids_of: outpost.buildings", error)
             return []
 
     def _total(self, building_id):
         wh = _component(building_id)
         try:
             return int(wh.total()) if wh else 0
-        except Exception:
+        except Exception as error:
+            swallowed("warehouse_upgrade.WarehouseUpgrader._total: wh.total", error)
             return 0
 
     def _inventory_count(self, item_id):
         inventory = _component("inventory")
         try:
             return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception:
+        except Exception as error:
+            swallowed("warehouse_upgrade.WarehouseUpgrader._inventory_count: inventory.count", error)
             return 0
 
     def _credits(self):
         commander = _component("commander")
         try:
             return int(commander.get_credits()) if commander else 0
-        except Exception:
+        except Exception as error:
+            swallowed("warehouse_upgrade.WarehouseUpgrader._credits: commander.get_credits", error)
             return 0
 
     def _price(self):
@@ -138,8 +145,8 @@ class WarehouseUpgrader:
             for entry in shop.get_catalogue() if shop else []:
                 if entry.id == LARGE_TYPE_ID:
                     return int(entry.cost)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("warehouse_upgrade.WarehouseUpgrader._price: shop.get_catalogue", error)
         return LARGE_PRICE_FALLBACK
 
     def _large_unlocked(self):
@@ -147,8 +154,8 @@ class WarehouseUpgrader:
         try:
             if research and research.is_unlocked(LARGE_RESEARCH_ID):
                 return True
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("warehouse_upgrade.WarehouseUpgrader._large_unlocked: research.is_unlocked", error)
         return self._inventory_count(LARGE_TYPE_ID) > 0
 
     # ------------------------------------------------------------ state
@@ -429,7 +436,8 @@ class WarehouseUpgrader:
                     if building_id != new_id:
                         self.log.debug(f"[warehouse_upgrade] '{new_id}' has no room for {item_id}; falling back to '{building_id}'.")
                     return building_id
-            except Exception:
+            except Exception as error:
+                swallowed("warehouse_upgrade.WarehouseUpgrader._target_for: wh.space_for", error)
                 continue
         self.log.debug(f"[warehouse_upgrade] No store at '{outpost_id}' has room for {item_id} (tried {ordered}).")
         return None

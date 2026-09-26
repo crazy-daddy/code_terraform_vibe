@@ -20,6 +20,7 @@
 
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
 from tree_console import TreeConsole
+from swallow import swallowed
 from version_guard import validate_game_version
 
 STRANDED_STATUSES = ("stalled_no_battery", "stalled_no_oil", "scrambled")
@@ -164,16 +165,16 @@ class DroneServiceController:
                 self.log.print(f"[{self.name}] {drone_ref.name} low on fuel; nudging home to drone_service at {target}.")
                 self.nudge_commands.add(drone_ref.id)
                 return True
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("drone_service.DroneServiceController.order_return_to_service: get_component", error)
         return False
 
     def is_station_powered(self):
         if self.power and hasattr(self.power, "is_powered"):
             try:
                 return self.power.is_powered(self.name)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("drone_service.DroneServiceController.is_station_powered: self.power.is_powered", error)
         return True
 
     def _queue_service(self, d_id, heli, lvl):
@@ -197,7 +198,8 @@ class DroneServiceController:
         self.log.trace(f"[{self.name}] manage_docked_drones() entry.")
         try:
             docked_ids = self.station.get_docked()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_service.DroneServiceController.manage_docked_drones: self.station.get_docked", error)
             return
         if not docked_ids:
             self.log.trace(f"[{self.name}] manage_docked_drones(): no docked drones this cycle.")
@@ -230,8 +232,8 @@ class DroneServiceController:
                         self.log.debug(f"[{self.name}] Docked drone {d_id} ({lvl*100:.0f}%) below target but already active/queued; not re-queuing.")
                 else:
                     self.log.trace(f"[{self.name}] Docked drone {d_id} at {lvl*100:.0f}%, at or above target {self.target_charge_level*100:.0f}%; no charge needed.")
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("drone_service.DroneServiceController.manage_docked_drones: get_component", error)
         self.log.trace(f"[{self.name}] manage_docked_drones() exit: {len(docked_ids)} docked drone(s) evaluated.")
 
     def manage_fleet_rescues(self):
@@ -255,7 +257,8 @@ class DroneServiceController:
 
         try:
             drones = self.fleet.drones()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_service.DroneServiceController.manage_fleet_rescues: self.fleet.drones", error)
             return
 
         for d_ref in drones:
@@ -285,8 +288,8 @@ class DroneServiceController:
                 self.log.level("warn").print(f"[{self.name}] Emergency! Drone {d_ref.name} ({d_ref.id}) in distress: {reason} at ({d_ref.x:.1f}, {d_ref.y:.1f}).")
                 try:
                     notify(f"[RESCUE DISPATCH] Sending recovery vehicle to {d_ref.name} ({reason})!", level="warn", duration_seconds=10.0)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("drone_service.DroneServiceController.manage_fleet_rescues: notify", error)
 
                 res = self.station.dispatch_rescue(d_ref.id, target_level)
                 if res.status == "ok":

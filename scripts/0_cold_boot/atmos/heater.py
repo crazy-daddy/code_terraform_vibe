@@ -9,13 +9,29 @@ optimal_power = None
 last_day = -1
 throttled = False
 
+# No lib/ access in this tier: local stand-in for lib/swallow.py's swallowed().
+# Logs a caught-and-recovered error at debug level (repeats at one site once).
+_SWALLOW_LAST = {}
+
+
+def _swallowed(where, error):
+    message = f"{error!r}"
+    if _SWALLOW_LAST.get(where) == message:
+        return
+    _SWALLOW_LAST[where] = message
+    console = get_component("console")
+    if console:
+        console.debug(f"[swallowed] {where}: {message}")
+
+
 def get_battery_pct():
     if not battery:
         return 1.0
     try:
         cap = battery.get_capacity()
         return (battery.get_level() / cap) if cap > 0 else 1.0
-    except Exception:
+    except Exception as error:
+        _swallowed("heater.get_battery_pct: battery.get_capacity", error)
         return 1.0
 
 while True:

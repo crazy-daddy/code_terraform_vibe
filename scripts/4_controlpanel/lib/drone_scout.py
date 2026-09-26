@@ -8,6 +8,7 @@
 # "Repeat scans are free").
 
 from tree_console import TreeConsole
+from swallow import swallowed
 from typing import TYPE_CHECKING
 from unsupported_markers import clear_wrong_scanner_marker
 
@@ -39,7 +40,8 @@ class DroneScoutMixin:
 
         try:
             pois = nocturna.points_of_interest()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_scout.DroneScoutMixin._scan_candidates: nocturna.points_of_interest", error)
             pois = []
 
         pos = self._host.position()

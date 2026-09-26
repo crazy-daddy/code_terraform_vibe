@@ -18,6 +18,7 @@
 # something that fires on its own every cycle.
 
 from archive import archive
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -88,7 +89,8 @@ class VehicleUpgradeMixin:
             return {}
         try:
             return {entry.id: entry.cost for entry in shop.get_catalogue()}
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_upgrade.VehicleUpgradeMixin._catalogue: shop.get_catalogue", error)
             return {}
 
     def _best_unlocked_tier(self, tiers, current_id, catalogue):
@@ -111,7 +113,8 @@ class VehicleUpgradeMixin:
             return 0
         try:
             return commander.get_credits()
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_upgrade.VehicleUpgradeMixin._credits: commander.get_credits", error)
             return 0
 
     def run_auto_upgrade_cycle(self):
@@ -329,7 +332,8 @@ class VehicleUpgradeMixin:
 
         try:
             slots = self._host.vehicle.modules()
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_upgrade.VehicleUpgradeMixin.handle_sport_nav_request_if_active: self._host.vehicle.modules", error)
             slots = []
         free_slot = next((s for s in slots if getattr(s, "module_id", None) is None), None)
         if free_slot is None:

@@ -6,6 +6,7 @@
 from archive import archive
 from typing import TYPE_CHECKING
 from unsupported_markers import MARKER_PREFIX
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -332,13 +333,15 @@ class VehicleClaimsMixin:
             if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
                 try:
                     scanner_tier = self._host.vehicle.sonar.tier()
-                except Exception:
+                except Exception as error:
+                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.sonar.tier", error)
                     scanner_tier = "basic"
             elif scanner_type == "drill" and hasattr(self._host.vehicle, "drill"):
                 try:
                     h = self._host.vehicle.drill.hardness_limit()
                     scanner_tier = "heavy" if h >= 4 else ("industrial" if h >= 3 else "basic")
-                except Exception:
+                except Exception as error:
+                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.drill.hardness_limit", error)
                     scanner_tier = "basic"
             else:
                 scanner_tier = "basic"
@@ -346,19 +349,22 @@ class VehicleClaimsMixin:
         if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
             try:
                 scanner_range = self._host.vehicle.sonar.range()
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.sonar.range", error)
                 scanner_range = 50.0
 
         if hardness_limit is None:
             if scanner_type == "sonar" and hasattr(self._host.vehicle, "sonar"):
                 try:
                     hardness_limit = self._host.vehicle.sonar.hardness_limit()
-                except Exception:
+                except Exception as error:
+                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.sonar.hardness_limit", error)
                     hardness_limit = 1.0
             elif scanner_type == "drill" and hasattr(self._host.vehicle, "drill"):
                 try:
                     hardness_limit = self._host.vehicle.drill.hardness_limit()
-                except Exception:
+                except Exception as error:
+                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: self._host.vehicle.drill.hardness_limit #2", error)
                     hardness_limit = 1.0
             else:
                 hardness_limit = 1.0
@@ -369,15 +375,15 @@ class VehicleClaimsMixin:
         if research and hasattr(research, "unlocked"):
             try:
                 unlocked_research_count = len(research.unlocked())
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: research.unlocked", error)
         if research:
             for r_id in SCAN_RESEARCH_IDS:
                 try:
                     if hasattr(research, "is_unlocked") and research.is_unlocked(r_id):
                         unlocked_scan_researches.append(r_id)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: research.is_unlocked", error)
 
         def updater(targets):
             if not isinstance(targets, dict):
@@ -402,8 +408,8 @@ class VehicleClaimsMixin:
         self._host.log.print(f"[{self._host.name}] Blacklisted unsupported target '{target_key}' ({reason}: {message} | scanner: {scanner_type}/{scanner_tier}, hardness_limit: {hardness_limit}). Fleet will skip until upgraded.")
         try:
             notify(f"[{self._host.name}] Skipped {target_key}: {reason} (req > {scanner_tier} T{hardness_limit})", level="info", duration_seconds=8.0)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("vehicle_claims.VehicleClaimsMixin.blacklist_target: notify", error)
 
     def clear_unsupported_target(self, target_key):
         """Removes a target from unsupported_targets once technology or survey successfully resolves it."""
@@ -449,13 +455,14 @@ class VehicleClaimsMixin:
         # until someone clicks the Control Panel's "Sync Unsupported" button.
         try:
             markers = get_component("markers")
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_claims.VehicleClaimsMixin.clear_unsupported_target: get_component", error)
             markers = None
         if markers:
             try:
                 markers.remove(f"{MARKER_PREFIX}{target_key}"[:64])
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle_claims.VehicleClaimsMixin.clear_unsupported_target: markers.remove", error)
 
     def get_unsupported_targets(self):
         """Returns the unified map of unsupported/blacklisted targets across the fleet."""
@@ -508,19 +515,22 @@ class VehicleClaimsMixin:
                     if hasattr(self._host.vehicle.sonar, "hardness_limit"):
                         try:
                             curr_h = self._host.vehicle.sonar.hardness_limit()
-                        except Exception:
+                        except Exception as error:
+                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.hardness_limit", error)
                             curr_h = 1.0
                     curr_tier = "basic"
                     if hasattr(self._host.vehicle.sonar, "tier"):
                         try:
                             curr_tier = self._host.vehicle.sonar.tier()
-                        except Exception:
+                        except Exception as error:
+                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.tier", error)
                             curr_tier = "basic"
                     curr_range = 50.0
                     if hasattr(self._host.vehicle.sonar, "range"):
                         try:
                             curr_range = self._host.vehicle.sonar.range()
-                        except Exception:
+                        except Exception as error:
+                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.sonar.range", error)
                             curr_range = 50.0
 
                     tier_order = {"none": 0, "basic": 1, "wide": 2, "deep": 3}
@@ -539,7 +549,8 @@ class VehicleClaimsMixin:
                     if hasattr(self._host.vehicle.drill, "hardness_limit"):
                         try:
                             curr_h = self._host.vehicle.drill.hardness_limit()
-                        except Exception:
+                        except Exception as error:
+                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: self._host.vehicle.drill.hardness_limit", error)
                             curr_h = 1.0
                     if curr_h > recorded_h_limit:
                         return True, f"upgraded_drill (limit {curr_h} > {recorded_h_limit})"
@@ -555,8 +566,8 @@ class VehicleClaimsMixin:
                         try:
                             if hasattr(research, "is_unlocked") and research.is_unlocked(res_id):
                                 return True, f"new_scan_research_{res_id}"
-                        except Exception:
-                            pass
+                        except Exception as error:
+                            swallowed("vehicle_claims.VehicleClaimsMixin.can_attempt_target: research.is_unlocked", error)
             return False, "scan_research_still_locked"
 
         return False, f"unsupported_{reason}"

@@ -30,6 +30,7 @@
 # so a player's manual edit is never silently clobbered by a background loop.
 
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="outpost_mining")
 
@@ -70,7 +71,8 @@ HOME_OUTPOST_ID = "outpost_home"
 def _component(component_id):
     try:
         return get_component(component_id)
-    except Exception:
+    except Exception as error:
+        swallowed("outpost_mining._component: get_component", error)
         return None
 
 
@@ -96,8 +98,8 @@ def outpost_by_id(outpost_id):
         for outpost in network.outposts():
             if getattr(outpost, "id", None) == outpost_id:
                 return outpost
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("outpost_mining.outpost_by_id: network.outposts", error)
     return None
 
 
@@ -109,7 +111,8 @@ def nearest_outpost_id(x, y):
     try:
         nearest = network.nearest(x, y)
         return getattr(nearest, "id", None) if nearest else None
-    except Exception:
+    except Exception as error:
+        swallowed("outpost_mining.nearest_outpost_id: network.nearest", error)
         return None
 
 
@@ -146,7 +149,8 @@ def _closest_outpost_within_range(x, y, range_m):
         return None
     try:
         nearest = network.nearest(x, y)
-    except Exception:
+    except Exception as error:
+        swallowed("outpost_mining._closest_outpost_within_range: network.nearest", error)
         return None
     if not nearest:
         return None
@@ -241,7 +245,8 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
     assigned = 0
     try:
         candidates = markers.list(RESOURCE_MARKER_PREFIX)
-    except Exception:
+    except Exception as error:
+        swallowed("outpost_mining.reevaluate_unassigned_near_outpost: markers.list", error)
         return 0
 
     for marker in candidates:
@@ -284,7 +289,8 @@ def assigned_ores_for(outpost_id):
         return []
     try:
         candidates = markers.list(RESOURCE_MARKER_PREFIX)
-    except Exception:
+    except Exception as error:
+        swallowed("outpost_mining.assigned_ores_for: markers.list", error)
         return []
 
     items = set()

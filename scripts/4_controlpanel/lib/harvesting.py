@@ -4,6 +4,7 @@
 
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 class HarvesterController:
     """
@@ -38,8 +39,8 @@ class HarvesterController:
             c = int(sector[1:])
             if 1 <= c <= cls.NUM_COLS:
                 return r, c
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("harvesting.HarvesterController.sector_to_rc: cls.ROWS.index", error)
         return None, None
 
     @classmethod
@@ -96,21 +97,24 @@ class HarvesterController:
         """Determines the Harvester's depot pad / base sector (starts at depot)."""
         try:
             return self.harvester.get_position()
-        except Exception:
+        except Exception as error:
+            swallowed("harvesting.HarvesterController.detect_base_sector: self.harvester.get_position", error)
             return "E13"
 
     def get_position(self):
         """Returns current sector string."""
         try:
             return self.harvester.get_position()
-        except Exception:
+        except Exception as error:
+            swallowed("harvesting.HarvesterController.get_position: self.harvester.get_position", error)
             return self.base_sector
 
     def get_heat(self):
         """Returns current heat level (0-100)."""
         try:
             return self.harvester.get_heat()
-        except Exception:
+        except Exception as error:
+            swallowed("harvesting.HarvesterController.get_heat: self.harvester.get_heat", error)
             return 0.0
 
     def cool_down(self, target_level=None):
@@ -142,8 +146,8 @@ class HarvesterController:
                 self.log.level("warn").print(f"[{self.name}] WARNING: Base inventory full! Cannot store '{held}'.")
                 try:
                     notify(f"[{self.name}] Base Inventory Full! Cannot store harvested items.", level="warn", duration_seconds=8.0)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("harvesting.HarvesterController.store_held_if_any: notify", error)
                 return False
             else:
                 self.log.level("warn").print(f"[{self.name}] Store notice: {res.status} - {res.message}")
@@ -239,8 +243,8 @@ class HarvesterController:
                     candidates.append({"sector": c.id, "type": "item", "priority": 1})
                 elif c.status == "mature":
                     candidates.append({"sector": c.id, "type": "crop", "priority": 2})
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("harvesting.HarvesterController.find_best_target: self.harvester.cells", error)
 
         # 2. Also check Scanner results if available
         if not candidates:
@@ -251,8 +255,8 @@ class HarvesterController:
                     for sec, scan_res in scanned.items():
                         if getattr(scan_res, "status", "") == "ok" and getattr(scan_res, "id", ""):
                             candidates.append({"sector": sec, "type": "item", "priority": 1})
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("harvesting.HarvesterController.find_best_target: scanner.get_scanned", error)
 
         if not candidates:
             self.log.debug(f"[{self.name}] find_best_target: no item/crop candidates found via cells() or scanner fallback")
@@ -282,8 +286,8 @@ class HarvesterController:
                     self.log.debug(f"[{self.name}] step: current cell {curr_pos} has a mature crop, harvesting in place instead of routing elsewhere")
                     self.harvest_at_current()
                     return
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("harvesting.HarvesterController.step: self.harvester.cell", error)
 
         # Step 3: Find closest item or mature crop
         target = self.find_best_target()

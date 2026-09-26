@@ -22,6 +22,7 @@ from storage import take_item, total_stock
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="supply_dock")
 
@@ -144,8 +145,8 @@ def plan_dock_assignments(clock=None):
     for dock in docks.values():
         try:
             total_dispatch_capacity += dock.dispatch_rate()
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("supply_dock.plan_dock_assignments: dock.dispatch_rate", error)
 
     # Shared across every can_fulfill_order() call in this pass (every
     # candidate order below, plus each dock's current order) -- see
@@ -167,8 +168,8 @@ def plan_dock_assignments(clock=None):
                 priority = _score_campaign_order(o, reserved)
                 candidates.append({"order": o, "priority": priority})
                 log.debug(f"plan_dock_assignments: campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("supply_dock.plan_dock_assignments: orders_api.list_orders", error)
     try:
         for o in orders_api.list_weekly_orders():
             if getattr(o, "status", "") != "active" or not can_fulfill_order(o, cache):
@@ -180,8 +181,8 @@ def plan_dock_assignments(clock=None):
             priority = _score_weekly_order(o, reserved)
             candidates.append({"order": o, "priority": priority})
             log.debug(f"plan_dock_assignments: weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("supply_dock.plan_dock_assignments: orders_api.list_weekly_orders", error)
 
     log.debug(f"plan_dock_assignments: {len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
 
@@ -191,7 +192,8 @@ def plan_dock_assignments(clock=None):
     for dock_id, dock in docks.items():
         try:
             curr = dock.current_order()
-        except Exception:
+        except Exception as error:
+            swallowed("supply_dock.plan_dock_assignments: dock.current_order", error)
             curr = None
         if curr and can_fulfill_order(curr, cache):
             plan[dock_id] = curr.id
@@ -237,8 +239,8 @@ class SupplyDockController:
             try:
                 self.dock.input.connect("inventory")
                 self.connected = True
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("supply_dock.SupplyDockController.ensure_connected: self.dock.input.connect", error)
 
     def drain_dock_cargo(self):
         """
@@ -261,8 +263,8 @@ class SupplyDockController:
                     self.log.print(f"[{self.name}] Ejected {count}x {item_id} from dock back to Inventory.")
                 elif res.status not in ["busy", "no_op"]:
                     self.log.level("warn").print(f"[{self.name}] Eject notice for {item_id}: {res.status} - {res.message}")
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("supply_dock.SupplyDockController.drain_dock_cargo: self.dock.slots", error)
 
     def pick_best_order(self):
         """
@@ -286,8 +288,8 @@ class SupplyDockController:
             for o in self.orders_api.list_orders():
                 if getattr(o, "status", "") == "active" and can_fulfill_order(o):
                     candidates.append({"order": o, "priority": _score_campaign_order(o, reserved)})
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("supply_dock.SupplyDockController.pick_best_order: self.orders_api.list_orders", error)
 
         try:
             current_day = None
@@ -302,8 +304,8 @@ class SupplyDockController:
                     self.log.level("warn").print(f"[{self.name}] Skipping '{getattr(o, 'name', o.id)}': can't ship remaining amount before it expires on day {o.expires_day}.")
                     continue
                 candidates.append({"order": o, "priority": _score_weekly_order(o, reserved)})
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
 
         if not candidates:
             self.log.debug(f"[{self.name}] pick_best_order: no fulfillable candidate orders found")

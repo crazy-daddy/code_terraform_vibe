@@ -21,6 +21,7 @@
 # from here, and lib/production.py is only imported inside functions.
 
 from archive import archive
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -118,7 +119,8 @@ def upgrade_phase_reached():
     try:
         from drill_sites import discover_drill_ids
         reached = bool(discover_drill_ids())
-    except Exception:
+    except Exception as error:
+        swallowed("drone_upgrade.upgrade_phase_reached: discover_drill_ids", error)
         reached = False
     if reached:
         update_fleet_upgrade(lambda s: s.update({"phase_reached": True}))
@@ -209,7 +211,8 @@ class DroneUpgradeMixin:
             return 0
         try:
             return int(inventory.count(item_id) or 0)
-        except Exception:
+        except Exception as error:
+            swallowed("drone_upgrade.DroneUpgradeMixin._inventory_count: inventory.count", error)
             return 0
 
     def _chassis_kind(self):
@@ -220,15 +223,16 @@ class DroneUpgradeMixin:
                 for ref in fleet.drones():
                     if getattr(ref, "id", None) == self._host.name:
                         return getattr(ref, "kind", None)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("drone_upgrade.DroneUpgradeMixin._chassis_kind: fleet.drones", error)
         return None
 
     def _unlocked_outputs(self):
         try:
             from production import fabricator_unlocked_outputs
             return fabricator_unlocked_outputs()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_upgrade.DroneUpgradeMixin._unlocked_outputs: fabricator_unlocked_outputs", error)
             return set()
 
     def _category_ladder(self, category, role):

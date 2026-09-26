@@ -22,6 +22,21 @@ thermometer = get_component("thermometer")
 last_eval_time = 0.0
 last_heartbeat = 0.0
 
+# No lib/ access in this tier: local stand-in for lib/swallow.py's swallowed().
+# Logs a caught-and-recovered error at debug level (repeats at one site once).
+_SWALLOW_LAST = {}
+
+
+def _swallowed(where, error):
+    message = f"{error!r}"
+    if _SWALLOW_LAST.get(where) == message:
+        return
+    _SWALLOW_LAST[where] = message
+    console = get_component("console")
+    if console:
+        console.debug(f"[swallowed] {where}: {message}")
+
+
 def get_master_solar_id():
     solar_b = home.buildings("solar_generator")
     if not solar_b:
@@ -44,8 +59,8 @@ def is_tech_unlocked(tech_id):
         try:
             if research.is_unlocked(v):
                 return True
-        except Exception:
-            pass
+        except Exception as error:
+            _swallowed("solar.is_tech_unlocked: research.is_unlocked", error)
     return False
 
 def get_building_ids(type_id):
@@ -71,7 +86,8 @@ def get_free_base_slots():
         cap_val = home.buildings_capacity() if callable(getattr(home, "buildings_capacity", None)) else getattr(home, "buildings_capacity", 25)
         used_val = home.buildings_used() if callable(getattr(home, "buildings_used", None)) else getattr(home, "buildings_used", 0)
         return max(0, int(cap_val) - int(used_val))
-    except Exception:
+    except Exception as error:
+        _swallowed("solar.get_free_base_slots: home.buildings_capacity", error)
         return max(0, 25 - len(home.buildings()))
 
 def safe_undeploy_and_sell(computer, type_id, keep_count, item_id):
@@ -119,8 +135,8 @@ def safe_buy_and_deploy(computer, item_id, count_needed, tech_gate=None):
             if pc and hasattr(pc, "set_powered"):
                 try:
                     pc.set_powered(d_res.machine_id, True)
-                except Exception:
-                    pass
+                except Exception as error:
+                    _swallowed("solar: pc.set_powered", error)
         else:
             print(f"[buyer] Deploy {item_id} -> {d_res.status}: {d_res.message}")
             break
@@ -184,8 +200,8 @@ while True:
                     print(f"[buyer] Powered ON {b.id}: {res.status}")
                 elif not hasattr(pc, "is_powered"):
                     pc.set_powered(b.id, True)
-            except Exception as e:
-                pass
+            except Exception as error:
+                _swallowed("solar: pc.is_powered", error)
 
     # Tech Guard: Ship Computer must be unlocked before using the computer component
     # (deploy/undeploy/buy) - everything below this point needs it, nothing above does.

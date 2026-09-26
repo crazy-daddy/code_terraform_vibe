@@ -6,6 +6,7 @@
 from archive import archive
 from version_guard import validate_game_version
 import outpost_mining
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -87,8 +88,8 @@ class VehicleSurveyMixin:
                     if getattr(s_res.site, "kind", lambda: None)() == "mineral":
                         try:
                             outpost_mining.auto_assign_new_site(s_res.site)
-                        except Exception:
-                            pass
+                        except Exception as error:
+                            swallowed("vehicle_survey.VehicleSurveyMixin.scan_and_survey: outpost_mining.auto_assign_new_site", error)
                 elif s_res.status in ["too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
                     log.level("warn").print(f"[{self._host.name}] Site {s.id} survey limitation: {s_res.status} - {s_res.message}")
                     self._host.blacklist_target(f"site_{s.id}", s_res.status, s_res.message, scanner_type="sonar")
@@ -109,7 +110,8 @@ class VehicleSurveyMixin:
             return "none"
         try:
             return f"{sonar.tier()}:{sonar.range()}:{sonar.hardness_limit()}"
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_survey.VehicleSurveyMixin.sonar_signature: sonar.tier", error)
             return "unknown"
 
     def remember_sonar_retry(self, coords):
@@ -160,7 +162,8 @@ class VehicleSurveyMixin:
             points.sort(key=lambda p: self._host.distance_between(home, (p.x, p.y)))
             log.trace(f"[{self._host.name}] unscanned_pois() exit: {len(points)} candidate(s), nearest-first from {home}.")
             return points
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_survey.VehicleSurveyMixin.unscanned_pois: self._host.get_unsupported_targets", error)
             return []
 
     def unsurveyed_known_sites(self):
@@ -211,7 +214,8 @@ class VehicleSurveyMixin:
             home = self._host.assigned_slot_coords
             sites.sort(key=lambda s: self._host.distance_between(home, (s.x, s.y)))
             return sites
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_survey.VehicleSurveyMixin.unsurveyed_known_sites: self._host.get_unsupported_targets", error)
             return []
 
     def survey_spiral_points(self, step=None, start_index=0, max_points=160):
@@ -223,7 +227,8 @@ class VehicleSurveyMixin:
         if step is None:
             try:
                 step = max(20.0, sonar.range() * 0.75)
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_survey.VehicleSurveyMixin.survey_spiral_points: sonar.range", error)
                 step = 35.0
 
         x, y = self._host.assigned_slot_coords
@@ -254,7 +259,8 @@ class VehicleSurveyMixin:
         for site in sites or []:
             try:
                 kind = site.kind() if hasattr(site, "kind") else getattr(site, "kind", "unknown")
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_survey.VehicleSurveyMixin.save_survey_waypoint: site.kind", error)
                 kind = "unknown"
             site_summaries.append({
                 "id": getattr(site, "id", None),
@@ -486,7 +492,7 @@ class VehicleSurveyMixin:
                 self._host.log.level("error").print(f"[{self._host.name}] Survey loop exception: {e}. Returning home.")
                 try:
                     self._host.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("vehicle_survey.VehicleSurveyMixin.run_survey_loop: self._host.vehicle.nav.brake", error)
                 self._host.return_to_base()
                 sleep(5.0)

@@ -13,6 +13,7 @@
 import logistics_requests
 from storage import total_stock
 import field_layout
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -95,7 +96,8 @@ class HarvesterCareMixin:
         try:
             if h.water_level() >= 1.0:
                 return True
-        except Exception:
+        except Exception as error:
+            swallowed("harvester_care.HarvesterCareMixin.ensure_water: h.water_level", error)
             return True
         res = self._host.act("refill_water")
         status = getattr(res, "status", "?")

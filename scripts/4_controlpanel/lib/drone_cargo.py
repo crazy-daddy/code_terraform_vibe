@@ -1,3 +1,4 @@
+from swallow import swallowed
 # Drone mixin: .cargo accounting/load-unload helpers and home-biome sample
 # filtering. Shared by scout/miner roles via DroneController.
 #
@@ -28,19 +29,22 @@ class DroneCargoMixin:
             if item_id is None:
                 return self._host.drone.cargo.count()
             return self._host.drone.cargo.contents().get(item_id, 0)
-        except Exception:
+        except Exception as error:
+            swallowed("drone_cargo.DroneCargoMixin.cargo_count: self._host.drone.cargo.count", error)
             return 0
 
     def cargo_capacity(self):
         try:
             return self._host.drone.cargo.capacity()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_cargo.DroneCargoMixin.cargo_capacity: self._host.drone.cargo.capacity", error)
             return 0
 
     def cargo_full(self):
         try:
             return self._host.drone.cargo.full()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_cargo.DroneCargoMixin.cargo_full: self._host.drone.cargo.full", error)
             return False
 
     def space_for(self, item_id):
@@ -51,7 +55,8 @@ class DroneCargoMixin:
             return 0
         try:
             return self._host.drone.cargo.space_for(item_id)
-        except Exception:
+        except Exception as error:
+            swallowed("drone_cargo.DroneCargoMixin.space_for: self._host.drone.cargo.space_for", error)
             return 0
 
     def is_home_biome_sample(self, life_form_item_id):
@@ -96,7 +101,8 @@ class DroneCargoMixin:
             return 0
         try:
             contents = dict(self._host.drone.cargo.contents())
-        except Exception:
+        except Exception as error:
+            swallowed("drone_cargo.DroneCargoMixin.unload_cargo_at_depot: self._host.drone.cargo.contents", error)
             contents = {}
         if not contents:
             self._host.log.debug(f"[{self._host.name}] unload_cargo_at_depot: no cargo aboard; nothing to unload.")
@@ -109,7 +115,8 @@ class DroneCargoMixin:
                 continue
             try:
                 res = self._host.drone.cargo.unload(item_id, count)
-            except Exception:
+            except Exception as error:
+                swallowed("drone_cargo.DroneCargoMixin.unload_cargo_at_depot: self._host.drone.cargo.unload", error)
                 continue
             moved = getattr(res, "moved", 0) or 0
             unloaded += moved

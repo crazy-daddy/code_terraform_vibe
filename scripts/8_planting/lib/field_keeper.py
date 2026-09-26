@@ -51,6 +51,7 @@ from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
 from storage import total_stock, discover_storage_buildings
 from tree_console import TreeConsole
+from swallow import swallowed
 from version_guard import validate_game_version
 
 STATUS_KEY = "plant.status"
@@ -67,7 +68,8 @@ def _now_tick():
     try:
         clock = get_component("clock")
         return clock.tick() if clock else 0
-    except Exception:
+    except Exception as error:
+        swallowed("field_keeper._now_tick: get_component", error)
         return 0
 
 
@@ -79,8 +81,8 @@ def _home_outpost_id():
         for o in network.outposts():
             if getattr(o, "is_home", False):
                 return o.id
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("field_keeper._home_outpost_id: network.outposts", error)
     return None
 
 
@@ -120,7 +122,8 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             return 0
         try:
             return int(inventory.count(item_id))
-        except Exception:
+        except Exception as error:
+            swallowed("field_keeper.FieldKeeperController.inventory_count: inventory.count", error)
             return 0
 
     def stock_count(self, item_id):

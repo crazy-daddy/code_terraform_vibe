@@ -3,6 +3,7 @@
 from archive import archive
 from patterns import is_wildcard_pattern, filter_wildcard_matches
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Default shedding tiers (configurable via archive key 'power.shedding_tiers')
 # Tier 1: Passive background terraforming machinery (shed first)
@@ -126,8 +127,8 @@ class PowerGridManager:
             try:
                 if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
                     self.power.set_powered(m_id, True)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("power.PowerGridManager.release_all: self.power.can_power_off", error)
             self.shedded_machines.discard(m_id)
         self.update_archive_shedded()
 
@@ -165,8 +166,8 @@ class PowerGridManager:
                 try:
                     if get_component(cand) is not None:
                         candidates.add(cand)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("power.PowerGridManager.resolve_pattern_machines: get_component", error)
 
         return filter_wildcard_matches(pattern, candidates)
 
@@ -211,8 +212,8 @@ class PowerGridManager:
                 self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
                 try:
                     notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("power.PowerGridManager.handle_sunset: notify", error)
 
             if capacity_wh > 0 and self.peak_day_battery_wh < (capacity_wh * 0.90):
                 charge_pct = (self.peak_day_battery_wh / capacity_wh) * 100
@@ -220,8 +221,8 @@ class PowerGridManager:
                 self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
                 try:
                     notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("power.PowerGridManager.handle_sunset: notify #2", error)
 
     def handle_sunrise(self, current_hour, grid_id_str):
         """Handles sunrise detection and historical overnight energy averaging.
@@ -304,8 +305,8 @@ class PowerGridManager:
                 self.log.level("warn").print(f"[BATTERY ADVISORY] {adv_msg}")
                 try:
                     notify(f"[Battery Advisory - {grid_id_str}] {adv_msg}", level="warn", duration_seconds=10.0)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("power.PowerGridManager.manage_night_loads: notify", error)
 
             shed_changed = False
             for t_idx in range(tier_to_shed):
@@ -346,17 +347,17 @@ class PowerGridManager:
                                         self.log.level("error").print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
                                         try:
                                             notify(f"[Power Guard CRITICAL] Shed load ({m_id}) on {grid_id_str}: {reason}", level="error", duration_seconds=8.0)
-                                        except Exception:
-                                            pass
+                                        except Exception as error:
+                                            swallowed("power.PowerGridManager.manage_night_loads: notify #2", error)
                                     else:
                                         reason = "Emergency reserve guard (<20%)" if emergency_low else f"Insufficient storage ({stored_wh:.1f} Wh < {wh_needed:.1f} Wh needed)"
                                         self.log.level("warn").print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
                                         try:
                                             notify(f"[Power Guard] Shed load ({m_id}) on {grid_id_str}: {reason}", level="warn", duration_seconds=6.0)
-                                        except Exception:
-                                            pass
-                        except Exception:
-                            pass
+                                        except Exception as error:
+                                            swallowed("power.PowerGridManager.manage_night_loads: notify #3", error)
+                        except Exception as error:
+                            swallowed("power.PowerGridManager.manage_night_loads: self.power.can_power_off", error)
 
             if shed_changed:
                 self.update_archive_shedded()
@@ -390,8 +391,8 @@ class PowerGridManager:
                                         self.shedded_machines.discard(m_id)
                                         recovered_any = True
                                         self.log.print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh).")
-                            except Exception:
-                                pass
+                            except Exception as error:
+                                swallowed("power.PowerGridManager.manage_night_loads: self.power.can_power_off #2", error)
             if recovered_any:
                 self.update_archive_shedded()
 
@@ -433,8 +434,8 @@ class PowerGridManager:
                                     self.shedded_machines.discard(m_id)
                                     recovered_any = True
                                     self.log.print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active ({generated_w:.0f} W gen vs {consumed_w:.0f} W con).")
-                        except Exception:
-                            pass
+                        except Exception as error:
+                            swallowed("power.PowerGridManager.manage_day_recovery: self.power.can_power_off", error)
         if recovered_any:
             self.update_archive_shedded()
 

@@ -25,6 +25,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="drill_sites")
 
@@ -52,7 +53,8 @@ def _now_tick():
     try:
         clock = get_component("clock")
         return clock.tick() if clock else 0
-    except Exception:
+    except Exception as error:
+        swallowed("drill_sites._now_tick: get_component", error)
         return 0
 
 
@@ -83,7 +85,8 @@ def discover_drill_ids(type_id=None):
     power = get_component("power_control")
     try:
         grids = power.grids() if power else []
-    except Exception:
+    except Exception as error:
+        swallowed("drill_sites.discover_drill_ids: power.grids", error)
         grids = []
     for grid in grids:
         for member in getattr(grid, "members", []) or []:
@@ -166,8 +169,8 @@ def connect_to_drill(port, drill_id):
     try:
         if port.connected_id() == drill_id:
             return True
-    except Exception:
-        pass
+    except Exception as exc:
+        swallowed("drill_sites.connect_to_drill: port.connected_id", exc)
     try:
         res = port.connect(drill_id)
     except Exception as error:

@@ -19,6 +19,7 @@
 # pulling the wrong species into a chamber that can't be processed locally.
 
 from tree_console import TreeConsole
+from swallow import swallowed
 import logistics_requests
 from typing import TYPE_CHECKING
 
@@ -61,13 +62,15 @@ class DroneMiningMixin:
 
         try:
             sites = journal.biomass_coords()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_mining.DroneMiningMixin._biosite_candidates: journal.biomass_coords", error)
             sites = []
 
         pos = self._host.position()
         try:
             requested = logistics_requests.network_deficits()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_mining.DroneMiningMixin._biosite_candidates: logistics_requests.network_deficits", error)
             requested = {}
         candidates = []
         skipped_no_home_forms = 0
@@ -276,8 +279,8 @@ class DroneMiningMixin:
                 log.level("error").print(f"[{self._host.name}] Miner loop exception: {e}")
                 try:
                     self._host.release_biosite_claim()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("drone_mining.DroneMiningMixin.run_miner_loop: self._host.release_biosite_claim", error)
                 sleep(5.0)
 
     def _adopt_interrupted_extraction(self, log):

@@ -46,6 +46,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="fluid_routing")
 
@@ -101,7 +102,8 @@ def tank_is_eligible_target(building, fluid_id):
     if building is not None and hasattr(building, "fluid"):
         try:
             current_fluid = building.fluid()
-        except Exception:
+        except Exception as error:
+            swallowed("fluid_routing.tank_is_eligible_target: building.fluid", error)
             current_fluid = None
     if current_fluid:
         return current_fluid == fluid_id
@@ -117,7 +119,8 @@ def safe_is_stalled(building):
         return False
     try:
         return building.is_stalled()
-    except Exception:
+    except Exception as error:
+        swallowed("fluid_routing.safe_is_stalled: building.is_stalled", error)
         return False
 
 
@@ -140,7 +143,8 @@ def port_connections(port):
         return []
     try:
         return list(port.connections())
-    except Exception:
+    except Exception as error:
+        swallowed("fluid_routing.port_connections: port.connections", error)
         return []
 
 
@@ -161,7 +165,8 @@ def declared_connection_state(port):
         return None
     try:
         own_id = port.connected_id()
-    except Exception:
+    except Exception as error:
+        swallowed("fluid_routing.declared_connection_state: port.connected_id", error)
         return None
     if not own_id:
         return None
@@ -177,7 +182,8 @@ def fill_pct_of(building):
         return 1.0
     try:
         return building.fill_pct()
-    except Exception:
+    except Exception as error:
+        swallowed("fluid_routing.fill_pct_of: building.fill_pct", error)
         return 1.0
 
 
@@ -293,7 +299,8 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
                         if resolve or fluid_id is not None:
                             try:
                                 resolved = get_component(b_id) or building
-                            except Exception:
+                            except Exception as error:
+                                swallowed("fluid_routing.discover_network_buildings: get_component", error)
                                 resolved = building
 
                         if fluid_id is not None and not tank_is_eligible_target(resolved, fluid_id):
@@ -301,8 +308,8 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
 
                         seen_ids.add(b_id)
                         pairs.append((resolved if resolve else b_id, outpost_id))
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("fluid_routing.discover_network_buildings: network.outposts", error)
     log.trace(f"discover_network_buildings({type_ids}): found {len(pairs)} building(s)")
     return pairs
 
@@ -341,7 +348,8 @@ def assign_tanks_from_current_fluid(overwrite=False):
             continue
         try:
             fluid = building.fluid()
-        except Exception:
+        except Exception as error:
+            swallowed("fluid_routing.assign_tanks_from_current_fluid: building.fluid", error)
             fluid = None
         if not fluid:
             skipped_empty += 1
@@ -416,7 +424,8 @@ def warn_about_unassigned_tanks(curr_tick):
 def _safe_fluid(building):
     try:
         return building.fluid()
-    except Exception:
+    except Exception as error:
+        swallowed("fluid_routing._safe_fluid: building.fluid", error)
         return None
 
 
@@ -545,7 +554,8 @@ class FluidInputRouter:
         self.steps_since_connect += 1
         try:
             own_id = port.connected_id() if hasattr(port, "connected_id") else None
-        except Exception:
+        except Exception as error:
+            swallowed("fluid_routing.FluidInputRouter.ensure: port.connected_id", error)
             own_id = None
         own_state = declared_connection_state(port)
 
@@ -584,7 +594,8 @@ class FluidInputRouter:
         for source_id in candidates:
             try:
                 res = port.connect(source_id)
-            except Exception:
+            except Exception as error:
+                swallowed("fluid_routing.FluidInputRouter.ensure: port.connect", error)
                 continue
             if res.status == "ok":
                 link_state = declared_connection_state(port)
@@ -679,7 +690,8 @@ class FluidOutputRouter:
             return building
         try:
             building = get_component(target_id)
-        except Exception:
+        except Exception as error:
+            swallowed("fluid_routing.FluidOutputRouter._resolve_target: get_component", error)
             building = None
         if building:
             self._target_lookup[target_id] = building
@@ -692,7 +704,8 @@ class FluidOutputRouter:
         if not self._id_synced:
             try:
                 self._connected_id = port.connected_id() if hasattr(port, "connected_id") else None
-            except Exception:
+            except Exception as error:
+                swallowed("fluid_routing.FluidOutputRouter.ensure_connection: port.connected_id", error)
                 self._connected_id = None
             self._id_synced = True
         current_id = self._connected_id
@@ -739,7 +752,8 @@ class FluidOutputRouter:
                 continue
             try:
                 res = port.connect(target.id)
-            except Exception:
+            except Exception as error:
+                swallowed("fluid_routing.FluidOutputRouter.ensure_connection: port.connect", error)
                 continue
             if res.status == "ok":
                 self.ticks_since_connect = 0

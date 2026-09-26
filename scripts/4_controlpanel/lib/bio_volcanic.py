@@ -17,6 +17,7 @@ from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapsh
 from storage import take_item, best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Reduced heat/cool knob percentage once within this many degrees C of the recipe's
 # required_range() edge, to avoid overshoot given the full-knob +/-2400 C/h rate
@@ -57,8 +58,8 @@ class BioCasterController:
             return
         try:
             self.comms.broadcast("biome_processor_heartbeat", {"chamber_empty": self.machine.fragment() is None})
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("bio_volcanic.BioCasterController._notify_heartbeat: self.comms.broadcast", error)
 
     def _find_raw_stack(self, fragment_id, outpost):
         for source_id, component in _local_sources(outpost):
@@ -66,7 +67,8 @@ class BioCasterController:
                 continue
             try:
                 stacks = component.stacks()
-            except Exception:
+            except Exception as error:
+                swallowed("bio_volcanic.BioCasterController._find_raw_stack: component.stacks", error)
                 continue
             for stack in stacks:
                 if getattr(stack, "id", None) != fragment_id:
@@ -86,7 +88,8 @@ class BioCasterController:
         if hasattr(self.machine.input, "stacks"):
             try:
                 staged_stacks = self.machine.input.stacks()
-            except Exception:
+            except Exception as error:
+                swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.stacks", error)
                 staged_stacks = []
 
         raw_candidate = None
@@ -123,8 +126,8 @@ class BioCasterController:
                 destination = best_unload_target(staged_id, count, outpost=outpost)
                 self.machine.input.eject(destination, staged_id, count, properties, "exact")
                 self.log.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.count", error)
             return
 
         if staged_stacks:
@@ -221,7 +224,8 @@ class BioCasterController:
         if exchange:
             try:
                 orders = exchange.orders()
-            except Exception:
+            except Exception as error:
+                swallowed("bio_volcanic.BioCasterController.step: exchange.orders", error)
                 orders = []
         snapshot = _local_stock_snapshot(outpost)
         self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, fragment_loaded={self.machine.fragment() is not None}")

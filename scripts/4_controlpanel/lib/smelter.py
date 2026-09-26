@@ -13,6 +13,7 @@ from production import SourceCache, craft_prefill_units, dock_remaining_requirem
 from storage import take_item, drain_port_inventory_first
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
 # this fresh -- if the owning smelter stalls/crashes without releasing it
@@ -108,8 +109,8 @@ class SmelterController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("smelter.SmelterController.get_current_tick: self.clock.tick", error)
         return 0
 
     def claim_recipe(self, recipe_id):
@@ -167,8 +168,8 @@ class SmelterController:
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
             self.log.debug(f"[{self.name}] release_recipe({recipe_id}): released")
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("smelter.SmelterController.release_recipe: archive.transaction", error)
 
     def ensure_connections(self):
         """Ensures input and output ports are connected to home inventory."""
@@ -176,15 +177,15 @@ class SmelterController:
             try:
                 self.smelter.input.connect("inventory")
                 self.connected_in = True
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("smelter.SmelterController.ensure_connections: self.smelter.input.connect", error)
 
         if not self.connected_out and hasattr(self.smelter, "output"):
             try:
                 self.smelter.output.connect("inventory")
                 self.connected_out = True
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("smelter.SmelterController.ensure_connections: self.smelter.output.connect", error)
 
     def is_shedded(self):
         """
@@ -225,8 +226,8 @@ class SmelterController:
         """Narrates why this step did or didn't load ore, via debug()."""
         try:
             detail["in_buf"] = self.smelter.get_input_count()
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("smelter.SmelterController.log_outcome: self.smelter.get_input_count", error)
         self.log.debug(f"[{self.name}] outcome: {reason} {detail}")
 
     def switch_min_demand(self, recipe, ore):
@@ -284,7 +285,8 @@ class SmelterController:
                 for recipe in self.smelter.list_recipes()
                 if getattr(recipe, "id", "")
             }
-        except Exception:
+        except Exception as error:
+            swallowed("smelter.SmelterController.step: self.smelter.list_recipes", error)
             unlocked_recipes = {}
 
         # A recipe can remain selected after its blueprint is no longer
@@ -465,8 +467,8 @@ class SmelterController:
                 if self.power.can_power_off(self.name) and self.power.is_powered(self.name):
                     self.log.print(f"[{self.name}] Powering OFF smelter breaker while idle.")
                     self.power.set_powered(self.name, False)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("smelter.SmelterController.power_down_if_idle: self.power.can_power_off", error)
 
     def select_needed_ore(self, unlocked_recipes=None, demands=None, cache=None, dock_reserved=None):
         """
@@ -507,7 +509,8 @@ class SmelterController:
                     for stack in self.smelter.input.stacks()
                     if getattr(stack, "id", "") in self.RECIPE_MAP
                 }
-            except Exception:
+            except Exception as error:
+                swallowed("smelter.SmelterController.select_needed_ore: self.smelter.input.stacks", error)
                 buffered_ore = set()
         try:
             recipes = unlocked_recipes or {
@@ -515,7 +518,8 @@ class SmelterController:
                 for recipe in self.smelter.list_recipes()
                 if getattr(recipe, "id", "")
             }
-        except Exception:
+        except Exception as error:
+            swallowed("smelter.SmelterController.select_needed_ore: self.smelter.list_recipes", error)
             return None, None
 
         sourceable = []

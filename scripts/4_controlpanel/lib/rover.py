@@ -8,6 +8,7 @@ from vehicle import VehicleController
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 from version_guard import validate_game_version
 import mining_reservations
+from swallow import swallowed
 
 class RoverController(VehicleController):
     """
@@ -256,14 +257,14 @@ class RoverController(VehicleController):
                 self.log.level("error").print(f"[{self.name}] Mission exception: {e}. Executing emergency failsafe brake.")
                 try:
                     self.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("rover.RoverController.run: self.vehicle.nav.brake", error)
                 # Release any active target claims (and yield reservation, if any) on failure
                 try:
                     self.release_target_claim()
                     if self.current_target_reserved:
                         mining_reservations.release_yield(self.name)
                         self.current_target_reserved = False
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("rover.RoverController.run: self.release_target_claim", error)
                 sleep(5.0)

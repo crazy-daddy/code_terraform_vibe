@@ -35,6 +35,7 @@
 import field_layout
 from production import set_upgrade_order
 from storage import crop_automator_forage
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -75,7 +76,8 @@ def _now_tick():
     try:
         clock = get_component("clock")
         return clock.tick() if clock else 0
-    except Exception:
+    except Exception as error:
+        swallowed("harvester_machines._now_tick: get_component", error)
         return 0
 
 
@@ -84,7 +86,8 @@ def plants_km2():
     try:
         sensor = get_component("plants_sensor")
         return float(sensor.get_value()) if sensor else None
-    except Exception:
+    except Exception as error:
+        swallowed("harvester_machines.plants_km2: get_component", error)
         return None
 
 
@@ -92,7 +95,8 @@ def credits():
     try:
         commander = get_component("commander")
         return int(commander.get_credits()) if commander else 0
-    except Exception:
+    except Exception as error:
+        swallowed("harvester_machines.credits: get_component", error)
         return 0
 
 
@@ -102,8 +106,8 @@ def shop_price(item_id, fallback):
         for entry in shop.get_catalogue() if shop else []:
             if entry.id == item_id:
                 return int(entry.cost)
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("harvester_machines.shop_price: get_component", error)
     return fallback
 
 
@@ -122,7 +126,8 @@ def deployed_machines():
         if home is None:
             return None
         return {m.position: m.type_id for m in home.harvesting_machines()}
-    except Exception:
+    except Exception as error:
+        swallowed("harvester_machines.deployed_machines: _home", error)
         return None
 
 
@@ -136,7 +141,8 @@ def clogged_automator_sectors():
         if not clogged:
             return []
         return [m.position for m in home.harvesting_machines("crop_automator") if m.id in clogged]
-    except Exception:
+    except Exception as error:
+        swallowed("harvester_machines.clogged_automator_sectors: _home", error)
         return []
 
 
@@ -154,7 +160,8 @@ class HarvesterMachinesMixin:
         if cache is None or now - cache[0] >= DEPLOYABLES_REFRESH_TICKS:
             try:
                 kits = list(self._host.harvester.deployables() or [])
-            except Exception:
+            except Exception as error:
+                swallowed("harvester_machines.HarvesterMachinesMixin.deployable_kits: self._host.harvester.deployables", error)
                 kits = []
             cache = (now, kits)
             self._deployables_cache = cache

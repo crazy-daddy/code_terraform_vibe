@@ -26,6 +26,7 @@ from drone_mining import DroneMiningMixin
 from drone_hauler import DroneHaulerMixin
 from drone_upgrade import DroneUpgradeMixin, inherited_params
 from tree_console import TreeConsole
+from swallow import swallowed
 from version_guard import validate_game_version
 
 
@@ -157,8 +158,8 @@ class DroneController(
                         coords = self.home_outpost.coords()
                         if coords:
                             self.home_coords = (float(coords[0]), float(coords[1]))
-                    except Exception:
-                        pass
+                    except Exception as error:
+                        swallowed("drone.DroneController.resolve_home: self.home_outpost.coords", error)
 
         self.home_biome = getattr(self.home_outpost, "biome", None)
         self.log.debug(f"[{self.name}] home_outpost resolved via {home_outpost_source or 'none (no depot/service/network home found)'}; home_depot={depot_info.get('id') or 'none'}, home_coords={self.home_coords}, home_biome={self.home_biome!r}.")
@@ -168,8 +169,8 @@ class DroneController(
         if clock and hasattr(clock, "tick"):
             try:
                 return clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("drone.DroneController.get_current_tick: clock.tick", error)
         return 0
 
     def publish_telemetry(self, state, target_desc=None):

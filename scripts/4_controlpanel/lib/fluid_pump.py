@@ -1,6 +1,7 @@
 import fluid_routing
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
 # at a reachable Liquid Tank / Large Liquid Tank, load-balancing across
@@ -87,8 +88,8 @@ class FluidPumpController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("fluid_pump.FluidPumpController.get_current_tick: self.clock.tick", error)
         return 0
 
     def well_dormant(self):
@@ -97,7 +98,8 @@ class FluidPumpController:
             return False
         try:
             return not self.pump.well_active()
-        except Exception:
+        except Exception as error:
+            swallowed("fluid_pump.FluidPumpController.well_dormant: self.pump.well_active", error)
             return False
 
     def ensure_output_connection(self):

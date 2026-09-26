@@ -1,3 +1,4 @@
+from swallow import swallowed
 # Drone mixin: thin wrappers around go_to()/go_to_station()/go_to_drill(),
 # arrival polling, and stalled/scrambled detection.
 #
@@ -33,7 +34,8 @@ class DroneNavigationMixin:
         try:
             pos = self._host.drone.position()
             return (float(pos.x), float(pos.y))
-        except Exception:
+        except Exception as error:
+            swallowed("drone_navigation.DroneNavigationMixin.position: self._host.drone.position", error)
             return getattr(self, "home_coords", (0.0, 0.0))
 
     def distance_between(self, p1, p2):
@@ -47,7 +49,8 @@ class DroneNavigationMixin:
     def status(self):
         try:
             return self._host.drone.status()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_navigation.DroneNavigationMixin.status: self._host.drone.status", error)
             return "idle"
 
     def is_stranded(self):
@@ -63,13 +66,15 @@ class DroneNavigationMixin:
     def current_station(self):
         try:
             return self._host.drone.current_station()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_navigation.DroneNavigationMixin.current_station: self._host.drone.current_station", error)
             return ""
 
     def current_drill(self):
         try:
             return self._host.drone.current_drill()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_navigation.DroneNavigationMixin.current_drill: self._host.drone.current_drill", error)
             return ""
 
     def _log_route_rejection(self, call_desc, res):
@@ -103,8 +108,8 @@ class DroneNavigationMixin:
         if clock and hasattr(clock, "real_seconds_per_hour"):
             try:
                 real_seconds_per_hour = clock.real_seconds_per_hour()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("drone_navigation.DroneNavigationMixin.flight_timeout_ticks: clock.real_seconds_per_hour", error)
 
         expected_real_seconds = (distance / speed_m_per_hour) * real_seconds_per_hour * safety_multiplier
         return max(min_ticks, int(expected_real_seconds * 10))

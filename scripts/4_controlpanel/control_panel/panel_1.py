@@ -37,6 +37,7 @@ from archive import archive
 from archive_cleaner import ArchiveCleaner
 from unsupported_markers import update_unsupported_markers
 from version_guard import version_mismatch, good_version, confirm_new_version
+from swallow import swallowed
 
 # Must match panel_7.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
@@ -150,6 +151,7 @@ while True:
             try:
                 last_cleaner_stats = ArchiveCleaner(dry_run=False, verbose=True).run()
             except Exception as e:
+                swallowed("panel_1: ArchiveCleaner(dry_run=False, verbose=True).run", e)
                 last_cleaner_stats = {"error": str(e)}
         if last_cleaner_stats is not None:
             scanned = last_cleaner_stats.get("keys_scanned", "-")
@@ -161,6 +163,7 @@ while True:
             try:
                 last_unsupported_count = update_unsupported_markers(clear_previous=True)
             except Exception as e:
+                swallowed("panel_1: update_unsupported_markers", e)
                 last_unsupported_count = -1
         if last_unsupported_count is not None:
             summary = "error" if last_unsupported_count < 0 else f"{last_unsupported_count} marker(s) placed"

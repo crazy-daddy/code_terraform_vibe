@@ -4,6 +4,7 @@
 from vehicle_energy import rescue_wh_per_meter_for
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 class ChargingStationController:
     """
@@ -49,8 +50,8 @@ class ChargingStationController:
                             coord = (float(pos[0]), float(pos[1]))
                             if not any(r["id"] == b_id for r in refs):
                                 refs.append({"id": b_id, "coords": coord})
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("charging.ChargingStationController.all_station_refs: network.outposts", error)
 
         if not any(r["id"] == self.name for r in refs):
             station_outpost = getattr(self.station, "outpost", None)
@@ -107,7 +108,8 @@ class ChargingStationController:
         vehicle = None
         try:
             vehicle = get_component(vehicle_ref.id)
-        except Exception:
+        except Exception as error:
+            swallowed("charging.ChargingStationController.return_floor_wh: get_component", error)
             vehicle = None
 
         stations = self.charging_station_coords()
@@ -133,7 +135,8 @@ class ChargingStationController:
                 vehicle = get_component(vehicle_ref.id)
                 capacity = vehicle.battery.capacity()
                 current_wh = vehicle.battery.wh()
-            except Exception:
+            except Exception as error:
+                swallowed("charging.ChargingStationController.rescue_target_level: get_component", error)
                 capacity = None
         if not capacity or capacity <= 0:
             return 1.0
@@ -168,8 +171,8 @@ class ChargingStationController:
                     self.log.print(f"[{self.name}] {vehicle_ref.name} low on charge; returning to nearest charging station at {target} before rescue.")
                     self.return_commands.add(vehicle_ref.id)
                 return True
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("charging.ChargingStationController.order_return_to_station: get_component", error)
         return False
 
     def is_station_powered(self):
@@ -177,8 +180,8 @@ class ChargingStationController:
         if self.power and hasattr(self.power, "is_powered"):
             try:
                 return self.power.is_powered(self.name)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("charging.ChargingStationController.is_station_powered: self.power.is_powered", error)
         return True
 
     def manage_docked_vehicles(self):
@@ -208,7 +211,7 @@ class ChargingStationController:
                         elif res.status != "target_reached":
                             self.log.level("warn").print(f"[{self.name}] Charge queue notice for {v_id}: {res.status} - {res.message}")
             except Exception as e:
-                pass
+                swallowed("charging.ChargingStationController.manage_docked_vehicles: get_component", e)
 
     def manage_fleet_rescues(self):
         """
@@ -231,7 +234,8 @@ class ChargingStationController:
         # Check all owned ground vehicles
         try:
             vehicles = self.fleet.vehicles()
-        except Exception:
+        except Exception as error:
+            swallowed("charging.ChargingStationController.manage_fleet_rescues: self.fleet.vehicles", error)
             return
 
         for v_ref in vehicles:
@@ -279,8 +283,8 @@ class ChargingStationController:
 
                 try:
                     notify(f"[RESCUE DISPATCH] Sending rescue drone to {v_name} ({reason})!", level="warn", duration_seconds=10.0)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("charging.ChargingStationController.manage_fleet_rescues: notify", error)
 
                 # Dispatch rescue drone
                 self.log.debug(f"[{self.name}] {v_id} selected for rescue this cycle ({reason}); only one drone dispatch is attempted per step(), any other distressed vehicle waits for the next cycle.")

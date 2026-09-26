@@ -15,6 +15,7 @@
 #     rather than duplicated between rover.py and pioneer.py
 
 from tree_console import TreeConsole
+from swallow import swallowed
 import fleet_status
 from vehicle_navigation import VehicleNavigationMixin
 from vehicle_energy import VehicleEnergyMixin
@@ -160,8 +161,8 @@ class VehicleController(
         if clock and hasattr(clock, "tick"):
             try:
                 return clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("vehicle.VehicleController.get_current_tick: clock.tick", error)
         return 0
 
     def publish_telemetry(self, state, target_desc=None):

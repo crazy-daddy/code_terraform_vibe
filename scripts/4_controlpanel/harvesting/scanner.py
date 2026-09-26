@@ -1,3 +1,4 @@
+from swallow import swallowed
 # Scanner 1 Grid Survey Automation Script
 # Maps all sectors of the Harvester grid (A1..H24) around base to locate loose items and resources.
 
@@ -10,7 +11,8 @@ while True:
     scanned = {}
     try:
         scanned = self.get_scanned() or {}
-    except Exception:
+    except Exception as error:
+        swallowed("scanner: self.get_scanned", error)
         scanned = {}
 
     unscanned = []
@@ -32,7 +34,7 @@ while True:
                     print(f"[Scanner] Surface discovery at {sec}: '{item_name}' (ID: {item_id}, Value: {val})")
             except Exception as e:
                 # Catch invalid coordinates or transient pauses
-                pass
+                swallowed("scanner: self.scan", e)
             sleep(0.05)
         print("[Scanner] Grid survey sweep complete. All sectors mapped.")
 

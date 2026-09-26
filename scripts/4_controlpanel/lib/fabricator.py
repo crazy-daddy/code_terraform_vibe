@@ -4,6 +4,7 @@ from archive import archive
 from storage import take_item, total_stock, best_unload_target, drain_port_to_storage, drain_port_inventory_first
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 import fluid_routing
 
 # Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
@@ -70,8 +71,8 @@ class FabricatorController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("fabricator.FabricatorController.get_current_tick: self.clock.tick", error)
         return 0
 
     def claim_recipe(self, recipe_id):
@@ -119,8 +120,8 @@ class FabricatorController:
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
             self.log.debug(f"[{self.name}] release_recipe({recipe_id}): released")
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("fabricator.FabricatorController.release_recipe: archive.transaction", error)
 
     def is_shedded(self):
         """
@@ -171,8 +172,8 @@ class FabricatorController:
                             b_id = getattr(building, "id", None)
                             if b_id:
                                 pairs.append((b_id, outpost_id))
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("fabricator.FabricatorController._discover_fluid_candidates: network.outposts", error)
         own_outpost_id = getattr(getattr(self.machine, "outpost", None), "id", None)
         ids = fluid_routing.rank_own_outpost_first(pairs, own_outpost_id)
         self.log.debug(f"[{self.name}] {fluid_key}: rediscovered sources (own outpost first): {ids}.")
@@ -200,7 +201,8 @@ class FabricatorController:
             capacity = port.capacity() if hasattr(port, "capacity") else 0
             flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
             return flow == 0 and (not capacity or level < capacity)
-        except Exception:
+        except Exception as error:
+            swallowed("fabricator.FabricatorController._fluid_port_starved: port.level", error)
             return False
 
     def ensure_fluid_connections(self, recipe):
@@ -275,8 +277,8 @@ class FabricatorController:
             fabricator_outputs = {getattr(r, "output_item", None) for r in self.machine.list_recipes()} - {None}
             if item_id in get_manual_order_blocking_items(fabricator_outputs):
                 return "blocking a manual order's own input"
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("fabricator.FabricatorController.target_reason: self.machine.list_recipes", error)
         if item_id in get_manual_orders():
             return "manual build order"
         if item_id in blueprint_demand_items():
@@ -294,7 +296,8 @@ class FabricatorController:
         upgrade_items = get_upgrade_orders()
         try:
             recipes = self.machine.list_recipes()
-        except Exception:
+        except Exception as error:
+            swallowed("fabricator.FabricatorController.choose_recipe: self.machine.list_recipes", error)
             return None
 
         fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
@@ -448,7 +451,8 @@ class FabricatorController:
             return
         try:
             staged = sum(getattr(s, "count", 0) or 0 for s in port.stacks())
-        except Exception:
+        except Exception as error:
+            swallowed("fabricator.FabricatorController.drain_byproduct: port.stacks", error)
             return
         if staged <= 0:
             return
@@ -549,7 +553,8 @@ class FabricatorController:
             destination = best_unload_target(item_id, excess)
             try:
                 result = self.machine.input.eject(destination, item_id, excess)
-            except Exception:
+            except Exception as error:
+                swallowed("fabricator.FabricatorController.eject_excess_inputs: self.machine.input.eject", error)
                 continue
             moved = getattr(result, "moved", 0) or 0
             if moved > 0:

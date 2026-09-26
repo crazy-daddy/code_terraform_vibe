@@ -15,6 +15,7 @@ from archive import archive
 from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Module-level singleton for the shared, biome-agnostic helper functions below
 # (get_my_biome, local_sibling, _local_stock_snapshot, _focus_local_order,
@@ -169,7 +170,8 @@ def _processor_is_idle(processor, processor_type):
             return False
         if processor.output.count() > 0:
             return False
-    except Exception:
+    except Exception as error:
+        swallowed("bio._processor_is_idle: processor.fragment", error)
         return True
     return True
 
@@ -229,7 +231,8 @@ def _local_stock_snapshot(outpost):
             continue
         try:
             stacks = component.stacks()
-        except Exception:
+        except Exception as error:
+            swallowed("bio._local_stock_snapshot: component.stacks", error)
             continue
         for stack in stacks:
             item_id = getattr(stack, "id", None)
@@ -321,7 +324,8 @@ def _find_matching_stack(exchange_machine, item_id, outpost):
             continue
         try:
             stacks = component.stacks()
-        except Exception:
+        except Exception as error:
+            swallowed("bio._find_matching_stack: component.stacks", error)
             continue
         for stack in stacks:
             if getattr(stack, "id", None) != item_id:
@@ -331,7 +335,8 @@ def _find_matching_stack(exchange_machine, item_id, outpost):
                 if exchange_machine.matches_order(item_id, properties):
                     log.trace(f"_find_matching_stack: exit, matched '{source_id}' properties={properties}")
                     return source_id, properties
-            except Exception:
+            except Exception as error:
+                swallowed("bio._find_matching_stack: exchange_machine.matches_order", error)
                 continue
     log.trace(f"_find_matching_stack: exit, no locally-staged {item_id} variant satisfies matches_order().")
     return None
@@ -501,7 +506,8 @@ def _bio_demand_totals(comms, exchange, my_biome):
     if exchange:
         try:
             active = exchange.active_order()
-        except Exception:
+        except Exception as error:
+            swallowed("bio._bio_demand_totals: exchange.active_order", error)
             active = None
         if active and is_local_order(active, my_biome) and is_order_incomplete(active):
             for frag_id, count_needed in (active.requires or {}).items():
@@ -536,8 +542,8 @@ class BioExchangeController:
                 try:
                     destination = best_unload_target(stack.id, stack.count, outpost=self.machine.outpost)
                     self.machine.input.eject(destination, stack.id, stack.count)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("bio.BioExchangeController.clear_input: best_unload_target", error)
 
     def _required_fragment_ids(self, all_orders):
         """Every fragment item id genuinely still needed (remaining > 0, net of
@@ -571,8 +577,8 @@ class BioExchangeController:
                 catalog = get_component("item_catalog")
                 info = catalog.lookup(item_id) if catalog else None
                 category = getattr(info, "category", None) if info else None
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("bio.BioExchangeController._is_bio_sample: get_component", error)
             _ITEM_CATEGORY_CACHE[item_id] = category
         category = _ITEM_CATEGORY_CACHE[item_id]
         if category is not None:
@@ -616,7 +622,8 @@ class BioExchangeController:
                 continue
             try:
                 stacks = component.stacks()
-            except Exception:
+            except Exception as error:
+                swallowed("bio.BioExchangeController._cleanup_orphaned_artifacts: component.stacks", error)
                 continue
             for stack in stacks:
                 item_id = getattr(stack, "id", None)
@@ -674,8 +681,8 @@ class BioExchangeController:
         self.log.trace(f"[EXCHANGE] broadcast_demands: exit, local_demands={local_demands} all_demands_count={len(all_demands)}")
         try:
             self.comms.broadcast("bio_orders", payload)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("bio.BioExchangeController.broadcast_demands: self.comms.broadcast", error)
 
     def sweep_and_deliver(self):
         """
@@ -757,16 +764,16 @@ class BioExchangeController:
                             reward_str = f" (+{ord_info.reward} credits)" if getattr(ord_info, "reward", 0) else ""
                             try:
                                 notify(f"[Bio Order Complete] {ord_info.name}{reward_str}!", level="info", duration_seconds=10.0)
-                            except Exception:
-                                pass
+                            except Exception as error:
+                                swallowed("bio.BioExchangeController.sweep_and_deliver: notify", error)
                             try:
                                 archive.transaction(
                                     "bio.completed_orders",
                                     [],
                                     lambda lst: lst if ord_info.id in lst else lst + [ord_info.id]
                                 )
-                            except Exception:
-                                pass
+                            except Exception as error:
+                                swallowed("bio.BioExchangeController.sweep_and_deliver: archive.transaction", error)
                     else:
                         self.log.level("error").print(f"[EXCHANGE] Deliver error: {deliv_res.status} - {deliv_res.message}")
                         break
@@ -806,8 +813,8 @@ class BioExchangeController:
                         sample_id = (msg.packet.value or {}).get("sample_id")
                         self.log.print(f"[EXCHANGE] Received sample_ready event ({sample_id}), triggering immediate sweep!")
                         continue
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("bio.BioExchangeController.run: self.comms.receive", error)
 
             sleep(self.sweep_delay)
 
@@ -860,8 +867,8 @@ class BioLabController:
             self.log.level("warn").print(f"[{self.name}] WARNING: local storage is full. Free space to resume sample extraction.")
             try:
                 notify(f"[{self.name}] Storage Full! Free space to resume extraction.", level="warn", duration_seconds=8.0)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("bio.BioLabController.handle_storage_full: notify", error)
             self.inventory_full_notified = True
         sleep(2.0)
 
@@ -913,8 +920,8 @@ class BioLabController:
                     try:
                         destination = best_unload_target(stack.id, stack.count, outpost=outpost)
                         self.machine.input.eject(destination, stack.id, stack.count)
-                    except Exception:
-                        pass
+                    except Exception as error:
+                        swallowed("bio.BioLabController.step: best_unload_target", error)
 
             if not processor_idle:
                 self._wait_for_processor()
@@ -950,8 +957,8 @@ class BioLabController:
                         }
                         return d
                     archive.transaction("bio.fragment_recipes", {}, update_recipes)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("bio.BioLabController.step: archive.transaction", error)
             sleep(0.5)
             return
 
@@ -1001,8 +1008,8 @@ class BioLabController:
                         try:
                             destination = best_unload_target(stack.id, stack.count, outpost=outpost)
                             self.machine.input.eject(destination, stack.id, stack.count)
-                        except Exception:
-                            pass
+                        except Exception as error:
+                            swallowed("bio.BioLabController.step: best_unload_target #2", error)
                 sleep(0.5)
                 return
 
@@ -1053,8 +1060,8 @@ class BioLabController:
                     if self.comms:
                         try:
                             self.comms.send("sample_ready", {"sample_id": sample_id})
-                        except Exception:
-                            pass
+                        except Exception as error:
+                            swallowed("bio.BioLabController.step: self.comms.send", error)
                 else:
                     self.log.debug(f"[{self.name}] extract() -> {ext_res.status}: {getattr(ext_res, 'message', '')}")
 
@@ -1105,7 +1112,8 @@ class BioCollectorController:
         if exchange:
             try:
                 orders = exchange.orders()
-            except Exception:
+            except Exception as error:
+                swallowed("bio.BioCollectorController.step: exchange.orders", error)
                 orders = []
             current_order = _focus_local_order(orders, snapshot, my_biome)
         preferred_fragments = set((current_order.requires or {}).keys()) if current_order else set()

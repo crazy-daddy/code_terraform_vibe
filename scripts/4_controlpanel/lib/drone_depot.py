@@ -22,6 +22,7 @@ from archive import archive
 from storage import discover_storage_buildings, warehouse_stock, drain_port_to_storage
 import logistics_requests
 from tree_console import TreeConsole
+from swallow import swallowed
 from version_guard import validate_game_version
 from drone_upgrade import retiring_depot_ids
 
@@ -67,7 +68,8 @@ class DroneDepotController:
             return None
         try:
             liquifiers = outpost.buildings(LIQUIFIER_TYPE_ID)
-        except Exception:
+        except Exception as error:
+            swallowed("drone_depot.DroneDepotController._find_local_liquifier: outpost.buildings", error)
             return None
         if len(liquifiers) != 1:
             if len(liquifiers) > 1:
@@ -116,7 +118,8 @@ class DroneDepotController:
                 for slot in building["component"].slots():
                     if slot.capacity:
                         return slot.capacity
-            except Exception:
+            except Exception as error:
+                swallowed("drone_depot.DroneDepotController._slot_capacity: building['component'].slots", error)
                 continue
         return WAREHOUSE_SLOT_FALLBACK_UNITS
 
@@ -131,7 +134,8 @@ class DroneDepotController:
         for building in discover_storage_buildings(outpost):
             try:
                 slots = list(building["component"].slots())
-            except Exception:
+            except Exception as error:
+                swallowed("drone_depot.DroneDepotController._buffer_target: building['component'].slots", error)
                 continue
             holding = [s for s in slots if s.item == item_id and not s.properties]
             if holding:
@@ -212,8 +216,8 @@ class DroneDepotController:
         try:
             if list(self.station.get_docked()):
                 return True
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("drone_depot.DroneDepotController.has_freight_activity: self.station.get_docked", error)
         stock = logistics_requests.depot_stock(self.station)
         return any(u > 0 and not self._is_life_form(i) for i, u in stock.items())
 
@@ -222,7 +226,8 @@ class DroneDepotController:
             return False
         try:
             return bool(self.nocturna.life_form_biome(item_id))
-        except Exception:
+        except Exception as error:
+            swallowed("drone_depot.DroneDepotController._is_life_form: self.nocturna.life_form_biome", error)
             return False
 
     def _log_stage_state(self, state, message):
@@ -240,17 +245,20 @@ class DroneDepotController:
         self.log.trace(f"[{self.name}] publish_telemetry() entry.")
         try:
             docked = list(self.station.get_docked())
-        except Exception:
+        except Exception as error:
+            swallowed("drone_depot.DroneDepotController.publish_telemetry: self.station.get_docked", error)
             docked = []
         try:
             bay_count = self.station.bay_count()
             bays_occupied = self.station.bays_occupied()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_depot.DroneDepotController.publish_telemetry: self.station.bay_count", error)
             bay_count = bays_occupied = 0
         try:
             slots_used = self.station.slots_used()
             slot_capacity = self.station.slot_capacity()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_depot.DroneDepotController.publish_telemetry: self.station.slots_used", error)
             slots_used = slot_capacity = 0
 
         telemetry = {

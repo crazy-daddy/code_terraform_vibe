@@ -15,6 +15,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from swallow import swallowed
 
 log = TreeConsole(module="storage")
 
@@ -58,7 +59,8 @@ INVENTORY_ONLY_ITEM_IDS = (
 def _component(component_id):
     try:
         return get_component(component_id)
-    except Exception:
+    except Exception as error:
+        swallowed("storage._component: get_component", error)
         return None
 
 
@@ -67,8 +69,8 @@ def _home_outpost():
     if network and hasattr(network, "home"):
         try:
             return network.home()
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("storage._home_outpost: network.home", error)
     return None
 
 
@@ -88,7 +90,8 @@ def discover_storage_buildings(outpost=None, type_ids=STORAGE_TYPE_IDS):
     for type_id in type_ids:
         try:
             buildings = outpost.buildings(type_id)
-        except Exception:
+        except Exception as error:
+            swallowed("storage.discover_storage_buildings: outpost.buildings", error)
             continue
         for b in buildings:
             b_id = getattr(b, "id", None)
@@ -110,15 +113,15 @@ def total_stock(item_id, outpost=None):
     if inventory and hasattr(inventory, "count"):
         try:
             total += inventory.count(item_id)
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("storage.total_stock: inventory.count", error)
     for building in discover_storage_buildings(outpost):
         component = building["component"]
         if component and hasattr(component, "count"):
             try:
                 total += component.count(item_id)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("storage.total_stock: component.count", error)
     return total
 
 
@@ -140,8 +143,8 @@ def warehouse_stock(item_id, outpost=None):
         if component and hasattr(component, "count"):
             try:
                 total += component.count(item_id)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("storage.warehouse_stock: component.count", error)
     return total
 
 
@@ -149,7 +152,8 @@ def _fill_fraction(building):
     component = building["component"]
     try:
         return component.fill_percent()
-    except Exception:
+    except Exception as error:
+        swallowed("storage._fill_fraction: component.fill_percent", error)
         return 1.0
 
 
@@ -183,13 +187,15 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
             continue
         try:
             space = component.space_for(item_id)
-        except Exception:
+        except Exception as error:
+            swallowed("storage.best_unload_target: component.space_for", error)
             continue
         if space < min_amount:
             continue
         try:
             already_holds = component.count(item_id) > 0
-        except Exception:
+        except Exception as error:
+            swallowed("storage.best_unload_target: component.count", error)
             already_holds = False
         (holders if already_holds else others).append(building)
 
@@ -226,8 +232,8 @@ def _now_tick():
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("storage._now_tick: clock.tick", error)
     return 0
 
 
@@ -256,7 +262,8 @@ def crop_automator_forage(outpost=None):
         return []
     try:
         refs = list(resolved.harvesting_machines(CROP_AUTOMATOR_TYPE_ID) or [])
-    except Exception:
+    except Exception as error:
+        swallowed("storage.crop_automator_forage: resolved.harvesting_machines", error)
         return []
     telemetry = archive.get(CROP_AUTOMATOR_STATUS_KEY)
     telemetry = telemetry if isinstance(telemetry, dict) else {}
@@ -268,17 +275,21 @@ def crop_automator_forage(outpost=None):
         ca_id = getattr(ref, "id", None)
         machine = _component(ca_id) if ca_id else None
         port = getattr(machine, "output", None)
-        if not ca_id or not port or not hasattr(port, "count"):
+        if not ca_id or not port or not hasattr(port, "stacks"):
             continue
+        # OutputSlot.count() takes no item id (docs/types/storage_and_inventory.md):
+        # count("forage") raises, which used to hide every automator's Forage.
         try:
-            count = int(port.count(CROP_AUTOMATOR_ITEM_ID) or 0)
-        except Exception:
+            count = int(sum(s.count for s in port.stacks() if s.id == CROP_AUTOMATOR_ITEM_ID))
+        except Exception as error:
+            swallowed("storage.crop_automator_forage: port.stacks", error)
             continue
         if count <= 0:
             continue
         try:
             status = getattr(machine, "status")()
-        except Exception:
+        except Exception as error:
+            swallowed("storage.crop_automator_forage: getattr(machine, 'status')", error)
             status = None
         clogged = status == "output_full" or count >= CROP_AUTOMATOR_CLOG_FRACTION * CROP_AUTOMATOR_OUTPUT_CAP
         garden = ca_id in garden_ids
@@ -330,7 +341,8 @@ def _holder_candidates(item_id, outpost=None, cache=None):
             if inventory and hasattr(inventory, "count"):
                 try:
                     count = inventory.count(item_id)
-                except Exception:
+                except Exception as error:
+                    swallowed("storage._holder_candidates: inventory.count", error)
                     count = 0
                 if count > 0:
                     holders.append(("inventory", count))
@@ -340,7 +352,8 @@ def _holder_candidates(item_id, outpost=None, cache=None):
                 continue
             try:
                 count = component.count(item_id)
-            except Exception:
+            except Exception as error:
+                swallowed("storage._holder_candidates: component.count", error)
                 continue
             if count > 0:
                 holders.append((building["id"], count))
@@ -382,7 +395,8 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     if hasattr(port, "connected_id"):
         try:
             current_id = port.connected_id()
-        except Exception:
+        except Exception as error:
+            swallowed("storage.take_item: port.connected_id", error)
             current_id = None
 
     moved_total = 0
@@ -393,7 +407,8 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
         if source_id != current_id:
             try:
                 res = port.connect(source_id)
-            except Exception:
+            except Exception as error:
+                swallowed("storage.take_item: port.connect", error)
                 continue
             status = getattr(res, "status", None)
             if status != "ok":
@@ -422,7 +437,8 @@ def _take_from_current(port, item_id, remaining):
         return 0, "no_op"
     try:
         res = port.take(item_id, remaining)
-    except Exception:
+    except Exception as error:
+        swallowed("storage._take_from_current: port.take", error)
         return 0, "exception"
     return (getattr(res, "moved", 0) or 0), getattr(res, "status", None)
 
@@ -451,7 +467,8 @@ def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False)
     moved_total = 0
     try:
         stacks = port.stacks()
-    except Exception:
+    except Exception as error:
+        swallowed("storage.drain_port_to_storage: port.stacks", error)
         return 0
 
     for stack in stacks:
@@ -468,12 +485,14 @@ def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False)
         if hasattr(port, "connected_id") and port.connected_id() != target:
             try:
                 port.connect(target)
-            except Exception:
+            except Exception as error:
+                swallowed("storage.drain_port_to_storage: port.connect", error)
                 continue
 
         try:
             res = port.send(item_id, count)
-        except Exception:
+        except Exception as error:
+            swallowed("storage.drain_port_to_storage: port.send", error)
             continue
         moved_total += getattr(res, "moved", 0) or 0
 
@@ -514,7 +533,8 @@ def drain_port_inventory_first(port, outpost=None):
         return results
     try:
         stacks = port.stacks()
-    except Exception:
+    except Exception as exc:
+        swallowed("storage.drain_port_inventory_first: port.stacks", exc)
         return results
 
     for stack in stacks:
@@ -527,6 +547,7 @@ def drain_port_inventory_first(port, outpost=None):
                 port.connect("inventory")
             res = port.send(item_id, count)
         except Exception as error:
+            swallowed("storage.drain_port_inventory_first: port.connected_id", error)
             results.append((item_id, 0, "inventory", "exception", str(error)))
             continue
         status = getattr(res, "status", None)
@@ -576,7 +597,8 @@ def consolidate_cross_warehouse_stock(outpost=None):
             continue
         try:
             res = component.compact()
-        except Exception:
+        except Exception as error:
+            swallowed("storage.consolidate_cross_warehouse_stock: component.compact", error)
             continue
         moved = getattr(res, "moved", 0) or 0
         if moved > 0:
@@ -595,8 +617,8 @@ def inventory_stack_size():
         try:
             if research.is_unlocked(BIGGER_STACKS_TECH_ID):
                 return BIGGER_STACKS_SIZE
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("storage.inventory_stack_size: research.is_unlocked", error)
     return DEFAULT_STACK_SIZE
 
 
@@ -612,7 +634,8 @@ def _must_stay_in_inventory(item_id):
         return False
     try:
         info = catalog.lookup(item_id)
-    except Exception:
+    except Exception as error:
+        swallowed("storage._must_stay_in_inventory: catalog.lookup", error)
         return False
     return bool(info) and getattr(info, "category", None) in NON_WAREHOUSABLE_CATEGORIES
 
@@ -626,7 +649,8 @@ def _occupied_stackable_slots_by_item():
         return {}
     try:
         slots = inventory.get_slots()
-    except Exception:
+    except Exception as error:
+        swallowed("storage._occupied_stackable_slots_by_item: inventory.get_slots", error)
         return {}
 
     per_item = {}
@@ -659,7 +683,8 @@ def _cheapest_warehouse_occupant(exclude_item_id, outpost=None):
             continue
         try:
             slots = component.slots()
-        except Exception:
+        except Exception as error:
+            swallowed("storage._cheapest_warehouse_occupant: component.slots", error)
             continue
         for slot in slots:
             item_id = getattr(slot, "item", None) or getattr(slot, "item_id", None)
@@ -687,7 +712,8 @@ def _warehouse_item_ids(outpost=None):
             continue
         try:
             slots = component.slots()
-        except Exception:
+        except Exception as error:
+            swallowed("storage._warehouse_item_ids: component.slots", error)
             continue
         for slot in slots:
             item_id = getattr(slot, "item", None) or getattr(slot, "item_id", None)
@@ -721,7 +747,8 @@ def _items_demanded_by_active_dock_orders(outpost=None):
     demanded = set()
     try:
         dock_refs = outpost.buildings("supply_dock")
-    except Exception:
+    except Exception as error:
+        swallowed("storage._items_demanded_by_active_dock_orders: outpost.buildings", error)
         return demanded
     for ref in dock_refs:
         dock_id = getattr(ref, "id", None)
@@ -732,7 +759,8 @@ def _items_demanded_by_active_dock_orders(outpost=None):
             continue
         try:
             order = getattr(dock, "current_order")()
-        except Exception:
+        except Exception as error:
+            swallowed("storage._items_demanded_by_active_dock_orders: getattr(dock, 'current_order')", error)
             continue
         if not order:
             continue
@@ -783,7 +811,8 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
             continue
         try:
             slots = component.slots()
-        except Exception:
+        except Exception as error:
+            swallowed("storage.reclaim_inventory_only_items_from_warehouses: component.slots", error)
             continue
         for slot in slots:
             item_id = getattr(slot, "item", None)
@@ -798,7 +827,8 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
             properties = getattr(slot, "properties", None)
             try:
                 res = component.transfer_to("inventory", item_id, int(count), properties=properties, property_match="exact")
-            except Exception:
+            except Exception as error:
+                swallowed("storage.reclaim_inventory_only_items_from_warehouses: component.transfer_to", error)
                 continue
             moved = getattr(res, "moved", 0) or 0
             if moved > 0:
@@ -877,14 +907,16 @@ def rebalance_inventory_to_warehouses(outpost=None):
                 continue
             try:
                 space = component.space_for(item_id)
-            except Exception:
+            except Exception as error:
+                swallowed("storage.rebalance_inventory_to_warehouses: component.space_for", error)
                 space = 0
             if space <= 0:
                 continue
             amount = min(remaining, space)
             try:
                 res = inventory.transfer_to(building["id"], item_id, int(amount))
-            except Exception:
+            except Exception as error:
+                swallowed("storage.rebalance_inventory_to_warehouses: inventory.transfer_to", error)
                 continue
             moved = getattr(res, "moved", 0) or 0
             if moved > 0:
@@ -919,7 +951,8 @@ def rebalance_inventory_to_warehouses(outpost=None):
             continue
         try:
             evict_res = warehouse_component.transfer_to("inventory", occupant_item, occupant_qty)
-        except Exception:
+        except Exception as error:
+            swallowed("storage.rebalance_inventory_to_warehouses: warehouse_component.transfer_to", error)
             continue
         evicted = getattr(evict_res, "moved", 0) or 0
         if evicted <= 0:
@@ -929,7 +962,8 @@ def rebalance_inventory_to_warehouses(outpost=None):
 
         try:
             space = warehouse_component.space_for(item_id)
-        except Exception:
+        except Exception as error:
+            swallowed("storage.rebalance_inventory_to_warehouses: warehouse_component.space_for", error)
             space = 0
         amount = min(remaining, space)
         if amount <= 0:
@@ -937,7 +971,8 @@ def rebalance_inventory_to_warehouses(outpost=None):
             continue
         try:
             res = inventory.transfer_to(warehouse_id, item_id, int(amount))
-        except Exception:
+        except Exception as error:
+            swallowed("storage.rebalance_inventory_to_warehouses: inventory.transfer_to #2", error)
             continue
         moved = getattr(res, "moved", 0) or 0
         if moved > 0:

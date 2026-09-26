@@ -4,6 +4,7 @@ from archive import archive
 from storage import take_item, warehouse_stock, discover_storage_buildings
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
 # machine turns whatever native life form sits in its input bin into its
@@ -77,7 +78,8 @@ class EssenceLiquifierController:
             return True
         try:
             biome = self.liquifier.biome()
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController._resolve_biome: self.liquifier.biome", error)
             biome = None
         if not biome:
             return False
@@ -98,14 +100,15 @@ class EssenceLiquifierController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("essence_liquifier.EssenceLiquifierController.get_current_tick: self.clock.tick", error)
         return 0
 
     def stall_reason(self):
         try:
             return self.liquifier.stall_reason()
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController.stall_reason: self.liquifier.stall_reason", error)
             return "ok"
 
     # ------------------------------------------------------------------ feed
@@ -116,7 +119,8 @@ class EssenceLiquifierController:
             return None
         try:
             return self.nocturna.life_form_biome(item_id)
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController.sample_biome: self.nocturna.life_form_biome", error)
             return None
 
     def _local_depots(self):
@@ -128,13 +132,15 @@ class EssenceLiquifierController:
         for type_id in DRONE_DEPOT_TYPE_IDS:
             try:
                 refs.extend(outpost.buildings(type_id))
-            except Exception:
+            except Exception as error:
+                swallowed("essence_liquifier.EssenceLiquifierController._local_depots: refs.extend", error)
                 continue
         depots = []
         for ref in refs:
             try:
                 depot = get_component(ref.id)
-            except Exception:
+            except Exception as error:
+                swallowed("essence_liquifier.EssenceLiquifierController._local_depots: get_component", error)
                 depot = None
             if depot:
                 depots.append(depot)
@@ -149,20 +155,23 @@ class EssenceLiquifierController:
         try:
             for stack in port.stacks():
                 stock[stack.id] = stock.get(stack.id, 0) + stack.count
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController._depot_stock: port.stacks", error)
             return {}
         return stock
 
     def _loaded_item_ids(self):
         try:
             return {stack.id for stack in self.liquifier.input.stacks() if stack.count > 0}
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController._loaded_item_ids: self.liquifier.input.stacks", error)
             return set()
 
     def _input_room(self):
         try:
             return self.liquifier.input.capacity() - self.liquifier.input.count()
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController._input_room: self.liquifier.input.capacity", error)
             return 0
 
     def feed_from_depot(self):
@@ -262,7 +271,8 @@ class EssenceLiquifierController:
         for building in discover_storage_buildings(outpost):
             try:
                 stored.update(building["component"].materials())
-            except Exception:
+            except Exception as error:
+                swallowed("essence_liquifier.EssenceLiquifierController.feed_from_warehouse: stored.update", error)
                 continue
         forms = [f for f in stored if self.sample_biome(f) == self.biome]
         forms.sort(key=lambda f: f not in loaded)
@@ -339,15 +349,18 @@ class EssenceLiquifierController:
         port = self.output_port()
         try:
             rate = self.liquifier.essence_rate()
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController.publish_telemetry: self.liquifier.essence_rate", error)
             rate = 0.0
         try:
             input_count = self.liquifier.input.count()
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController.publish_telemetry: self.liquifier.input.count", error)
             input_count = 0
         try:
             output_target = port.connected_id() if port else ""
-        except Exception:
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController.publish_telemetry: port.connected_id", error)
             output_target = ""
         archive.set_entry(STATUS_KEY, self.name, {
             "name": self.name,

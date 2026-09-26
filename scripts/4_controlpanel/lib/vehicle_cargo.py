@@ -17,6 +17,7 @@ import mining_reservations
 import logistics_requests
 import drill_sites
 import pump_salt
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -102,13 +103,15 @@ class VehicleCargoMixin:
         if hasattr(self._host.vehicle.cargo, "stacks"):
             try:
                 stacks = self._host.vehicle.cargo.stacks()
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo: self._host.vehicle.cargo.stacks", error)
                 stacks = []
 
         if not stacks and hasattr(out_port, "stacks"):
             try:
                 stacks = out_port.stacks()
-            except Exception:
+            except Exception as error:
+                swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo: out_port.stacks", error)
                 stacks = []
 
         def unload_one(item_id, count):
@@ -140,8 +143,8 @@ class VehicleCargoMixin:
                     self._host.log.level("warn").print(f"[{self._host.name}] WARNING: '{target}' is full. Cargo remains aboard until space is available.")
                     try:
                         notify(f"[{self._host.name}] Storage Full! Free space before the next expedition.", level="warn", duration_seconds=8.0)
-                    except Exception:
-                        pass
+                    except Exception as error:
+                        swallowed("vehicle_cargo.VehicleCargoMixin.unload_cargo.unload_one: notify", error)
                     return 0, True
                 else:
                     self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {res.status} - {res.message}")
@@ -186,7 +189,8 @@ class VehicleCargoMixin:
             return []
         try:
             stacks = self._host.vehicle.cargo.stacks()
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_cargo.VehicleCargoMixin._current_supply_items: self._host.vehicle.cargo.stacks", error)
             stacks = []
         return [item_id for item_id in (getattr(s, "id", None) for s in stacks) if item_id]
 
@@ -487,8 +491,8 @@ class VehicleCargoMixin:
                 self._host.log.level("error").print(f"[{self._host.name}] Haul exception: {error}")
                 try:
                     self._host.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    swallowed("vehicle_cargo.VehicleCargoMixin.run_haul_loop: self._host.vehicle.nav.brake", exc)
             sleep(poll_interval)
 
     # ------------------------------------------------------------ pull (reverse) hauling
@@ -532,7 +536,8 @@ class VehicleCargoMixin:
         network = get_component("outpost_network")
         try:
             outposts = list(network.outposts()) if network else []
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_cargo.VehicleCargoMixin._pull_sources: network.outposts", error)
             outposts = []
         for outpost in outposts:
             if getattr(outpost, "id", None) == home_id or not hasattr(outpost, "coords"):
@@ -585,7 +590,8 @@ class VehicleCargoMixin:
         home_coords = None
         try:
             home_coords = self._host.home_outpost.coords() if self._host.home_outpost else None
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_cargo.VehicleCargoMixin._plan_pull_route: self._host.home_outpost.coords", error)
             home_coords = None
         start = self._host.get_position()
 
@@ -722,7 +728,8 @@ class VehicleCargoMixin:
         totals = {}
         try:
             stacks = self._host.vehicle.cargo.stacks()
-        except Exception:
+        except Exception as error:
+            swallowed("vehicle_cargo.VehicleCargoMixin._cargo_totals: self._host.vehicle.cargo.stacks", error)
             stacks = []
         for stack in stacks:
             item_id = getattr(stack, "id", None)
@@ -840,8 +847,8 @@ class VehicleCargoMixin:
                 self._host.log.level("error").print(f"[{self._host.name}] Pull exception: {error}")
                 try:
                     self._host.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    swallowed("vehicle_cargo.VehicleCargoMixin.run_pull_loop: self._host.vehicle.nav.brake", exc)
             sleep(poll_interval)
 
     def _finish_pull_delivery(self, poll_interval):

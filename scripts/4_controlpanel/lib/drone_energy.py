@@ -24,6 +24,7 @@
 
 from archive import archive
 from drone_upgrade import retiring_depot_ids
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -109,6 +110,9 @@ def _pin_home_depot(drone_name, depot_id):
             try:
                 live = {getattr(d, "id", "") for d in fleet.drones()}
             except Exception:
+                # Silent on purpose: this runs inside an archive.transaction()
+                # updater, where any log call rejects the transaction. Keeping
+                # every pin (no pruning) is the safe fallback.
                 live = set()
             if live:
                 pins = {name: pin for name, pin in pins.items() if name in live or name == drone_name}
@@ -171,7 +175,8 @@ def service_oil_state(service_id):
             return (False, 0.0, 0.0)
         wired = bool(port.connections()) or bool(port.connected_to())
         return (wired, float(port.level() or 0.0), float(port.flow_rate() or 0.0))
-    except Exception:
+    except Exception as error:
+        swallowed("drone_energy.service_oil_state: get_component", error)
         return (False, 0.0, 0.0)
 
 
@@ -237,7 +242,8 @@ def discover_drone_buildings(type_id):
     if network and hasattr(network, "outposts"):
         try:
             outposts = network.outposts()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_energy.discover_drone_buildings: network.outposts", error)
             outposts = []
         for outpost in outposts:
             if not hasattr(outpost, "buildings"):
@@ -246,7 +252,8 @@ def discover_drone_buildings(type_id):
             for t_id in type_ids:
                 try:
                     buildings.extend(outpost.buildings(t_id))
-                except Exception:
+                except Exception as error:
+                    swallowed("drone_energy.discover_drone_buildings: buildings.extend", error)
                     continue
             for b in buildings:
                 b_id = getattr(b, "id", "")
@@ -325,8 +332,8 @@ class DroneEnergyMixin:
                         engine = getattr(ref, "engine", "") or ""
                         source = "fleet.drones()"
                         break
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("drone_energy.DroneEnergyMixin.detect_engine: fleet.drones", error)
         if engine not in ENGINE_PROFILES:
             engine = ""
             for candidate, attr in (("heli", "oil_tank"), ("electric", "battery")):
@@ -334,13 +341,15 @@ class DroneEnergyMixin:
                     getattr(self._host.drone, attr).capacity()
                     engine, source = candidate, f"{attr} probe"
                     break
-                except Exception:
+                except Exception as error:
+                    swallowed("drone_energy.DroneEnergyMixin.detect_engine: getattr(self._host.drone, attr).capacity", error)
                     continue
         if not engine:
             engine, source = DEFAULT_ENGINE, "fallback (no thruster/fuel module readable)"
         try:
             self._host.plated = bool(self._host.drone.is_plated())
-        except Exception:
+        except Exception as error:
+            swallowed("drone_energy.DroneEnergyMixin.detect_engine: self._host.drone.is_plated", error)
             self._host.plated = False
         self._host.engine = engine
         self._host.log.debug(f"[{self._host.name}] Engine detected: '{engine}' via {source}; plated={self._host.plated}.")
@@ -368,7 +377,8 @@ class DroneEnergyMixin:
         try:
             module = getattr(self._host.drone, store)
             return module.level(), module.capacity(), module.percent()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_energy.DroneEnergyMixin.get_battery: module.level", error)
             return 0.0, 100.0, 0.0
 
     def wh_per_meter_at_throttle(self, throttle):

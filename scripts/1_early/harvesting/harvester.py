@@ -43,10 +43,26 @@ scanner = get_component(SCANNER_ID)
 shop = get_component("shop")
 home = get_component("outpost_home")
 
+# No lib/ access in this tier: local stand-in for lib/swallow.py's swallowed().
+# Logs a caught-and-recovered error at debug level (repeats at one site once).
+_SWALLOW_LAST = {}
+
+
+def _swallowed(where, error):
+    message = f"{error!r}"
+    if _SWALLOW_LAST.get(where) == message:
+        return
+    _SWALLOW_LAST[where] = message
+    console = get_component("console")
+    if console:
+        console.debug(f"[swallowed] {where}: {message}")
+
+
 try:
     clock = get_component("clock")
     RSPH = clock.real_seconds_per_hour()
-except Exception:
+except Exception as error:
+    _swallowed("harvester: get_component", error)
     RSPH = 30.0
 
 def base_is_full():
@@ -58,7 +74,8 @@ def base_is_full():
         cap = home.buildings_capacity() if callable(getattr(home, "buildings_capacity", None)) else getattr(home, "buildings_capacity", 25)
         used = home.buildings_used() if callable(getattr(home, "buildings_used", None)) else getattr(home, "buildings_used", 0)
         return int(used) >= int(cap)
-    except Exception:
+    except Exception as error:
+        _swallowed("harvester.base_is_full: home.buildings_capacity", error)
         return False
 
 def parse(sid: str):
@@ -226,7 +243,8 @@ min_scanned_sectors = 60
 while True:
     try:
         scanned_count = len(scanner.get_scanned())
-    except Exception:
+    except Exception as error:
+        _swallowed("harvester: scanner.get_scanned", error)
         scanned_count = 0
     if scanned_count >= min_scanned_sectors:
         break

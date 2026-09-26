@@ -9,6 +9,7 @@
 # else in this codebase -- this doesn't change that, it just tells the checker
 # what the untyped body already does at runtime).
 from typing import TYPE_CHECKING
+from swallow import swallowed
 
 if TYPE_CHECKING:
     from typing import Any, TypeVar, overload
@@ -24,7 +25,8 @@ class ArchiveClient:
     def __init__(self, notebook=None):
         try:
             self.notebook = notebook or get_component("notebook")
-        except Exception:
+        except Exception as error:
+            swallowed("archive.ArchiveClient.__init__: get_component", error)
             self.notebook = None
 
     @property
@@ -43,7 +45,8 @@ class ArchiveClient:
         try:
             val = self.notebook.get(key, default)
             return default if val is None and default is not None else val
-        except Exception:
+        except Exception as error:
+            swallowed("archive.ArchiveClient.get: self.notebook.get", error)
             return default
 
     def set(self, key, value):
@@ -52,7 +55,8 @@ class ArchiveClient:
         try:
             res = self.notebook.set(key, value)
             return getattr(res, "status", "") == "ok"
-        except Exception:
+        except Exception as error:
+            swallowed("archive.ArchiveClient.set: self.notebook.set", error)
             return False
 
     def transaction(self, key, default, updater):
@@ -61,7 +65,8 @@ class ArchiveClient:
         try:
             res = self.notebook.transaction(key, default, updater)
             return getattr(res, "status", "") == "ok"
-        except Exception:
+        except Exception as error:
+            swallowed("archive.ArchiveClient.transaction: self.notebook.transaction", error)
             return False
 
     def has(self, key):
@@ -69,7 +74,8 @@ class ArchiveClient:
             return False
         try:
             return bool(self.notebook.has(key))
-        except Exception:
+        except Exception as error:
+            swallowed("archive.ArchiveClient.has: self.notebook.has", error)
             return False
 
     def delete(self, key):
@@ -78,7 +84,8 @@ class ArchiveClient:
         try:
             res = self.notebook.delete(key)
             return getattr(res, "status", "") in ["ok", "not_found"]
-        except Exception:
+        except Exception as error:
+            swallowed("archive.ArchiveClient.delete: self.notebook.delete", error)
             return False
 
     def keys(self, prefix=""):
@@ -86,7 +93,8 @@ class ArchiveClient:
             return []
         try:
             return list(self.notebook.keys(prefix))
-        except Exception:
+        except Exception as error:
+            swallowed("archive.ArchiveClient.keys: self.notebook.keys", error)
             return []
 
     # One-shared-dict-per-concern helpers (CLAUDE.md rule 7): a key holds

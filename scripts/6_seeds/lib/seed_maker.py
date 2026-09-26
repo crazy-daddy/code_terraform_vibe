@@ -31,6 +31,7 @@ from archive import archive
 from storage import take_item, drain_port_to_storage, best_unload_target
 import logistics_requests
 from tree_console import TreeConsole
+from swallow import swallowed
 from version_guard import validate_game_version
 
 TRIED_KEY = "seed.combos_tried"
@@ -55,7 +56,8 @@ def _now_tick():
     try:
         clock = get_component("clock")
         return clock.tick() if clock else 0
-    except Exception:
+    except Exception as error:
+        swallowed("seed_maker._now_tick: get_component", error)
         return 0
 
 
@@ -88,13 +90,15 @@ class SeedMakerController:
     def _read_life_forms(self):
         try:
             return sorted(self.maker.life_forms())
-        except Exception:
+        except Exception as error:
+            swallowed("seed_maker.SeedMakerController._read_life_forms: self.maker.life_forms", error)
             return []
 
     def _recipes(self):
         try:
             return list(self.maker.recipes())
-        except Exception:
+        except Exception as error:
+            swallowed("seed_maker.SeedMakerController._recipes: self.maker.recipes", error)
             return []
 
     def _chamber(self):
@@ -104,8 +108,8 @@ class SeedMakerController:
             for stack in self.maker.input.stacks():
                 if stack.count > 0:
                     loaded[stack.id] = loaded.get(stack.id, 0) + stack.count
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("seed_maker.SeedMakerController._chamber: self.maker.input.stacks", error)
         return loaded
 
     def _saturated_forms(self, recipes):
@@ -219,7 +223,8 @@ class SeedMakerController:
         try:
             if self.maker.get_output_count() <= 0:
                 return True
-        except Exception:
+        except Exception as error:
+            swallowed("seed_maker.SeedMakerController._drain_output: self.maker.get_output_count", error)
             return True
         port = self.maker.output
         try:
@@ -236,7 +241,8 @@ class SeedMakerController:
             self.log.debug(f"[{self.name}] output drain raised: {e}")
         try:
             return self.maker.get_output_count() <= 0
-        except Exception:
+        except Exception as error:
+            swallowed("seed_maker.SeedMakerController._drain_output: self.maker.get_output_count #2", error)
             return False
 
     # ---------------------------------------------------------- planning
@@ -357,8 +363,8 @@ class SeedMakerController:
             self.log.color("#7CFC00").print(f"[{self.name}] NEW SEED: {key} -> '{species}' ({getattr(result, 'seed_id', '')}).")
             try:
                 notify(f"Seed Maker found '{species}' ({key})", level="info", duration_seconds=8.0)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("seed_maker.SeedMakerController._run_trial: notify", error)
         elif status == "sludge":
             self._last_result = f"{key} -> sludge"
             self.log.print(f"[{self.name}] {key} -> sludge.")
@@ -410,7 +416,8 @@ class SeedMakerController:
     def _safe_is_running(self):
         try:
             return bool(self.maker.is_running())
-        except Exception:
+        except Exception as error:
+            swallowed("seed_maker.SeedMakerController._safe_is_running: self.maker.is_running", error)
             return False
 
     # -------------------------------------------------------------- loop

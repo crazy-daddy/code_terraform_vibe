@@ -1,6 +1,7 @@
 import fluid_routing
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing
@@ -109,8 +110,8 @@ class ThermalCapController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("thermal_cap.ThermalCapController.get_current_tick: self.clock.tick", error)
         return 0
 
     def ensure_output_connection(self):
@@ -207,8 +208,8 @@ class ThermalCapController:
             self.log.level("error").print(f"[{self.name}] WARNING: Chamber overpressured -- banked steam was lost to atmosphere. Releasing sooner next cycle.")
             try:
                 notify(f"[{self.name}] Thermal Cap overpressured; banked steam lost.", level="warn", duration_seconds=8.0)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("thermal_cap.ThermalCapController.step: notify", error)
 
     def run(self, poll_interval=1.0):
         self.log.print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")

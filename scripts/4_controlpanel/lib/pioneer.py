@@ -14,6 +14,7 @@ from version_guard import validate_game_version
 import mining_reservations
 import drill_sites
 from logistics_requests import PULL_DESTINATION_WILDCARDS
+from swallow import swallowed
 
 class PioneerController(VehicleController, VehicleUpgradeMixin):
     """
@@ -156,7 +157,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                 continue
             try:
                 jobs = getter() or []
-            except Exception:
+            except Exception as error:
+                swallowed("pioneer.PioneerController.get_construction_progress: getter", error)
                 continue
             any_list_read = True
             for c in jobs:
@@ -260,8 +262,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
         if hasattr(self.vehicle, "nav"):
             try:
                 self.vehicle.nav.brake()
-            except Exception:
-                pass
+            except Exception as exc:
+                swallowed("pioneer.PioneerController.execute_construction: self.vehicle.nav.brake", exc)
 
         while True:
             # No-op if this Pioneer doesn't actually own the job's claim (the
@@ -308,14 +310,15 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
             if hasattr(self.vehicle, "nav"):
                 try:
                     self.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    swallowed("pioneer.PioneerController.execute_construction: self.vehicle.nav.brake #2", exc)
 
     def cargo_count(self, item_id):
         """Units of item_id currently sitting in the Pioneer's cargo, across all stacks."""
         try:
             return sum(getattr(s, "count", 0) for s in self.vehicle.cargo.stacks() if getattr(s, "id", None) == item_id)
-        except Exception:
+        except Exception as error:
+            swallowed("pioneer.PioneerController.cargo_count: self.vehicle.cargo.stacks", error)
             return 0
 
     def batch_required_count(self, pending, item_id, max_limit=None):
@@ -353,8 +356,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                 cnt = self.vehicle.cargo.count()
                 free_space = max(0, cap - cnt)
                 goal = min(goal, have + free_space)
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("pioneer.PioneerController.load_construction_materials: self.vehicle.cargo.capacity", error)
 
         if have >= goal and have >= required_count:
             return True
@@ -415,13 +418,15 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                     if hasattr(bp_component, "paused_constructions"):
                         try:
                             paused = bp_component.paused_constructions() or []
-                        except Exception:
+                        except Exception as error:
+                            swallowed("pioneer.PioneerController.run_construction_loop: bp_component.paused_constructions", error)
                             paused = []
                             lists_ok = False
                     if hasattr(bp_component, "pending_constructions"):
                         try:
                             pending = bp_component.pending_constructions() or []
-                        except Exception:
+                        except Exception as error:
+                            swallowed("pioneer.PioneerController.run_construction_loop: bp_component.pending_constructions", error)
                             pending = []
                             lists_ok = False
 
@@ -430,7 +435,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                     if lists_ok and bp_component is not None:
                         try:
                             active_now = bp_component.active_constructions() if hasattr(bp_component, "active_constructions") else []
-                        except Exception:
+                        except Exception as error:
+                            swallowed("pioneer.PioneerController.run_construction_loop: bp_component.active_constructions", error)
                             active_now = None  # unreadable -- don't sweep this cycle
                         if active_now is not None:
                             live_ids = {getattr(j, "id", getattr(j, "blueprint_id", None)) for j in (active_now or [])}
@@ -456,7 +462,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                 if bp_component and hasattr(bp_component, "active_constructions"):
                     try:
                         active = bp_component.active_constructions() or []
-                    except Exception:
+                    except Exception as error:
+                        swallowed("pioneer.PioneerController.run_construction_loop: bp_component.active_constructions #2", error)
                         active = []
                         lists_ok = False
                 if lists_ok:
@@ -667,7 +674,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                     if hasattr(self.vehicle, "cargo"):
                         try:
                             free_space = max(0, self.vehicle.cargo.capacity() - self.vehicle.cargo.count())
-                        except Exception:
+                        except Exception as error:
+                            swallowed("pioneer.PioneerController.run_construction_loop: self.vehicle.cargo.capacity", error)
                             free_space = 50
 
                     batch_needed = self.batch_required_count(target_jobs, required_item, max_limit=free_space)
@@ -700,16 +708,16 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                 self.log.level("error").print(f"[{self.name}] Pioneer loop exception: {e}")
                 try:
                     self.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("pioneer.PioneerController.run_construction_loop: self.vehicle.nav.brake", error)
                 # Release any construction job claim on failure -- run_construction_loop()
                 # doesn't use self.current_target_key at all (unlike mining/survey), so
                 # this releases every claim this Pioneer holds; harmless since a
                 # Constructor Pioneer only ever runs this one loop.
                 try:
                     self.release_target_claim()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("pioneer.PioneerController.run_construction_loop: self.release_target_claim", error)
                 sleep(5.0)
 
     def run_mining_loop(self):
@@ -857,13 +865,13 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                 self.log.level("error").print(f"[{self.name}] Mining loop exception: {e}. Executing emergency failsafe brake.")
                 try:
                     self.vehicle.nav.brake()
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("pioneer.PioneerController.run_mining_loop: self.vehicle.nav.brake", error)
                 try:
                     self.release_target_claim()
                     if self.current_target_reserved:
                         mining_reservations.release_yield(self.name)
                         self.current_target_reserved = False
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("pioneer.PioneerController.run_mining_loop: self.release_target_claim", error)
                 sleep(5.0)

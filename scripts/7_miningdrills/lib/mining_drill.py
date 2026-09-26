@@ -1,6 +1,7 @@
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 from drill_sites import STATUS_KEY
 
 # Field Mining Drill telemetry (standard / Industrial / Heavy share one API,
@@ -53,15 +54,16 @@ class MiningDrillController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("mining_drill.MiningDrillController.get_current_tick: self.clock.tick", error)
         return 0
 
     def read_snapshot(self):
         """Live readings: rate (t/h), stockpile count/capacity and {item_id: units}."""
         try:
             rate = float(self.drill.drill_rate() or 0.0)
-        except Exception:
+        except Exception as exc:
+            swallowed("mining_drill.MiningDrillController.read_snapshot: self.drill.drill_rate", exc)
             rate = 0.0
         port = getattr(self.drill, "output", None)
         count, capacity, items = 0, 0, {}

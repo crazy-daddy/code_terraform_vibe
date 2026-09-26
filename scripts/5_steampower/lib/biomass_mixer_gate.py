@@ -1,6 +1,7 @@
 import fluid_routing
 from archive import archive
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Biomass Mixer duty-cycle gate: pause a Mixer (breaker off) while one of its
 # expected essences is dry, resume once every expected essence has refilled.
@@ -127,7 +128,8 @@ class MixerGate:
         for building, _ in fluid_routing.discover_network_buildings(LIQUIFIER_TYPE_ID, resolve=True):
             try:
                 biome = building.biome()
-            except Exception:
+            except Exception as error:
+                swallowed("biomass_mixer_gate.MixerGate._discover: building.biome", error)
                 biome = None
             if biome in ESSENCE_BIOMES:
                 by_biome.setdefault(biome, []).append(building)
@@ -155,7 +157,8 @@ class MixerGate:
     def _call(obj, method, default):
         try:
             return getattr(obj, method)()
-        except Exception:
+        except Exception as error:
+            swallowed("biomass_mixer_gate.MixerGate._call: getattr(obj, method)", error)
             return default
 
     def _port_reading(self, mixer, biome):
@@ -183,7 +186,8 @@ class MixerGate:
             return True
         try:
             return bool(power.is_powered(mixer_id))
-        except Exception:
+        except Exception as error:
+            swallowed("biomass_mixer_gate.MixerGate._is_powered: power.is_powered", error)
             return True
 
     # ---- power -----------------------------------------------------------

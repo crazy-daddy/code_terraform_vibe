@@ -35,6 +35,7 @@
 from archive import archive
 import field_layout
 from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -69,7 +70,8 @@ def _now_tick():
     try:
         clock = get_component("clock")
         return clock.tick() if clock else 0
-    except Exception:
+    except Exception as error:
+        swallowed("harvester_planting._now_tick: get_component", error)
         return 0
 
 

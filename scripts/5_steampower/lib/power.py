@@ -27,6 +27,7 @@
 from archive import archive
 from patterns import is_wildcard_pattern, filter_wildcard_matches
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # lib/production.py imports this. Decompiled simworker's dayCycleDuration.
 DAY_CYCLE_DURATION_SECONDS = 600
@@ -86,8 +87,8 @@ DAILY_HISTORY_KEY_PREFIX = "power.daily_hist:"
 def _notify(text, level="warn", duration=8.0):
     try:
         notify(text, level=level, duration_seconds=duration)
-    except Exception:
-        pass
+    except Exception as error:
+        swallowed("power._notify: notify", error)
 
 
 def steam_pool(tank_ids):
@@ -110,8 +111,8 @@ def steam_pool(tank_ids):
             stored_t += tank.level()
             capacity_t += tank.capacity()
             count += 1
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("power.steam_pool: get_component", error)
     return stored_t, capacity_t, count
 
 
@@ -197,8 +198,8 @@ class PowerGridManager:
                     outpost = get_component(outpost_id)
                     for ref in outpost.buildings("gas_tank") if outpost else []:
                         found.append(ref.id)
-                except Exception:
-                    pass
+                except Exception as error:
+                    swallowed("power.PowerGridManager._steam_tank_ids: get_component", error)
             self.fallback_tank_ids = found
             self.log.debug(f"[POWER] Gas Tanks not in grid members for '{self.grid_anchor}'; outpost walk over {len(outpost_ids)} outpost(s) found {len(found)}.")
         return self.fallback_tank_ids
@@ -326,8 +327,8 @@ class PowerGridManager:
                     self.shedded_machines.add(m_id)
                     self.log.level("warn").print(f"[POWER GUARD] Shed {m_id} on '{grid_id_str}' ({reason}).")
                     return True
-        except Exception:
-            pass
+        except Exception as error:
+            swallowed("power.PowerGridManager._shed: self.power.can_power_off", error)
         return False
 
     def _restore(self, m_id, soft):
@@ -337,7 +338,8 @@ class PowerGridManager:
         try:
             if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
                 return self.power.set_powered(m_id, True).status == "ok"
-        except Exception:
+        except Exception as error:
+            swallowed("power.PowerGridManager._restore: self.power.can_power_off", error)
             return False
         return True
 

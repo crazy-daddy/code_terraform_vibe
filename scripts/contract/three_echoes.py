@@ -10,7 +10,8 @@ for letter in broadcast.freq_a:
         subject.append(broadcast.freq_b[i])
         subject.append(broadcast.freq_c[i])
         i+=1
-    except:
+    except IndexError:
+        # freq_b/freq_c shorter than freq_a: nothing left to interleave.
         continue
 print(subject)
 transmitter = get_component("transmitter")

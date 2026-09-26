@@ -32,6 +32,7 @@ import drill_sites
 from archive import archive
 from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
+from swallow import swallowed
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -69,7 +70,8 @@ class DroneHaulerMixin:
         network = get_component("outpost_network")
         try:
             return {o.id: o for o in network.outposts()} if network else {}
-        except Exception:
+        except Exception as error:
+            swallowed("drone_hauler.DroneHaulerMixin._outposts_by_id: network.outposts", error)
             return {}
 
     def _haul_destinations(self, curr_tick):
@@ -211,7 +213,8 @@ class DroneHaulerMixin:
     def _item_room(self, item_id):
         try:
             return int(self._host.drone.cargo.space_for(item_id))
-        except Exception:
+        except Exception as error:
+            swallowed("drone_hauler.DroneHaulerMixin._item_room: self._host.drone.cargo.space_for", error)
             return 0
 
     def _candidate_routes(self, dests, sources, capacity, start):
@@ -248,7 +251,8 @@ class DroneHaulerMixin:
 
         try:
             capacity = self._host.drone.cargo.capacity() - self._host.drone.cargo.count()
-        except Exception:
+        except Exception as error:
+            swallowed("drone_hauler.DroneHaulerMixin._plan_haul_job: self._host.drone.cargo.capacity", error)
             capacity = 0
         if capacity <= 0:
             return None
@@ -307,7 +311,8 @@ class DroneHaulerMixin:
     def _cargo_contents(self):
         try:
             return {i: int(n) for i, n in dict(self._host.drone.cargo.contents()).items() if n > 0}
-        except Exception:
+        except Exception as error:
+            swallowed("drone_hauler.DroneHaulerMixin._cargo_contents: dict(self._host.drone.cargo.contents()).items", error)
             return {}
 
     # ------------------------------------------------------------ service stations

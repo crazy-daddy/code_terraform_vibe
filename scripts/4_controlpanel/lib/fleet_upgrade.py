@@ -38,6 +38,7 @@ from drone_claims import DRONE_RECALL_KEY, MISSION_KEY
 from drone_depot import DEPOT_STATUS_KEY
 from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Worst -> best, kit id -> the Depot typeId it deploys (lib/drone_energy.py).
 DEPOT_KIT_TIERS = ["drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large"]
@@ -72,7 +73,8 @@ DRONE_CANCELLABLE_STATES = ("ordered", "requested", "ready", "announced")
 def _component(component_id):
     try:
         return get_component(component_id)
-    except Exception:
+    except Exception as error:
+        swallowed("fleet_upgrade._component: get_component", error)
         return None
 
 
@@ -88,7 +90,8 @@ class FleetUpgradeCoordinator:
         inventory = _component("inventory")
         try:
             return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception:
+        except Exception as error:
+            swallowed("fleet_upgrade.FleetUpgradeCoordinator._inventory_count: inventory.count", error)
             return 0
 
     def _unlocked(self, ladder, unlocked_outputs):
@@ -101,13 +104,15 @@ class FleetUpgradeCoordinator:
         network = _component("outpost_network")
         try:
             outposts = network.outposts() if network else []
-        except Exception:
+        except Exception as error:
+            swallowed("fleet_upgrade.FleetUpgradeCoordinator._depots: network.outposts", error)
             outposts = []
         for outpost in outposts:
             for type_id in DEPOT_TYPE_TIERS:
                 try:
                     refs = outpost.buildings(type_id)
-                except Exception:
+                except Exception as error:
+                    swallowed("fleet_upgrade.FleetUpgradeCoordinator._depots: outpost.buildings", error)
                     continue
                 for ref in refs:
                     found.append({
@@ -123,7 +128,8 @@ class FleetUpgradeCoordinator:
         fleet = _component("fleet")
         try:
             return {getattr(d, "id", ""): d for d in fleet.drones()} if fleet else {}
-        except Exception:
+        except Exception as error:
+            swallowed("fleet_upgrade.FleetUpgradeCoordinator._drones: fleet.drones", error)
             return {}
 
     def _start_script(self, machine_id):
@@ -134,6 +140,7 @@ class FleetUpgradeCoordinator:
         try:
             res = run.start(machine_id)
         except Exception as e:
+            swallowed("fleet_upgrade.FleetUpgradeCoordinator._start_script: run.start", e)
             return f"error: {e}"
         return "ok" if res.status in ("ok", "already_running") else res.status
 
@@ -463,7 +470,8 @@ class FleetUpgradeCoordinator:
             drone = _component(old_id)
             try:
                 cargo = drone.cargo.count() if drone else 0
-            except Exception:
+            except Exception as error:
+                swallowed("fleet_upgrade.FleetUpgradeCoordinator._swap_drone: drone.cargo.count", error)
                 cargo = 0
             depot_ids = {d["id"] for d in self._depots()}
             if getattr(ref, "current_station", "") not in depot_ids or cargo:

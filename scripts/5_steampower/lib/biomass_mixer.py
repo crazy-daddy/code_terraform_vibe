@@ -2,6 +2,7 @@ import fluid_routing
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole
+from swallow import swallowed
 
 # Shared Biomass Mixer automation. Nothing to tune -- the Mixer picks its own
 # strongest balanced mix every tick (docs/components/biomass_mixer.md), and
@@ -84,7 +85,8 @@ class EssenceInputRouter:
         try:
             level = port.level()
             flow = port.flow_rate()
-        except Exception:
+        except Exception as error:
+            swallowed("biomass_mixer.EssenceInputRouter._port_starved: port.level", error)
             return False
         starved = level < STARVED_LEVEL_T and flow == 0
         if starved:
@@ -100,7 +102,8 @@ class EssenceInputRouter:
         for building, outpost_id in fluid_routing.discover_network_buildings(LIQUIFIER_TYPE_ID, resolve=True):
             try:
                 biome = building.biome()
-            except Exception:
+            except Exception as error:
+                swallowed("biomass_mixer.EssenceInputRouter._discover_candidates: building.biome", error)
                 biome = None
             if biome == self.biome:
                 liquifiers.append((building.id, outpost_id))
@@ -146,14 +149,15 @@ class BiomassMixerController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("biomass_mixer.BiomassMixerController.get_current_tick: self.clock.tick", error)
         return 0
 
     def _read(self, method, default):
         try:
             return getattr(self.mixer, method)()
-        except Exception:
+        except Exception as error:
+            swallowed("biomass_mixer.BiomassMixerController._read: getattr(self.mixer, method)", error)
             return default
 
     def ensure_input_connections(self):
@@ -182,7 +186,8 @@ class BiomassMixerController:
             port = router.port()
             try:
                 level = port.level() if port else 0.0
-            except Exception:
+            except Exception as error:
+                swallowed("biomass_mixer.BiomassMixerController.publish_telemetry: port.level", error)
                 level = 0.0
             inputs[router.biome] = {
                 "source": fluid_routing.healthy_peer_id(port) if port else None,

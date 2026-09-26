@@ -48,6 +48,7 @@ import field_layout
 from storage import take_item
 from seed_supply import seed_buffer
 from tree_console import TreeConsole
+from swallow import swallowed
 from version_guard import validate_game_version
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
@@ -89,14 +90,15 @@ class CropAutomatorController:
         if self.clock and hasattr(self.clock, "tick"):
             try:
                 return self.clock.tick()
-            except Exception:
-                pass
+            except Exception as error:
+                swallowed("crop_automator.CropAutomatorController.get_current_tick: self.clock.tick", error)
         return 0
 
     def _read_sector(self):
         try:
             return self.machine.position()
-        except Exception:
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController._read_sector: self.machine.position", error)
             return None
 
     # ------------------------------------------------------------ discovery
@@ -204,7 +206,8 @@ class CropAutomatorController:
                 jobs.append(current)
                 if getattr(current, "state", None) == "blocked" or getattr(current, "blocker", None):
                     blocked = current
-        except Exception:
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.queued_jobs_info: self.machine.get_queue", error)
             return None, {}, None
         for job in jobs:
             s = getattr(job, "sector", None)
@@ -223,7 +226,8 @@ class CropAutomatorController:
             return 0
         try:
             return sum(getattr(st, "count", 0) for st in port.stacks() if getattr(st, "id", None) == seed_id)
-        except Exception:
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.seed_stock_in_port: port.stacks", error)
             return 0
 
     def unblock_queue(self, blocked_job, curr_tick):
@@ -265,8 +269,10 @@ class CropAutomatorController:
     def output_forage(self):
         port = getattr(self.machine, "output", None)
         try:
-            return int(port.count("forage") or 0) if port else 0
-        except Exception:
+            # OutputSlot.count() takes no item id; sum the Forage stacks instead.
+            return int(sum(s.count for s in port.stacks() if s.id == "forage")) if port else 0
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.output_forage: port.stacks", error)
             return 0
 
     def in_garden(self):
@@ -302,7 +308,8 @@ class CropAutomatorController:
         self.unblock_queue(blocked_job, curr_tick)
         try:
             room = QUEUE_LIMIT - self.machine.queue_count()
-        except Exception:
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.step: self.machine.queue_count", error)
             room = 0
         cells = {}
         try:
@@ -373,7 +380,8 @@ class CropAutomatorController:
         try:
             status = self.machine.status()
             queue = self.machine.queue_count()
-        except Exception:
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.publish: self.machine.status", error)
             status, queue = "?", None
         entry = {"sector": self.sector, "status": status, "queue": queue, "cells": len(mine),
                  "mature": len(mature), "open": len(open_cells), "waiting_machines": len(waiting),
