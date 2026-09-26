@@ -492,3 +492,15 @@ These three produced the general layout rules now listed in the cheatsheet's §7
 `card()`'s own title, fold a widget's live value into its own label instead of a second text
 element, give a `pill()` more vertical clearance than plain text, anchor fixed-footprint elements
 from the edge rather than a width fraction).
+
+---
+
+## §8 — Live-Debug Bridge: How the Command Channel and Library Caching Were Established
+
+The general external-command channel was found (2026-09-22) from a real stale request left in `command.json` by earlier tool use, not reverse-engineered blind. Sending `"action":"run"` for `rover_1.py` force-restarted the running script (fresh startup, tick counter reset). The same session showed that restarting `rover_1.py` after syncing a new `lib/vehicle_mining.py` still ran the stale cached module. Every relevant VS Code command was then tried against the changed library file (Run Script in Game → `context`, Create Library in Game → `file_exists`, Import File as Game Library → `duplicate_name`, Rename Library and Update Imports → `no_change`); each failed for a semantically correct reason, never "not found", ruling out a hidden apply command. `scripts_sync.py --auto`'s launch retry exists because a freshly re-filled `drone_2.py` failed an immediate launch and succeeded after a short wait. Library registration via `create-library` was confirmed 2026-09-24 (`drone_upgrade`, `fleet_upgrade` → `{"ok": true}`).
+
+---
+
+## §9 — Tiered `scripts/` Migration
+
+pre-restructure codebase written/tested against save with 60 techs unlocked (incl. `data_archive_unlock`, `custom_panels_unlock`) → moved wholesale into `4_controlpanel/` as honest home tier (see `devtools/_migrate_from_root.py`), not guessed apart per file. `0_cold_boot`/`1_early` seeded separately from top-level `early_game_runner/` submodule's `early_game_runner/templates/` (flat) and `early_game_runner/templates/early/` (richer) boilerplate. That submodule = this project's own earlier `code-terraform-earlygame-automation` prototype, not `inspirations/vakermit`. Flat `early_game_runner/templates/*.py` = thin `from <lib_module> import ...` wrappers around project's own `lib/` controllers (`terraforming.py`, `solar.py`, `smelter.py`, ...), need `research_shared_library` → wrongly copied into `0_cold_boot` in initial seeding. Only `early_game_runner/templates/early/` genuinely self-contained (no `lib/`/game-module imports), belongs at `0_cold_boot`/`1_early`. `0_cold_boot/power/solar.py` = hand-trimmed exception: `early_game_runner/templates/early/solar.py` bundles full Ship-Computer building-buyer speedrunner around tracking loop, so cold-boot gets few-line sun-tracking-only script extracted from it. `fabricator`, unified `pioneer` (destination-routing, distinct from `pioneer_scout`), `steam_turbine`, `thermal_cap`, `water_pump` have no self-contained early equivalent yet → removed from `0_cold_boot` rather than left broken. They resolve once save reaches tier defining them (currently `4_controlpanel`). Splitting rest of `4_controlpanel` into earlier-tier-capable content = manual follow-up (see TODO.md), not automatic.

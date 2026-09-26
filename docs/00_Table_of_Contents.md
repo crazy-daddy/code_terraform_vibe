@@ -5,7 +5,7 @@ Master navigation guide to all modular documentation in `docs/`.
 ---
 
 ## ⚡ Quick References
-- **[AI Cheatsheet](AI_CHEATSHEET.md)**: High-density quick reference for formulas, setpoints, hardware catalog, and IPC protocols.
+- **[AI Cheatsheet](AI_CHEATSHEET.md)**: High-density quick reference hub (formulas, `lib/` map, conventions) with a section index into the topic files under [`cheatsheet/`](cheatsheet/).
 - **[Component Master Index](INDEX.md)**: Complete alphabetical index of all documentation files.
 - **Full DOCS Manual** (`Code-Terraform-DOCS-Manual-<build>.md`, gitignored): complete monolithic in-game export; the split files below are regenerated from it with `devtools/split_docs_manual.py`. Current build: see [README](README.md).
 

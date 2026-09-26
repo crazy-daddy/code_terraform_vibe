@@ -1,0 +1,300 @@
+# Vehicles & Drones (§2, §2a–§2b-1, §2e–§2h, §2j–§2k)
+
+Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics sections of §2 (§2a-0…§2a-3, §2c, §2d, §2i, §2k-1) live in [`production_logistics.md`](production_logistics.md).
+
+## 🚗 2. Surface Vehicles & Logistics
+
+| Vehicle | Speed / Throttle | Energy Cost / Budgeting | Operational Rules |
+| :--- | :--- | :--- | :--- |
+| **Rover** | `self.cruise_throttle` (explicit at construction, else fleet-wide `vehicle.default_cruise_throttle` archive value, default 0.5) capped per-leg by `RoverController.max_safe_throttle_for_leg()` | Developer-confirmed travel model, Rover-specific, flat (no calibration, no Pioneer terms): `Wh/meter = 0.2 × throttle`; safety margin `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%). See §2a | Sonar scan: `SONAR_WH_BUDGET = 2.0` Wh. Mining drill: exact per-ore/per-drill/per-purity `mine_wh_per_unit(item_id, purity)`, `MINE_WH_PER_UNIT = 2.5` Wh/unit only as no-item-id fallback. See §2a. Return to nearest charging station (not necessarily home) when Wh below trip budget. |
+| **Pioneer** | Configurable slots / tools | Slot chassis: `inspect_slots()`, `execute_construction()`; construction energy: `WH_PER_PROGRESS` (per-vehicle calibrated, default `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh for 0%→100%). See §2a | Heavy construction, blueprint placement, pipe/power line deploy. Budgets each trip for `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` progress (~4 round trips per job), not just round-trip driving. |
+| **Harvester** | BFS on 8x24 grid (`NUM_ROWS=8`, `NUM_COLS=24`, A1..H24) | Travel time: 0.5 h/sector. Empty move: `+7 heat`; Item move: `+1 heat` | Max heat: 100°C. Pause & cool when heat exceeds `HEAT_SAFE_CEILING = 75.0`, resume at `HEAT_RESUME_LEVEL = 40.0` (`lib/harvesting.py`). Tier `8_planting` replaces this with calibrated just-in-time resting, see §1k. |
+
+### 2a. Vehicle Energy Budgeting Detail (`lib/vehicle_energy.py` `VehicleEnergyMixin`)
+
+- **Travel energy = developer-confirmed exact model, no calibration — Pioneer and
+  Rover use two DIFFERENT models.** Construction *progress* energy still calibrated
+  (`wh_per_progress`, no confirmed formula).
+
+  **Pioneer** (`VehicleEnergyMixin`, used as-is by `PioneerController`):
+  ```
+  power (W)   = (BASE_TRAVEL_POWER_W=3.0 + MODULE_TRAVEL_POWER_W=8.0 × active_modules
+                 + CARGO_UNIT_TRAVEL_POWER_W=0.04 × cargo_units) × throttle^1.5 × nav_power_multiplier
+  speed (m/h) = DRIVE_SPEED_M_PER_HOUR_PER_THROTTLE=100.0 × throttle × nav_speed_multiplier
+  ```
+  - `active_modules` — mounted functional modules drawing power while driving: Nav/Drill/Sonar/
+    Constructor family, including upgraded variants (`ACTIVE_MODULE_ID_PREFIXES`). Passive
+    containers (Battery Holder, Cargo Rack) don't count. `active_modules_count()`.
+  - `cargo_units` — live `self.vehicle.cargo.count()`. `calculate_trip_energy()` computes outbound
+    and return legs with *different* cargo loads (return = outbound + `planned_drill_units`).
+    `cargo_units_count()`.
+  - `nav_speed_multiplier` / `nav_power_multiplier` — from mounted Sport Nav modules. 1 Sport Nav =
+    exactly 2x speed / 2.6x power (`docs/components/nav_module.md`); `nav_power_multiplier()`
+    linearly extrapolates +1.6x power per +1.0x speed for additional Sport Navs. No Sport Nav gives
+    both multipliers `1.0`.
+
+  **Rover** (`RoverController` override in `lib/rover.py`, not in base mixin):
+  ```
+  Wh/meter = ROVER_WH_PER_METER_PER_THROTTLE=0.2 × throttle
+  ```
+  Developer-confirmed (Spyros - CT Dev, in-game Discord #playtest-chat, 2026-08-28): "the rover is
+  very simple wh = distance x throttle x 0.2" — flat, **no** `active_modules`, `cargo_units`, or
+  Sport Nav terms, linear in throttle (vs. Pioneer `throttle^1.5`).
+  `RoverController.wh_per_meter_at_throttle()` overrides only that method —
+  `minimum_wh_per_meter()`, `calculate_trip_energy()`, `energy_needed_to_return_now()`/
+  `_comfortably()`, `energy_wh_for_leg()` all call through it. `max_safe_throttle_for_leg()` solves
+  directly (linear): `t <= available_for_leg / (distance * ROVER_WH_PER_METER_PER_THROTTLE *
+  SAFETY_MARGIN_MULTIPLIER)`.
+  - Module-level standalone `_for`-suffixed versions (`travel_wh_per_meter_for(vehicle, throttle,
+    cargo_units=None)`, etc.) let non-`VehicleController` callers (e.g. a charging station's own
+    script — no cross-script instance calls exist, only `get_component(id)`/Archive/Signal Bus)
+    use the same formula without a live instance, dispatching to the Rover model via
+    `is_rover_chassis_for(vehicle)` (probes `vehicle.id`/`.name` for a `"rover"` prefix).
+    `lib/charging.py`'s `rescue_wh_per_meter_for(vehicle)` collapses this into one entry point for
+    rescue sizing (rates the leg at `MIN_SPEEDMODE_THROTTLE`, the cheapest Wh/m; falls back to a
+    bare-module Pioneer shape if unreachable).
+  - **`lib/charging.py` fleet rescue** (`manage_fleet_rescues()`): dispatch triggers on engine
+    `"stranded"`/`"stalled_no_battery"` status, OR `return_floor_wh()` (the Wh needed on board
+    *right now* to self-navigate to the nearest station, via `rescue_wh_per_meter_for()` at
+    `MIN_SPEEDMODE_THROTTLE` — same formula the vehicle's own hard-abort uses).
+    `RESCUE_EXTRA_RESERVE_WH = 8.0` is added on top only when sizing `rescue_target_level()` (how
+    much to charge *during* rescue); the trigger comparison uses the bare floor.
+  - **Multi-station arbitration**: every deployed station gates dispatch on
+    `is_nearest_station_to(vehicle_ref)`, so only one rescues a given stranded vehicle. Ties default
+    to allowing dispatch.
+- Round-trip budget = outbound drive + sonar/scan budget + mining/drill budget + drive from target
+  to *nearest* charging station, all × `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%), plus hard
+  `MIN_EMERGENCY_RESERVE_WH = 8.0` floor on top. See `calculate_trip_energy()`.
+- **Mining/drill budget also developer-confirmed exact model, not flat average.**
+  `mine_wh_per_unit(item_id, purity)` (and standalone `mine_wh_per_unit_for(...)`):
+  ```
+  time (h) = (ORE_DIG_MINUTES[item_id] / 60) × drill.speed_multiplier() / PURITY_DIVISOR[purity]
+  Wh       = time (h) × DRILL_POWER_W_BY_HARDNESS_LIMIT[drill.hardness_limit()]
+  ```
+  Per-tier Watts: basic=10W/industrial=20W/heavy=30W (keyed by `drill.hardness_limit()`, no
+  `.power_draw()` method exists). Per-ore dig minutes (`docs/database/items_minerals.md`):
+  iron_ore/silicon=15, lead_ore=18, titanium/cobalt=20, rare_earth=25, neutronium=30. Purity yield
+  multiplier: `standard`=1×/`rich`=2×/`pure`=3× (same divisor as game's own time formula).
+  `calculate_trip_energy()`'s `mine_item_id`/`mine_purity` params feed this; every real mining
+  call site passes candidate's own `harvest_item`/`purity`. `MINE_WH_PER_UNIT = 2.5` (flat) =
+  only fallback for candidate with no `mine_item_id` — equals cheapest real case (basic drill,
+  iron ore, standard) but under-reserves by up to **~3.6x** for Heavy/Neutronium
+  (`9.0` Wh vs. flat `2.5` Wh).
+- Throttle clamped to `[MIN_SPEEDMODE_THROTTLE=0.10, MAX_SPEEDMODE_THROTTLE=1.0]`, picked
+  per-leg by `select_cruise_throttle()` / `max_safe_throttle_for_leg()`. Pioneer power scales with
+  `throttle^1.5`, speed with `throttle`, so leg Wh/m scales with `sqrt(throttle)` —
+  `max_safe_throttle_for_leg()` solves via `t <= (available_Wh / (distance *
+  coeff * SAFETY_MARGIN_MULTIPLIER)) ** 2`.
+- **Cruise throttle = one numeric default, not binary conserve/highspeed flag.**
+  `select_cruise_throttle()` picks `min(self.cruise_throttle, MAX_SPEEDMODE_THROTTLE)` as
+  baseline, then caps DOWN (never up) to what `max_safe_throttle_for_leg()` allows.
+  `self.cruise_throttle` resolves same as `wh_per_progress`: explicit constructor value
+  (demand-driven transporter role always passes `cruise_throttle=1.0`, since it recharges fully
+  at both ends of every leg — §2f), else `default_cruise_throttle()` — fleet-wide
+  `vehicle.default_cruise_throttle` archive value (clamped to `[MIN_SPEEDMODE_THROTTLE,
+  MAX_SPEEDMODE_THROTTLE]`, fallback `DEFAULT_CRUISE_THROTTLE_FALLBACK = 0.5`), settable via
+  Data Archive Notebook or live from `panel_2.py`'s FLEET card slider. `lib/drone_energy.py`
+  mirrors exactly for drones — own `drone.default_cruise_throttle` archive key (distinct from
+  vehicle key so fleets tune independently), same clamp/fallback, settable from `panel_5.py`'s
+  DRONE FLEET card slider (§7).
+- `minimum_wh_per_meter()` gives best-case Wh/m at throttle floor. Any check claiming target/job
+  *permanently* unreachable (not just "not right now") must budget against this, not typical
+  cruise-throttle rate.
+- Two reserve checks, deliberately separate:
+  - `energy_needed_to_return_now()` — true floor, at `minimum_wh_per_meter()`. Used only for
+    the **hard mid-drive abort** inside `drive_to()`'s tick loop.
+  - `energy_needed_to_return_comfortably()` — rated at `self.cruise_throttle`. Used for every
+    **proactive** "keep working or head back" decision (mining stop check, construction Field
+    Battery Floor, survey per-POI/per-waypoint reserve checks). A simple heuristic, not an exact
+    time/output optimum.
+- `drive_to()` computes `is_driving_to_station` once before polling loop, skips return-reserve
+  abort check entirely when destination is charging station/base slot (or already within 3m) —
+  arriving there *is* recovery.
+- Construction (Pioneer only): `calculate_trip_energy()`'s `planned_construction_progress` param
+  adds `progress * self.wh_per_progress`. `wh_per_progress` calibrated per-vehicle from real
+  `constructor.execute()` calls (`calibrate_wh_per_progress()`), fallback
+  `CONSTRUCTION_WH_PER_PROGRESS_DEFAULT = 40.0` Wh (0%→100%) until enough samples.
+  `planned_progress_for_job()` caps planned progress at
+  `TARGET_CONSTRUCTION_PROGRESS_PER_TRIP = 0.25` (or less if further along) — floor on whether to
+  depart, not on-site cap.
+- **Construction job claims (Pioneer only, `run_construction_loop()`, exclusive)**: construction
+  job NOT shareable (two Constructor Pioneers on same blueprint would double-load materials).
+  Uses `vehicle_claims.py`'s exclusive claim mechanism, key `f"build_{job_id}"`
+  (`PioneerController.construction_claim_key()`), prefix distinct from mining `"site_"`/survey
+  `"poi_"`. `claim_target()` called at each of three commit points (resuming paused job,
+  executing cargo-matching pending job, committing before round trip home).
+  `execute_construction()` heartbeats via `refresh_claim()` every attempt (no-op if not owner).
+  Released on completion (`get_construction_progress() >= 1.0`) or genuine failure, held across
+  incomplete "still paused" outcome, released wholesale on unhandled exception.
+  **Blueprint missing from every list (pending/active/paused) counts as complete (1.0)** — game
+  drops finished blueprints from all lists.
+  `release_finished_construction_claims()` also sweeps this Pioneer's own `build_*` claims on
+  no-longer-live blueprints each loop pass (one transaction per claims key, only when something
+  needs releasing, skipped if any list read failed).
+- Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
+  `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expire after
+  `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral mining sites not exclusive**
+  (several Pioneers may mine same POI) — claim calls still fire for bookkeeping
+  (`current_target_key`, mission resume) but never gate candidate selection. Survey/POI targets
+  still exclusive via same mechanism.
+- **In-flight mining yield reservation** (`lib/mining_reservations.py`, `mining.reserved_yield`
+  archive key): non-exclusive, additive bookkeeping, so vehicles converging on one deficit don't
+  all see the same undiminished demand.
+  `VehicleMiningMixin.select_best_mining_target(candidates, reserve_demand=True)` (home-demand path only)
+  estimates trip yield via `max_mineable_units()` and reserves it; `get_raw_material_demands()`
+  subtracts every non-stale reservation's units before returning. Heartbeat-renewed/released
+  (`refresh_yield()`/`release_yield()`), same expiry (`RESERVATION_STALE_TICKS = 36000`).
+  **Stockpile path** (`build_local_stockpile_candidates()`, `reserve_demand=False`) skips this —
+  already self-bounded by each outpost's `stock_target_for()`.
+- **Energy-based mining trip sizing** (`VehicleEnergyMixin.max_mineable_units()`): default
+  yield estimate (not `cargo.capacity()`). Solves trip-energy budget directly for units
+  (outbound + base return Wh fixed, mined-unit Wh and marginal return-drive Wh linear in unit
+  count) after subtracting `MIN_EMERGENCY_RESERVE_WH` and applying `SAFETY_MARGIN_MULTIPLIER`,
+  clamped to `cargo.capacity()`. `mine_until_full_or_exhausted()` stays safety net for estimate
+  drift (e.g. richer-than-expected purity).
+- Recall (`lib/vehicle_claims.py`): one shared `vehicle.recall` dict `{vehicle_name: True}` (not
+  one archive key per vehicle). `is_vehicle_recalled()`/`set_vehicle_recalled()` module-level
+  read/write. Toggled via `panel_2.py`'s Fleet card switch: on → abandon current target, drive to
+  base now; off → resume. Checked inside `drive_to()`'s tick loop and mining loops, same
+  `is_driving_to_station` exemption as return-reserve check.
+- Navigation timeout (`drive_timeout_ticks()`): defaults `None`, computed per-leg from expected
+  travel time, converted via `Clock.real_seconds_per_hour()` (not flat constant — compressed
+  day/night cycle stretches game-hours relative to world-clock hours). `safety_multiplier = 2.0`,
+  `min_ticks = 3000` floor.
+- Navigation safety: stall detection re-issues drive command after repeated stuck cycles,
+  dropping to `MIN_SPEEDMODE_THROTTLE` each retry, gives up after 3 failed recoveries — applies
+  regardless of `is_driving_to_station`. Base staging slots staggered per vehicle index.
+- `is_at_base(threshold=3.0)`: `self.distance_to_home() <= threshold`. Gates one-time-per-visit
+  actions (top-off charging, restocking) so they fire only when parked at base.
+- **Loop-top "cargo aboard but not at base" safety net vs. mission resume**:
+  `run_expedition_cycle()`/`run_mining_loop()` compute `has_resumable_target` before forcing
+  return-to-base-and-unload detour, so save reload mid-trip doesn't undo already-resumed drive.
+  `cargo_matches_target(target)` downgrades `has_resumable_target` to `False` for that cycle only
+  when cargo holds *different* material than resumed target's `harvest_item` (cargo not
+  material-locked). Target with no `harvest_item` (survey POI) always matches.
+
+### 2b. Mining (`lib/vehicle_mining.py` `VehicleMiningMixin`)
+
+Mineral-site discovery + drill execution in one place, shared by Rover and Pioneer (mixed into `VehicleController`).
+
+- Capability always read live via `self.vehicle.drill.hardness_limit()` — never assumed from vehicle type. Rover fixed Drill only carries basic drill (`hardness_limit = 1`, iron_ore/silicon); Industrial (`hardness_limit = 3`) and Heavy (`hardness_limit = 4`) Drills = Pioneer-universal-slot items for higher-hardness sites.
+- `build_mineral_site_candidates(deprioritize_hardness_at_or_below=None)`: candidate sites matching `get_raw_material_demands()` + vehicle hardness limit. Passing `ROVER_PREFERRED_MAX_HARDNESS = 1.0` sets `priority=3` instead of `2` on hardness ≤ 1 sites — **soft** preference (capable Pioneer still claims easy site if nothing harder pending).
+- Neither candidate builder filters peer-claimed sites (mineral sites not exclusive) — see `lib/mining_reservations.py` for overmining guard.
+- `select_best_mining_target(candidates, reserve_demand=False)`: sorts by `(priority, -PURITY_RANK,
+  distance)` — priority first; within tier, richer beats closer (`PURITY_RANK = {"standard": 0, "rich": 1, "pure": 2}`); distance only breaks ties between equally-rich. Soft preference — `calculate_trip_energy()` achievability check + `claim_target()` still run after sort. Both builders attach site `"purity"` from `getattr(site, "purity", None)`; POI candidates default to `"standard"`'s `0`.
+  Achievability checked at full 10-unit haul first; if not fitting round-trip budget, retries once at whatever `max_mineable_units()` says affordable instead of rejecting (only 0 affordable = real rejection) — else vehicle whose battery never fits full 10-unit trip (undersized battery, or expensive-per-unit ore like Neutronium) idles at base forever despite reachable demand. Logged at `print()` level (`"battery can't afford a full load -- heading out for a partial ~N-unit load"`) when fallback fires — normal-operation outcome worth surfacing, not debug detail.
+- `mine_current_site(max_units=None)` defaults to `self.vehicle.cargo.capacity()` (live) when no `max_units`. Home-demand mining loops always pass explicit `max_units` from `select_best_mining_target()`'s `estimated_units` (energy-based, `max_mineable_units()`).
+  `mine_until_full_or_exhausted(target_coords)` wraps it with recharge-and-resume-in-place loop. Battery-interruption recharge stop landing at *home base* station itself with cargo loaded unloads via `unload_cargo()` **before** `recharge_at_station()` — ore not stranded in cargo during (possibly multi-minute) recharge, and resumed `mine_current_site()` gets full cargo capacity as `max_units`.
+- Pioneer mining role (`run_stationed_mining_loop(outpost_id)`) requires operator already mounted drill — only checks `hasattr(self.vehicle, "drill")`, idles with advisory if absent; never auto-mounts.
+- **Unified role entrypoint (`PioneerController.run()`/`detect_role()`, `lib/pioneer.py`)**: every `pioneer_N.py` script constructs `PioneerController`, calls `run()`. `detect_role()` maps `ROLE_MODULES` (`{"constructor": "constructor", "scout": "sonar", "miner": "drill"}`) via `hasattr(self.vehicle, <attr>)` — exactly one mounted module picks role; none → `"hauler"`; more than one = misconfigured loadout (`TreeConsole` warn + no-op) unless `role_override=` passed. `run()` dispatches: constructor → `run_construction_loop()`, scout → `run_survey_loop()`, miner → `run_stationed_mining_loop(self.home_base)` (never home-demand `run_mining_loop()`), hauler → `run_haul_loop(dest_outpost_id=...)`. Equipment swappable at runtime, so re-probes every script run, no role caching.
+
+### 2b-1. Pioneer Auto-Upgrade (`lib/vehicle_upgrade.py` `VehicleUpgradeMixin`)
+
+Auto hardware tier upgrades for Pioneer, checked once per idle-at-base cycle (`handle_upgrade_cycle_if_idle()`, called from same "parked at base, checking readiness" checkpoint every role loop has: `run_mining_loop()`/`run_construction_loop()` in `lib/pioneer.py`, `run_haul_loop()`/`_stationed_mining_cycle()` in `lib/vehicle_cargo.py`/
+`lib/vehicle_mining.py`, `run_survey_loop()` in `lib/vehicle_survey.py` — last three Rover-shared, so call there `hasattr(self._host, "handle_upgrade_cycle_if_idle")`-gated).
+
+- **Pioneer-only.** `docs/database/equipment_modules.md` documents Sport Nav, Wide/Deep Sonar, Industrial/Heavy Drill as Pioneer-universal-slot items — Rover's 3 fixed slots only accept basic `nav_module`/`sonar_module`/`drill_module` (§2b), so never better tier for it. `VehicleUpgradeMixin` mixed into `PioneerController` only, never shared `VehicleController` base.
+- **Tier tables** (worst → best; `best_unlocked_tier()` only steps to immediate next tier present in fresh `shop.get_catalogue()` read, never straight to top, so one swap = one affordable purchase):
+  - `SONAR_TIERS = ["sonar_module", "sonar_module_wide", "sonar_module_deep"]`
+  - `DRILL_TIERS = ["drill_module", "drill_module_industrial", "drill_module_heavy"]`
+  - `BATTERY_HOLDER_TIERS = ["battery_holder_small", "battery_holder_medium", "battery_holder_large"]`
+    (`_BAY_COUNTS`: 1/2/3 bays)
+  - `CARGO_RACK_TIERS = ["cargo_rack_small", "cargo_rack_medium", "cargo_rack_large"]` (1/2/3 bays)
+  - `PORTABLE_BATTERY_TIERS = ["portable_battery", "heavy_portable_battery"]` (50Wh/100Wh)
+  - `PORTABLE_BIN_TIERS = ["portable_bin", "heavy_portable_bin"]` (25u/50u)
+- **Swap ordering (`_upgrade_function_module()`/`_upgrade_containers()`)**: `unmount` old → `shop.buy` new → `mount` new → `shop.sell` old — deliberately holds old + new in Inventory briefly instead of selling first, so failed purchase rolls back clean (`mount(slot_index, old_id)` restores vehicle). Failure *after* buy (mount rejects, or container mid-sequence purchase runs out of credits) left as logged, non-destructive stop state for operator, not force-rolled-back — nothing silently lost, at most deferred one cycle.
+- **Battery Holder swaps always recharge to ~100% first** (`_ensure_full_charge_for_sale()`) before uninstalling any Portable Battery — `shop.sell()` refunds battery's retained charge% with 50% floor (`docs/components/shop.md`), so full charge maximizes refund. Cargo Rack swaps skip this; Portable Bins not charge-valued.
+- **Density policy**: every Battery Holder/Cargo Rack bay — newly added by size upgrade (`_fill_container_bays()`) or already installed at base tier (`_top_up_container_density()`, independent of any size upgrade that cycle) — gets **Heavy** Portable Battery/Bin once unlocked, falls back to base variant only while Heavy locked.
+- **Sport Nav deliberately excluded from auto ladder** — stacks additively onto mounted Nav instead of replacing, so manual one-shot operator action: `request_sport_nav(vehicle_name)` sets shared `{vehicle_name: True}` archive dict (`SPORT_NAV_REQUEST_KEY = "vehicle.sport_nav_request"`, same shape/rationale as `vehicle_claims.RECALL_KEY`), surfaced as per-Pioneer-row button on `panel_2.py`'s FLEET card (only drawn when `width >= SPORT_NAV_BTN_MIN_WIDTH = 1100`, wide layout).
+  `handle_sport_nav_request_if_active()` consumes it once idle at base: finds first free `universal` slot, buys + mounts `nav_module_sport` if unlocked + affordable. Request flag always clears after one attempt, success or fail — stuck request (no free slot, locked research, insufficient credits) no retry loop; operator clicks again when ready.
+
+### 2e. Stationed Mining Role (`lib/vehicle.py`, `lib/vehicle_energy.py`, `lib/vehicle_mining.py`)
+
+Rover/Pioneer can treat **any** outpost — not just home — as base.
+
+- **`VehicleController.__init__`'s `home_base` param** (outpost id, or `None` = production/home outpost). Resolved to **live objects once at construction**, cached as `self.home_outpost` (`get_outpost_ref(home_base)`) and `self.home_charging_station` (`find_charging_station(self.home_outpost)`), no re-walking `outpost_network.outposts()` by id per lookup. `get_home_slot_coords()` reads only these two cached fields: station position if found, else outpost's `.coords()`, else `(0, 0)` only if `outpost_network` unavailable at construction. `self.home_base` kept only for identity checks. Trade-off: charging station built at this outpost *after* construction not picked up until next script reload.
+- **`unload_cargo(outpost=None)`** — defaults to `self.home_outpost` (cached), so stationed vehicle unloads into own outpost's Warehouse; explicit override for the transporter (§2f).
+- **`VehicleMiningMixin.build_local_stockpile_candidates(outpost_id)`** — per ore in `outpost_mining.assigned_ores_for(outpost_id)` still under `stock_target_for()`, builds mineral site candidates (same hardness/claim/blacklist filtering as `build_mineral_site_candidates()`) plus requires `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`. Fully independent of home's live demand.
+- **`VehicleMiningMixin.run_stationed_mining_loop(outpost_id)`** — thin wrapper around `_stationed_mining_cycle(outpost_id)`: same cycle shape as `run_mining_loop()` (reload resume, cargo/target mismatch detour, claim + drive + mine + return + unload + recharge, release claim right after return), target selection swapped for `build_local_stockpile_candidates()`.
+
+### 2f. Transporter Role: Terminology & Haul Cycle (`lib/vehicle_cargo.py` `run_haul_loop()`)
+
+**Terminology note**: for every other vehicle, "home"/"base" = production outpost. A transporter is constructed with `home_base=<SOURCE outpost id>` (§2e), so **its `self.home_base`/`self.home_outpost` point at the stationed source outpost**. The delivery leg uses a separately resolved ref (`dest_outpost = self.get_outpost_ref(dest_outpost_id)`), never `home_outpost`.
+
+- **Construction**: `PioneerController(vehicle, home_base=<source outpost id>)` — Pioneer, not Rover (Rover integrated hold fixed `capacity() == 10`; Pioneer cargo scales with Cargo Rack loadout). Always runs at `cruise_throttle=1.0`, since it recharges fully at both ends.
+- **Cycle** (items decided fresh each cycle, one load can mix several items):
+  1. `_current_supply_items()` — cargo already aboard (resuming after reload) → read items off `self.vehicle.cargo.stacks()` instead of re-planning.
+  2. Else `_plan_haul_load(capacity, dest_outpost_id)` (§2g). Empty plan → idle (no preemptive top-off, per CLAUDE.md's Demand-Driven Production rule).
+  3. `is_at_base()` check before loading — `return_to_base()` first if needed (`take_item()` needs physical presence).
+  4. `_load_haul_plan()` loads each item via `storage.take_item(...)` (§2g).
+  5. `drive_with_recharge()` to the destination — **not** `return_to_base()`.
+  6. `unload_cargo(outpost=dest_outpost)` — sends each cargo stack to its own destination.
+  7. Recharge fully at the destination, then `return_to_base()` and recharge there too.
+
+### 2g. Generalized Hauler + Reagent Resupply (`lib/vehicle_cargo.py` `run_haul_loop()`, `lib/outpost_reagents.py`)
+
+§2f ore-hauler and Bio Lab reagent-hauler same shape: **transporter always stationed at `self.home_base` (SOURCE), delivers to explicit DEST**. Ore-hauler: source = mining outpost, dest = home (`None`). Reagent-hauler: source = home (`home_base=None`), dest = coastal outpost. Every thin entrypoint calls `PioneerController.run(dest_outpost_id=...)` (§2b), which detects hauler role (no constructor/sonar/drill mounted), forwards to `run_haul_loop(dest_outpost_id, poll_interval=10.0)` — `dest_outpost_id` alone disambiguates role (`None` = ore-hauler; other id = remote outpost's Bio Lab = reagent-hauler).
+
+- **`_outpost_haul_demand(dest_outpost_id)`** (module-level) computed fresh each cycle: `None`/home → `production.get_raw_material_demands()`; other outpost id → `outpost_reagents.get_outpost_reagent_demand(dest_outpost_id)`.
+- **`_plan_haul_load(capacity, dest_outpost_id)`**: when source is home (`self.home_outpost.is_home`, plain `bool` property on `OutpostRef` — **not** method, unlike same-named method on full `Outpost` component from `get_component()`), candidate "available" = full deficit regardless of stock on hand (home shortfall always buyable at Shop); elsewhere, real stock on hand = hard ceiling.
+- **`_load_haul_plan()`**: buys shortfall **one Inventory-stack at a time** (`storage.inventory_stack_size()`), immediately `take_item()`-ing each bought stack into cargo before next buy — bounds *transient* Inventory footprint, not total planned volume (already capped by cargo capacity). Only triggers when source is home.
+
+**`outpost_reagents.py`** mirrors `outpost_mining.py` seed-once-then-editable convention (`assigned_reagents_for(outpost_id)`, `reagent_stock_target_for(outpost_id, item_id)`, `get_outpost_reagent_demand(outpost_id)`), but per-reagent, not one flat constant (reagent prices span 1cr to 1,000cr):
+
+```python
+DEFAULT_REAGENT_STOCK_TARGETS = {
+    "alkaline_buffer": 100, "cryo_solvent": 100, "protein_marker": 60,
+    "chelating_agent": 20, "enzyme_solution": 10,
+}  # dial these up as credit budget allows; FALLBACK_REAGENT_STOCK_TARGET = 100 covers any
+   # reagent id not yet in this dict (e.g. a future game update)
+```
+
+Deficit math uses `storage.warehouse_stock(item_id, outpost)`, **never** `storage.total_stock()` — `total_stock()` always adds home Inventory count regardless of `outpost`, over-reporting remote outpost reagent stock by whatever sits untouched at home (where Shop delivers). `lib/bio.py`'s `local_stock(item_id, outpost)` picks between the two via `is_home_outpost(outpost)` (reads `OutpostRef.is_home`, same property-not-method distinction).
+
+`lib/bio.py`'s `local_sibling(outpost, type_id)` replaces hardcoded same-pipeline instance ids with live `outpost.buildings(type_id)` lookup (first match, resolved) — needed because Bio Lab's `take_from()` requires its Collector at *same* outpost. No caching — resolved fresh per call, since sibling building may not exist yet at controller construction.
+
+### 2h. Drone Energy Budgeting Detail (`lib/drone_energy.py` `DroneEnergyMixin`)
+
+`DroneController` base (`lib/drone.py`) with scout (`lib/drone_scout.py`), miner (`lib/drone_mining.py`) and hauler (`lib/drone_hauler.py`, §2j) roles, plus `lib/drone_service.py` (charging/refuelling/rescue) and `lib/drone_depot.py` (cargo station). Drones = **fresh hierarchy, not `VehicleController` subclass** — no `.drive`/`.nav`, no terrain/stall handling, route-based `go_to(x, y)`/`go_to_station(name)`/`go_to_drill(name)` not blocking drive loop, simpler linear power/speed model — but `DroneController` follows same mixin-composition philosophy as `lib/vehicle.py`. Role from mounted modules: Bio Scanner → scout, Bio Extractor → miner, neither but Cargo Pods (`cargo.capacity() > 0`) → hauler.
+
+- **Linear travel model**: full throttle = **5 Wh/h** at **300 m/h**; both scale with throttle (speed linear, burn quadratic), collapsing to `Wh/meter = DRONE_WH_PER_METER_PER_THROTTLE
+  (=5.0/300.0 ≈ 0.01667) × throttle` — structurally like Rover flat model, different constant, **no** per-drone/cargo/module term. Standalone `drone_wh_per_meter_at_throttle(throttle)` / `drone_rescue_wh_per_meter()` module-level functions let `lib/drone_service.py` reuse same rate cross-script. `max_safe_throttle_for_leg()` solves safe-throttle bound **directly linear** (`t <= available_for_leg / (distance × rate × SAFETY_MARGIN_MULTIPLIER)`). Drone's own `range_remaining()` = ground truth; formula for planning only.
+- **Engine auto-detect** (`detect_engine()`, at `__init__` and again at `run()` after a possible re-equip): own `DroneRef.engine` from `fleet.drones()`, else probe `oil_tank.capacity()`/`battery.capacity()` (the wrong powertrain raises `ReferenceError`; `hasattr` is useless since both attributes always exist), else `"electric"`. Also caches `is_plated()`. Every energy figure in the mixin is in the drone's own unit via `ENGINE_PROFILES`: **electric** `per_meter = 5/300` Wh/m, 300 m/h, reserve `MIN_EMERGENCY_RESERVE_WH`; **heli** `per_meter = HELI_T_PER_METER_PER_THROTTLE = 5/900` t Oil/m (≈ 5.6 t/km at full throttle), 900 m/h, reserve `HELI_MIN_EMERGENCY_RESERVE_T = 5.0` t. Shield Plating × `PLATING_BURN_MULTIPLIER = 1.5`. `get_battery()` keeps its name but reads the oil tank on a heli; `energy_unit()` gives `"Wh"`/`"t"` for logs; telemetry adds `engine`/`unit`. Heli drones skip **dry** drone_service stations (`heli_capable_services()`, shared with `lib/drone_service.py`): usable = `oil_in.level() >= SERVICE_MIN_OIL_T = 10.0` t (buffer max 100 t) **or** `flow_rate() > 0` (refilling now); none usable → wired-but-dry stations ("wired" via `connections()`, which also sees a link the pump declared, unlike `connected_to()`); none wired → all. Applies to refuel, idle parking, return floors and hauler fuel budgets. `flight_timeout_ticks()` uses the engine's speed; `fly_to_station()`/`fly_to_drill()` default timeout scales with distance when coords are known. `STRANDED_STATUSES` includes `stalled_no_oil`. **Route-call burn** (confirmed live on heli): hovering with no route costs nothing, but every `go_to()`/`go_to_station()`/`go_to_drill()` call costs a small minimal burn, even for a 0 m leg. So never re-issue a route needlessly: `fly_to()` returns early when already within precision, `fly_to_station()`/`fly_to_drill()` return early when `current_station()`/`current_drill()` already equals the target, and `drone_service.py`'s low-fuel nudge sends `go_to()` once per episode (`nudge_commands`, cleared on dock/rescue) instead of every 1.5 s cycle. The per-call amount isn't measured yet, so budgets don't model it (the safety margin and reserve cover it).
+- **`MIN_EMERGENCY_RESERVE_WH = 4.0`** (vs. `VehicleEnergyMixin`'s `8.0`) — electric drone batteries much smaller. `SAFETY_MARGIN_MULTIPLIER = 1.05` unchanged.
+- **`LAUNCH_MIN_SOC = 0.80`** — launch hysteresis (`hold_for_launch_charge()`): before picking a new mission (scout and miner loops, after cargo/recall handling), a drone below 80% charge docks at its drone_service and stays until ≥ 80%. Floor only: a target needing more still falls to the existing "none reachable → top up to 98%" branch, so far sites aren't lost. Needed because depot/service share coords, so the comfortable-return trigger is ~0 right after unloading. Reserve stays 4 Wh so the round-trip budget doesn't shrink max range.
+- **Pinned home** (`resolve_home_depot()` / `get_home_depot()` / `get_home_service()`): each drone pins a home, either an **outpost pool** (any Drone Depot in that outpost) or one **hardwired** depot — priority (1) `HOME_DEPOT` script variable in `drone.py` entrypoint (outpost id = pool; depot id/display name = hardwired — mirrors pioneer's `HOME_BASE`), (2) archived pin in shared dict `drone.home_depots` (same matching), (3) first run: pool of nearest depot's outpost. Pin is persisted, so a restart mid-field doesn't re-home to whichever depot is nearest there. With a pool, `get_home_depot()` re-picks per call via `_pick_free_depot()`: already-docked depot, else free bay first (live `get_component(depot_id).bay_count()/bays_occupied()`), then `prefer_id` (the depot already queued at — avoids churn when all full), then free cargo slots, then nearest. `fly_to_station()` returns early on `waiting_bay`, and `_return_and_unload()` then re-picks once and transfers to a free sibling (same coords, no flight cost), so drone A never waits on depot A while depot B is empty. Unload (`_return_and_unload()`) and recall use the home depot; if it's removed, `get_home_depot()` re-homes via `DroneController.resolve_home()` (which also refreshes `home_outpost`/`home_biome`). **Home service** = drone_service in the home depot's outpost (else nearest to home depot); used by `calculate_trip_energy()` (return leg), `energy_needed_to_return_comfortably()`, and `return_to_service_for_charge()` (falls back to nearest service when home is out of reach on current battery). **Nearest** service still used for hard survival floor `return_floor_wh()` (in-flight abort) and `max_safe_throttle_for_leg()`. `discover_drone_buildings()` returns `{"id", "name", "coords", "outpost", "outpost_id"}` dicts — `"outpost"` field is how `resolve_home()` sets `self.home_outpost`/`self.home_biome`, since **drone has no `.outpost` property** (confirmed against `docs/models/vehicles_and_modules.md`): home depot's outpost first, fallback nearest drone_service's outpost, then network home outpost. `return_to_service_for_charge()` checks "already there" by `current_station() == service id`, not coords (depot and service often share coords).
+- **Depot sizes = three typeIds**: `DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")` (`outpost.buildings()` matches one exact type, so discovery loops over all three). Script-slot/instance prefixes differ again: `drone_station_N` / `drone_station_med_N` / `drone_station_lrg_N` (decompiled simworker machine catalog; large confirmed live) — `scripts/4_controlpanel/drone/drone_station_med.py`/`drone_station_lrg.py` are thin copies of `drone_station.py` so scripts_sync matches them. Same tuple in `logistics_requests.py`, `essence_liquifier.py` and `ArchiveCleaner.MACHINE_STATUS_KEYS`. `discover_drone_depots()` hides Depots a fleet upgrade is retiring (§2k).
+- **`DRONE_DEPOT_TYPE_ID = "drone_station"`**, not `"drone_depot"` — in-game building `typeId` follows item/error-code naming (`drone_station_kit`, ship_computer.md's `"missing_drone_station"`/`"drone_station_full"`), not doc-page slug or display name "Drone Depot". A wrong typeId makes `outpost.buildings()` silently match nothing. See `docs/components/drone_depot.md` scripting note.
+- **No "biosphere region"** — per-outpost + per-biome: sample only locally processable (Essence Liquifier) at outpost where dropped off, and only if native to that outpost's biome (`nocturna.life_form_biome(item_id) == outpost.biome`). Miner drone filters `journal.biomass_coords()` candidates to samples native to home outpost biome (`is_home_biome_sample()`). Biosite whose tile has **mixed** biome sample set skipped entirely (`PortableBioExtractor.extract()` takes no species arg, can't pull only home-biome sample). Cross-outpost ferrying of foreign samples = deferred TODO.md Phase 4 item.
+- **Exclusive biosite claims, not shared yield-debit reservations** — biosite extraction exclusive-WITH-COOLDOWN (`journal.is_ready(x, y)`/`next_ready_at(x, y)`, `BioExtractionResult.status == "cooling"` only after full depletion), fundamentally different from mineral mining's shareable sites (§2b). `lib/drone_claims.py`'s `claim_biosite()`/`refresh_biosite_claim()`/`release_biosite_claim()` reuse `vehicle_claims.py` claim/heartbeat/staleness shape (`CLAIM_STALE_TICKS = 36,000`) but own archive key (`biosite.claims`) — **do not** route biosite selection through `mining_reservations.py`. Miner target order: (1) `journal.is_ready(x, y)` cooldown gate (read-only, before any claim); candidates sorted by **request score** first (§2i: per home-biome sample still on the site whose life form has a network deficit in `logistics_requests.network_deficits()`, `RARITY_REQUEST_WEIGHT = {"common": 1, "uncommon": 2, "rare": 4}`; 0 everywhere without requests), then **partially-drained** (`0 < remaining_tons < tons` — cooldown only starts once a site is empty, so finishing a half-drained site beats opening a fresh one), then nearest; (2) exclusive claim attempt; (3) scout's separate bounded "confirmed-empty POI" cache (`SCOUTED_EMPTY_POI_KEY`, coord → tick scanned, capped at `SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000`), kept as separate small archive-key wrapper from `biosite.claims`.
+- **Resumability**: `drone.mission[<name>]` persists in-progress target (mirrors `vehicle.mission[<name>]`). Drone `go_to()` fire-and-forget, **cancelled by script restart** (unlike rover's persistent `drive_to()`) — on resume, `run_miner_loop()` re-validates claim, checks `position()`/`current_station()`, **re-issues** `go_to()`. `extract()`/`scan()` survive restart transparently — only flight leg needs re-issue. While a pre-restart `extract()` still runs, every `go_to*()` is rejected `"busy"` (logged at debug, not warn). `_adopt_interrupted_extraction()` (run once at miner-loop start) uses `detect_role()`'s extract probe (`role_probe_status`): `"busy"`/`"ok"` means hovering mid-harvest, so it claims the current tile as the mission even without a saved one, and the resume branch finishes it. `_return_and_unload()` returns False on failure and callers sleep before retrying.
+- **Idle-to-recharge fallback**: `energy_needed_to_return_comfortably()` alone only covers "in danger where parked" case. Drone can be above that floor (safe to sit) yet below what any candidate's `calculate_trip_energy()` round trip needs (`IDLE_OUT_OF_RANGE` tick, not low-battery). `run_scout_loop()`/`run_miner_loop()` call `DroneEnergyMixin.return_to_service_for_charge()` (shared, dock-if-not-already-there) when cycle finds candidates but none reachable AND charge below 98%.
+- **Bay-full queueing** (Drone Depot only): `go_to_station()` itself queues drone in `"waiting_bay"` when Depot full (game-engine behavior, drone.md) — no script-side reservation needed for wait. `fly_to_station()` (`drone_navigation.py`) polls `current_station()` (documented authoritative arrival check) up to `timeout_ticks` (default scales with distance via `flight_timeout_ticks()` when target coords are known, min 1500 ≈ 150 real seconds); caller's raw-`fly_to()` fallback on timeout does NOT enter bay queue (only `go_to_station()` does), so self-healing only via outer loop's next retry, not real dock. `_return_and_unload()` skips that fallback while `status() == "waiting_bay"` (publishes `WAITING_DEPOT_BAY`, retries) — fallback would "arrive" instantly at same coords and unload undocked into nothing. **Depot slot-full** (unload `target_full`, distinct from bay-full): `_return_and_unload()` leaves berth, flies to drone_service to charge, and sets a backoff of `DroneMiningMixin.DEPOT_FULL_RETRY_TICKS = 600` (~60 s); `run_miner_loop()` holds the drone docked at the service (`WAITING_DEPOT_SPACE`) until it expires, instead of re-docking at the full depot every few seconds. A roleless (bare/unequipped) drone deliberately **stays docked** (needs berth to be equipped), so it blocks a 1-bay Depot until equipped.
+- **`leave_station()`** (`drone_navigation.py`): releases current berth via `undock()` — keeps exact position/cargo/modules, costs no flight energy, unlike re-issuing `fly_to()` to same coords. `_return_and_unload()` (`drone_mining.py`) calls it right after every Depot unload attempt (success or full), so miner frees bay for waiting peer instead of squatting until next mission moves it. No-op on `"not_docked"`/`"busy"` (latter protects active Drone Service Station charge/rescue job, which must keep control — never call on charging drone).
+- **Recall** (`lib/drone_claims.py`): mirrors `vehicle_claims.py`'s `RECALL_KEY` shape exactly, own key `drone.recall` `{drone_name: True}`. `is_drone_recalled()`/`set_drone_recalled()` module-level read/write, toggled via `panel_5.py` DRONE FLEET card switch. Unlike ground-vehicle recall (returns to charging-station "base"), drone recall targets its home **Drone Depot specifically, never drone_service** — `couple()`/`uncouple()` (module re-equip) both require docking at operational Depot (drone.md), and recall's point is letting operator swap modules. `handle_recall_if_active()` abandons biosite claim/mission, flies to Depot, and — deliberately opposite of `leave_station()` — stays docked rather than releasing berth, since re-equip needs berth held. Checked near top of `run_miner_loop()`/`run_scout_loop()`, right after stranded check (stranded drone needs `drone_service` rescue regardless of recall — can't self-navigate) but before mission-resume/target-selection, so active mission abandoned promptly.
+- **`lib/drone_service.py`** structurally mirrors `lib/charging.py`: docked charge queue, fleet-wide stranded/scrambled detection via `fleet.drones()` (stranded predicate also includes `"scrambled"`), nearest-station coordination (`is_nearest_station_to()`), proactive same-outpost nudge for low-battery field drone (`order_return_to_service()`). Engine-aware: docked electric → `charge()`, docked heli → `refuel()` (engine probed by `battery.percent()` raising); `no_oil` warns once with a hint whether `oil_in` is wired. For a heli, only oil-holding stations (`station_refs_for()`) compete in `is_nearest_station_to()`, are nudge targets and set the return floor, so a dry station never rescues a heli into an empty refuel queue. Rescue/nudge floors use `fuel_of(drone_ref)` (`battery_*` or `oil_*` DroneRef fields) and `drone_rescue_energy_per_meter(engine)` (assumes plating, conservative); heli reserves `RETURN_EMERGENCY_RESERVE_T = RESCUE_EXTRA_RESERVE_T = 2.5` t. Heli rescue carries the drone home to the refuel queue (game behaviour). Station script's cross-script `drone.go_to()` call works despite `drone.md`'s `(self only)` tag — `(self only)` documents intended caller convention, not engine-enforced restriction (see `lib/charging.py`'s `order_return_to_station()` for same already-relied-upon pattern with `nav_module.md`).
+- **`lib/drone_depot.py`** mostly passive — cargo moves via drone's own `cargo.load()`/`cargo.unload()` while docked. Ports **don't** drain passively: declared link moves nothing until someone calls `take()`/`send()`, and Liquifier's own controller does the `take()` (§1h). Controller jobs: (1) one-time idempotent `self.output.connect(...)` wiring to outpost's Essence Liquifier, only when unambiguous (exactly one same-outpost Liquifier — else logged, left for manual wiring); (2) `stage_life_forms()`: every life form (`nocturna.life_form_biome()` not None) sent Depot → local Warehouse, capped at `LIFEFORM_BUFFER_SLOTS = 1` Warehouse stack per form per outpost (slot capacity read from `slots()`, fallback `WAREHOUSE_SLOT_FALLBACK_UNITS = 2000`). Tops up a slot already holding the form first; opens an empty slot only while `WAREHOUSE_FREE_SLOTS_KEEP = 1` more stay empty (room for ore/cargo). Full stack → rest stays in the Depot for the Liquifier. Keeps the 50-unit Depot free for drones, gives the Liquifier a buffer and pull haulers a `take()` source; re-declares the Liquifier link next step since `output` now points at the Warehouse; (3) `drain_freight()`: every **non-life-form** stack → local storage via `storage.drain_port_to_storage(include=, allow_partial=True)` (Warehouse, or Inventory at home; trickles into partial room). Makes the Depot usable as a hauler endpoint — its 50/100/200-unit stockpile is tiny next to a Large hauler's load, so the drone unloads in rounds while this drains; the controller polls every `FREIGHT_POLL_INTERVAL = 2.0` s while freight sits there or any drone is docked (else 10 s); (4) periodic telemetry publish (`drone_depot.status`).
+
+### 2j. Floating Drone Hauler (`lib/drone_hauler.py` `DroneHaulerMixin`, phase 1: drills → Depots)
+
+Drone with Cargo Pods and no bio module. **No home Depot**: each cycle picks the best job network-wide, refuels at whichever drone_service is nearest when needed, and parks at the nearest service when idle (never holds a Depot bay). Hard limits (drone.md / `DroneCargo`): `cargo.load()` only at a docked Drone Depot, a field Mining Drill or a Lead Cask; `cargo.unload()` only into a docked Depot (or Lead Cask) — **no direct Warehouse/Inventory access**. One material per Cargo Pod (100/250/500); Large chassis = 1 thruster + 5 modules. Phase 1 = drill pickups only (no staging needed); outpost-Depot pickups need Depot-side staging (phase 2, TODO.md).
+
+- **Demand** (`_haul_destinations()`): every outpost with a Depot → `logistics_requests.outpost_deficits(live=True)` (net of in-flight pickups), plus at home per item max with `get_raw_material_demands()` (net of `mining.reserved_yield`) — same demand the Pioneer pull hauler (§2i) reads, so they share it.
+- **Sources** (`_drill_sources()`): advertised drills (`drill.status`) with a known `drill.positions` entry, net of `reserved_from()`. Unlocated drills skipped (warned once).
+- **Plan** (`_plan_haul_job()`): per destination a nearest-neighbour drill chain (largest deficits first, per-item room capped by `cargo.space_for()`), up to `HAUL_MAX_STOPS_PER_TRIP = 3`, chained stops only if direct ≤ `HAUL_CHAIN_MAX_DETOUR_RATIO = 0.75` × via-destination. Skipped below `min(HAUL_MIN_LOAD_UNITS = 50, total deficit)`. Score = units / (route m + `HAUL_TRIP_OVERHEAD_M = 300`); best wins. **Fuel budget** (`_route_fuel()`): route legs at cruise throttle + nearest-service-from-destination at the speedmode floor, × `SAFETY_MARGIN_MULTIPLIER` + `emergency_reserve()` — "back" is any service, not a home. Job over a full tank → dropped; over what's aboard → `_refuel()` at nearest service first, then re-plan.
+- **Coordination**: planned units reserved per drill in `logistics.pickups` (dest + source), home-bound ore also in `mining.reserved_yield` (`haul:<drone>:<item>`); both corrected to loaded amounts, released after full delivery. Mission `drone.mission[<name>] = {"kind": "haul", "dest", "target_key": None}` (no `target_key` → biosite `load_mission()` ignores it).
+- **Deliver** (`_deliver()`): free Depot of the destination (`_pick_free_depot()`, waits ≤ `DEPOT_BAY_WAIT_S = 60` s in `waiting_bay`), unload rounds every `DEPOT_UNLOAD_RETRY_S = 2` s while the Depot drains (§2h), give up after `DEPOT_UNLOAD_TIMEOUT_S = 300` s → leave bay, keep cargo/mission/reservations, retry next cycle. Cargo aboard at loop start (restart, failed delivery) → `_deliver_cargo_aboard()`: saved mission dest, else Depot outpost with most demand for the cargo, else home, else nearest Depot; reservations re-asserted from what's physically aboard.
+- **Refuel** (`_refuel()`): fly to nearest (oil-fed, for heli) service; its station script queues the charge/refuel; wait until ≥ `REFUEL_FULL_LEVEL = 0.98`, or ≥ needed once the service job ended, ≤ `REFUEL_TIMEOUT_S = 900` s. Launch floor `LAUNCH_MIN_SOC` only applied while already docked at a service (free top-up).
+- Recall uses the pinned home Depot as usual (`HOME_DEPOT` otherwise ignored for haulers). Stub-tested only.
+
+### 2k. Fleet Hardware Upgrade (`lib/fleet_upgrade.py` coordinator + `lib/drone_upgrade.py` drone side)
+
+Background task in headless `panel_4.py` (every `STORAGE_TICK_INTERVAL`), **gated by `upgrades_active()`** = operator switch on AND mining-drill phase reached (`upgrade_phase_reached()`: any mining drill deployed per `drill_sites.discover_drill_ids()`, same condition as `7_miningdrills/.criteria`; stored once as `fleet.upgrade["phase_reached"]`, monotonic) — earlier, expanding beats upgrading. Switch off → swaps not started yet (Depot `ordered`; drone `ordered`/`requested`/`ready`/`announced`) are cancelled, a parked drone resumes work, orders withdrawn; swaps past the point of no return still finish. In-place module upkeep obeys the same gate. Swaps Drone Depots and miner/hauler drones for the **best unlocked tier** (Fabricator recipe unlocked, or item already in Inventory). **One swap at a time fleet-wide, Depots first**; within a kind the **lowest tier first** (small → large directly; Medium only deployed while Large is locked). Scouts never touched (chassis or modules). Operator switch + status line on `panel_5.py` (`fleet.upgrade["enabled"]`, default on). All state in one archive dict `fleet.upgrade` (layout in `drone_upgrade.py`, plus `phase_reached`); each coordinator pass advances at most one state and writes back → restart-safe. Undeploy refused `MAX_UNDEPLOY_ATTEMPTS = 5` times → entry `blocked`, machine back in service (operator deletes the entry to retry).
+
+- **Depot swap**: `ordered` (kit → `fabricator.upgrade_orders`, wait for it in Inventory) → `deploying` (snapshot of same-type Depots at the outpost, so a restart adopts an already-deployed one instead of deploying twice; `computer.deploy(kit, outpost)`; old id added to `retiring_depots`) → `attach` (`run_control.start(new)` retried until `drone_depot.status[new]` appears) → `draining` (old `bays_occupied()==0` and `slots_used()==0`; a retiring Depot's own script drains **everything**, life forms included, `drain_everything()`) → `undeploying` (stop script, `computer.undeploy()`; kit back in Inventory, kept) → `renaming` (`computer.rename(new, old display name)` so name-based `HOME_DEPOT` keeps working; `drone.home_depots` pins old id → new id) → done. `duplicate_outpost_machine`/`deploy_limit` → `blocked`.
+- **Drone swap**: `ordered` (chassis → upgrade order) → `requested` → drone answers at the top of its loop (`handle_upgrade_request_if_active()`, after recall): finishes cargo/claimed target first, charges to `UPGRADE_MIN_SOC = 0.98` at its drone_service, docks at its home Depot, writes `ready` + its script variables (`params`: `HOME_DEPOT`/`CRUISE_THROTTLE` overrides) and holds (`UPGRADE_HOLD`) → `announced` (waits `ANNOUNCE_SAVE_WAIT_TICKS = 1800` so the announcement reaches the save file before the new slot exists — autosave ~30 s real) → `swapping` (re-verify docked at a Depot + cargo 0 via `fleet.drones()`/`get_component(id).cargo`; stop, undeploy → modules back to Inventory; `deploy(chassis, outpost)` or adopt a new drone of that kind not in the pre-swap snapshot; write `lineage[new_id] = {from, role, engine, kind, params, fitted: False}`; move `drone.home_depots` pin, drop `drone.recall`/`drone.mission`/`drone.loadouts`/`fleet.status`/upgrade-order entries of the old id) → `attach` (start retried until `fleet.status[new]` appears) → `fitting` → done when `lineage[new].fitted`, then `computer.rename(new, old display name)` (`old_name`, captured at `ordered`). Candidates need role `miner`/`hauler` in `fleet.status` (published from `DroneController.role`) and a heartbeat ≤ `DRONE_ALIVE_TICKS = 600` old.
+- **New chassis fitting** (`fit_loadout_if_new()`, `DroneController.run()` loops it every 30 s **before** `detect_role()`, which refuses a bare drone): couples thruster (slot 0, from `lineage.engine`), then `LOADOUTS[role][kind]` from Inventory, best tier present; empty slots ordered. `fitted` once thruster + energy + (extractor for miner / Cargo Pod for hauler). Replacement drones also inherit `params` for any script variable left at `None` (`inherited_params()`), so a hand-pasted default script behaves like the old drone.
+- **`LOADOUTS`** (one category per module slot; energy = `battery_pack` electric / best `oil_tank_*` heli; cargo = best `cargo_pod_*`; role = `portable_bio_extractor`): miner small `role, energy` · medium `role, energy, cargo` · large `role, energy, energy, cargo, cargo`; hauler small `energy, cargo` · medium `energy, cargo, cargo` · large `energy, energy, cargo, cargo, cargo`. Module slots `MODULE_SLOTS = {small: 2, medium: 3, large: 5}`.
+- **In-place module upkeep** (`maintain_modules_at_depot()`, right after a successful unload while docked and empty — `drone_hauler._deliver()`, `drone_mining._return_and_unload()`): Cargo Pod / Oil Tank → better unlocked tier once in Inventory (else ordered under the drone's id); empty slots filled with whatever category `LOADOUTS` still lacks. **Engine type never changes** (electric → heli waits for an oil-distribution check, TODO.md). A drone has no `modules()`, so each keeps a slot record `drone.loadouts[id] = {kind, slots: {"0": thruster, "1": module|None, ...}}`; without one it surveys once (`_discover_slots()`: uncouple each slot, identify the module by Inventory gain polled `SERVICE_POLL_TRIES = 10` × `SERVICE_POLL_S = 0.5` s, couple it back).
+- **Drone hardware stays in Inventory**: `storage.INVENTORY_ONLY_ITEM_IDS` (kits, chassis, thrusters, pods, tanks, battery pack, bio modules, plating) are never warehoused and are reclaimed if found in a Warehouse — `deploy()`/`couple()` take from Inventory only.
+- **Script attach**: scripts can't attach scripts (`run_control.apply_variant()` needs an operator-saved variant, and variants don't carry across drone sizes — TODO.md). `devtools/scripts_sync.py` fills the new slot (§9: replacement drones get the old drone's params without prompting); the coordinator's `run_control.start()` retry starts it even without `--auto`.
