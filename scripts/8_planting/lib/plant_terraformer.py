@@ -169,8 +169,27 @@ class PlantTerraformerController:
     # ------------------------------------------------------------- feeding
 
     def local_stock(self, item_id):
-        """Units at this outpost a local InputSlot can take(): Warehouses + Drone Depots (+ Inventory at home)."""
-        return logistics_requests.outpost_stock([item_id], self.outpost).get(item_id, 0)
+        """Units at this outpost a local InputSlot can take(): Warehouses + Drone Depots (+ Inventory at home) + Crop Automators (for forage)."""
+        stock = logistics_requests.outpost_stock([item_id], self.outpost).get(item_id, 0)
+        if item_id == "forage" and self.is_home:
+            stock += self.crop_automator_forage_stock()
+        return stock
+
+    def crop_automator_forage_stock(self):
+        """Total forage currently in output ports of local Crop Automators."""
+        if not self.outpost or not hasattr(self.outpost, "harvesting_machines"):
+            return 0
+        total = 0
+        try:
+            for m in self.outpost.harvesting_machines():
+                if getattr(m, "type_id", None) == "crop_automator":
+                    ca = get_component(getattr(m, "id", None)) or m
+                    port = getattr(ca, "output", None)
+                    if port and hasattr(port, "count"):
+                        total += int(port.count("forage") or 0)
+        except Exception:
+            pass
+        return total
 
     def remote_retain(self, item_id, requests):
         """
@@ -194,17 +213,80 @@ class PlantTerraformerController:
         return max(self.local_stock(item_id) - self.remote_retain(item_id, requests), 0)
 
     def _take(self, item_id, amount, requests):
-        """Pulls up to `amount` into the holders: Warehouses/Inventory first, then a local Drone Depot."""
+        """
+        Pulls up to `amount` into the holders:
+        For remote outposts: Drone Depots first, then local Warehouses.
+        For home outpost: Warehouses/Inventory first (to drain existing forage),
+        then directly from Crop Automators, then Drone Depots.
+        """
         amount = min(amount, self.available(item_id, requests))
         if amount <= 0:
             return 0
         port = getattr(self.machine, "input", None)
+        if not port:
+            return 0
+
+        moved_total = 0
+        # Remote outposts: prefer local Drone Depot directly (brought by drones/pioneers)
+        if not self.is_home:
+            moved_total += self._take_from_depots(port, item_id, amount)
+            if moved_total >= amount:
+                return moved_total
+
+        # Next / Home primary: Warehouses and Inventory (drains remaining warehouse forage)
         report = {}
-        moved = take_item(port, item_id, amount, outpost=self.outpost, report=report)
-        self.log.debug(f"[{self.name}] take {item_id} x{amount}: moved {moved}, sources {report.get('sources')}.")
-        if moved < amount and port:
-            moved += self._take_from_depots(port, item_id, amount - moved)
-        return moved
+        moved = take_item(port, item_id, amount - moved_total, outpost=self.outpost, report=report)
+        self.log.debug(f"[{self.name}] take {item_id} x{amount - moved_total}: moved {moved}, sources {report.get('sources')}.")
+        moved_total += moved
+
+        # For forage at home: if warehouses empty, pull directly from Crop Automators!
+        if moved_total < amount and item_id == "forage" and self.is_home:
+            moved_total += self._take_from_crop_automators(port, amount - moved_total)
+
+        # Home fallback: Drone Depots
+        if moved_total < amount and self.is_home:
+            moved_total += self._take_from_depots(port, item_id, amount - moved_total)
+
+        return moved_total
+
+    def _take_from_crop_automators(self, port, amount):
+        """Pulls forage directly from Crop Automator output buffers."""
+        if not self.outpost or not hasattr(self.outpost, "harvesting_machines") or amount <= 0:
+            return 0
+        moved_total = 0
+        try:
+            automators = [m for m in self.outpost.harvesting_machines() if getattr(m, "type_id", None) == "crop_automator"]
+        except Exception:
+            automators = []
+
+        for m in automators:
+            if moved_total >= amount:
+                break
+            ca_id = getattr(m, "id", None)
+            if not ca_id:
+                continue
+            ca = get_component(ca_id) or m
+            out_port = getattr(ca, "output", None)
+            if not out_port or not hasattr(out_port, "count"):
+                continue
+            try:
+                available = int(out_port.count("forage") or 0)
+            except Exception:
+                available = 0
+            if available <= 0:
+                continue
+            want = min(amount - moved_total, available)
+            try:
+                if hasattr(port, "connected_id") and port.connected_id() != ca_id:
+                    port.connect(ca_id)
+                res = port.take("forage", want)
+            except Exception as error:
+                self.log.debug(f"[{self.name}] take forage from Crop Automator '{ca_id}' raised: {error}")
+                continue
+            moved = getattr(res, "moved", 0) or 0
+            self.log.debug(f"[{self.name}] take forage x{want} from Crop Automator '{ca_id}': {getattr(res, 'status', None)}, moved {moved}.")
+            moved_total += moved
+        return moved_total
 
     def _take_from_depots(self, port, item_id, amount):
         moved_total = 0

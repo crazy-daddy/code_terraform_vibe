@@ -364,6 +364,16 @@ def outpost_stock(item_ids, outpost):
                     totals[item_id] += inventory.count(item_id)
         except Exception:
             pass
+        if "forage" in item_ids and hasattr(outpost, "harvesting_machines"):
+            try:
+                for m in outpost.harvesting_machines():
+                    if getattr(m, "type_id", None) == "crop_automator":
+                        ca = get_component(getattr(m, "id", None)) or m
+                        port = getattr(ca, "output", None)
+                        if port and hasattr(port, "count"):
+                            totals["forage"] += int(port.count("forage") or 0)
+            except Exception:
+                pass
     return totals
 
 
@@ -410,9 +420,9 @@ def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude
     """
     {item_id: units} an outpost can give away to a pull hauler -- its
     advertised "free stock", computed live (no per-outpost script needed):
-    Warehouse stock (+ Inventory when it's home) minus the outpost's own
-    request target for that item, minus what other haulers already reserved
-    from it. Drone Depot stock is left out on purpose -- lib/drone_depot.py
+    Warehouse stock (+ Inventory when it's home, + Crop Automators for forage)
+    minus the outpost's own request target for that item, minus what other haulers
+    already reserved from it. Drone Depot stock is left out on purpose -- lib/drone_depot.py
     stages requested items into a Warehouse, which vehicles can take() from.
     """
     requests = requests if requests is not None else active_requests(curr_tick)
@@ -431,6 +441,16 @@ def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude
         if inventory is not None:
             try:
                 units += inventory.count(item_id)
+            except Exception:
+                pass
+        if item_id == "forage" and getattr(outpost, "is_home", False) and hasattr(outpost, "harvesting_machines"):
+            try:
+                for m in outpost.harvesting_machines():
+                    if getattr(m, "type_id", None) == "crop_automator":
+                        ca = get_component(getattr(m, "id", None)) or m
+                        port = getattr(ca, "output", None)
+                        if port and hasattr(port, "count"):
+                            units += int(port.count("forage") or 0)
             except Exception:
                 pass
         units -= own.get(item_id, {}).get("target", 0) + taken.get(item_id, 0)

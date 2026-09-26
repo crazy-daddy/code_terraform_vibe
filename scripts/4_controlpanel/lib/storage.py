@@ -271,13 +271,30 @@ def _holder_candidates(item_id, outpost=None, cache=None):
                 continue
             if count > 0:
                 holders.append((building["id"], count))
+        if item_id == "forage" and resolved and hasattr(resolved, "harvesting_machines"):
+            try:
+                for m in resolved.harvesting_machines():
+                    if getattr(m, "type_id", None) == "crop_automator":
+                        ca_id = getattr(m, "id", None)
+                        ca = _component(ca_id) or m
+                        out_port = getattr(ca, "output", None)
+                        if out_port and hasattr(out_port, "count"):
+                            cnt = int(out_port.count("forage") or 0)
+                            if cnt > 0 and ca_id:
+                                holders.append((ca_id, cnt))
+            except Exception:
+                pass
 
     now = _now_tick()
     ranked = []
     for source_id, count in holders:
         busy_tick = _recent_busy.get(source_id)
         recently_busy = busy_tick is not None and now > 0 and now - busy_tick <= TAKE_BUSY_COOLDOWN_TICKS
-        ranked.append(((1 if recently_busy else 0, 0 if source_id == "inventory" else 1, -count), (source_id, count)))
+        is_inv = source_id == "inventory"
+        is_ca = "crop_automator" in source_id
+        # Rank: inventory (0), warehouses (1), crop_automators (2) so warehouses drain first
+        kind_rank = 0 if is_inv else (2 if is_ca else 1)
+        ranked.append(((1 if recently_busy else 0, kind_rank, -count), (source_id, count)))
     ranked.sort(key=lambda pair: pair[0])
     return [entry for _key, entry in ranked]
 

@@ -230,18 +230,10 @@ class CropAutomatorController:
         return status == "queued"
 
     def drain_output(self):
-        port = getattr(self.machine, "output", None)
-        try:
-            if not port or port.count() < OUTPUT_DRAIN_ABOVE:
-                return
-        except Exception:
-            return
-        moved = drain_port_to_storage(port, allow_partial=True)
-        if moved:
-            self._forage_out += moved
-            self.log.debug(f"[{self.name}] Sent {moved} Forage to storage.")
-        else:
-            self.log.debug(f"[{self.name}] Output holds Forage but no home storage has room.")
+        # User requirement: stop draining forage to warehouses altogether.
+        # Crop automators store up to 50,000 units in their output buffers.
+        # Plant terraformers and remote haulers pull directly from them.
+        pass
 
     # ----------------------------------------------------------------- step
 
@@ -250,7 +242,6 @@ class CropAutomatorController:
         if not self.sector:
             self.sector = self._read_sector()
         self.consume_results(curr_tick)
-        self.drain_output()
 
         layout = archive.get(LAYOUT_KEY, {})
         layout = layout if isinstance(layout, dict) else {}
