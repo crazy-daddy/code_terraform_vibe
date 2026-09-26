@@ -28,9 +28,16 @@ RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"
 
 SEED_SUPPLY_STASH_T = 120        # per-form request cap at the Seed Maker outpost (supports bulk replanting)
-SEED_BUFFER_PER_SPECIES = 3      # seeds per species kept when no Harvester publishes demand
+SEED_BUFFER_PER_SPECIES = 3      # seeds per species kept when no Harvester publishes demand; seed_buffer() floor
+SEED_BUFFER_CELLS_PER = 6        # seed_buffer(): one spare seed per this many layout cells of a species...
+SEED_BUFFER_MAX = 30             # ...capped here, so a big fill species doesn't tie up life forms in spare seeds
 SEED_DEMAND_STALE_TICKS = 6000   # ~10 min; older Harvester demand counts as absent
 SUPPLY_IDLE_POLL_SECONDS = 20.0  # nothing to make right now
+
+
+def seed_buffer(cells):
+    """Spare seeds of one species kept on top of open cells: scales with its layout cells, within [SEED_BUFFER_PER_SPECIES, SEED_BUFFER_MAX]."""
+    return max(SEED_BUFFER_PER_SPECIES, min(SEED_BUFFER_MAX, cells // SEED_BUFFER_CELLS_PER))
 
 
 class SeedSupplyController(SeedMakerController):
@@ -75,16 +82,21 @@ class SeedSupplyController(SeedMakerController):
     # ------------------------------------------------------------- demand
 
     def _read_demand(self, by_seed, curr_tick):
-        """(now, rotation) as {seed_id: n}; a buffer per species if the Harvester isn't publishing."""
-        raw = archive.get(SEED_DEMAND_KEY, {})
-        fresh = isinstance(raw, dict) and curr_tick - raw.get("tick", -SEED_DEMAND_STALE_TICKS) < SEED_DEMAND_STALE_TICKS
-        if fresh:
+        """
+        (now, rotation, priority): {seed_id: n} twice, plus the garden seed
+        ids to make first (a tuple, empty in the starter layout). A buffer per
+        species if the Harvester isn't publishing.
+        """
+        raw = archive.get(SEED_DEMAND_KEY)
+        fresh = isinstance(raw, dict) and curr_tick - (raw.get("tick") or -SEED_DEMAND_STALE_TICKS) < SEED_DEMAND_STALE_TICKS
+        if isinstance(raw, dict) and fresh:
             now = {k: int(v) for k, v in (raw.get("now") or {}).items() if k in by_seed}
             rotation = {k: int(v) for k, v in (raw.get("rotation") or {}).items() if k in by_seed}
-            return now, rotation
+            priority = tuple(k for k in (raw.get("priority") or []) if k in by_seed)
+            return now, rotation, priority
         self.log.debug(f"[{self.name}] No fresh '{SEED_DEMAND_KEY}' (Harvester not running?); keeping {SEED_BUFFER_PER_SPECIES} seed(s) per species.")
         buffer = {k: SEED_BUFFER_PER_SPECIES for k in by_seed}
-        return buffer, dict(buffer)
+        return buffer, dict(buffer), ()
 
     def _drain_output(self):
         """
@@ -112,17 +124,40 @@ class SeedSupplyController(SeedMakerController):
                 out[seed_id] = missing
         return out
 
-    def _publish_supply_requests(self, by_seed, rotation, deficits, stock, curr_tick, force=False):
+    def _publish_supply_requests(self, by_seed, rotation, deficits, stock, curr_tick, priority=(), force=False):
+        """
+        Life-form requests: per form, base stock (1 t per layout cell whose
+        blend uses it) + open seed deficit, capped at SEED_SUPPLY_STASH_T.
+        Garden first: while any form of a `priority` seed is below its
+        target, forms are requested without the other seeds' base stock
+        (their open deficit still counts), so drones fetch garden forms
+        before the fill's bulk.
+        """
         if not force and curr_tick - self._last_request_tick < REQUEST_REFRESH_TICKS:
             return
         self._last_request_tick = curr_tick
+        def per_form(counts, seeds):
+            out = {}
+            for seed_id, n in counts.items():
+                if seed_id in seeds:
+                    for form in by_seed[seed_id].blend:
+                        out[form] = out.get(form, 0) + n
+            return out
+
+        others = [s for s in by_seed if s not in priority]
+        prio_base = per_form(rotation, priority)
+        prio_deficit = per_form(deficits, priority)
+        other_base = per_form(rotation, others)
+        all_deficit = per_form(deficits, list(by_seed))
+        garden_short = sorted(f for f in set(prio_base) | set(prio_deficit)
+                              if stock.get(f, 0) < min(SEED_SUPPLY_STASH_T, prio_base.get(f, 0) + prio_deficit.get(f, 0)))
+        if garden_short:
+            self.log.debug(f"[{self.name}] Garden forms short {garden_short}: fill base stock held back.")
+            other_base = {}
         need = {}
-        for seed_id, cells in rotation.items():
-            for form in by_seed[seed_id].blend:
-                need[form] = need.get(form, 0) + cells
-        for seed_id, missing in deficits.items():
-            for form in by_seed[seed_id].blend:
-                need[form] = need.get(form, 0) + missing
+        for part in (prio_base, other_base, all_deficit):
+            for form, n in part.items():
+                need[form] = need.get(form, 0) + n
         wants = {f: (min(SEED_SUPPLY_STASH_T, n), stock.get(f, 0)) for f, n in need.items() if n > 0}
         if self.outpost_id:
             if wants:
@@ -132,12 +167,23 @@ class SeedSupplyController(SeedMakerController):
         short = sorted(f for f, pair in wants.items() if pair[1] < pair[0])
         self.log.debug(f"[{self.name}] supply requests: {len(wants)} form(s), {len(short)} below target: {short}")
 
-    def _pick(self, by_seed, deficits, stock):
-        """Seed with the largest deficit whose three forms are all in local stock, or None."""
-        ready = [s for s in deficits if all(stock.get(f, 0) >= 1 for f in by_seed[s].blend)]
+    def _pick(self, by_seed, deficits, stock, priority=()):
+        """
+        Seed whose three forms are all in local stock: garden (`priority`)
+        seeds first, then the largest deficit; or None. A non-garden seed
+        leaves the last unit of a form that a garden seed with a deficit
+        needs, so the fill can't eat the garden's forms.
+        """
+        reserved = set(f for s in deficits if s in priority for f in by_seed[s].blend)
+
+        def has_forms(s):
+            floor = 1 if s in priority else 2
+            return all(stock.get(f, 0) >= (floor if f in reserved else 1) for f in by_seed[s].blend)
+
+        ready = [s for s in deficits if has_forms(s)]
         if not ready:
             return None
-        ready.sort(key=lambda s: (-deficits[s], s))
+        ready.sort(key=lambda s: (0 if s in priority else 1, -deficits[s], s))
         return ready[0]
 
     # ------------------------------------------------------------ crafting
@@ -212,16 +258,16 @@ class SeedSupplyController(SeedMakerController):
         by_seed = self._recipe_map(recipes)
         self._publish_recipes(recipes, curr_tick)
 
-        now, rotation = self._read_demand(by_seed, curr_tick)
+        now, rotation, priority = self._read_demand(by_seed, curr_tick)
         deficits = self._deficits(now)
         stock = self._local_stock()
-        self._publish_supply_requests(by_seed, rotation, deficits, stock, curr_tick)
+        self._publish_supply_requests(by_seed, rotation, deficits, stock, curr_tick, priority)
 
         if not deficits:
             self._publish_supply_status("idle", deficits)
             return SUPPLY_IDLE_POLL_SECONDS
 
-        seed_id = self._pick(by_seed, deficits, stock)
+        seed_id = self._pick(by_seed, deficits, stock, priority)
         if seed_id is None:
             self.log.debug(f"[{self.name}] Deficit {deficits} but no blend fully in stock; waiting for deliveries.")
             self._publish_supply_status("waiting_material", deficits)

@@ -20,6 +20,11 @@
 #   3. deploy (full layout only): with a kit at home, drive to the cell,
 #      collect a loose item there if any, stage the kit into Inventory and
 #      deploy() it. The Harvester can drive over machines.
+#   4. garden rescue: a Crop Automator with a clogged output (storage.
+#      crop_automator_forage()) can't harvest or replant. Garden cells it
+#      owns go back to the Harvester (harvest to Inventory, replant) until it
+#      drains, so every garden species stays productive -- the species count
+#      multiplies the whole field's yield. Fill cells just wait.
 #
 # Deployed machines are read from outpost.harvesting_machines() (type and
 # position), falling back to Cell.status == "provider". A new machine has no
@@ -29,6 +34,7 @@
 
 import field_layout
 from production import set_upgrade_order
+from storage import crop_automator_forage
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -60,6 +66,9 @@ AUTOMATOR_CREDIT_RESERVE = 100000
 AUTOMATOR_PRICE_FALLBACK = 30000
 # deployables() is research state: re-read this often.
 DEPLOYABLES_REFRESH_TICKS = 3000
+# Clogged Crop Automators (garden rescue) are re-read this often (~1 min):
+# an output takes hours to fill, and each read walks every automator.
+CLOG_CHECK_TICKS = 600
 
 
 def _now_tick():
@@ -98,18 +107,37 @@ def shop_price(item_id, fallback):
     return fallback
 
 
+def _home():
+    network = get_component("outpost_network")
+    home = network.home() if network and hasattr(network, "home") else None
+    if home is None and network:
+        home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None)
+    return home
+
+
 def deployed_machines():
     """{sector: kind} of the field machines on the home field, or None if unreadable."""
     try:
-        network = get_component("outpost_network")
-        home = network.home() if network and hasattr(network, "home") else None
-        if home is None and network:
-            home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None)
+        home = _home()
         if home is None:
             return None
         return {m.position: m.type_id for m in home.harvesting_machines()}
     except Exception:
         return None
+
+
+def clogged_automator_sectors():
+    """Sectors of the Crop Automators storage.crop_automator_forage() rates clogged."""
+    try:
+        home = _home()
+        if home is None:
+            return []
+        clogged = [ca_id for ca_id, _n, is_clogged, _garden in crop_automator_forage(home) if is_clogged]
+        if not clogged:
+            return []
+        return [m.position for m in home.harvesting_machines("crop_automator") if m.id in clogged]
+    except Exception:
+        return []
 
 
 class HarvesterMachinesMixin:
@@ -167,11 +195,31 @@ class HarvesterMachinesMixin:
         return [s for s, k in deployed.items() if k == "crop_automator"]
 
     def automated_cells(self):
-        """Sectors a deployed Crop Automator serves (its jobs, not the Harvester's)."""
+        """Sectors a deployed Crop Automator serves (its jobs, not the Harvester's), minus rescued_cells()."""
         out = set()
         for ca in self.deployed_automators():
             out |= set(field_layout.automator_area(ca))
-        return out
+        return out - self.rescued_cells()
+
+    def clogged_automators(self):
+        """Sectors of clogged Crop Automators, re-read every CLOG_CHECK_TICKS."""
+        now = _now_tick()
+        cache = getattr(self, "_clog_cache", None)
+        if cache is None or now - cache[0] >= CLOG_CHECK_TICKS:
+            sectors = clogged_automator_sectors() if self._host.layout_mode == "full" else []
+            if cache is not None and set(sectors) != set(cache[1]):
+                self._host.log.debug(f"[{self._host.name}] Clogged Crop Automators: {sorted(sectors) or 'none'}.")
+            cache = (now, sectors)
+            self._clog_cache = cache
+        return cache[1]
+
+    def rescued_cells(self):
+        """Garden sectors whose owning Crop Automator is clogged: the Harvester harvests and replants them."""
+        clogged = self.clogged_automators()
+        if not clogged:
+            return set()
+        automators = self.deployed_automators()
+        return set(s for s in (self._host.garden or []) if field_layout.automator_owner(s, automators) in clogged)
 
     def kit_order_reserved(self):
         """Reserved machine cells the kit order is for: the full layout, or its pre-order."""

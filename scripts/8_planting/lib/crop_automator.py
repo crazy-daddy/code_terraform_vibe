@@ -5,16 +5,17 @@
 #
 # Each step (POLL_INTERVAL_S):
 #   1. consume finished job results (a full result inbox pauses the machine)
-#   2. seed demand fallback: if `plant.seed_demand` is older than 3000 ticks
-#      (Harvester offline), the first deployed automator republishes it from
-#      the layout (refresh_seed_demand_if_stale()), so the Seed Maker keeps
-#      making seeds
+#   2. seed demand fallback: if `plant.seed_demand` is older than
+#      SEED_DEMAND_FALLBACK_TICKS (Harvester offline), the first deployed
+#      automator republishes it for the automated cells
+#      (refresh_seed_demand_if_stale()), so the Seed Maker keeps making seeds
 #   3. ownership: automator areas overlap, so every layout cell belongs to
 #      the nearest deployed automator (Chebyshev distance, then Manhattan,
 #      then sector id). Each automator only queues jobs for its own cells.
 #   4. a blocked head job would freeze the FIFO executor (unblock_queue()):
-#      `no_seed` -> load one seed, else cancel the job; `output_full` ->
-#      wait until a consumer pulls (see 7)
+#      `no_seed` -> load one seed, else cancel the job (cell cooldown);
+#      `output_full` -> wait until a consumer pulls (see 7); QUIET_BLOCKERS
+#      are normal states, logged at debug only
 #   5. harvest every mature layout crop it owns (status "mature" or
 #      growth >= 1.0)
 #   6. plant every open layout cell it owns, once the machines beside the
@@ -45,6 +46,7 @@
 from archive import archive
 import field_layout
 from storage import take_item
+from seed_supply import seed_buffer
 from tree_console import TreeConsole
 from version_guard import validate_game_version
 
@@ -59,6 +61,10 @@ STATUS_STALE_TICKS = 36000         # an automator silent this long (~1 h) is dro
 QUEUE_LIMIT = 45                   # the machine takes 50; leave room for a manual job
 JOB_FAIL_COOLDOWN_TICKS = 3000     # a cell whose job failed is left alone this long (~5 min)
 MAX_RESULTS_PER_STEP = 50          # the inbox holds at most 50
+SEED_DEMAND_FALLBACK_TICKS = 3000  # Harvester's plant.seed_demand older than this (~5 min) -> automator republishes it
+# Head-job blockers that are normal states (brownout shedding, not yet
+# placed, result inbox full -- consume_results() empties it): debug only.
+QUIET_BLOCKERS = ("no_power", "not_placed", "results_full")
 SEED_PULL_BATCH = 10               # batch-load seeds into input to avoid per-job storage transfers
 
 
@@ -112,24 +118,8 @@ class CropAutomatorController:
     def owned_cells(self, layout_cells, automators):
         """Layout sectors in this automator's area that no nearer automator owns."""
         me = self.sector
-        mine = []
-        for sector in field_layout.automator_area(me):
-            if sector not in layout_cells:
-                continue
-            r, c = field_layout.sector_to_rc(sector)
-            if r is None or c is None:
-                continue
-
-            def rank(ca, r=r, c=c):
-                ar, ac = field_layout.sector_to_rc(ca)
-                if ar is None or ac is None:
-                    return (99, 99, ca)
-                return (max(abs(ar - r), abs(ac - c)), abs(ar - r) + abs(ac - c), ca)
-
-            reach = [ca for ca in automators if sector in field_layout.automator_area(ca)]
-            if reach and min(reach, key=rank) == me:
-                mine.append(sector)
-        return mine
+        return [s for s in field_layout.automator_area(me)
+                if s in layout_cells and field_layout.automator_owner(s, automators) == me]
 
     def services_ready(self, sector, species, rules, deployed):
         served = [field_layout.MACHINE_SERVICE.get(deployed.get(n) or "") for n in field_layout.neighbours(sector)]
@@ -139,22 +129,42 @@ class CropAutomatorController:
         shedded = archive.get("power.shedded", [])
         return isinstance(shedded, list) and self.name in shedded
 
-    def refresh_seed_demand_if_stale(self, curr_tick, layout_cells, rules, automators):
-        """Fallback: if Harvester is offline, first automator keeps plant.seed_demand fresh."""
+    def refresh_seed_demand_if_stale(self, curr_tick, layout, rules, automators):
+        """
+        Fallback while the Harvester is offline: the first deployed automator
+        republishes plant.seed_demand once it is SEED_DEMAND_FALLBACK_TICKS
+        old. Only automated cells count (layout cells in some automator's
+        area): nobody plants the rest while the Harvester is away.
+        """
         if not automators or automators[0] != self.sector:
             return
-        raw = archive.get(SEED_DEMAND_KEY, {})
-        if isinstance(raw, dict) and curr_tick - raw.get("tick", 0) < 3000:
+        raw = archive.get(SEED_DEMAND_KEY)
+        if isinstance(raw, dict) and curr_tick - (raw.get("tick") or 0) < SEED_DEMAND_FALLBACK_TICKS:
             return
+        layout_cells = layout.get("cells") or {}
+        served = set()
+        for ca in automators:
+            served |= set(field_layout.automator_area(ca))
         rotation = {}
         for sector, species in layout_cells.items():
-            seed_id = rules.get(species, {}).get("seed_id", "seed_" + species)
-            rotation[seed_id] = rotation.get(seed_id, 0) + 1
-        now = {}
-        for seed_id, count in rotation.items():
-            now[seed_id] = max(3, min(30, count // 6))
-        archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "tick": curr_tick})
-        self.log.debug(f"[{self.name}] Refreshed stale '{SEED_DEMAND_KEY}' as automator fallback.")
+            if sector in served:
+                seed_id = (rules.get(species) or {}).get("seed_id") or "seed_" + species
+                rotation[seed_id] = rotation.get(seed_id, 0) + 1
+        priority = field_layout.priority_seeds(layout_cells, layout.get("garden"), layout.get("fill"), rules)
+        demand = {"now": {seed_id: seed_buffer(n) for seed_id, n in rotation.items()}, "rotation": rotation,
+                  "priority": priority, "tick": curr_tick}
+        wrote = []
+
+        def updater(state):
+            # The Harvester may have published since the read above: keep that.
+            if isinstance(state, dict) and curr_tick - (state.get("tick") or 0) < SEED_DEMAND_FALLBACK_TICKS:
+                return state
+            wrote.append(True)
+            return demand
+
+        archive.transaction(SEED_DEMAND_KEY, {}, updater)
+        if wrote:
+            self.log.debug(f"[{self.name}] '{SEED_DEMAND_KEY}' stale; republished for {sum(rotation.values())} automated cell(s) as fallback.")
 
     # ----------------------------------------------------------------- jobs
 
@@ -216,7 +226,7 @@ class CropAutomatorController:
         except Exception:
             return 0
 
-    def unblock_queue(self, blocked_job):
+    def unblock_queue(self, blocked_job, curr_tick):
         """Resolves or cancels a blocked FIFO head job so the executor doesn't freeze."""
         if blocked_job is None:
             return
@@ -230,6 +240,9 @@ class CropAutomatorController:
             # clogged automators first (storage.crop_automator_forage()).
             self.log.debug(f"[{self.name}] Output full: {action}@{sector} waits for a Forage pull.")
             return
+        if blocker in QUIET_BLOCKERS:
+            self.log.debug(f"[{self.name}] Head job {job_id} ({action}@{sector}) waits: {blocker}.")
+            return
         self.log.level("warn").print(f"[{self.name}] Head job {job_id} ({action}@{sector}) blocked: {blocker}.")
         if blocker == "no_seed" and item_id:
             port = getattr(self.machine, "input", None)
@@ -238,6 +251,8 @@ class CropAutomatorController:
                 return
             if job_id is not None:
                 res = self.machine.cancel_job(job_id)
+                # Not requeued right away: the cell waits JOB_FAIL_COOLDOWN_TICKS.
+                self._failed[sector] = curr_tick
                 self.log.level("warn").print(f"[{self.name}] Canceled seed-starved plant job {job_id}@{sector} -> {getattr(res, 'status', '?')}.")
 
     def submit(self, method, *args):
@@ -279,12 +294,12 @@ class CropAutomatorController:
         rules = field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
         deployed = self.deployed_machines()
         automators = [s for s, k in deployed.items() if k == "crop_automator"] or [self.sector]
-        self.refresh_seed_demand_if_stale(curr_tick, layout_cells, rules, automators)
+        self.refresh_seed_demand_if_stale(curr_tick, layout, rules, automators)
         mine = self.owned_cells(layout_cells, automators)
         queued, committed_seeds, blocked_job = self.queued_jobs_info()
         if queued is None:
             return
-        self.unblock_queue(blocked_job)
+        self.unblock_queue(blocked_job, curr_tick)
         try:
             room = QUEUE_LIMIT - self.machine.queue_count()
         except Exception:

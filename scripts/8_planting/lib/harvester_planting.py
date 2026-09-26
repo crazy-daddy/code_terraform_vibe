@@ -28,12 +28,13 @@
 #   plant.layout      = {"version", "mode", "fill", "chunks", "base", "anchor",
 #                        "cells": {sector: species}, "reserved": {sector: machine kind},
 #                        "garden": [sectors]}
-#   plant.seed_demand = {"now": {seed_id: n}, "rotation": {seed_id: cells}, "tick"}
-#                       read by lib/seed_supply.py
+#   plant.seed_demand = {"now": {seed_id: n}, "rotation": {seed_id: cells},
+#                        "priority": [garden seed_id], "tick"}
+#                       read by lib/seed_supply.py (garden seeds first)
 
 from archive import archive
 import field_layout
-from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, SEED_BUFFER_PER_SPECIES
+from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -264,12 +265,15 @@ class HarvesterPlantingMixin:
             elif plant == species and (status == "mature" or (getattr(cell, "growth", 0) or 0) >= SEED_PREFETCH_GROWTH):
                 now[seed_id] = now.get(seed_id, 0) + 1
         for seed_id, count in rotation.items():
-            buffer_n = max(SEED_BUFFER_PER_SPECIES, min(30, max(3, count // 6)))
-            now[seed_id] = now.get(seed_id, 0) + buffer_n
+            now[seed_id] = now.get(seed_id, 0) + seed_buffer(count)
         return now, rotation
 
-    def publish_seed_demand(self, now, rotation, curr_tick):
-        archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "tick": curr_tick})
+    def publish_seed_demand(self, now, rotation, curr_tick, layout=None, rules=None):
+        """Full layout: also "priority" (field_layout.priority_seeds()), garden seeds the Seed Maker makes first."""
+        priority = []
+        if self.layout_mode == "full" and layout and rules:
+            priority = field_layout.priority_seeds(layout, self.garden, self.field_fill(), rules)
+        archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "priority": priority, "tick": curr_tick})
 
     # ---------------------------------------------------------------- tasks
 
@@ -318,6 +322,11 @@ class HarvesterPlantingMixin:
                 return False
         res = self._host.act("plant", seed_id)
         if res is not None and res.status == "ok":
+            # stock_count() is memoised per step: without this a second cell
+            # on the same route (work_on_pass()) plans with a seed that's gone.
+            memo = self._host.stock_memo
+            if seed_id in memo:
+                memo[seed_id] = max(memo[seed_id] - 1, 0)
             self._host.log.print(f"[{self._host.name}] Planted {species} at {here}.")
             self._host.last_action = f"plant {species}@{here}"
             return True
@@ -361,6 +370,7 @@ class HarvesterPlantingMixin:
         res = self._host.act("harvest")
         status = getattr(res, "status", "?")
         if status in ("ok", "partial"):
+            self._host.stock_memo.pop("forage", None)
             self._host.log.print(f"[{self._host.name}] Harvested {here}: {status}.")
             self._host.last_action = f"harvest@{here}"
             return True

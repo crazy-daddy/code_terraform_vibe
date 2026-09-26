@@ -10,11 +10,14 @@
 #
 # Each step re-reads cells() and does the single most urgent task, cheapest
 # route (heat) first within a priority:
-#   1. full layout: build in field_layout.work_order() (garden row by row in
-#      a snake, then the fill chunk by chunk): deploy a machine kit (Grow
-#      Lamp / Sprinkler / Dispenser / Crop Automator) on its reserved cell,
-#      or plant one of its own cells. First: every machine takes care work
-#      off the Harvester for good, and behind care it never ran
+#   1. full layout, build phase (a reserved machine is still missing): build
+#      in field_layout.work_order() (garden row by row in a snake, then the
+#      fill chunk by chunk): deploy a machine kit (Grow Lamp / Sprinkler /
+#      Dispenser / Crop Automator) on its reserved cell, or plant one of its
+#      own cells. First: every machine takes care work off the Harvester for
+#      good, and behind care it never ran. Once every machine is in, the
+#      machines do most of the work and this step is skipped: what is left
+#      of the Harvester's cells goes through 2-5 like any other
 #   2. care tour: once any treatment drops below CARE_REFRESH_H, every
 #      treatment below CARE_BATCH_H is renewed in one tour, so renewals line
 #      up and the field needs fewer separate trips. Ahead of harvesting: a
@@ -105,6 +108,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.work_groups = []          # field_layout.work_order() of the full layout
         self.step_mine = {}            # this step's harvester_layout(), for work_on_pass()
         self.step_machine_map = None   # deployed field machines, read once per step
+        self.build_phase = None        # full layout: True while a reserved machine is missing
         saved = archive.get(STATUS_KEY, {})
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
 
@@ -205,7 +209,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         now, rotation = self.seed_demand(self.seed_layout(active, self.step_mine), cells, rules)
         for seed_id, n in self.paving_seed_demand(layout, cells, rules, len(spare_items)).items():
             now[seed_id] = now.get(seed_id, 0) + n
-        self.publish_seed_demand(now, rotation, curr_tick)
+        self.publish_seed_demand(now, rotation, curr_tick, layout, rules)
         self.publish_salt_request(layout, rules, self.home_id, curr_tick)
         kit_order, automators_wanted = self.publish_kit_order(cells)
 
@@ -284,13 +288,19 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # Something left in the held slot (e.g. after a restart) goes back to Inventory.
         self.store_held_if_any()
 
-        # 1. Full layout: build (deploy a machine whose kit is at home, or
-        #    plant one of its own cells) in field_layout.work_order(): the
-        #    garden row by row in a snake, then the fill chunk by chunk.
+        # 1. Full layout, build phase: build (deploy a machine whose kit is at
+        #    home, or plant one of its own cells) in field_layout.work_order():
+        #    the garden row by row in a snake, then the fill chunk by chunk.
         #    Ahead of care: each machine takes a treatment (a Crop Automator a
         #    whole 5 x 5 area) off the Harvester for good, and behind care it
-        #    never ran (hand care kept it busy).
-        if self.layout_mode == "full":
+        #    never ran (hand care kept it busy). Ends once every reserved
+        #    machine is deployed.
+        building = self.layout_mode == "full" and bool(self.missing_machines(cells))
+        if building != self.build_phase:
+            if self.build_phase is not None:
+                self.log.print(f"[{self.name}] Build phase {'resumed: machines missing' if building else 'done: every field machine deployed'}.")
+            self.build_phase = building
+        if building:
             deploys = self.deploy_targets(cells)
             build = dict(self.plant_targets(mine, cells))
             build.update(deploys)

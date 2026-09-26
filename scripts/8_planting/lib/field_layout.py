@@ -406,6 +406,45 @@ def automator_area(sector):
     return out
 
 
+def priority_seeds(cells, garden, fill, rules):
+    """
+    Seed ids to make first, sorted: every species in the diversity garden
+    except the fill species (FILL_SPECIES[fill]). The garden carries the
+    field's species multiplier, so its seeds (and their life forms) come
+    before the fill's bulk. Published as plant.seed_demand["priority"] and
+    read by lib/seed_supply.py.
+    """
+    fill_species = FILL_SPECIES.get(fill or FIELD_FILL)
+    out = set()
+    for s in garden or []:
+        species = cells.get(s)
+        if species and species != fill_species:
+            out.add((rules.get(species) or {}).get("seed_id") or "seed_" + species)
+    return sorted(out)
+
+
+def automator_owner(sector, automators):
+    """
+    The Crop Automator (sector) among `automators` that owns `sector`, or
+    None if none reaches it. Areas overlap, so the nearest one owns it
+    (Chebyshev distance, then Manhattan, then sector id): every cell has
+    exactly one owner. Shared by lib/crop_automator.py (which cells to
+    queue) and the Harvester (which cells a clogged automator leaves).
+    """
+    r, c = sector_to_rc(sector)
+    if r is None or c is None:
+        return None
+
+    def rank(ca):
+        ar, ac = sector_to_rc(ca)
+        if ar is None or ac is None:
+            return (99, 99, ca)
+        return (max(abs(ar - r), abs(ac - c)), abs(ar - r) + abs(ac - c), ca)
+
+    reach = [ca for ca in automators if sector in automator_area(ca)]
+    return min(reach, key=rank) if reach else None
+
+
 def _needed_machines(cells, machines):
     """{sector: kind} of the providers in `machines` that give some plant in `cells` a service it needs."""
     rules = rules_from_published({})
