@@ -5,42 +5,58 @@
 #
 # Each step (POLL_INTERVAL_S):
 #   1. consume finished job results (a full result inbox pauses the machine)
-#   2. ownership: automator areas overlap, so every layout cell belongs to
+#   2. seed demand fallback: if `plant.seed_demand` is older than 3000 ticks
+#      (Harvester offline), the first deployed automator republishes it from
+#      the layout (refresh_seed_demand_if_stale()), so the Seed Maker keeps
+#      making seeds
+#   3. ownership: automator areas overlap, so every layout cell belongs to
 #      the nearest deployed automator (Chebyshev distance, then Manhattan,
 #      then sector id). Each automator only queues jobs for its own cells.
-#   3. harvest every mature layout crop it owns
-#   4. plant every open layout cell it owns, once the machines beside the
+#   4. a blocked head job would freeze the FIFO executor (unblock_queue()):
+#      `no_seed` -> load one seed, else cancel the job; `output_full` ->
+#      wait until a consumer pulls (see 7)
+#   5. harvest every mature layout crop it owns (status "mature" or
+#      growth >= 1.0)
+#   6. plant every open layout cell it owns, once the machines beside the
 #      cell give every care service the species needs (Crop Automators only
 #      apply Fertilizer / Growth Accelerant: light, water and salt must come
-#      from Grow Lamps, Sprinklers and Dispensers). Seeds are loaded into
-#      its input from Inventory / home Warehouses just before the job
-#      (storage.take_item()); the Harvester's plant.seed_demand covers the
-#      whole layout, so the Seed Maker makes them.
-#   5. drain Forage from its output to home storage (Inventory first, then
-#      Warehouses), where the Plant Terraformer takes it from
+#      from Grow Lamps, Sprinklers and Dispensers). Seeds in the input are
+#      netted against plant jobs already queued (queued_jobs_info()); when
+#      none are spare, SEED_PULL_BATCH are loaded at once from Inventory /
+#      home Warehouses (storage.take_item()) instead of one per job. The
+#      Harvester's plant.seed_demand covers the automated cells, so the Seed
+#      Maker makes them.
+#   7. Forage stays in its output (up to 50,000 units): no drain to
+#      Warehouses, so auto-loaders stay free. A clogged automator is
+#      accepted over clogged Warehouses. Consumers (the Plant Terraformer via
+#      storage.take_item()) take it from there directly, clogged automators
+#      first, then garden ones (storage.crop_automator_forage(), which reads
+#      this module's `garden` telemetry flag)
 # Nothing is queued while the Power Guard has shed it (`power.shedded`) or
 # while the layout is still the starter one. Loose items on its cells are
 # swept by the Harvester (a plant job needs an empty cell).
 #
 # Telemetry: `plant.automators` = {machine_id: {"sector", "status", "queue",
-# "cells", "mature", "open", "waiting_machines", "forage_out", "tick"}} (one
-# shared dict, stale entries pruned).
+# "cells", "mature", "open", "waiting_machines", "forage", "garden", "tick"}}
+# (one shared dict, stale entries pruned). "forage" = Forage in the output;
+# "garden" = the automator sits in the diversity garden (columns
+# 1..field_layout.GARDEN_COLS), read by storage.crop_automator_forage().
 
 from archive import archive
 import field_layout
-from storage import take_item, drain_port_to_storage
+from storage import take_item
 from tree_console import TreeConsole
 from version_guard import validate_game_version
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
+SEED_DEMAND_KEY = "plant.seed_demand"  # same key as seed_supply.SEED_DEMAND_KEY
 STATUS_KEY = "plant.automators"
 
 POLL_INTERVAL_S = 10.0
 PUBLISH_INTERVAL_TICKS = 600       # telemetry at most once a minute
 STATUS_STALE_TICKS = 36000         # an automator silent this long (~1 h) is dropped from telemetry
 QUEUE_LIMIT = 45                   # the machine takes 50; leave room for a manual job
-OUTPUT_DRAIN_ABOVE = 100           # drain Forage once the output holds at least this much
 JOB_FAIL_COOLDOWN_TICKS = 3000     # a cell whose job failed is left alone this long (~5 min)
 MAX_RESULTS_PER_STEP = 50          # the inbox holds at most 50
 SEED_PULL_BATCH = 10               # batch-load seeds into input to avoid per-job storage transfers
@@ -60,7 +76,6 @@ class CropAutomatorController:
         self.log = TreeConsole(module="crop_automator")
         self.sector = self._read_sector()
         self._failed = {}                  # {sector: tick of last failed job}
-        self._forage_out = 0
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self._last_state = None
 
@@ -210,6 +225,11 @@ class CropAutomatorController:
         action = getattr(blocked_job, "action", "")
         sector = getattr(blocked_job, "sector", "?")
         item_id = getattr(blocked_job, "item_id", None)
+        if blocker == "output_full":
+            # Accepted: Forage waits here for a consumer, which drains
+            # clogged automators first (storage.crop_automator_forage()).
+            self.log.debug(f"[{self.name}] Output full: {action}@{sector} waits for a Forage pull.")
+            return
         self.log.level("warn").print(f"[{self.name}] Head job {job_id} ({action}@{sector}) blocked: {blocker}.")
         if blocker == "no_seed" and item_id:
             port = getattr(self.machine, "input", None)
@@ -219,8 +239,6 @@ class CropAutomatorController:
             if job_id is not None:
                 res = self.machine.cancel_job(job_id)
                 self.log.level("warn").print(f"[{self.name}] Canceled seed-starved plant job {job_id}@{sector} -> {getattr(res, 'status', '?')}.")
-        elif blocker == "output_full":
-            self.drain_output()
 
     def submit(self, method, *args):
         res = getattr(self.machine, method)(*args)
@@ -229,11 +247,16 @@ class CropAutomatorController:
             self.log.debug(f"[{self.name}] {method}{args} -> {status}: {getattr(res, 'message', '')}")
         return status == "queued"
 
-    def drain_output(self):
-        # User requirement: stop draining forage to warehouses altogether.
-        # Crop automators store up to 50,000 units in their output buffers.
-        # Plant terraformers and remote haulers pull directly from them.
-        pass
+    def output_forage(self):
+        port = getattr(self.machine, "output", None)
+        try:
+            return int(port.count("forage") or 0) if port else 0
+        except Exception:
+            return 0
+
+    def in_garden(self):
+        _r, c = field_layout.sector_to_rc(self.sector) if self.sector else (None, None)
+        return c is not None and c <= field_layout.GARDEN_COLS
 
     # ----------------------------------------------------------------- step
 
@@ -339,7 +362,7 @@ class CropAutomatorController:
             status, queue = "?", None
         entry = {"sector": self.sector, "status": status, "queue": queue, "cells": len(mine),
                  "mature": len(mature), "open": len(open_cells), "waiting_machines": len(waiting),
-                 "forage_out": self._forage_out, "tick": curr_tick}
+                 "forage": self.output_forage(), "garden": self.in_garden(), "tick": curr_tick}
 
         def updater(state):
             if not isinstance(state, dict):

@@ -13,6 +13,7 @@
 # Everything here defaults to the home outpost, matching how Inventory itself
 # only participates at Nocturna Base (docs/components/inventory.md).
 
+from archive import archive
 from tree_console import TreeConsole
 
 log = TreeConsole(module="storage")
@@ -230,14 +231,79 @@ def _now_tick():
     return 0
 
 
+# Crop Automators (home Harvesting field, tier 8_planting) keep their Forage
+# in their output instead of draining it to Warehouses, so Forage consumers
+# take it from there (lib/crop_automator.py). A full output pauses the
+# automator's harvests (a partial harvest discards the rest), so clogged ones
+# are drained before anything else, and diversity-garden ones before the
+# fill: the garden carries the field's variety bonus.
+CROP_AUTOMATOR_TYPE_ID = "crop_automator"
+CROP_AUTOMATOR_ITEM_ID = "forage"
+CROP_AUTOMATOR_OUTPUT_CAP = 50000     # output buffer (docs/components/crop_automator.md)
+CROP_AUTOMATOR_CLOG_FRACTION = 0.9    # at/above this fill (or status "output_full") it counts as clogged
+CROP_AUTOMATOR_STATUS_KEY = "plant.automators"  # lib/crop_automator.py telemetry; "garden" flag read here
+
+
+def crop_automator_forage(outpost=None):
+    """
+    [(automator_id, forage, clogged, garden)] for every Crop Automator at
+    `outpost` (default home; only home has a Harvesting field) holding
+    Forage, in drain order: clogged first, then garden, then most Forage.
+    Automators are identified by HarvestingMachineRef.type_id, never by id.
+    """
+    resolved = outpost if outpost is not None else _home_outpost()
+    if resolved is None or not hasattr(resolved, "harvesting_machines"):
+        return []
+    try:
+        refs = list(resolved.harvesting_machines(CROP_AUTOMATOR_TYPE_ID) or [])
+    except Exception:
+        return []
+    telemetry = archive.get(CROP_AUTOMATOR_STATUS_KEY)
+    telemetry = telemetry if isinstance(telemetry, dict) else {}
+    garden_ids = [k for k, v in telemetry.items() if isinstance(v, dict) and v.get("garden")]
+    out = []
+    for ref in refs:
+        if getattr(ref, "type_id", CROP_AUTOMATOR_TYPE_ID) != CROP_AUTOMATOR_TYPE_ID:
+            continue
+        ca_id = getattr(ref, "id", None)
+        machine = _component(ca_id) if ca_id else None
+        port = getattr(machine, "output", None)
+        if not ca_id or not port or not hasattr(port, "count"):
+            continue
+        try:
+            count = int(port.count(CROP_AUTOMATOR_ITEM_ID) or 0)
+        except Exception:
+            continue
+        if count <= 0:
+            continue
+        try:
+            status = getattr(machine, "status")()
+        except Exception:
+            status = None
+        clogged = status == "output_full" or count >= CROP_AUTOMATOR_CLOG_FRACTION * CROP_AUTOMATOR_OUTPUT_CAP
+        garden = ca_id in garden_ids
+        out.append((ca_id, count, clogged, garden))
+    out.sort(key=lambda e: (0 if e[2] else 1, 0 if e[3] else 1, -e[1]))
+    return out
+
+
+def crop_automator_forage_total(outpost=None):
+    """Forage sitting in the Crop Automators' outputs at `outpost`."""
+    return int(sum(e[1] for e in crop_automator_forage(outpost)))
+
+
 def _holder_candidates(item_id, outpost=None, cache=None):
     """
     [(source_id, units)] for every storage endpoint holding item_id, in the
     order take_item() should try them:
+      0. Forage only: clogged Crop Automators (garden first), before
+         anything else -- a full output stalls their harvests.
       1. Inventory (home only) -- it has no Auto Feeder of its own and never
          locks, so it's the one source that can't be "busy".
       2. Warehouses holding the item, most units first.
-      3. ...with any endpoint that answered "busy" within
+      3. Forage only: the other Crop Automators, garden first, then most
+         Forage (Warehouse Forage drains first, keeping auto-loaders free).
+      4. ...with any endpoint that answered "busy" within
          TAKE_BUSY_COOLDOWN_TICKS moved to the end (stable, so the order
          above is kept within each group).
     Endpoints holding 0 are left out entirely -- the old blind
@@ -249,8 +315,15 @@ def _holder_candidates(item_id, outpost=None, cache=None):
     is_home = outpost is None or bool(resolved and getattr(resolved, "is_home", False))
 
     holders = []
+    # {automator_id: rank within the sort: 0 = clogged, 3 = normal}, plus
+    # garden order; stored per id so nothing depends on the id's spelling.
+    automator_rank = {}
+    if item_id == CROP_AUTOMATOR_ITEM_ID and is_home:
+        for ca_id, count, clogged, garden in crop_automator_forage(resolved):
+            holders.append((ca_id, count))
+            automator_rank[ca_id] = (0 if clogged else 3, 0 if garden else 1)
     if cache is not None and outpost is None and hasattr(cache, "building_stock"):
-        holders = list(cache.building_stock(item_id))
+        holders += list(cache.building_stock(item_id))
     else:
         if is_home:
             inventory = _component("inventory")
@@ -271,30 +344,15 @@ def _holder_candidates(item_id, outpost=None, cache=None):
                 continue
             if count > 0:
                 holders.append((building["id"], count))
-        if item_id == "forage" and resolved and hasattr(resolved, "harvesting_machines"):
-            try:
-                for m in resolved.harvesting_machines():
-                    if getattr(m, "type_id", None) == "crop_automator":
-                        ca_id = getattr(m, "id", None)
-                        ca = _component(ca_id) or m
-                        out_port = getattr(ca, "output", None)
-                        if out_port and hasattr(out_port, "count"):
-                            cnt = int(out_port.count("forage") or 0)
-                            if cnt > 0 and ca_id:
-                                holders.append((ca_id, cnt))
-            except Exception:
-                pass
 
     now = _now_tick()
     ranked = []
     for source_id, count in holders:
         busy_tick = _recent_busy.get(source_id)
         recently_busy = busy_tick is not None and now > 0 and now - busy_tick <= TAKE_BUSY_COOLDOWN_TICKS
-        is_inv = source_id == "inventory"
-        is_ca = "crop_automator" in source_id
-        # Rank: inventory (0), warehouses (1), crop_automators (2) so warehouses drain first
-        kind_rank = 0 if is_inv else (2 if is_ca else 1)
-        ranked.append(((1 if recently_busy else 0, kind_rank, -count), (source_id, count)))
+        # 0 clogged automator, 1 Inventory, 2 Warehouse, 3 other automator.
+        kind_rank, garden_rank = automator_rank.get(source_id, (1 if source_id == "inventory" else 2, 0))
+        ranked.append(((1 if recently_busy else 0, kind_rank, garden_rank, -count), (source_id, count)))
     ranked.sort(key=lambda pair: pair[0])
     return [entry for _key, entry in ranked]
 
@@ -305,7 +363,8 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     input port exposing .connect(id)/.connected_id()/.take(item_id, count)).
     Only endpoints that actually hold the item are tried, in
     _holder_candidates() order (Inventory first, then Warehouses by most
-    stock, recently-"busy" ones last), reconnecting between them since a
+    stock, recently-"busy" ones last; Forage adds Crop Automators, clogged
+    ones before everything, the rest after Warehouses), reconnecting between them since a
     port holds one source at a time (same single-source constraint as
     FluidPort, see lib/thermal_cap.py). Stops once `amount` is met or every
     holder has been tried. Returns total units actually moved.

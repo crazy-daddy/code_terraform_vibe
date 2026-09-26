@@ -25,7 +25,7 @@
 # so two haulers never plan the same units at the same source.
 
 from archive import archive
-from storage import warehouse_stock
+from storage import warehouse_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
 from tree_console import TreeConsole
 
 log = TreeConsole(module="logistics_requests")
@@ -344,8 +344,8 @@ def depot_stock(depot):
 def outpost_stock(item_ids, outpost):
     """
     {item_id: units} held at `outpost`: its Warehouses + Drone Depots, plus
-    home Inventory when `outpost` is the home outpost -- everything a local
-    machine's InputSlot can take() from.
+    home Inventory and Crop Automator Forage when `outpost` is the home
+    outpost -- everything a local machine's InputSlot can take() from.
     """
     totals = {item_id: 0 for item_id in item_ids}
     if not item_ids or outpost is None:
@@ -364,16 +364,8 @@ def outpost_stock(item_ids, outpost):
                     totals[item_id] += inventory.count(item_id)
         except Exception:
             pass
-        if "forage" in item_ids and hasattr(outpost, "harvesting_machines"):
-            try:
-                for m in outpost.harvesting_machines():
-                    if getattr(m, "type_id", None) == "crop_automator":
-                        ca = get_component(getattr(m, "id", None)) or m
-                        port = getattr(ca, "output", None)
-                        if port and hasattr(port, "count"):
-                            totals["forage"] += int(port.count("forage") or 0)
-            except Exception:
-                pass
+        if CROP_AUTOMATOR_ITEM_ID in totals:
+            totals[CROP_AUTOMATOR_ITEM_ID] += crop_automator_forage_total(outpost)
     return totals
 
 
@@ -443,16 +435,8 @@ def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude
                 units += inventory.count(item_id)
             except Exception:
                 pass
-        if item_id == "forage" and getattr(outpost, "is_home", False) and hasattr(outpost, "harvesting_machines"):
-            try:
-                for m in outpost.harvesting_machines():
-                    if getattr(m, "type_id", None) == "crop_automator":
-                        ca = get_component(getattr(m, "id", None)) or m
-                        port = getattr(ca, "output", None)
-                        if port and hasattr(port, "count"):
-                            units += int(port.count("forage") or 0)
-            except Exception:
-                pass
+        if item_id == CROP_AUTOMATOR_ITEM_ID and inventory is not None:
+            units += crop_automator_forage_total(outpost)
         units -= own.get(item_id, {}).get("target", 0) + taken.get(item_id, 0)
         if units > 0:
             free[item_id] = units
