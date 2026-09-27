@@ -47,6 +47,8 @@
 #     docs/AI_CHEATSHEET.md #2a-0-5).
 #   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
 #     chassis swaps to the best unlocked tier, one at a time, once per cycle.
+#   - Fleet commissioning (lib/fleet_commission.py): buys, deploys and fits the
+#     Pioneers queued on the COMMISSION card, one job at a time.
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController no
 # longer do any of this themselves -- it's a hard dependency on this script
 # running (see legacy/README.md for pre-Control-Room saves). The manual
@@ -63,6 +65,7 @@ from version_guard import version_mismatch
 import outpost_mining
 import supply_dock
 from fleet_upgrade import FleetUpgradeCoordinator
+from fleet_commission import FleetCommissionCoordinator
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
@@ -87,6 +90,7 @@ mixer_gate_summary = "no Mixers"
 biomass_retirement = None   # BiomassRetirement, created once biomass is complete
 grid_count = 0              # last solar-sync grid census; carries over on ticks solar_due is False
 fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state lives in archive)
+fleet_commissioner = FleetCommissionCoordinator()  # same
 
 while True:
     clock = get_component("clock")
@@ -203,6 +207,12 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet upgrade error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned, {upgrade_summary}, {mixer_gate_summary}")
+            commission_summary = "commission idle"
+            try:
+                commission_summary = fleet_commissioner.step(current_tick)
+            except Exception as e:
+                print(f"[AUTOMATION] Fleet commission error: {e}")
+
+            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned, {upgrade_summary}, {commission_summary}, {mixer_gate_summary}")
 
     sleep(1.0)
