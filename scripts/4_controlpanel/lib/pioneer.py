@@ -9,6 +9,7 @@ from vehicle import VehicleController
 from vehicle_claims import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
 from vehicle_mining import ROVER_PREFERRED_MAX_HARDNESS
 from vehicle_upgrade import VehicleUpgradeMixin
+from pioneer_commission import PioneerFittingMixin
 from storage import take_item
 from version_guard import validate_game_version
 import mining_reservations
@@ -18,7 +19,7 @@ from outpost_mining import HOME_OUTPOST_ID
 from logistics_requests import PULL_DESTINATION_WILDCARDS
 from swallow import swallowed
 
-class PioneerController(VehicleController, VehicleUpgradeMixin):
+class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMixin):
     """
     Automated Heavy Field Vehicle & Constructor Controller for Pioneer chassis.
     Extends VehicleController with field construction, module slot management,
@@ -90,8 +91,10 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
         hauler that fetches requested items from anywhere to its HOME_BASE
         (run_pull_loop()). role_override forces a specific role,
         bypassing detection -- required when more than one role-defining
-        module is mounted at once (see detect_role()).
+        module is mounted at once (see detect_role()). A Pioneer launched from
+        the COMMISSION card fits its parts first (lib/pioneer_commission.py).
         """
+        self.fit_commissioned_loadout()
         role = self.detect_role(role_override)
         if role is None:
             return
