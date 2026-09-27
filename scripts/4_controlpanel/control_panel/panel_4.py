@@ -53,6 +53,8 @@
 #     always-on script must). Idles until a Mixer exists. The module lives in
 #     the 5_steampower lib, but scripts_sync deploys new-only lib modules at
 #     every tier from 2_libunlock on, so this one panel serves every tier.
+#     Once biomass is complete (lib/biomass_retire.py) the gate stops and
+#     BiomassRetirement switches the Liquifier/Mixer chain off instead.
 #   - Supply Dock order-assignment planning across every discovered dock
 #     (lib/supply_dock.py's plan_dock_assignments() -- the central "decider"
 #     so multiple docks share/split Earth Orders instead of each redundantly
@@ -70,6 +72,7 @@
 from archive import archive
 from power import PowerGridManager
 from biomass_mixer_gate import MixerGate
+from biomass_retire import BiomassRetirement, biomass_complete
 from storage import rebalance_inventory_to_warehouses, consolidate_cross_warehouse_stock, reclaim_inventory_only_items_from_warehouses
 from version_guard import version_mismatch
 import outpost_mining
@@ -96,6 +99,7 @@ last_storage_tick = 0
 last_mixer_gate_tick = 0
 mixer_gate = None           # MixerGate, created lazily once power_control is available
 mixer_gate_summary = "no Mixers"
+biomass_retirement = None   # BiomassRetirement, created once biomass is complete
 grid_count = 0              # last solar-sync grid census; carries over on ticks solar_due is False
 fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state lives in archive)
 
@@ -139,9 +143,9 @@ while True:
         if mixer_gate_due:
             last_mixer_gate_tick = current_tick
             try:
-                if mixer_gate is None and power:
+                if biomass_retirement is None and mixer_gate is None and power:
                     mixer_gate = MixerGate(power=power, clock=clock)
-                if mixer_gate is not None:
+                if mixer_gate is not None and biomass_retirement is None:
                     gate_states = mixer_gate.step(current_tick)
                     if gate_states:
                         paused = sum(1 for st in gate_states.values() if st.get("state") == "pause")
@@ -199,6 +203,14 @@ while True:
                 dock_plan_count = sum(1 for v in plan.values() if v)
             except Exception as e:
                 print(f"[AUTOMATION] Supply Dock planning error: {e}")
+
+            try:
+                if biomass_retirement is None and biomass_complete():
+                    biomass_retirement = BiomassRetirement(power=power)
+                if biomass_retirement is not None:
+                    mixer_gate_summary = biomass_retirement.step(current_tick)
+            except Exception as e:
+                print(f"[AUTOMATION] Biomass retirement error: {e}")
 
             upgrade_summary = "fleet upgrade idle"
             try:

@@ -34,6 +34,7 @@ from archive_cleaner import ArchiveCleaner
 from unsupported_markers import update_unsupported_markers
 from version_guard import version_mismatch, good_version, confirm_new_version
 from swallow import swallowed
+from biomass_retire import retire_state, sell_retired_machines
 
 # Must match panel_7.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
@@ -43,6 +44,7 @@ AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 # same pattern panel_2.py uses for its scroll_label).
 last_cleaner_stats = None
 last_unsupported_count = None
+last_biomass_sale = None
 
 while True:
     panel.clear()
@@ -164,3 +166,19 @@ while True:
         if last_unsupported_count is not None:
             summary = "error" if last_unsupported_count < 0 else f"{last_unsupported_count} marker(s) placed"
             panel.label(btn2_x, btn_y + 34, summary, "muted")
+
+        # Biomass chain sale (lib/biomass_retire.py): drawn only once biomass is
+        # complete and every Liquifier/Mixer is drained (panel_4.py publishes
+        # readiness). Undeploys and sells them -- operator-triggered only.
+        retire = retire_state()
+        if retire.get("complete"):
+            btn3_x = btn2_x + btn_w + 24
+            if retire.get("ready"):
+                if panel.button("sell_biomass_chain", btn3_x, btn_y, btn_w, 26, "Sell Biomass Chain"):
+                    try:
+                        last_biomass_sale = sell_retired_machines()
+                    except Exception as e:
+                        swallowed("panel_1: sell_retired_machines", e)
+                        last_biomass_sale = f"error: {e}"
+            line = last_biomass_sale or retire.get("last_sale") or retire.get("status", "")
+            panel.draw_text(btn3_x, btn_y + (40 if retire.get("ready") else 14), str(line), 10, "text-secondary", width - btn3_x - 24)

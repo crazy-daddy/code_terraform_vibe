@@ -3,6 +3,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
+from biomass_retire import biomass_complete
 
 # Shared Biomass Mixer automation. Nothing to tune -- the Mixer picks its own
 # strongest balanced mix every tick (docs/components/biomass_mixer.md), and
@@ -23,6 +24,9 @@ from swallow import swallowed
 # per port instead (see _port_starved()): a link can read "ready" to a remote
 # Liquifier that has run dry while a same-essence tank sits full next to the
 # Mixer, and link state alone would keep that dead link forever.
+#
+# Once biomass_complete() (lib/biomass_retire.py) the Mixer has nothing left
+# to add: routing stops and panel_4.py switches its breaker off.
 
 ESSENCE_BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 LIQUIFIER_TYPE_ID = "essence_liquifier"
@@ -207,6 +211,9 @@ class BiomassMixerController:
         })
 
     def step(self):
+        if biomass_complete():
+            self.log.debug(f"[{self.name}] Biomass complete; retired, not routing essence.")
+            return
         results = self.ensure_input_connections()
         self.check_stall()
         self.publish_telemetry(results)

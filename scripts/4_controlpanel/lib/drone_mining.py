@@ -17,10 +17,18 @@
 # _biosite_candidates() below skips any biosite where a non-home-biome
 # sample is ALSO present at the same tile, rather than risking extract()
 # pulling the wrong species into a chamber that can't be processed locally.
+#
+# Once biomass is complete (lib/biomass_retire.py) there is no Liquifier left
+# to feed: a drone only visits biosites holding a life form some outpost
+# requests (the Seed Maker, lib/logistics_requests.py), mixed-biome tiles
+# included, and still drains each one fully so its cooldown starts. Forms
+# nobody requests come along; the Drone Depot and a Waste Processor deal with
+# them (lib/drone_depot.py, lib/waste_sink.py).
 
 from tree_console import TreeConsole
 from swallow import swallowed
 import logistics_requests
+from biomass_retire import biomass_complete
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -72,10 +80,19 @@ class DroneMiningMixin:
         except Exception as error:
             swallowed("drone_mining.DroneMiningMixin._biosite_candidates: logistics_requests.network_deficits", error)
             requested = {}
+        retired = biomass_complete()
+        # Every life form any outpost requests, satisfied or not: a partly
+        # drained site holding one is finished even with the request met,
+        # or it never cools down and regrows.
+        wanted_types = set()
+        if retired:
+            for items in logistics_requests.active_requests().values():
+                wanted_types.update(items.keys())
         candidates = []
         skipped_no_home_forms = 0
         skipped_mixed_biome = 0
         skipped_cooling = 0
+        skipped_unrequested = 0
         for site in sites:
             coord = getattr(site, "coord", None)
             life_forms = getattr(site, "life_forms", []) or []
@@ -87,7 +104,7 @@ class DroneMiningMixin:
             if not home_forms:
                 skipped_no_home_forms += 1
                 continue
-            if len(home_forms) != len(life_forms):
+            if len(home_forms) != len(life_forms) and not retired:
                 # Mixed-biome tile: extract() takes no species argument (see
                 # module docstring), so v1 skips this site entirely rather
                 # than risk pulling the wrong species.
@@ -106,11 +123,17 @@ class DroneMiningMixin:
             # only when the site is empty"), so a half-drained site left
             # sitting is dead time on its regen clock.
             partial = 0.0 < remaining < peak
+            if retired:
+                amounts = [(float(getattr(lf, "remaining_tons", 0.0) or 0.0), float(getattr(lf, "tons", 0.0) or 0.0)) for lf in life_forms]
+                partial = any(r < p for r, p in amounts) and any(r > 0 for r, _p in amounts)
             request_score = 0
-            for lf in home_forms:
+            for lf in (life_forms if retired else home_forms):
                 lf_type = getattr(lf, "type", None)
                 if requested.get(lf_type, 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0:
                     request_score += RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1)
+            if retired and request_score == 0 and not (partial and any(getattr(lf, "type", None) in wanted_types for lf in life_forms)):
+                skipped_unrequested += 1
+                continue
             candidates.append({
                 "coords": (x, y),
                 "target_key": f"bio_{x}_{y}",
@@ -141,7 +164,8 @@ class DroneMiningMixin:
             )
         self._host.log.debug(
             f"[{self._host.name}] _biosite_candidates(): {len(sites)} known site(s), {len(candidates)} ready home-biome candidate(s) "
-            f"(skipped {skipped_no_home_forms} non-home, {skipped_mixed_biome} mixed-biome, {skipped_cooling} cooling-down)."
+            f"(skipped {skipped_no_home_forms} non-home, {skipped_mixed_biome} mixed-biome, {skipped_cooling} cooling-down, "
+            f"{skipped_unrequested} unrequested after biomass completion)."
         )
         self._host.log.trace(f"[{self._host.name}] _biosite_candidates() exit: {len(candidates)} candidate(s).")
         return candidates

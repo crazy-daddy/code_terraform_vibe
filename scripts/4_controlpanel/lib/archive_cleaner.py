@@ -68,6 +68,7 @@ MACHINE_STATUS_KEYS = {
     "drone_depot.status": ("drone_station", "drone_station_medium", "drone_station_large"),
     "essence_liquifier.status": "essence_liquifier",
     "biomass_mixer.status": "biomass_mixer",
+    "waste_sink.status": "garbage_disposal",  # Waste Processor typeId (decompiled)
 }
 
 

@@ -1,7 +1,8 @@
 import fluid_routing
 import logistics_requests
 from archive import archive
-from storage import take_item, warehouse_stock, discover_storage_buildings
+from storage import take_item, warehouse_stock, discover_storage_buildings, best_unload_target
+from biomass_retire import biomass_complete
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -27,6 +28,9 @@ from swallow import swallowed
 #      Mixer may also declare its own input straight onto this port
 #      (lib/biomass_mixer.py); that is an independent peer link and needs no
 #      coordination here.
+# Once biomass_complete() (lib/biomass_retire.py) the Liquifier retires:
+# no feeding, its input bin is ejected to local storage so undeploy() can
+# take it, and panel_4.py switches its breaker off once the bin is empty.
 
 # typeIds, not the "Drone Depot" display name; one per Depot size -- see lib/drone_energy.py
 DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")
@@ -371,9 +375,46 @@ class EssenceLiquifierController:
             "input_count": input_count,
             "last_fed": self._last_fed,
             "output_target": output_target,
+            "retired": biomass_complete(),
         })
 
+    # ---------------------------------------------------------------- retire
+
+    def retire_step(self):
+        """Biomass complete: ejects every staged life form to local storage (Warehouse, else a local Depot)."""
+        try:
+            stacks = [(s.id, s.count) for s in self.liquifier.input.stacks() if s.count > 0]
+        except Exception as error:
+            swallowed("essence_liquifier.EssenceLiquifierController.retire_step: self.liquifier.input.stacks", error)
+            stacks = []
+        if not stacks:
+            self.log.debug(f"[{self.name}] retired: input empty; waiting for the breaker/undeploy.")
+            return
+        outpost = getattr(self.liquifier, "outpost", None)
+        for item_id, count in stacks:
+            target = best_unload_target(item_id, 1, outpost=outpost)
+            if target is None:
+                depots = self._local_depots()
+                target = depots[0].id if depots else None
+            if target is None:
+                self.log.level("warn").print(f"[{self.name}] retired: no local store has room for {count}x '{item_id}'; retrying.")
+                continue
+            try:
+                res = self.liquifier.input.eject(target, item_id, count)
+            except Exception as e:
+                self.log.level("warn").print(f"[{self.name}] retired: eject({target!r}, '{item_id}', {count}) failed: {e}")
+                continue
+            moved = getattr(res, "moved", 0) or 0
+            if moved > 0:
+                self.log.print(f"[{self.name}] Biomass complete: ejected {moved}x '{item_id}' -> '{target}'.")
+            else:
+                self.log.debug(f"[{self.name}] retired: eject '{item_id}' -> '{target}': {getattr(res, 'status', '?')} {getattr(res, 'message', '')}")
+
     def step(self):
+        if biomass_complete():
+            self.retire_step()
+            self.publish_telemetry()
+            return
         if not self._resolve_biome():
             self.log.level("warn").print(f"[{self.name}] No valid host biome (stall_reason={self.stall_reason()!r}); waiting.")
             return

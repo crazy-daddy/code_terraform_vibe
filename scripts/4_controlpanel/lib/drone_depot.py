@@ -17,6 +17,12 @@
 # hauler's up-to-2000-unit load, so the drone unloads in several rounds while
 # this controller keeps draining (FREIGHT_POLL_INTERVAL while freight or a
 # docked drone is present).
+#
+# Once biomass is complete (lib/biomass_retire.py) the Liquifier is gone, so
+# no wiring. Staging is unchanged; what can't be staged waits in the Depot for
+# a local Waste Processor (lib/waste_sink.py, which reuses buffer_target() and
+# lifeform_buffer_cap() below); without one the Depot fills and miner drones
+# back off.
 
 from archive import archive
 from storage import discover_storage_buildings, warehouse_stock, drain_port_to_storage
@@ -25,6 +31,7 @@ from tree_console import TreeConsole
 from swallow import swallowed
 from version_guard import validate_game_version
 from drone_upgrade import retiring_depot_ids
+from biomass_retire import biomass_complete
 
 # One shared dict {depot_id: telemetry} (not one key per depot, CLAUDE.md
 # rule 7). Old per-depot "drone_depot.status.<id>" keys are purged by
@@ -44,6 +51,50 @@ WAREHOUSE_SLOT_FALLBACK_UNITS = 2000  # docs/components/warehouse.md: 5 x 2,000
 # so a hauler unloading several Depot-fulls in a row isn't held up by the
 # idle 10 s cycle.
 FREIGHT_POLL_INTERVAL = 2.0
+
+
+def slot_capacity(outpost):
+    """Units per Warehouse slot at `outpost` (first slot seen), else WAREHOUSE_SLOT_FALLBACK_UNITS."""
+    for building in discover_storage_buildings(outpost):
+        try:
+            for slot in building["component"].slots():
+                if slot.capacity:
+                    return slot.capacity
+        except Exception as error:
+            swallowed("drone_depot.slot_capacity: building['component'].slots", error)
+            continue
+    return WAREHOUSE_SLOT_FALLBACK_UNITS
+
+
+def buffer_target(item_id, outpost):
+    """
+    (warehouse_id, room) to stage item_id into, else (None, 0). A Warehouse
+    whose slot already holds item_id wins (tops that one stack up); an
+    empty slot is only taken while the Warehouse keeps
+    WAREHOUSE_FREE_SLOTS_KEEP further empty slots for ore/cargo unloads.
+    """
+    fallback = (None, 0)
+    for building in discover_storage_buildings(outpost):
+        try:
+            slots = list(building["component"].slots())
+        except Exception as error:
+            swallowed("drone_depot.buffer_target: building['component'].slots", error)
+            continue
+        holding = [s for s in slots if s.item == item_id and not s.properties]
+        if holding:
+            room = sum(max(0, s.capacity - s.count) for s in holding)
+            if room > 0:
+                return (building["id"], room)
+            continue
+        empty = [s for s in slots if not s.item or s.count <= 0]
+        if fallback[0] is None and len(empty) > WAREHOUSE_FREE_SLOTS_KEEP:
+            fallback = (building["id"], empty[0].capacity)
+    return fallback
+
+
+def lifeform_buffer_cap(outpost):
+    """Units of one life form kept in `outpost`'s Warehouses: LIFEFORM_BUFFER_SLOTS full slots."""
+    return slot_capacity(outpost) * LIFEFORM_BUFFER_SLOTS
 
 
 class DroneDepotController:
@@ -86,7 +137,7 @@ class DroneDepotController:
         (exactly one same-outpost Liquifier). Otherwise logs once and
         leaves it for manual wiring via the Control Panel.
         """
-        if self._wired:
+        if self._wired or biomass_complete():
             return
         if not hasattr(self.station, "output"):
             self.log.debug(f"[{self.name}] Station has no .output port; skipping wiring check.")
@@ -111,42 +162,6 @@ class DroneDepotController:
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] Could not wire output to Essence Liquifier: {e}")
 
-    def _slot_capacity(self, outpost):
-        """Units per Warehouse slot at `outpost` (first slot seen), else WAREHOUSE_SLOT_FALLBACK_UNITS."""
-        for building in discover_storage_buildings(outpost):
-            try:
-                for slot in building["component"].slots():
-                    if slot.capacity:
-                        return slot.capacity
-            except Exception as error:
-                swallowed("drone_depot.DroneDepotController._slot_capacity: building['component'].slots", error)
-                continue
-        return WAREHOUSE_SLOT_FALLBACK_UNITS
-
-    def _buffer_target(self, item_id, outpost):
-        """
-        (warehouse_id, room) to stage item_id into, else (None, 0). A Warehouse
-        whose slot already holds item_id wins (tops that one stack up); an
-        empty slot is only taken while the Warehouse keeps
-        WAREHOUSE_FREE_SLOTS_KEEP further empty slots for ore/cargo unloads.
-        """
-        fallback = (None, 0)
-        for building in discover_storage_buildings(outpost):
-            try:
-                slots = list(building["component"].slots())
-            except Exception as error:
-                swallowed("drone_depot.DroneDepotController._buffer_target: building['component'].slots", error)
-                continue
-            holding = [s for s in slots if s.item == item_id and not s.properties]
-            if holding:
-                room = sum(max(0, s.capacity - s.count) for s in holding)
-                if room > 0:
-                    return (building["id"], room)
-                continue
-            empty = [s for s in slots if not s.item or s.count <= 0]
-            if fallback[0] is None and len(empty) > WAREHOUSE_FREE_SLOTS_KEEP:
-                fallback = (building["id"], empty[0].capacity)
-        return fallback
 
     def stage_life_forms(self):
         """
@@ -156,7 +171,8 @@ class DroneDepotController:
         buffer (lib/essence_liquifier.py feed_from_warehouse()) and a pull
         hauler's take() source (lib/vehicle_cargo.py run_pull_loop()), and
         the Depot's small mixed stockpile stays free for drone unloads. Once
-        a form's stack is full it stays in the Depot for the Liquifier.
+        a form's stack is full it stays in the Depot for the Liquifier, or,
+        after biomass completion, for the Waste Processor.
         """
         outpost = getattr(self.station, "outpost", None)
         port = getattr(self.station, "output", None)
@@ -168,14 +184,14 @@ class DroneDepotController:
         if not forms:
             self._log_stage_state("empty", "no life forms in the Depot to stage.")
             return
-        cap = self._slot_capacity(outpost) * LIFEFORM_BUFFER_SLOTS
+        cap = lifeform_buffer_cap(outpost)
         self._log_stage_state("active", f"staging life forms to Warehouse (cap {cap} per form): {forms}.")
         for item_id, units in forms.items():
             want = min(units, cap - warehouse_stock(item_id, outpost))
             if want <= 0:
                 self.log.trace(f"[{self.name}] stage: '{item_id}' Warehouse buffer full (>= {cap}); leaving {units} in the Depot.")
                 continue
-            target, room = self._buffer_target(item_id, outpost)
+            target, room = buffer_target(item_id, outpost)
             if target is None:
                 self.log.debug(f"[{self.name}] stage: no Warehouse slot for '{item_id}' (would leave < {WAREHOUSE_FREE_SLOTS_KEEP} free slot(s)); leaving {units} in the Depot.")
                 continue
