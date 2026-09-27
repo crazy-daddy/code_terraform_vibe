@@ -14,15 +14,15 @@ from swallow import swallowed
 # Stage 1, automatic (every consumer checks biomass_complete()):
 #   - Essence Liquifiers stop feeding and eject their input bin to local
 #     storage (lib/essence_liquifier.py retire_step()).
-#   - Biomass Mixer scripts stop routing; panel_4.py stops the Mixer gate.
-#   - BiomassRetirement.step() (panel_4.py) switches every Mixer's breaker off
+#   - Biomass Mixer scripts stop routing; automation_panel.py stops the Mixer gate.
+#   - BiomassRetirement.step() (automation_panel.py) switches every Mixer's breaker off
 #     and each Liquifier's once its input bin is empty, and publishes
-#     RETIRE_KEY for panel_1.py.
+#     RETIRE_KEY for status_panel.py.
 #   - Miner drones only visit biosites holding a requested life form
 #     (lib/drone_mining.py). Each outpost keeps one Warehouse slot per form
 #     (creature feeds use life forms later); a Waste Processor destroys the
 #     rest (lib/waste_sink.py).
-# Stage 2, manual (panel_1.py button, drawn only once every machine is
+# Stage 2, manual (status_panel.py button, drawn only once every machine is
 # ready): sell_retired_machines() undeploys each machine and sells what
 # undeploy() returns to Inventory -- the kit plus every applied tier pack --
 # at full Shop price (decompiled shop sell: deployable equipment and upgrade
@@ -90,7 +90,7 @@ def _input_count(liquifier):
 
 
 class BiomassRetirement:
-    """Stage 1 bookkeeping for panel_4.py: breakers off, readiness per machine, RETIRE_KEY status."""
+    """Stage 1 bookkeeping for automation_panel.py: breakers off, readiness per machine, RETIRE_KEY status."""
 
     def __init__(self, power=None):
         self.power = power or get_component("power_control")

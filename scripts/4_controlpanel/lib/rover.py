@@ -8,6 +8,8 @@ from vehicle import VehicleController
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 from version_guard import validate_game_version
 import mining_reservations
+import fleet_intent
+from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
 
 class RoverController(VehicleController):
@@ -201,6 +203,10 @@ class RoverController(VehicleController):
             )
         else:
             self.log.print(f"[{self.name}] Reserved target '{target['name']}' at {coords} (Est. trip cost: {budget['total_required_wh']:.1f} Wh).")
+        if target["type"] == "mine":
+            self.set_intent(fleet_intent.describe("mining", [target["harvest_item"]], at=target["name"], root=fleet_intent.haul_root([target["harvest_item"]], HOME_OUTPOST_ID)))
+        else:
+            self.set_intent(fleet_intent.describe("scanning", at=target["name"]))
         self.publish_telemetry("OUTBOUND", target["name"])
 
         # Step 4: Drive to target (using intermediate recharge stops if needed)

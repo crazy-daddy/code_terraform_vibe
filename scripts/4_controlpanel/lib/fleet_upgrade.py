@@ -1,9 +1,9 @@
 # Fleet hardware upgrade coordinator (Phase 7), run from the headless
-# control-room calculator (control_panel/panel_4.py) every storage tick.
+# control-room calculator (control_panel/automation_panel.py) every storage tick.
 #
 # Only once the save reaches the mining-drill phase (any mining drill
 # deployed, same condition as scripts/7_miningdrills/.criteria) and while the
-# panel_5.py switch is on -- earlier, expanding beats upgrading.
+# drones_panel.py switch is on -- earlier, expanding beats upgrading.
 #
 # Swaps, one at a time fleet-wide, Depots first:
 #   - every Drone Depot for the best unlocked Depot kit (small -> large
@@ -65,7 +65,7 @@ MAX_UNDEPLOY_ATTEMPTS = 5
 
 DEPOT_ACTIVE_STATES = ("ordered", "deploying", "attach", "draining", "undeploying", "renaming")
 DRONE_ACTIVE_STATES = ("ordered", "requested", "ready", "announced", "swapping", "attach", "fitting")
-# Swaps the panel_5.py switch can still cancel: nothing deployed/undeployed yet.
+# Swaps the drones_panel.py switch can still cancel: nothing deployed/undeployed yet.
 DEPOT_CANCELLABLE_STATES = ("ordered",)
 DRONE_CANCELLABLE_STATES = ("ordered", "requested", "ready", "announced")
 
@@ -168,7 +168,7 @@ class FleetUpgradeCoordinator:
     # ------------------------------------------------------------ main step
 
     def step(self, current_tick):
-        """One coordinator pass. Returns a short summary for panel_4's automation line."""
+        """One coordinator pass. Returns a short summary for automation_panel's automation line."""
         enabled = is_upgrade_enabled()
         if enabled and not upgrade_phase_reached():
             self._set_status("waiting for mining drills")

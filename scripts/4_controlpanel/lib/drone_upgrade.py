@@ -1,7 +1,7 @@
 # Drone mixin + shared state for the fleet hardware upgrade (Phase 7).
 #
 # Two halves, one shared archive key:
-#   - lib/fleet_upgrade.py (host side, panel_4.py) swaps Drone Depots and
+#   - lib/fleet_upgrade.py (host side, automation_panel.py) swaps Drone Depots and
 #     drone chassis for bigger ones: it orders the kit/chassis, deploys and
 #     undeploys. It never touches a drone's modules.
 #   - This mixin (drone side) does everything that needs the drone's own
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 # One shared dict (CLAUDE.md rule 7), written by both halves via transaction():
 #   {"enabled": bool,
-#    "status": str,                         # coordinator's one-line summary (panel_5.py)
+#    "status": str,                         # coordinator's one-line summary (drones_panel.py)
 #    "depots": {old_depot_id: {...}},       # swap state per Depot (fleet_upgrade.py)
 #    "retiring_depots": [old_depot_id],     # hidden from drones while they drain
 #    "drones": {old_drone_id: {...}},       # swap state per drone
@@ -102,7 +102,7 @@ def update_fleet_upgrade(mutate):
 
 
 def is_upgrade_enabled():
-    """Operator switch (panel_5.py); on unless explicitly turned off."""
+    """Operator switch (drones_panel.py); on unless explicitly turned off."""
     return bool(fleet_upgrade_state().get("enabled", True))
 
 
@@ -483,7 +483,7 @@ class DroneUpgradeMixin:
           2. an empty slot gets whatever LOADOUTS still lacks for this role.
         Never changes the engine type or a module's category. Scouts and
         drones with no known role are left alone, and nothing happens while
-        the panel_5.py switch is off or before the mining-drill phase
+        the drones_panel.py switch is off or before the mining-drill phase
         (upgrades_active()) -- an order placed earlier is withdrawn.
         """
         role = getattr(self._host, "role", None)

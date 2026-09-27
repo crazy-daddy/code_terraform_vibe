@@ -1,3 +1,4 @@
+# ct-panel: vehicles_panel
 # Control Room fleet card: live vehicle state, battery, mission, and rescue status.
 # Also publishes a per-vehicle "recall" toggle: on -> that vehicle abandons
 # its current job and returns to base now; off -> resumes normal operations.
@@ -17,12 +18,46 @@ from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
 from vehicle_upgrade import is_sport_nav_requested, request_sport_nav
 from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
+import fleet_status
 
 # Sport Nav button only fits alongside the existing wide-layout row content
 # (role pill, battery bar, status text, location, recall switch) without
 # overlapping any of it -- narrower cards just don't show it, same trade-off
 # the row's own location text already makes via its "loc_x + 90 < recall_x" check.
 SPORT_NAV_BTN_MIN_WIDTH = 1100
+
+# Intent column (fleet.status[id]["intent"], lib/fleet_intent.py): what the
+# job is and whom it serves. Word-wrapped onto up to INTENT_LINES lines of
+# the room left of the right-hand controls, at INTENT_CHAR_PX per character
+# (font size 10); the last line is cut with "..".
+INTENT_CHAR_PX = 6
+INTENT_LINES = 2
+INTENT_LINE_PX = 13
+
+
+def wrap_text(text, width_px, max_lines=INTENT_LINES):
+    chars = int(width_px // INTENT_CHAR_PX)
+    if chars <= 2:
+        return []
+    lines, line = [], ""
+    for word in text.split(" "):
+        candidate = f"{line} {word}" if line else word
+        if len(candidate) <= chars or not line:
+            line = candidate
+            continue
+        lines.append(line)
+        line = word
+    if line:
+        lines.append(line)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1][:chars - 2] + ".."
+    return [l if len(l) <= chars else l[:chars - 2] + ".." for l in lines]
+
+
+def draw_intent(x, y, text, width_px):
+    for index, line in enumerate(wrap_text(text, width_px)):
+        panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
 
 
 def vehicle_role(name):
@@ -83,6 +118,7 @@ while True:
     vehicles = fleet.vehicles() if fleet and hasattr(fleet, "vehicles") else []
     wide = width >= 900
     recall_x = width - 115  # fixed right-margin anchor: never overflows the card, at any width
+    telemetry = fleet_status.get_all()
 
     if not vehicles:
         panel.label(24, 98, "No ground vehicles owned", "muted")
@@ -152,15 +188,24 @@ while True:
                 location = "docked"
             else:
                 location = f"({getattr(vehicle, 'x', 0):.0f}, {getattr(vehicle, 'y', 0):.0f})"
+            intent = str((telemetry.get(vehicle_id) or {}).get("intent") or "")
             if wide:
                 loc_x = status_x + 110
                 if loc_x + 90 < recall_x:
                     panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
+                intent_x = loc_x + 95
+                intent_right = recall_x - 12
+                if role_label == "PIONEER" and width >= SPORT_NAV_BTN_MIN_WIDTH:
+                    intent_right -= 92  # Sport Nav button below
+                if intent:
+                    draw_intent(intent_x, y + 15, intent, intent_right - intent_x)
             else:
                 # Below the role pill, not overlapping it -- pill(40, y+22, ...)
                 # renders taller than a 16px gap allows, so this needs real
                 # clearance (see row_height's matching bump below).
                 panel.draw_text(40, y + 46, location, 10, "text-secondary")
+                if intent:
+                    draw_intent(135, y + 46, intent, width - 24 - 135)
 
             switch_on = panel.switch(f"recall_{vehicle_id}", recall_x, y + 6, recalled, "recall")
             if switch_on != recalled:

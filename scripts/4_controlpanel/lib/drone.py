@@ -108,6 +108,7 @@ class DroneController(
         self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
 
         self.state = "INIT"
+        self.intent = None  # set_intent(); published in telemetry for the fleet cards
         self.role = None  # set by run() once detected; published in telemetry for lib/fleet_upgrade.py
         self.current_target = None
         self.current_target_key = None
@@ -173,10 +174,20 @@ class DroneController(
                 swallowed("drone.DroneController.get_current_tick: clock.tick", error)
         return 0
 
+    def set_intent(self, text):
+        """One-line job description (lib/fleet_intent.py describe()) carried
+        by every publish_telemetry() until replaced, cleared (None) or an
+        idle state (fleet_status.IDLE_STATES) ends the job."""
+        if text != self.intent:
+            self.log.debug(f"[{self.name}] intent: {text!r}.")
+        self.intent = text
+
     def publish_telemetry(self, state, target_desc=None):
         """Publishes live drone status to the shared fleet.status archive dict
         (lib/fleet_status.py), same shape as VehicleController.publish_telemetry()."""
         self.state = state
+        if state in fleet_status.IDLE_STATES:
+            self.intent = None
         curr_wh, cap_wh, lvl = self.get_battery()
         pos = self.position()
         telemetry = {
@@ -189,6 +200,7 @@ class DroneController(
             "engine": self.engine,
             "level": round(lvl, 2),
             "target": target_desc or (self.current_target.get("name") if self.current_target else "none"),
+            "intent": self.intent,
             "role": self.role,
             "tick": self.get_current_tick(),
         }

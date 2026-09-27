@@ -131,6 +131,7 @@ class DroneScoutMixin:
                     continue
 
                 log.print(f"[{self._host.name}] Flying to POI {target} to scan.")
+                self._host.set_intent(f"scouting poi_{target[0]}_{target[1]}")
                 self._host.publish_telemetry("OUTBOUND", f"poi_{target[0]}_{target[1]}")
                 log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
                 if not self._host.fly_to(target[0], target[1], precision=1.0):

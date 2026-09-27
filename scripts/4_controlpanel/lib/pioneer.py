@@ -13,6 +13,8 @@ from storage import take_item
 from version_guard import validate_game_version
 import mining_reservations
 import drill_sites
+import fleet_intent
+from outpost_mining import HOME_OUTPOST_ID
 from logistics_requests import PULL_DESTINATION_WILDCARDS
 from swallow import swallowed
 
@@ -251,6 +253,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
             self.log.level("error").print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")
             return False
 
+        self.set_intent(fleet_intent.describe("building", [kind or "blueprint"], at=f"{coords[0]:.0f},{coords[1]:.0f}" if coords else None))
         if coords:
             self.log.print(f"[{self.name}] Driving to construction site at {coords}...")
             if not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
@@ -822,6 +825,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin):
                     f"{target['harvest_item']} for {target['reason']} at {coords} "
                     f"(Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
                 )
+                self.set_intent(fleet_intent.describe("mining", [target["harvest_item"]], at=target["name"], root=fleet_intent.haul_root([target["harvest_item"]], HOME_OUTPOST_ID)))
                 self.publish_telemetry("OUTBOUND", target["name"])
 
                 # Step 4: Drive to target (using intermediate recharge stops if needed)

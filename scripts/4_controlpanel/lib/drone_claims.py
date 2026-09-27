@@ -32,7 +32,7 @@ DRONE_RECALL_KEY = "drone.recall"
 
 
 def is_drone_recalled(drone_name):
-    """Module-level so non-drone scripts (e.g. panel_5.py's DRONE FLEET card) can
+    """Module-level so non-drone scripts (e.g. drones_panel.py's DRONE FLEET card) can
     read a drone's recall flag without instantiating a DroneController."""
     recalls = archive.get(DRONE_RECALL_KEY, {}) or {}
     if not isinstance(recalls, dict):
@@ -151,7 +151,7 @@ class DroneClaimsMixin:
     def is_recalled(self):
         """
         True when the operator has set this drone's recall flag (the DRONE
-        FLEET card's toggle in panel_5.py, or a direct set_drone_recalled()
+        FLEET card's toggle in drones_panel.py, or a direct set_drone_recalled()
         call). Checked every loop cycle -- see handle_recall_if_active() --
         so an active mission is abandoned promptly rather than only at the
         next natural idle point.

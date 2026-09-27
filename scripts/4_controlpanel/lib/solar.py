@@ -3,7 +3,7 @@ from version_guard import validate_game_version
 
 # Shared Library for Solar Generator Automation
 # Pure closed-loop sun tracking -- Power Grid supervision (brownout
-# load-shedding, day/night calibration) is owned centrally by panel_1.py's
+# load-shedding, day/night calibration) is owned centrally by status_panel.py's
 # AUTOMATION section (lib/power.py's PowerGridManager, one instance per grid),
 # not by any individual solar generator -- see docs/AI_CHEATSHEET.md. With
 # supervision centralized in the Control Room panel, each generator handles

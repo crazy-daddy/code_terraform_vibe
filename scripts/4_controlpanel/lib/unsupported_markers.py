@@ -3,7 +3,7 @@
 # colored visual map markers on the Planet Map for all blacklisted contacts.
 # Promoted out of playground/mark_unsupported_targets.py (playground/ isn't
 # synced into the live game, so this never actually ran there) -- now callable
-# from the root mark_unsupported_targets.py entrypoint and from panel_1.py's
+# from the root mark_unsupported_targets.py entrypoint and from status_panel.py's
 # AUTOMATION section "Sync Unsupported" button.
 
 from archive import archive

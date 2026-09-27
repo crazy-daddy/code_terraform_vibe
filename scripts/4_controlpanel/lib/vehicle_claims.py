@@ -42,7 +42,7 @@ RECALL_KEY = "vehicle.recall"
 
 def is_vehicle_recalled(vehicle_name):
     """
-    Module-level so non-vehicle scripts (e.g. panel_2.py's Fleet card) can
+    Module-level so non-vehicle scripts (e.g. vehicles_panel.py's Fleet card) can
     read a vehicle's recall flag without instantiating a VehicleController.
     """
     recalls = archive.get(RECALL_KEY, {}) or {}
@@ -141,7 +141,7 @@ class VehicleClaimsMixin:
     def is_recalled(self):
         """
         True when the operator has set this vehicle's recall flag (the Fleet
-        card's toggle in panel_2.py, or a direct set_vehicle_recalled() call).
+        card's toggle in vehicles_panel.py, or a direct set_vehicle_recalled() call).
         Checked every loop cycle -- see handle_recall_if_active() -- so an
         active mission is abandoned promptly rather than only at the next
         natural idle point.

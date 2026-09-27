@@ -95,6 +95,7 @@ class VehicleController(
 
         # State tracking
         self.state = "INIT"
+        self.intent = None  # set_intent(); published in telemetry for the fleet cards
         self.current_target = None
         self.current_target_key = None
         # True only while current_target_key holds a home-demand mine-type
@@ -165,10 +166,20 @@ class VehicleController(
                 swallowed("vehicle.VehicleController.get_current_tick: clock.tick", error)
         return 0
 
+    def set_intent(self, text):
+        """One-line job description (lib/fleet_intent.py describe()) carried
+        by every publish_telemetry() until replaced, cleared (None) or an
+        idle state (fleet_status.IDLE_STATES) ends the job."""
+        if text != self.intent:
+            self.log.debug(f"[{self.name}] intent: {text!r}.")
+        self.intent = text
+
     def publish_telemetry(self, state, target_desc=None):
         """Publishes live vehicle status to the shared fleet.status archive dict (lib/fleet_status.py)."""
         self.log.trace(f"[{self.name}] publish_telemetry(state={state!r}, target_desc={target_desc!r}) called.")
         self.state = state
+        if state in fleet_status.IDLE_STATES:
+            self.intent = None
         curr_wh, cap_wh, lvl = self.get_battery()
         pos = self.get_position()
         telemetry = {
@@ -179,6 +190,7 @@ class VehicleController(
             "wh": round(curr_wh, 1),
             "level": round(lvl, 2),
             "target": target_desc or (self.current_target["name"] if self.current_target else "none"),
+            "intent": self.intent,
             "tick": self.get_current_tick()
         }
         wrote = fleet_status.publish(self.name, telemetry)

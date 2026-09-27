@@ -76,7 +76,7 @@ NIGHT_DURATION_HOURS = 24.0 - SUNSET_HOUR + SUNRISE_HOUR  # 10.08, exact and con
 class PowerGridManager:
     """
     Supervises a single power grid -- one instance per grid, owned centrally by
-    panel_1.py's AUTOMATION section (see docs/AI_CHEATSHEET.md) rather than by
+    status_panel.py's AUTOMATION section (see docs/AI_CHEATSHEET.md) rather than by
     any individual generator, so there's no Master/Follower election needed:
     - Monitors generation, consumption, and battery storage directly via PowerGrid snapshot.
     - Calibrates day/night cycles and historical overnight energy usage.

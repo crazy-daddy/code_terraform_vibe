@@ -1,5 +1,6 @@
+# ct-panel: automation_panel
 # Control Room automation CALCULATOR -- headless, draws nothing. See
-# panel_1.py for the actual STATUS/AUTOMATION card UI, which reads this
+# status_panel.py for the actual STATUS/AUTOMATION card UI, which reads this
 # script's results back out of `archive`.
 #
 # Split out because this game has no true background/daemon script type -- a
@@ -15,30 +16,14 @@
 # no known threshold under which an occasional multi-second stall is safe for
 # a script that also renders every tick, so the fix is structural: keep this
 # process entirely headless (no panel.* calls at all) and publish its results
-# to `archive` for panel_1.py to display instead of drawing them directly --
+# to `archive` for status_panel.py to display instead of drawing them directly --
 # same Archive-as-decoupling-channel pattern CLAUDE.md calls for when a
 # result can't be produced by the component that has to display it.
 #
-# NOTE ON THE FILE NUMBER: this script started life as panel_1.py (the first
-# Custom Panel on any save, hence the natural original home for a
-# "guaranteed to keep running" process). In the LIVE SAVE it's panel_7.py
-# instead -- Custom Panel ids only ever increment (deleting one never frees
-# its number) and cards can't be drag-reordered in the Control Room UI, so
-# getting the UI card into the visually-first slot meant recreating it at
-# panel_1 and moving this (position-agnostic, since it draws nothing)
-# calculator to whatever number was free.
-#
-# In this SOURCE TREE it's named panel_4.py instead (cosmetic renumbering to
-# panel_1..4 across the four real Control Room scripts, done when scripts/
-# was split into tiers -- see docs/AI_CHEATSHEET.md §9). That's deliberately
-# decoupled from the live-save slot number above; devtools/scripts_sync.py
-# does NOT currently bridge the two (see TODO.md's "Panel dev-side numbering
-# vs. save-side slot numbers"), so this file only re-deploys correctly today
-# because the save's panel_7.py already has code and is never re-synced.
-#
-# See docs/AI_CHEATSHEET.md §7's panel-numbering-quirk note for the current
-# full mapping -- it WILL drift again if panels are added/removed in-game,
-# so verify against the operator before trusting it.
+# SLOT NUMBER: the game picks Custom Panel ids itself (ids only increment,
+# cards can't be drag-reordered), so this file's live panel_N slot differs
+# per save. devtools/scripts_sync.py pairs the slot with this file by the
+# ct-panel marker on line 1 -- see docs/cheatsheet/panels.md §7.
 #
 # Responsibilities (see docs/AI_CHEATSHEET.md):
 #   - Power Grid supervision (brownout load-shedding, day/night calibration)
@@ -66,7 +51,7 @@
 # longer do any of this themselves -- it's a hard dependency on this script
 # running (see legacy/README.md for pre-Control-Room saves). The manual
 # "Clean Archive"/"Sync Unsupported"/"Confirm New Version" buttons live on
-# panel_1.py instead -- they're rare, user-triggered one-offs, not the
+# status_panel.py instead -- they're rare, user-triggered one-offs, not the
 # chronic per-cycle cost that forced this script headless.
 
 from archive import archive
@@ -81,10 +66,10 @@ from fleet_upgrade import FleetUpgradeCoordinator
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
-# Published each time the storage-tick automation runs; panel_1.py reads this
+# Published each time the storage-tick automation runs; status_panel.py reads this
 # to display the "ALWAYS-ON" line instead of computing it itself. Left
 # untouched (not overwritten) while version_mismatch() halts automation below,
-# same as the old combined script did -- panel_1.py shows its own fixed
+# same as the old combined script did -- status_panel.py shows its own fixed
 # "halted" message in that case rather than trusting a stale summary.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 

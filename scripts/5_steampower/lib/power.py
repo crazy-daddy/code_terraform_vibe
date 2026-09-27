@@ -2,7 +2,7 @@
 #
 # Replaces 4_controlpanel's lib/power.py from this tier up. Same import
 # surface (PowerGridManager with supervise_grid()/release_all(), and
-# DAY_CYCLE_DURATION_SECONDS for lib/production.py), so panel_4.py drives it
+# DAY_CYCLE_DURATION_SECONDS for lib/production.py), so automation_panel.py drives it
 # unchanged.
 #
 # Why a rewrite instead of a patch: the old manager modelled "night" as
@@ -72,7 +72,7 @@ EMERGENCY_RESTORE_FRACTION = 0.25
 # Gas Tanks normally appear in grid.members (buildings at a connected outpost
 # are members with an empty roles list). The outpost walk below is only a
 # fallback for when they do not; throttle it, in supervise_grid() calls
-# (~1s each from panel_4.py).
+# (~1s each from automation_panel.py).
 TANK_FALLBACK_SCAN_INTERVAL_CALLS = 60
 
 # Today's running snapshot lives in memory; it is written to the archive on
@@ -404,7 +404,7 @@ class PowerGridManager:
 
     # ------------------------------------------------------------------
     def supervise_grid(self, grid, elevation=None):
-        """One supervision cycle. `elevation` is accepted for panel_4.py's
+        """One supervision cycle. `elevation` is accepted for automation_panel.py's
         call signature and ignored -- sun position no longer matters here."""
         if not grid:
             return

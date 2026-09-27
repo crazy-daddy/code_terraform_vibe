@@ -18,6 +18,7 @@ from storage import total_stock
 from archive import archive
 import outpost_mining
 import mining_reservations
+import fleet_intent
 from swallow import swallowed
 from typing import TYPE_CHECKING
 
@@ -590,6 +591,8 @@ class VehicleMiningMixin:
             f"[{self._host.name}] Reserved {target['name']} to stockpile {target['harvest_item']} "
             f"for outpost '{outpost_id}' at {coords} (Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
         )
+        root = fleet_intent.haul_root([target["harvest_item"]], outpost_id) or f"{outpost_id} stock"
+        self._host.set_intent(fleet_intent.describe("mining", [target["harvest_item"]], at=target["name"], root=root))
         self._host.publish_telemetry("OUTBOUND", target["name"])
 
         reached = self._host.drive_with_recharge(coords[0], coords[1])

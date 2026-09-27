@@ -17,6 +17,7 @@ import mining_reservations
 import logistics_requests
 import drill_sites
 import pump_salt
+import fleet_intent
 from swallow import swallowed
 from typing import TYPE_CHECKING
 
@@ -443,6 +444,9 @@ class VehicleCargoMixin:
                     self._reserve_home_haul(haul_amounts)
 
                 dest_coords = dest_outpost.coords()
+                dest_label = dest_outpost_id or "outpost_home"
+                aboard = self._cargo_totals()
+                self._host.set_intent(fleet_intent.describe("hauling", aboard, self._host.home_base, dest_label, fleet_intent.haul_root(aboard, dest_label)))
                 self._host.publish_telemetry("OUTBOUND", "delivering mixed cargo to the destination outpost")
                 if not self._host.drive_with_recharge(dest_coords[0], dest_coords[1]):
                     self._host.log.level("warn").print(f"[{self._host.name}] Could not reach the destination outpost this cycle; will retry.")
@@ -478,6 +482,7 @@ class VehicleCargoMixin:
                 self._host.publish_telemetry("CHARGING_AT_BASE")
                 self._host.recharge_at_station(target_level=1.0)
 
+                self._host.set_intent(None)
                 self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}'")
                 if self._host.return_to_base():
                     self._host.recharge_at_station(target_level=1.0)
@@ -861,6 +866,9 @@ class VehicleCargoMixin:
                     for item_id, amount in loads:
                         planned_totals[item_id] = planned_totals.get(item_id, 0) + amount
                 self._reserve_pull_yield(planned_totals, curr_tick)
+                source_ids = [src["id"] for src, _loads in route]
+                source_label = source_ids[0] + (f" +{len(source_ids) - 1}" if len(source_ids) > 1 else "")
+                self._host.set_intent(fleet_intent.describe("hauling", planned_totals, source_label, home_id, fleet_intent.haul_root(planned_totals, home_id, curr_tick)))
                 self._host.log.start(f"[{self._host.name}] Pull trip: " + " -> ".join(legs))
 
                 loaded_totals = {item_id: 0 for item_id in planned_totals}
@@ -894,6 +902,10 @@ class VehicleCargoMixin:
 
     def _finish_pull_delivery(self, poll_interval):
         """Drives home, unloads, releases this vehicle's pickup debits and recharges."""
+        if not self._host.intent:
+            home_id = getattr(self._host.home_outpost, "id", None)
+            aboard = self._cargo_totals()
+            self._host.set_intent(fleet_intent.describe("hauling", aboard, dest=home_id, root=fleet_intent.haul_root(aboard, home_id)))
         self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}' with pickups")
         if not self._host.return_to_base():
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach home to unload; will retry.")

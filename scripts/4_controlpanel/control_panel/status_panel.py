@@ -1,13 +1,14 @@
+# ct-panel: status_panel
 # Control Room status + automation card: clock, power, storage, actionable
-# warnings (STATUS), plus a live view of panel_7.py's automation results
+# warnings (STATUS), plus a live view of automation_panel.py's automation results
 # (AUTOMATION) -- see docs/AI_CHEATSHEET.md §7.
 #
-# panel_7.py is the actual "always-on" worker (grid supervision, rebalance
+# automation_panel.py is the actual "always-on" worker (grid supervision, rebalance
 # sweep, outpost sync, Supply Dock planning) -- it runs headless, with no
 # panel.* calls of its own. Split out this way because a multi-second
 # synchronous call (supply_dock.plan_dock_assignments()) inside a per-tick
 # UI-rendering loop leaves the Custom Panel canvas blank permanently, while
-# the script keeps running underneath and no error is raised. panel_7.py publishes its result summary to
+# the script keeps running underneath and no error is raised. automation_panel.py publishes its result summary to
 # `archive` (AUTOMATION_SUMMARY_KEY below) for this card to read and display
 # instead -- same Archive-as-decoupling-channel pattern CLAUDE.md calls for
 # when a result can't be produced by the component that has to display it.
@@ -15,18 +16,13 @@
 # Everything drawn here (STATUS's clock/power/storage/alerts, the version
 # gate, and the manual buttons) is either a cheap single-call component read
 # or a rare user-triggered one-off -- none of it is the chronic per-cycle
-# cost that forced panel_7.py to go headless, so it stays inline in this UI
+# cost that forced automation_panel.py to go headless, so it stays inline in this UI
 # script rather than being routed through archive too.
 #
-# NOTE ON THE FILE NUMBER: this UI card was originally panel_4.py and the
-# calculator was panel_1.py -- they're swapped from that because Custom Panel
-# ids only ever increment (deleting one never frees its number) and cards
-# can't be drag-reordered in the Control Room UI, so getting this UI card
-# into the visually-first slot meant recreating it at panel_1 and moving the
-# (position-agnostic, since it draws nothing) calculator to whatever number
-# was free instead. See docs/AI_CHEATSHEET.md §7's panel-numbering-quirk note
-# for the current full mapping -- it WILL drift again if panels are
-# added/removed in-game, so verify against the operator before trusting it.
+# SLOT NUMBER: the game picks Custom Panel ids itself (ids only increment,
+# cards can't be drag-reordered), so this file's live panel_N slot differs
+# per save. devtools/scripts_sync.py pairs the slot with this file by the
+# ct-panel marker on line 1 -- see docs/cheatsheet/panels.md §7.
 # Recommended card size: 2 columns x 2 rows -- see docs/AI_CHEATSHEET.md.
 
 from archive import archive
@@ -36,12 +32,12 @@ from version_guard import version_mismatch, good_version, confirm_new_version
 from swallow import swallowed
 from biomass_retire import retire_state, sell_retired_machines
 
-# Must match panel_7.py's own AUTOMATION_SUMMARY_KEY.
+# Must match automation_panel.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 
 # Loop-scoped state, created once and persisting across iterations (this
 # script is one continuous while-loop process, not re-invoked per tick --
-# same pattern panel_2.py uses for its scroll_label).
+# same pattern vehicles_panel.py uses for its scroll_label).
 last_cleaner_stats = None
 last_unsupported_count = None
 last_biomass_sale = None
@@ -111,7 +107,7 @@ while True:
             panel.draw_text(col4 + 18, y + 5, alert, 10, "text-secondary", width * 0.18)
 
     # ------------------------------------------------------------------
-    # AUTOMATION -- a live view of panel_7.py's headless worker (see module
+    # AUTOMATION -- a live view of automation_panel.py's headless worker (see module
     # docstring). This card does not itself run any of that automation; the
     # buttons below are the one exception (rare, user-triggered one-offs).
     # ------------------------------------------------------------------
@@ -119,7 +115,7 @@ while True:
     panel.card(8, auto_y, width - 16, height - auto_y - 8, "AUTOMATION")
 
     # ------------------------------------------------------------------
-    # VERSION SAFETY GATE -- see lib/version_guard.py. panel_7.py's own
+    # VERSION SAFETY GATE -- see lib/version_guard.py. automation_panel.py's own
     # automation loop checks version_mismatch() independently and halts its
     # own mutating work; this card just surfaces the same gate and the
     # confirm button so the operator can always reach it.
@@ -149,7 +145,7 @@ while True:
             try:
                 last_cleaner_stats = ArchiveCleaner(dry_run=False, verbose=True).run()
             except Exception as e:
-                swallowed("panel_1: ArchiveCleaner(dry_run=False, verbose=True).run", e)
+                swallowed("status_panel: ArchiveCleaner(dry_run=False, verbose=True).run", e)
                 last_cleaner_stats = {"error": str(e)}
         if last_cleaner_stats is not None:
             scanned = last_cleaner_stats.get("keys_scanned", "-")
@@ -161,14 +157,14 @@ while True:
             try:
                 last_unsupported_count = update_unsupported_markers(clear_previous=True)
             except Exception as e:
-                swallowed("panel_1: update_unsupported_markers", e)
+                swallowed("status_panel: update_unsupported_markers", e)
                 last_unsupported_count = -1
         if last_unsupported_count is not None:
             summary = "error" if last_unsupported_count < 0 else f"{last_unsupported_count} marker(s) placed"
             panel.label(btn2_x, btn_y + 34, summary, "muted")
 
         # Biomass chain sale (lib/biomass_retire.py): drawn only once biomass is
-        # complete and every Liquifier/Mixer is drained (panel_4.py publishes
+        # complete and every Liquifier/Mixer is drained (automation_panel.py publishes
         # readiness). Undeploys and sells them -- operator-triggered only.
         retire = retire_state()
         if retire.get("complete"):
@@ -178,7 +174,7 @@ while True:
                     try:
                         last_biomass_sale = sell_retired_machines()
                     except Exception as e:
-                        swallowed("panel_1: sell_retired_machines", e)
+                        swallowed("status_panel: sell_retired_machines", e)
                         last_biomass_sale = f"error: {e}"
             line = last_biomass_sale or retire.get("last_sale") or retire.get("status", "")
             panel.draw_text(btn3_x, btn_y + (40 if retire.get("ready") else 14), str(line), 10, "text-secondary", width - btn3_x - 24)

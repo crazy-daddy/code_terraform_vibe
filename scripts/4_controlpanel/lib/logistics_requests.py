@@ -42,7 +42,7 @@ log = TreeConsole(module="logistics_requests")
 
 REQUESTS_KEY = "logistics.requests"
 PICKUPS_KEY = "logistics.pickups"
-# Operator switch (panel_2.py FLEET card): when True, ground pull haulers
+# Operator switch (vehicles_panel.py FLEET card): when True, ground pull haulers
 # leave drone-servable pickups to floating drone haulers (drone_served_source()).
 DRONE_YIELD_KEY = "logistics.drone_yield"
 

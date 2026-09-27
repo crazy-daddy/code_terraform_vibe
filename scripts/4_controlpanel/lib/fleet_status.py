@@ -1,8 +1,8 @@
 # Shared live-telemetry dict for every ground vehicle and drone. One archive
-# key "fleet.status" = {name: {name, state, x, y, wh, level, target, tick}}
+# key "fleet.status" = {name: {name, state, x, y, wh, level, target, intent, tick}}
 # instead of one key per vehicle -- the Data Archive has a fixed key-count cap
 # (CLAUDE.md rule 7). Written by VehicleController/DroneController
-# publish_telemetry(); intended as the data source for a future fleet panel.
+# publish_telemetry(); the FLEET/DRONE FLEET cards read "intent" from it.
 #
 # Replaces three legacy per-entity families: fleet.status.<id> plus the exact
 # duplicates rover.status.<id> (rovers) and drone.status.<id> (drones).
@@ -23,6 +23,11 @@ LEGACY_FLEET_STATUS_PREFIXES = ("fleet.status.", "rover.status.", "drone.status.
 # script apart from an idle one) at most this often. Any changed field
 # (state, position, battery, target) publishes immediately. 50 ticks ~= 5 s.
 FLEET_STATUS_MIN_INTERVAL_TICKS = 50
+
+# publish_telemetry() states that end a job: the controller's intent (one
+# line from lib/fleet_intent.py describe(), shown on the fleet cards) is
+# cleared on them.
+IDLE_STATES = ("IDLE", "IDLE_AT_OUTPOST", "IDLE_AT_BASE", "READY_AT_OUTPOST", "RECALLED", "AWAITING_MODULES", "SURVEY_COMPLETE", "UPGRADE_HOLD")
 
 # name -> (payload without "tick", tick last written). Per script process.
 _last_published = {}

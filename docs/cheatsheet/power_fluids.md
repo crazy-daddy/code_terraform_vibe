@@ -37,7 +37,7 @@ Same import surface (`PowerGridManager.supervise_grid(grid, elevation)` / `relea
 
 ### 1a-1. Centralized Grid Ownership (headless automation panel, no Master/Follower election)
 
-Headless automation panel AUTOMATION section (§7 — `panel_4.py` in source tree) = single always-running process, owns grid supervision directly, one `PowerGridManager` per grid, no election.
+Headless automation panel AUTOMATION section (§7 — `automation_panel.py` in source tree) = single always-running process, owns grid supervision directly, one `PowerGridManager` per grid, no election.
 
 - **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param.
   `grid` (initial snapshot) required, binds `self.grid_anchor` at construction — identity fixed for manager lifetime; only per-call snapshot (stored/capacity/consumed) must be fresh each call.

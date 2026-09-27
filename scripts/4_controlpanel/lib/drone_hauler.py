@@ -38,6 +38,7 @@ import logistics_requests
 import mining_reservations
 import depot_stage
 import drill_sites
+import fleet_intent
 from archive import archive
 from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
@@ -719,6 +720,7 @@ class DroneHaulerMixin:
         self._note_success("dest", dest_id)
         self._release_all()
         self._host.clear_mission()
+        self._host.set_intent(None)
         # Docked and empty: the one moment couple()/uncouple() can run.
         self._host.maintain_modules_at_depot()
         self._host.leave_station()
@@ -743,6 +745,7 @@ class DroneHaulerMixin:
             logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, units, curr_tick)
         self._reserve_yield(self._outposts_by_id().get(dest_id), contents, curr_tick)
         self._save_haul_mission(dest_id)
+        self._host.set_intent(fleet_intent.describe("hauling", contents, dest=dest_id, root=fleet_intent.haul_root(contents, dest_id, curr_tick)))
         services = self._host.get_all_drone_services()
         dest_coords = next((d["coords"] for d in self._host.get_all_drone_depots() if d.get("outpost_id") == dest_id), self._host.position())
         needed = self._route_fuel([self._host.position(), dest_coords], services)
@@ -861,6 +864,9 @@ class DroneHaulerMixin:
                 planned[item_id] = planned.get(item_id, 0) + amount
         self._reserve_yield(dest["outpost"], planned, curr_tick)
         self._save_haul_mission(dest_id)
+        source_ids = [source["id"] for source, _loads in route]
+        source_label = source_ids[0] + (f" +{len(source_ids) - 1}" if len(source_ids) > 1 else "")
+        self._host.set_intent(fleet_intent.describe("hauling", planned, source_label, dest_id, fleet_intent.haul_root(planned, dest_id, curr_tick)))
         self._host.log.start(f"[{self._host.name}] Haul job -> '{dest_id}': " + " -> ".join(legs))
 
         loaded = {i: 0 for i in planned}
@@ -883,5 +889,6 @@ class DroneHaulerMixin:
         if total <= 0:
             self._release_all()
             self._host.clear_mission()
+            self._host.set_intent(None)
             return
         self._deliver(dest_id)

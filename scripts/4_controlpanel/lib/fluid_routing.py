@@ -412,13 +412,30 @@ def warn_about_unassigned_tanks(curr_tick):
         if not (hasattr(building, "fluid") and _safe_fluid(building)) and building.id not in get_tank_assignments()
     })
     if blocked:
+        _add_blank_tank_assignments(blocked)
         message = (
             f"{len(blocked)} tank(s) are idle -- not latched to any fluid and not in "
             f"fluid_routing.tank_assignments, so no router will connect to them: {blocked} -- "
-            "designate them in the Data Archive Notebook (see docs/AI_CHEATSHEET.md)."
+            "fill in their blank \"\" entries in the Data Archive Notebook (see docs/AI_CHEATSHEET.md)."
         )
         log.level("warn").print(message)
         notify(message)
+
+
+def _add_blank_tank_assignments(building_ids):
+    """Adds a blank "" tank_assignments entry for every id in building_ids that has no entry yet, so
+    the operator only has to type the fluid id into the Notebook. A blank entry still counts as
+    unassigned (get_tank_assignments() drops empty and non-string values), and an existing entry --
+    blank or filled -- is never overwritten."""
+    def updater(stored):
+        stored = dict(stored) if isinstance(stored, dict) else {}
+        missing = [b_id for b_id in building_ids if b_id not in stored]
+        for b_id in missing:
+            stored[b_id] = ""
+        if missing:
+            log.debug(f"_add_blank_tank_assignments: added blank entries for {missing}")
+        return stored
+    archive.transaction(TANK_ASSIGNMENTS_KEY, {}, updater)
 
 
 def _safe_fluid(building):

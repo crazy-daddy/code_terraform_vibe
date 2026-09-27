@@ -58,6 +58,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `vehicle_mining.py` — shared Rover + Pioneer; see §2b |
 | &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
 | &nbsp;&nbsp;↳ shared live telemetry dict `fleet.status` (vehicles + drones) | `fleet_status.py` — see §4 |
+| &nbsp;&nbsp;↳ job intent line + demand-root attribution ("hauling X from A to B for supply_dock_1") | `fleet_intent.py` — see §4 |
 | &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `vehicle_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1 |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; **no** shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
@@ -80,8 +81,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ miner role loop (biosite extraction) | `drone_mining.py` |
 | &nbsp;&nbsp;↳ floating hauler role loop (drills and Depot outposts → Depots, no home) | `drone_hauler.py` — see §2j |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
-| Fleet hardware upgrade coordinator (Depot + drone chassis swaps), run by headless `panel_4.py` | `fleet_upgrade.py` — see §2k |
-| Warehouse pair → Large Warehouse swap (buy, deploy, greedy drain, undeploy, sell), run by headless `panel_6.py` | `warehouse_upgrade.py` — see §2k-1 |
+| Fleet hardware upgrade coordinator (Depot + drone chassis swaps), run by headless `automation_panel.py` | `fleet_upgrade.py` — see §2k |
+| Warehouse pair → Large Warehouse swap (buy, deploy, greedy drain, undeploy, sell), run by headless `warehouse_upgrade_panel.py` | `warehouse_upgrade.py` — see §2k-1 |
 | Drone Service Station (charging/refuelling/rescue) | `drone_service.py` — see §2h |
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |
@@ -102,8 +103,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Oil Generator (last-resort power) | `oil_generator.py` — see §1c-1 (tier 5+) |
 | Essence Liquifier (Depot → sample feed, essence → Liquid Tank) | `essence_liquifier.py` — see §1h (tier 5+) |
 | Biomass Mixer (keep all five essence inputs sourced) | `biomass_mixer.py` — see §1h (tier 5+) |
-| Biomass Mixer duty-cycle gate (breaker pause until all expected essences refilled) | `biomass_mixer_gate.py` — see §1h (lives in tier 5 lib, deployed from `2_libunlock` on like every new-only module; driven by the single `panel_4.py`, idles without Mixers) |
-| Biomass completion: retire Liquifiers/Mixers, sell button | `biomass_retire.py` — see §1h-1 (tier 5 lib; imported by `drone_mining.py`/`drone_depot.py`/`panel_1.py`/`panel_4.py`) |
+| Biomass Mixer duty-cycle gate (breaker pause until all expected essences refilled) | `biomass_mixer_gate.py` — see §1h (lives in tier 5 lib, deployed from `2_libunlock` on like every new-only module; driven by the single `automation_panel.py`, idles without Mixers) |
+| Biomass completion: retire Liquifiers/Mixers, sell button | `biomass_retire.py` — see §1h-1 (tier 5 lib; imported by `drone_mining.py`/`drone_depot.py`/`status_panel.py`/`automation_panel.py`) |
 | Waste Processor (destroy surplus at its outpost, today life forms after biomass completion) | `waste_sink.py` — see §1h-1 (tier 5) |
 | Shared network-wide fluid-target discovery/blacklist/reconnect | `fluid_routing.py` — `FluidOutputRouter` (`thermal_cap.py`/`fluid_pump.py`/`essence_liquifier.py`), `FluidInputRouter` (`steam_turbine.py`/`fabricator.py`/`biomass_mixer.py`/`oil_generator.py`); see §1b |
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
@@ -115,7 +116,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
 
-Root executable scripts (`solar_1.py`, `rover_1.py`, `panel_4.py`, etc.) stay thin entrypoints: import + run controller from `lib/`. No own copies of tier lists, thresholds, budgeting formulas.
+Root executable scripts (`solar_1.py`, `rover_1.py`, `automation_panel.py`, etc.) stay thin entrypoints: import + run controller from `lib/`. No own copies of tier lists, thresholds, budgeting formulas.
 
 **No real stdlib — only short allowlist of "executable built-in modules"** (`docs/guide/programming_language_reference.md`'s "Imports & Libraries" section authoritative; re-check before any import, don't assume ordinary Python). **Only** executable modules: `random` (`randint`/`rand`/`random()`, also bare global helpers), `re` (regex — `re.escape` unavailable), `functools` (`reduce`, `total_ordering`), `dataclasses` (`dataclass`, `field`). Nothing else. None are real system libs — small in-game reimplementation exposing just those names, not CPython modules. `math`, `sys`, `os`, `json`, `time`, `itertools`, `collections` (concrete module), etc. **don't** exist at runtime. `typing`, `types`, `collections.abc`, `user_stubs` exist ONLY for editor/Pyright annotations — erased at runtime (`typing.TYPE_CHECKING` always `False` in-game). **Need stdlib thing (ceiling division, etc.) → write plain arithmetic by hand, don't import** — see `lib/production.py`'s `_ceil()` pattern instead of `math.ceil()`.
 

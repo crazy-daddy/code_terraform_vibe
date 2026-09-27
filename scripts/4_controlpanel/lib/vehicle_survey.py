@@ -349,6 +349,7 @@ class VehicleSurveyMixin:
             self.current_target_key = target_key
             self.current_target = {"coords": target, "name": target_key, "type": "poi"}
             self._host.save_mission("poi_survey", self.current_target)
+            self._host.set_intent(f"surveying POI_{target[0]}_{target[1]}")
             self._host.publish_telemetry("SURVEY_POI", f"POI_{target[0]}_{target[1]}")
             self._host.log.print(f"[{self._host.name}] Surveying known {target_label} at {target} ({self._host.distance_between(current_pos, target):.1f} m leg).")
             if not self._host.drive_to(target[0], target[1]):
@@ -442,6 +443,7 @@ class VehicleSurveyMixin:
                         self._host.log.print(f"[{self._host.name}] Spiral boundary reached at ({target_x:.1f}, {target_y:.1f}); returning home.")
                         break
 
+                    self._host.set_intent(f"surveying waypoint {target_x:.0f},{target_y:.0f}")
                     self._host.publish_telemetry("SURVEY_OUTBOUND", f"{target_x:.1f},{target_y:.1f}")
                     if not self._host.drive_to(target_x, target_y):
                         self._host.log.level("warn").print(f"[{self._host.name}] Could not safely reach spiral waypoint; returning home.")

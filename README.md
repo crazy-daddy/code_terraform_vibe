@@ -28,7 +28,7 @@ scripts/                    # source of truth for every deployable script and li
 
 devtools/
   scripts_sync.py            # syncs scripts/ into a live save folder's script slots
-  dap_client.py              # minimal Debug Adapter Protocol client, used by scripts_sync.py --auto
+  dap_client.py              # minimal Debug Adapter Protocol client for scripted debug sessions
   split_docs_manual.py       # regenerates docs/ split files from a new in-game DOCS Manual export
   _migrate_from_root.py      # one-off migration script (kept for reference)
 
@@ -45,7 +45,7 @@ docs/AI_CHEATSHEET.md        # single source of truth for formulas, constants, m
 
 Tier 5 (`5_steampower`) is the first tier gated on built buildings rather than research: it
 carries the steam-aware power guard (`lib/power.py`, overriding tier 4's), the Essence Liquifier /
-Biomass Mixer controllers and the Mixer duty-cycle gate, plus the `panel_4.py` card that drives the
+Biomass Mixer controllers and the Mixer duty-cycle gate, plus the `automation_panel.py` card that drives the
 gate. See `docs/AI_CHEATSHEET.md` §1a-0 and §9.
 
 ### Why tiers?

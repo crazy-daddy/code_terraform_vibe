@@ -9,8 +9,8 @@
 # a build change only takes effect on the next script (re)start, same as the
 # game itself.
 #
-# Resumes as soon as the operator clicks "Confirm New Version" on panel_1
-# (see panel_1.py), which records the new build as good and broadcasts on
+# Resumes as soon as the operator clicks "Confirm New Version" on status_panel
+# (see status_panel.py), which records the new build as good and broadcasts on
 # VERSION_CONFIRMED_CHANNEL so every waiting script wakes immediately
 # instead of polling. Falls back to polling archive directly if the Signal
 # Bus ("comms") is unavailable or not yet researched.
@@ -39,7 +39,7 @@ def version_mismatch():
 
 
 def confirm_new_version():
-    """Operator-triggered (panel_1's "Confirm New Version" button): records the
+    """Operator-triggered (status_panel's "Confirm New Version" button): records the
     running build as good and wakes every script blocked in validate_game_version()."""
     current = get_game_version()
     archive.set(GOOD_VERSION_KEY, current)
@@ -54,7 +54,7 @@ def validate_game_version():
     Call once at controller startup, immediately before entering its run()
     loop -- not on every tick. Blocks (without busy-looping) while the
     running game build no longer matches the last confirmed-good version.
-    Resumes as soon as the operator confirms on panel_1, or returns
+    Resumes as soon as the operator confirms on status_panel, or returns
     immediately if there is no mismatch.
     """
     if not version_mismatch():
@@ -64,7 +64,7 @@ def validate_game_version():
     log.debug(f"validate_game_version: mismatch confirmed, current={get_game_version()!r} last_good={good_version()!r} match={get_game_version() == good_version()}")
     log.level("warn").print(
         f"Game version changed ({good_version()} -> {get_game_version()}); "
-        f"halted until confirmed on panel_1's AUTOMATION card."
+        f"halted until confirmed on status_panel's AUTOMATION card."
     )
     comms = get_component("comms")
     while version_mismatch():

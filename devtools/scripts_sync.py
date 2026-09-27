@@ -33,13 +33,33 @@ differences documented in the plan this came from:
 
     python devtools/scripts_sync.py status          # show what maps to what
     python devtools/scripts_sync.py once             # one pass over what is there now
-    python devtools/scripts_sync.py watch            # keep running and fill files as they appear
+    python devtools/scripts_sync.py watch            # keep running and push changes as they happen
+
+scripts/ is the only source of truth. Every save slot with a confident match
+(see below) is overwritten with its resolved source whenever the two differ
+(old copy backed up to devtools/.sync-backups/), then restarted in game over
+the external-command channel (`"action": "run"`) if it was running or was
+just filled from empty. A slot whose imports reach a lib/ module the game
+hasn't applied yet (deployed file != the Library's `deployedSource` in
+codeterraform-workspace.json) is still pushed but not restarted: a restart
+would run the new script against the stale cached lib, and only the in-game
+"Apply & restart all" swaps that cache. `--no-restart` pushes only.
 
 Matching ignores a trailing `_<number>` (`bio_lab_1.py` matches `bio_lab.py`),
-except for machine types listed in DISTINCT_INSTANCES (currently just `panel`)
+except for machine types listed in ROLE_MATCHED (currently just `panel`),
 where each numbered instance is a genuinely distinct, hand-authored script
-(panel_1 does Power Grid supervision, panel_2 does FLEET Sport Nav, ...) and is
-matched by its exact name instead.
+(status card, vehicle fleet card, headless automation worker, ...) and the
+slot number is whatever the game happened to assign in that save. Source
+files for these are named by role (`vehicles_panel.py`, `drones_panel.py`)
+and start with a `# ct-panel: <role>` marker line. A save slot `panel_N.py`
+is paired with its source by, in order:
+  1. the `# ct-panel: <role>` marker in the slot's current code - every slot
+     filled from source carries it;
+  2. the slot's first comment line equal to a role source's first comment
+     line (after the marker) - bridges slots filled before markers existed;
+  3. an empty slot takes the one role no other slot of that type holds yet.
+     With several unpaired roles it is skipped with a warning; type the
+     `# ct-panel: <role>` line into it in game to choose.
 
 No duplicate files across tiers: for a given category/base_name, the resolver
 walks tiers from the active one down to `0_cold_boot` and uses the first file
@@ -53,10 +73,9 @@ resolves. Use it for scripts that are genuinely tech-independent and
 self-contained (no `lib/` imports) - contracts are the motivating case.
 
 An empty game file with no match is staged into `scripts/_unmatched/` (never
-used as a source) exactly as in vakermit's tool - see its docstring for the
-fill/pull marker mechanics (`synctool-fill` / `synctool-pull` here, renamed
-from `xyz`/`zyx` to avoid confusion with two unrelated tools sharing tokens),
-renumbering, and the "already has code" guard, all ported unchanged.
+used as a source): write the script there, then move it into a category.
+A slot with code and no match is left alone. Filling renumbers the source's
+own instance id to the slot's (see renumber()).
 
 A newly built (or newly re-equipped) machine's script slot exists in the
 game's own `codeterraform-workspace.json` (`context.scripts`, sibling of the
@@ -67,17 +86,19 @@ files (as `watch` otherwise does) can never see such a slot - there is
 nothing to watch yet. `materialize_missing_slots()` polls that JSON instead
 (every 5s in `watch`, once up front in `once`) and writes a real `.py` file
 for any slot missing one, using the JSON's own live `source` text - never a
-blank stub, so an actually-running script that just hadn't had a file
-written for it yet is never clobbered. Once materialized, the slot flows
-through the normal fill pipeline like any other file.
+blank stub. Once materialized, the slot flows through the normal push
+pipeline like any other file.
 
 A source script may itself contain `${VAR}` / `${VAR:default}` placeholders
 (same syntax as `early_game_runner/auto_deploy.py`'s substitution, kept
 identical on purpose) for values only the operator knows at deploy time -
-e.g. `pioneer.py`'s destination outpost. `sync_file()` prompts for these
-interactively the first time a given save slot needs them and remembers the
-answer in `devtools/.sync-backups/script_params.json` (gitignored) so
-re-filling the same slot later doesn't re-ask.
+e.g. `pioneer.py`'s destination outpost. `sync_file()` resolves each one
+per save slot from, in order: the answer cached in
+`devtools/.sync-backups/script_params.json` (gitignored), the value the
+slot's current code holds at the placeholder's position (see
+infer_placeholders()), the template default when the slot already has code
+(code that predates a placeholder never set it), an interactive prompt for
+an empty slot. Answers are cached.
 """
 import ast
 import json
@@ -109,28 +130,20 @@ GAME_DIR = "io.codeterraform.game"
 
 LIB_CATEGORY = "lib"
 
-# launch_in_game()'s retry cushion for the game's own disk-poll lag: a script
-# slot we just wrote to isn't necessarily registered in the game's workspace
-# snapshot yet by the time we try to launch it (confirmed live -- an
-# immediate launch right after a fresh fill failed with "not registered",
-# succeeded on retry after a short wait). Total extra wait if every attempt
-# needs it: 0.5 + 1.0 + 2.0 = 3.5s, on top of the immediate first try.
-LAUNCH_RETRY_DELAYS_S = (0.5, 1.0, 2.0)
+# restart_in_game()'s retry cushion: the game polls disk on its own cadence,
+# so a slot file we just created may not be registered yet. Total extra wait
+# if every attempt needs it: 0.5 + 1.0 + 2.0 = 3.5s after the first try.
+RESTART_RETRY_DELAYS_S = (0.5, 1.0, 2.0)
 
 # Machine types where each numbered instance is a genuinely distinct,
-# hand-authored script (see module docstring) - matched by exact stem,
-# never collapsed to a shared base name or renumbered.
-#
-# KNOWN GAP (see TODO.md "Panel dev-side numbering vs. save-side slot
-# numbers"): scripts/4_controlpanel/control_panel/ was renumbered panel_1..4
-# on the dev side (panel_7 -> panel_4, since _7 was just an artifact of
-# which slot the game happened to assign), but the game can't rename/reorder
-# an existing script slot, so the save's actual file is still panel_7.py.
-# Exact-stem matching below does NOT bridge that - panel_4.py won't resolve
-# against a save file named panel_7.py. Harmless while that slot already has
-# code; would need a machine_id-based alias table (from
-# codeterraform-workspace.json) to fix properly - not implemented.
-DISTINCT_INSTANCES = {"panel"}
+# hand-authored script with its own role (see module docstring). The game
+# picks slot numbers per save and can't rename a slot, so the number carries
+# no meaning: source files are named by role (`drones_panel.py`, i.e. any
+# stem ending in `_<type>`) and carry a `# ct-<type>: <role>` header marker.
+# A save slot is paired with its source by role, never by number - see
+# role_for_slot().
+ROLE_MATCHED = {"panel"}
+ROLE_SCAN_LINES = 15                # how far into a file the role marker may sit
 
 # The game owns these; never write to them.
 RESERVED = {"user_stubs.py"}
@@ -138,16 +151,13 @@ SKIP_DIRS = {"lib"}
 SKIP_SUFFIXES = (".codeterraform-write.bak",)
 SKIP_PATTERNS = (re.compile(r"\.codeterraform-retired-"),)
 TRAILING_INDEX = re.compile(r"_\d+$")
-DEFAULT_MAGIC = "synctool-fill"     # game file -> filled from scripts/
-DEFAULT_PULL = "synctool-pull"      # game file -> copied back into scripts/
 
 SHORT_HELP = (
     "Sync the tiered scripts/ tree into a Code: Terraform save's script directory.\n\n"
     "Commands: status | once | watch | resolve-preview | register-libs. Run `<command> --help` for its "
     "options, or see the module docstring in devtools/scripts_sync.py for the full "
     "tiering/matching rules.\n\n"
-    "--auto (once/watch) launches filled/updated slots in-game via DAP - off by default, "
-    "opt in per run."
+    "once/watch push every matched slot and restart it in game; --no-restart pushes only."
 )
 
 app = typer.Typer(add_completion=False, help=SHORT_HELP)
@@ -161,12 +171,11 @@ class Options:
     dry_run: bool = False
     verbose: bool = False
     renumber: bool = True
-    magic: str = DEFAULT_MAGIC
-    pull: str = DEFAULT_PULL
     force_tier: Optional[str] = None
-    auto: bool = False
-    auto_debounce: float = 30.0
+    restart: bool = True
     active_tier: str = field(default="", init=False)
+    lib_index: dict = field(default_factory=dict, init=False)
+    lib_closure: dict = field(default_factory=dict, init=False)
 
     @property
     def unmatched_dir(self) -> Path:
@@ -355,11 +364,9 @@ def materialize_missing_slots(opts: Options) -> int:
     """Writes a real `.py` file for every script slot workspace state knows
     about but that has no file on disk yet (see read_workspace_context()),
     using that slot's own live `source` text from the JSON - never a blank
-    stub, unless the JSON itself says the slot is empty. This matters: if the
-    slot is actually running non-empty code (just hadn't had a file written
-    for it yet), materializing a blank file instead would make sync_file()'s
-    own fill logic treat it as an empty slot and overwrite real operator code
-    with whatever scripts/ resolves to. Once materialized as a real file
+    stub, unless the JSON itself says the slot is empty. The live text
+    matters to sync_file(): it reads placeholder values out of it, and a
+    role-matched slot is paired by it. Once materialized as a real file
     (blank or not), the normal sync_file() pipeline treats it exactly like
     any other slot from here on - this only bridges the gap of the file not
     existing at all yet. Returns how many files were created."""
@@ -545,11 +552,89 @@ def base_name(stem: str) -> str:
 
 
 def match_key(stem: str) -> str:
-    """The key a source file is looked up by. Distinct-instance machine types
-    (see DISTINCT_INSTANCES) are matched by their exact stem; everything else
-    by its slot-number-stripped base name."""
+    """The key a source file is looked up by: the slot-number-stripped base
+    name. A role-matched save slot (see ROLE_MATCHED) keeps its exact stem,
+    which no source file uses - such slots resolve through role_for_slot()."""
     base = base_name(stem)
-    return stem if base in DISTINCT_INSTANCES else base
+    return stem if base in ROLE_MATCHED else base
+
+
+def _role_marker(text: str, slot_type: str) -> Optional[str]:
+    """`<role>` from a `# ct-<slot_type>: <role>` line near the top of text."""
+    pattern = re.compile(r"#\s*ct-%s\s*:\s*([A-Za-z0-9_]+)\s*$" % re.escape(slot_type))
+    for line in text.splitlines()[:ROLE_SCAN_LINES]:
+        m = pattern.match(line.strip())
+        if m:
+            return m.group(1)
+    return None
+
+
+def _header_line(text: str, slot_type: str) -> Optional[str]:
+    """First non-blank line that isn't a role marker."""
+    for line in text.splitlines()[:ROLE_SCAN_LINES]:
+        s = line.strip()
+        if s and not _role_marker(s, slot_type):
+            return s
+    return None
+
+
+def role_sources(index: dict, slot_type: str) -> dict:
+    """{role: source path} for every source named `<something>_<slot_type>`."""
+    suffix = "_" + slot_type
+    return {k: p for k, p in index.items() if k.endswith(suffix)}
+
+
+def role_for_slot(stem: str, text: str, index: dict, save_dir: Optional[Path] = None):
+    """(role, how) for a role-matched save slot, or (None, why-not).
+
+    Resolution order is documented in the module docstring. A marker naming no
+    source is reported rather than falling through to the next rule: it is a
+    typo to fix, not a guess to make. The empty-slot rule needs save_dir to see
+    which roles the other slots of this type already hold.
+    """
+    slot_type = base_name(stem)
+    roles = role_sources(index, slot_type)
+    known = ", ".join(sorted(roles)) or "none"
+
+    given = _role_marker(text, slot_type)
+    if given:
+        role = given if given in roles else (given + "_" + slot_type if given + "_" + slot_type in roles else None)
+        if role is None:
+            return None, "ct-%s marker names unknown role %r (known: %s)" % (slot_type, given, known)
+        return role, "ct-%s marker" % slot_type
+
+    header = _header_line(text, slot_type)
+    if header:
+        hits = [r for r, p in roles.items() if _header_line(read(p) or "", slot_type) == header]
+        if len(hits) == 1:
+            return hits[0], "header match"
+        if len(hits) > 1:
+            return None, "header matches several roles: %s" % ", ".join(sorted(hits))
+        return None, "code matches no role (known: %s)" % known
+
+    if save_dir is None:
+        return None, "empty"
+    taken = set()
+    for other in save_dir.glob("%s_*.py" % slot_type):
+        if other.stem != stem and base_name(other.stem) == slot_type and is_candidate(other, save_dir):
+            role, _ = role_for_slot(other.stem, read(other) or "", index)
+            if role:
+                taken.add(role)
+    free = sorted(set(roles) - taken)
+    if len(free) == 1:
+        return free[0], "only unpaired role"
+    if not free:
+        return None, "empty, every role already has a slot"
+    return None, "empty, several unpaired roles (%s) - type `# ct-%s: <role>` into it in game" % (", ".join(free), slot_type)
+
+
+def source_for(stem: str, text: str, index: dict, save_dir: Optional[Path] = None):
+    """(source path or None, note) for a save slot. The note names how a
+    role-matched slot was paired, or why it wasn't; None for plain slots."""
+    if base_name(stem) not in ROLE_MATCHED:
+        return index.get(match_key(stem)), None
+    role, how = role_for_slot(stem, text, index, save_dir)
+    return (index[role], "role %s via %s" % (role, how)) if role else (None, how)
 
 
 def split_index(stem: str):
@@ -562,8 +647,8 @@ def renumber(text: str, src_stem: str, dst_stem: str):
 
     Only the source's exact self id is rewritten; every other numbered id is
     left alone (see vakermit's ct_sync.py docstring for why). A source with no
-    number, or a distinct-instance match where src_stem == dst_stem already,
-    is never rewritten.
+    number (every role-matched source, e.g. `drones_panel`), or one where
+    src_stem == dst_stem already, is never rewritten.
     """
     src_base, src_num = split_index(src_stem)
     if src_num is None or src_base != base_name(dst_stem) or src_stem == dst_stem:
@@ -707,46 +792,6 @@ def is_empty(text: str, strict: bool) -> bool:
             and isinstance(body[0].value.value, str))
 
 
-def _first_real_line(text: str):
-    for i, line in enumerate(text.splitlines()):
-        if line.strip():
-            return i, line
-    return None, None
-
-
-def _unquote_marker(line: str) -> str:
-    line = line.strip().lstrip("#").strip()
-    for quote in ('"""', "'''", '"', "'"):
-        if line.startswith(quote) and line.endswith(quote) and len(line) > 2 * len(quote):
-            return line[len(quote):-len(quote)].strip()
-    return line
-
-
-def parse_magic(text: str, magic: str):
-    if not magic:
-        return False, None
-    _, line = _first_real_line(text)
-    if line is None:
-        return False, None
-    token = _unquote_marker(line)
-    if token.lower() == magic.lower():
-        return True, None
-    m = re.match(re.escape(magic) + r"[\s\-:/]+([A-Za-z0-9_][\w-]*)$", token, re.IGNORECASE)
-    return (True, m.group(1)) if m else (False, None)
-
-
-def has_magic(text: str, magic: str) -> bool:
-    return parse_magic(text, magic)[0]
-
-
-def strip_magic(text: str, magic: str) -> str:
-    i, _ = _first_real_line(text)
-    if i is None or not has_magic(text, magic):
-        return text
-    lines = text.splitlines(keepends=True)
-    return "".join(lines[:i] + lines[i + 1:])
-
-
 def read(path: Path) -> Optional[str]:
     try:
         return path.read_text(encoding="utf-8")
@@ -830,6 +875,10 @@ UPGRADE_PENDING_STATES = ("announced", "swapping")
 # re-queues these every few seconds; `once` just reports them.
 HELD_SLOTS: set = set()
 
+# Role-matched slots skipped for lack of a role -> the reason last printed,
+# so `watch` warns once per reason instead of on every pass.
+ROLELESS_WARNED: dict = {}
+
 
 def upgrade_fill_for(save_dir: Path, stem: str):
     """How sync_file() should treat an empty slot with respect to a fleet upgrade.
@@ -890,77 +939,124 @@ def inherit_placeholders(save_dir: Path, stem: str, old_id: str, params: dict, p
     return answers
 
 
-def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run: bool) -> dict:
-    """Answers for every (name, default) in placeholders. Anything already
-    cached for this exact save slot is reused silently; anything new is
-    prompted for interactively (blocking - see scripts_sync.py's plan notes on
-    why that's fine even under `watch`: the filesystem observer runs on its
-    own thread and just queues further events while we wait on input()).
-    Under --dry-run nothing is prompted or cached - falls back to cached/
-    default values only, as a preview of what a real run would fill in."""
+def infer_placeholders(template: str, current: str) -> dict:
+    """{name: value} read out of a slot's current code: every template line
+    holding a placeholder becomes a regex (literal text around it, the
+    placeholder as a capture) matched against current. First match wins;
+    a line whose surrounding text changed since simply doesn't match."""
+    found: dict = {}
+    for line in template.splitlines():
+        marks = list(PLACEHOLDER.finditer(line))
+        if not marks or all(m.group(1) in found for m in marks):
+            continue
+        pattern, pos = "", 0
+        for m in marks:
+            pattern += re.escape(line[pos:m.start()]) + "(.*?)"
+            pos = m.end()
+        pattern += re.escape(line[pos:])
+        hit = re.search(r"^" + pattern.strip() + r"\s*$", current, re.MULTILINE)
+        if hit:
+            for m, value in zip(marks, hit.groups()):
+                found.setdefault(m.group(1), value)
+    return found
+
+
+def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run: bool,
+                         template: str = "", current: str = "") -> dict:
+    """Answers for every (name, default) in placeholders, from: this save
+    slot's cached answers, the value the slot's current code holds
+    (infer_placeholders()), the template default when the slot already has
+    code (it predates the placeholder), an interactive prompt for an empty
+    slot (blocking - fine under
+    `watch`: the filesystem observer runs on its own thread and just queues
+    further events while we wait on input()). New answers are cached.
+    Under --dry-run nothing is prompted or cached - unknown names fall back
+    to their template defaults, as a preview of what a real run would fill in."""
     cache = load_params_cache()
     key = "%s/%s" % (save_dir.name, stem)
     slot_cache = dict(cache.get(key, {}))
+    inferred = infer_placeholders(template, current) if current.strip() else {}
     answers: dict = {}
     dirty = False
     for name, default in placeholders:
         if name in slot_cache:
             answers[name] = slot_cache[name]
             continue
-        if dry_run:
+        if name in inferred:
+            answers[name] = inferred[name]
+        elif dry_run:
             answers[name] = default
             continue
-        answers[name] = typer.prompt("%s: %s" % (stem, name), default=default)
-        slot_cache[name] = answers[name]
-        dirty = True
+        elif current.strip():
+            # Code that predates this placeholder never set it: the template
+            # default reproduces what it did.
+            answers[name] = default
+        else:
+            answers[name] = typer.prompt("%s: %s" % (stem, name), default=default)
+        if not dry_run:
+            slot_cache[name] = answers[name]
+            dirty = True
     if dirty:
         cache[key] = slot_cache
         save_params_cache(cache)
     return answers
 
 
-def launch_in_game(save_dir: Path, script_stem: str) -> None:
-    """Best-effort DAP launch, only ever called when --auto is passed.
+def restart_in_game(save_dir: Path, stem: str, body: str) -> bool:
+    """(Re)start one script slot with body over the external-command channel
+    (`"action": "run"`, same as VS Code's "Run Script in Game"): stops a
+    running copy and starts body fresh. User-invoked automation (the operator
+    runs this tool), not the assistant starting a live session on its own.
+    Retries briefly while the game hasn't registered a just-created slot."""
+    reason = None
+    for attempt, delay in enumerate((0.0,) + RESTART_RETRY_DELAYS_S):
+        if delay:
+            time.sleep(delay)
+        result = send_game_command(save_dir, "run", scriptId=stem, source=body)
+        if result.get("ok"):
+            ok("  run   %-28s restarted in game%s" % (stem + ".py", " (retry %d)" % attempt if attempt else ""))
+            return True
+        reason = result.get("reason") or result.get("status") or result.get("message")
+        if reason in ("no_session", "unconfirmed", "busy"):
+            break  # game unreachable: retrying won't help
+    warn("  run   %-28s not restarted (%s) - is the game running with this save open?" % (stem + ".py", reason))
+    return False
 
-    This is user-invoked automation (the operator passes --auto themselves on
-    each run) rather than Claude or any other assistant starting a live-debug
-    session on its own initiative, so it does not need the "always ask first"
-    confirmation that governs the assistant's own actions - see CLAUDE.md's
-    live-debugging rule and the plan this tool came from.
-    """
-    sys.path.insert(0, str(REPO / "devtools"))
-    try:
-        from dap_client import launch_script  # type: ignore
-    except ImportError:
-        warn("  --auto requested but devtools/dap_client.py is unavailable")
-        return
-    # launch_script()'s "script" argument is matched against the workspace's
-    # registered document paths (debug-adapter.cjs's Workspace.document()) --
-    # a bare stem is not a registered path and is always rejected ("This file
-    # is not registered to a game script"). Confirmed live: every --auto call
-    # site here was passing script_stem straight through and silently failing
-    # every single launch until this fix.
-    script_path = str(save_dir / f"{script_stem}.py")
-    try:
-        for attempt, delay in enumerate((0.0,) + LAUNCH_RETRY_DELAYS_S):
-            if delay:
-                time.sleep(delay)
-            if launch_script(str(save_dir), script_path):
-                ok("  auto  %-28s launched in game%s" % (script_stem, " (retry %d)" % attempt if attempt else ""))
-                break
-        else:
-            # Most common cause: we just wrote this file ourselves a moment
-            # ago, but the game polls disk on its own cadence rather than
-            # reacting instantly, so "This file is not registered to a game
-            # script" is expected for the first attempt or two right after a
-            # fresh fill -- confirmed live (a freshly-cleared, re-filled
-            # drone_2.py failed to launch immediately, succeeded once retried
-            # after a short wait). The retries above are a best-effort cushion
-            # for that race, not a fix for a genuinely broken launch.
-            warn("  auto  %-28s launch failed after %d attempt(s) (see DAP output above -- "
-                 "the game may not have polled this file yet)" % (script_stem, len(LAUNCH_RETRY_DELAYS_S) + 1))
-    except Exception as exc:  # pragma: no cover - best-effort, never fatal
-        warn("  auto  %-28s launch error: %s" % (script_stem, exc))
+
+def libs_awaiting_apply(opts: Options) -> set:
+    """lib_index keys whose resolved source differs from the code the game
+    actually runs (`deployedSource` of the matching Library in
+    codeterraform-workspace.json), or that the game has no Library for yet.
+    Empty when the workspace file is unreadable (nothing known)."""
+    context = read_workspace_context(opts.save_dir)
+    if context is None:
+        return set()
+    running = {}
+    for info in (context.get("libraryScripts") or {}).values():
+        name = str(info.get("name") or "")
+        if name.endswith(".py"):
+            running[name[:-3]] = info.get("deployedSource")
+    pending = set()
+    for key, source in opts.lib_index.items():
+        if key not in running or running[key] != read(source):
+            pending.add(key)
+    return pending
+
+
+def libs_reached(text: str, opts: Options) -> set:
+    """Every lib_index key text imports, directly or through other libs."""
+    direct = {n for n in parse_module_imports(text) if n in opts.lib_index}
+    reached = set(direct)
+    for dep in direct:
+        reached |= opts.lib_closure.get(dep, set())
+    return reached
+
+
+def slot_status(save_dir: Path, stem: str) -> Optional[str]:
+    """The game's own run status for a slot ("running", "idle", ...), or None."""
+    context = read_workspace_context(save_dir)
+    info = (context or {}).get("scripts", {}).get(stem)
+    return info.get("status") if isinstance(info, dict) else None
 
 
 # ---------------------------------------------------------------------- sync
@@ -973,7 +1069,7 @@ def stage_unmatched(path: Path, text: str, opts: Options) -> bool:
         return True
     try:
         opts.unmatched_dir.mkdir(parents=True, exist_ok=True)
-        dest.write_text(strip_magic(text, opts.magic), encoding="utf-8", newline="\n")
+        dest.write_text(text, encoding="utf-8", newline="\n")
     except OSError as exc:
         err("  fail  %-28s %s" % (path.name, exc))
         return False
@@ -985,103 +1081,65 @@ def tidy_unmatched(index: dict, opts: Options) -> None:
     if not opts.unmatched_dir.is_dir():
         return
     for path in sorted(opts.unmatched_dir.glob("*.py")):
+        # A role-matched slot never resolves by its number, so a blank one
+        # staged here has nothing to wait for.
+        role_slot = base_name(path.stem) in ROLE_MATCHED
         matched = index.get(match_key(path.stem))
-        if matched is None:
+        if matched is None and not role_slot:
             continue
         text = read(path)
         if text is None or text.strip():
             continue
+        why = "now matched by %s" % show(matched) if matched else "role slot, paired by role instead"
         if opts.dry_run:
-            typer.echo("  would drop %-24s (blank, now matched by %s)" % (show(path), show(matched)))
+            typer.echo("  would drop %-24s (blank, %s)" % (show(path), why))
             continue
         try:
             path.unlink()
-            typer.echo("  drop  %-28s blank, now matched by %s" % (show(path), show(matched)))
+            typer.echo("  drop  %-28s blank, %s" % (show(path), why))
         except OSError:
             pass
 
 
-def pull_file(path: Path, text: str, index: dict, opts: Options) -> bool:
-    """Copy a game file marked `synctool-pull` back into scripts/, at the
-    active tier's category for its match_key if known, else scripts/_unmatched/."""
-    body = strip_magic(text, opts.pull)
-    if is_empty(body, strict=False):
-        warn("  skip  %-28s marked %r but holds no code; nothing to pull" % (path.name, opts.pull))
-        return False
-
-    key = match_key(path.stem)
-    existing_source = index.get(key)
-    if existing_source is not None:
-        target = existing_source
-        how = "existing source"
-    else:
-        target = opts.unmatched_dir / path.name
-        how = "new, staged"
-
-    note = None
-    if opts.renumber:
-        body, _, note = renumber(body, path.stem, target.stem)
-    parts = [opts.pull, how] + ([note] if note else [])
-    suffix = "  [%s]" % ", ".join(parts)
-
-    if opts.dry_run:
-        ok("  would pull %-24s -> %s%s" % (path.name, show(target), suffix))
-        return True
-
-    prior = read(target) if target.exists() else None
-    if prior != body:
-        if prior is not None and prior.strip():
-            backup(target)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not write_atomic(target, body):
-            return False
-        ok("  pull  %-28s -> %s%s" % (path.name, show(target), suffix))
-        if note:
-            others = other_numbered_ids(body, base_name(target.stem))
-            if others:
-                warn("        left as-is (check these): %s" % ", ".join(others))
-    else:
-        typer.echo("  pull  %-28s -> %s   already identical" % (path.name, show(target)))
-
-    write_atomic(path, strip_magic(text, opts.pull))
-    return True
-
-
 def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) -> bool:
-    """Fill one save script from scripts/. True if it was written."""
+    """Push one save slot's resolved source into it when they differ, then
+    restart it in game (see module docstring). True if it was written."""
     if not is_candidate(path, opts.save_dir):
         return False
     text = read(path)
     if text is None:
         return False
-    pulled, _ = parse_magic(text, opts.pull)
-    if pulled:
-        return pull_file(path, text, index, opts)
-    marked, _ = parse_magic(text, opts.magic)
-    if not marked and not is_empty(text, opts.strict):
-        if not quiet_skips:
-            typer.echo("  skip  %-28s already has code" % path.name)
-        return False
+    was_empty = is_empty(text, opts.strict)
 
-    source = index.get(match_key(path.stem))
+    source, role_note = source_for(path.stem, text, index, opts.save_dir)
+    if source is None and role_note is not None:
+        # Role-matched slot with no resolvable role: staging it under its
+        # slot number would be meaningless, so only say why.
+        if ROLELESS_WARNED.get(path) != role_note:
+            warn("  skip  %-28s %s" % (path.name, role_note))
+        ROLELESS_WARNED[path] = role_note
+        return False
+    ROLELESS_WARNED.pop(path, None)
     if source is None:
-        first_time = not (opts.unmatched_dir / path.name).exists()
-        if marked and (first_time or not quiet_skips):
-            warn("  skip  %-28s marked %r but no match in scripts/" % (path.name, opts.magic))
-        elif not marked and not quiet_skips:
+        if not was_empty:
+            if not quiet_skips:
+                typer.echo("  skip  %-28s has code, no match in scripts/" % path.name)
+            return False
+        if not quiet_skips:
             typer.echo("  skip  %-28s no match in scripts/" % path.name)
         stage_unmatched(path, text, opts)
         return False
 
-    body = read(source)
-    if body is None:
+    template = read(source)
+    if template is None:
         err("  fail  %-28s cannot read %s" % (path.name, source))
         return False
+    body = template
 
     param_note = None
-    placeholders = find_placeholders(body)
+    placeholders = find_placeholders(template)
     if placeholders:
-        mode, old_id, params = upgrade_fill_for(opts.save_dir, path.stem)
+        mode, old_id, params = upgrade_fill_for(opts.save_dir, path.stem) if was_empty else ("normal", None, None)
         if mode == "hold":
             if path not in HELD_SLOTS:
                 typer.echo("  hold  %-28s %s" % (path.name, old_id))
@@ -1092,34 +1150,42 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
             answers = inherit_placeholders(opts.save_dir, path.stem, str(old_id), params or {}, placeholders, opts.dry_run)
             param_note = "inherited from %s: %s" % (old_id, ", ".join("%s=%s" % kv for kv in answers.items()))
         else:
-            answers = resolve_placeholders(opts.save_dir, path.stem, placeholders, opts.dry_run)
+            answers = resolve_placeholders(opts.save_dir, path.stem, placeholders, opts.dry_run, template, text)
             param_note = "params: %s" % ", ".join("%s=%s" % kv for kv in answers.items())
-        body = render_placeholders(body, answers)
+        body = render_placeholders(template, answers)
 
     note = None
     if opts.renumber:
         body, _, note = renumber(body, source.stem, path.stem)
-    parts = ([opts.magic] if marked else []) + ([param_note] if param_note else []) + ([note] if note else [])
-    suffix = "  [%s]" % ", ".join(parts) if parts else ""
 
     if text == body:
         return False
 
+    parts = ([role_note] if role_note else []) + ([param_note] if param_note else []) + ([note] if note else [])
+    suffix = "  [%s]" % ", ".join(parts) if parts else ""
+    verb = "fill" if was_empty else "push"
+    restart = opts.restart and (was_empty or slot_status(opts.save_dir, path.stem) == "running")
+    blockers = sorted(libs_reached(body, opts) & libs_awaiting_apply(opts)) if restart else []
+
     if opts.dry_run:
-        ok("  would fill %-24s <- %s%s" % (path.name, show(source), suffix))
+        then = ("; not restarted, unapplied lib: %s" % ", ".join(blockers)) if blockers else ("; then restart" if restart else "")
+        ok("  would %s %-23s <- %s%s%s" % (verb, path.name, show(source), suffix, then))
         return True
 
     if text.strip():
         backup(path)
     if not write_atomic(path, body):
         return False
-    ok("  fill  %-28s <- %s%s" % (path.name, show(source), suffix))
+    ok("  %-5s %-28s <- %s%s" % (verb, path.name, show(source), suffix))
     if note:
         others = other_numbered_ids(body, base_name(path.stem))
         if others:
             warn("        left as-is (check these): %s" % ", ".join(others))
-    if opts.auto:
-        launch_in_game(opts.save_dir, path.stem)
+    if blockers:
+        warn("  run   %-28s not restarted: reaches unapplied lib %s - Apply & restart all in game"
+             % (path.name, ", ".join(blockers)))
+    elif restart:
+        restart_in_game(opts.save_dir, path.stem, body)
     return True
 
 
@@ -1131,13 +1197,9 @@ def sync_lib(lib_index: dict, opts: Options) -> set:
     differs from what's already deployed (backing up the old copy first).
 
     Returns the set of lib_index keys actually (re)written -- including under
-    --dry-run, as a preview of what would change -- so the caller can decide
-    which currently-deployed scripts need relaunching (see
-    warn_stale_lib_dependents()): unlike a machine script slot, a lib module has
-    no slot of its own whose text changing would trigger sync_file()'s own
-    --auto launch, so without this a lib-only fix silently never reaches any
-    already-running script - it sits on disk correct but unread until
-    something restarts the scripts that import it.
+    --dry-run, as a preview of what would change. A rewritten module still
+    needs the in-game "Apply & restart all" before any script runs it (see
+    report_unapplied_libs()).
     """
     dest_dir = opts.save_dir / "lib"
     changed: set = set()
@@ -1351,87 +1413,46 @@ def lib_dependency_closure(lib_index: dict) -> dict:
     return closure
 
 
-def warn_stale_lib_dependents(changed_keys: set, lib_index: dict, opts: Options, skip_stems: set) -> None:
-    """Reports every currently-deployed script whose import closure reaches a
-    lib module sync_lib() just changed -- it deliberately does NOT attempt to
-    relaunch them (despite the name -- kept for now to avoid touching every
-    call site again; see TODO.md to rename). skip_stems are slots sync_file()
-    already relaunched this same pass for their OWN changed body text, so
-    they're excluded from the report (though see the caveat below -- that
-    relaunch has the same unsolved problem for anything they import).
+# Last unapplied-lib report printed, so `watch` repeats it only on change.
+_LAST_APPLY_REPORT: list = [None]
 
-    CONFIRMED LIVE (2026-09-22, this save) that no automatable path actually
-    applies a lib/ change to an already-running script:
-    - DAP `launch` (what launch_in_game() calls) never restarts a script
-      that's already running -- runIfIdle=True in debug-adapter.cjs means an
-      already-running target just gets attached to, old code untouched.
-    - The general external-command channel's "action":"run" (same one "Run
-      Script in Game" uses) DOES force a genuine restart with fresh top-level
-      code -- confirmed on rover_1.py -- but the restarted script still ran
-      the STALE cached copy of the changed library, not the freshly-synced
-      file on disk. The game caches an imported library module independently
-      of restarting the script that imports it.
-    - Every relevant VS Code command was tried directly against this exact
-      changed file (Run Script/Create Library/Import File as Library/Rename
-      Library) and each failed for an unrelated, semantically-correct reason
-      (wrong file kind, already exists, no-op rename, ...), not "not found" --
-      there is no hidden "apply library" command sitting in the palette.
-    - `debug-adapter.cjs` was read in full: no restart/reload-library
-      capability is advertised or implemented there either.
 
-    Only the native in-game Script Editor's "Apply & restart all" button
-    actually invalidates that cache, and it has no external hook in the
-    currently shipped tooling. So rather than call launch_in_game() and print
-    a misleading "launched in game" while the script silently keeps running
-    stale library code, this only tells the operator which scripts need a
-    manual Apply in-game.
-    """
-    if not changed_keys or not opts.auto or opts.dry_run:
+def report_unapplied_libs(opts: Options) -> None:
+    """Names every save script that reaches a lib/ module the game hasn't
+    applied yet. No external command applies a changed Library: the game
+    caches an imported module independently of the importing script, and
+    only the in-game Script Editor's "Apply & restart all" swaps that cache
+    (restarting the importer over the command channel runs the stale copy)."""
+    if opts.dry_run:
         return
-    closure = lib_dependency_closure(lib_index)
-    hit_stems = []
-    for path in sorted(opts.save_dir.glob("*.py")):
-        if path.stem in skip_stems or not is_candidate(path, opts.save_dir):
-            continue
-        text = read(path)
-        if text is None:
-            continue
-        direct = {n for n in parse_module_imports(text) if n in lib_index}
-        reaches = set(direct)
-        for dep in direct:
-            reaches |= closure.get(dep, set())
-        if reaches & changed_keys:
-            hit_stems.append(path.stem)
-    if hit_stems:
-        warn("  auto  lib changed (%s) -- %d running script(s) need a manual Apply & restart all in-game: %s" %
-             (", ".join(sorted(changed_keys)), len(hit_stems), ", ".join(hit_stems)))
+    pending = libs_awaiting_apply(opts)
+    hits = []
+    if pending:
+        for path in sorted(opts.save_dir.glob("*.py")):
+            if is_candidate(path, opts.save_dir) and libs_reached(read(path) or "", opts) & pending:
+                hits.append(path.stem)
+    report = (sorted(pending), hits)
+    if report == _LAST_APPLY_REPORT[0]:
+        return
+    _LAST_APPLY_REPORT[0] = report
+    if hits:
+        warn("  apply lib(s) not applied in game yet (%s) - %d script(s) need Apply & restart all: %s" %
+             (", ".join(sorted(pending)), len(hits), ", ".join(hits)))
 
 
-def sync_all(script_index: dict, lib_index: dict, opts: Options, on_lib_changed=None) -> int:
-    """Full pass: mirror lib/, fill matched script slots, stage the rest.
-
-    on_lib_changed, when given, replaces the immediate warn_stale_lib_dependents()
-    call with on_lib_changed(changed_lib_keys, launched_stems) -- used by
-    Watcher to debounce a burst of lib/ edits into one relaunch instead of one
-    per file (see Watcher._note_lib_changed()). `once` (no callback) keeps the
-    immediate relaunch: a single one-shot run has no "still mid-edit" risk to
-    wait out.
-    """
+def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
+    """Full pass: mirror lib/, push matched script slots, stage the rest."""
+    opts.lib_index = lib_index
+    opts.lib_closure = lib_dependency_closure(lib_index)
     materialized = materialize_missing_slots(opts)
     changed_lib_keys = sync_lib(lib_index, opts)
     register_new_libraries(lib_index, opts)
     written = materialized + len(changed_lib_keys)
-    launched_stems: set = set()
     for path in sorted(opts.save_dir.glob("*.py")):
         if sync_file(path, script_index, opts, quiet_skips=not opts.verbose):
             written += 1
-            if opts.auto:
-                launched_stems.add(path.stem)
     tidy_unmatched(script_index, opts)
-    if changed_lib_keys and on_lib_changed is not None:
-        on_lib_changed(changed_lib_keys, launched_stems)
-    else:
-        warn_stale_lib_dependents(changed_lib_keys, lib_index, opts, launched_stems)
+    report_unapplied_libs(opts)
     return written
 
 
@@ -1483,8 +1504,6 @@ DryOpt = typer.Option(False, "--dry-run", "-n", help="Report what would change."
 VerboseOpt = typer.Option(False, "--verbose", "-v", help="Also report files that were skipped.")
 NoRenumberOpt = typer.Option(False, "--no-renumber",
                               help="Copy verbatim; do not point the script's own id at the slot.")
-MagicOpt = typer.Option(DEFAULT_MAGIC, "--magic", envvar="CT_MAGIC")
-PullOpt = typer.Option(DEFAULT_PULL, "--pull-magic", envvar="CT_PULL_MAGIC")
 def _known_tiers_blurb() -> str:
     # Best-effort help text only - a bad tier name under the *default*
     # scripts/ dir shouldn't crash --help; the real validation (and a hard
@@ -1499,23 +1518,17 @@ def _known_tiers_blurb() -> str:
 ForceTierOpt = typer.Option(None, "--force-tier",
                              help="Skip save-state detection and use this tier for one run. "
                                   "Known tiers (under %s): %s" % (DEFAULT_SCRIPTS, _known_tiers_blurb()))
-AutoOpt = typer.Option(False, "--auto",
-                        help="Also launch filled/updated slots in-game via DAP. "
-                             "User-invoked automation, not on by default.")
-AutoDebounceOpt = typer.Option(30.0, "--auto-debounce",
-                                help="watch --auto only: seconds of lib/ quiet time to wait before "
-                                     "relaunching dependent scripts, re-extended by every further lib/ "
-                                     "edit seen in that window - avoids pushing a still-mid-edit, "
-                                     "inconsistent set of lib/ files into a live restart.")
+NoRestartOpt = typer.Option(False, "--no-restart",
+                            help="Push matched slots but don't restart them in game.")
 
 
-def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, magic,
-              pull=DEFAULT_PULL, force_tier=None, auto=False, auto_debounce=30.0) -> Options:
+def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber,
+              force_tier=None, no_restart=False) -> Options:
     save = resolve_save(save_dir)
     if not scripts_dir.is_dir():
         err("Not a directory: %s" % scripts_dir)
         raise typer.Exit(2)
-    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, magic, pull, force_tier, auto, auto_debounce)
+    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, force_tier, not no_restart)
     opts.active_tier = resolve_active_tier(scripts_dir, save, force_tier)
     return opts
 
@@ -1523,9 +1536,9 @@ def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, magi
 @app.command()
 def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
            strict: bool = StrictOpt, no_renumber: bool = NoRenumberOpt,
-           magic: str = MagicOpt, pull: str = PullOpt, force_tier: Optional[str] = ForceTierOpt):
+           force_tier: Optional[str] = ForceTierOpt):
     """Show the resolved tier, the scripts/lib mapping, and what each save script would do."""
-    opts = make_opts(save_dir, scripts_dir, strict, False, False, no_renumber, magic, pull, force_tier)
+    opts = make_opts(save_dir, scripts_dir, strict, False, False, no_renumber, force_tier)
     typer.echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
     script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier)
     report_conflicts(conflicts)
@@ -1550,31 +1563,39 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
             text = read(path) or ""
             typer.echo("  %-24s %s" % (path.name, "blank" if not text.strip() else "in progress"))
 
+    opts.lib_index = lib_index
+    opts.lib_closure = lib_dependency_closure(lib_index)
+    pending = libs_awaiting_apply(opts)
+    if pending:
+        typer.echo("\nlib/ modules the game hasn't applied yet (%d): %s" % (len(pending), ", ".join(sorted(pending))))
+
     files = sorted(p for p in opts.save_dir.glob("*.py") if is_candidate(p, opts.save_dir))
     typer.echo("\nSave scripts (%d):" % len(files))
     for path in files:
         text = read(path) or ""
-        source = script_index.get(match_key(path.stem))
-        pulled, _ = parse_magic(text, opts.pull)
-        marked, _ = parse_magic(text, opts.magic)
-        fillable = marked or is_empty(text, opts.strict)
-        if pulled:
-            state = "marked %r -> would pull to %s" % (opts.pull, show(source) if source else show(opts.unmatched_dir / path.name))
-        elif not fillable:
-            state = "has code, left alone"
-        elif source is None:
-            state = ("marked %r, " % opts.magic if marked else "empty, ") + "no match -> would stage"
+        empty = is_empty(text, opts.strict)
+        source, role_note = source_for(path.stem, text, script_index, opts.save_dir)
+        if source is None:
+            state = role_note or ("empty, no match -> would stage" if empty else "has code, no match -> left alone")
         else:
-            state = ("marked %r -> " % opts.magic if marked else "empty -> ") + "would fill from %s" % show(source)
-            names = find_placeholders(read(source) or "")
+            template = read(source) or ""
+            body = template
+            names = find_placeholders(template)
             if names:
-                mode, old_id, _ = upgrade_fill_for(opts.save_dir, path.stem)
-                if mode == "inherit":
-                    state += "  (inherits params from %s, no questions)" % old_id
-                elif mode == "hold":
-                    state += "  (held: %s)" % old_id
-                else:
-                    state += "  (asks for: %s)" % ", ".join(n for n, _ in names)
+                cached = load_params_cache().get("%s/%s" % (opts.save_dir.name, path.stem), {})
+                inferred = infer_placeholders(template, text)
+                body = render_placeholders(template, {n: cached.get(n, inferred.get(n, d)) for n, d in names})
+            if opts.renumber:
+                body, _, _ = renumber(body, source.stem, path.stem)
+            if body == text:
+                state = "up to date with %s" % show(source)
+            else:
+                state = "%s from %s" % ("would fill" if empty else "would push", show(source))
+                blockers = sorted(libs_reached(body, opts) & pending)
+                if blockers:
+                    state += "  (no restart: unapplied lib %s)" % ", ".join(blockers)
+            if role_note:
+                state += "  [%s]" % role_note
         typer.echo("  %-28s %s" % (path.name, state))
     typer.echo("")
 
@@ -1582,10 +1603,10 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
 @app.command()
 def once(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
          strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
-         no_renumber: bool = NoRenumberOpt, magic: str = MagicOpt, pull: str = PullOpt,
-         force_tier: Optional[str] = ForceTierOpt, auto: bool = AutoOpt):
-    """Fill every empty script that is already in the save directory, and sync lib/."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, magic, pull, force_tier, auto)
+         no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
+         no_restart: bool = NoRestartOpt):
+    """Push every matched save script, restart it in game, and sync lib/."""
+    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart)
     typer.echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
     script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier)
     report_conflicts(conflicts)
@@ -1609,7 +1630,7 @@ def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Optional[Path] = S
 def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
                   dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt):
     """Register every deployed lib/ module the game does not know yet as a game Library (nothing else)."""
-    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, DEFAULT_MAGIC, DEFAULT_PULL, force_tier, False)
+    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier)
     _, lib_index, _ = build_index(opts.scripts_dir, opts.active_tier)
     registered = registered_library_names(opts.save_dir)
     if registered is None:
@@ -1627,16 +1648,6 @@ class Watcher:
         self.pending: dict = {}
         self.repo_due = None
         self.last_tier_check = time.monotonic()
-        # Debounced --auto relaunch state (see _note_lib_changed()/drain()):
-        # a lib/ edit doesn't fire warn_stale_lib_dependents() immediately --
-        # it accumulates here and pushes auto_launch_due out by
-        # opts.auto_debounce seconds, so a burst of related lib/ edits (e.g.
-        # touching both vehicle_mining.py and production.py for one fix)
-        # settles into a single relaunch of a CONSISTENT set of files instead
-        # of restarting dependent scripts once per file mid-edit.
-        self.pending_lib_changes: set = set()
-        self.pending_lib_skip_stems: set = set()
-        self.auto_launch_due = None
 
     def note_save(self, raw_path):
         path = Path(str(raw_path))
@@ -1663,26 +1674,12 @@ class Watcher:
         self.sweep()
 
     def sweep(self):
-        on_lib_changed = self._note_lib_changed if (self.opts.auto and not self.opts.dry_run) else None
-        sync_all(self.script_index, self.lib_index, self.opts, on_lib_changed=on_lib_changed)
+        sync_all(self.script_index, self.lib_index, self.opts)
         if not self.opts.dry_run:
             write_resolved_preview(self.opts.scripts_dir, self.opts.active_tier, self.opts.save_dir)
 
-    def _note_lib_changed(self, changed_keys: set, launched_stems: set) -> None:
-        """sync_all()'s on_lib_changed callback: defer the relaunch instead of
-        firing it inline (see Watcher.__init__'s docstring comment)."""
-        self.pending_lib_changes |= changed_keys
-        self.pending_lib_skip_stems |= launched_stems
-        self.auto_launch_due = time.monotonic() + self.opts.auto_debounce
-        ok("  auto  lib changed (%s); relaunching dependents in %.0fs unless more lib/ edits arrive" %
-           (", ".join(sorted(changed_keys)), self.opts.auto_debounce))
-
     def drain(self):
         now = time.monotonic()
-        if self.auto_launch_due is not None and self.auto_launch_due <= now:
-            changed_keys, skip_stems = self.pending_lib_changes, self.pending_lib_skip_stems
-            self.pending_lib_changes, self.pending_lib_skip_stems, self.auto_launch_due = set(), set(), None
-            warn_stale_lib_dependents(changed_keys, self.lib_index, self.opts, skip_stems)
         # Cheap periodic re-check so a tier advance (new tech unlocked
         # mid-session) is picked up even with no repo-side file change.
         if now - self.last_tier_check > 5.0:
@@ -1694,6 +1691,9 @@ class Watcher:
                 self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, new_tier)
                 report_conflicts(self.conflicts)
                 self.sweep()
+            # The game rewrites the workspace file on its own cadence, so an
+            # in-game "Apply & restart all" only shows up here.
+            report_unapplied_libs(self.opts)
             # Same cadence covers materialize_missing_slots() too: a newly
             # built (or newly re-equipped) machine's script slot shows up in
             # codeterraform-workspace.json well before the game ever writes
@@ -1743,24 +1743,18 @@ class Events(FileSystemEventHandler):
 @app.command()
 def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
           strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
-          no_renumber: bool = NoRenumberOpt, magic: str = MagicOpt, pull: str = PullOpt,
-          force_tier: Optional[str] = ForceTierOpt, auto: bool = AutoOpt,
-          auto_debounce: float = AutoDebounceOpt,
+          no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
+          no_restart: bool = NoRestartOpt,
           poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events.")):
-    """Watch the save directory and scripts/, filling and re-tiering as things change."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, magic, pull, force_tier, auto, auto_debounce)
+    """Watch the save directory and scripts/, pushing and re-tiering as things change."""
+    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart)
     watcher = Watcher(opts)
 
     typer.echo("Save     %s" % opts.save_dir)
     typer.echo("Scripts  %s (tier %s)" % (opts.scripts_dir, opts.active_tier))
     typer.echo("Staging  %s for game files with no match" % show(opts.unmatched_dir))
-    if magic:
-        typer.echo("Marker   %r at the top of a game file fills it from scripts/" % magic)
-    if pull:
-        typer.echo("Marker   %r at the top of a game file copies it back into scripts/" % pull)
-    if auto:
-        typer.echo("Auto     lib/ relaunch debounced %.0fs (resets on every further lib/ edit)" % auto_debounce)
-        warn("Auto-launch enabled: filled/updated slots will be started in-game via DAP.")
+    typer.echo("Push     every matched slot follows scripts/ (in-game edits are overwritten, backups in %s)" % show(BACKUP_DIR))
+    typer.echo("Restart  %s" % ("off (--no-restart)" if no_restart else "running and newly filled slots, unless an unapplied lib/ is reached"))
     if dry_run:
         warn("Dry run: nothing will be written.")
     watcher.sweep()

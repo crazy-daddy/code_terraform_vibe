@@ -28,6 +28,7 @@
 from tree_console import TreeConsole
 from swallow import swallowed
 import logistics_requests
+import fleet_intent
 from biomass_retire import biomass_complete
 from typing import TYPE_CHECKING
 
@@ -291,6 +292,7 @@ class DroneMiningMixin:
                 self._host.save_mission("mine", self.current_target)
 
                 log.print(f"[{self._host.name}] Reserved biosite {target['target_key']} ({target['sample_type']}) at {target['coords']} (Est. trip cost: {budget['total_required_wh']:.1f} {self._host.energy_unit()}).")
+                self._host.set_intent(fleet_intent.describe("sampling", [target["sample_type"]], at=target["target_key"], root=fleet_intent.haul_root([target["sample_type"]])))
                 self._host.publish_telemetry("OUTBOUND", target["target_key"])
 
                 if not self._host.fly_to(target["coords"][0], target["coords"][1], precision=1.0):

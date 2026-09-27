@@ -8,13 +8,13 @@
 # one worth doing, wasteful otherwise) or scanning the full Earth Order board
 # redundantly every cycle (the same N-times-redundant-per-cycle pattern bio.py's
 # Collector/Luminizer hit). `plan_dock_assignments()` is the central "decider" --
-# called once per cycle from panel_7.py's AUTOMATION section (this script's own
+# called once per cycle from automation_panel.py's AUTOMATION section (this script's own
 # `set_order()`/`clear_order()`/`set_enabled()` are all `*(self only)*` hardware
 # calls per docs/components/supply_dock.md, so the plan itself has to be computed
 # somewhere else and handed to each dock via Archive; each dock's own
 # `SupplyDockController` then reads its assignment and performs the self-only
 # calls on itself). `desired_order_id()` falls back to this dock's own
-# `pick_best_order()` if no plan is available yet (panel_7 not running this
+# `pick_best_order()` if no plan is available yet (automation_panel not running this
 # cycle, or not running at all) so a dock never sits idle waiting on a planner
 # that may not be online.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, SourceCache
@@ -113,7 +113,7 @@ def _score_weekly_order(order, reserved):
 
 def plan_dock_assignments(clock=None):
     """
-    Central per-cycle decision, run once from panel_7.py's AUTOMATION section:
+    Central per-cycle decision, run once from automation_panel.py's AUTOMATION section:
     which Earth Order (if any) each discovered Supply Dock should be working.
     Docks already holding a still-fulfillable order keep it (stability -- an
     order mid-shipment shouldn't get cleared over a marginal priority
@@ -153,7 +153,7 @@ def plan_dock_assignments(clock=None):
     # redundant discovery + list_recipes() calls -- see SourceCache's
     # docstring in lib/production.py. Even cached, a pass takes ~2 s, so this
     # must never run inside a per-tick UI loop: it runs from the headless
-    # control_panel/panel_4.py (live slot panel_7.py).
+    # control_panel/automation_panel.py (live slot automation_panel.py).
     cache = SourceCache()
 
     candidates = []
@@ -264,7 +264,7 @@ class SupplyDockController:
     def pick_best_order(self):
         """
         Fallback order selection used only when no central plan is available
-        (see desired_order_id()) -- panel_7.py's plan_dock_assignments() is
+        (see desired_order_id()) -- automation_panel.py's plan_dock_assignments() is
         the normal path and additionally spreads docks across candidates and
         skips weekly orders that can't finish before they expire. This
         per-instance fallback keeps a lone dock functional standalone:

@@ -19,7 +19,7 @@ from swallow import swallowed
 # The Mixer has no set_enabled(), so the only pause is the breaker
 # (power_control.set_powered). A breaker-off machine's own script is paused
 # too and can't switch itself back on -- hence this lives in the always-on
-# Control Room calculator (panel_4.py), not in lib/biomass_mixer.py. Fluid
+# Control Room calculator (automation_panel.py), not in lib/biomass_mixer.py. Fluid
 # still flows INTO an unpowered Mixer (the simworker only requires the
 # SOURCE end of a link to be powered), so buffers refill while paused and
 # the gate reads them directly.
