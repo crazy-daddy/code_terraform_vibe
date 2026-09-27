@@ -232,10 +232,13 @@ The save has grown past a single production base: multiple outposts are founded,
   wherever a Depot exists at both ends; Pioneers keep only the uncovered jobs; retire the surplus via
   `recall_home_and_decommission()` above (operator-triggered, never automatic). Re-check the residual set
   whenever a Depot is built at an outpost.
-  - [ ] Pioneer job filter: before claiming a published job (`logistics.pickups`, pull requests, drill ore),
+  - [x] Pioneer job filter: before claiming a published job (`logistics.pickups`, pull requests, drill ore),
     a Pioneer checks the job is "for it": the source or destination has no Drone Depot, or the source kind is
     drone-unservable (e.g. Water Pump `salt_out`). Otherwise leave the job to drones. Decide per job at claim
     time (runtime Depot discovery, no hardcoded outpost list), and log the reject reason at `debug()`.
+    Operator switch "leave to drones" on the FLEET card (`logistics.drone_yield`, default off). Pull loop only;
+    see `docs/cheatsheet/production_logistics.md` §2i. Stub-tested only.
+  - [ ] Validate live: switch on, pull hauler skips drills + Depot outposts, drone haulers pick the ore up.
 - [ ] Verify power subnet topology after every remote build:
   - [ ] Confirm every line/bridge is complete and physically touches the intended service footprints.
   - [ ] Compare subnet generation, demand, conventional battery storage, and Lightning Rod reserve.

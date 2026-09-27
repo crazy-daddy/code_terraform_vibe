@@ -520,7 +520,9 @@ class VehicleCargoMixin:
         net of what other haulers already reserved there. A drill with no
         recorded position (drill.positions) is skipped, warned about once.
         Water Pumps holding byproduct salt (lib/pump_salt.py) are added when
-        salt is wanted, home pumps included.
+        salt is wanted, home pumps included. With the FLEET card's drone
+        yield switch on, sources drone haulers can serve are dropped
+        (logistics_requests.drone_served_source()).
         """
         home_id = getattr(self._host.home_outpost, "id", None)
         requests = logistics_requests.active_requests(curr_tick)
@@ -565,6 +567,15 @@ class VehicleCargoMixin:
                 free = entry["available"] - taken.get(pump_salt.SALT_ITEM_ID, 0)
                 if free > 0:
                     sources.append({"kind": "pump", "id": pump_id, "coords": entry["coords"], "available": {pump_salt.SALT_ITEM_ID: free}, "outpost": None})
+
+        kept = []
+        for src in sources:
+            reason = logistics_requests.drone_served_source(src, self._host.home_outpost)
+            if reason:
+                self._host.log.debug(f"[{self._host.name}] pull: skip {src['kind']}:{src['id']} ({reason}; drone yield on).")
+            else:
+                kept.append(src)
+        sources = kept
 
         self._host.log.debug(f"[{self._host.name}] pull: {len(sources)} source(s) hold wanted items: " + ", ".join(f"{src['kind']}:{src['id']}={src['available']}" for src in sources))
         return sources

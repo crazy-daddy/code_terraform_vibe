@@ -16,6 +16,7 @@ from archive import archive
 from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
 from vehicle_upgrade import is_sport_nav_requested, request_sport_nav
+from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
 
 # Sport Nav button only fits alongside the existing wide-layout row content
 # (role pill, battery bar, status text, location, recall switch) without
@@ -68,6 +69,15 @@ while True:
     slider_value = panel.slider("default_cruise_throttle", 24, 54, slider_w, current_default_throttle, f"cruise throttle {current_default_throttle * 100:.0f}%")
     if slider_value != current_default_throttle:
         archive.set(DEFAULT_CRUISE_THROTTLE_KEY, slider_value)
+
+    # Drone yield (lib/logistics_requests.py drone_served_source()): on ->
+    # pull haulers leave drill and Drone-Depot-outpost pickups to drone
+    # haulers. Intent publish only, like recall.
+    drone_yield = drone_yield_enabled()
+    yield_x = max(slider_w + 48, width - 250)
+    yield_on = panel.switch("drone_yield", yield_x, 46, drone_yield, "leave to drones")
+    if yield_on != drone_yield:
+        set_drone_yield_enabled(yield_on)
 
     fleet = get_component("fleet")
     vehicles = fleet.vehicles() if fleet and hasattr(fleet, "vehicles") else []

@@ -33,6 +33,9 @@ log = TreeConsole(module="logistics_requests")
 
 REQUESTS_KEY = "logistics.requests"
 PICKUPS_KEY = "logistics.pickups"
+# Operator switch (panel_2.py FLEET card): when True, ground pull haulers
+# leave drone-servable pickups to floating drone haulers (drone_served_source()).
+DRONE_YIELD_KEY = "logistics.drone_yield"
 
 # A requester republishes at least this often while alive; older entries are
 # ignored and pruned so a stopped/removed requester can't pin stock forever
@@ -329,6 +332,33 @@ def local_depots(outpost):
         if depot:
             depots.append(depot)
     return depots
+
+
+def drone_yield_enabled():
+    """Operator switch: ground pull haulers skip drone-servable sources (default off)."""
+    return bool(archive.get(DRONE_YIELD_KEY, False))
+
+
+def set_drone_yield_enabled(enabled):
+    archive.set(DRONE_YIELD_KEY, bool(enabled))
+
+
+def drone_served_source(source, dest_outpost):
+    """
+    Reason string when a pull source (lib/vehicle_cargo.py _pull_sources()
+    dict) is left to drone haulers, else None. Only while drone_yield_enabled()
+    and dest_outpost has a Drone Depot (drones can't deliver elsewhere). Then
+    field Mining Drills and outposts with their own Drone Depot are skipped;
+    Water Pump salt stays (DroneCargo.load() can't take it).
+    """
+    if not drone_yield_enabled() or not local_depots(dest_outpost):
+        return None
+    kind = source.get("kind")
+    if kind == "drill":
+        return "drill, drone-servable"
+    if kind == "outpost" and local_depots(source.get("outpost")):
+        return "outpost has a Drone Depot"
+    return None
 
 
 def depot_stock(depot):
