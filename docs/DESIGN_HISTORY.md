@@ -504,3 +504,22 @@ The general external-command channel was found (2026-09-22) from a real stale re
 ## §9 — Tiered `scripts/` Migration
 
 pre-restructure codebase written/tested against save with 60 techs unlocked (incl. `data_archive_unlock`, `custom_panels_unlock`) → moved wholesale into `4_controlpanel/` as honest home tier (see `devtools/_migrate_from_root.py`), not guessed apart per file. `0_cold_boot`/`1_early` seeded separately from top-level `early_game_runner/` submodule's `early_game_runner/templates/` (flat) and `early_game_runner/templates/early/` (richer) boilerplate. That submodule = this project's own earlier `code-terraform-earlygame-automation` prototype, not `inspirations/vakermit`. Flat `early_game_runner/templates/*.py` = thin `from <lib_module> import ...` wrappers around project's own `lib/` controllers (`terraforming.py`, `solar.py`, `smelter.py`, ...), need `research_shared_library` → wrongly copied into `0_cold_boot` in initial seeding. Only `early_game_runner/templates/early/` genuinely self-contained (no `lib/`/game-module imports), belongs at `0_cold_boot`/`1_early`. `0_cold_boot/power/solar.py` = hand-trimmed exception: `early_game_runner/templates/early/solar.py` bundles full Ship-Computer building-buyer speedrunner around tracking loop, so cold-boot gets few-line sun-tracking-only script extracted from it. `fabricator`, unified `pioneer` (destination-routing, distinct from `pioneer_scout`), `steam_turbine`, `thermal_cap`, `water_pump` have no self-contained early equivalent yet → removed from `0_cold_boot` rather than left broken. They resolve once save reaches tier defining them (currently `4_controlpanel`). Splitting rest of `4_controlpanel` into earlier-tier-capable content = manual follow-up (see TODO.md), not automatic.
+
+---
+
+## §10 — Two-Tier Logistics Demand and Depot Flush (2026-09-27)
+
+A live stall (Seed Maker idle, diversity 3/15) came from the FLEET "leave to drones" switch handing
+outpost pickups to drones that could only load at drills: nobody hauled outpost stock home. Floating
+haulers now load at Depot outposts through Depot-side staging, and the yield switch only yields while a
+hauler drone is alive.
+
+Requests got a `min` (need tier) below `target` (buffer tier). A single target mixed "can't keep working
+without this" with "nice stock to have", so a home salt buffer of 2000 would have kept every unit from an
+outpost Terraformer short of 6. Need is served first everywhere; buffers share the rest in proportion to
+their deficits. Legacy requesters without `min` stay all-need, so their behaviour is unchanged.
+
+Depots clogged by life forms nobody consumes after the Liquifiers retired are cleared with
+`InputSlot.flush()`, not a Waste Processor: both only destroy, and the flush needs no extra building or
+running script. Because flush discards the whole stockpile, it runs only once everything non-surplus has
+been drained out.

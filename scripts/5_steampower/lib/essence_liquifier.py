@@ -21,7 +21,7 @@ from swallow import swallowed
 #      non-life-form cargo and foreign-biome samples are never touched.
 #      Items requested via lib/logistics_requests.py (e.g. by the Seed Maker)
 #      are held back up to logistics_requests.retain_amount(). Second source:
-#      the local Warehouse buffer the Drone Depot fills (one stack per form).
+#      the local Warehouse buffer the Drone Depot fills (LIFEFORM_BUFFER_SLOTS stacks per form).
 #   2. Drain: keep the single biome-named <biome>_essence_out port pointed at
 #      a reachable Liquid Tank latched/assigned to that essence, via the same
 #      FluidOutputRouter Water Pump uses (lib/fluid_routing.py). A Biomass
@@ -258,7 +258,7 @@ class EssenceLiquifierController:
     def feed_from_warehouse(self):
         """
         Liquifies native life forms from the local Warehouse buffer (filled by
-        lib/drone_depot.py stage_life_forms(), one stack per form) beyond what
+        lib/drone_depot.py stage_life_forms(), LIFEFORM_BUFFER_SLOTS stacks per form) beyond what
         is still requested (retain_amount()). Runs after the Depot feed, so
         the Depot's small stockpile is emptied first.
         """

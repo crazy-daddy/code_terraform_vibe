@@ -46,7 +46,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 - `drone.loadouts`: `{drone_id: {kind, slots: {slot_index: module_id | None}}}` — per-drone module slot record (drones have no `modules()`), §2k. Pruned by the coordinator.
 - `fabricator.upgrade_orders`: `{requester_id: {item_id: qty}}` — §2a-1 item 5.
 - `drone.home_depots`: one shared dict `{drone_name: outpost_id (pool) | depot_id (hardwired)}` of pinned drone homes (not one key per drone). Written by `resolve_home_depot()` in `lib/drone_energy.py`; `HOME_DEPOT` script variable overrides and overwrites the entry. Entries of drones no longer in `fleet.drones()` pruned on every write. See §2h.
-- `logistics.requests`: `{outpost_id: {item_id: {"target", "have", "by", "tick"}}}` pull requests — see §2i. Entries stale after `REQUEST_STALE_TICKS = 3000`.
+- `logistics.requests`: `{outpost_id: {item_id: {"target", "have", "min"?, "by", "tick"}}}` pull requests (`min` = need tier, absent = all need) — see §2i. Entries stale after `REQUEST_STALE_TICKS = 6000`.
+- `depot.stage`: `{depot_id: {item_id: {"units", "by", "tick"}}}` hauler-drone stage requests (`lib/depot_stage.py`), fulfilled by the Depot's `fulfil_stage()` — see §2h/§2j. Stale after `STAGE_STALE_TICKS = 9000`, pruned on every write.
 - `logistics.pickups`: `{"pull:<vehicle>:<dest>:<item>[:<source>]": {"vehicle", "dest", "source", "item_id", "units", "tick"}}` in-flight reverse-hauler pickups — see §2i.
 - `logistics.drone_yield`: bool operator switch (`panel_2.py` FLEET card, default off) — reverse haulers leave drone-servable pickups to drone haulers, see §2i.
 - `seed.combos_tried`: `{"a,b,c": True | {"by": maker_id, "tick", "stage"}}` Seed Maker triples tried (True) or claimed in flight — see §1i. Name-keyed, never reset; ≤ 4060 keys.

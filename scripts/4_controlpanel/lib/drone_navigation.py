@@ -284,6 +284,17 @@ class DroneNavigationMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] undock() notice: {res.status} - {res.message}")
         return False
 
+    def hover_wait(self, state, target_desc=None):
+        """
+        Waiting with nothing to do at a station: frees the berth via
+        leave_station() and hovers in place (hovering burns nothing, only
+        route calls do) instead of flying off to a drone_service. Publishes
+        `state` so dashboards and the Depot (flush_surplus() reads
+        WAITING_DEPOT_SPACE + target) see why.
+        """
+        self.leave_station()
+        self._host.publish_telemetry(state, target_desc)
+
     def fly_to_drill(self, name, target_coords=None, timeout_ticks=None):
         """
         Flies to a named field Mining Drill via go_to_drill() (the hauler

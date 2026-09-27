@@ -23,7 +23,8 @@ CARE_REFRESH_H = 4.0      # a treatment below this triggers a care tour
 CARE_BATCH_H = 12.0       # a tour (and any visit) also renews everything below this,
                           # so renewals line up and later tours need fewer trips
 SALT_MIN_STOCK = 3        # salt species are only planted with at least this much salt at home
-SALT_STOCK_TARGET = 20    # home salt stock requested from the reverse hauler
+SALT_STOCK_TARGET = 2000  # home salt buffer requested from haulers (one Warehouse slot)
+SALT_NEED_UNITS = 30      # need tier of that request: 2 Dispenser refills + 2 Terraformer batches + hand care
 REQUESTER_ID = "field_keeper"
 
 _FLAG = {"light": "lit", "water": "watered", "salt": "salted"}
@@ -57,7 +58,7 @@ class HarvesterCareMixin:
         wanted = set(self.salt_species(rules))
         if any(sp in wanted for sp in layout.values()):
             have = total_stock("salt")
-            logistics_requests.set_requests(home_id, REQUESTER_ID, {"salt": (SALT_STOCK_TARGET, have)}, curr_tick)
+            logistics_requests.set_requests(home_id, REQUESTER_ID, {"salt": (SALT_STOCK_TARGET, have, SALT_NEED_UNITS)}, curr_tick)
         else:
             logistics_requests.clear_requests(REQUESTER_ID, home_id)
 

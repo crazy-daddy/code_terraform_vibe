@@ -13,9 +13,17 @@
 #
 # Archive shape (one shared dict per concern, CLAUDE.md rule 7):
 #   logistics.requests = {outpost_id: {item_id: {"target": t, "have": h,
-#                                                "by": requester, "tick": n}}}
+#                                                "min": m, "by": requester,
+#                                                "tick": n}}}
 #   logistics.pickups  = {pickup_key: {"vehicle", "dest", "source",
 #                                      "item_id", "units", "tick"}}
+# Two demand tiers per request: "min" is what the requester needs to keep
+# working (the need tier), "target" the stock it would like on hand (the
+# buffer tier above min). "min" missing or >= target means all need. Need
+# deficits are served first everywhere; what supply is left is split between
+# buffer deficits in proportion to their size (fair_buffer_caps()). A source
+# outpost keeps its own min back from another outpost's need, and its full
+# target back from another outpost's buffer (outpost_free_tiers()).
 # "have" is the requester's own last-published local stock -- a cheap,
 # slightly lagging number for readers that can't afford a live stock walk
 # (miner drones). The hauler recomputes local stock live (outpost_stock())
@@ -26,6 +34,7 @@
 
 from archive import archive
 from storage import warehouse_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
+from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
 
@@ -39,8 +48,18 @@ DRONE_YIELD_KEY = "logistics.drone_yield"
 
 # A requester republishes at least this often while alive; older entries are
 # ignored and pruned so a stopped/removed requester can't pin stock forever
-# (10 ticks/s -> 5 minutes).
-REQUEST_STALE_TICKS = 3000
+# (10 ticks/s -> 10 minutes). Longer than the slowest requester's publish
+# gap (the field Harvester republishes between care tours, ~5 minutes).
+REQUEST_STALE_TICKS = 6000
+
+# Planner scoring: a need-tier unit counts this many times a buffer-tier
+# unit, so topping up a requester that is about to stall beats filling
+# another outpost's buffer.
+NEED_SCORE_WEIGHT = 4
+
+# A drone hauler counts as present (drone_served_source()) while its
+# fleet.status heartbeat is younger than this (10 minutes).
+HAULER_FRESH_TICKS = 6000
 
 # Same window as mining_reservations.RESERVATION_STALE_TICKS.
 PICKUP_STALE_TICKS = 36000
@@ -76,9 +95,10 @@ def _is_fresh(entry, curr_tick, stale_ticks):
 def set_requests(outpost_id, requester, wants, curr_tick=None):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
-    ({item_id: (target, have)}), in one transaction. An empty `wants` just
-    withdraws the requester's entries there. Stale entries of any requester
-    are pruned on the way.
+    ({item_id: (target, have)} or {item_id: (target, have, min)}), in one
+    transaction. Without min the whole target is need tier. An empty
+    `wants` just withdraws the requester's entries there. Stale entries of
+    any requester are pruned on the way.
     """
     tick = curr_tick if curr_tick is not None else _now_tick()
 
@@ -97,9 +117,12 @@ def set_requests(outpost_id, requester, wants, curr_tick=None):
                 del requests[o_id]
         if wants:
             bucket = requests.get(outpost_id, {})
-            for item_id, pair in wants.items():
-                target, have = pair
-                bucket[item_id] = {"target": target, "have": have, "by": requester, "tick": tick}
+            for item_id, values in wants.items():
+                target, have = values[0], values[1]
+                entry = {"target": target, "have": have, "by": requester, "tick": tick}
+                if len(values) > 2 and values[2] is not None and values[2] < target:
+                    entry["min"] = max(0, values[2])
+                bucket[item_id] = entry
             requests[outpost_id] = bucket
         return requests
 
@@ -343,15 +366,32 @@ def set_drone_yield_enabled(enabled):
     archive.set(DRONE_YIELD_KEY, bool(enabled))
 
 
+def drone_haulers_present(curr_tick=None):
+    """True when fleet.status holds a hauler-role drone heard from within HAULER_FRESH_TICKS."""
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    status = archive.get(FLEET_STATUS_KEY, {})
+    if not isinstance(status, dict):
+        return False
+    for entry in status.values():
+        if isinstance(entry, dict) and entry.get("role") == "hauler" and tick - (entry.get("tick", 0) or 0) < HAULER_FRESH_TICKS:
+            return True
+    return False
+
+
 def drone_served_source(source, dest_outpost):
     """
     Reason string when a pull source (lib/vehicle_cargo.py _pull_sources()
-    dict) is left to drone haulers, else None. Only while drone_yield_enabled()
-    and dest_outpost has a Drone Depot (drones can't deliver elsewhere). Then
-    field Mining Drills and outposts with their own Drone Depot are skipped;
-    Water Pump salt stays (DroneCargo.load() can't take it).
+    dict) is left to drone haulers, else None. Only while drone_yield_enabled(),
+    dest_outpost has a Drone Depot (drones can't deliver elsewhere) and at
+    least one hauler drone is alive (drone_haulers_present()). Then field
+    Mining Drills and outposts with their own Drone Depot are skipped; Water
+    Pump salt stays (DroneCargo.load() can't take it).
     """
     if not drone_yield_enabled() or not local_depots(dest_outpost):
+        return None
+    if not drone_haulers_present():
+        log.debug("drone_served_source(): drone yield on, but no hauler drone reported in the last "
+                  f"{HAULER_FRESH_TICKS} ticks; keeping every source for ground haulers.")
         return None
     kind = source.get("kind")
     if kind == "drill":
@@ -404,26 +444,109 @@ def outpost_stock(item_ids, outpost):
     return totals
 
 
-def outpost_deficits(outpost, curr_tick=None, live=True):
+def request_min(entry):
+    """Need-tier level of one request entry: its "min", capped at "target" (whole target when unset)."""
+    target = entry.get("target", 0) or 0
+    floor = entry.get("min")
+    return target if floor is None else min(floor, target)
+
+
+def _tier_split(entry, have, flying):
+    """(need, buffer) units missing for one request entry, given stock and in-flight units."""
+    target = entry.get("target", 0) or 0
+    arriving = have + flying
+    need = max(0, request_min(entry) - arriving)
+    buffer = max(0, target - arriving) - need
+    return need, max(0, buffer)
+
+
+def outpost_deficits_tiered(outpost, curr_tick=None, live=True):
     """
-    {item_id: units still missing} for requests at `outpost` (OutpostRef):
-    target - local stock - in-flight pickups, positive entries only. live=True
-    counts local stock now (hauler at the requesting outpost); live=False
-    trusts the requester's last published "have".
+    ({item_id: need units}, {item_id: buffer units}) still missing for
+    requests at `outpost` (OutpostRef): need = min - local stock - in-flight,
+    buffer = the rest up to target. Positive entries only. live=True counts
+    local stock now; live=False trusts the requester's last published "have".
     """
     tick = curr_tick if curr_tick is not None else _now_tick()
     outpost_id = getattr(outpost, "id", None)
     requests = active_requests(tick).get(outpost_id, {})
     if not requests:
-        return {}
+        return {}, {}
     have = outpost_stock(list(requests.keys()), outpost) if live else {i: e.get("have", 0) for i, e in requests.items()}
     flying = in_flight(outpost_id, tick)
-    deficits = {}
+    need, buffer = {}, {}
     for item_id, entry in requests.items():
-        missing = entry.get("target", 0) - have.get(item_id, 0) - flying.get(item_id, 0)
-        if missing > 0:
-            deficits[item_id] = missing
+        n, b = _tier_split(entry, have.get(item_id, 0), flying.get(item_id, 0))
+        if n > 0:
+            need[item_id] = n
+        if b > 0:
+            buffer[item_id] = b
+    return need, buffer
+
+
+def outpost_deficits(outpost, curr_tick=None, live=True):
+    """
+    {item_id: units still missing} for requests at `outpost` (OutpostRef):
+    target - local stock - in-flight pickups (need + buffer tier, see
+    outpost_deficits_tiered()), positive entries only.
+    """
+    need, buffer = outpost_deficits_tiered(outpost, curr_tick, live)
+    deficits = dict(need)
+    for item_id, units in buffer.items():
+        deficits[item_id] = deficits.get(item_id, 0) + units
     return deficits
+
+
+def fair_buffer_caps(dest_outpost_id, buffer, supply, curr_tick=None):
+    """
+    {item_id: units} dest may plan from its buffer-tier deficit `buffer`,
+    given `supply` ({item_id: units} the planner can see for the buffer tier,
+    after need tiers were served). Split in proportion to every requesting
+    outpost's buffer deficit for that item (other outposts read from their
+    published "have", minus in-flight). The largest deficit gets the
+    rounding remainder, so the supply is never stranded by flooring.
+    """
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    others = {}
+    for o_id, items in active_requests(tick).items():
+        if o_id == dest_outpost_id:
+            continue
+        flying = in_flight(o_id, tick)
+        for item_id, entry in items.items():
+            if item_id not in buffer:
+                continue
+            _n, b = _tier_split(entry, entry.get("have", 0) or 0, flying.get(item_id, 0))
+            if b > 0:
+                others.setdefault(item_id, []).append(b)
+    caps = {}
+    for item_id, mine in buffer.items():
+        available = max(0, int(supply.get(item_id, 0)))
+        rivals = others.get(item_id, [])
+        total = mine + sum(rivals)
+        if not rivals or total <= available:
+            caps[item_id] = min(mine, available)
+            continue
+        share = available * mine // total
+        if mine >= max(rivals):
+            share = available - sum(available * r // total for r in rivals)
+        caps[item_id] = max(0, min(mine, share))
+        log.debug(f"fair_buffer_caps({dest_outpost_id!r}, {item_id}): supply {available} vs buffer deficits mine={mine}, others={rivals} -> {caps[item_id]}.")
+    return caps
+
+
+def plan_take(source, item_id, need_left, buffer_left, cap):
+    """
+    (need units, buffer units) to plan from one source for item_id. A source
+    dict carries "available" (free for another outpost's need) and optionally
+    "available_buffer" (free for a buffer top-up, <= available; defaults to
+    "available"). Need is taken first; buffer only from what stays above the
+    source's own target after that.
+    """
+    avail = source["available"].get(item_id, 0)
+    avail_buffer = source.get("available_buffer", source["available"]).get(item_id, 0)
+    need = max(0, min(need_left.get(item_id, 0), avail, cap))
+    buffer = max(0, min(buffer_left.get(item_id, 0), avail_buffer - need, cap - need))
+    return need, buffer
 
 
 def network_deficits(curr_tick=None):
@@ -443,14 +566,17 @@ def network_deficits(curr_tick=None):
     return totals
 
 
-def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude_vehicle=None):
+def outpost_free_tiers(outpost, item_ids, requests=None, curr_tick=None, exclude_vehicle=None, include_depots=False):
     """
-    {item_id: units} an outpost can give away to a pull hauler -- its
-    advertised "free stock", computed live (no per-outpost script needed):
-    Warehouse stock (+ Inventory when it's home, + Crop Automators for forage)
-    minus the outpost's own request target for that item, minus what other haulers
-    already reserved from it. Drone Depot stock is left out on purpose -- lib/drone_depot.py
-    stages requested items into a Warehouse, which vehicles can take() from.
+    ({item_id: free for another outpost's need}, {item_id: free for a buffer
+    top-up}) -- an outpost's "free stock", computed live (no per-outpost
+    script needed): Warehouse stock (+ Inventory when it's home, + Crop
+    Automators for forage, + Drone Depot stockpiles with include_depots)
+    minus what the outpost keeps for itself (its own request's min for the
+    need tier, its full target for the buffer tier), minus what other haulers
+    already reserved from it. Depots are left out for ground haulers: a
+    vehicle can only take() from Warehouses; a docked drone loads straight
+    from the Depot stockpile.
     """
     requests = requests if requests is not None else active_requests(curr_tick)
     outpost_id = getattr(outpost, "id", None)
@@ -461,22 +587,37 @@ def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude
         try:
             inventory = get_component("inventory")
         except Exception as error:
-            swallowed("logistics_requests.outpost_free_stock: get_component", error)
+            swallowed("logistics_requests.outpost_free_tiers: get_component", error)
             inventory = None
-    free = {}
+    depot_totals = {}
+    if include_depots:
+        for depot in local_depots(outpost):
+            for item_id, units in depot_stock(depot).items():
+                depot_totals[item_id] = depot_totals.get(item_id, 0) + units
+    for_need, for_buffer = {}, {}
     for item_id in item_ids:
-        units = warehouse_stock(item_id, outpost)
+        units = warehouse_stock(item_id, outpost) + depot_totals.get(item_id, 0)
         if inventory is not None:
             try:
                 units += inventory.count(item_id)
             except Exception as error:
-                swallowed("logistics_requests.outpost_free_stock: inventory.count", error)
+                swallowed("logistics_requests.outpost_free_tiers: inventory.count", error)
         if item_id == CROP_AUTOMATOR_ITEM_ID and inventory is not None:
             units += crop_automator_forage_total(outpost)
-        units -= own.get(item_id, {}).get("target", 0) + taken.get(item_id, 0)
-        if units > 0:
-            free[item_id] = units
-    return free
+        units -= taken.get(item_id, 0)
+        entry = own.get(item_id)
+        keep_need = request_min(entry) if entry else 0
+        keep_buffer = (entry.get("target", 0) or 0) if entry else 0
+        if units - keep_need > 0:
+            for_need[item_id] = units - keep_need
+        if units - keep_buffer > 0:
+            for_buffer[item_id] = units - keep_buffer
+    return for_need, for_buffer
+
+
+def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude_vehicle=None):
+    """{item_id: units} an outpost can give to a buffer top-up (outpost_free_tiers() buffer tier, Warehouses only)."""
+    return outpost_free_tiers(outpost, item_ids, requests, curr_tick, exclude_vehicle)[1]
 
 
 def retain_amount(item_id, outpost_id, requests=None):

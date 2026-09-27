@@ -99,7 +99,7 @@ FERTILIZER_ITEM_IDS = ("fertilizer_mk3", "fertilizer_mk2", "fertilizer")
 SUPPORT_REQUEST_BATCHES = 2
 
 # Requests are republished at least this often (well inside
-# logistics_requests.REQUEST_STALE_TICKS = 3000) and at once when a target
+# logistics_requests.REQUEST_STALE_TICKS = 6000) and at once when a target
 # changes; 10 ticks/s -> 1 min.
 REQUEST_REFRESH_TICKS = 600
 

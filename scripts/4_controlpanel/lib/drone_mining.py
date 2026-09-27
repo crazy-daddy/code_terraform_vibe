@@ -44,8 +44,12 @@ RARITY_REQUEST_WEIGHT = {"common": 1, "uncommon": 2, "rare": 4}
 class DroneMiningMixin:
 
     # Wait before retrying an unload at a full Drone Depot (10 ticks/s,
-    # so ~30 s). The drone charges at its drone_service meanwhile.
+    # so ~30 s). The drone hovers at the Depot meanwhile (hover_wait()),
+    # flying to a drone_service only below LAUNCH_MIN_SOC.
     DEPOT_FULL_RETRY_TICKS = 300
+    # After this many full-Depot unload failures in a row, cargo another
+    # Depot outpost requests is delivered there instead (_deliver_elsewhere()).
+    DEPOT_FULL_STALL_ATTEMPTS = 3
 
     @property
     def _host(self) -> "DroneController":
@@ -244,13 +248,12 @@ class DroneMiningMixin:
                 if self._host.cargo_count() > 0:
                     now_tick = self._host.get_current_tick()
                     retry_tick = getattr(self, "_depot_full_retry_tick", 0)
+                    full_depot = getattr(self, "_depot_full_id", None)
                     if now_tick < retry_tick:
-                        # Depot was full last try: stay docked at the
-                        # drone_service (charging) until the backoff expires.
-                        log.debug(f"[{self._host.name}] Depot full backoff: {retry_tick - now_tick} ticks left; charging at drone_service.")
-                        self._host.return_to_service_for_charge(log, "Waiting for Drone Depot space")
-                        self._host.publish_telemetry("WAITING_DEPOT_SPACE")
+                        self._wait_for_depot_space(log, full_depot, retry_tick - now_tick)
                         sleep(poll_interval)
+                        continue
+                    if getattr(self, "_depot_full_count", 0) >= self.DEPOT_FULL_STALL_ATTEMPTS and self._deliver_elsewhere(log):
                         continue
                     # Without the sleep a failed return (e.g. go_to "busy")
                     # retried in a tight loop and flooded the console.
@@ -385,6 +388,78 @@ class DroneMiningMixin:
                 break
         self._host.log.trace(f"[{self._host.name}] _extract_until_done({coords}) exit.")
 
+    def _wait_for_depot_space(self, log, depot_id, ticks_left):
+        """
+        Depot-full backoff: hover in place off the berth (free) and report
+        WAITING_DEPOT_SPACE for depot_id, which lets that Depot flush surplus
+        (lib/drone_depot.py flush_surplus()). Charges at a drone_service
+        only when below LAUNCH_MIN_SOC.
+        """
+        _, _, lvl = self._host.get_battery()
+        if lvl < self._host.LAUNCH_MIN_SOC:
+            log.debug(f"[{self._host.name}] Depot full backoff: {ticks_left} ticks left, {lvl*100:.0f}% charge; charging at drone_service meanwhile.")
+            self._host.return_to_service_for_charge(log, "Waiting for Drone Depot space")
+            self._host.publish_telemetry("WAITING_DEPOT_SPACE", depot_id)
+            return
+        log.debug(f"[{self._host.name}] Depot full backoff: {ticks_left} ticks left; hovering off the berth.")
+        self._host.hover_wait("WAITING_DEPOT_SPACE", depot_id)
+
+    def _deliver_elsewhere(self, log):
+        """
+        Stalled at a full home Depot: delivers cargo that another Depot
+        outpost requests (logistics_requests.outpost_deficits()) there, once,
+        if the trip is affordable (calculate_trip_energy()). Picks the outpost
+        taking the most units. True when anything was unloaded (the stall
+        counter resets); False leaves the drone waiting at home.
+        """
+        try:
+            contents = {i: int(n) for i, n in dict(self._host.drone.cargo.contents()).items() if n > 0}
+        except Exception as error:
+            swallowed("drone_mining.DroneMiningMixin._deliver_elsewhere: self._host.drone.cargo.contents", error)
+            return False
+        home_ids = {d["id"] for d in self._host._home_depot_candidates()}
+        by_outpost = {}
+        for depot in self._host.get_all_drone_depots():
+            if depot["id"] not in home_ids and depot.get("outpost_id"):
+                by_outpost.setdefault(depot["outpost_id"], []).append(depot)
+        network = get_component("outpost_network")
+        try:
+            outposts = {o.id: o for o in network.outposts()} if network else {}
+        except Exception as error:
+            swallowed("drone_mining.DroneMiningMixin._deliver_elsewhere: network.outposts", error)
+            outposts = {}
+        best, best_units = None, 0
+        for outpost_id, depots in by_outpost.items():
+            deficits = logistics_requests.outpost_deficits(outposts.get(outpost_id), live=False) if outpost_id in outposts else {}
+            units = sum(min(n, deficits.get(i, 0)) for i, n in contents.items())
+            if units <= 0:
+                continue
+            budget = self._host.calculate_trip_energy(depots[0]["coords"])
+            if not budget["is_achievable"]:
+                log.debug(f"[{self._host.name}] Stalled cargo: '{outpost_id}' wants {units} unit(s) but is out of range.")
+                continue
+            if units > best_units:
+                best, best_units = (outpost_id, depots), units
+        if best is None:
+            log.debug(f"[{self._host.name}] Stalled cargo {contents}: no other Depot outpost requests it in range; waiting at home.")
+            return False
+        outpost_id, depots = best
+        depot = self._host._pick_free_depot(depots)
+        log.print(f"[{self._host.name}] Home Depot full {self._depot_full_count}x; delivering {contents} to '{depot['id']}' ({outpost_id}), which requests {best_units} unit(s).")
+        self._host.publish_telemetry("DELIVERING", depot["id"])
+        if not self._host.fly_to_station(depot["id"], target_coords=depot["coords"]):
+            log.level("warn").print(f"[{self._host.name}] Could not dock at '{depot['id']}' for the stalled cargo; back to waiting at home.")
+            return False
+        unloaded = self._host.unload_cargo_at_depot()
+        self._host.leave_station()
+        if unloaded <= 0:
+            log.debug(f"[{self._host.name}] '{depot['id']}' took nothing ({unloaded}); back to waiting at home.")
+            return False
+        log.print(f"[{self._host.name}] Unloaded {unloaded} stalled unit(s) at '{depot['id']}'.")
+        self._depot_full_count = 0
+        self._depot_full_retry_tick = 0
+        return True
+
     def _return_and_unload(self):
         """Flies to the home Depot and unloads. Returns True on success, False when the caller should back off before retrying."""
         self._host.log.trace(f"[{self._host.name}] _return_and_unload() entry.")
@@ -432,7 +507,12 @@ class DroneMiningMixin:
 
         if unloaded < 0:
             self._depot_full_retry_tick = self._host.get_current_tick() + self.DEPOT_FULL_RETRY_TICKS
-            self._host.log.debug(f"[{self._host.name}] Depot full; parking at drone_service to charge, next unload attempt in {self.DEPOT_FULL_RETRY_TICKS} ticks.")
+            self._depot_full_count = getattr(self, "_depot_full_count", 0) + 1
+            self._depot_full_id = depot_id
+            self._host.log.debug(f"[{self._host.name}] Depot '{depot_id}' full ({self._depot_full_count}x in a row); next unload attempt in {self.DEPOT_FULL_RETRY_TICKS} ticks.")
+        elif self._host.cargo_count() == 0:
+            self._depot_full_count = 0
+            self._depot_full_id = None
 
         self._host.release_biosite_claim()
         if unloaded >= 0 and self._host.cargo_count() == 0:
@@ -448,10 +528,9 @@ class DroneMiningMixin:
         self._host.leave_station()
         if unloaded < 0:
             # Re-docking at a full depot every few seconds burns time and
-            # battery for nothing. Charge at the drone_service instead; the
-            # miner loop holds the drone there until the retry tick passes.
-            self._host.return_to_service_for_charge(self._host.log, "Drone Depot full")
-            self._host.publish_telemetry("WAITING_DEPOT_SPACE")
+            # battery for nothing; the miner loop hovers here until the retry
+            # tick passes (_wait_for_depot_space()).
+            self._wait_for_depot_space(self._host.log, depot_id, self.DEPOT_FULL_RETRY_TICKS)
         else:
             self._host.publish_telemetry("READY_AT_DEPOT")
         self._host.log.trace(f"[{self._host.name}] _return_and_unload() exit: unloaded={unloaded}.")

@@ -1,33 +1,42 @@
-# Drone role: floating freight hauler (phase 1: field Mining Drills -> Drone
-# Depots). Detected when a drone carries Cargo Pods but no bio module (see
-# DroneController.detect_role()).
+# Drone role: floating freight hauler (field Mining Drills and Drone Depot
+# outposts -> Drone Depots). Detected when a drone carries Cargo Pods but no
+# bio module (see DroneController.detect_role()).
 #
 # "Floating": no home Depot. Every cycle the drone picks the best job
 # network-wide -- which outpost (with a Drone Depot) needs what, and which
-# field drills hold it -- flies there, loads straight from the drill(s),
-# delivers to that outpost's Depot, and moves on. It refuels at whichever
+# drills or other Depot outposts hold it -- flies there, loads, delivers to
+# that outpost's Depot, and moves on. It refuels at whichever
 # drone_service_station is nearest when a job's fuel budget demands it, and
-# parks at the nearest one when there is nothing to do (never holds a Depot
-# bay while idle).
+# hovers in place when there is nothing to do (never holds a bay while idle).
 #
-# Why drills only for now: cargo.load() works only at a docked Drone Depot or
-# a field Mining Drill, cargo.unload() only into a docked Depot (drone.md,
-# DroneCargo). A drill needs no staging; an outpost pickup needs its Depot to
-# pull the items out of storage first -- phase 2 (see TODO.md).
+# Loading: cargo.load() works only at a docked Drone Depot or a field Mining
+# Drill, cargo.unload() only into a docked Depot (drone.md, DroneCargo). A
+# drill needs no staging. An outpost pickup asks the source Depot to pull the
+# items out of local storage first (lib/depot_stage.py, fulfilled by
+# lib/drone_depot.py fulfil_stage()) while the drone is on its way, then
+# loads in rounds as the small stockpile refills.
 #
 # Demand and coordination are shared with the Pioneer pull hauler
 # (lib/vehicle_cargo.py run_pull_loop()), so the two never both serve the
 # same deficit:
-#   - demand per outpost: logistics_requests.outpost_deficits() (net of
-#     in-flight logistics.pickups), plus get_raw_material_demands() at home
-#     (net of mining.reserved_yield);
-#   - planned units reserved per drill (logistics.pickups "source") and, for
+#   - demand per outpost: logistics_requests.outpost_deficits_tiered() (net
+#     of in-flight logistics.pickups), plus get_raw_material_demands() at
+#     home (net of mining.reserved_yield) as need tier. Need is served first
+#     (scored NEED_SCORE_WEIGHT x); buffer deficits are capped at the fair
+#     share of what the sources hold (fair_buffer_caps());
+#   - planned units reserved per source (logistics.pickups "source") and, for
 #     home-bound ore, debited from mining.reserved_yield.
 # The Depot controller (lib/drone_depot.py drain_freight()) drains unloaded
 # freight into local storage while the drone unloads in rounds.
+#
+# Stalls: a Depot where docking, loading or unloading fails
+# STALL_MAX_ATTEMPTS times in a row goes on cooldown (in memory, per drone)
+# for STALL_COOLDOWN_TICKS, so the drone moves on to other jobs and
+# destinations instead of retrying the same one forever.
 
 import logistics_requests
 import mining_reservations
+import depot_stage
 import drill_sites
 from archive import archive
 from production import get_raw_material_demands
@@ -53,6 +62,16 @@ DEPOT_UNLOAD_TIMEOUT_S = 300.0
 DEPOT_UNLOAD_RETRY_S = 2.0
 # Waiting at a Depot whose bays are all taken.
 DEPOT_BAY_WAIT_S = 60.0
+# Loading at a source Depot happens in rounds while drone_depot.py stages
+# more from storage; give up (keep what's aboard) after this.
+DEPOT_LOAD_TIMEOUT_S = 120.0
+# Docked at a Depot with no load/unload progress for this long -> leave the
+# bay, hover, retry later.
+DOCK_IDLE_MAX_S = 60.0
+# Failures in a row at one Depot/outpost before it goes on cooldown, and the
+# cooldown (10 ticks/s -> 5 minutes).
+STALL_MAX_ATTEMPTS = 3
+STALL_COOLDOWN_TICKS = 3000
 # Refuel/charge wait at a drone_service before giving up for this cycle.
 REFUEL_TIMEOUT_S = 900.0
 REFUEL_FULL_LEVEL = 0.98
@@ -77,9 +96,11 @@ class DroneHaulerMixin:
     def _haul_destinations(self, curr_tick):
         """
         Outposts with a Drone Depot and something missing, as dicts
-        {"outpost", "outpost_id", "coords", "depots", "deficits"}. Home adds
-        raw-ore demand (larger of request vs ore demand per item, never the
-        sum -- both measure a target against the same stock).
+        {"outpost", "outpost_id", "coords", "depots", "need", "buffer",
+        "deficits"} (deficits = need + buffer). Home adds raw-ore demand to
+        the need tier (larger of request vs ore demand per item, never the
+        sum -- both measure a target against the same stock). Destinations on
+        stall cooldown are left out.
         """
         outposts = self._outposts_by_id()
         depots_by_outpost = {}
@@ -91,17 +112,30 @@ class DroneHaulerMixin:
             outpost = outposts.get(outpost_id)
             if outpost is None:
                 continue
-            deficits = logistics_requests.outpost_deficits(outpost, curr_tick, live=True)
+            if self._cooling("dest", outpost_id, curr_tick):
+                self._host.log.debug(f"[{self._host.name}] haul: '{outpost_id}' on stall cooldown; not a destination this cycle.")
+                continue
+            need, buffer = logistics_requests.outpost_deficits_tiered(outpost, curr_tick, live=True)
             if getattr(outpost, "is_home", False):
                 for item_id, units in get_raw_material_demands().items():
-                    if units > deficits.get(item_id, 0):
-                        deficits[item_id] = units
-            deficits = {i: u for i, u in deficits.items() if u > 0}
-            if deficits:
-                dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots, "deficits": deficits})
+                    if units > need.get(item_id, 0) + buffer.get(item_id, 0):
+                        need[item_id] = units
+                        buffer.pop(item_id, None)
+            need = {i: u for i, u in need.items() if u > 0}
+            buffer = {i: u for i, u in buffer.items() if u > 0}
+            if need or buffer:
+                dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots,
+                              "need": need, "buffer": buffer, "deficits": self._sum_tiers(need, buffer)})
         self._warn_if_home_has_no_depot(outposts, depots_by_outpost)
-        self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}={d['deficits']}" for d in dests) or "none"))
+        self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}=need {d['need']} buffer {d['buffer']}" for d in dests) or "none"))
         return dests
+
+    @staticmethod
+    def _sum_tiers(need, buffer):
+        total = dict(need)
+        for item_id, units in buffer.items():
+            total[item_id] = total.get(item_id, 0) + units
+        return total
 
     def _warn_if_home_has_no_depot(self, outposts, depots_by_outpost):
         """
@@ -142,8 +176,38 @@ class DroneHaulerMixin:
                     self._host.log.level("warn").print(f"[{self._host.name}] Drill '{drill_id}' holds {available} but its position is unknown; seed drill.positions to include it.")
                     self._unlocated_drills_warned.add(drill_id)
                 continue
-            sources.append({"id": drill_id, "coords": (float(coords[0]), float(coords[1])), "available": available})
+            sources.append({"kind": "drill", "id": drill_id, "coords": (float(coords[0]), float(coords[1])), "available": available})
         self._host.log.debug(f"[{self._host.name}] haul: {len(sources)} drill(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
+        return sources
+
+    def _outpost_sources(self, items, curr_tick):
+        """
+        Drone Depot outposts holding free stock of `items` (Warehouses,
+        Depot stockpiles, Inventory at home -- logistics_requests.
+        outpost_free_tiers(include_depots=True)), net of other haulers'
+        reservations. "available" is what another outpost's need may take,
+        "available_buffer" what a buffer top-up may take. Outposts on stall
+        cooldown are left out.
+        """
+        outposts = self._outposts_by_id()
+        depots_by_outpost = {}
+        for depot in self._host.get_all_drone_depots():
+            if depot.get("outpost_id"):
+                depots_by_outpost.setdefault(depot["outpost_id"], []).append(depot)
+        requests = logistics_requests.active_requests(curr_tick)
+        sources = []
+        for outpost_id, depots in depots_by_outpost.items():
+            outpost = outposts.get(outpost_id)
+            if outpost is None:
+                continue
+            if self._cooling("source", outpost_id, curr_tick):
+                self._host.log.debug(f"[{self._host.name}] haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
+                continue
+            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, list(items), requests, curr_tick, exclude_vehicle=self._host.name, include_depots=True)
+            if for_need:
+                sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": for_need,
+                                "available_buffer": for_buffer, "depots": depots, "outpost": outpost})
+        self._host.log.debug(f"[{self._host.name}] haul: {len(sources)} Depot outpost(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
         return sources
 
     # ------------------------------------------------------------ planning
@@ -172,20 +236,22 @@ class DroneHaulerMixin:
 
     def _plan_route_for(self, dest, sources, capacity, start, first=None):
         """
-        Greedy nearest-neighbour drill route for one destination, starting at
-        `first` (else the nearest useful drill): largest deficits first per
-        stop, up to capacity / HAUL_MAX_STOPS_PER_TRIP, chained stops only
-        when not "behind" the destination. Per-item room is capped by
+        Greedy nearest-neighbour route for one destination, starting at
+        `first` (else the nearest useful source): need tier first, then the
+        (fair-share capped) buffer tier, largest deficits first per stop, up
+        to capacity / HAUL_MAX_STOPS_PER_TRIP, chained stops only when not
+        "behind" the destination. Per-item room is capped by
         cargo.space_for() (one material per pod); the live load corrects any
         over-optimism. Returns [(source, [(item, n), ...]), ...].
         """
-        remaining = dict(dest["deficits"])
+        need_left = dict(dest["need"])
+        buffer_left = dict(dest["buffer"])
         cap_left = capacity
         pos = start
-        pool = list(sources)
+        pool = [s for s in sources if s["id"] != dest["outpost_id"]]
         route = []
         while pool and cap_left > 0 and len(route) < HAUL_MAX_STOPS_PER_TRIP:
-            useful = [s for s in pool if any(remaining.get(i, 0) > 0 for i in s["available"])]
+            useful = [s for s in pool if self._source_useful(s, need_left, buffer_left, cap_left)]
             if route:
                 useful = [s for s in useful if self._chain_worthwhile(pos, s["coords"], dest["coords"])]
             elif first is not None:
@@ -195,13 +261,16 @@ class DroneHaulerMixin:
             source = min(useful, key=lambda s: self._host.distance_between(pos, s["coords"]))
             pool = [s for s in pool if s["id"] != source["id"]]
             loads = []
-            for item_id in sorted(source["available"], key=lambda i: -remaining.get(i, 0)):
+            order = sorted(source["available"], key=lambda i: (-need_left.get(i, 0), -buffer_left.get(i, 0)))
+            for item_id in order:
                 room = min(cap_left, self._item_room(item_id))
-                amount = min(remaining.get(item_id, 0), source["available"][item_id], room)
+                need, buffer = logistics_requests.plan_take(source, item_id, need_left, buffer_left, room)
+                amount = need + buffer
                 if amount <= 0:
                     continue
                 loads.append((item_id, amount))
-                remaining[item_id] -= amount
+                need_left[item_id] = need_left.get(item_id, 0) - need
+                buffer_left[item_id] = buffer_left.get(item_id, 0) - buffer
                 cap_left -= amount
                 if cap_left <= 0:
                     break
@@ -209,6 +278,46 @@ class DroneHaulerMixin:
                 route.append((source, loads))
                 pos = source["coords"]
         return route
+
+    @staticmethod
+    def _source_useful(source, need_left, buffer_left, cap_left):
+        return any(sum(logistics_requests.plan_take(source, i, need_left, buffer_left, cap_left)) > 0 for i in source["available"])
+
+    @staticmethod
+    def _need_units(dest, route):
+        """Units of `route` that fill dest's need tier (planning takes need before buffer per item)."""
+        planned = {}
+        for _s, loads in route:
+            for item_id, n in loads:
+                planned[item_id] = planned.get(item_id, 0) + n
+        return sum(min(n, dest["need"].get(i, 0)) for i, n in planned.items())
+
+    def _cap_buffers(self, dests, sources, curr_tick):
+        """Caps each destination's buffer tier at its fair share of what the other sources hold (fair_buffer_caps())."""
+        for dest in dests:
+            if not dest["buffer"]:
+                continue
+            supply = {}
+            for s in sources:
+                if s["id"] == dest["outpost_id"]:
+                    continue
+                for item_id, units in s.get("available_buffer", s["available"]).items():
+                    if item_id in dest["buffer"]:
+                        supply[item_id] = supply.get(item_id, 0) + units
+            caps = logistics_requests.fair_buffer_caps(dest["outpost_id"], dest["buffer"], supply, curr_tick)
+            dest["buffer"] = {i: u for i, u in caps.items() if u > 0}
+            dest["deficits"] = self._sum_tiers(dest["need"], dest["buffer"])
+
+    @staticmethod
+    def _reachable(dest, sources):
+        """Units of dest's deficits that the sources (other than dest itself) can cover at all."""
+        supply = {}
+        for s in sources:
+            if s["id"] == dest["outpost_id"]:
+                continue
+            for item_id, units in s["available"].items():
+                supply[item_id] = supply.get(item_id, 0) + units
+        return sum(min(u, supply.get(i, 0)) for i, u in dest["deficits"].items())
 
     def _item_room(self, item_id):
         try:
@@ -226,16 +335,18 @@ class DroneHaulerMixin:
         _plan_pull_route() trying every first stop. Scoring picks the winner.
         """
         for dest in dests:
-            firsts = [s for s in sources if any(dest["deficits"].get(i, 0) > 0 for i in s["available"])]
+            firsts = [s for s in sources if s["id"] != dest["outpost_id"] and any(dest["deficits"].get(i, 0) > 0 for i in s["available"])]
             for first in firsts:
                 yield dest, self._plan_route_for(dest, sources, capacity, start, first=first)
 
     def _plan_haul_job(self, curr_tick):
         """
-        Best job network-wide, or None: for every destination, plan a drill
-        route and score units / (route meters + HAUL_TRIP_OVERHEAD_M). Jobs
-        not flyable even on a full tank are dropped; the caller refuels
-        first when the chosen job needs more than is aboard.
+        Best job network-wide, or None: for every destination, plan a route
+        over drills and other Depot outposts and score weighted units /
+        (route meters + HAUL_TRIP_OVERHEAD_M), need-tier units counting
+        NEED_SCORE_WEIGHT times. Jobs not flyable even on a full tank are
+        dropped; the caller refuels first when the chosen job needs more
+        than is aboard.
         Returns {"dest", "route", "units", "fuel"}.
         """
         seen = logistics_requests.pickups_snapshot()  # before any demand/stock read; see claim_pickups()
@@ -245,9 +356,10 @@ class DroneHaulerMixin:
         items = set()
         for dest in dests:
             items.update(dest["deficits"].keys())
-        sources = self._drill_sources(items, curr_tick)
+        sources = self._drill_sources(items, curr_tick) + self._outpost_sources(items, curr_tick)
         if not sources:
             return None
+        self._cap_buffers(dests, sources, curr_tick)
 
         try:
             capacity = self._host.drone.cargo.capacity() - self._host.drone.cargo.count()
@@ -263,8 +375,8 @@ class DroneHaulerMixin:
         best, best_score = None, 0.0
         for dest, route in self._candidate_routes(dests, sources, capacity, start):
             units = sum(n for _s, loads in route for _i, n in loads)
-            wanted = min(HAUL_MIN_LOAD_UNITS, sum(dest["deficits"].values()))
-            if not route or units < wanted:
+            wanted = min(HAUL_MIN_LOAD_UNITS, self._reachable(dest, sources))
+            if not route or units < wanted or units <= 0:
                 self._host.log.debug(f"[{self._host.name}] haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
                 continue
             points = [start] + [s["coords"] for s, _l in route] + [dest["coords"]]
@@ -273,10 +385,11 @@ class DroneHaulerMixin:
             if fuel > full_tank:
                 self._host.log.debug(f"[{self._host.name}] haul: '{dest['outpost_id']}' needs {fuel:.1f} {self._host.energy_unit()} > full tank {full_tank:.1f}; out of range.")
                 continue
-            score = units / (meters + HAUL_TRIP_OVERHEAD_M)
-            self._host.log.debug(f"[{self._host.name}] haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, score {score:.3f}.")
+            need_units = self._need_units(dest, route)
+            score = (units + need_units * (logistics_requests.NEED_SCORE_WEIGHT - 1)) / (meters + HAUL_TRIP_OVERHEAD_M)
+            self._host.log.debug(f"[{self._host.name}] haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({need_units} need), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, score {score:.3f}.")
             if score > best_score:
-                best, best_score = {"dest": dest, "route": route, "units": units, "fuel": fuel, "seen": seen}, score
+                best, best_score = {"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen}, score
         return best
 
     # ------------------------------------------------------------ reservations / mission
@@ -297,6 +410,32 @@ class DroneHaulerMixin:
     def _release_all(self):
         logistics_requests.release_pickups(self._host.name)
         mining_reservations.release_yield(self._host.name)
+        depot_stage.clear_stage(self._host.name)
+
+    # ------------------------------------------------------------ stall cooldowns
+
+    def _cooling(self, kind, target_id, curr_tick):
+        until = getattr(self, "_stall_cooldowns", {}).get((kind, target_id), 0)
+        return curr_tick < until
+
+    def _note_failure(self, kind, target_id, reason):
+        """Counts a failure at a destination/source; STALL_MAX_ATTEMPTS in a row puts it on cooldown."""
+        if not hasattr(self, "_stall_failures"):
+            self._stall_failures = {}
+            self._stall_cooldowns = {}
+        key = (kind, target_id)
+        count = self._stall_failures.get(key, 0) + 1
+        if count >= STALL_MAX_ATTEMPTS:
+            self._stall_failures[key] = 0
+            self._stall_cooldowns[key] = self._host.get_current_tick() + STALL_COOLDOWN_TICKS
+            self._host.log.level("warn").print(f"[{self._host.name}] {kind} '{target_id}' failed {count}x in a row ({reason}); skipping it for {STALL_COOLDOWN_TICKS} ticks.")
+        else:
+            self._stall_failures[key] = count
+            self._host.log.debug(f"[{self._host.name}] {kind} '{target_id}' failure {count}/{STALL_MAX_ATTEMPTS}: {reason}.")
+
+    def _note_success(self, kind, target_id):
+        if hasattr(self, "_stall_failures"):
+            self._stall_failures.pop((kind, target_id), None)
 
     def _save_haul_mission(self, dest_outpost_id):
         # No target_key: load_mission() (biosite claims) ignores this record.
@@ -320,6 +459,22 @@ class DroneHaulerMixin:
     def _docked_at_service(self):
         station = self._host.current_station()
         return bool(station) and any(s["id"] == station for s in self._host.get_all_drone_services())
+
+    def _idle(self, reason):
+        """
+        Nothing to do: stay docked if already at a drone_service, fly to one
+        only below LAUNCH_MIN_SOC, else leave any Depot bay and hover in place.
+        """
+        if self._docked_at_service():
+            self._host.publish_telemetry("IDLE", reason)
+            return
+        _, _, frac = self._host.get_battery()
+        if frac < self._host.LAUNCH_MIN_SOC:
+            self._host.publish_telemetry("IDLE", reason)
+            self._go_to_nearest_service(f"{reason}, {frac*100:.0f}% charge")
+            return
+        self._host.log.debug(f"[{self._host.name}] {reason}; hovering in place ({frac*100:.0f}% charge).")
+        self._host.hover_wait("IDLE", reason)
 
     def _go_to_nearest_service(self, reason):
         """Docks at the nearest (engine-suitable) drone_service unless already docked at one. False if none/unreachable."""
@@ -384,6 +539,103 @@ class DroneHaulerMixin:
             moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
         return moved_by_item
 
+    def _dock_at_depot(self, candidates, prefer=None):
+        """
+        Docks at a free Depot among candidates (waiting up to DEPOT_BAY_WAIT_S
+        in "waiting_bay"). Returns the depot dict, or None.
+        """
+        waited = 0.0
+        while True:
+            depot = self._host._pick_free_depot(candidates, prefer_id=prefer)
+            prefer = depot["id"]
+            if self._host.current_station() == depot["id"] or self._host.fly_to_station(depot["id"], target_coords=depot["coords"]):
+                return depot
+            if self._host.status() != "waiting_bay" or waited >= DEPOT_BAY_WAIT_S:
+                self._host.log.level("warn").print(f"[{self._host.name}] Could not dock at Drone Depot '{depot['id']}' (status {self._host.status()}).")
+                return None
+            sleep(DEPOT_UNLOAD_RETRY_S)
+            waited += DEPOT_UNLOAD_RETRY_S
+
+    def _stage_depot_for(self, source):
+        """The Depot of an outpost source to load at: the one holding most of what's planned, else a free one."""
+        if len(source["depots"]) == 1:
+            return source["depots"][0]
+        planned = [i for i in source["available"]]
+        best, best_units = None, 0
+        for depot in source["depots"]:
+            comp = get_component(depot["id"])
+            stock = logistics_requests.depot_stock(comp) if comp else {}
+            units = sum(stock.get(i, 0) for i in planned)
+            if units > best_units:
+                best, best_units = depot, units
+        return best or self._host._pick_free_depot(source["depots"])
+
+    def _load_at_depot(self, source, loads, dest_id, curr_tick):
+        """
+        Docks at the source outpost's staged Depot and loads in rounds while
+        drone_depot.py stages more from storage (the stage request shrinks
+        to what is still missing after each round). Stops when done, after
+        DOCK_IDLE_MAX_S without progress, or DEPOT_LOAD_TIMEOUT_S overall.
+        Returns {item: moved}, or None if no Depot could be docked at.
+        Corrects reservations to what loaded, clears the stage request and
+        leaves the bay.
+        """
+        depot = getattr(self, "_leg_depots", {}).get(source["id"]) or self._stage_depot_for(source)
+        self._host.publish_telemetry("OUTBOUND", f"pickup at Depot '{depot['id']}' ({source['id']})")
+        docked = self._dock_at_depot(source["depots"], prefer=depot["id"])
+        if docked is None:
+            self._note_failure("source", source["id"], "could not dock")
+            return None
+        if docked["id"] != depot["id"]:
+            for item_id, amount in loads:
+                depot_stage.request_stage(depot["id"], self._host.name, item_id, 0, curr_tick)
+                depot_stage.request_stage(docked["id"], self._host.name, item_id, amount, curr_tick)
+            depot = docked
+
+        remaining = {i: a for i, a in loads}
+        moved_by_item = {}
+        waited = idle = 0.0
+        while remaining and waited < DEPOT_LOAD_TIMEOUT_S and idle < DOCK_IDLE_MAX_S:
+            moved_round = 0
+            for item_id in list(remaining.keys()):
+                want = min(remaining[item_id], self._item_room(item_id))
+                if want <= 0:
+                    self._host.log.debug(f"[{self._host.name}] load {item_id} at '{depot['id']}': no cargo room left for it.")
+                    remaining.pop(item_id)
+                    continue
+                moved = 0
+                try:
+                    res = self._host.drone.cargo.load(item_id, want)
+                    moved = int(getattr(res, "moved", 0) or 0)
+                    if res.status not in ("ok", "partial"):
+                        self._host.log.trace(f"[{self._host.name}] load {item_id} at '{depot['id']}': {res.status} - {res.message}")
+                except Exception as e:
+                    self._host.log.debug(f"[{self._host.name}] load {item_id} at '{depot['id']}' raised: {e}")
+                if moved:
+                    moved_round += moved
+                    moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
+                    remaining[item_id] -= moved
+                    depot_stage.request_stage(depot["id"], self._host.name, item_id, remaining[item_id], self._host.get_current_tick())
+                    if remaining[item_id] <= 0:
+                        remaining.pop(item_id)
+            if not remaining:
+                break
+            idle = 0.0 if moved_round else idle + DEPOT_UNLOAD_RETRY_S
+            sleep(DEPOT_UNLOAD_RETRY_S)
+            waited += DEPOT_UNLOAD_RETRY_S
+
+        for item_id, amount in loads:
+            logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, moved_by_item.get(item_id, 0), curr_tick, source_id=source["id"])
+        depot_stage.clear_stage(self._host.name, depot["id"])
+        total = sum(moved_by_item.values())
+        self._host.log.print(f"[{self._host.name}] Loaded {moved_by_item} at Depot '{depot['id']}' ({source['id']})" + (f"; {remaining} not staged in time." if remaining else "."))
+        if total > 0:
+            self._note_success("source", source["id"])
+        else:
+            self._note_failure("source", source["id"], "nothing loaded")
+        self._host.leave_station()
+        return moved_by_item
+
     def _pick_delivery_outpost(self, contents):
         """
         Where cargo already aboard goes (resume after a reload or a failed
@@ -392,7 +644,8 @@ class DroneHaulerMixin:
         else the nearest Depot.
         """
         depots = self._host.get_all_drone_depots()
-        depot_outposts = {d.get("outpost_id") for d in depots}
+        tick = self._host.get_current_tick()
+        depot_outposts = {d.get("outpost_id") for d in depots if not self._cooling("dest", d.get("outpost_id"), tick)}
         saved = self._saved_haul_dest()
         if saved in depot_outposts:
             return saved
@@ -407,14 +660,18 @@ class DroneHaulerMixin:
         if home is not None and home.id in depot_outposts:
             return home.id
         _, nearest = self._host.get_nearest_drone_depot()
-        return nearest.get("outpost_id") or None
+        nearest_id = nearest.get("outpost_id") or None
+        return nearest_id if nearest_id in depot_outposts else None
 
     def _deliver(self, dest_id):
         """
         Docks at a free Depot of dest_id and unloads in rounds while the
-        Depot controller drains to storage. True when cargo is empty. On
-        failure the cargo stays aboard (reservations and mission kept) and
-        the next cycle retries.
+        Depot controller drains to storage. True when cargo is empty. Gives
+        up after DOCK_IDLE_MAX_S without progress or DEPOT_UNLOAD_TIMEOUT_S
+        overall: the cargo stays aboard (reservations and mission kept), the
+        drone leaves the bay reporting WAITING_DEPOT_SPACE for that Depot
+        (so it may flush surplus), and the failure counts towards dest_id's
+        stall cooldown.
         """
         candidates = [d for d in self._host.get_all_drone_depots() if d.get("outpost_id") == dest_id]
         if not candidates:
@@ -422,23 +679,15 @@ class DroneHaulerMixin:
             return False
 
         self._host.publish_telemetry("DELIVERING", f"to '{dest_id}'")
-        waited = 0.0
-        prefer = None
-        while True:
-            depot = self._host._pick_free_depot(candidates, prefer_id=prefer)
-            prefer = depot["id"]
-            if self._host.current_station() == depot["id"] or self._host.fly_to_station(depot["id"], target_coords=depot["coords"]):
-                break
-            if self._host.status() != "waiting_bay" or waited >= DEPOT_BAY_WAIT_S:
-                self._host.log.level("warn").print(f"[{self._host.name}] Could not dock at a Drone Depot in '{dest_id}' (status {self._host.status()}).")
-                return False
-            sleep(DEPOT_UNLOAD_RETRY_S)
-            waited += DEPOT_UNLOAD_RETRY_S
+        depot = self._dock_at_depot(candidates)
+        if depot is None:
+            self._note_failure("dest", dest_id, "could not dock")
+            return False
 
         self._host.log.start(f"[{self._host.name}] Unloading at '{depot['id']}' ({dest_id})")
         delivered = {}
-        waited = 0.0
-        while waited < DEPOT_UNLOAD_TIMEOUT_S:
+        waited = idle = 0.0
+        while waited < DEPOT_UNLOAD_TIMEOUT_S and idle < DOCK_IDLE_MAX_S:
             contents = self._cargo_contents()
             if not contents:
                 break
@@ -454,15 +703,20 @@ class DroneHaulerMixin:
                     delivered[item_id] = delivered.get(item_id, 0) + moved
                     moved_round += moved
             if moved_round == 0:
-                self._host.log.trace(f"[{self._host.name}] Depot stockpile full; waiting for it to drain ({waited:.0f}s).")
-                sleep(DEPOT_UNLOAD_RETRY_S)
-                waited += DEPOT_UNLOAD_RETRY_S
+                self._host.log.trace(f"[{self._host.name}] Depot stockpile full; waiting for it to drain ({idle:.0f}s idle).")
+                idle += DEPOT_UNLOAD_RETRY_S
+            else:
+                idle = 0.0
+            sleep(DEPOT_UNLOAD_RETRY_S)
+            waited += DEPOT_UNLOAD_RETRY_S
         left = self._cargo_contents()
         self._host.log.end(f"[{self._host.name}] Delivered {delivered} to '{dest_id}'" + (f"; {left} still aboard (Depot not draining -- storage full or Depot script not running?)" if left else "."))
         if left:
-            self._host.leave_station()
+            self._note_failure("dest", dest_id, f"Depot '{depot['id']}' took no more after {idle:.0f}s")
+            self._host.hover_wait("WAITING_DEPOT_SPACE", depot["id"])
             return False
 
+        self._note_success("dest", dest_id)
         self._release_all()
         self._host.clear_mission()
         # Docked and empty: the one moment couple()/uncouple() can run.
@@ -477,8 +731,8 @@ class DroneHaulerMixin:
         contents = self._cargo_contents()
         dest_id = self._pick_delivery_outpost(contents)
         if not dest_id:
-            self._host.log.level("warn").print(f"[{self._host.name}] Cargo {contents} aboard but no Drone Depot to deliver to.")
-            self._host.publish_telemetry("STUCK_WITH_CARGO")
+            self._host.log.level("warn").print(f"[{self._host.name}] Cargo {contents} aboard but no Drone Depot to deliver to (all on stall cooldown or none deployed).")
+            self._host.hover_wait("STUCK_WITH_CARGO")
             sleep(poll_interval)
             return
         # Re-assert the debits from what's physically aboard (a restart may
@@ -497,14 +751,17 @@ class DroneHaulerMixin:
             sleep(poll_interval)
             return
         if not self._deliver(dest_id):
+            if self._cooling("dest", dest_id, self._host.get_current_tick()):
+                # Requeue at the back: forget the saved destination so the
+                # next cycle picks the next-best one for this cargo.
+                self._host.clear_mission()
             sleep(poll_interval)
 
     def run_hauler_loop(self, poll_interval=5.0):
         """
         Floating hauler main loop: cargo aboard -> deliver; else plan the
-        best drill job (_plan_haul_job()), refuel first if its budget needs
-        it, fly the pickups, deliver; nothing to do -> park at the nearest
-        drone_service (which also tops the drone up).
+        best job (_plan_haul_job()), refuel first if its budget needs it, fly
+        the pickups, deliver; nothing to do -> hover in place (_idle()).
         """
         self._host.log.print(f"[{self._host.name}] Floating hauler online ({self._host.engine}, cargo capacity {self._host.cargo_capacity()}).")
         while True:
@@ -536,8 +793,7 @@ class DroneHaulerMixin:
                 curr_tick = self._host.get_current_tick()
                 job = self._plan_haul_job(curr_tick)
                 if job is None:
-                    self._host.publish_telemetry("IDLE", "no drill job")
-                    self._go_to_nearest_service("No haul job")
+                    self._idle("No haul job")
                     sleep(poll_interval)
                     continue
 
@@ -570,13 +826,25 @@ class DroneHaulerMixin:
             if kept:
                 route.append((source, kept))
         units = sum(n for _s, loads in route for _i, n in loads)
-        wanted = min(HAUL_MIN_LOAD_UNITS, sum(dest["deficits"].values()))
+        wanted = job.get("wanted", min(HAUL_MIN_LOAD_UNITS, sum(dest["deficits"].values())))
         if units < job["units"]:
             self._host.log.debug(f"[{self._host.name}] haul: another hauler reserved part of this job since planning; {job['units']} -> {units} unit(s).")
         if not route or units < wanted:
             self._host.log.debug(f"[{self._host.name}] haul: {units} unit(s) left after claim < minimum {wanted}; dropping job, replanning next cycle.")
             logistics_requests.release_pickups(self._host.name)
             return None
+        # Outpost pickups: have the source Depot stage the goods while the
+        # drone flies there.
+        self._leg_depots = {}
+        tick = self._host.get_current_tick()
+        for source, loads in route:
+            if source.get("kind") != "outpost":
+                continue
+            depot = self._stage_depot_for(source)
+            self._leg_depots[source["id"]] = depot
+            for item_id, amount in loads:
+                depot_stage.request_stage(depot["id"], self._host.name, item_id, amount, tick)
+            self._host.log.debug(f"[{self._host.name}] haul: staging {loads} at Depot '{depot['id']}' ({source['id']}).")
         return route
 
     def _run_job(self, job, curr_tick):
@@ -597,7 +865,10 @@ class DroneHaulerMixin:
 
         loaded = {i: 0 for i in planned}
         for index, (source, loads) in enumerate(route):
-            moved = self._load_at_drill(source, loads, dest_id, curr_tick)
+            if source.get("kind") == "outpost":
+                moved = self._load_at_depot(source, loads, dest_id, curr_tick)
+            else:
+                moved = self._load_at_drill(source, loads, dest_id, curr_tick)
             if moved is None:
                 for later, later_loads in route[index:]:
                     for item_id, _n in later_loads:

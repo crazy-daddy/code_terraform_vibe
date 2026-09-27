@@ -213,10 +213,26 @@ The save has grown past a single production base: multiple outposts are founded,
     Depot while `drain_freight()` empties it, drone + Pioneer pull hauler sharing one ore deficit without
     overshoot. Retune `HAUL_MIN_LOAD_UNITS` / `HAUL_TRIP_OVERHEAD_M` / `HELI_MIN_EMERGENCY_RESERVE_T` from
     observed trips. Measure the fixed minimal burn per `go_to*()` call (confirmed live: hovering is free, but every route call burns a little even for a 0 m leg) and add it as a per-leg term in `_route_fuel()` if it matters.
-  - [ ] **Floating drone hauler, phase 2: Depot → Depot freight.** Pickups at outposts need the source
-    Depot to stage items from storage (`depot.input.take()`) before or while the drone docks: e.g. a shared
-    `depot.stage` dict `{depot_id: {item_id: units}}` written by the hauler, fulfilled by `DroneDepotController`.
-    Watch Depot slot caps (3/4/6 materials), and don't let `drain_freight()` push staged items straight back into storage.
+  - [x] **Floating drone hauler, phase 2: Depot → Depot freight.** Outpost sources (`_outpost_sources()`), Depot
+    staging via `depot.stage` (`lib/depot_stage.py`, fulfilled by `DroneDepotController.fulfil_stage()`), load in
+    rounds (`_load_at_depot()`), stall cooldowns, hover instead of holding a bay. See `docs/cheatsheet/vehicles_drones.md`
+    §2h/§2j. Stub-tested only.
+    - [ ] Validate live: drone_13 plans `outpost_6 -> outpost_home` for Seed Maker forms, lrg_3 logs `Staged ...
+      for a hauler drone`, multi-round load at a 200-unit Depot, delivery at lrg_7; a stalled Depot goes on
+      cooldown after 3 failures; `leave to drones` on + no hauler alive keeps outposts with pioneer_11.
+  - [x] **Two-tier demand + fair share** (`logistics_requests`: request `min` = need tier, `fair_buffer_caps()`,
+    `plan_take()`, `outpost_free_tiers()`), used by both pull hauler and drone hauler. Salt request 2000 buffer /
+    30 need. See `docs/cheatsheet/production_logistics.md` §2i. Stub-tested only.
+    - [ ] Validate live: pioneer_11 fetches salt with a 6-unit deficit (reachable minimum), home salt climbs
+      towards 2000, and an outpost Terraformer's salt need is served from home stock above 30.
+    - [ ] Give other buffer-style requesters a `min` (Seed Maker base stock vs forms needed for the next blend,
+      Plant Terraformer's second batch).
+  - [x] **Depot surplus flush** (`DroneDepotController.flush_surplus()`, `LIFEFORM_BUFFER_SLOTS = 2`).
+    - [ ] Validate live: `input.flush()` result shape/status, lrg_3 flushes crystal_spores once drone_10 reports
+      `WAITING_DEPOT_SPACE`, drone_10 then unloads its cave_fungus.
+    - [ ] Dynamic Warehouse slot allocation for life-form stashes: compare free Warehouse slots at the outpost
+      against the forms competing for them (and ore/cargo needs) instead of the fixed `LIFEFORM_BUFFER_SLOTS`;
+      flush only once that allocation is exhausted.
   - [ ] Drones can self-locate unmapped drills: `go_to_drill(id)` needs no coordinates, so a hauler with a
     full tank could fly to an unlocated advertised drill and record `drone.position()` into `drill.positions`
     on arrival (`drill_sites.confirm_position()`). Needs an in-flight fuel abort in `fly_to_drill()` first.
@@ -370,7 +386,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
     - [x] Salt supply: the Harvester requests `salt` at home; the reverse hauler (pioneer_11, `HOME_BASE = outpost_home`, `DESTINATION_OUTPOST_ID = any`) gains a Water Pump `salt_out` source kind (`lib/pump_salt.py`). Drones can't serve it (`DroneCargo.load()` -> `not_at_source`, confirmed live). Until salt is at home the planner leaves salt species unplanted. Seeds and salt stay in home Warehouses; the Harvester stages one unit into Inventory per `load_seed()`/`dispense_salt()`.
     - [x] Plant Terraformer controller (`8_planting/lib/plant_terraformer.py`, thin `bio/plant_terraformer.py`): feeds Forage/Salt/Fertilizer/Accelerant per `batch_requirements()`, Water router, start at `MIN_START_FORAGE`, restart recovery, demand advert as local stock targets in `logistics.requests` (Forage away from home, Salt/Fertilizer/Accelerant per phase) read by the pull/drone haulers, Depot fallback loader, home holds back remote targets, `plant.terraformer` telemetry. Stub-tested only; see §1k.
       - [ ] Validate live: `input.stacks()` shows holder contents, batch start at the threshold, preload while running, `is_enabled()`/restart resume, power draw while enabled-but-blocked vs running.
-      - [ ] Remote Terraformer Forage delivery: the floating drone hauler only loads at drills (phase 1), so home Forage reaches a remote Terraformer only via a Pioneer pull hauler with `HOME_BASE` = that outpost, until drone hauler phase 2 (outpost pickups).
+      - [ ] Remote Terraformer Forage delivery: validate live that the floating drone hauler carries home Forage to a remote Terraformer's Depot outpost (home Crop Automator Forage counts as free stock; the home Depot stages it via `take_item()`).
       - [ ] Fertilizer / Growth Accelerant supply for Mk II phases (needs a code-written Fabricator order channel that `fleet_upgrade._prune()` doesn't wipe).
       - [ ] Control Panel card: phase, km² to next phase, batch progress, onboard Forage.
     - [ ] Plant Terraformer placement: the farm itself uses 0 building slots (field machines occupy field cells, not building capacity), so only Terraformers compete for home's slots. Inventory is location-bound for ordinary I/O (only deployment works from Inventory anywhere), so Harvester Forage (lands in home Inventory) feeds a Terraformer at home, or has to be hauled to an outpost Warehouse. Band 1 (0–500k km²) needs Forage only (25,000).

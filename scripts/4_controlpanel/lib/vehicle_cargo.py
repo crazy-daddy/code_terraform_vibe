@@ -492,24 +492,27 @@ class VehicleCargoMixin:
 
     # ------------------------------------------------------------ pull (reverse) hauling
 
-    def _pull_deficits(self, curr_tick):
+    def _pull_deficits_tiered(self, curr_tick):
         """
-        {item_id: units} this vehicle's home outpost still needs: its live
-        pull-request deficits (logistics_requests, already net of in-flight
-        pickups), plus -- when home is the production outpost -- the raw-ore
-        demand normal haulers and miners chase (get_raw_material_demands(),
-        already net of mining.reserved_yield). The larger of the two per
-        item, never the sum: both measure a target against the same stock.
+        ({item_id: need units}, {item_id: buffer units}) this vehicle's home
+        outpost still misses: its live pull-request deficits
+        (logistics_requests.outpost_deficits_tiered(), already net of
+        in-flight pickups), plus -- when home is the production outpost --
+        the raw-ore demand normal haulers and miners chase
+        (get_raw_material_demands(), net of mining.reserved_yield) as need
+        tier. The larger of request vs ore demand per item, never the sum:
+        both measure a target against the same stock.
         """
         home = self._host.home_outpost
-        deficits = logistics_requests.outpost_deficits(home, curr_tick, live=True)
+        need, buffer = logistics_requests.outpost_deficits_tiered(home, curr_tick, live=True)
         if getattr(home, "is_home", False):
             raw = get_raw_material_demands()
-            self._host.log.debug(f"[{self._host.name}] pull: requests={deficits}, raw-ore demand={raw}.")
+            self._host.log.debug(f"[{self._host.name}] pull: requests need={need} buffer={buffer}, raw-ore demand={raw}.")
             for item_id, units in raw.items():
-                if units > deficits.get(item_id, 0):
-                    deficits[item_id] = units
-        return deficits
+                if units > need.get(item_id, 0) + buffer.get(item_id, 0):
+                    need[item_id] = units
+                    buffer.pop(item_id, None)
+        return need, buffer
 
     def _pull_sources(self, items, curr_tick):
         """
@@ -539,9 +542,9 @@ class VehicleCargoMixin:
         for outpost in outposts:
             if getattr(outpost, "id", None) == home_id or not hasattr(outpost, "coords"):
                 continue
-            available = logistics_requests.outpost_free_stock(outpost, items, requests, curr_tick, exclude_vehicle=self._host.name)
-            if available:
-                sources.append({"kind": "outpost", "id": outpost.id, "coords": outpost.coords(), "available": available, "outpost": outpost})
+            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, items, requests, curr_tick, exclude_vehicle=self._host.name)
+            if for_need:
+                sources.append({"kind": "outpost", "id": outpost.id, "coords": outpost.coords(), "available": for_need, "available_buffer": for_buffer, "outpost": outpost})
 
         positions = drill_sites.known_positions()
         for drill_id, entry in drill_sites.advertised_drills(curr_tick).items():
@@ -580,18 +583,39 @@ class VehicleCargoMixin:
         self._host.log.debug(f"[{self._host.name}] pull: {len(sources)} source(s) hold wanted items: " + ", ".join(f"{src['kind']}:{src['id']}={src['available']}" for src in sources))
         return sources
 
-    def _plan_pull_route(self, deficits, capacity, curr_tick):
+    def _plan_pull_route(self, need, buffer, capacity, curr_tick):
         """
-        Multi-stop pickup plan for this vehicle's home outpost. Every source
-        holding something from `deficits` is tried as the first stop; from
-        there the chain greedily visits the nearest (from the previous stop)
-        remaining source, taking the largest deficits first, until capacity,
+        Multi-stop pickup plan for this vehicle's home outpost. The buffer
+        tier is first capped at home's fair share of what the sources hold
+        (logistics_requests.fair_buffer_caps()). Every source holding
+        something wanted is tried as the first stop; from there the chain
+        greedily visits the nearest (from the previous stop) remaining
+        source, need tier first, then largest deficits, until capacity,
         PULL_MAX_STOPS_PER_TRIP or the deficits run out. Stops after the
         first must pass _pull_chain_worthwhile() (no driving past home). The
-        chain with the best units / (round-trip m + PULL_TRIP_OVERHEAD_M)
-        wins. Returns [(source, [(item_id, amount), ...]), ...].
+        chain with the best weighted units / (round-trip m +
+        PULL_TRIP_OVERHEAD_M) wins, need units counting NEED_SCORE_WEIGHT
+        times. Returns (route, reachable): route is
+        [(source, [(item_id, amount), ...]), ...], reachable the units of
+        the (capped) deficits any source can cover at all.
         """
-        sources = self._pull_sources(list(deficits.keys()), curr_tick)
+        items = set(need.keys()) | set(buffer.keys())
+        sources = self._pull_sources(list(items), curr_tick)
+        home_id = getattr(self._host.home_outpost, "id", None)
+        if buffer:
+            supply = {}
+            for src in sources:
+                for item_id, units in src.get("available_buffer", src["available"]).items():
+                    if item_id in buffer:
+                        supply[item_id] = supply.get(item_id, 0) + units
+            buffer = {i: u for i, u in logistics_requests.fair_buffer_caps(home_id, buffer, supply, curr_tick).items() if u > 0}
+        supply_all = {}
+        for src in sources:
+            for item_id, units in src["available"].items():
+                supply_all[item_id] = supply_all.get(item_id, 0) + units
+        reachable = 0
+        for item_id in items:
+            reachable += min(need.get(item_id, 0) + buffer.get(item_id, 0), supply_all.get(item_id, 0))
 
         home_coords = None
         try:
@@ -603,30 +627,36 @@ class VehicleCargoMixin:
 
         best_route, best_score = [], -1.0
         for first in sources:
-            route = self._plan_pull_chain(first, sources, deficits, capacity, start, home_coords)
+            route = self._plan_pull_chain(first, sources, need, buffer, capacity, start, home_coords)
             if not route:
                 continue
             units = sum(a for _src, loads in route for _i, a in loads)
+            planned = {}
+            for _src, loads in route:
+                for item_id, amount in loads:
+                    planned[item_id] = planned.get(item_id, 0) + amount
+            need_units = sum(min(a, need.get(i, 0)) for i, a in planned.items())
             meters, pos = 0.0, start
             for source, _loads in route:
                 meters += self._host.distance_between(pos, source["coords"])
                 pos = source["coords"]
             meters += self._host.distance_between(pos, home_coords) if home_coords is not None else 0.0
-            score = units / (meters + PULL_TRIP_OVERHEAD_M)
-            self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) over {meters:.0f}m ({len(route)} stop(s)), score {score:.4f}.")
+            score = (units + need_units * (logistics_requests.NEED_SCORE_WEIGHT - 1)) / (meters + PULL_TRIP_OVERHEAD_M)
+            self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) ({need_units} need) over {meters:.0f}m ({len(route)} stop(s)), score {score:.4f}.")
             if score > best_score:
                 best_route, best_score = route, score
-        return best_route
+        return best_route, reachable
 
-    def _plan_pull_chain(self, first, sources, deficits, capacity, start, home_coords):
-        """One candidate trip for _plan_pull_route(), starting at `first`."""
-        remaining = dict(deficits)
+    def _plan_pull_chain(self, first, sources, need, buffer, capacity, start, home_coords):
+        """One candidate trip for _plan_pull_route(), starting at `first` (need tier before buffer, logistics_requests.plan_take())."""
+        need_left = dict(need)
+        buffer_left = dict(buffer)
         cap_left = capacity
         pos = start
         pending = list(sources)
         route = []
-        while pending and cap_left > 0 and remaining and len(route) < PULL_MAX_STOPS_PER_TRIP:
-            useful = [src for src in pending if any(remaining.get(i, 0) > 0 and u > 0 for i, u in src["available"].items())]
+        while pending and cap_left > 0 and len(route) < PULL_MAX_STOPS_PER_TRIP:
+            useful = [src for src in pending if any(sum(logistics_requests.plan_take(src, i, need_left, buffer_left, cap_left)) > 0 for i in src["available"])]
             if not route:
                 useful = [src for src in useful if src["id"] == first["id"]]
             elif home_coords is not None:
@@ -637,12 +667,14 @@ class VehicleCargoMixin:
             source = useful[0]
             pending = [src for src in pending if src["id"] != source["id"]]
             loads = []
-            for item_id in sorted(source["available"].keys(), key=lambda i: -remaining.get(i, 0)):
-                amount = min(remaining.get(item_id, 0), source["available"][item_id], cap_left)
+            for item_id in sorted(source["available"].keys(), key=lambda i: (-need_left.get(i, 0), -buffer_left.get(i, 0))):
+                take_need, take_buffer = logistics_requests.plan_take(source, item_id, need_left, buffer_left, cap_left)
+                amount = take_need + take_buffer
                 if amount <= 0:
                     continue
                 loads.append((item_id, amount))
-                remaining[item_id] -= amount
+                need_left[item_id] = need_left.get(item_id, 0) - take_need
+                buffer_left[item_id] = buffer_left.get(item_id, 0) - take_buffer
                 cap_left -= amount
                 if cap_left <= 0:
                     break
@@ -673,7 +705,7 @@ class VehicleCargoMixin:
         (mining.reserved_yield, same debit run_haul_loop() and home-demand
         miners write), so a normal hauler or miner doesn't also chase ore
         this trip already covers -- and vice versa, since this vehicle's own
-        _pull_deficits() reads the same debited demand. Only for a home-based
+        _pull_deficits_tiered() reads the same debited demand. Only for a home-based
         pull hauler; elsewhere raw-ore demand isn't read at all.
         """
         if not getattr(self._host.home_outpost, "is_home", False):
@@ -747,7 +779,7 @@ class VehicleCargoMixin:
     def run_pull_loop(self, poll_interval=10.0):
         """
         Reverse hauler: parked at self.home_base, fetches what this outpost
-        is missing (_pull_deficits(): pull requests, plus raw-ore demand when
+        is missing (_pull_deficits_tiered(): pull requests, plus raw-ore demand when
         parked at home) from any other outpost's free stock or any field
         Mining Drill's stockpile, and brings it home (Pioneer entrypoint
         with DESTINATION_OUTPOST_ID="*"). One trip can chain up to
@@ -785,20 +817,23 @@ class VehicleCargoMixin:
 
                 curr_tick = self._host.get_current_tick()
                 seen = logistics_requests.pickups_snapshot()  # before any demand/stock read; see claim_pickups()
-                deficits = self._pull_deficits(curr_tick)
-                if not deficits:
+                need, buffer = self._pull_deficits_tiered(curr_tick)
+                if not need and not buffer:
                     if not self._host.is_at_base():
                         self._host.return_to_base()
                     self._host.publish_telemetry("IDLE_AT_OUTPOST", "no demand")
                     sleep(poll_interval)
                     continue
-                self._host.log.debug(f"[{self._host.name}] pull: deficits at '{home_id}': {deficits}")
+                self._host.log.debug(f"[{self._host.name}] pull: deficits at '{home_id}': need={need} buffer={buffer}")
 
                 capacity = self._host.vehicle.cargo.capacity()
-                route = self._plan_pull_route(deficits, capacity, curr_tick)
+                route, reachable = self._plan_pull_route(need, buffer, capacity, curr_tick)
                 planned = sum(a for _src, loads in route for _i, a in loads)
-                wanted = min(PULL_MIN_LOAD_UNITS, sum(deficits.values()))
-                if not route or planned < wanted:
+                # Minimum trip only over what some source can actually give:
+                # deficits nobody holds (or that were left to drones) must not
+                # keep a small but real delivery waiting.
+                wanted = min(PULL_MIN_LOAD_UNITS, reachable)
+                if not route or planned <= 0 or planned < wanted:
                     self._host.log.debug(f"[{self._host.name}] pull: planned {planned} unit(s) < minimum {wanted}; waiting.")
                     self._host.publish_telemetry("IDLE_AT_OUTPOST", "wanted items not available anywhere yet")
                     sleep(poll_interval)
