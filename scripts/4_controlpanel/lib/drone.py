@@ -203,7 +203,8 @@ class DroneController(
 
         NOT a hasattr()-based probe, unlike PioneerController.detect_role().
         self.drone always exposes .bio_scanner and .bio_extractor as attributes
-        regardless of which (if either) is actually mounted, so hasattr() cannot
+        regardless of which (if either) is actually mounted (confirmed live:
+        both hasattr() calls return True on a Bio-Scanner-only drone), so hasattr() cannot
         distinguish "mounted" from "not mounted" for these two. Drone also has no
         .modules() to enumerate equipment generically (unlike Rover/Pioneer). The
         only available signal is to call the module's own method once and read

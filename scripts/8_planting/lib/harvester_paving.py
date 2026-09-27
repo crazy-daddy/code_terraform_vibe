@@ -3,11 +3,12 @@
 # layout is wall-to-wall plants and machines, which the Harvester drives over.
 #
 # Moving onto a cell that holds an item costs +1 heat, an empty cell +7, and
-# a dropped seed counts as an item. Plant cells measure at about +1 too
+# a dropped seed counts as an item (dev-confirmed). Plant cells measure at about +1 too
 # (live calibration), so the expensive cells in the block are the empty gaps
 # the rules force between patches. Heat is the Harvester's real budget
 # (lib/harvester_heat.py), so a short path of gap cells joining every patch
-# (field_layout.path_cells(), 4-5 cells for v1) gets one item each, once:
+# (field_layout.path_cells(); 0 cells for the starter block) gets one item
+# each, once:
 #   1. free: a loose item from elsewhere on the field is collected, carried
 #      over and drop()ped (fresh saves only -- the early sweep collects them);
 #   2. otherwise, with PAVE_WITH_SEEDS, one seed of the species whose blend

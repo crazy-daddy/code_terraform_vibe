@@ -34,7 +34,8 @@ class ChargingStationController:
         Returns [{"id": str, "coords": (x, y)}, ...] for every deployed charging
         station. BuildingRef.position is a plain (x, y) tuple, but OutpostRef.position
         is a *method* (returns a Position snapshot) -- OutpostRef.x/.y are the plain
-        floats to use instead.
+        floats to use instead. Treating OutpostRef.position as a tuple raises
+        "'native_fn' object has no attribute 'x'" every cycle.
         """
         refs = []
 
