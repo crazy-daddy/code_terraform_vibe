@@ -172,10 +172,10 @@ Makes whole production chain aware of Warehouse/Large Warehouse buildings, not j
     joins the first anyway rather than idling. Joined smelters split intake via the demand-share
     and fair-share caps (§2a-0-2) and self-throttle together as `get_smelter_demands()` nets down.
 - **"Inventory manager" sweep** — `rebalance_inventory_to_warehouses()`, called once per cycle from headless automation panel's AUTOMATION section: any **propertyless** Inventory item moved to Warehouse **entirely** when it spans more than `INVENTORY_REBALANCE_SLOT_THRESHOLD = 2` slots, or already split (some in Inventory, some in Warehouse — `_warehouse_item_ids()`).
-  - **Exception**: `item_catalog.lookup(item_id).category` of `"equipment"`, `"module"`, or
-    `"portable"` (`NON_WAREHOUSABLE_CATEGORIES`, `_must_stay_in_inventory()`) are never swept —
-    equipment deploys from Inventory only; modules/portables must be in Inventory to equip a
-    vehicle. `"construction_kit"` is NOT in this set (placed via blueprint construction, fine to
+  - **Exception**: `item_catalog.lookup(item_id).category` of `"equipment"`, `"module"`,
+    `"portable"`, or `"upgrade_pack"` (`NON_WAREHOUSABLE_CATEGORIES`, `_must_stay_in_inventory()`)
+    are never swept — equipment and building upgrade packs apply from Inventory only;
+    modules/portables must be in Inventory to equip a vehicle. `"construction_kit"` is NOT in this set (placed via blueprint construction, fine to
     warehouse).
   - **Direct move**: if any Warehouse has `space_for(item_id) > 0`, `inventory.transfer_to()` as
     much as fits, splitting across more than one Warehouse if needed.
