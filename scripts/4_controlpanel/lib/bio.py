@@ -391,7 +391,7 @@ def _order_fragment_remaining(order, fragment_id, snapshot):
     target_properties = _order_target_properties(order, fragment_id)
     already_matching = _snapshot_property_count(snapshot, fragment_id, target_properties)
     final = max(0, remaining - already_matching)
-    log.debug(
+    log.trace(
         f"_order_fragment_remaining({getattr(order, 'id', '?')}, {fragment_id}): needed={needed} "
         f"delivered={delivered} in_transit={in_transit} remaining_raw={remaining} "
         f"target_properties={target_properties} already_matching_local={already_matching} -> final={final}"
@@ -442,7 +442,7 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
         if fragment_id is not None and fragment_id not in (order.requires or {}):
             continue
         candidates.append(order)
-    log.debug(f"_focus_local_order: {len(candidates)} local/incomplete/non-frozen candidate(s) survived filtering (of {len(orders)} total).")
+    log.trace(f"_focus_local_order: {len(candidates)} local/incomplete/non-frozen candidate(s) survived filtering (of {len(orders)} total).")
 
     if not candidates:
         log.trace("_focus_local_order: exit, no candidates.")
@@ -453,7 +453,7 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
             if _order_fragment_remaining(order, fragment_id, snapshot) > 0:
                 log.trace(f"_focus_local_order: exit, chose {order.id} (still needs {fragment_id}).")
                 return order
-        log.debug(f"_focus_local_order: every candidate already has {fragment_id} fully covered/matched -- none chosen.")
+        log.trace(f"_focus_local_order: every candidate already has {fragment_id} fully covered/matched -- none chosen.")
         return None
 
     for order in candidates:

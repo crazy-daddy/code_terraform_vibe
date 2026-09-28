@@ -226,6 +226,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
 ## 🐾 Phase 6: Biosphere Tier 3 — Wildlife Husbandry & Endgame
 - [ ] Catalog all 5 DNA fragments per target creature in Bio Lab to unlock their feed recipes.
   - [ ] Use Bio Orders to drive specimen collection and keep completed samples out of Inventory through Exchange delivery.
+  - [ ] Bio Caster bulk material demand (`lib/bio_volcanic.py`, requester `bio_caster`, §1g): deploy `bio_volcanic.py` + `production.py` by hand; live-verify `find_recipe()` returns materials for never-analyzed fragments, forged stacks carry a property (forged-stock subtraction), Fabricator builds the floor and a hauler serves the Volcanic outpost; steam_in/water_in connect via `FluidInputRouter` (steam source must be reachable by gas pipe if not local).
 - [ ] Deploy **Habitats** and assign target species (`set_revival_target(creature_id)`).
   - [ ] Stage at least 2 of each required creature's samples before attempting revival.
 - [ ] Produce species-specific feed in **Feed Makers**.

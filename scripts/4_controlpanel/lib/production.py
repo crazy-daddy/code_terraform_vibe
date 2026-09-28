@@ -486,8 +486,9 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # Requesters in UPGRADE_ORDERS_KEY that aren't drones. fleet_upgrade._prune()
 # drops every other entry whose drone no longer exists, so a standing order
 # from another script must be listed here. "field_keeper" = the Harvester's
-# field-machine kits (8_planting/lib/harvester_machines.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper",)
+# field-machine kits (8_planting/lib/harvester_machines.py). "bio_caster" = the
+# Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster")
 
 
 def get_upgrade_orders():

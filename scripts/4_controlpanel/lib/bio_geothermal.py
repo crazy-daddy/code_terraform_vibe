@@ -73,7 +73,7 @@ class DnaSequencerController:
                 count = getattr(stack, "count", 0)
                 if count <= 0:
                     continue
-                properties = getattr(stack, "properties", None) or {}
+                properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
                 return source_id, properties, count
         return None
 
@@ -95,7 +95,7 @@ class DnaSequencerController:
             count = getattr(stack, "count", 0)
             if not staged_id or count <= 0:
                 continue
-            properties = getattr(stack, "properties", None) or {}
+            properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
             if raw_candidate is None:
                 raw_candidate = (staged_id, properties)
 
