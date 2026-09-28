@@ -1,4 +1,4 @@
-# Power & Fluids (§1a–§1c-1)
+# Power & Fluids (§1a–§1c-2)
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §1.
 
@@ -158,3 +158,14 @@ every cycle — delivery self-limits to what connected tank accepts.
 - **Stop**: battery fraction AND combined reserve both `≥ OIL_STOP_RESERVE_FRACTION = 0.30` (above the guard's 0.25 restore line). Grid unreadable → throttle 0 (fail safe).
 - **Oil input**: `FluidInputRouter` (steam-turbine constants: stall streak 5, rescan 150 ticks, discovery cache 100 ticks, neutral grace 5); candidates = oil-eligible Liquid/Large Liquid Tanks (own outpost first), then Oil Pumps. Starved = throttle > 0, `oil_in.level() == 0`, `oil_consumption() == 0`.
 - No archive state: game resets throttle to 0 on script stop; restart re-evaluates within one step.
+
+### 1c-2. Steam Condenser: Steam → Water (`5_steampower/lib/steam_condenser.py` `SteamCondenserController`)
+
+1 t steam → 1 t water, 250 t/h and 150 W at throttle 1. Draw follows throttle even when blocked, so throttle is 1.0 or 0.0.
+
+- **Steam guard**: grid steam pool (`power.measure_grid()` over `grid_steam_tank_ids()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.85` → idle; resumes at `>= STEAM_POOL_START_FRACTION = 0.95`. Steam is the main power source and the pool must carry the turbines through long vent dormancy, so the Condenser only takes the surplus of a nearly full pool (active vent phase). No measurable steam tank on the grid → guard open.
+- **Water guard**: current `water_out` tank fill `>= WATER_TARGET_STOP_FRACTION = 0.85` → idle; resumes at `< WATER_TARGET_START_FRACTION = 0.80`. Stays below `water_sink.py`'s `WATER_SINK_HIGH_FILL = 0.90`, so no steam is spent on water the Waste Processor drains.
+- **Local**: `steam_in` empty or `water_out` buffer full → idle.
+- **steam_in**: `FluidInputRouter` with the Steam Turbine's candidates and constants (§1b); starved = `steam_in.level() == 0` while the steam guard is open.
+- **water_out**: `FluidOutputRouter` with the Fluid Pump's targets and constants (§1c, `fluid_id="water"`); stall signal = `water_out` buffer full.
+- No archive state: game resets throttle to 0 on script stop; guards re-evaluate from live readings on the first step.

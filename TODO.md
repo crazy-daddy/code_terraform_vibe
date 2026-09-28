@@ -354,6 +354,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
   - [ ] Validate live: Liquifier eject (does `eject()` accept while the bin is mid-liquify?), breakers off, `biomass.retire` readiness, sell button (undeploy returns kit + Mk II pack, full-price resale), drone candidate filter.
   - [ ] Waste Processing is researched: deploy one Waste Processor per outpost with miner drones (`5_steampower/factory/garbage_disposal.py`, `lib/waste_sink.py`), outpost_6 first (Depot full of crystal_spores blocks stone_lichen hauls home, which starves Crowncap seeds). Until then the Depot's `flush_surplus()` (hand-deploy updated `drone_depot.py`) clears forms it can't stage.
   - [ ] Deploy a Waste Processor at home for Water overflow (`lib/water_sink.py`, new, syncs): keeps `liquid_tank_1` below 90 % so all four Water Pumps keep pumping and making salt. Then check salt pickup keeps up — pumps 3/4 already vent salt (full 20-unit bins).
+  - [ ] Steam Condenser (`5_steampower/lib/steam_condenser.py`, new, syncs; slot `steam_condenser_1`): condense steam into water, idle when the grid steam pool is low or the water tank is near full (§1c-2). Validate live: `water_out` routing to a water tank, both guards trigger, turbines keep night steam.
   - [ ] Drain or repurpose the essence Liquid Tanks (leftover essence; `fluid_routing.tank_assignments` entries) — e.g. Waste Processor `"liquid"` mode or reassign for Wildlife supply fluids.
 
 ---
