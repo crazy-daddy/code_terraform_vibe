@@ -10,10 +10,19 @@ from swallow import swallowed
 # stops at LIQUID_TANK_REBALANCE_FILL_FRACTION), and a stalled pump makes no
 # salt. Salt is the Plant Terraformer's phase-3 input and the Dispensers'
 # treatment, so the pumps should run even when nothing downstream wants the
-# water. The processor drains its outpost's fullest Water tank from
-# WATER_SINK_HIGH_FILL down to WATER_SINK_LOW_FILL: the pumps never see a full
-# tank, and consumers on the same tank (Sprinklers, Terraformer water_in) keep
-# at least the low mark.
+# water. Water is scarce too, so draining is a last resort:
+#   - start only when every Water tank at this outpost is at or above
+#     WATER_SINK_HIGH_FILL AND some Water Pump on the network reports
+#     is_stalled() (nothing downstream accepts its water). One full tank
+#     while others have room is not overflow -- the pumps rebalance to the
+#     emptier tanks -- and full local tanks with no stalled pump mean the
+#     pumps still have room somewhere else on the network.
+#   - drain only the tank that was fullest at the start (locked for the
+#     whole drain), down to WATER_SINK_LOW_FILL: just enough room to unstall
+#     the pumps, not a sweep across every tank.
+# Tanks count when fluid_routing.tank_is_eligible_target() accepts them for
+# water (latched to water, or empty and assigned to water), so an empty
+# assigned tank counts as room.
 #
 # One processor has one mode at a time. While draining it stays in "liquid";
 # otherwise it runs WasteSinkController's items duty. The staged items or
@@ -24,11 +33,12 @@ from swallow import swallowed
 
 WASTE_PROCESSOR_TYPE_ID = "garbage_disposal"
 WATER_FLUID_ID = "water"
+WATER_PUMP_TYPE_ID = "water_pump"
 
-# Start draining at this tank fill (below the pumps' 0.98 give-up mark), stop at
-# WATER_SINK_LOW_FILL.
+# Start when every Water tank here is at least this full (and a pump is
+# stalled); stop once the locked tank is down to WATER_SINK_LOW_FILL.
 WATER_SINK_HIGH_FILL = 0.90
-WATER_SINK_LOW_FILL = 0.60
+WATER_SINK_LOW_FILL = 0.80
 
 
 class WaterAwareWasteSinkController(WasteSinkController):
@@ -53,50 +63,66 @@ class WaterAwareWasteSinkController(WasteSinkController):
         ids = [i for i in ids if i]
         return not ids or ids[0] == self.name
 
-    def _fullest_water_tank(self):
-        """(tank, fill 0-1) of the fullest Water-latched tank at this outpost, else (None, None)."""
+    def _water_tanks(self):
+        """[(tank, fill 0-1)] of every water-eligible tank at this outpost."""
         outpost = self._outpost()
         if not outpost or not hasattr(outpost, "buildings"):
-            return None, None
-        best, best_fill = None, None
+            return []
+        tanks = []
         for type_id in fluid_routing.LIQUID_TANK_TYPE_IDS:
             try:
                 refs = list(outpost.buildings(type_id))
             except Exception as error:
-                swallowed("water_sink.WaterAwareWasteSinkController._fullest_water_tank: outpost.buildings", error)
+                swallowed("water_sink.WaterAwareWasteSinkController._water_tanks: outpost.buildings", error)
                 continue
             for ref in refs:
                 try:
                     tank = get_component(ref.id) or ref
-                    latched = tank.fluid()
                 except Exception as error:
-                    swallowed("water_sink.WaterAwareWasteSinkController._fullest_water_tank: tank.fluid", error)
+                    swallowed("water_sink.WaterAwareWasteSinkController._water_tanks: get_component", error)
                     continue
-                if latched != WATER_FLUID_ID:
+                if not fluid_routing.tank_is_eligible_target(tank, WATER_FLUID_ID):
                     continue
                 fill = fluid_routing.fill_pct_of(tank)
                 self.log.trace(f"[{self.name}] water tank '{tank.id}' at {fill*100:.0f}%.")
-                if best_fill is None or fill > best_fill:
-                    best, best_fill = tank, fill
-        return best, best_fill
+                tanks.append((tank, fill))
+        return tanks
 
-    def _update_draining(self, tank, fill):
+    def _stalled_water_pump(self):
+        """Id of a Water Pump anywhere on the network reporting is_stalled(), else None."""
+        for pump, _ in fluid_routing.discover_network_buildings(WATER_PUMP_TYPE_ID):
+            if fluid_routing.safe_is_stalled(pump):
+                return getattr(pump, "id", "?")
+        return None
+
+    def _update_draining(self, tanks):
         if self._draining:
-            if tank is None or fill <= WATER_SINK_LOW_FILL:
+            fill = next((f for t, f in tanks if t.id == self._tank_id), None)
+            if fill is None or fill <= WATER_SINK_LOW_FILL:
                 self._draining = False
-                self.log.print(f"[{self.name}] Water drain off: {'no Water tank here' if tank is None else f'{tank.id} at {fill*100:.0f}%'} (stop at {WATER_SINK_LOW_FILL*100:.0f}%).")
+                self.log.print(f"[{self.name}] Water drain off: {f'{self._tank_id} gone or no longer water' if fill is None else f'{self._tank_id} at {fill*100:.0f}%'} (stop at {WATER_SINK_LOW_FILL*100:.0f}%).")
+            else:
+                self._tank_fill = fill
             return
-        if tank is None:
+        if not tanks:
             self.log.trace(f"[{self.name}] no Water tank at this outpost; items duty only.")
             return
-        if fill < WATER_SINK_HIGH_FILL:
-            self.log.trace(f"[{self.name}] '{tank.id}' at {fill*100:.0f}% < {WATER_SINK_HIGH_FILL*100:.0f}%; items duty.")
+        tank, fill = max(tanks, key=lambda pair: pair[1])
+        self._tank_id = tank.id
+        self._tank_fill = fill
+        lowest = min(f for _, f in tanks)
+        if lowest < WATER_SINK_HIGH_FILL:
+            self.log.trace(f"[{self.name}] emptiest Water tank here at {lowest*100:.0f}% < {WATER_SINK_HIGH_FILL*100:.0f}%; room left, items duty.")
             return
         if not self._water_duty():
-            self.log.debug(f"[{self.name}] '{tank.id}' at {fill*100:.0f}% but a lower-id Waste Processor here drains water; items duty.")
+            self.log.debug(f"[{self.name}] Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but a lower-id Waste Processor here drains water; items duty.")
+            return
+        pump_id = self._stalled_water_pump()
+        if not pump_id:
+            self.log.debug(f"[{self.name}] Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but no Water Pump is stalled; pumps still have room elsewhere, items duty.")
             return
         self._draining = True
-        self.log.print(f"[{self.name}] Water drain on: '{tank.id}' at {fill*100:.0f}% (start at {WATER_SINK_HIGH_FILL*100:.0f}%) so the Water Pumps don't stall.")
+        self.log.print(f"[{self.name}] Water drain on: all {len(tanks)} Water tank(s) here >= {WATER_SINK_HIGH_FILL*100:.0f}% and '{pump_id}' stalled; draining '{tank.id}' ({fill*100:.0f}%) to {WATER_SINK_LOW_FILL*100:.0f}%.")
 
     def arm_liquid(self, tank_id):
         """Liquid mode, liquid_in -> tank_id, enabled; all idempotent."""
@@ -137,10 +163,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
         archive.set_entry(STATUS_KEY, self.name, entry)
 
     def step(self):
-        tank, fill = self._fullest_water_tank()
-        self._tank_id = getattr(tank, "id", None)
-        self._tank_fill = fill
-        self._update_draining(tank, fill)
+        self._update_draining(self._water_tanks())
         if self._draining:
             self.arm_liquid(self._tank_id)
         else:
