@@ -26,9 +26,7 @@
 #                next job.
 
 import fleet_status
-from pioneer_commission import (
-    PIONEER_KIT_ID, commission_state, update_commission, build_spec, spec_parts,
-)
+from pioneer_commission import PIONEER_KIT_ID, commission_state, update_commission, build_spec, spec_parts
 from warehouse_upgrade import WAREHOUSE_UPGRADE_CREDIT_RESERVE
 from tree_console import TreeConsole
 from swallow import swallowed
