@@ -143,6 +143,7 @@ every cycle — delivery self-limits to what connected tank accepts.
   "large_liquid_tank")` — `discover_network_buildings()` takes iterable of type_ids (or
   single string), walks each outpost per type, dedupes by id.
 - **Water and oil never share a tank**: router passes `fluid_id`, so a tank latched to the other fluid is skipped and an empty tank qualifies only with a matching `fluid_routing.tank_assignments` entry (§4). **First oil tank must be assigned `"oil"` by the operator.**
+- **Water overflow** (`lib/water_sink.py` `WaterAwareWasteSinkController`, entrypoint `5_steampower/factory/garbage_disposal.py`): a stalled Water Pump makes no salt, so a Waste Processor drains its outpost's fullest Water-latched tank in `"liquid"` mode from `WATER_SINK_HIGH_FILL = 0.90` down to `WATER_SINK_LOW_FILL = 0.60` (below the pumps' 0.98 give-up mark; consumers on the tank keep ≥ 60 %). Otherwise it does `WasteSinkController`'s items duty (§1h-1); the paused mode's buffer is kept. Several processors at one outpost: only the lowest id drains water. Same-outpost tanks only.
 - **Oil well dormancy**: `well_active()` False → throttle `0` (saves 5 W), routing skipped. Water Pump has no `well_active()` → never dormant.
 - Output port (same shape as Thermal Cap's `steam_out`) holds one destination at a
   time. `is_stalled()` same semantics as Thermal Cap's, so same

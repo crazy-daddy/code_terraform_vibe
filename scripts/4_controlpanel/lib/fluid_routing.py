@@ -427,15 +427,19 @@ def _add_blank_tank_assignments(building_ids):
     the operator only has to type the fluid id into the Notebook. A blank entry still counts as
     unassigned (get_tank_assignments() drops empty and non-string values), and an existing entry --
     blank or filled -- is never overwritten."""
+    added = []
+
     def updater(stored):
         stored = dict(stored) if isinstance(stored, dict) else {}
         missing = [b_id for b_id in building_ids if b_id not in stored]
         for b_id in missing:
             stored[b_id] = ""
-        if missing:
-            log.debug(f"_add_blank_tank_assignments: added blank entries for {missing}")
+        added[:] = missing
         return stored
-    archive.transaction(TANK_ASSIGNMENTS_KEY, {}, updater)
+    if not archive.transaction(TANK_ASSIGNMENTS_KEY, {}, updater):
+        log.level("warn").print(f"_add_blank_tank_assignments: archive write failed; no blank entries for {building_ids}.")
+    elif added:
+        log.debug(f"_add_blank_tank_assignments: added blank entries for {added}")
 
 
 def _safe_fluid(building):

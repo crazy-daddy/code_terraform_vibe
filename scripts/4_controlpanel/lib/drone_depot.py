@@ -23,7 +23,8 @@
 # a local Waste Processor (lib/waste_sink.py, which reuses buffer_target() and
 # lifeform_buffer_cap() below) or a hauler drone. When the stockpile is full
 # and a drone is waiting to unload, flush_surplus() discards life forms whose
-# Warehouse stash is full and alone covers every request for them.
+# Warehouse stash can't grow (buffer cap, or no slot) and alone covers every
+# request for them.
 #
 # (5) Hauler pickups (lib/drone_hauler.py): a hauler drone planning to load
 # here writes a stage request (lib/depot_stage.py); fulfil_stage() take()s the
@@ -342,8 +343,8 @@ class DroneDepotController:
                 self.log.trace(f"[{self.name}] stage for hauler: {item_id} ready ({stock.get(item_id, 0)} >= {units}).")
                 continue
             room, slots = self._stockpile_room(stock)
-            if item_id not in stock and slots <= 0:
-                self.log.debug(f"[{self.name}] stage for hauler: no free material slot for {item_id}; draining the stockpile first.")
+            if room <= 0 or (item_id not in stock and slots <= 0):
+                self.log.debug(f"[{self.name}] stage for hauler: no room for {item_id} ({room} unit(s), {slots} slot(s) free); draining the stockpile first.")
                 self.drain_freight()
                 self.stage_life_forms()
                 self.flush_surplus(for_stage=True)
@@ -385,9 +386,10 @@ class DroneDepotController:
         Discards surplus life forms when the stockpile is full (units or
         material slots) and a drone needs the room (one docked or waiting to
         unload here, or a hauler stage request with for_stage). A form is
-        surplus when nobody staged it, its local Warehouse stash is at
-        lifeform_buffer_cap(), and that stash alone covers retain_amount() plus
-        the network-wide deficit for it. InputSlot.flush() discards the whole
+        surplus when nobody staged it, its local Warehouse stash can't grow
+        (at lifeform_buffer_cap(), or buffer_target() finds no slot -- the
+        same test lib/waste_sink.py uses), and that stash alone covers
+        retain_amount() plus the network-wide deficit for it. InputSlot.flush() discards the whole
         stockpile, so everything else is drained first and the flush only
         runs when nothing but surplus is left. Returns units destroyed.
         """
@@ -415,10 +417,11 @@ class DroneDepotController:
                 continue
             stash = warehouse_stock(item_id, outpost)
             needed = logistics_requests.retain_amount(item_id, outpost_id, requests) + deficits.get(item_id, 0)
-            if stash >= cap and stash >= needed:
+            stash_full = stash >= cap or buffer_target(item_id, outpost)[0] is None
+            if stash_full and stash >= needed:
                 surplus[item_id] = units
             else:
-                self.log.debug(f"[{self.name}] flush: keep {item_id} (stash {stash}/{cap}, requests need {needed}).")
+                self.log.debug(f"[{self.name}] flush: keep {item_id} (stash {stash}/{cap}, {'no room to stage' if stash_full else 'stageable'}, requests need {needed}).")
         if not surplus:
             self.log.debug(f"[{self.name}] flush: stockpile full ({stock}) but nothing is surplus.")
             return 0
