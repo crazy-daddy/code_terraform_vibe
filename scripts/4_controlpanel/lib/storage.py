@@ -45,8 +45,10 @@ NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable")
 # Inventory -- computer.deploy() takes Depot kits and chassis from there, and
 # drone.couple() takes modules from there (docs/components/drone.md). Listed
 # by id since their item_catalog categories aren't documented; the fleet
-# upgrade (lib/fleet_upgrade.py) orders and consumes these.
+# upgrade (lib/fleet_upgrade.py) orders and consumes these. The Pioneer
+# chassis likewise, for lib/fleet_commission.py's deploy.
 INVENTORY_ONLY_ITEM_IDS = (
+    "pioneer",
     "drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large",
     "drone_small", "drone_medium", "drone_large",
     "electric_thruster", "heli_thruster", "battery_pack",

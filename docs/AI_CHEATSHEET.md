@@ -24,7 +24,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 2b, 2b-1 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2c, 2d | Storage management, outpost ore assignment | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2g | Stationed mining, transporter/haul cycle, reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2h, 2j, 2k | Drones (energy, home, claims, depot, service), drone hauler, fleet upgrade | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
+| 2h, 2j, 2k, 2k-2 | Drones (energy, home, claims, depot, service), drone hauler, fleet upgrade, Pioneer commissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2i, 2k-1 | Pull logistics + reverse hauler, Warehouse → Large Warehouse | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | this file |
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |
@@ -82,6 +82,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ floating hauler role loop (drills and Depot outposts → Depots, no home) | `drone_hauler.py` — see §2j |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot + drone chassis swaps), run by headless `automation_panel.py` | `fleet_upgrade.py` — see §2k |
+| New Pioneers from the COMMISSION card (queue, buy, deploy, wait for script), run by headless `automation_panel.py` | `fleet_commission.py` — see §2k-2 |
+| &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `PioneerFittingMixin` (the new Pioneer mounts/installs its own parts) | `pioneer_commission.py` — see §2k-2 |
 | Warehouse pair → Large Warehouse swap (buy, deploy, greedy drain, undeploy, sell), run by headless `warehouse_upgrade_panel.py` | `warehouse_upgrade.py` — see §2k-1 |
 | Drone Service Station (charging/refuelling/rescue) | `drone_service.py` — see §2h |
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
