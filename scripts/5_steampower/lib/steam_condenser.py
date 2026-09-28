@@ -30,7 +30,17 @@ from swallow import swallowed
 #     WATER_TARGET_STOP_FRACTION. That stays below lib/water_sink.py's
 #     WATER_SINK_HIGH_FILL (0.90), so condensed water is never piped into a
 #     tank the Waste Processor is draining. Resumes at
-#     WATER_TARGET_START_FRACTION.
+#     WATER_TARGET_START_FRACTION: wide hysteresis, since at 250 t/h the
+#     Condenser refills the tank fast and would otherwise cycle on and off.
+#   - sink gate: a Waste Processor at the water_out tank's outpost is
+#     draining that tank (enabled, "liquid" mode, liquid_in on the tank).
+#     water_sink.py drains from 0.90 down to WATER_SINK_LOW_FILL (0.60);
+#     condensing then would feed the drain. The water gate's resume line sits
+#     below 0.60, so this mostly catches a drain that started while the gate
+#     was open or on another processor's schedule.
+#     Read live from the processor, not the waste_sink.status archive entry:
+#     is_enabled() drops to False when the sink script stops, the archive
+#     entry does not.
 #   - local: steam_in empty or water_out buffer full.
 #
 # No archive state: the game resets the throttle to 0 when the script stops,
@@ -40,7 +50,9 @@ STEAM_POOL_STOP_FRACTION = 0.85
 STEAM_POOL_START_FRACTION = 0.95
 
 WATER_TARGET_STOP_FRACTION = 0.85
-WATER_TARGET_START_FRACTION = 0.80
+WATER_TARGET_START_FRACTION = 0.50
+
+WASTE_PROCESSOR_TYPE_ID = "garbage_disposal"
 
 # steam_in routing -- same meaning as lib/steam_turbine.py's constants.
 STALL_STREAK_BLACKLIST_THRESHOLD = 5
@@ -214,6 +226,30 @@ class SteamCondenserController:
         else:
             self.log.debug(f"[{self.name}] Water tank {fill*100:.0f}%, gate {'open' if self.water_gate_open else 'closed'}.")
 
+    def sink_draining_target(self):
+        """Id of a Waste Processor draining the current water_out tank, else None."""
+        target_id = self._water_router._connected_id
+        if not target_id:
+            return None
+        target = self._water_router._resolve_target(target_id)
+        outpost = getattr(target, "outpost", None)
+        if not outpost or not hasattr(outpost, "buildings"):
+            return None
+        try:
+            refs = list(outpost.buildings(WASTE_PROCESSOR_TYPE_ID))
+        except Exception as error:
+            swallowed("steam_condenser.SteamCondenserController.sink_draining_target: outpost.buildings", error)
+            return None
+        for ref in refs:
+            try:
+                processor = get_component(ref.id)
+                if (processor and processor.is_enabled() and processor.mode() == "liquid"
+                        and processor.liquid_in.connected_id() == target_id):
+                    return ref.id
+            except Exception as error:
+                swallowed("steam_condenser.SteamCondenserController.sink_draining_target: processor.is_enabled", error)
+        return None
+
     # ------------------------------------------------------------------
     # Loop
     # ------------------------------------------------------------------
@@ -233,6 +269,8 @@ class SteamCondenserController:
             reason = "steam reserve low"
         elif not self.water_gate_open:
             reason = "water tank near full"
+        elif self.sink_draining_target():
+            reason = "Waste Processor draining the water tank"
         elif steam_empty:
             reason = "no steam in buffer"
         elif water_full:
