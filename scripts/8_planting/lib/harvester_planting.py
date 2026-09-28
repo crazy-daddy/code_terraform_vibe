@@ -14,7 +14,10 @@
 #      each). The Harvester plants only the garden and the next
 #      HARVESTER_FILL_CHUNKS fill chunk(s) without an automator; one
 #      Harvester can't keep up with 170 cells, so deployed automators (kits
-#      bought by harvester_machines.py) take the rest.
+#      bought by harvester_machines.py) take the rest. Garden crops are
+#      planted once and never harvested (field_layout.kept_crop()): a mature
+#      crop still counts toward the species multiplier, and a replant risks a
+#      species whose seed is missing. Garden cells need no replant seeds.
 #   3. "full" with the grandbloom fill (checkerboard), once Mk II+ lamps and
 #      sprinklers (and the power/water for ~75 machines) make it pay. The
 #      operator switches by setting the Data Archive key `plant.field_fill`
@@ -178,7 +181,7 @@ class HarvesterPlantingMixin:
                                  "cells": layout, "reserved": reserved, "garden": garden})
         self._host.log.print(f"[{self._host.name}] Field layout set ({mode}{', ' + str(fill) + ' fill, ' + str(chunks) + ' chunk(s)' if mode == 'full' else ''}): "
                              f"{len(layout)} plants, {len(set(layout.values()))} species, {len(reserved)} machine cells, "
-                             f"~{round(field_layout.forage_per_hour(layout, rules))} Forage/h at Mk I (base {base}).")
+                             f"~{round(field_layout.forage_per_hour(layout, rules, garden if mode == 'full' else ()))} Forage/h at Mk I (base {base}).")
         return layout
 
     def active_layout(self, layout, rules, inactive_species):
@@ -252,16 +255,29 @@ class HarvesterPlantingMixin:
 
     # ---------------------------------------------------------- seed demand
 
+    def kept_garden(self):
+        """Garden sectors whose crops are never harvested (full layout only; field_layout.kept_crop())."""
+        return set(self.garden or []) if self.layout_mode == "full" else set()
+
     def seed_demand(self, active, cells, rules):
-        """(now, rotation) as {seed_id: n}: seeds needed soon, and cells per species."""
+        """
+        (now, rotation) as {seed_id: n}: seeds needed soon, and cells per
+        species. Kept garden cells (kept_garden()) are planted once: an open
+        one needs a seed now, but they add no rotation, buffer or prefetch.
+        """
         now = {}
         rotation = {}
+        kept = self.kept_garden()
         for sector, species in active.items():
             seed_id = rules[species].get("seed_id", "seed_" + species)
-            rotation[seed_id] = rotation.get(seed_id, 0) + 1
             cell = cells.get(sector)
             status = getattr(cell, "status", "unknown")
             plant = getattr(cell, "plant", None)
+            if sector in kept:
+                if status in OPEN_STATUSES:
+                    now[seed_id] = now.get(seed_id, 0) + 1
+                continue
+            rotation[seed_id] = rotation.get(seed_id, 0) + 1
             if status in OPEN_STATUSES:
                 now[seed_id] = now.get(seed_id, 0) + 1
             elif plant == species and (status == "mature" or (getattr(cell, "growth", 0) or 0) >= SEED_PREFETCH_GROWTH):
@@ -280,11 +296,13 @@ class HarvesterPlantingMixin:
     # ---------------------------------------------------------------- tasks
 
     def harvest_targets(self, cells, layout=None):
-        """Every mature crop, layout or not, except layout cells a Crop Automator harvests."""
+        """Every mature crop, layout or not, except layout cells a Crop Automator harvests and kept garden crops."""
         automated = self._host.automated_cells() if self.layout_mode == "full" else set()
+        kept = self.kept_garden()
         layout = layout or {}
         return [s for s, c in cells.items()
-                if getattr(c, "status", "") == "mature" and not (s in automated and s in layout)]
+                if getattr(c, "status", "") == "mature" and not (s in automated and s in layout)
+                and not field_layout.kept_crop(s, getattr(c, "plant", None), layout, kept)]
 
     def plant_targets(self, active, cells):
         """[(sector, species)] of open layout cells whose seed is at home (Inventory or Warehouse)."""
@@ -358,6 +376,8 @@ class HarvesterPlantingMixin:
         if _now_tick() - self._plant_failures().get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
             return
         if status == "mature":
+            if sector in self.kept_garden():
+                return
             if h.inventory_full_tick is not None or not self.harvest_here():
                 return
             status = "empty"

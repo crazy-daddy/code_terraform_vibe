@@ -423,13 +423,23 @@ def priority_seeds(cells, garden, fill, rules):
     return sorted(out)
 
 
+def kept_crop(sector, plant, cells, garden):
+    """
+    True for a full-layout garden cell holding its own layout species: never
+    harvested. A mature crop still counts toward the species multiplier, and
+    replanting risks a garden species missing its seed; the fill carries the
+    Forage. A wrong species in a garden cell (after a rebuild) is not kept.
+    """
+    return bool(plant) and sector in (garden or ()) and cells.get(sector) == plant
+
+
 def automator_owner(sector, automators):
     """
     The Crop Automator (sector) among `automators` that owns `sector`, or
     None if none reaches it. Areas overlap, so the nearest one owns it
     (Chebyshev distance, then Manhattan, then sector id): every cell has
-    exactly one owner. Shared by lib/crop_automator.py (which cells to
-    queue) and the Harvester (which cells a clogged automator leaves).
+    exactly one owner. Used by lib/crop_automator.py (which cells to
+    queue).
     """
     r, c = sector_to_rc(sector)
     if r is None or c is None:
@@ -594,16 +604,20 @@ def full_layout(chunks, fill=None):
     return cells, reserved, sorted(garden)
 
 
-def forage_per_hour(cells, rules=None):
+def forage_per_hour(cells, rules=None, garden=()):
     """
     Forage/h the planted `cells` supply at Mk I providers: base yield per
-    growth hour x species diversity. Higher provider tiers only raise it, so
-    sizing the field with this errs towards more plants than needed.
+    growth hour x species diversity. `garden` cells count toward diversity
+    only (never harvested, see kept_crop()). Higher provider tiers only raise
+    it, so sizing the field with this errs towards more plants than needed.
     """
     rules = rules or rules_from_published({})
     diversity = len(set(cells.values()))
+    garden = set(garden or ())
     per_h = 0.0
-    for species in cells.values():
+    for sector, species in cells.items():
+        if sector in garden:
+            continue
         r = rules.get(species, {})
         per_h += r.get("base_yield", 0) / (r.get("growth_time") or 1.0)
     return per_h * diversity
@@ -613,8 +627,8 @@ def chunks_for_demand(forage_per_h, rules=None, fill=None):
     """Fewest full_layout() chunks whose plants supply forage_per_h (at least 1)."""
     total = full_chunk_count(fill)
     for n in range(1, total + 1):
-        cells, _, _ = full_layout(n, fill)
-        if forage_per_hour(cells, rules) >= forage_per_h:
+        cells, _, garden = full_layout(n, fill)
+        if forage_per_hour(cells, rules, garden) >= forage_per_h:
             return n
     return total
 
