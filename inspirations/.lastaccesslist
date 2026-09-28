@@ -80,3 +80,31 @@ inspirations/discord-panels/manual_craft.png | 2026-09-18 | Separate "Control Ro
 # manual_craft.png added since the 2026-09-16 sweep (user-added UI mockups, not runnable code).
 # Findings folded into TODO_inspirations.md under "Jasmine Control Room Panel Mockups
 # (Reviewed 2026-09-18)". Nothing else new found under inspirations/ as of this date.
+
+inspirations/vakermit/scripts/lib/control.py | 2026-09-28 | control.policy broadcast (mode/allow/mine/roles, 6h world-clock staleness); covered by PowerGridManager + power-mode channels. Not actionable.
+inspirations/vakermit/scripts/lib/power.py | 2026-09-28 | Hysteretic start/continue gate + sleep-until-dawn + hours_to_empty; hysteresis already ours, dawn/hours-left noted for Power History card.
+inspirations/vakermit/scripts/lib/demand.py | 2026-09-28 | Ore demand rebuilt via Smelter recipes when factory.ore silent; capped weight_of(). Our production.py graph covers it. Not actionable.
+inspirations/vakermit/scripts/lib/scout.py | 2026-09-28 | Sonar-range clustering merged into TODO.md 'Range-aware sonar scanning' + cluster-value outpost siting (kept for autoplay/building planner). Logged in TODO_inspirations.md.
+inspirations/vakermit/scripts/lib/store.py | 2026-09-28 | Storage Bin latch-aware routing; low priority (slot limit binds before inventory early game), easy add since a bin acts as a 1-slot warehouse. Logged.
+inspirations/vakermit/scripts/lib/machines.py | 2026-09-28 | find_machine() probe helper moved into a lib. Nothing new.
+inspirations/vakermit/scripts/lib/signals.py | 2026-09-28 | Signal Bus latest()/field() None-guards. Nothing new.
+inspirations/vakermit/scripts/lib/util.py | 2026-09-28 | key_of()/clamp(). Nothing new.
+inspirations/vakermit/scripts/lib/bio.py | 2026-09-28 | active_remaining() (net of delivered + in-transit). Already in our bio pipeline.
+inspirations/vakermit/scripts/control_room/controller.py | 2026-09-28 | Central policy card w/ manual mode combo + role table; covered by our power/fleet panels. Not actionable.
+inspirations/vakermit/scripts/control_room/fleet_card.py | 2026-09-28 | Physical vs script-intent columns per vehicle; matches our fleet intent line. Not actionable.
+inspirations/vakermit/scripts/control_room/factory_card.py | 2026-09-28 | Read-only manufacturing loop card; matches our production panels. Not actionable.
+inspirations/vakermit/scripts/factory/supply_dock_1.py | 2026-09-28 | reward x fillable scoring, weekly finishability, leftover eject; our lib/supply_dock.py already does all. Not actionable.
+inspirations/vakermit/scripts/rover/pioneer_1.py | 2026-09-28 | Build/scout/mine roles, demand-first ordering; our PioneerController exceeds it. Survey ordering idea logged via scout.py.
+inspirations/vakermit/scripts/rover/pioneer_explorer.py | 2026-09-28 | Per-biome survey census; covered by our blocked-contact markers + survey_known_pois() budget debug logs. Not actionable.
+inspirations/vakermit/scripts/factory/fabricator_1.py | 2026-09-28 | Diff only: dock.needs merged into targets, bin-aware pull/push, wait_for_policy gate. Nothing new beyond store.py.
+inspirations/vakermit/scripts/factory/smelter_1.py | 2026-09-28 | Diff only: bin-aware routing + wait_for_policy gate. Nothing new beyond store.py.
+inspirations/vakermit/scripts/rover/rover_1.py | 2026-09-28 | Diff only: helpers moved to lib, multi-sink unload loop. Nothing new.
+inspirations/vakermit/scripts/harvesting/harvester_1.py | 2026-09-28 | Diff only: wait_for_policy gate. Nothing new.
+inspirations/vakermit/scripts/bio/{early,mid}/*.py | 2026-09-28 | Diff only: helpers moved to lib, wait_for_policy gates. Nothing new.
+inspirations/vakermit/bin/ct_sync.py | 2026-09-28 | Diff only: lib/ mirror w/ no-clobber of in-game edits; our scripts_sync.py already ahead (auto-registers libs).
+inspirations/vakermit/bin/README.md | 2026-09-28 | Diff only: documents lib sync. Nothing new.
+inspirations/vakermit/tools/build_docs.py | 2026-09-28 | Diff skipped per tools-code operator decision (2026-09-16).
+
+# STATUS (2026-09-28): reviewed vakermit 2ffa380..aa5568f, covering both submodule bumps (the
+# 9a5319d bump from 2026-09-27 was never assessed). Findings under "vakermit Controller,
+# Pioneer & Storage Update (Reviewed 2026-09-28)" in TODO_inspirations.md.
