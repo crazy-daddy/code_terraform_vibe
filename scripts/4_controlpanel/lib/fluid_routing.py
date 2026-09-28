@@ -51,6 +51,9 @@ from swallow import swallowed
 log = TreeConsole(module="fluid_routing")
 
 TANK_ASSIGNMENTS_KEY = "fluid_routing.tank_assignments"
+# Assignment value for a tank being replaced (lib/tank_upgrade.py): never a target for a new
+# connection, even while still latched, so producers move off it and it can drain.
+RETIRING_ASSIGNMENT = "retiring"
 
 
 def get_tank_assignments():
@@ -97,7 +100,15 @@ def tank_is_eligible_target(building, fluid_id):
     tank that isn't latched to anything at all (freshly built, or drained to 0 and not yet
     reassigned) falls through to tank_matches_assignment()'s strict registry check -- eligible only
     with an explicit matching entry.
+
+    A tank assigned RETIRING_ASSIGNMENT is never eligible, latched or not -- checked before the
+    latch, since a retiring tank keeps its latch until it has drained to 0.
     """
+    b_id = getattr(building, "id", None)
+    if not b_id:
+        return False
+    if get_tank_assignments().get(b_id) == RETIRING_ASSIGNMENT:
+        return False
     current_fluid = None
     if building is not None and hasattr(building, "fluid"):
         try:
@@ -107,9 +118,6 @@ def tank_is_eligible_target(building, fluid_id):
             current_fluid = None
     if current_fluid:
         return current_fluid == fluid_id
-    b_id = getattr(building, "id", None)
-    if not b_id:
-        return False
     return tank_matches_assignment(b_id, fluid_id)
 
 
@@ -333,7 +341,8 @@ def assign_tanks_from_current_fluid(overwrite=False):
     overwrite=False (default) never touches a building_id that already has an assignment entry,
     so a prior manual designation (or an earlier run of this same function) is never silently
     clobbered. Pass overwrite=True to instead resync every already-latched tank's entry to its
-    current .fluid() -- e.g. after re-plumbing a tank onto a different network.
+    current .fluid() -- e.g. after re-plumbing a tank onto a different network. A
+    RETIRING_ASSIGNMENT entry is never overwritten.
 
     Returns (assigned, skipped_already_set, skipped_empty) counts for the caller to print.
     """
@@ -354,7 +363,7 @@ def assign_tanks_from_current_fluid(overwrite=False):
         if not fluid:
             skipped_empty += 1
             continue
-        if not overwrite and b_id in existing:
+        if (not overwrite and b_id in existing) or existing.get(b_id) == RETIRING_ASSIGNMENT:
             skipped_already_set += 1
             continue
         to_add[b_id] = fluid
