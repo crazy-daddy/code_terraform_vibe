@@ -23,7 +23,7 @@ from swallow import swallowed
 # rejects a tank latched to another fluid and accepts an empty tank only when
 # fluid_routing.tank_assignments reserves it for this fluid.
 
-LIQUID_TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank")
+LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 
 # Display names per fluid_id, for log lines only.
 PUMP_LABELS = {"water": "Water Pump", "oil": "Oil Pump"}

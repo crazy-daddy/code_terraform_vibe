@@ -280,12 +280,12 @@ def find_dock_order_requiring(item_id):
 # recipe and stall forever, and Supply Dock would commit to an Earth Order
 # that could never actually complete.
 FLUID_SOURCE_TYPE_IDS = {
-    "water_in": ("water_pump", "steam_condenser", "liquid_tank", "large_liquid_tank"),
-    "oil_in": ("oil_pump", "liquid_tank", "large_liquid_tank"),
+    "water_in": ("water_pump", "steam_condenser", "liquid_tank", "bulk_liquid_reservoir"),
+    "oil_in": ("oil_pump", "liquid_tank", "bulk_liquid_reservoir"),
     "steam_in": ("thermal_cap", "gas_tank"),
 }
 
-# liquid_tank/large_liquid_tank/gas_tank are generic multi-fluid buffers --
+# liquid_tank/bulk_liquid_reservoir/gas_tank are generic multi-fluid buffers --
 # they latch onto whichever exact fluid is piped into them FIRST and hold
 # only that until drained to 0 (docs/components/liquid_tank.md,
 # docs/components/gas_tank.md). Their mere existence on the network says
@@ -296,7 +296,7 @@ FLUID_SOURCE_TYPE_IDS = {
 # FLUID_SOURCE_TYPE_IDS is a dedicated producer (oil_pump, water_pump,
 # steam_condenser, thermal_cap) that only ever emits its one fixed fluid, so
 # its existence alone is sufficient.
-BUFFER_FLUID_TYPE_IDS = ("liquid_tank", "large_liquid_tank", "gas_tank")
+BUFFER_FLUID_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir", "gas_tank")
 # Expected building.fluid() latch id for each fluid_key -- see both docs
 # pages' `.fluid()` method above.
 FLUID_LATCH_IDS = {"water_in": "water", "oil_in": "oil", "steam_in": "steam"}

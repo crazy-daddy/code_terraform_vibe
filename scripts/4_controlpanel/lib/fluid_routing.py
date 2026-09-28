@@ -126,7 +126,7 @@ def safe_is_stalled(building):
 
 # Liquid (not gas) buffer types -- the only valid target/source for liquids like water or a biome
 # essence. Same pair as water_pump.LIQUID_TANK_TYPE_IDS.
-LIQUID_TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank")
+LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 
 # FluidConnection.state values (docs/types/infrastructure_and_fluids.md). Unlike is_stalled(),
 # these are a direct, per-peer reachability verdict: "local"/"ready" means the link can actually
@@ -314,10 +314,10 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
     return pairs
 
 
-# liquid_tank/large_liquid_tank/gas_tank -- mirrors production.BUFFER_FLUID_TYPE_IDS, not
+# liquid_tank/bulk_liquid_reservoir/gas_tank -- mirrors production.BUFFER_FLUID_TYPE_IDS, not
 # imported from there to avoid a circular import (production.py already imports from this
 # module). Kept in sync by hand; both lists are short and rarely change.
-TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank", "gas_tank")
+TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir", "gas_tank")
 
 
 def assign_tanks_from_current_fluid(overwrite=False):

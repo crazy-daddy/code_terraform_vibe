@@ -61,7 +61,7 @@ STEAM_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 NEUTRAL_GRACE_STEPS = 5
 
 # water_out routing -- same meaning as lib/fluid_pump.py's constants.
-LIQUID_TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank")
+LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 LIQUID_TANK_REBALANCE_FILL_FRACTION = 0.98
 CONNECTION_GRACE_TICKS = 2
 WATER_RESCAN_INTERVAL_TICKS = 300

@@ -144,7 +144,7 @@ class FabricatorController:
     def _discover_fluid_candidates(self, fluid_key, type_ids):
         """
         Candidate source ids network-wide for fluid_key (e.g. every
-        water_pump/steam_condenser/liquid_tank/large_liquid_tank for
+        water_pump/steam_condenser/liquid_tank/bulk_liquid_reservoir for
         "water_in" -- see production.FLUID_SOURCE_TYPE_IDS), own outpost
         first, dropping any production.fluid_building_is_viable() rejects
         (e.g. a Liquid Tank latched to a different fluid, or empty with no

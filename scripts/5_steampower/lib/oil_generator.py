@@ -58,7 +58,7 @@ RESCAN_INTERVAL_TICKS = 150
 DISCOVERY_CACHE_INTERVAL_TICKS = 100
 NEUTRAL_GRACE_STEPS = 5
 
-OIL_TANK_TYPE_IDS = ("liquid_tank", "large_liquid_tank")
+OIL_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 
 
 def _notify(text, level="warn", duration=8.0):
