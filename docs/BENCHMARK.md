@@ -134,7 +134,7 @@ Same units and container as above (empty loop = 350 µs). Every call is a single
 | `transmitter.connect("earth")` (interruptive) | 2,500 | 7.4 |
 | `power_control.set_powered` off + on (interruptive) | 5,000 | 14.8 |
 
-Not measured yet: storage bin / warehouse reads, battery reads and `power_control.is_powered(id)`. No `storage_bin` or `battery` was found among the 30 home buildings in the first run; storage discovery now also accepts `warehouse` and `large_warehouse`, and the setup prints the building types it found.
+Not measured yet: storage bin / warehouse reads, battery reads and `power_control.is_powered(id)`. The first run had no `storage_bin` at home and no battery at home; discovery now searches every outpost, accepts `warehouse` and `large_warehouse` as storage, and prints the building types it found.
 
 ### API interpretation
 

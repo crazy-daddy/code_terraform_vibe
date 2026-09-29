@@ -643,15 +643,15 @@ def setup_api():
         env["home"] = env["net"].home()
         env["blds"] = env["home"].buildings()
         counts = {}
-        for b in env["blds"]:
-            counts[b.type_id] = counts.get(b.type_id, 0) + 1
-        print(f"  home building types: {counts}")
-        for b in env["blds"]:
-            if b.type_id in STORAGE_TYPES and env["storage"] is None:
-                env["storage_id"] = b.id
-                env["storage"] = find_component(b.id)
-            if b.type_id == "battery" and env["battery"] is None:
-                env["battery"] = find_component(b.id)
+        for outpost in env["net"].outposts():
+            for b in outpost.buildings():
+                counts[b.type_id] = counts.get(b.type_id, 0) + 1
+                if b.type_id in STORAGE_TYPES and env["storage"] is None:
+                    env["storage_id"] = b.id
+                    env["storage"] = find_component(b.id)
+                if b.type_id == "battery" and env["battery"] is None:
+                    env["battery"] = find_component(b.id)
+        print(f"  building types across all outposts: {counts}")
     print(f"  home buildings: {len(env['blds'])}, storage: {env['storage_id']}")
 
 
