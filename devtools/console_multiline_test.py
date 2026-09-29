@@ -31,7 +31,7 @@ def probe_string_limit():
         try:
             s = "x" * n
         except Exception as err:
-            print(f"string of {n} chars failed: {type(err).__name__}: {err}")
+            print(f"string of {n} chars failed: {type(err)}: {err}")
             print(f"  numbers in message: {limit_from(str(err))}")
             return last_ok
         last_ok = n
@@ -46,7 +46,7 @@ def probe_collection_limit():
         try:
             lst = [0] * n
         except Exception as err:
-            print(f"list of {n} items failed: {type(err).__name__}: {err}")
+            print(f"list of {n} items failed: {type(err)}: {err}")
             print(f"  numbers in message: {limit_from(str(err))}")
             return
         n = n * 2
@@ -85,6 +85,6 @@ for size in (1000, 5000, 9000, 20000):
         res = console.print("y" * size, level="debug", channel=CH)
         print(f"print of {size} chars -> {res.status}")
     except Exception as err:
-        print(f"print of {size} chars failed: {type(err).__name__}: {err}")
+        print(f"print of {size} chars failed: {type(err)}: {err}")
 
 print("Console test done")
