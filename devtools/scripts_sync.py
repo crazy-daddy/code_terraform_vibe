@@ -1023,6 +1023,8 @@ def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run:
             answers[name] = inferred[name]
             if slot_cache.get(name) == answers[name]:
                 continue
+            ok("  param %-28s %s %s -> %s (in-game edit)" % (
+                stem, name, slot_cache.get(name, "(uncached)"), answers[name]))
         elif name in slot_cache:
             answers[name] = slot_cache[name]
             continue
