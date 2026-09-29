@@ -497,6 +497,13 @@ class DroneHaulerMixin:
         return self._host.fly_to_station(service_id, target_coords=coords)
 
     def _refuel(self, needed, reason):
+        """Refuels at a drone_service inside a log block; see _refuel_at_service()."""
+        self._host.log.start(f"[{self._host.name}] Refuelling: {reason}")
+        ok = self._refuel_at_service(needed, reason)
+        self._host.log.end("refuelled" if ok else "not refuelled")
+        return ok
+
+    def _refuel_at_service(self, needed, reason):
         """
         Flies to the nearest drone_service and waits while its station
         script charges/refuels this drone, until full (REFUEL_FULL_LEVEL) or

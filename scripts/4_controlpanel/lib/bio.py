@@ -737,7 +737,7 @@ class BioExchangeController:
         all_orders = self.machine.orders()
         delivered_count = 0
 
-        self.log.print(f"[EXCHANGE] Starting sweep across {len(all_orders)} orders. Checking local storage...")
+        self.log.debug(f"[EXCHANGE] Starting sweep across {len(all_orders)} orders. Checking local storage...")
 
         for ord_info in all_orders:
             if not is_order_incomplete(ord_info):
@@ -770,6 +770,8 @@ class BioExchangeController:
                     biome_tag = getattr(ord_info, "biome", "order")
                     self.log.print(f"[EXCHANGE] Switched to {ord_info.id} ({ord_info.name} - {biome_tag}) to deliver {to_deliver}x {item_id}")
 
+                delivered_before = delivered_count
+                self.log.start(f"[EXCHANGE] Delivering up to {to_deliver}x {item_id} -> {ord_info.id}")
                 for _ in range(to_deliver):
                     self.drain_output()
 
@@ -815,6 +817,7 @@ class BioExchangeController:
                     else:
                         self.log.level("error").print(f"[EXCHANGE] Deliver error: {deliv_res.status} - {deliv_res.message}")
                         break
+                self.log.end(f"[EXCHANGE] {ord_info.id}: delivered {delivered_count - delivered_before}x {item_id}")
 
         self.drain_output()
         self.clear_input()

@@ -224,6 +224,7 @@ class PowerGridManager:
 
     def _close_day(self, start, now, grid_id_str):
         """Records the finished day's balance and warns on a >20% drain."""
+        self.log.start(f"[POWER] Closing day {start.get('day')} on '{grid_id_str}'")
         bat_delta = now["bat_wh"] - start.get("bat_wh", 0.0)
         steam_delta = now["steam_t"] - start.get("steam_t", 0.0)
         bat_cap = max(now["bat_cap"], start.get("bat_cap", 0.0))
@@ -261,6 +262,7 @@ class PowerGridManager:
             _notify(f"[Power Advisory] {msg}")
         else:
             self.log.debug(f"[POWER] Day {summary['day']} on '{grid_id_str}': no pool lost more than {DAILY_LOSS_WARN_FRACTION*100:.0f}% of capacity; no advisory.")
+        self.log.end(f"[POWER] Day {summary['day']} closed on '{grid_id_str}' ({'draining' if draining else 'no advisory'})")
 
     def _track_day(self, grid, now, grid_id_str):
         current_day = self.clock.get_day() if self.clock else 1
@@ -365,7 +367,7 @@ class PowerGridManager:
             tiers_to_shed = 1
         else:
             tiers_to_shed = 0
-        self.log.debug(
+        self.log.trace(
             f"[POWER] Guard '{grid_id_str}': reserve {total_wh:.0f}/{total_cap:.0f} Wh ({frac*100:.1f}%) "
             f"[battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {tiers_to_shed}/{len(tiers)} tier(s)."
         )
@@ -413,7 +415,7 @@ class PowerGridManager:
         grid_machines = set(getattr(grid, "machine_ids", None) or [])
 
         now = self._measure(grid)
-        self.log.debug(
+        self.log.trace(
             f"[POWER] Grid '{grid_id_str}': gen={getattr(grid, 'generated', 0.0):.0f} W, con={getattr(grid, 'consumed', 0.0):.0f} W, "
             f"battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t in {now['tanks']} tank(s)."
         )

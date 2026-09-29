@@ -184,7 +184,7 @@ class SteamCondenserController:
                 swallowed("steam_condenser.SteamCondenserController.water_pool_fraction: tank.level", error)
         if capacity <= 0:
             return None
-        self.log.debug(f"[{self.name}] Water pool {level:.0f}/{capacity:.0f} t over {len(tanks)} reachable tank(s).")
+        self.log.trace(f"[{self.name}] Water pool {level:.0f}/{capacity:.0f} t over {len(tanks)} reachable tank(s).")
         return level / capacity
 
     # ------------------------------------------------------------------
@@ -204,7 +204,7 @@ class SteamCondenserController:
         now = power.measure_grid(grid, power.grid_steam_tank_ids(grid))
         if now["steam_cap"] <= 0:
             return None
-        self.log.debug(f"[{self.name}] Grid steam pool {now['steam_t']:.0f}/{now['steam_cap']:.0f} t over {now['tanks']} tank(s).")
+        self.log.trace(f"[{self.name}] Grid steam pool {now['steam_t']:.0f}/{now['steam_cap']:.0f} t over {now['tanks']} tank(s).")
         return now["steam_t"] / now["steam_cap"]
 
     def update_steam_gate(self):
@@ -220,7 +220,7 @@ class SteamCondenserController:
             self.steam_gate_open = True
             self.log.print(f"[{self.name}] Grid steam pool back to {fraction*100:.0f}% (>= {STEAM_POOL_START_FRACTION*100:.0f}%) -- resuming condensation.")
         else:
-            self.log.debug(f"[{self.name}] Steam pool {fraction*100:.0f}%, gate {'open' if self.steam_gate_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
+            self.log.trace(f"[{self.name}] Steam pool {fraction*100:.0f}%, gate {'open' if self.steam_gate_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
 
     def update_water_gate(self):
         fill = self.water_pool_fraction()
@@ -234,7 +234,7 @@ class SteamCondenserController:
             self.water_gate_open = True
             self.log.print(f"[{self.name}] Water tanks down to {fill*100:.0f}% (< {WATER_POOL_START_FRACTION*100:.0f}%) -- resuming condensation.")
         else:
-            self.log.debug(f"[{self.name}] Water pool {fill*100:.0f}%, gate {'open' if self.water_gate_open else 'closed'} (stop >= {WATER_POOL_STOP_FRACTION*100:.0f}%, start < {WATER_POOL_START_FRACTION*100:.0f}%).")
+            self.log.trace(f"[{self.name}] Water pool {fill*100:.0f}%, gate {'open' if self.water_gate_open else 'closed'} (stop >= {WATER_POOL_STOP_FRACTION*100:.0f}%, start < {WATER_POOL_START_FRACTION*100:.0f}%).")
 
     def sink_draining_target(self):
         """Id of a Waste Processor draining the current water_out tank, else None."""
@@ -299,7 +299,7 @@ class SteamCondenserController:
             else:
                 self.log.print(f"[{self.name}] Condensing at full throttle.")
             self._last_reason = reason
-        self.log.debug(f"[{self.name}] steam_in {steam_level:.0f} t, water_out {water_level:.0f}/{water_cap:.0f} t, throttle {throttle}, rate {self.rate():.0f} t/h.")
+        self.log.trace(f"[{self.name}] steam_in {steam_level:.0f} t, water_out {water_level:.0f}/{water_cap:.0f} t, throttle {throttle}, rate {self.rate():.0f} t/h.")
 
     def rate(self):
         try:

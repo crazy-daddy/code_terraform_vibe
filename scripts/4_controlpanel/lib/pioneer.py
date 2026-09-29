@@ -250,6 +250,13 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         etc.) or an inability to physically reach the site/station -- never merely
         because the job is still incomplete and needs another recharge round later.
         """
+        self.log.start(f"[{self.name}] Build '{blueprint_id}' ({kind or 'blueprint'}) at {coords}")
+        ok = self._execute_construction(blueprint_id, coords, kind)
+        self.log.end(f"[{self.name}] Build '{blueprint_id}' {'finished or paused for later' if ok else 'failed'}")
+        return ok
+
+    def _execute_construction(self, blueprint_id, coords, kind):
+        """Body of execute_construction()."""
         self.log.trace(f"[{self.name}] execute_construction() enter: blueprint_id={blueprint_id!r}, coords={coords}")
         if not hasattr(self.vehicle, "constructor"):
             self.log.level("error").print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")

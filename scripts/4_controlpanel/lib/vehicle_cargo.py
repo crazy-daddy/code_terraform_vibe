@@ -65,7 +65,7 @@ class VehicleCargoMixin:
 
         target_outpost = outpost if outpost is not None else self._host.home_outpost
 
-        self._host.log.print(f"[{self._host.name}] Offloading {cargo_count} items...")
+        self._host.log.start(f"[{self._host.name}] Offloading {cargo_count} items")
         self._host.publish_telemetry("UNLOADING")
 
         out_port = getattr(self._host.vehicle, "output", None)
@@ -77,6 +77,7 @@ class VehicleCargoMixin:
 
         if not out_port:
             self._host.log.level("error").print(f"[{self._host.name}] Error: No output port found on vehicle!")
+            self._host.log.end(f"[{self._host.name}] Offload failed: no output port")
             return 0
 
         unloaded = 0
@@ -164,6 +165,7 @@ class VehicleCargoMixin:
                     break
 
         result = -1 if inventory_full else unloaded
+        self._host.log.end(f"[{self._host.name}] Offloaded {unloaded} unit(s)" + ("; storage full, cargo remains aboard" if inventory_full else ""))
         self._host.log.trace(f"[{self._host.name}] unload_cargo() exit: unloaded={unloaded}, inventory_full={inventory_full}, result={result}")
         return result
 
@@ -670,6 +672,11 @@ class VehicleCargoMixin:
 
     def _finish_pull_delivery(self, poll_interval):
         """Drives home, unloads, releases this vehicle's pickup debits and recharges."""
+        self._host.log.start(f"[{self._host.name}] Delivering pickups to '{self._host.home_base}'")
+        outcome = self._deliver_pull_cargo(poll_interval)
+        self._host.log.end(f"[{self._host.name}] {outcome}")
+
+    def _deliver_pull_cargo(self, poll_interval):
         if not self._host.intent:
             home_id = getattr(self._host.home_outpost, "id", None)
             aboard = self._cargo_totals()
@@ -679,15 +686,15 @@ class VehicleCargoMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach home to unload; will retry.")
             flush_all()
             sleep(poll_interval)
-            return
+            return "Delivery incomplete: home not reached"
         if self.unload_cargo() < 0:
             self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
             flush_all()
             sleep(poll_interval)
-            return
+            return "Delivery blocked: no inventory space"
         logistics_requests.release_pickups(self._host.name)
         # A pull hauler holds no other yield reservations (roles are exclusive per script).
         mining_reservations.release_yield(self._host.name)
         self._host.recharge_at_station(target_level=1.0)
         self._host.publish_telemetry("READY_AT_OUTPOST")
-
+        return "Delivered and recharged"
