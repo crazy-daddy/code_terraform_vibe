@@ -64,9 +64,15 @@ class HarvesterCareMixin:
 
     # ---------------------------------------------------------------- care
 
-    def care_due(self, cell, rules, refresh_h=CARE_REFRESH_H):
-        """Treatment kinds this cell's plant needs renewed (less than refresh_h left)."""
-        if getattr(cell, "status", "") not in ("growing", "stalled"):
+    def care_due(self, cell, rules, refresh_h=CARE_REFRESH_H, kept=False):
+        """
+        Treatment kinds this cell's plant needs renewed (less than refresh_h
+        left). A mature crop waits for its harvest untreated, except a kept
+        one (`kept`, never harvested): it only counts toward diversity while
+        its conditions are met.
+        """
+        statuses = ("growing", "stalled", "mature") if kept else ("growing", "stalled")
+        if getattr(cell, "status", "") not in statuses:
             return []
         species = getattr(cell, "plant", None)
         if not species:
@@ -82,11 +88,11 @@ class HarvesterCareMixin:
             due.append(kind)
         return due
 
-    def care_targets(self, cells, rules, refresh_h=CARE_REFRESH_H):
-        """{sector: [kinds]} for every plant with a treatment below refresh_h."""
+    def care_targets(self, cells, rules, refresh_h=CARE_REFRESH_H, kept=()):
+        """{sector: [kinds]} for every plant with a treatment below refresh_h (`kept` sectors: mature ones too)."""
         out = {}
         for sector, cell in cells.items():
-            due = self.care_due(cell, rules, refresh_h)
+            due = self.care_due(cell, rules, refresh_h, sector in kept)
             if due:
                 out[sector] = due
         return out
