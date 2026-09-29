@@ -1,5 +1,8 @@
 """Indented, tree-drawn console logging shared across scripts.
 
+Adapted from the version by Discord user E̸̤̝̊̈l̶͙͎̓͠l̸̖̊͜ì̶̲ȍ̸̰t̶̯͓̾͗ 
+(https://discord.com/channels/1498806997955514368/1550356674127069195/1550356674127069195)
+
 Wraps the `console` component (docs/components/console.md) so both the
 quick overview and the in-depth reasoning trail read like a call stack in
 the Console tab instead of a flat scroll of unindented lines.
