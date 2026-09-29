@@ -67,6 +67,7 @@ import logistics_requests  # noqa: E402
 import site_supply  # noqa: E402
 import site_plan  # noqa: E402
 import supply_dock  # noqa: E402
+import tree_console  # noqa: E402
 from tree_console import TreeConsole  # noqa: E402
 
 LIB_MODULES = (archive, production, storage, swallow, smelter, fabricator, outpost_mining, logistics_requests, site_supply, site_plan, supply_dock)
@@ -75,6 +76,7 @@ LIB_MODULES = (archive, production, storage, swallow, smelter, fabricator, outpo
 def _reset_module_state(world):
     archive.archive.notebook = world.notebook
     swallow._STATE["console"] = None
+    tree_console._BUFFER.update({"console": None, "key": None, "lines": [], "chars": 0, "cap": 0})
     swallow._LAST.clear()
     swallow._WARNED.clear()
     storage._recent_busy.clear()
@@ -105,4 +107,5 @@ class StubTestCase(unittest.TestCase):
 
     def debug_log(self):
         """Every console line so far, for failure messages."""
+        tree_console.flush_all()
         return self.world.console.text()

@@ -4,7 +4,7 @@
 
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 import fluid_routing
@@ -284,6 +284,7 @@ class HeatController:
         validate_game_version()
         while True:
             self.step()
+            flush_all()
             sleep(poll_interval)
 
 
@@ -331,6 +332,7 @@ class PressureController:
         validate_game_version()
         while True:
             self.step()
+            flush_all()
             sleep(poll_interval)
 
 
@@ -368,4 +370,5 @@ class OxygenController:
         validate_game_version()
         while True:
             self.step()
+            flush_all()
             sleep(poll_interval)

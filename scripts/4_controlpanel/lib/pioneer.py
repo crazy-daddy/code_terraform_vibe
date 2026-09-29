@@ -17,6 +17,7 @@ import drill_sites
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
+from tree_console import flush_all
 
 class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMixin):
     """
@@ -390,6 +391,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         while True:
             try:
                 if self.handle_recall_if_active():
+                    flush_all()
                     sleep(5.0)
                     continue
 
@@ -449,6 +451,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     if self.distance_to_home() > 3.0:
                         self.return_to_base()
                     self.publish_telemetry("IDLE_AT_BASE")
+                    flush_all()
                     sleep(10.0)
                     continue
 
@@ -508,6 +511,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         if not success:
                             failed_jobs.add(job_id)
                             self.release_target_claim(self.construction_claim_key(job_id))
+                            flush_all()
                             sleep(2.0)
                         elif self.get_construction_progress(job_id) >= 1.0:
                             self.release_target_claim(self.construction_claim_key(job_id))
@@ -558,6 +562,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                             if not success:
                                 failed_jobs.add(job_id)
                                 self.release_target_claim(self.construction_claim_key(job_id))
+                                flush_all()
                                 sleep(2.0)
                             elif self.get_construction_progress(job_id) >= 1.0:
                                 self.release_target_claim(self.construction_claim_key(job_id))
@@ -597,6 +602,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                                         req_details.append(f"{j_id}")
                                     failed_jobs.add(j_id)
                                 self.log.level("warn").print(f"[{self.name}] Advisory: Matching construction job(s) exceed maximum battery range even at minimum throttle ({cap_wh:.1f} Wh): {', '.join(req_details)}.")
+                                flush_all()
                                 sleep(5.0)
                                 continue
 
@@ -635,6 +641,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     if self.distance_to_home() > 3.0:
                         self.return_to_base()
                     self.publish_telemetry("IDLE_AT_BASE")
+                    flush_all()
                     sleep(10.0)
                     continue
 
@@ -650,6 +657,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         break
                 if not target_job:
                     # Every achievable job just got claimed out from under us; retry next cycle.
+                    flush_all()
                     sleep(2.0)
                     continue
 
@@ -695,11 +703,13 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                             self.log.level("warn").print(f"[{self.name}] Could not load materials for job {job_id}; deferring to try other pending jobs.")
                             failed_jobs.add(job_id)
                             self.release_target_claim(self.construction_claim_key(job_id))
+                            flush_all()
                             sleep(2.0)
                             continue
                     else:
                         # Already have materials loaded; avoid rapid cycling
                         self.log.debug(f"[{self.name}] run_construction_loop(): {required_item} already loaded for job {job_id}; waiting a beat before retry.")
+                        flush_all()
                         sleep(2.0)
                 else:
                     # Deconstruction job - ensure cargo has space for reclaimed materials
@@ -721,6 +731,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     self.release_target_claim()
                 except Exception as error:
                     swallowed("pioneer.PioneerController.run_construction_loop: self.release_target_claim", error)
+                flush_all()
                 sleep(5.0)
 
     def run_mining_loop(self):
@@ -738,12 +749,14 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         while True:
             try:
                 if self.handle_recall_if_active():
+                    flush_all()
                     sleep(5.0)
                     continue
 
                 if not hasattr(self.vehicle, "drill"):
                     self.log.level("warn").print(f"[{self.name}] No Drill Module mounted; mining role idle. Mount an Industrial/Heavy Drill to begin.")
                     self.publish_telemetry("IDLE_NO_DRILL")
+                    flush_all()
                     sleep(30.0)
                     continue
 
@@ -792,10 +805,12 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         self.log.print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
                         if not self.return_to_base():
                             self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                            flush_all()
                             sleep(5.0)
                             continue
                     if self.unload_cargo() < 0:
                         self.publish_telemetry("WAITING_INVENTORY_SPACE")
+                        flush_all()
                         sleep(10.0)
                         continue
 
@@ -817,6 +832,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                 if not target or not budget:
                     self.log.print(f"[{self.name}] No mining target: no reachable mineral site currently matches demand. Standing by at base slot.")
                     self.publish_telemetry("IDLE_AT_BASE")
+                    flush_all()
                     sleep(15.0)
                     continue
 
@@ -845,6 +861,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                 # just fail with "not_at_target" otherwise.
                 if not self.return_to_base():
                     self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                    flush_all()
                     sleep(5.0)
                     continue
 
@@ -859,6 +876,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                 # Step 7: Offload and recharge
                 if self.unload_cargo() < 0:
                     self.publish_telemetry("WAITING_INVENTORY_SPACE")
+                    flush_all()
                     sleep(10.0)
                     continue
                 self.recharge_at_station(target_level=1.0)
@@ -877,4 +895,5 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         self.current_target_reserved = False
                 except Exception as error:
                     swallowed("pioneer.PioneerController.run_mining_loop: self.release_target_claim", error)
+                flush_all()
                 sleep(5.0)

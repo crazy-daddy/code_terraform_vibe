@@ -8,6 +8,7 @@ from version_guard import validate_game_version
 import outpost_mining
 from swallow import swallowed
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -98,6 +99,7 @@ class VehicleSurveyMixin:
                     surveyed_sites.append(s)
             else:
                 surveyed_sites.append(s)
+            flush_all()
             sleep(0.5)
 
         log.trace(f"[{self._host.name}] scan_and_survey() exit: {len(sites)} candidate site(s) in range, {len(surveyed_sites)} returned.")
@@ -387,6 +389,7 @@ class VehicleSurveyMixin:
         while True:
             try:
                 if self._host.handle_recall_if_active():
+                    flush_all()
                     sleep(5.0)
                     continue
 
@@ -412,12 +415,14 @@ class VehicleSurveyMixin:
                     self._host.return_to_base()
                     self._host.publish_telemetry("SURVEY_COMPLETE", f"{poi_completed} known POIs")
                     self._host.recharge_at_station(target_level=1.0)
+                    flush_all()
                     sleep(5.0)
                     continue
 
                 if not spiral_fallback:
                     self._host.log.print(f"[{self._host.name}] All known POIs are scanned; no random spiral fallback requested.")
                     self._host.publish_telemetry("SURVEY_COMPLETE", "all known POIs scanned")
+                    flush_all()
                     sleep(30.0)
                     continue
 
@@ -488,6 +493,7 @@ class VehicleSurveyMixin:
                 self._host.publish_telemetry("SURVEY_COMPLETE", f"{completed} waypoints; next {next_index}")
                 self._host.log.print(f"[{self._host.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}. Recharging before continuing.")
                 self._host.recharge_at_station(target_level=1.0)
+                flush_all()
                 sleep(5.0)
             except Exception as e:
                 self._host.log.level("error").print(f"[{self._host.name}] Survey loop exception: {e}. Returning home.")
@@ -496,4 +502,5 @@ class VehicleSurveyMixin:
                 except Exception as error:
                     swallowed("vehicle_survey.VehicleSurveyMixin.run_survey_loop: self._host.vehicle.nav.brake", error)
                 self._host.return_to_base()
+                flush_all()
                 sleep(5.0)

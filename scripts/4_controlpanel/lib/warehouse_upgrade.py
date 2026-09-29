@@ -37,7 +37,7 @@
 # Warehouses have no script slot of their own.
 
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 import cash
 
@@ -387,6 +387,7 @@ class WarehouseUpgrader:
                     left = self._total(old_id)
                     self.log.level("warn").print(f"[warehouse_upgrade] '{old_id}': {left} unit(s) left and nowhere to move them; retrying later.")
                     return f"{old_id}: stuck with {left} unit(s)"
+                flush_all()
                 sleep(BUSY_RETRY_S)
         finally:
             self.log.end(f"[warehouse_upgrade] '{old_id}': {moved_total} unit(s) moved this pass")
@@ -416,6 +417,7 @@ class WarehouseUpgrader:
                     self.log.debug(f"[warehouse_upgrade] {stack.id}: '{res.status}' {busy}x in a row; skipping this stack for now.")
                     return moved
                 self.log.trace(f"[warehouse_upgrade] {stack.id} '{old_id}' -> '{target}': {res.status}, retry {busy}.")
+                flush_all()
                 sleep(BUSY_RETRY_S)
                 continue
             self.log.debug(f"[warehouse_upgrade] transfer {stack.id} '{old_id}' -> '{target}': {res.status} - {res.message}")

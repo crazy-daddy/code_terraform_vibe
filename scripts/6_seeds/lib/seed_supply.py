@@ -21,7 +21,7 @@ import logistics_requests
 from seed_maker import SeedMakerController, STATUS_KEY, REQUESTER_ID, REQUEST_REFRESH_TICKS
 from seed_maker import IDLE_POLL_SECONDS, combo_key, _now_tick
 from storage import total_stock, drain_port_to_storage
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from version_guard import validate_game_version
 
 RECIPES_KEY = "plant.recipes"
@@ -235,6 +235,7 @@ class SeedSupplyController(SeedMakerController):
     def _recover_supply(self, by_seed):
         """After a restart: finish a known blend still in the chamber, else return it to storage."""
         while self._safe_is_running():
+            flush_all()
             sleep(0.5)
         self._drain_output()
         chamber = self._chamber()
@@ -293,4 +294,5 @@ class SeedSupplyController(SeedMakerController):
                 self.log.level("error").print(f"[{self.name}] Seed Supply exception: {e}")
                 delay = IDLE_POLL_SECONDS
             if delay:
+                flush_all()
                 sleep(delay)

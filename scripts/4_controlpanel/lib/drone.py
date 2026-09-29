@@ -25,7 +25,7 @@ from drone_scout import DroneScoutMixin
 from drone_mining import DroneMiningMixin
 from drone_hauler import DroneHaulerMixin
 from drone_upgrade import DroneUpgradeMixin, inherited_params
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -294,6 +294,7 @@ class DroneController(
         # it has enough to fly (see fit_loadout_if_new()).
         while not self.fit_loadout_if_new():
             self.publish_telemetry("AWAITING_MODULES")
+            flush_all()
             sleep(30.0)
         self.detect_engine()  # re-read: modules may have been swapped while recalled
         role = self.detect_role(role_override)

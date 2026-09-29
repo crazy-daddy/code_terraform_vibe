@@ -30,7 +30,7 @@
 from archive import archive
 from storage import take_item, drain_port_to_storage, best_unload_target
 import logistics_requests
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -387,6 +387,7 @@ class SeedMakerController:
         returned to storage. A "loading" claim is released.
         """
         while self._safe_is_running():
+            flush_all()
             sleep(0.5)
         self._drain_output()
         self._refresh_tried()
@@ -483,4 +484,5 @@ class SeedMakerController:
                 self.log.level("error").print(f"[{self.name}] Seed Maker exception: {e}")
                 delay = IDLE_POLL_SECONDS
             if delay:
+                flush_all()
                 sleep(delay)

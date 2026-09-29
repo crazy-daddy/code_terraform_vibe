@@ -54,6 +54,7 @@ def is_rover_chassis_for(vehicle):
 
 from archive import archive
 from swallow import swallowed
+from tree_console import flush_all
 
 # Building type id as returned by OutpostRef.buildings() / Machine.typeId
 # ("charging_station"), not the component doc name
@@ -819,6 +820,7 @@ class VehicleEnergyMixin:
             except Exception as error:
                 swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: self._host.vehicle.nav.brake", error)
 
+        flush_all()
         sleep(0.5)
         self._host.publish_telemetry("CHARGING")
         self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
@@ -861,6 +863,7 @@ class VehicleEnergyMixin:
                 except Exception as error:
                     swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: get_docked_fn", error)
 
+            flush_all()
             sleep(2.0)
 
         return True

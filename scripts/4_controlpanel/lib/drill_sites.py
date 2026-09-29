@@ -24,7 +24,7 @@
 # every write, unless discovery came back empty.
 
 from archive import archive
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 log = TreeConsole(module="drill_sites")
@@ -155,6 +155,7 @@ def record_built_drill(port, kind, coords):
             if connect_to_drill(port, drill_id):
                 confirm_position(drill_id, site_id, coords)
                 return drill_id
+        flush_all()
         sleep(1.0)
     if len(unresolved) == 1:
         log.level("warn").print(f"New {kind} at {coords} didn't accept a connection; assuming it is '{unresolved[0]}' (only unresolved one).")
@@ -197,6 +198,7 @@ def take_from_drill(port, item_id, amount):
         status = getattr(res, "status", None)
         moved_total += moved
         if status == "busy":
+            flush_all()
             sleep(0.5)
             continue
         if moved <= 0 or status not in ("ok", "partial"):

@@ -23,6 +23,7 @@ from swallow import swallowed
 # `plant.status[<id>]["heat"]` across restarts.
 
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
@@ -147,6 +148,7 @@ class HarvesterHeatMixin:
                 return
             hours = (heat - target) / max(0.5, self.cool_per_hour)
             self._host.log.debug(f"[{self._host.name}] Heat {heat:.1f}: resting {hours:.2f} h to {target:.1f}.")
+            flush_all()
             sleep(hours * self.real_seconds_per_hour + 0.5)
             after = self._host.get_heat()
             if after > 0.5:  # a reading floored at 0 says nothing about the rate
@@ -245,6 +247,7 @@ class HarvesterHeatMixin:
             if st == "overheated":
                 self.cool_to(self.heat_cap() - cost)
             elif st in ("moving", "busy"):
+                flush_all()
                 sleep(1.0)
             else:
                 self._host.log.level("warn").print(f"[{self._host.name}] move {sector} -> {st}: {getattr(res, 'message', '')}")

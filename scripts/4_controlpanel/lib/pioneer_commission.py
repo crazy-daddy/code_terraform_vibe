@@ -27,6 +27,7 @@ from archive import archive
 from vehicle_upgrade import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, _BAY_COUNTS
 from swallow import swallowed
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -159,6 +160,7 @@ class PioneerFittingMixin:
                 return
             self._host.publish_telemetry("FITTING", target_desc=result)
             self._host.log.debug(f"[{name}] Fitting pass: {result}; missing {missing}; retrying in {FIT_RETRY_S:.0f} s.")
+            flush_all()
             sleep(FIT_RETRY_S)
 
     def _report_missing(self, name, missing):
@@ -186,6 +188,7 @@ class PioneerFittingMixin:
         for _ in range(FIT_POLL_TRIES):
             if check():
                 return True
+            flush_all()
             sleep(FIT_POLL_S)
         return check()
 

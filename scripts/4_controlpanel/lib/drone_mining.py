@@ -25,7 +25,7 @@
 # nobody requests come along; the Drone Depot and a Waste Processor deal with
 # them (lib/drone_depot.py, lib/waste_sink.py).
 
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 import logistics_requests
 import fleet_intent
@@ -206,14 +206,17 @@ class DroneMiningMixin:
                 if self._host.is_stranded():
                     log.level("warn").print(f"[{self._host.name}] {self._host.status()}; awaiting drone_service rescue.")
                     self._host.publish_telemetry("STRANDED")
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
                 if self._host.handle_recall_if_active():
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
                 if self._host.handle_upgrade_request_if_active():
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -233,16 +236,19 @@ class DroneMiningMixin:
                     if not self._host.is_at(coords, precision=1.0):
                         if not self._host.fly_to(coords[0], coords[1], precision=1.0):
                             log.level("warn").print(f"[{self._host.name}] Could not re-reach resumed target {coords}; will retry.")
+                            flush_all()
                             sleep(poll_interval)
                             continue
                     self._extract_until_done(coords)
                     if not self._return_and_unload():
+                        flush_all()
                         sleep(poll_interval)
                     continue
 
                 curr_wh, _, _ = self._host.get_battery()
                 if curr_wh <= self._host.energy_needed_to_return_comfortably():
                     self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} {self._host.energy_unit()})")
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -252,6 +258,7 @@ class DroneMiningMixin:
                     full_depot = getattr(self, "_depot_full_id", None)
                     if now_tick < retry_tick:
                         self._wait_for_depot_space(log, full_depot, retry_tick - now_tick)
+                        flush_all()
                         sleep(poll_interval)
                         continue
                     if getattr(self, "_depot_full_count", 0) >= self.DEPOT_FULL_STALL_ATTEMPTS and self._deliver_elsewhere(log):
@@ -259,6 +266,7 @@ class DroneMiningMixin:
                     # Without the sleep a failed return (e.g. go_to "busy")
                     # retried in a tight loop and flooded the console.
                     if not self._return_and_unload():
+                        flush_all()
                         sleep(poll_interval)
                     continue
 
@@ -266,10 +274,12 @@ class DroneMiningMixin:
                 if not candidates:
                     log.debug(f"[{self._host.name}] No ready home-biome biosite candidates this cycle.")
                     self._host.publish_telemetry("IDLE_NO_TARGETS")
+                    flush_all()
                     sleep(30.0)
                     continue
 
                 if self._host.hold_for_launch_charge(log):
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -284,6 +294,7 @@ class DroneMiningMixin:
                         # trip (but not low enough to trip the proactive-return
                         # check above) idles here forever instead of topping up.
                         self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl*100:.0f}% charge")
+                    flush_all()
                     sleep(15.0)
                     continue
 
@@ -298,11 +309,13 @@ class DroneMiningMixin:
                 if not self._host.fly_to(target["coords"][0], target["coords"][1], precision=1.0):
                     log.level("warn").print(f"[{self._host.name}] Could not reach biosite {target['coords']}; releasing claim and retrying later.")
                     self._host.release_biosite_claim(target["target_key"])
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
                 self._extract_until_done(target["coords"])
                 if not self._return_and_unload():
+                    flush_all()
                     sleep(poll_interval)
             except Exception as e:
                 log.level("error").print(f"[{self._host.name}] Miner loop exception: {e}")
@@ -310,6 +323,7 @@ class DroneMiningMixin:
                     self._host.release_biosite_claim()
                 except Exception as error:
                     swallowed("drone_mining.DroneMiningMixin.run_miner_loop: self._host.release_biosite_claim", error)
+                flush_all()
                 sleep(5.0)
 
     def _adopt_interrupted_extraction(self, log):
@@ -373,6 +387,7 @@ class DroneMiningMixin:
                     break
                 continue
             elif res.status == "busy":
+                flush_all()
                 sleep(1.0)
                 continue
             elif res.status == "cooling":
@@ -383,6 +398,7 @@ class DroneMiningMixin:
                 # seconds before giving up and flying home empty.
                 settle_retries -= 1
                 self._host.log.debug(f"[{self._host.name}] extract() not_at_location at {coords} (status={self._host.status()}, pos={self._host.position()}); retrying, {settle_retries} left.")
+                flush_all()
                 sleep(1.0)
                 continue
             else:

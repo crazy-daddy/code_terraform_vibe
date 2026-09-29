@@ -6,7 +6,7 @@
 from bio import get_my_biome, local_sibling, is_order_incomplete, is_local_order, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 
@@ -277,6 +277,7 @@ class BioLuminizerController:
         if res.status == "ok":
             self.log.print(f"[{self.name}] Infused sample at glow {target}.")
         elif res.status == "busy":
+            flush_all()
             sleep(0.2)
 
     def _solve_and_apply(self, target):
@@ -347,6 +348,7 @@ class BioLuminizerController:
         chamber = self.machine.chamber
         if chamber is None:
             self._load_next_sample(orders, snapshot)
+            flush_all()
             sleep(0.5)
             return
 
@@ -355,6 +357,7 @@ class BioLuminizerController:
             # No glow requirement for this fragment right now -- pass through unchanged.
             self.log.debug(f"[{self.name}] No local order requires {chamber.fragment_id} tinted right now -- discarding unchanged.")
             self.machine.discard()
+            flush_all()
             sleep(0.5)
             return
 
@@ -366,6 +369,7 @@ class BioLuminizerController:
         validate_game_version()
         while True:
             self.step()
+            flush_all()
             sleep(0.5)
 
 

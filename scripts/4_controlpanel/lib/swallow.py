@@ -37,10 +37,13 @@ Imports nothing (not even archive or tree_console), so every lib -- including
 lib/archive.py, which tree_console itself depends on -- can use it.
 """
 
+from typing import Callable
+
 _BUG_ERRORS = (TypeError, AttributeError, NameError, KeyError, IndexError, ZeroDivisionError)
 
 # Console component, looked up on first use; per-site dedupe state.
 _STATE: "dict[str, Console | None]" = {"console": None}
+_HOOKS: "dict[str, Callable[[], None] | None]" = {"flush": None}
 _LAST = {}
 _WARNED = set()
 
@@ -49,6 +52,18 @@ def _is_bug_error(error):
     if not isinstance(error, _BUG_ERRORS):
         return False
     return not (isinstance(error, AttributeError) and "NoneType" in str(error))
+
+
+def set_flush_hook(hook):
+    """Register the callable that writes pending buffered console lines (tree_console.flush_all),
+    so a swallowed-error line never overtakes lines logged before it."""
+    _HOOKS["flush"] = hook
+
+
+def _flush_pending():
+    hook = _HOOKS["flush"]
+    if hook is not None:
+        hook()
 
 
 def swallowed(where, error):
@@ -64,10 +79,12 @@ def swallowed(where, error):
         message = f"{error!r}"
         if _is_bug_error(error) and where not in _WARNED:
             _WARNED.add(where)
+            _flush_pending()
             console.print(f"[swallowed] {where}: {message} -- likely a code bug, recovered with a fallback.",
                           level="warn", timestamp=True)
         if _LAST.get(where) != message:
             _LAST[where] = message
+            _flush_pending()
             console.print(f"[swallowed] {where}: {message}", level="debug", timestamp=True)
     except Exception:
         # Logging must never turn a recovered error into a crash; nothing

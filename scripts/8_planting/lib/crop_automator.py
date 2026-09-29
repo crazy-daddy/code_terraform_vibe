@@ -48,7 +48,7 @@ from archive import archive
 import field_layout
 from storage import take_item
 from seed_supply import seed_buffer
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -411,4 +411,5 @@ class CropAutomatorController:
                 self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Crop Automator exception: {e}")
+            flush_all()
             sleep(POLL_INTERVAL_S)
