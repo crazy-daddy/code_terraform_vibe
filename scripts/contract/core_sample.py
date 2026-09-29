@@ -42,20 +42,22 @@ def solve_core(core):
         if not unassigned:
             solutions.append((list(kind), list(pair)))
             return
-        i = min(unassigned)
-        rest = unassigned - {i}
-        for j in sorted(rest):
+        i = unassigned[0]
+        rest = unassigned[1:]
+        for j in rest:
             for ki in kinds_of(i):
                 kj = 5 - ki
                 if not (1 <= kj <= 4):
                     continue
                 if not (fits(i, ki, j) and fits(j, kj, i)):
                     continue
-                kind[i], kind[j], pair[i], pair[j] = ki, kj, j, i
-                match(kind, pair, rest - {j})
-        kind[i] = pair[i] = None
+                kind[i] = ki
+                kind[j] = kj
+                pair[i] = j
+                pair[j] = i
+                match(kind, pair, [r for r in rest if r != j])
 
-    match([None] * n, [None] * n, frozenset(range(n)))
+    match([0] * n, [0] * n, list(range(n)))
 
     results = []
     for kind, pair in solutions:
