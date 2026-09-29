@@ -71,7 +71,7 @@ Operations over a 1000-element list:
 | --- | --- |
 | Lookup | `get_component("clock")`, `get_component(<building id>)` |
 | Clock / scheduler | `clock.tick()`, `clock.get_time()`, `sleep(0.1)` |
-| Console | `console.now()`, `print()`, `console.info()`, `console.debug()` (labelled with `CONSOLE_DEBUG_STATE`) |
+| Console | `console.now()`, `print()`, `console.debug()` (labelled with `CONSOLE_DEBUG_STATE`) |
 | Archive (`notebook`) | `get` and `has` on a missing key; `set`, `get`, `transaction` on a small dict and on a 100-entry dict; `keys(prefix)`; reading `.status` from an `ActionResult` |
 | Signal Bus (`comms`) | `broadcast`, `latest`, `latest_info`, `send` + `receive`, `queue_size`, `pending`, `channels` |
 | Outposts | `outposts()`, `home()`, `coords()`, `buildings()`, `buildings(type_id)`, reading `.type_id` over the building refs |
@@ -80,7 +80,7 @@ Operations over a 1000-element list:
 | World | `nocturna` `terraform_progress` / `biome_at` / `points_of_interest`, `atmosphere.get_o2()` |
 | Reference data | `research.unlocked()` / `is_unlocked()`, `item_catalog.lookup()`, `shop.get_catalogue()`, `orders.list_orders()`, `journal` `is_empty` / `biomass_coords` |
 
-**Console comparison** (`CONSOLE_ONLY`): runs only the console cases. Run it once with debug output enabled in the console UI and once with it disabled, setting `CONSOLE_DEBUG_STATE` to `"shown"` or `"hidden"` each time, to see whether the 0.1 s cost of `console.debug()` depends on the debug filter. `print()` is documented as equivalent to `console.info()`; `warn` and `error` only change the level, so they are not benchmarked separately.
+**Console comparison** (`CONSOLE_ONLY`): runs only the console cases. Run it once with debug output enabled in the console UI and once with it disabled, setting `CONSOLE_DEBUG_STATE` to `"shown"` or `"hidden"` each time, to see whether the 0.1 s cost of `console.debug()` depends on the debug filter. `print()` is documented as equivalent to `console.info()`, and `warn` and `error` only change the level, so only `print()` and `debug()` are benchmarked.
 
 **Interruptive** (`RUN_INTERRUPTIVE`, off by default): each case briefly changes real game state and restores it in a `finally` block.
 

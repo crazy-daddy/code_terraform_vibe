@@ -328,12 +328,6 @@ def api_print_builtin(n):
         print("bench")
 
 
-def api_console_info(n):
-    console = env["console"]
-    for i in range(n):
-        console.info("bench")
-
-
 def api_console_debug(n):
     console = env["console"]
     for i in range(n):
@@ -679,7 +673,6 @@ def build_api_cases():
     add_case(c, None, "sleep(0.1)", api_sleep, 5)
     add_case(c, "console", "console.now()", api_console_now, 50)
     add_case(c, None, "print('bench')", api_print_builtin, 20)
-    add_case(c, "console", "console.info('bench')", api_console_info, 20)
     add_case(c, "console", f"console.debug('bench') [debug output {CONSOLE_DEBUG_STATE}]", api_console_debug, 20)
     add_case(c, "notebook", "archive.get missing key", api_archive_get_missing, 50)
     add_case(c, "notebook", "archive.has missing key", api_archive_has_missing, 50)
