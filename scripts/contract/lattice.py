@@ -1,9 +1,12 @@
 # Lattice Contract Solver
 # Minesweeper-style deduction: probes only proven-clear cells, then transmits the node map.
+# The board is padded with a wall ring so neighbours are plain index offsets, and neighbour
+# counts use native slice/count calls: the game interpreter is slow, so op count matters.
 
 UNKNOWN = 0
 CLEAR = 1
 NODE = 2
+WALL = 3
 MAX_COMPONENT = 60
 SEARCH_BUDGET = 20000
 
@@ -16,90 +19,96 @@ if c.status == "completed":
 grid = c.grid
 W = grid.width()
 H = grid.height()
-CELLS = W * H
+P = W + 2
 
-nbrs = []
-for idx in range(CELLS):
-    cx = idx % W
-    cy = idx // W
-    around = []
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            nx = cx + dx
-            ny = cy + dy
-            if (dx != 0 or dy != 0) and 0 <= nx < W and 0 <= ny < H:
-                around.append(ny * W + nx)
-    nbrs.append(around)
-
-state = [UNKNOWN] * CELLS
-reading = [-1] * CELLS
-unk_cnt = [len(nbrs[i]) for i in range(CELLS)]
-flag_cnt = [0] * CELLS
-read_cells = []
+state = [WALL] * P + ([WALL] + [UNKNOWN] * W + [WALL]) * H + [WALL] * P
+reading = [-1] * len(state)
 pending = []
-work = []
+frontier = []
 failed = False
 
 
-def set_state(i, new):
-    """Record a proven cell and queue the read cells whose counters it changes."""
-    state[i] = new
-    for j in nbrs[i]:
-        unk_cnt[j] -= 1
-        if new == NODE:
-            flag_cnt[j] += 1
-        if reading[j] >= 0:
-            work.append(j)
-    if new == CLEAR:
-        pending.append(i)
+def unknowns(i):
+    """Unknown cells around i, found row by row with a native membership test."""
+    out = []
+    for a in (i - P - 1, i - 1, i + P - 1):
+        row = state[a : a + 3]
+        if UNKNOWN in row:
+            for t in (0, 1, 2):
+                if row[t] == UNKNOWN:
+                    out.append(a + t)
+    return out
 
 
-def mark_clear(i):
-    set_state(i, CLEAR)
+def mark_clear(j):
+    state[j] = CLEAR
+    pending.append(j)
 
 
-def mark_node(i):
-    set_state(i, NODE)
+def mark_node(j):
+    state[j] = NODE
 
 
-def probe_one():
+def check(i):
+    """Single-cell rule. 0: nothing left to resolve, 1: resolved cells, 2: still undecided."""
+    a = i - P - 1
+    b = i - 1
+    d = i + P - 1
+    window = state[a : a + 3] + state[b : b + 3] + state[d : d + 3]
+    unk = window.count(UNKNOWN)
+    if unk == 0:
+        return 0
+    need = reading[i] - window.count(NODE)
+    if need == 0:
+        for j in unknowns(i):
+            mark_clear(j)
+        return 1
+    if need == unk:
+        for j in unknowns(i):
+            mark_node(j)
+        return 1
+    return 2
+
+
+def probe_pending():
     global failed
-    i = pending.pop()
-    res = grid.probe(i % W, i // W)
-    if res.status != "ok" or res.reading is None:
-        print(f"Probe ({i % W},{i // W}) failed: {res.status} - {res.message}")
-        failed = True
-        return
-    reading[i] = res.reading
-    read_cells.append(i)
-    work.append(i)
+    while pending and not failed:
+        i = pending.pop()
+        res = grid.probe(i % P - 1, i // P - 1)
+        if res.status != "ok" or res.reading is None:
+            print(f"Probe ({i % P - 1},{i // P - 1}) failed: {res.status} - {res.message}")
+            failed = True
+            return
+        reading[i] = res.reading
+        if check(i) == 2:
+            frontier.append(i)
 
 
-def propagate():
-    """Single-cell rule, driven by a work list of read cells whose neighborhood changed."""
-    while work:
-        i = work.pop()
-        unk = unk_cnt[i]
-        if unk == 0:
-            continue
-        need = reading[i] - flag_cnt[i]
-        if need == 0:
-            for j in nbrs[i]:
-                if state[j] == UNKNOWN:
-                    mark_clear(j)
-        elif need == unk:
-            for j in nbrs[i]:
-                if state[j] == UNKNOWN:
-                    mark_node(j)
+def sweep():
+    """Re-run the single-cell rule over the undecided frontier; True if anything resolved."""
+    global frontier
+    changed = False
+    remaining = []
+    for i in frontier:
+        r = check(i)
+        if r == 2:
+            remaining.append(i)
+        elif r == 1:
+            changed = True
+    frontier = remaining
+    return changed
 
 
 def constraints():
-    """(unknown cells, nodes still to place) for each read cell with unknown neighbors."""
+    """(unknown cells, nodes still to place) for each undecided frontier cell."""
     out = []
-    for i in read_cells:
-        if unk_cnt[i] > 0:
-            unk = [j for j in nbrs[i] if state[j] == UNKNOWN]
-            out.append((unk, reading[i] - flag_cnt[i]))
+    for i in frontier:
+        unk = unknowns(i)
+        if unk:
+            need = reading[i]
+            for a in (i - P - 1, i - 1, i + P - 1):
+                need -= state[a : a + 3].count(NODE)
+            out.append((unk, need))
     return out
 
 
@@ -237,19 +246,18 @@ def enumerate_frontier():
 
 
 start = grid.start()
-mark_clear(start[1] * W + start[0])
+mark_clear((start[1] + 1) * P + start[0] + 1)
 print(f"Start cell: ({start[0]},{start[1]}), grid {W}x{H}")
 
 stalls = 0
 while not failed:
-    propagate()
-    if pending:
-        probe_one()
+    probe_pending()
+    if failed:
+        break
+    if sweep() or pending:
         continue
     stalls += 1
-    if subset_rules():
-        continue
-    if enumerate_frontier():
+    if subset_rules() or enumerate_frontier():
         continue
     break
 
@@ -264,7 +272,10 @@ if failed:
 elif unresolved:
     print("Unresolved cells remain; refusing to guess, not transmitting.")
 else:
-    node_map = [1 if state[i] == NODE else 0 for i in range(CELLS)]
+    node_map = []
+    for y in range(H):
+        row = state[(y + 1) * P + 1 : (y + 1) * P + 1 + W]
+        node_map += [v >> 1 for v in row]
     transmitter = get_component("transmitter")
     if not transmitter:
         print("[LATTICE] No Transmitter found!")
