@@ -13,27 +13,40 @@
 # deployed and a first recipe attempted -- flip on debug() console output to see
 # required_materials() vs materials() vs what's staged in self.input if a cast()
 # unexpectedly returns "wrong_materials".
-from bio import get_my_biome, local_sibling, is_local_order, is_order_incomplete, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
+from bio import get_my_biome, local_sibling, is_local_order, is_order_incomplete, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining, processor_fragment_preference
 from storage import take_item, best_unload_target, drain_port_to_storage
-from production import set_upgrade_order, fabricator_unlocked_outputs, FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
+from production import set_upgrade_order, fabricator_unlocked_outputs, FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, SECONDS_PER_GAME_HOUR
 import logistics_requests
 import fluid_routing
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
 
-# Reduced heat/cool knob percentage once within this many degrees C of the recipe's
-# required_range() edge, to avoid overshoot given the full-knob +/-2400 C/h rate
-# against this script's own ~0.5s poll interval. Tune once live-verified against a
-# real forge run -- see docs/AI_CHEATSHEET.md.
-CASTER_APPROACH_BAND_C = 50.0
-CASTER_APPROACH_PCT = 25.0
+# Crucible temperature control (_drive_temperature): proportional toward the
+# required_range() midpoint. The knob is sized so the remaining error closes over
+# CASTER_CONVERGE_STEPS measured step intervals, so a step that runs up to that many
+# times longer than estimated still does not overshoot the midpoint. Full knob is
+# +/-2400 C/h = +/-96 C/s at 25 s per game hour, which crosses a whole band in
+# under one step.
+CASTER_FULL_RATE_C_PER_H = 2400.0
+CASTER_PASSIVE_COOL_C_PER_H = 20.0
+CASTER_CONVERGE_STEPS = 3.0
+# Step interval estimate in game seconds before the first measurement, the EMA
+# weight of each new measurement, and the clamp on a measured sample.
+CASTER_STEP_SECONDS_DEFAULT = 1.0
+CASTER_STEP_EMA_ALPHA = 0.5
+CASTER_STEP_SECONDS_MIN = 0.5
+CASTER_STEP_SECONDS_MAX = 5.0
+CLOCK_TICKS_PER_SECOND = 10.0
 
 # Requester id for the caster's material demand in fabricator.upgrade_orders and
 # logistics.requests; listed in production.STANDING_ORDER_REQUESTERS.
 REQUESTER_ID = "bio_caster"
 # Minimum clock ticks between two material-demand publishes (10 ticks/s -> 60 s).
 MATERIAL_PUBLISH_INTERVAL_TICKS = 600
+# Clock ticks to wait after a take()/eject() on self.input before reading its counts
+# again (a take of 6 units lands over ~8 ticks; the step loop runs every ~5 ticks).
+STAGE_SETTLE_TICKS = 20
 
 # steam_in/water_in source routing (fluid_routing.FluidInputRouter), same values as
 # the Plant Terraformer's water router.
@@ -63,6 +76,9 @@ class BioCasterController:
         self.last_publish_tick = None
         self.published_demand = None
         self.fluid_routers = {}
+        self.last_stage_tick = None
+        self.last_drive_tick = None
+        self.step_seconds = CASTER_STEP_SECONDS_DEFAULT
 
     def _find_local_order(self, orders, snapshot, fragment_id=None):
         """Delegates to bio.py's _focus_local_order() -- shared with
@@ -98,8 +114,9 @@ class BioCasterController:
                 count = getattr(stack, "count", 0)
                 if count <= 0:
                     continue
-                properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
-                return source_id, properties, count
+                if getattr(stack, "properties", None):
+                    continue  # forged marker: finished output, not a raw sample load() accepts
+                return source_id, None, count  # None + "exact" = propertyless only
         return None
 
     def _load_next_sample(self, orders, snapshot):
@@ -124,6 +141,15 @@ class BioCasterController:
                 self.log.debug(f"[{self.name}] Staged {staged_id} has no matching recipe -- treating as a fabricated material, not a raw fragment.")
                 continue  # a staged fabricated material, not a forgeable raw fragment
             properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
+            if properties:
+                # Forged marker: load() only takes raw samples, so return it to storage.
+                try:
+                    destination = best_unload_target(staged_id, count, outpost=outpost)
+                    eject_res = self.machine.input.eject(destination, staged_id, count, properties, "exact")
+                    self.log.debug(f"[{self.name}] Staged {staged_id} {properties} is forged, not raw -- eject {count} to '{destination}' -> {getattr(eject_res, 'status', None)}.")
+                except Exception as error:
+                    swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.eject forged", error)
+                return
             if raw_candidate is None:
                 raw_candidate = (staged_id, properties)
 
@@ -153,15 +179,18 @@ class BioCasterController:
             return
 
         if staged_stacks:
-            self.log.trace(f"[{self.name}] _load_next_sample: exit, {len(staged_stacks)} stack(s) staged (fabricated materials awaiting recipe).")
-            return  # everything staged is a fabricated material waiting for its recipe
+            # Only fabricated materials left with an empty chamber: return them. The Lab
+            # hands over the next sample only once self.input is empty
+            # (bio._processor_is_idle()), so leftovers here block the pipeline.
+            self._return_staged_surplus({}, "chamber empty")
+            return
 
         order = self._find_local_order(orders, snapshot)
         if not order:
             self.log.trace(f"[{self.name}] _load_next_sample: exit, no local order to focus on.")
             return
 
-        for fragment_id in (order.requires or {}).keys():
+        for fragment_id in processor_fragment_preference(self.machine, "bio_caster", (order.requires or {}).keys()):
             if self.machine.find_recipe(fragment_id) is None:
                 continue  # not a Bio Caster recipe -- some other biome's fragment
             remaining = _order_fragment_remaining(order, fragment_id, snapshot)
@@ -197,6 +226,11 @@ class BioCasterController:
         local storage, one material per cycle (mirrors BioLabController's reagent
         loop) -- see the module header's live-verification note on how staged
         materials actually reach the crucible's materials() count."""
+        if self._staging_settling():
+            return
+        if self.machine.output.count() > 0:
+            self.log.trace(f"[{self.name}] Output not drained yet -- holding material staging.")
+            return
         loaded = self.machine.materials() or {}
         for material_id, required_qty in required_materials.items():
             have = loaded.get(material_id, 0)
@@ -205,8 +239,59 @@ class BioCasterController:
                 self.log.trace(f"[{self.name}] Material {material_id}: have={have} required={required_qty} -- already sufficient.")
                 continue
             moved = take_item(self.machine.input, material_id, missing, outpost=outpost)
+            if moved > 0:
+                self.last_stage_tick = self._tick()
             self.log.debug(f"[{self.name}] Staged {moved}x {material_id} toward {required_qty} required (have={have}, missing={missing}).")
             return
+
+    def _tick(self):
+        clock = get_component("clock")
+        return clock.tick() if clock else 0
+
+    def _staging_settling(self):
+        """True within STAGE_SETTLE_TICKS of the last take()/eject() on self.input:
+        a transfer lands over several ticks, so counts read before it lands would
+        stage or return the same units twice."""
+        if self.last_stage_tick is None:
+            return False
+        elapsed = self._tick() - self.last_stage_tick
+        if elapsed < STAGE_SETTLE_TICKS:
+            self.log.trace(f"[{self.name}] Input transfer settling ({elapsed}/{STAGE_SETTLE_TICKS} ticks).")
+            return True
+        return False
+
+    def _return_staged_surplus(self, required_materials, reason):
+        """Ejects staged fabricated materials beyond required_materials back to local
+        storage, one stack per call. cast() needs materials() to match
+        required_materials() exactly, and the Lab's hand-off needs an empty input once
+        the chamber is empty. Returns True when an eject was issued."""
+        if self._staging_settling():
+            return True
+        outpost = self.machine.outpost
+        for stack in self._port_stacks(self.machine.input, "bio_volcanic.BioCasterController._return_staged_surplus: self.machine.input.stacks"):
+            item_id = getattr(stack, "id", None)
+            count = getattr(stack, "count", 0)
+            if not item_id or count <= 0 or self._recipe_materials(item_id) is not None:
+                continue  # raw/forged fragments are handled by _load_next_sample()
+            surplus = count - required_materials.get(item_id, 0)
+            if surplus <= 0:
+                continue
+            properties = getattr(stack, "properties", None) or None
+            try:
+                destination = best_unload_target(item_id, surplus, outpost=outpost)
+                if not destination:
+                    self.log.debug(f"[{self.name}] No local storage has room for {surplus}x surplus {item_id}.")
+                    continue
+                res = self.machine.input.eject(destination, item_id, surplus, properties, "exact")
+            except Exception as error:
+                swallowed("bio_volcanic.BioCasterController._return_staged_surplus: self.machine.input.eject", error)
+                continue
+            status = getattr(res, "status", None)
+            self.log.print(f"[{self.name}] Returned {surplus}x {item_id} to '{destination}' ({reason}) -> {status}.")
+            if status in ("ok", "partial"):
+                self.last_stage_tick = self._tick()
+            return True
+        return False
 
     def _recipe_materials(self, fragment_id):
         """{material_id: qty} for one cast of fragment_id, or None when the caster has no
@@ -472,26 +557,41 @@ class BioCasterController:
             if res.status != "ok":
                 self.log.debug(f"[{self.name}] set_{knob}({pct}) -> {res.status}: {getattr(res, 'message', '')}")
 
+    def _measure_step_seconds(self):
+        """EMA of game seconds between consecutive _drive_temperature() calls. A gap
+        above CASTER_STEP_SECONDS_MAX (idle chamber, script restart) is not a step
+        interval and is ignored."""
+        now = self._tick()
+        last = self.last_drive_tick
+        self.last_drive_tick = now
+        if last is None or now <= last:
+            return self.step_seconds
+        sample = (now - last) / CLOCK_TICKS_PER_SECOND
+        if sample > CASTER_STEP_SECONDS_MAX:
+            return self.step_seconds
+        sample = max(CASTER_STEP_SECONDS_MIN, sample)
+        self.step_seconds += CASTER_STEP_EMA_ALPHA * (sample - self.step_seconds)
+        return self.step_seconds
+
     def _drive_temperature(self, target_range):
+        """Proportional control toward the band midpoint: the knob rate closes the
+        error over CASTER_CONVERGE_STEPS step intervals, plus a feed-forward for
+        passive cooling. Positive rate is heat, negative is cool."""
         low, high = target_range
         temp = self.machine.temperature()
-        if temp < low - CASTER_APPROACH_BAND_C:
-            self.log.trace(f"[{self.name}] temp={temp:.1f}C is >{CASTER_APPROACH_BAND_C}C below low={low:.1f}C -- full heat(100).")
-            self._set_knobs(100, 0)
-        elif temp < low:
-            self.log.trace(f"[{self.name}] temp={temp:.1f}C within {CASTER_APPROACH_BAND_C}C of low={low:.1f}C -- approach heat({CASTER_APPROACH_PCT}).")
-            self._set_knobs(CASTER_APPROACH_PCT, 0)
-        elif temp > high + CASTER_APPROACH_BAND_C:
-            self.log.trace(f"[{self.name}] temp={temp:.1f}C is >{CASTER_APPROACH_BAND_C}C above high={high:.1f}C -- full cool(100).")
-            self._set_knobs(0, 100)
-        elif temp > high:
-            self.log.trace(f"[{self.name}] temp={temp:.1f}C within {CASTER_APPROACH_BAND_C}C of high={high:.1f}C -- approach cool({CASTER_APPROACH_PCT}).")
-            self._set_knobs(0, CASTER_APPROACH_PCT)
+        step_seconds = self._measure_step_seconds()
+        target = (low + high) / 2.0
+        error = target - temp
+        rate_c_per_h = error / (CASTER_CONVERGE_STEPS * step_seconds) * SECONDS_PER_GAME_HOUR + CASTER_PASSIVE_COOL_C_PER_H
+        pct = max(-100, min(100, int(round(rate_c_per_h / CASTER_FULL_RATE_C_PER_H * 100.0))))
+        if pct >= 0:
+            self._set_knobs(pct, 0)
         else:
-            self._set_knobs(0, 0)
-        self.log.trace(
-            f"[{self.name}] temperature={temp:.1f}C target=[{low:.1f},{high:.1f}] "
-            f"heat={self.machine.heat()} cool={self.machine.cool()}"
+            self._set_knobs(0, -pct)
+        self.log.debug(
+            f"[{self.name}] temperature={temp:.1f}C target=[{low:.1f},{high:.1f}] mid={target:.1f}C "
+            f"error={error:+.1f}C step={step_seconds:.2f}s rate_wanted={rate_c_per_h:+.0f}C/h "
+            f"-> heat={self.machine.heat()} cool={self.machine.cool()} temp_rate={self.machine.temp_rate():+.0f}C/h"
         )
 
     def step(self):
@@ -535,6 +635,11 @@ class BioCasterController:
         if not required_range:
             self.log.debug(f"[{self.name}] No recipe selected despite a loaded fragment -- ejecting.")
             self.machine.eject()
+            sleep(0.5)
+            return
+
+        if self._return_staged_surplus(required_materials, f"surplus for {fragment_id}"):
+            self._drive_temperature(required_range)
             sleep(0.5)
             return
 
