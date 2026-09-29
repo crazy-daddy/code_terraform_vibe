@@ -76,6 +76,12 @@ STALL_COOLDOWN_TICKS = 3000
 # Refuel/charge wait at a drone_service before giving up for this cycle.
 REFUEL_TIMEOUT_S = 900.0
 REFUEL_FULL_LEVEL = 0.98
+# Between jobs (no cargo aboard), below this charge the hauler docks at the
+# nearest drone_service, where the LAUNCH_MIN_SOC launch floor holds it until
+# topped up. Outpost buffers keep short, cheap jobs available nearly all the
+# time, so without this trigger the per-job budget alone lets the hauler
+# chain jobs down to the emergency reserve and never charge.
+HAUL_RECHARGE_SOC = 0.30
 
 
 class DroneHaulerMixin:
@@ -792,6 +798,11 @@ class DroneHaulerMixin:
                     self._host.publish_telemetry("REFUELING", "launch floor")
                     sleep(poll_interval)
                     continue
+                if frac < HAUL_RECHARGE_SOC:
+                    self._host.publish_telemetry("REFUELING", "recharge floor")
+                    if self._go_to_nearest_service(f"Charge {frac*100:.0f}% < {HAUL_RECHARGE_SOC*100:.0f}% recharge floor"):
+                        sleep(poll_interval)
+                        continue
 
                 curr_tick = self._host.get_current_tick()
                 job = self._plan_haul_job(curr_tick)
