@@ -69,6 +69,7 @@ def validate_game_version():
     comms = get_component("comms")
     while version_mismatch():
         if comms:
+            flush_all()
             comms.wait_broadcast(VERSION_CONFIRMED_CHANNEL)
         else:
             flush_all()

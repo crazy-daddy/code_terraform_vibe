@@ -1,5 +1,6 @@
-"""Every statement-level sleep() in tier 4+ scripts is preceded by flush_all(), so buffered debug lines
-(lib/tree_console.py) are written out before the script yields."""
+"""Every statement-level sleep() and comms wait in tier 4+ scripts is preceded by flush_all(), so buffered
+debug lines (lib/tree_console.py) are written out before the script parks. A script stopped from the UI
+is killed without unwinding, so nothing buffered would survive."""
 import ast
 import glob
 import os
@@ -10,15 +11,24 @@ TIERS = ("4_controlpanel", "5_steampower", "6_seeds", "7_miningdrills", "8_plant
 EXEMPT = ("tree_console.py", "swallow.py", "archive.py")
 
 
+WAITS = ("wait", "wait_any", "wait_broadcast")
+
+
+def is_parking_call(call):
+    func = call.func
+    if isinstance(func, ast.Name):
+        return func.id == "sleep"
+    return isinstance(func, ast.Attribute) and func.attr in WAITS
+
+
 def sleep_statements(tree):
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Name) and node.value.func.id == "sleep"):
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and is_parking_call(node.value):
             yield node.lineno
 
 
 class FlushBeforeSleepTests(unittest.TestCase):
-    def test_every_sleep_statement_flushes_first(self):
+    def test_every_sleep_and_wait_statement_flushes_first(self):
         missing = []
         for tier in TIERS:
             for path in sorted(glob.glob(os.path.join(ROOT, tier, "**", "*.py"), recursive=True)):
@@ -30,7 +40,7 @@ class FlushBeforeSleepTests(unittest.TestCase):
                 for lineno in sleep_statements(ast.parse(source)):
                     if lines[lineno - 2].strip() != "flush_all()":
                         missing.append(f"{os.path.relpath(path, ROOT)}:{lineno}")
-        self.assertEqual(missing, [], "sleep() without a preceding flush_all():\n" + "\n".join(missing))
+        self.assertEqual(missing, [], "sleep()/wait without a preceding flush_all():\n" + "\n".join(missing))
 
     def test_files_that_flush_import_it(self):
         broken = []

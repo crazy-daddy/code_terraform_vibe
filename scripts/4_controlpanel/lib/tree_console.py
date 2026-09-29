@@ -36,8 +36,10 @@ is kept across modules. The buffer is written out as a single
 - the next line would exceed the size cap (half the interpreter's string
   limit, at most `MAX_BUFFER_CHARS`), or
 - `flush()` / `flush_all()` is called.
-Lines still buffered when a script sleeps or crashes are not shown until the
-next flush, so run loops call `log.flush()` before `sleep()`. `swallowed()`
+Lines still buffered when a script parks are not shown until the next flush,
+and a script stopped from the UI or crashed is killed without unwinding
+(`finally` blocks do not run), so they are lost: run loops call `log.flush()`
+(`flush_all()`) before every `sleep()` and comms wait. `swallowed()`
 flushes before it prints. `buffered=False` on a TreeConsole prints its debug
 lines immediately.
 

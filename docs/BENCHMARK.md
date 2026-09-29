@@ -172,6 +172,7 @@ Measured with [`devtools/console_multiline_test.py`](../devtools/console_multili
 
 - **Cost per console call, not per line:** a call costs 0.1 s whatever its length, so joining lines into one message costs a fraction of printing them separately.
 - **Limits raise `OverflowError` and name themselves.** The message reads `string length 128,000 exceeds the current limit of 100,000` or `list exceeds the current limit of 50,000 items`. A script can read the active limit by building an oversized string inside `try/except OverflowError` and parsing the last number in the message. Both limits can be set lower in Settings → Game → Advanced Scripting (10,000 at the default), so any buffered console text needs a cap that adapts to the setting.
+- **Stopping a script from the UI does not unwind it.** A `try/finally` around a loop never runs its `finally` block when Stop is clicked, so cleanup and log flushing cannot rely on it.
 - **`type(x)` returns a string,** so `type(x).__name__` raises `AttributeError`. Use `type(x)` directly.
 
 ## Reproducing

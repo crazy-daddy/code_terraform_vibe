@@ -932,6 +932,7 @@ class BioLabController:
         self.log.trace(f"[{self.name}] _wait_for_processor: entry, waiting on 'biome_processor_heartbeat'")
         if self.comms:
             try:
+                flush_all()
                 self.comms.wait_broadcast("biome_processor_heartbeat")
                 self.log.trace(f"[{self.name}] _wait_for_processor: exit, heartbeat received")
                 return
