@@ -94,6 +94,11 @@ class Commander:
         return cash.LEGACY_RESERVE * 10
 
 
+class PoorCommander:
+    def get_credits(self):
+        return 5
+
+
 PIONEER_SHOP = ["pioneer", "nav_module", "drill_module", "battery_holder_small", "cargo_rack_small", "portable_battery", "portable_bin"]
 
 
@@ -211,6 +216,33 @@ class DroneCommissionTests(CommissionTestCase):
         self.assertTrue(fleet_commission.cancel_job(job_id))
         self.steps(1)
         self.assertNotIn("fleet_commission", self.orders())
+
+    def test_shop_only_part_bought_through_cash_manager(self):
+        w = self.world
+        w.components.clear()
+        w.add_fabricator("fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"])
+        w.services["shop"] = Shop(w, PIONEER_SHOP + ["portable_bio_extractor"])
+        job_id = fleet_commission.queue_drone("miner")
+        self.steps(1)
+        spec = self.job(job_id)["spec"]
+        self.assertEqual(spec["buy"], ["portable_bio_extractor"])
+        self.assertNotIn("portable_bio_extractor", self.orders()["fleet_commission"])
+        self.steps(1)  # crafting: buys the extractor, waits on the Fabricator for the rest
+        self.assertEqual(w.inventory.count("portable_bio_extractor"), 1, self.debug_log())
+        spent = [e[1:] for e in (w.notebook.get(cash.BUDGET_KEY) or {}).get("spent", [])]
+        self.assertIn(["drone_commission", 10], spent)
+        self.assertEqual(self.job(job_id)["state"], "crafting")
+
+    def test_shop_only_part_waits_for_cash(self):
+        w = self.world
+        w.components.clear()
+        w.add_fabricator("fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"])
+        w.services["shop"] = Shop(w, PIONEER_SHOP + ["portable_bio_extractor"])
+        w.services["commander"] = PoorCommander()
+        job_id = fleet_commission.queue_drone("miner")
+        self.steps(2)
+        self.assertEqual(w.inventory.count("portable_bio_extractor"), 0)
+        self.assertIn("waiting for credits", pioneer_commission.commission_state()["status"])
 
     def test_drone_job_does_not_wait_behind_pioneer(self):
         fleet_commission.queue_pioneer("hauler")

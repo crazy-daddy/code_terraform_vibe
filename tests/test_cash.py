@@ -71,7 +71,7 @@ class GateTests(CashTestCase):
     def test_priority_reorder(self):
         self.set_credits(35000)
         self.run_manager()
-        cash.move_priority("tank_upgrade", -3)
+        cash.move_priority("tank_upgrade", -10)
         self.assertEqual(cash.priority_order()[0], "tank_upgrade")
         self.assertFalse(cash.can_spend("crop_automator", 30000))
         self.assertTrue(cash.can_spend("tank_upgrade", 15000))  # now above the automator

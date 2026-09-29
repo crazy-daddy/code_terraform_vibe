@@ -50,7 +50,7 @@
 
 import fleet_status
 from pioneer_commission import PIONEER_KIT_ID, commission_state, update_commission, build_spec, spec_parts
-from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_spec_parts
+from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_spec_parts, drone_craft_parts, drone_buy_parts
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
 from production import set_upgrade_order, fabricator_unlocked_outputs
 from outpost_mining import HOME_OUTPOST_ID
@@ -58,7 +58,8 @@ import cash
 from tree_console import TreeConsole
 from swallow import swallowed
 
-CASH_CONSUMER = "pioneer_commission"   # lib/cash.py consumer id
+# lib/cash.py consumer ids, one per job kind.
+CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission"}
 
 # States the COMMISSION card may cancel: nothing deployed yet (or given up).
 CANCELLABLE_STATES = ("queued", "buying", "crafting", "blocked")
@@ -205,7 +206,7 @@ class FleetCommissionCoordinator:
         self.log.level("warn").print(f"[fleet_commission] {job['id']} ({job.get('role')}) blocked: {reason}. Cancel it on the COMMISSION card.")
         return f"{job['id']} blocked ({reason})"
 
-    def _buy_missing(self, parts, catalogue, label):
+    def _buy_missing(self, parts, catalogue, label, kind="pioneer"):
         """
         Buys whatever of parts {item_id: n} the Inventory lacks, all or nothing
         once the cash manager grants the whole cost. Returns None once everything is in
@@ -219,8 +220,9 @@ class FleetCommissionCoordinator:
         if unpriced:
             return f"{label}: not in Shop {unpriced}"
         cost = sum(catalogue[item] * n for item, n in needed.items())
-        queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and job_kind(j) == "pioneer" and j.get("state") == "queued")
-        if not cash.can_spend(CASH_CONSUMER, cost, planned=cost * (1 + queued), label=label):
+        consumer = CASH_CONSUMERS[kind]
+        queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and job_kind(j) == kind and j.get("state") == "queued")
+        if not cash.can_spend(consumer, cost, planned=cost * (1 + queued), label=label):
             self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {self._credits()}cr; cash manager holds it back.")
             return f"{label}: waiting for credits ({cost}cr)"
         shop = _component("shop")
@@ -231,10 +233,10 @@ class FleetCommissionCoordinator:
             res = shop.buy(item, n)
             self.log.debug(f"[fleet_commission] {label}: buy('{item}', {n}) -> {res.status}")
             if res.status != "ok":
-                cash.spent(CASH_CONSUMER, paid)
+                cash.spent(consumer, paid)
                 return f"{label}: buy {item} {res.status}"
             paid += catalogue[item] * n
-        cash.spent(CASH_CONSUMER, paid)
+        cash.spent(consumer, paid)
         self.log.print(f"[fleet_commission] {label}: bought {needed} for {cost}cr.")
         return None
 
@@ -249,8 +251,10 @@ class FleetCommissionCoordinator:
         jobs = [j for j in (commission_state().get("jobs") or []) if isinstance(j, dict)]
         crafting = next((j for j in jobs if job_kind(j) == "drone" and j.get("state") == "crafting"), None)
         self._sync_craft_order(crafting)
+        for kind, consumer in CASH_CONSUMERS.items():
+            if not any(job_kind(j) == kind and j.get("state") in ("queued", "buying", "crafting", "fitting") for j in jobs):
+                cash.release(consumer)
         if not jobs:
-            cash.release(CASH_CONSUMER)
             self._set_status("idle")
             return "commission idle"
 
@@ -278,7 +282,7 @@ class FleetCommissionCoordinator:
 
     def _sync_craft_order(self, job):
         """The Fabricator order for the crafting drone job's kit, or none (cancelled/advanced)."""
-        wanted = drone_spec_parts(job["spec"]) if job and job.get("spec") else {}
+        wanted = drone_craft_parts(job["spec"]) if job and job.get("spec") else {}
         set_upgrade_order(COMMISSION_REQUESTER, wanted)
 
     def _advance(self, job, pioneers):
@@ -389,16 +393,20 @@ class FleetCommissionCoordinator:
         self.log.debug(f"[fleet_commission] {label}: state '{state}'.")
 
         if state == "queued":
-            spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), self._inventory_count)
+            spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), self._inventory_count, set(self._catalogue()))
             if spec is None:
                 return self._block(job, reason)
             self._patch(job_id, state="crafting", spec=spec)
             self._sync_craft_order(dict(job, spec=spec))
-            self.log.print(f"[fleet_commission] {label} at '{outpost_id or 'home'}': {spec['kind']} with {spec['modules'][1:]}.")
+            bought = f", buying {spec['buy']}" if spec.get("buy") else ""
+            self.log.print(f"[fleet_commission] {label} at '{outpost_id or 'home'}': {spec['kind']} with {spec['modules'][1:]}{bought}.")
             return f"{label}: crafting"
 
         spec = job.get("spec") or {}
         if state == "crafting":
+            waiting = self._buy_missing(drone_buy_parts(spec), self._catalogue(), label, kind="drone")
+            if waiting:
+                return waiting
             parts = drone_spec_parts(spec)
             short = {item: n - self._inventory_count(item) for item, n in parts.items() if self._inventory_count(item) < n}
             if short:
