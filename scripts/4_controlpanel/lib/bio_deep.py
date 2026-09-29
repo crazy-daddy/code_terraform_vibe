@@ -235,6 +235,7 @@ class BioConditionerController:
             sleep(1.0)
             return
 
+        self.log.start(f"[{self.name}] QC stage {stage}: {current}")
         passed = rule(report)
         decision = "accept" if passed else "reject"
         self.log.debug(f"[{self.name}] QC quiz: property='{current}' value={prop_value} rulebook_predicate_passed={passed} -> decision={decision}()")
@@ -246,6 +247,7 @@ class BioConditionerController:
         elif action_res.status == "conditioned":
             self.log.print(f"[{self.name}] Conditioned {fragment_id} successfully.")
         self.log.trace(f"[{self.name}] _run_qc_stage: exit, result={action_res.status}")
+        self.log.end(f"[{self.name}] Stage {stage} {decision}ed -> {action_res.status}")
 
     def step(self):
         self._notify_heartbeat()

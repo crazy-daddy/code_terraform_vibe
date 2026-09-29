@@ -193,20 +193,26 @@ class DroneClaimsMixin:
             self._host.publish_telemetry("RECALLED")
             return True
 
-        self._host.log.print(f"[{self._host.name}] Recall active; returning to Drone Depot '{depot_id or depot_coords}' for re-equip.")
+        self._host.log.start(f"[{self._host.name}] Recall active; returning to Drone Depot '{depot_id or depot_coords}' for re-equip")
         self._host.publish_telemetry("RECALLED")
         self.release_biosite_claim()
+        outcome = self._fly_recall_leg(depot_id, depot_coords)
+        self._host.log.end(f"[{self._host.name}] Recall leg: {outcome}")
+        return True
 
+    def _fly_recall_leg(self, depot_id, depot_coords):
+        """Flies to the recall depot; returns an outcome text for the enclosing block."""
         reached = bool(depot_id) and self._host.fly_to_station(depot_id, target_coords=depot_coords)
-        if not reached and self._host.status() == "waiting_bay":
+        if reached:
+            return "docked"
+        if self._host.status() == "waiting_bay":
             # At the depot, bay taken: next cycle's get_home_depot() re-picks
             # (a free sibling depot in a pool home), no direct fly_to needed.
             self._host.log.debug(f"[{self._host.name}] Recall: Drone Depot '{depot_id}' bay taken; retrying next cycle.")
-            return True
-        if not reached:
-            self._host.log.debug(f"[{self._host.name}] fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
-            self._host.fly_to(depot_coords[0], depot_coords[1], precision=1.5)
-        return True
+            return "bay taken, retrying next cycle"
+        self._host.log.debug(f"[{self._host.name}] fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
+        arrived = self._host.fly_to(depot_coords[0], depot_coords[1], precision=1.5)
+        return "arrived" if arrived else "not reached"
 
     def claim_biosite(self, target_key, target_info):
         """

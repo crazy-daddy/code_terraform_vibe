@@ -151,17 +151,19 @@ class PioneerFittingMixin:
         spec = entry.get("spec") or {}
         self._host.log.start(f"[{name}] Commissioned as {entry.get('role')}: fitting {spec.get('modules')}")
         self._host.publish_telemetry("FITTING", target_desc="fitting")
-        while True:
+        fitted = False
+        while not fitted:
             result, missing = self._fit_pass(spec)
             self._report_missing(name, missing)
             if result == "done":
                 update_commission(lambda s: s.get("lineage", {}).get(name, {}).update({"fitted": True, "missing": {}}))
-                self._host.log.end(f"[{name}] Loadout fitted.")
-                return
+                fitted = True
+                continue
             self._host.publish_telemetry("FITTING", target_desc=result)
             self._host.log.debug(f"[{name}] Fitting pass: {result}; missing {missing}; retrying in {FIT_RETRY_S:.0f} s.")
             flush_all()
             sleep(FIT_RETRY_S)
+        self._host.log.end(f"[{name}] Loadout fitted.")
 
     def _report_missing(self, name, missing):
         entry = lineage_entry(name) or {}

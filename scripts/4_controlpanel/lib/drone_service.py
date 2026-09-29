@@ -236,6 +236,31 @@ class DroneServiceController:
                 swallowed("drone_service.DroneServiceController.manage_docked_drones: get_component", error)
         self.log.trace(f"[{self.name}] manage_docked_drones() exit: {len(docked_ids)} docked drone(s) evaluated.")
 
+    def _dispatch_rescue(self, d_ref, is_stranded, v_wh, target_level):
+        """Announces distress and dispatches the recovery vehicle; True when the loop over drones should stop."""
+        unit = "t Oil" if d_ref.engine == "heli" else "Wh"
+        reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL FUEL ({v_wh:.1f} {unit}, below {self.return_floor_wh(d_ref):.1f} {unit} return floor)"
+        self.log.start(f"[{self.name}] Rescue {d_ref.name}")
+        self.log.level("warn").print(f"[{self.name}] Emergency! Drone {d_ref.name} ({d_ref.id}) in distress: {reason} at ({d_ref.x:.1f}, {d_ref.y:.1f}).")
+        try:
+            notify(f"[RESCUE DISPATCH] Sending recovery vehicle to {d_ref.name} ({reason})!", level="warn", duration_seconds=10.0)
+        except Exception as error:
+            swallowed("drone_service.DroneServiceController.manage_fleet_rescues: notify", error)
+
+        res = self.station.dispatch_rescue(d_ref.id, target_level)
+        if res.status == "ok":
+            self.log.print(f"[{self.name}] Rescue dispatched to {d_ref.id}; target charge {target_level*100:.0f}%.")
+            self.last_rescued_drone = d_ref.id
+            self.log.end("dispatched")
+            return True
+        if res.status == "already_dispatched":
+            self.log.debug(f"[{self.name}] Rescue for {d_ref.id} already dispatched; not re-issuing.")
+            self.log.end("already dispatched")
+            return True
+        self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
+        self.log.end(f"rejected ({res.status})")
+        return False
+
     def manage_fleet_rescues(self):
         """
         Monitors every owned drone (electric and heli). Redirects a low-charge field
@@ -283,24 +308,8 @@ class DroneServiceController:
                     self.log.debug(f"[{self.name}] {d_ref.name} in distress but a closer drone_service station exists; deferring dispatch to it.")
                     continue
 
-                unit = "t Oil" if d_ref.engine == "heli" else "Wh"
-                reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL FUEL ({v_wh:.1f} {unit}, below {self.return_floor_wh(d_ref):.1f} {unit} return floor)"
-                self.log.level("warn").print(f"[{self.name}] Emergency! Drone {d_ref.name} ({d_ref.id}) in distress: {reason} at ({d_ref.x:.1f}, {d_ref.y:.1f}).")
-                try:
-                    notify(f"[RESCUE DISPATCH] Sending recovery vehicle to {d_ref.name} ({reason})!", level="warn", duration_seconds=10.0)
-                except Exception as error:
-                    swallowed("drone_service.DroneServiceController.manage_fleet_rescues: notify", error)
-
-                res = self.station.dispatch_rescue(d_ref.id, target_level)
-                if res.status == "ok":
-                    self.log.print(f"[{self.name}] Rescue dispatched to {d_ref.id}; target charge {target_level*100:.0f}%.")
-                    self.last_rescued_drone = d_ref.id
+                if self._dispatch_rescue(d_ref, is_stranded, v_wh, target_level):
                     break
-                elif res.status == "already_dispatched":
-                    self.log.debug(f"[{self.name}] Rescue for {d_ref.id} already dispatched; not re-issuing.")
-                    break
-                else:
-                    self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
         self.log.trace(f"[{self.name}] manage_fleet_rescues() exit: {len(drones)} drone(s) evaluated.")
 
     def step(self):

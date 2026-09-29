@@ -281,32 +281,38 @@ class BioLuminizerController:
             sleep(0.2)
 
     def _solve_and_apply(self, target):
+        self.log.start(f"[{self.name}] Tinting to glow {target}")
+        outcome = self._solve_lamps(target)
+        self.log.end(f"[{self.name}] Tint {outcome}")
+
+    def _solve_lamps(self, target):
+        """Runs the lamp-mix solve; returns a short outcome string for the enclosing log block."""
         self.log.trace(f"[{self.name}] _solve_and_apply: entry, target={target}")
         matrix = self._lamp_matrix_cols()
         if not matrix:
             self.log.level("warn").print(f"[{self.name}] Lamp signature unavailable this cycle.")
-            return
+            return "skipped (lamp signature unavailable)"
 
         zero_res = self.machine.set_lamps(0, 0, 0)
         if zero_res.status != "ok":
             self.log.debug(f"[{self.name}] set_lamps(0,0,0) -> {zero_res.status}: {getattr(zero_res, 'message', '')} -- aborting solve this cycle.")
-            return
+            return "aborted (lamps would not zero)"
         base = self.machine.glow()
         if base is None:
             self.log.debug(f"[{self.name}] glow() returned None after zeroing lamps -- aborting solve this cycle.")
-            return
+            return "aborted (no glow reading)"
 
         delta = [target[i] - base[i] for i in range(3)]
         solved = _solve_3x3(matrix, delta)
         if solved is None:
             self.log.level("warn").print(f"[{self.name}] Could not solve lamp mix for target {target} (singular lamp matrix).")
-            return
+            return "failed (singular lamp matrix)"
 
         r, g, b = (max(0, min(40, round(v))) for v in solved)
         self.log.debug(f"[{self.name}] Solved lamp mix base={base} delta={delta} -> raw_solve={solved}, rounded/clamped=({r},{g},{b}).")
         if self._try_lamps(r, g, b, target):
             self.log.trace(f"[{self.name}] _solve_and_apply: exit, exact solve matched on first try ({r},{g},{b}).")
-            return
+            return f"matched exactly at lamps ({r},{g},{b})"
 
         # Bounded local search over the +/-1-per-channel neighborhood for rounding
         # error -- cheap (<=27 combinations) and avoids trusting the rounded solve
@@ -319,10 +325,11 @@ class BioLuminizerController:
                         continue
                     if self._try_lamps(r + dr, g + dg, b + db, target):
                         self.log.trace(f"[{self.name}] _solve_and_apply: exit, neighborhood search matched ({r+dr},{g+dg},{b+db}).")
-                        return
+                        return f"matched in neighborhood at lamps ({r+dr},{g+dg},{b+db})"
 
         self.log.level("warn").print(f"[{self.name}] WARNING: no exact lamp match found near ({r},{g},{b}) for target {target}.")
         self.log.trace(f"[{self.name}] _solve_and_apply: exit, no match found.")
+        return "failed (no exact lamp match)"
 
     def step(self):
         self._notify_heartbeat()
