@@ -523,3 +523,18 @@ Depots clogged by life forms nobody consumes after the Liquifiers retired are cl
 `InputSlot.flush()`, not a Waste Processor: both only destroy, and the flush needs no extra building or
 running script. Because flush discards the whole stockpile, it runs only once everything non-surplus has
 been drained out.
+
+## §11 — Pioneer Haulers Pull to a Home, No Destination (2026-09-29)
+
+The push hauler (`run_haul_loop(dest)`, `DESTINATION_OUTPOST_ID`) had two uses: an ore hauler parked at a
+mine delivering home, and a reagent hauler parked at home buying and delivering to a remote Bio Lab. The
+pull hauler already covered the first from the other end (homed at home, reading home raw-ore demand), so
+the push hauler was removed and every Pioneer hauler serves its `HOME_BASE`. The reagent case became a
+buyable request at the lab's outpost plus a Shop pickup at home, restricted to flagged requests so a hauler
+never buys what should be mined or made.
+
+Fully floating Pioneer haulers were considered and rejected: nearest-free dispatch picks a Pioneer 1000 km
+away while one near the job is busy, and a Pioneer pays for every empty metre on terrain. Idle Pioneers
+pinned to outposts are the accepted cost; drones stay the floating fleet. Existing save slots are re-homed
+by scripts_sync from their old destination, since keeping `HOME_BASE` would have turned the mine-parked ore
+hauler into one pulling toward the mine.

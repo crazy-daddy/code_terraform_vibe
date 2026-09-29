@@ -1,5 +1,5 @@
 # Vehicle mixin: cargo offloading into Base Inventory (or a Warehouse for
-# bulk items) and demand-driven hauler roles. Shared by Rover and Pioneer via
+# bulk items) and the demand-driven pull hauler role. Shared by Rover and Pioneer via
 # VehicleController (lib/vehicle.py).
 #
 # No cooperative Smelter wake-up here on purpose: the Smelter is soft-shed
@@ -11,8 +11,7 @@
 
 from production import get_raw_material_demands
 from version_guard import validate_game_version
-from storage import best_unload_target, take_item, total_stock, inventory_stack_size
-import outpost_reagents
+from storage import best_unload_target, take_item, inventory_stack_size
 import mining_reservations
 import logistics_requests
 import drill_sites
@@ -42,22 +41,6 @@ PULL_CHAIN_MAX_DETOUR_RATIO = 0.75
 PULL_TRIP_OVERHEAD_M = 300
 
 
-def _outpost_haul_demand(dest_outpost_id):
-    """
-    {item_id: deficit} demand at dest_outpost_id, pulled fresh every haul
-    cycle rather than fixed at loop construction -- there's no reason to
-    decide in advance what a hauler will ever be asked to carry, only where
-    it's headed. dest_outpost_id alone disambiguates which of this codebase's
-    two demand sources applies: None/home means the production outpost's raw-
-    material shortfall (only home ever needs ore hauled in); any other
-    outpost id means that outpost's own Bio Lab reagent shortfall (only a
-    remote outpost's Lab needs reagents hauled out to it).
-    """
-    if dest_outpost_id is None or dest_outpost_id == "outpost_home":
-        return get_raw_material_demands()
-    return outpost_reagents.get_outpost_reagent_demand(dest_outpost_id)
-
-
 class VehicleCargoMixin:
     """Cargo offload behavior mixed into VehicleController."""
 
@@ -68,11 +51,7 @@ class VehicleCargoMixin:
     def unload_cargo(self, outpost=None):
         """Transfers mined/gathered minerals and items into outpost's Inventory/
         Warehouse (default: this vehicle's own self.home_outpost -- see
-        storage.best_unload_target()). The explicit outpost override is for
-        run_haul_loop() below: a transporter stationed at a mining
-        outpost (its own home_outpost) still needs to unload at the
-        destination outpost specifically for its delivery leg, not wherever
-        it happens to be stationed."""
+        storage.best_unload_target()), or at an explicit `outpost`."""
         if not hasattr(self._host.vehicle, "cargo"):
             return 0
 
@@ -184,317 +163,6 @@ class VehicleCargoMixin:
         self._host.log.trace(f"[{self._host.name}] unload_cargo() exit: unloaded={unloaded}, inventory_full={inventory_full}, result={result}")
         return result
 
-    def _current_supply_items(self):
-        """All item ids already loaded (e.g. resuming a mixed delivery after a reload), or [] if the hold is empty."""
-        if self._host.vehicle.cargo.count() == 0:
-            return []
-        try:
-            stacks = self._host.vehicle.cargo.stacks()
-        except Exception as error:
-            swallowed("vehicle_cargo.VehicleCargoMixin._current_supply_items: self._host.vehicle.cargo.stacks", error)
-            stacks = []
-        return [item_id for item_id in (getattr(s, "id", None) for s in stacks) if item_id]
-
-    def _plan_haul_load(self, capacity, dest_outpost_id):
-        """
-        Plans a MIXED load across whatever _outpost_haul_demand(dest_outpost_id)
-        currently shows as a deficit, filling up to capacity units total rather
-        than being limited to a single item per trip (e.g. 50 titanium + 30
-        silicon in one run) -- a source can have several haulable items at once,
-        and hauling only one per trip would leave the others piling up unused
-        there. No separate "what can this source supply" candidate list is
-        needed: an item with no stock at a non-home source is filtered out
-        below anyway (available <= 0), so ranking a few items the source
-        happens not to carry costs nothing but a skipped iteration. Ranks by
-        deficit descending, keeping only items with stock sitting at the
-        source right now OR (when the source is home) buyable at the Shop,
-        then greedily takes min(deficit, available, remaining capacity) from
-        each in that order until either capacity runs out or no more
-        qualifying item remains. Returns [(item_id, amount), ...], possibly
-        empty.
-        """
-        demands = _outpost_haul_demand(dest_outpost_id)
-        if not demands:
-            self._host.log.debug(f"[{self._host.name}] _plan_haul_load(): no haul demand at destination '{dest_outpost_id}'.")
-            return []
-        self._host.log.debug(f"[{self._host.name}] _plan_haul_load(): demand at '{dest_outpost_id}': {demands}")
-        source_is_home = getattr(self._host.home_outpost, "is_home", True)
-        # Stock a pull hauler (run_pull_loop()) already promised itself here
-        # isn't ours to load -- it would arrive to an emptied Warehouse.
-        pulled = {} if source_is_home else logistics_requests.reserved_from(getattr(self._host.home_outpost, "id", None), exclude_vehicle=self._host.name)
-        ranked = []
-        for item_id, unmet in demands.items():
-            if unmet <= 0:
-                continue
-            if source_is_home:
-                # A shortfall at home can always be bought at the Shop (see
-                # _load_haul_plan()'s buy-before-load step), so treat the full
-                # deficit as available -- capacity is still the real ceiling below.
-                available = unmet
-            else:
-                # No Shop delivery anywhere but home: real stock on hand is the
-                # hard ceiling.
-                available = total_stock(item_id, outpost=self._host.home_outpost) - pulled.get(item_id, 0)
-                if available <= 0:
-                    continue
-            ranked.append((unmet, item_id, available))
-        ranked.sort(reverse=True)
-
-        plan = []
-        remaining = capacity
-        for unmet, item_id, available in ranked:
-            if remaining <= 0:
-                break
-            amount = min(unmet, available, remaining)
-            if amount <= 0:
-                continue
-            plan.append((item_id, amount))
-            remaining -= amount
-        self._host.log.debug(f"[{self._host.name}] _plan_haul_load(): planned {plan} (capacity={capacity}).")
-        return plan
-
-    def _load_haul_plan(self, plan):
-        """
-        Loads each planned (item_id, amount) into vehicle.input, buying any shortfall
-        at the Shop first -- but only when this vehicle's source is home (nowhere else
-        has direct Shop delivery). Bought one Inventory-stack at a time, immediately
-        take_item()-ing each stack into cargo before buying the next, rather than one
-        shop.buy(item_id, full_shortfall) call: the total planned amount is already
-        capped by cargo capacity in _plan_haul_load(), but buying it all into Inventory
-        in a single call could still stall on a full Inventory before the vehicle gets
-        a chance to pull any of it back out, especially for a reagent Inventory has
-        never stocked before. Draining stack-by-stack keeps that transient footprint to
-        about one slot regardless of the total planned amount. Returns
-        (["Nx item_id", ...], {item_id: moved}) -- the dict lets run_haul_loop()
-        reserve exactly what got physically loaded (mining_reservations),
-        rather than the originally planned amount, in case a shortfall (Shop
-        out of stock, storage race) meant less was actually loaded.
-        """
-        source_is_home = getattr(self._host.home_outpost, "is_home", True)
-        shop = get_component("shop") if source_is_home else None
-        stack_size = inventory_stack_size()
-
-        loaded_summary = []
-        loaded_amounts = {}
-        for item_id, amount in plan:
-            moved_for_item = 0
-            remaining = amount
-            while remaining > 0:
-                on_hand = total_stock(item_id, outpost=self._host.home_outpost)
-                if on_hand <= 0 and shop:
-                    buy_qty = min(remaining, stack_size)
-                    buy_res = shop.buy(item_id, buy_qty)
-                    if buy_res.status != "ok":
-                        break
-                elif on_hand <= 0:
-                    break
-
-                moved = take_item(self._host.vehicle.input, item_id, min(remaining, stack_size), outpost=self._host.home_outpost)
-                if moved <= 0:
-                    break
-                moved_for_item += moved
-                remaining -= moved
-
-            if moved_for_item > 0:
-                loaded_summary.append(f"{moved_for_item}x {item_id}")
-                loaded_amounts[item_id] = moved_for_item
-        return loaded_summary, loaded_amounts
-
-    def _haul_reservation_key(self, item_id):
-        return f"haul:{self._host.name}:{item_id}"
-
-    def _reserve_home_haul(self, loaded_amounts):
-        """
-        Debits loaded_amounts from home's raw-ore deficit
-        (mining_reservations, shared with lib/vehicle_mining.py's in-flight-mining
-        debit) for the duration of the delivery leg -- otherwise a second
-        transporter stationed at a different mining outpost would see the
-        same still-uncovered home buffer/production deficit on its own next
-        cycle and load a redundant amount before this vehicle's cargo ever
-        lands, overshooting the target (e.g. two haulers each bringing 380
-        of an ore with only 380 of room). Only meaningful for a home-bound
-        delivery -- get_raw_material_demands() is home-specific, so a
-        reagent-hauler's remote-outpost delivery has nothing to debit here.
-        """
-        curr_tick = self._host.get_current_tick()
-        for item_id, amount in loaded_amounts.items():
-            if amount > 0:
-                mining_reservations.reserve_yield(self._host.name, self._haul_reservation_key(item_id), item_id, amount, curr_tick)
-
-    def _release_home_haul(self, loaded_amounts):
-        for item_id in loaded_amounts:
-            mining_reservations.release_yield(self._host.name, self._haul_reservation_key(item_id))
-
-    def run_haul_loop(self, dest_outpost_id, poll_interval=10.0):
-        """
-        Generic demand-driven hauler shared by every transporter role (TODO.md Phase
-        3's ore-hauler and the reagent-hauler both reduce to this -- construct
-        directly with the right home_base/dest_outpost_id combo rather than
-        going through a role-specific wrapper method). The vehicle is always
-        stationed at its home_base (idles/recharges there between runs via
-        is_at_base()/return_to_base()) and drives out only to
-        dest_outpost_id, only when _outpost_haul_demand(dest_outpost_id) shows
-        a deficit for something actually available at the stationed outpost
-        (or buyable at the Shop, when stationed at home). Which end is "home"
-        differs per role -- an ore-hauler stations at the mining outpost and
-        delivers to dest_outpost_id=None (home); a reagent-hauler stations at
-        home (home_base=None) and delivers to an explicit remote outpost id --
-        but the shape is otherwise identical, including "when the source is
-        home, missing stock gets bought at the Shop before loading". What to
-        haul is never
-        decided at construction time -- only dest_outpost_id is fixed up front,
-        and every other detail (which items, how much) is re-derived fresh each
-        cycle from live demand (_outpost_haul_demand()), since there's no
-        reason to lock that in ahead of when it's actually needed.
-
-        dest_outpost = self.get_outpost_ref(dest_outpost_id), resolved once (this
-        vehicle's own self.home_outpost is the STATIONED/source outpost, never
-        confused with `dest_outpost` here).
-
-        Each cycle: plans a MIXED load (_plan_haul_load()) across however many
-        items currently have an actual deficit at the destination -- no
-        preemptive/opportunistic top-off. Cargo already aboard (resuming after a
-        reload) is identified from the cargo itself (_current_supply_items()) rather
-        than re-deciding mid-delivery. Delivers, unloads at the destination explicitly
-        (unload_cargo(outpost=...) override, since the default target would be this
-        vehicle's own stationed outpost), recharges fully at the destination before
-        heading back (so the return leg can run at full throttle), then returns to
-        the stationed outpost to wait for the next deficit.
-        """
-        self._host.log.print(f"[{self._host.name}] Haul Controller online. Hauling from '{self._host.home_base}' to '{dest_outpost_id}' on demand.")
-        dest_outpost = self._host.get_outpost_ref(dest_outpost_id)
-        is_home_delivery = dest_outpost_id is None or dest_outpost_id == "outpost_home"
-        validate_game_version()
-        while True:
-            try:
-                if self._host.handle_recall_if_active():
-                    sleep(poll_interval)
-                    continue
-
-                # Pioneer-only auto-upgrade/Sport-Nav-request pass -- see
-                # lib/vehicle_upgrade.py. Self-guarded (only acts once
-                # actually idle at base), and hasattr-gated since this loop is
-                # shared with RoverController, which never mixes in
-                # VehicleUpgradeMixin.
-                upgrade_cycle = getattr(self._host, "handle_upgrade_cycle_if_idle", None)
-                if upgrade_cycle is not None:
-                    upgrade_cycle()
-
-                if not dest_outpost or not hasattr(dest_outpost, "coords"):
-                    self._host.log.level("warn").print(f"[{self._host.name}] Haul: destination outpost unavailable this cycle.")
-                    sleep(poll_interval)
-                    continue
-
-                # Cargo already aboard (e.g. resuming after a reload) skips
-                # straight to delivery instead of (re-)planning a load.
-                haul_amounts = {}
-                loaded_items = self._current_supply_items()
-                if not loaded_items:
-                    plan = self._plan_haul_load(self._host.vehicle.cargo.capacity(), dest_outpost_id)
-                    if not plan:
-                        if not self._host.is_at_base():
-                            self._host.return_to_base()
-                        self._host.publish_telemetry("IDLE_AT_OUTPOST", "no demand for candidate items")
-                        sleep(poll_interval)
-                        continue
-                    if not hasattr(self._host.vehicle, "input"):
-                        self._host.log.level("warn").print(f"[{self._host.name}] Haul requires an input port and Auto Feeders.")
-                        sleep(poll_interval)
-                        continue
-
-                    # Loading below needs the vehicle physically within the
-                    # stationed outpost's service area to connect to its
-                    # Warehouse/Inventory -- a transporter starting or left
-                    # anywhere else must return first.
-                    if not self._host.is_at_base():
-                        self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}' to load")
-                        if not self._host.return_to_base():
-                            self._host.log.level("warn").print(f"[{self._host.name}] Could not reach '{self._host.home_base}' to load; will retry.")
-                            sleep(poll_interval)
-                            continue
-
-                    loaded_summary, loaded_amounts = self._load_haul_plan(plan)
-                    if not loaded_summary:
-                        self._host.log.level("warn").print(f"[{self._host.name}] Could not load any planned item at '{self._host.home_base}'.")
-                        sleep(poll_interval)
-                        continue
-                    self._host.log.print(f"[{self._host.name}] Loaded {', '.join(loaded_summary)} at '{self._host.home_base}'.")
-
-                    # Debit what just got loaded from home's own raw-ore
-                    # deficit for the length of the delivery leg -- see
-                    # _reserve_home_haul() -- so a peer transporter stationed
-                    # at a different mining outpost doesn't also chase the
-                    # same now-already-covered deficit before this delivery
-                    # lands.
-                    if is_home_delivery:
-                        haul_amounts = loaded_amounts
-                        self._reserve_home_haul(haul_amounts)
-                elif is_home_delivery:
-                    # Resuming with cargo already aboard (e.g. after a script
-                    # restart mid-delivery) -- the reservation from the
-                    # original loading cycle may no longer exist (archive
-                    # survives, but nothing re-asserts it after a restart),
-                    # so rebuild it from what's physically in the hold right
-                    # now rather than skipping it.
-                    for stack in self._host.vehicle.cargo.stacks():
-                        item_id = getattr(stack, "id", None)
-                        count = getattr(stack, "count", 0)
-                        if item_id and count > 0:
-                            haul_amounts[item_id] = haul_amounts.get(item_id, 0) + count
-                    self._reserve_home_haul(haul_amounts)
-
-                dest_coords = dest_outpost.coords()
-                dest_label = dest_outpost_id or "outpost_home"
-                aboard = self._cargo_totals()
-                self._host.set_intent(fleet_intent.describe("hauling", aboard, self._host.home_base, dest_label, fleet_intent.haul_root(aboard, dest_label)))
-                self._host.publish_telemetry("OUTBOUND", "delivering mixed cargo to the destination outpost")
-                if not self._host.drive_with_recharge(dest_coords[0], dest_coords[1]):
-                    self._host.log.level("warn").print(f"[{self._host.name}] Could not reach the destination outpost this cycle; will retry.")
-                    sleep(poll_interval)
-                    continue
-
-                delivered = self._host.vehicle.cargo.count()
-                if self.unload_cargo(outpost=dest_outpost) < 0:
-                    self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
-                    sleep(poll_interval)
-                    continue
-                self._host.log.print(f"[{self._host.name}] Delivered {delivered} units to the destination outpost.")
-
-                # Cargo has physically landed and is now reflected in
-                # total_stock() at the destination -- release the in-flight
-                # debit so it doesn't linger subtracting from a deficit that
-                # no longer exists (would otherwise only self-correct once
-                # mining_reservations.RESERVATION_STALE_TICKS elapses).
-                if haul_amounts:
-                    self._release_home_haul(haul_amounts)
-
-                # Recharge fully at the destination before heading back --
-                # get_nearest_charging_station() (used internally by
-                # recharge_at_station() when no station is given) resolves by
-                # current position, not self.home_base, so this correctly
-                # finds the destination's own station even though this
-                # vehicle's home_base/home_outpost (for navigation/
-                # is_at_base() purposes) is its stationed outpost. Starting
-                # the return leg fully charged lets it run at full throttle
-                # without drive_with_recharge() needing to plan an
-                # intermediate stop for it -- faster round trips than only
-                # recharging back at the stationed outpost.
-                self._host.publish_telemetry("CHARGING_AT_BASE")
-                self._host.recharge_at_station(target_level=1.0)
-
-                self._host.set_intent(None)
-                self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}'")
-                if self._host.return_to_base():
-                    self._host.recharge_at_station(target_level=1.0)
-                self._host.publish_telemetry("READY_AT_OUTPOST")
-            except Exception as error:
-                self._host.log.level("error").print(f"[{self._host.name}] Haul exception: {error}")
-                try:
-                    self._host.vehicle.nav.brake()
-                except Exception as exc:
-                    swallowed("vehicle_cargo.VehicleCargoMixin.run_haul_loop: self._host.vehicle.nav.brake", exc)
-            sleep(poll_interval)
-
     # ------------------------------------------------------------ pull (reverse) hauling
 
     def _pull_deficits_tiered(self, curr_tick):
@@ -590,7 +258,10 @@ class VehicleCargoMixin:
 
     def _plan_pull_route(self, need, buffer, capacity, curr_tick):
         """
-        Multi-stop pickup plan for this vehicle's home outpost. The buffer
+        Multi-stop pickup plan for this vehicle's home outpost. Sources are
+        _pull_sources() plus, for buyable requests, the Shop
+        (_shop_source(); listed last, so free stock at the home outpost
+        wins a tie). The buffer
         tier is first capped at home's fair share of what the sources hold
         (logistics_requests.fair_buffer_caps()). Every source holding
         something wanted is tried as the first stop; from there the chain
@@ -606,6 +277,9 @@ class VehicleCargoMixin:
         """
         items = set(need.keys()) | set(buffer.keys())
         sources = self._pull_sources(list(items), curr_tick)
+        shop = self._shop_source(need, buffer, curr_tick)
+        if shop:
+            sources.append(shop)
         home_id = getattr(self._host.home_outpost, "id", None)
         if buffer:
             supply = {}
@@ -651,6 +325,57 @@ class VehicleCargoMixin:
             if score > best_score:
                 best_route, best_score = route, score
         return best_route, reachable
+
+    def _shop_source(self, need, buffer, curr_tick):
+        """
+        Virtual pull source for the Shop, or None: only for a hauler whose
+        home is NOT the home outpost, and only for deficits whose request is
+        flagged buyable (logistics_requests.buyable_deficits()). Sits at the
+        home outpost's coords (Shop purchases land in home Inventory);
+        "available" is the whole buyable deficit. The id is per destination
+        (SHOP_SOURCE_ID:<home id>), so two haulers buying for different
+        outposts never trim each other's shop legs in claim_pickups().
+        """
+        home = self._host.home_outpost
+        if home is None or getattr(home, "is_home", True) or not get_component("shop"):
+            return None
+        buy_need, buy_buffer = logistics_requests.buyable_deficits(home, need, buffer, curr_tick)
+        available = dict(buy_need)
+        for item_id, units in buy_buffer.items():
+            available[item_id] = available.get(item_id, 0) + units
+        if not available:
+            return None
+        base = self._host.get_outpost_ref(None)
+        if base is None or not hasattr(base, "coords"):
+            return None
+        self._host.log.debug(f"[{self._host.name}] pull: Shop source for buyable deficits {available}.")
+        return {"kind": "shop", "id": f"{logistics_requests.SHOP_SOURCE_ID}:{getattr(home, 'id', None)}", "coords": base.coords(), "available": available, "outpost": base}
+
+    def _buy_and_take(self, item_id, amount, outpost):
+        """
+        Buys up to `amount` of item_id at the Shop one Inventory stack at a
+        time and take_item()s each stack into cargo before buying the next,
+        so the purchase never needs more than about one free Inventory slot.
+        Stops at the first refused purchase (credits, Shop stock) or failed
+        take. Returns units loaded.
+        """
+        shop = get_component("shop")
+        if not shop:
+            return 0
+        stack_size = inventory_stack_size()
+        loaded = 0
+        while loaded < amount:
+            qty = min(amount - loaded, stack_size)
+            res = shop.buy(item_id, qty)
+            if res.status != "ok":
+                self._host.log.level("warn").print(f"[{self._host.name}] Shop refused {qty}x {item_id}: {res.status} - {getattr(res, 'message', '')}")
+                break
+            moved = take_item(self._host.vehicle.input, item_id, qty, outpost=outpost)
+            self._host.log.debug(f"[{self._host.name}] Bought {qty}x {item_id}, loaded {moved}.")
+            if moved <= 0:
+                break
+            loaded += moved
+        return loaded
 
     def _plan_pull_chain(self, first, sources, need, buffer, capacity, start, home_coords):
         """One candidate trip for _plan_pull_route(), starting at `first` (need tier before buffer, logistics_requests.plan_take())."""
@@ -707,8 +432,8 @@ class VehicleCargoMixin:
     def _reserve_pull_yield(self, totals, curr_tick):
         """
         Debits {item_id: units} headed home from get_raw_material_demands()
-        (mining.reserved_yield, same debit run_haul_loop() and home-demand
-        miners write), so a normal hauler or miner doesn't also chase ore
+        (mining.reserved_yield, same debit drone haulers and home-demand
+        miners write), so another hauler or miner doesn't also chase ore
         this trip already covers -- and vice versa, since this vehicle's own
         _pull_deficits_tiered() reads the same debited demand. Only for a home-based
         pull hauler; elsewhere raw-ore demand isn't read at all.
@@ -727,12 +452,14 @@ class VehicleCargoMixin:
         {item_id: moved}, or None when the source couldn't be reached.
         Corrects this vehicle's pickup reservations there to what actually
         got loaded. A drill that refuses the connection (wrong recorded
-        position) yields nothing and is warned about.
+        position) yields nothing and is warned about. A Shop stop buys what
+        it loads (_buy_and_take()).
         """
         moved_by_item = {}
         coords = source["coords"]
         is_drill = source["kind"] == "drill"
         is_pump = source["kind"] == "pump"
+        is_shop = source["kind"] == "shop"
         self._host.publish_telemetry("OUTBOUND", f"pickup at {source['kind']} '{source['id']}'")
         if is_drill:
             precision = drill_sites.DRILL_ARRIVAL_PRECISION_M
@@ -756,6 +483,8 @@ class VehicleCargoMixin:
         for item_id, amount in loads:
             if is_drill or is_pump:
                 moved = drill_sites.take_from_drill(self._host.vehicle.input, item_id, amount)
+            elif is_shop:
+                moved = self._buy_and_take(item_id, amount, source["outpost"])
             else:
                 moved = take_item(self._host.vehicle.input, item_id, amount, outpost=source["outpost"])
             self._host.log.print(f"[{self._host.name}] Picked up {moved}/{amount}x {item_id} at '{source['id']}'.")
@@ -786,8 +515,10 @@ class VehicleCargoMixin:
         Reverse hauler: parked at self.home_base, fetches what this outpost
         is missing (_pull_deficits_tiered(): pull requests, plus raw-ore demand when
         parked at home) from any other outpost's free stock or any field
-        Mining Drill's stockpile, and brings it home (Pioneer entrypoint
-        with DESTINATION_OUTPOST_ID="*"). One trip can chain up to
+        Mining Drill's stockpile, and brings it home (every hauler-role
+        Pioneer). Buyable requests at a non-home HOME_BASE (remote Bio Lab
+        reagents) can also be bought at the Shop on a stop at the home
+        outpost (_shop_source()). One trip can chain up to
         PULL_MAX_STOPS_PER_TRIP sources, nearest-neighbour ordered. Every leg
         goes through drive_with_recharge(), which already refuses a leg
         unless the vehicle can still reach a charging station afterwards.
@@ -795,9 +526,9 @@ class VehicleCargoMixin:
         Plays nice with other haulers on both ends: planned amounts are
         reserved per source (logistics.pickups "source", so nobody else
         plans the same units there) and, for home-bound ore, debited from
-        home raw-ore demand (mining.reserved_yield, shared with
-        run_haul_loop() and home-demand miners), so a normal hauler already
-        bringing 800 ore makes this one see 800 less demand, and vice versa.
+        home raw-ore demand (mining.reserved_yield, shared with drone
+        haulers and home-demand miners), so a drone already bringing 800
+        ore makes this one see 800 less demand, and vice versa.
         """
         home = self._host.home_outpost
         home_id = getattr(home, "id", None)

@@ -1335,11 +1335,11 @@ def get_raw_material_demands(smelter=None):
 
     # Debit ore already promised by an in-flight home-demand mining trip
     # (lib/vehicle_mining.py's select_best_mining_target(reserve_demand=True)) or
-    # haul delivery (lib/vehicle_cargo.py's run_haul_loop()) so a peer's
+    # pull-haul delivery (lib/vehicle_cargo.py's run_pull_loop(), drone haulers) so a peer's
     # candidate search this cycle or later doesn't also chase a deficit
     # that's already being fetched. With several Pioneers mining the same POI,
     # get_claims() alone cannot prevent concurrent dispatch -- the same race
-    # also applies across multiple mining-outpost haulers converging on the
+    # also applies across multiple haulers converging on the
     # same home buffer deficit. Only the home-demand path reads this:
     # outpost-stationed stockpile mining doesn't go through
     # get_raw_material_demands() at all, and is already self-bounded by its

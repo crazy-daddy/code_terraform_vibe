@@ -16,6 +16,7 @@ from storage import take_item, warehouse_stock, total_stock, drain_port_to_stora
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
+import outpost_reagents
 
 # Module-level singleton for the shared, biome-agnostic helper functions below
 # (get_my_biome, local_sibling, _local_stock_snapshot, _focus_local_order,
@@ -859,8 +860,8 @@ class BioLabController:
     """
     Automates Analyze and Extract for the Bio Lab.
     Cleans latched inputs/outputs, auto-purchases missing reagents (home only --
-    a remote Lab has no direct Shop delivery, so it waits on the reagent transporter
-    instead, see lib/vehicle_cargo.py's run_haul_loop()), and notifies
+    a remote Lab has no direct Shop delivery, so it publishes its reagent targets as
+    pull requests, lib/outpost_reagents.py, for the Pioneer pull hauler homed there), and notifies
     the Signal Bus ('sample_ready') upon completing an extraction.
     """
     def __init__(self, machine):
@@ -939,6 +940,14 @@ class BioLabController:
         processor, processor_type = local_biome_processor(outpost)
         processor_idle = _processor_is_idle(processor, processor_type)
         self.log.trace(f"[{self.name}] step: entry, is_home={is_home} processor_type={processor_type} processor_idle={processor_idle} specimen_present={self.machine.specimen is not None}")
+
+        if not is_home:
+            # Remote Lab: keep its reagent targets published as buyable pull
+            # requests for the Pioneer hauler homed here (throttled inside).
+            try:
+                outpost_reagents.publish_reagent_requests(outpost)
+            except Exception as error:
+                swallowed("bio.BioLabController.step: publish_reagent_requests", error)
 
         if processor_idle:
             if not self.drain_output():
@@ -1048,8 +1057,8 @@ class BioLabController:
                 return
 
             # Load missing reagents: from local stock, buying the shortfall only when
-            # this Lab is at home (a remote Lab can't have the Shop deliver to it --
-            # see run_haul_loop() for how a remote Lab gets restocked).
+            # this Lab is at home (a remote Lab can't have the Shop deliver to it;
+            # its pull requests bring reagents in, see publish_reagent_requests()).
             needs_loading = False
             for reagent_id, req_qty in recipe.items():
                 curr_qty = loaded.get(reagent_id, 0)

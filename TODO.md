@@ -118,8 +118,10 @@ The save has grown past a single production base: multiple outposts are founded,
   - [x] **Phase A: Pioneers.** COMMISSION card (`fleet_commission_panel.py`: role buttons, outpost picker, queue with cancel) → `lib/fleet_commission.py` in headless `automation_panel.py` buys chassis + best-unlocked preset parts (credit reserve shared with §2k-1), deploys, waits for scripts_sync to attach the script; the new Pioneer fits itself (`lib/pioneer_commission.py` `PioneerFittingMixin`, before `detect_role()`). Stub-tested only.
     - [ ] Validate live (ask first): create the `fleet_commission_panel` Custom Panel; one hauler end to end. Confirm `deploy("pioneer")` lands inside the home service area so `mount()` works right away, whether `mount()`/`install()` complete synchronously (fitting polls 5 s), whether Pioneers have a `deploy_limit`, and that scripts_sync fills the new `pioneer_N` slot. Retune `PIONEER_PRESETS` from real trips.
   - [ ] **Phase B: drones.** Chassis/thruster/modules via `fabricator.upgrade_orders` (requester `fleet_commission`), wait for a free Depot bay at the target outpost (`missing_drone_station`/`drone_station_full`), deploy, then reuse `drone_upgrade.fit_loadout_if_new()` via a lineage entry with `from: None`.
-  - [ ] **Phase C: parameters chosen in game.** Card writes `HOME_BASE`/`DESTINATION_OUTPOST_ID` (or `HOME_DEPOT`) into the lineage `params`; `devtools/scripts_sync.py` reads `fleet.commission` from the save (like `upgrade_fill_for()`) and fills the slot without prompting.
+  - [ ] **Phase C: parameters chosen in game.** Card writes `HOME_BASE` (or `HOME_DEPOT`) into the lineage `params`; `devtools/scripts_sync.py` reads `fleet.commission` from the save (like `upgrade_fill_for()`) and fills the slot without prompting.
   - [ ] **Phase D: semi-auto.** Target count per role (`fleet.commission["targets"]`) + auto switch: the coordinator queues a job when the live count is below target; later demand-driven targets (pickup backlog age, unserved ore demand). Matching "−" button = `recall_home_and_decommission()` below.
+- [ ] **Every Pioneer hauler pulls to its HOME_BASE** (no `DESTINATION_OUTPOST_ID`, no push hauler, no floating Pioneers; see `docs/cheatsheet/vehicles_drones.md` §2f/§2g). Remote Bio Lab reagents are buyable pull requests, bought at the Shop by the hauler homed at the lab. Stub-tested only.
+  - [ ] Validate live: scripts_sync re-homes the old ore hauler to home and the reagent hauler to its lab outpost (`note ... re-homed` lines); the home hauler keeps home ore stocked; the lab hauler buys reagents at home (`Bought Nx ...` debug) and the remote Lab loads them.
 - [ ] **Pioneer `recall_home_and_decommission()`**: as drone haulers take over freight, retire Pioneers in an
   orderly way. Recall to `outpost_home`, unload cargo, uncouple modules to Inventory, sell modules and any
   leftover cargo, then undeploy/sell the chassis (Ship Computer deploy/undeploy API, v0.1.25). Operator-triggered
@@ -162,8 +164,8 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
     tile carries a non-home-biome sample alongside a home-biome one (`PortableBioExtractor.extract()`
     takes no species argument, so it can't be told to pull only the matching one) and never ferries an
     already-extracted foreign sample to the outpost that could process it. Revisit once there's a
-    concrete need — the mining/hauler transporter pattern (`lib/vehicle_cargo.py` `run_haul_loop()`,
-    §2g) is the likely template. See `docs/AI_CHEATSHEET.md` §2h.
+    concrete need — a pull request at the processing outpost (`logistics_requests`, served by the
+    drone hauler / Pioneer pull hauler, §2i) is the likely template. See `docs/AI_CHEATSHEET.md` §2h.
 - [x] Connect multi-biome essence pipeline to central **Biomass Mixers**. (scripted side done: `lib/biomass_mixer.py`; physical pipes still manual)
   - [ ] Validate gate live once tier 5 is active: pause/resume transitions, buffers refilling while breaker off, give-up/backpressure escapes; retune `PAUSE_LEVEL_T`/`RESUME_LEVEL_T`/`NO_PROGRESS_TICKS` from observed Liquifier rates.
 - [ ] Add biomass telemetry and threshold alerts for 500 t and 2,000 t milestones.

@@ -5,7 +5,7 @@
 # fleet cards: this card only writes fleet.commission, the headless
 # automation_panel.py runs lib/fleet_commission.py, which buys the chassis and
 # parts, deploys the chassis and waits for its script -- devtools/scripts_sync.py
-# fills the new pioneer slot (and asks for HOME_BASE / DESTINATION_OUTPOST_ID).
+# fills the new pioneer slot (and asks for HOME_BASE).
 # The Pioneer then fits its own parts.
 #
 # Below the buttons: the coordinator's status line and the job queue, each
