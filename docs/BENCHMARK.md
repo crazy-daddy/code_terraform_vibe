@@ -80,7 +80,7 @@ Operations over a 1000-element list:
 | World | `nocturna` `terraform_progress` / `biome_at` / `points_of_interest`, `atmosphere.get_o2()` |
 | Reference data | `research.unlocked()` / `is_unlocked()`, `item_catalog.lookup()`, `shop.get_catalogue()`, `orders.list_orders()`, `journal` `is_empty` / `biomass_coords` |
 
-**Console comparison** (`CONSOLE_ONLY`): runs only the console cases. Run it once with debug output enabled in the console UI and once with it disabled, setting `CONSOLE_DEBUG_STATE` to `"shown"` or `"hidden"` each time, to see whether the 0.1 s cost of `console.debug()` depends on the debug filter. `print()` is documented as equivalent to `console.info()`, and `warn` and `error` only change the level, so only `print()` and `debug()` are benchmarked.
+**Console comparison** (`CONSOLE_ONLY`): runs only the console cases. Run it once with debug output enabled in the console UI and once with it disabled, setting `CONSOLE_DEBUG_STATE` to `"shown"` or `"hidden"` each time, to see whether the 0.1 s cost of `console.debug()` depends on the debug filter (it does not: both runs measured 0.1 s per call). `print()` is documented as equivalent to `console.info()`, and `warn` and `error` only change the level, so only `print()` and `debug()` are benchmarked.
 
 **Interruptive** (`RUN_INTERRUPTIVE`, off by default): each case briefly changes real game state and restores it in a `finally` block.
 
@@ -137,7 +137,8 @@ Same units and container as above (empty loop = 350 µs). Every call is a single
 | `journal.is_empty(0, 0)` | 2,266 | 6.7 |
 | `journal.biomass_coords()` | 1,797 | 5.3 |
 | `sleep(0.1)` | 100,000 | 296 |
-| `console.debug("bench")` | 100,000 | 296 |
+| `print("bench")` | 100,000 | 296 |
+| `console.debug("bench")`, debug output shown or hidden | 100,000 | 296 |
 | `transmitter.connect("earth")` (interruptive) | 2,500 | 7.4 |
 | `power_control.set_powered` off + on (interruptive) | 5,000 | 14.8 |
 
@@ -151,7 +152,7 @@ Storage, battery and `is_powered` were measured on a large warehouse and a batte
 4. **`send` + `receive` is two calls** (12.5×, about 6 steps each). `latest()` on a broadcast channel is 5.2×.
 5. **Attribute reads on returned objects cost about 2 steps.** Reading `.type_id` over 30 refs costs 3.2 steps per element including the loop iteration; a `.status` read costs 2.4. Read each field once and keep it in a local.
 6. **`get_component()` lookup is cheap** (4.5×), so wrapper creation does not need caching for cost reasons. Cache it only where a wrapper carries state (for example the transmitter connection).
-7. **`sleep(0.1)` and `console.debug()` each cost exactly 0.1 s of simulation time**, about 285 steps. The debug result comes from a loop of 40 calls taking 4.00 s. `console.now()` costs a normal 4.4×. `print()` (the same as `info`, with `warn` and `error` only changing the level) has not been measured yet. Until it is, treat every console write as an expensive call: build one string and log once instead of logging inside hot loops.
+7. **`sleep(0.1)`, `print()` and `console.debug()` each cost exactly 0.1 s of simulation time**, about 290 steps: forty calls take 4.00 s. `console.debug()` costs the same with debug output shown or hidden in the console, so a hidden line is still paid for. `info` is documented as identical to `print`, and `warn` and `error` only change the level. `console.now()` costs a normal 4.3×. Treat every console write as an expensive call: build one string and log once instead of logging inside hot loops or per item.
 8. **Storage, battery and power reads follow the same rule** (`fill_percent`, `stacks`, `get_level`, `total` at 4.7×; calls that take an item or machine id at 5.8×) on the warehouse in that save; how the cost scales for a much fuller warehouse has not been measured.
 9. **Switching power and re-opening the Earth link are instant for the script.** `transmitter.connect` costs 7.4×; `set_powered` off + on costs 14.8× for two calls, so there is no settle time to wait for.
 10. **Budget:** with about 350 µs per step and about 1.5–2.3 ms per API call, a script can make roughly 450–650 API calls per simulation second, and none of them cost more when the returned collection is large.
