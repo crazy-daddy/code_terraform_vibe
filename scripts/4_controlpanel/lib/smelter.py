@@ -4,7 +4,7 @@
 # automation panel, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, smelter_recipe_peers, machine_outpost_id
+from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
 from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole
@@ -18,6 +18,8 @@ from swallow import swallowed
 # (missing a real conflict) is cheap, false-positive (blocking a legitimate
 # claim) means an ore nobody's actually processing sits idle.
 SMELTER_RECIPE_CLAIM_STALE_TICKS = 600
+# Shape {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}: claims only
+# arbitrate Smelters at the same outpost (production.site_recipe_claims()).
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 
 # Per-call ceiling on ore loading: bounds any single grab (~2.5 s of
@@ -105,8 +107,9 @@ class SmelterController:
 
     def claim_recipe(self, recipe_id):
         """
-        Claims recipe_id for this smelter, or confirms/refreshes an existing
-        claim already held by this smelter. Returns False if another smelter
+        Claims recipe_id for this smelter at its outpost, or confirms/refreshes
+        an existing claim already held by this smelter. Smelters at different
+        outposts never block each other. Returns False if another smelter
         holds a still-fresh claim on it (see SMELTER_RECIPE_CLAIM_STALE_TICKS),
         so select_needed_ore() can move on to a different demanded ore instead
         of racing another smelter for the same one.
@@ -114,9 +117,12 @@ class SmelterController:
         current_tick = self.get_current_tick()
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
+        site_id = claim_site_id(self.smelter)
+
         def updater(claims):
-            claims = dict(claims or {})
-            existing = claims.get(recipe_id)
+            claims = site_recipe_claims(claims, "smelter")
+            site = claims.setdefault(site_id, {})
+            existing = site.get(recipe_id)
             if not isinstance(existing, dict):
                 existing = None
             if existing is not None and existing.get("smelter") != self.name:
@@ -128,7 +134,7 @@ class SmelterController:
                 if current_tick == 0 or age <= SMELTER_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
                 notes.append(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
-            claims[recipe_id] = {"smelter": self.name, "tick": current_tick}
+            site[recipe_id] = {"smelter": self.name, "tick": current_tick}
             return claims
 
         try:
@@ -139,8 +145,8 @@ class SmelterController:
         for note in notes:
             self.log.debug(note)
 
-        claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
-        owner = (claims.get(recipe_id) or {}).get("smelter")
+        claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "smelter")
+        owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("smelter")
         won = owner == self.name
         self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): {'won' if won else f'held by other smelter {owner!r}'}")
         return won
@@ -149,10 +155,15 @@ class SmelterController:
         if not recipe_id:
             return
 
+        site_id = claim_site_id(self.smelter)
+
         def updater(claims):
-            claims = dict(claims or {})
-            if (claims.get(recipe_id) or {}).get("smelter") == self.name:
-                del claims[recipe_id]
+            claims = site_recipe_claims(claims, "smelter")
+            site = claims.get(site_id) or {}
+            if (site.get(recipe_id) or {}).get("smelter") == self.name:
+                del site[recipe_id]
+            if not site:
+                claims.pop(site_id, None)
             return claims
 
         try:

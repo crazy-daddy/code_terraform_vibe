@@ -13,6 +13,7 @@
       "extraPaths": [
         ".pyright-resolved/lib",
         "scripts/4_controlpanel/lib",
+        "scripts/5_steampower/lib",
         ".pyright-resolved/stubs"
       ]
     },

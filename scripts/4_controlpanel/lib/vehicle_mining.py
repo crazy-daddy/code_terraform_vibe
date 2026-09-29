@@ -181,7 +181,7 @@ class VehicleMiningMixin:
         outpost = outpost_mining.outpost_by_id(outpost_id)
         under_target = {
             item_id for item_id in assigned
-            if total_stock(item_id, outpost=outpost) < outpost_mining.stock_target_for(outpost_id, item_id)
+            if total_stock(item_id, outpost=outpost) < outpost_mining.ore_stock_target(item_id)
         }
         if not under_target:
             return []
@@ -603,13 +603,13 @@ class VehicleMiningMixin:
 
         # Cap this trip to the stockpile target's remaining headroom, not just
         # cargo capacity -- otherwise a full cargo load routinely overshoots
-        # stock_target_for() (default one Warehouse slot, 2000 units) by
+        # ore_stock_target() (default one Warehouse slot, 2000 units) by
         # however much cargo capacity exceeds the remainder, forcing the
         # overflow into a second material slot for no benefit (found from a
         # real Warehouse: iron_ore split 2000+279 across two slots, wasting
         # one of only 5 available for other assigned ores).
         outpost_ref = outpost_mining.outpost_by_id(outpost_id)
-        remaining_target = outpost_mining.stock_target_for(outpost_id, target["harvest_item"]) - total_stock(target["harvest_item"], outpost=outpost_ref)
+        remaining_target = outpost_mining.ore_stock_target(target["harvest_item"]) - total_stock(target["harvest_item"], outpost=outpost_ref)
         self.mine_until_full_or_exhausted(coords, max_units=max(1, remaining_target))
 
         if not self._host.return_to_base():

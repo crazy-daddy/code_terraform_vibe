@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id
+from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims
 from archive import archive
 from storage import take_item, total_stock, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
@@ -14,6 +14,7 @@ import fluid_routing
 # claim on the recipe id it's about to set lets a Fabricator move on to its
 # next-best sourceable candidate if another Fabricator already holds it.
 FABRICATOR_RECIPE_CLAIM_STALE_TICKS = 600
+# Shape {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}, per outpost like smelter.recipe_claims.
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
 # load_inputs() caps each take_item() call to this many units, preventing
@@ -78,9 +79,12 @@ class FabricatorController:
         current_tick = self.get_current_tick()
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
+        site_id = claim_site_id(self.machine)
+
         def updater(claims):
-            claims = dict(claims or {})
-            existing = claims.get(recipe_id)
+            claims = site_recipe_claims(claims, "fabricator")
+            site = claims.setdefault(site_id, {})
+            existing = site.get(recipe_id)
             if not isinstance(existing, dict):
                 existing = None
             if existing is not None and existing.get("fabricator") != self.name:
@@ -88,7 +92,7 @@ class FabricatorController:
                 if current_tick == 0 or age <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
                 notes.append(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('fabricator')}' is stale (age={age} > {FABRICATOR_RECIPE_CLAIM_STALE_TICKS}), taking over")
-            claims[recipe_id] = {"fabricator": self.name, "tick": current_tick}
+            site[recipe_id] = {"fabricator": self.name, "tick": current_tick}
             return claims
 
         try:
@@ -99,8 +103,8 @@ class FabricatorController:
         for note in notes:
             self.log.debug(note)
 
-        claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
-        owner = (claims.get(recipe_id) or {}).get("fabricator")
+        claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "fabricator")
+        owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("fabricator")
         won = owner == self.name
         self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): {'won' if won else f'held by other fabricator {owner!r}'}")
         return won
@@ -109,10 +113,15 @@ class FabricatorController:
         if not recipe_id:
             return
 
+        site_id = claim_site_id(self.machine)
+
         def updater(claims):
-            claims = dict(claims or {})
-            if (claims.get(recipe_id) or {}).get("fabricator") == self.name:
-                del claims[recipe_id]
+            claims = site_recipe_claims(claims, "fabricator")
+            site = claims.get(site_id) or {}
+            if (site.get(recipe_id) or {}).get("fabricator") == self.name:
+                del site[recipe_id]
+            if not site:
+                claims.pop(site_id, None)
             return claims
 
         try:

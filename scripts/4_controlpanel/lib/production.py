@@ -1,7 +1,7 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
 from storage import total_stock, discover_storage_buildings, outpost_is_home
-from outpost_mining import stock_target_for, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
+from outpost_mining import ore_stock_target, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -141,6 +141,32 @@ def machine_outpost_id(machine):
     """Id of the outpost a Smelter/Fabricator is deployed at (its .outpost
     OutpostRef), or None when the component doesn't expose one."""
     return getattr(getattr(machine, "outpost", None), "id", None)
+
+
+def claim_site_id(machine):
+    """Outpost id a machine's recipe claim is filed under (smelter/fabricator
+    .recipe_claims): its own outpost, HOME_OUTPOST_ID when not exposed."""
+    return machine_outpost_id(machine) or HOME_OUTPOST_ID
+
+
+def site_recipe_claims(claims, owner_field):
+    """
+    Copy of a stored recipe-claims dict in its per-site shape
+    {outpost_id: {recipe_id: {owner_field: machine_id, "tick": n}}}, with
+    empty sites and flat-shaped entries ({recipe_id: {owner_field: ...}},
+    keyed by recipe network-wide) dropped. Claims are short-lived (a fresh
+    claim is renewed every step), so a dropped flat entry is simply re-claimed.
+    """
+    result = {}
+    if not isinstance(claims, dict):
+        return result
+    for site_id, site in claims.items():
+        if not isinstance(site, dict) or owner_field in site:
+            continue
+        entries = {recipe_id: dict(claim) for recipe_id, claim in site.items() if isinstance(claim, dict)}
+        if entries:
+            result[site_id] = entries
+    return result
 
 
 def _home_outpost():
@@ -1179,7 +1205,9 @@ def get_smelter_demands(cache=None):
          or a dock order get_fabricator_targets() already folded in) counts
          as gross need as-is.
       3. Dock orders for Smelter outputs NOT already covered by (2).
-      4. Net once: minus total stock (Inventory + Warehouses) and minus what's
+      4. Net once: minus stock anywhere on the network (home Inventory +
+         every outpost's Warehouses, SourceCache.network_stock(), so ingots
+         a remote Smelter made aren't refined again at home) and minus what's
          already staged in every Fabricator's stockpile.
 
     Pass the step's SourceCache -- this walks the full target set, so it is
@@ -1230,10 +1258,11 @@ def get_smelter_demands(cache=None):
 
     demands = {}
     for item_id, qty in gross.items():
-        net = qty - cache.stock(item_id) - staged.get(item_id, 0)
+        stock = cache.network_stock(item_id)
+        net = qty - stock - staged.get(item_id, 0)
         if net > 0:
             demands[item_id] = net
-        log.debug(f"get_smelter_demands: {item_id} gross={qty} stock={cache.stock(item_id)} staged_in_fabricators={staged.get(item_id, 0)} -> net={max(0, net)}")
+        log.debug(f"get_smelter_demands: {item_id} gross={qty} network_stock={stock} staged_in_fabricators={staged.get(item_id, 0)} -> net={max(0, net)}")
     return demands
 
 
@@ -1333,7 +1362,7 @@ def get_raw_material_demands(smelter=None):
             swallowed("production.get_raw_material_demands: smelter.list_recipes", error)
 
     # Standing home ore buffer: keep at least one Warehouse slot's worth
-    # (outpost_mining.stock_target_for(), seed-once-editable) of every raw
+    # (outpost_mining.ore_stock_target(), seed-once-editable) of every raw
     # ore on hand at home even with zero active production/order demand --
     # freely drawn down by Smelter/Supply Dock like any other stock, never a
     # reserved amount, just a floor that creates replenishment demand once
@@ -1341,7 +1370,7 @@ def get_raw_material_demands(smelter=None):
     # production demand already computed above, since both ultimately want
     # the same ore delivered home -- adding them would double-count.
     for item_id in RAW_ORE_ITEM_IDS:
-        buffer_deficit = max(0, stock_target_for(HOME_OUTPOST_ID, item_id) - total_stock(item_id))
+        buffer_deficit = max(0, ore_stock_target(item_id) - total_stock(item_id))
         if buffer_deficit > raw_demands.get(item_id, 0):
             log.trace(f"get_raw_material_demands: home buffer floor for {item_id} ({buffer_deficit}) exceeds production demand ({raw_demands.get(item_id, 0)}), using buffer floor")
             raw_demands[item_id] = buffer_deficit
@@ -1400,6 +1429,7 @@ class SourceCache:
         self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
         self._fabricator_pipeline = None  # get_fabricator_pipeline() memo -- see its docstring
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
+        self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
 
     def _build_stock_map(self):
         log.trace("SourceCache._build_stock_map: one-shot stock scan across Inventory + Warehouses starting")
@@ -1477,6 +1507,16 @@ class SourceCache:
                     swallowed("production.SourceCache.local_stock: component.stacks", error)
             self._outpost_stock[outpost_id] = held
         return held.get(item_id, 0)
+
+    def network_stock(self, item_id):
+        """stock() plus every non-home outpost's local Warehouses (local_stock()):
+        units anywhere in storage on the network."""
+        if self._remote_outposts is None:
+            self._remote_outposts = [o for o in _all_outposts() if not outpost_is_home(o)]
+        total = self.stock(item_id)
+        for outpost in self._remote_outposts:
+            total += self.local_stock(item_id, outpost)
+        return total
 
     def smelter_recipes(self):
         if self._smelter_recipes is None:

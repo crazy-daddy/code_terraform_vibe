@@ -144,7 +144,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   subtracts every non-stale reservation's units before returning. Heartbeat-renewed/released
   (`refresh_yield()`/`release_yield()`), same expiry (`RESERVATION_STALE_TICKS = 36000`).
   **Stockpile path** (`build_local_stockpile_candidates()`, `reserve_demand=False`) skips this —
-  already self-bounded by each outpost's `stock_target_for()`.
+  already self-bounded by `ore_stock_target()`.
 - **Energy-based mining trip sizing** (`VehicleEnergyMixin.max_mineable_units()`): default
   yield estimate (not `cargo.capacity()`). Solves trip-energy budget directly for units
   (outbound + base return Wh fixed, mined-unit Wh and marginal return-drive Wh linear in unit
@@ -213,7 +213,7 @@ Rover/Pioneer can treat **any** outpost — not just home — as base.
 
 - **`VehicleController.__init__`'s `home_base` param** (outpost id, or `None` = production/home outpost). Resolved to **live objects once at construction**, cached as `self.home_outpost` (`get_outpost_ref(home_base)`) and `self.home_charging_station` (`find_charging_station(self.home_outpost)`), no re-walking `outpost_network.outposts()` by id per lookup. `get_home_slot_coords()` reads only these two cached fields: station position if found, else outpost's `.coords()`, else `(0, 0)` only if `outpost_network` unavailable at construction. `self.home_base` kept only for identity checks. Trade-off: charging station built at this outpost *after* construction not picked up until next script reload.
 - **`unload_cargo(outpost=None)`** — defaults to `self.home_outpost` (cached), so stationed vehicle unloads into own outpost's Warehouse; or an explicit `outpost`.
-- **`VehicleMiningMixin.build_local_stockpile_candidates(outpost_id)`** — per ore in `outpost_mining.assigned_ores_for(outpost_id)` still under `stock_target_for()`, builds mineral site candidates (same hardness/claim/blacklist filtering as `build_mineral_site_candidates()`) plus requires `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`. Fully independent of home's live demand.
+- **`VehicleMiningMixin.build_local_stockpile_candidates(outpost_id)`** — per ore in `outpost_mining.assigned_ores_for(outpost_id)` still under `ore_stock_target()` (local stock), builds mineral site candidates (same hardness/claim/blacklist filtering as `build_mineral_site_candidates()`) plus requires `outpost_mining.nearest_outpost_id(site.x, site.y) == outpost_id`. Fully independent of home's live demand.
 - **`VehicleMiningMixin.run_stationed_mining_loop(outpost_id)`** — thin wrapper around `_stationed_mining_cycle(outpost_id)`: same cycle shape as `run_mining_loop()` (reload resume, cargo/target mismatch detour, claim + drive + mine + return + unload + recharge, release claim right after return), target selection swapped for `build_local_stockpile_candidates()`.
 
 ### 2f. Hauler Role: Pulls to its HOME_BASE (`lib/vehicle_cargo.py` `run_pull_loop()`)
