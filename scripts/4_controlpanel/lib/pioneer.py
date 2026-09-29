@@ -16,7 +16,6 @@ import mining_reservations
 import drill_sites
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
-from logistics_requests import PULL_DESTINATION_WILDCARDS
 from swallow import swallowed
 
 class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMixin):
@@ -79,21 +78,27 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         self.log.end(f"[{self.name}] Detected role: '{role}'")
         return role
 
-    def run(self, dest_outpost_id=None, role_override=None):
+    def run(self, role_override=None, dest_outpost_id=None):
         """
         Unified entrypoint: detects this Pioneer's role from its mounted
         equipment (Constructor Module -> constructor, Sonar Module -> scout,
         Drill Module -> miner, none of those -> hauler) and dispatches to the
         matching loop, so a thin entrypoint script no longer needs to name
-        the loop function by hand. dest_outpost_id is only used (and
-        required) for the hauler role, since it's the only role without a
-        module to detect it by; a wildcard ("*", "any", "%") makes it a reverse
-        hauler that fetches requested items from anywhere to its HOME_BASE
-        (run_pull_loop()). role_override forces a specific role,
+        the loop function by hand. Every role works for its HOME_BASE: a
+        hauler fetches what that outpost requests from anywhere and brings
+        it there (run_pull_loop()). role_override forces a specific role,
         bypassing detection -- required when more than one role-defining
         module is mounted at once (see detect_role()). A Pioneer launched from
         the COMMISSION card fits its parts first (lib/pioneer_commission.py).
+        dest_outpost_id is ignored; a real outpost id there (an entrypoint
+        written for push hauling) is warned about, since haulers pull to
+        HOME_BASE rather than deliver elsewhere.
         """
+        if dest_outpost_id not in (None, "", "None", "*", "any", "%"):
+            self.log.level("warn").print(
+                f"[{self.name}] DESTINATION_OUTPOST_ID='{dest_outpost_id}' is ignored: haulers pull to HOME_BASE "
+                f"('{self.home_base}'). Set HOME_BASE='{dest_outpost_id}' to supply that outpost."
+            )
         self.fit_commissioned_loadout()
         role = self.detect_role(role_override)
         if role is None:
@@ -106,14 +111,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         elif role == "miner":
             self.run_stationed_mining_loop(self.home_base)
         elif role == "hauler":
-            if not dest_outpost_id:
-                self.log.level("warn").print(f"[{self.name}] Hauler role detected but no dest_outpost_id given; cannot start.")
-                return
-            if dest_outpost_id in PULL_DESTINATION_WILDCARDS:
-                # "Go anywhere, bring it home": reverse hauler parked at HOME_BASE.
-                self.run_pull_loop()
-                return
-            self.run_haul_loop(dest_outpost_id=dest_outpost_id)
+            self.run_pull_loop()
         else:
             self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")
 

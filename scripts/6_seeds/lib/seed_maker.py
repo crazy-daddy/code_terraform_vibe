@@ -24,7 +24,7 @@
 #   just adds untried triples, nothing is ever reset.
 #
 # Missing forms are requested via lib/logistics_requests.py, which a reverse
-# hauler (Pioneer with DESTINATION_OUTPOST_ID="*" parked at this outpost) and
+# hauler (hauler-role Pioneer with HOME_BASE at this outpost) and
 # demand-aware miner drones act on.
 
 from archive import archive

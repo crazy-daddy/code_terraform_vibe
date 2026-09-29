@@ -64,7 +64,7 @@ RESOURCE_PURITY_LABELS = {"standard": "Standard", "rich": "Rich", "pure": "Pure"
 RAW_ORE_ITEM_IDS = ("iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore")
 
 # Canonical home outpost id (docs/components/outpost.md; also hardcoded as a
-# literal in lib/vehicle_cargo.py's _outpost_haul_demand()/pioneer_5-7.py).
+# literal in a few tier-1 scripts, e.g. power/solar.py).
 HOME_OUTPOST_ID = "outpost_home"
 
 

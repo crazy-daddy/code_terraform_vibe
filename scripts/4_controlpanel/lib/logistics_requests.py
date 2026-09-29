@@ -14,7 +14,7 @@
 # Archive shape (one shared dict per concern, CLAUDE.md rule 7):
 #   logistics.requests = {outpost_id: {item_id: {"target": t, "have": h,
 #                                                "min": m, "by": requester,
-#                                                "tick": n}}}
+#                                                "buy": bool, "tick": n}}}
 #   logistics.pickups  = {pickup_key: {"vehicle", "dest", "source",
 #                                      "item_id", "units", "tick"}}
 # Two demand tiers per request: "min" is what the requester needs to keep
@@ -28,6 +28,9 @@
 # slightly lagging number for readers that can't afford a live stock walk
 # (miner drones). The hauler recomputes local stock live (outpost_stock())
 # before planning, since it's physically at the requesting outpost anyway.
+# "buy": True (set_requests(buyable=True)) lets a Pioneer pull hauler buy the
+# item at the Shop on a home pickup (SHOP_SOURCE_ID) when no free stock covers
+# it; unflagged requests are never bought.
 # "source" (outpost or drill id, None for legacy entries) lets a planner
 # debit stock another hauler has already promised itself (reserved_from()),
 # so two haulers never plan the same units at the same source.
@@ -72,9 +75,9 @@ LIFEFORM_STASH_CAP_T = 25
 # typeIds, not the "Drone Depot" display name; one per Depot size -- see lib/drone_energy.py
 DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")
 
-# Accepted DESTINATION_OUTPOST_ID values that mean "pick up anywhere, bring to
-# my HOME_BASE" (lib/pioneer.py run()).
-PULL_DESTINATION_WILDCARDS = ("*", "any", "%")
+# Pull-source id of the Shop (lib/vehicle_cargo.py _pull_sources()): a
+# virtual source at the home outpost, used only for buyable requests.
+SHOP_SOURCE_ID = "shop"
 
 
 def _now_tick():
@@ -92,11 +95,13 @@ def _is_fresh(entry, curr_tick, stale_ticks):
 
 # ------------------------------------------------------------------ requests
 
-def set_requests(outpost_id, requester, wants, curr_tick=None):
+def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
     ({item_id: (target, have)} or {item_id: (target, have, min)}), in one
-    transaction. Without min the whole target is need tier. An empty
+    transaction. Without min the whole target is need tier. buyable=True
+    marks the entries as Shop-buyable (buyable_deficits()): a Pioneer pull
+    hauler may buy them at home instead of finding free stock. An empty
     `wants` just withdraws the requester's entries there. Stale entries of
     any requester are pruned on the way.
     """
@@ -122,6 +127,8 @@ def set_requests(outpost_id, requester, wants, curr_tick=None):
                 entry = {"target": target, "have": have, "by": requester, "tick": tick}
                 if len(values) > 2 and values[2] is not None and values[2] < target:
                     entry["min"] = max(0, values[2])
+                if buyable:
+                    entry["buy"] = True
                 bucket[item_id] = entry
             requests[outpost_id] = bucket
         return requests
@@ -482,6 +489,20 @@ def outpost_deficits_tiered(outpost, curr_tick=None, live=True):
         if b > 0:
             buffer[item_id] = b
     return need, buffer
+
+
+def buyable_deficits(outpost, need, buffer, curr_tick=None):
+    """
+    ({item_id: need units}, {item_id: buffer units}): the part of `outpost`'s
+    deficits (outpost_deficits_tiered() output) whose request is flagged
+    buyable (set_requests(buyable=True)), i.e. what a pull hauler may buy
+    at the Shop for it.
+    """
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    requests = active_requests(tick).get(getattr(outpost, "id", None), {})
+    flagged = {item_id for item_id, entry in requests.items() if entry.get("buy")}
+    return ({i: u for i, u in need.items() if i in flagged},
+            {i: u for i, u in buffer.items() if i in flagged})
 
 
 def outpost_deficits(outpost, curr_tick=None, live=True):
