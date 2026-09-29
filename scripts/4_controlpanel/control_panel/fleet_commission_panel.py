@@ -28,6 +28,7 @@ from drone_energy import DRONE_DEPOT_TYPE_IDS
 from fleet_commission import queue_pioneer, queue_drone, cancel_job, job_kind, job_home_base, CANCELLABLE_STATES
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
+from tree_console import TreeConsole
 
 PIONEER_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("scout", "+ Scout"), ("constructor", "+ Builder")]
 DRONE_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner")]
@@ -49,20 +50,28 @@ def read_outposts():
     except Exception as error:
         swallowed("fleet_commission_panel.read_outposts: network.outposts", error)
         refs = []
+    log.debug(f"read_outposts: network.outposts() gave {len(refs)} refs")
     found, with_depot = [], []
     for ref in refs:
         entry = (getattr(ref, "id", ""), getattr(ref, "name", "") or getattr(ref, "id", ""), bool(getattr(ref, "is_home", False)))
         if not entry[0]:
+            log.debug(f"read_outposts: skip ref without id: {ref!r}")
             continue
         found.append(entry)
         try:
-            if any(ref.buildings(type_id) for type_id in DRONE_DEPOT_TYPE_IDS):
+            types = [getattr(b, "type_id", "") for b in ref.buildings()]
+            has_depot = len([t for t in types if t in DRONE_DEPOT_TYPE_IDS]) > 0
+            log.trace(f"read_outposts: {entry} depot={has_depot} buildings={types}")
+            if has_depot:
                 with_depot.append(entry)
         except Exception as error:
             swallowed("fleet_commission_panel.read_outposts: outpost.buildings", error)
     order = lambda o: (not o[2], o[0])
     found.sort(key=order)
     with_depot.sort(key=order)
+    if not found:
+        log.debug(f"read_outposts: none found, fallback to {HOME_OUTPOST_ID} only (home picker cannot cycle)")
+    log.debug(f"read_outposts: outposts={found} with_depot={[o[0] for o in with_depot]}")
     return found or [(HOME_OUTPOST_ID, "home", True)], with_depot
 
 
@@ -76,27 +85,52 @@ def picker(button_id, x, y, prefix, choices, state_key, state):
         panel.draw_text(x, y + 17, f"{prefix} no Drone Depot", 10, "text-muted")
         return False
     stored = state.get(state_key)
-    index = next((i for i, c in enumerate(choices) if (c[0] == stored if stored else c[2])), 0)
+    matches = [i for i, c in enumerate(choices) if (c[0] == stored if stored else c[2])]
+    match = matches[0] if matches else None
+    index = 0 if match is None else match
     _, name, _ = choices[index]
+    seen = (stored, match, len(choices))
+    if _last_pick.get(state_key) != seen:
+        _last_pick[state_key] = seen
+        note = " (no match, show index 0)" if match is None else ""
+        log.debug(f"picker {state_key}: stored={stored!r} index={index}/{len(choices)} -> {choices[index]}{note}")
     if panel.button(button_id, x, y, PICKER_W, BUTTON_H, f"{prefix} {name}"[:28]):
         nxt = choices[(index + 1) % len(choices)]
-        update_commission(lambda s: s.update({state_key: None if nxt[2] else nxt[0]}))
+        value = None if nxt[2] else nxt[0]
+        log.debug(f"picker {state_key}: click at index {index}, write {value!r} (next {nxt})")
+
+        def write(s):
+            log.trace(f"picker {state_key}: transaction saw {s.get(state_key)!r}, set {value!r}")
+            s[state_key] = value
+
+        try:
+            update_commission(write)
+        except Exception as error:
+            swallowed(f"fleet_commission_panel.picker: update_commission {state_key}", error)
+        log.debug(f"picker {state_key}: archive now {commission_state().get(state_key)!r}")
     picked = choices[index]
     return None if picked[2] else picked[0]
 
 
 def role_row(y, title, labels, id_prefix, allowed, on_click):
     panel.draw_text(24, y + 17, title, 11, "text-secondary")
-    for index, (role, label) in enumerate(r for r in labels if r[0] in allowed):
+    for index, (role, label) in enumerate([r for r in labels if r[0] in allowed]):
         if panel.button(f"{id_prefix}_{role}", 24 + ROW_LABEL_W + index * (BUTTON_W + 8), y, BUTTON_W, BUTTON_H, label):
             on_click(role)
 
 
+log = TreeConsole(module="fleet_commission_panel")
+# state_key -> (stored, match, choice count) last logged, so the picker logs on change, not every frame.
+_last_pick = {}
+# Every widget on this card is a momentary button (state lives in fleet.commission), so stored keys hold
+# nothing worth keeping; drop them so the card stays under its 512-key limit.
+panel.clear_inputs()
 outposts, depot_outposts = read_outposts()
 loops = 0
 
 while True:
     loops += 1
+    log.flush()
     if loops % OUTPOST_REFRESH_LOOPS == 0:
         outposts, depot_outposts = read_outposts()
 
@@ -130,7 +164,7 @@ while True:
     jobs = [j for j in state.get("jobs") or [] if isinstance(j, dict)]
     top = status_y + 14
     max_rows = max(0, (height - top - 16) // ROW_H)
-    if not jobs:
+    if not jobs and top + 20 <= height:
         panel.label(24, top + 4, "Nothing queued", "muted")
     for index, job in enumerate(jobs[:max_rows]):
         row_y = top + index * ROW_H
@@ -143,7 +177,7 @@ while True:
             what = f"{job.get('role')} for {job_home_base(job) or 'home'}"
         line = f"{job.get('id')} {what}" + (f" - {detail}" if detail else "")
         panel.draw_text(120, row_y + 16, line[: int((width - 220) // 6)], 10, "text-value")
-        if job_state in CANCELLABLE_STATES and panel.button(f"commission_cancel_{job.get('id')}", width - 100, row_y, 76, 22, "cancel"):
+        if job_state in CANCELLABLE_STATES and panel.button(f"commission_cancel_{index}", width - 100, row_y, 76, 22, "cancel"):
             cancel_job(job.get("id"))
     if len(jobs) > max_rows > 0:
         panel.draw_text(width - 200, status_y, f"+{len(jobs) - max_rows} more", 10, "text-muted")
