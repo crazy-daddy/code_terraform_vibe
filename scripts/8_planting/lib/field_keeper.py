@@ -5,11 +5,14 @@
 #   HarvesterPavingMixin   (lib/harvester_paving.py)   -- items on a path joining the plant patches (+1 heat instead of +7)
 #   HarvesterPlantingMixin (lib/harvester_planting.py) -- layout, seed demand, plant, harvest
 #   HarvesterCareMixin     (lib/harvester_care.py)     -- light/water/salt, salt request
-#   HarvesterMachinesMixin (lib/harvester_machines.py) -- field-machine kit orders, deploy on reserved cells
+#   HarvesterMachinesMixin (lib/harvester_machines.py) -- field-machine kit orders, deploy on reserved cells, remove strays
 #   HarvesterController    (lib/harvesting.py)         -- movement, heat, loose-item sweep
 #
 # Each step re-reads cells() and does the single most urgent task, cheapest
 # route (heat) first within a priority:
+#   0. full layout: remove a field machine the layout doesn't reserve
+#      (left over from an older layout): it may sit on a layout cell, light
+#      a shade crop or burn salt
 #   1. full layout, build phase (a reserved machine is still missing): build
 #      in field_layout.work_order() (garden row by row in a snake, then the
 #      fill chunk by chunk): deploy a machine kit (Grow Lamp / Sprinkler /
@@ -277,7 +280,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if not self._layout or curr_tick - self._layout_tick >= LAYOUT_RECHECK_TICKS:
             self._layout = self.load_layout(cells, rules)
             self._layout_tick = curr_tick
-            self.work_groups = field_layout.work_order(self._layout, self.reserved) if self.layout_mode == "full" else []
+            self.work_groups = field_layout.work_order(self._layout, self.reserved, self.field_fill()) if self.layout_mode == "full" else []
         layout = self._layout
         inactive = self.inactive_species(rules)
         active = self.active_layout(layout, rules, inactive)
@@ -292,6 +295,15 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
 
         # Something left in the held slot (e.g. after a restart) goes back to Inventory.
         self.store_held_if_any()
+
+        # 0. Full layout: remove a stray field machine (older layout).
+        strays = self.stray_machines()
+        if strays:
+            target = self.nearest(list(strays), cells)
+            self.log.debug(f"[{self.name}] {len(strays)} stray field machine(s) {strays}; nearest {target}.")
+            if self.move_to(target):
+                self.remove_here(strays[target])
+            return
 
         # 1. Full layout, build phase: build (deploy a machine whose kit is at
         #    home, or plant one of its own cells) in field_layout.work_order():

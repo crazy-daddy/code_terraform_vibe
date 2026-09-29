@@ -42,7 +42,9 @@
 # "cells", "mature", "open", "waiting_machines", "forage", "garden", "tick"}}
 # (one shared dict, stale entries pruned). "forage" = Forage in the output;
 # "garden" = the automator sits in the diversity garden (columns
-# 1..field_layout.GARDEN_COLS), read by storage.crop_automator_forage().
+# 1..field_layout.garden_cols(fill)), read by storage.crop_automator_forage().
+# An automator the full layout doesn't reserve (left over from an older
+# layout) queues no jobs; the Harvester removes it once its output is empty.
 
 from archive import archive
 import field_layout
@@ -278,9 +280,28 @@ class CropAutomatorController:
             swallowed("crop_automator.CropAutomatorController.output_forage: port.stacks", error)
             return 0
 
+    def empty_for_removal(self):
+        """
+        Stray (not in the layout): clears the job queue and ejects the input
+        (seeds, Fertilizer) to Inventory, so the Harvester can undeploy it
+        once the output's Forage has drained (eject() is self-only).
+        """
+        try:
+            if self.machine.queue_count():
+                res = self.machine.clear_queue()
+                self.log.print(f"[{self.name}] Not in the field layout: cleared the job queue -> {getattr(res, 'status', '?')}.")
+            port = self.machine.input
+            for stack in port.stacks():
+                res = port.eject("inventory", stack.id, stack.count)
+                self.log.print(f"[{self.name}] Not in the field layout: ejected {stack.count} {stack.id} to Inventory -> {getattr(res, 'status', '?')}.")
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.empty_for_removal: machine", error)
+
     def in_garden(self):
         _r, c = field_layout.sector_to_rc(self.sector) if self.sector else (None, None)
-        return c is not None and c <= field_layout.GARDEN_COLS
+        layout = archive.get(LAYOUT_KEY, {})
+        fill = layout.get("fill") if isinstance(layout, dict) else None
+        return c is not None and c <= field_layout.garden_cols(fill)
 
     # ----------------------------------------------------------------- step
 
@@ -296,13 +317,18 @@ class CropAutomatorController:
         if layout.get("mode") != "full" or not layout_cells:
             self._note_state("waiting for the full field layout (Harvester)")
             return
+        reserved = layout.get("reserved") or {}
+        if reserved.get(self.sector) != "crop_automator":
+            self._note_state("not in the field layout: no jobs, input emptied (the Harvester removes it)")
+            self.empty_for_removal()
+            return
         if self.is_shedded():
             self._note_state("shed by the Power Guard: no new jobs")
             return
 
         rules = field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
         deployed = self.deployed_machines()
-        automators = [s for s, k in deployed.items() if k == "crop_automator"] or [self.sector]
+        automators = [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"] or [self.sector]
         self.refresh_seed_demand_if_stale(curr_tick, layout, rules, automators)
         mine = self.owned_cells(layout_cells, automators)
         queued, committed_seeds, blocked_job = self.queued_jobs_info()

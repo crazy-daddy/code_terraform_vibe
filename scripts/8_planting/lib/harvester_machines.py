@@ -20,6 +20,17 @@
 #   3. deploy (full layout only): with a kit at home, drive to the cell,
 #      collect a loose item there if any, stage the kit into Inventory and
 #      deploy() it. The Harvester can drive over machines.
+#   4. remove strays (full layout only): a field machine on a cell the
+#      layout doesn't reserve for its kind (left over from an older layout)
+#      is left alone until it holds no items (undeploy() refuses stored
+#      items, and eject() is self-only): its own script ejects its input to
+#      Inventory (field_provider / crop_automator, stray branch; a stopped
+#      script is restarted via run_control.start() for that), and Forage in
+#      an automator's output drains through storage.take_item(). Re-checked
+#      every DEPLOY_FAIL_COOLDOWN_TICKS. Once empty, the Harvester drives
+#      there, stops its script (run_control.stop()) and undeploy()s it; the
+#      kit goes back to Inventory. No Crop Automator kit is bought while a
+#      stray one is still out.
 #
 # Deployed machines are read from outpost.harvesting_machines() (type and
 # position), falling back to Cell.status == "provider". A new machine has no
@@ -112,13 +123,19 @@ def _home():
 
 def deployed_machines():
     """{sector: kind} of the field machines on the home field, or None if unreadable."""
+    refs = deployed_machine_ids()
+    return None if refs is None else {s: kind for s, (kind, _id) in refs.items()}
+
+
+def deployed_machine_ids():
+    """{sector: (kind, machine id)} of the field machines on the home field, or None if unreadable."""
     try:
         home = _home()
         if home is None:
             return None
-        return {m.position: m.type_id for m in home.harvesting_machines()}
+        return {m.position: (m.type_id, m.id) for m in home.harvesting_machines()}
     except Exception as error:
-        swallowed("harvester_machines.deployed_machines: _home", error)
+        swallowed("harvester_machines.deployed_machine_ids: _home", error)
         return None
 
 
@@ -173,9 +190,13 @@ class HarvesterMachinesMixin:
         return out
 
     def deployed_automators(self):
-        """Sectors of the Crop Automators on the field."""
+        """
+        Sectors of the Crop Automators on the field that the full layout
+        reserves (one left over from an older layout does no jobs).
+        """
         deployed = self.step_machines() or {}
-        return [s for s, k in deployed.items() if k == "crop_automator"]
+        reserved = self._host.reserved or {}
+        return [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"]
 
     def automated_cells(self):
         """Sectors a deployed Crop Automator serves (its jobs, not the Harvester's)."""
@@ -207,7 +228,9 @@ class HarvesterMachinesMixin:
         set_upgrade_order(ORDER_REQUESTER, order)
         wanted = sum(1 for k in missing.values() if k == "crop_automator")
         have = self._host.stock_count(MACHINE_KITS["crop_automator"]) if wanted else 0
-        if wanted > have and have == 0 and self._host.layout_mode == "full":
+        # A stray automator's kit comes back on removal: reuse it before buying.
+        strays = "crop_automator" in self.stray_machines(ignore_cooldown=True).values()
+        if wanted > have and have == 0 and not strays and self._host.layout_mode == "full":
             self.buy_automator_kit(wanted)
         elif not wanted:
             cash.release(CASH_CONSUMER)
@@ -258,6 +281,89 @@ class HarvesterMachinesMixin:
                 continue
             out[sector] = kind
         return out
+
+    def stray_machines(self, ignore_cooldown=False):
+        """
+        {sector: kind} of deployed field machines the full layout doesn't
+        reserve for their kind, outside their removal cooldown unless
+        `ignore_cooldown`. Empty outside the full layout.
+        """
+        h = self._host
+        if h.layout_mode != "full":
+            return {}
+        deployed = self.step_machines() or {}
+        reserved = h.reserved or {}
+        now = _now_tick()
+        failed = {} if ignore_cooldown else self._deploy_failures()
+        strays = {s: k for s, k in deployed.items()
+                  if reserved.get(s) != k and now - failed.get(s, -DEPLOY_FAIL_COOLDOWN_TICKS) >= DEPLOY_FAIL_COOLDOWN_TICKS}
+        if strays and not ignore_cooldown:
+            ids = deployed_machine_ids() or {}
+            for s in list(strays):
+                machine_id = ids.get(s, (None, None))[1]
+                held_out, held_in = self.items_held(machine_id) if machine_id else (0, 0)
+                if held_out or held_in:
+                    # undeploy() refuses stored items, and eject() is self-only: the
+                    # machine's own script empties its input (field_provider /
+                    # crop_automator, stray branch); Forage drains through
+                    # storage.take_item(). A stopped script is restarted to do it.
+                    self.ensure_running(machine_id)
+                    h.log.debug(f"[{h.name}] Stray {strays[s]} at {s} still holds {held_out} output / {held_in} input; removal waits.")
+                    failed[s] = now
+                    del strays[s]
+        return strays
+
+    def items_held(self, machine_id):
+        """(output, input) item counts of a field machine (remote reads); 0 for a missing or unreadable port."""
+        machine = get_component(machine_id)
+        out = []
+        for name in ("output", "input"):
+            port = getattr(machine, name, None) if machine is not None else None
+            try:
+                out.append(int(port.count()) if port is not None else 0)
+            except Exception as error:
+                swallowed("harvester_machines.HarvesterMachinesMixin.items_held: port.count", error)
+                out.append(0)
+        return out[0], out[1]
+
+    def ensure_running(self, machine_id):
+        """Starts a stray machine's stopped script so it can empty itself (run_control)."""
+        h = self._host
+        run = get_component("run_control")
+        if run is None or run.is_running(machine_id):
+            return
+        res = run.start(machine_id)
+        h.log.debug(f"[{h.name}] run_control.start('{machine_id}') -> {getattr(res, 'status', '?')} (stray must empty itself).")
+
+    def remove_here(self, kind):
+        """Stops and undeploys the (emptied) stray field machine in the current cell."""
+        h = self._host
+        here = h.get_position()
+        machine_id = (deployed_machine_ids() or {}).get(here, (None, None))[1]
+        self.step_machine_map = None
+        if not machine_id:
+            h.log.debug(f"[{h.name}] No field machine at {here}; stray {kind} already gone.")
+            return False
+        held_out, held_in = self.items_held(machine_id)
+        if held_out or held_in:
+            h.log.debug(f"[{h.name}] Stray {kind} at {here} holds {held_out} output / {held_in} input again; removal waits.")
+            self.ensure_running(machine_id)
+            self._deploy_failures()[here] = _now_tick()
+            return False
+        run = get_component("run_control")
+        if run is not None and run.is_running(machine_id):
+            res = run.stop(machine_id)
+            h.log.debug(f"[{h.name}] run_control.stop('{machine_id}') -> {getattr(res, 'status', '?')}.")
+        h.store_held_if_any()
+        res = h.act("undeploy")
+        status = getattr(res, "status", "?")
+        if status == "ok":
+            h.log.print(f"[{h.name}] Removed stray {kind} at {here} (not in the layout); kit back to Inventory.")
+            h.last_action = f"undeploy {kind}@{here}"
+            return True
+        h.log.level("warn").print(f"[{h.name}] undeploy {kind} at {here} -> {status}: {getattr(res, 'message', '')}")
+        self._deploy_failures()[here] = _now_tick()
+        return False
 
     def deploy_here(self, kind):
         """Deploys kind's kit in the current cell (collects a loose item there first)."""

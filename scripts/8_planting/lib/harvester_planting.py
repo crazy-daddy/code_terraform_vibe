@@ -50,8 +50,8 @@ if TYPE_CHECKING:
 LAYOUT_KEY = "plant.layout"
 # Bump when field_layout changes what a full layout looks like: a stored full
 # layout from an older version is rebuilt once.
-# 4 = CROWNCAP_GARDEN (replaced the FULL_LAYOUT garden + FILL_KEEP C7).
-LAYOUT_VERSION = 4
+# 5 = hand-cared CROWNCAP_GARDEN in columns 1-4, no garden machines.
+LAYOUT_VERSION = 5
 # Same for the starter layout: a stored starter with an older
 # "starter_version" is rebuilt once. 2 = keepers + Crowncap (STARTER_KEEP).
 STARTER_VERSION = 2

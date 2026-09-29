@@ -440,7 +440,9 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 | `"target_moving"` | transient | The destination vehicle must stop before cargo can be handed off. |
 | `"out_of_range"` | rejection | The vehicles are outside cargo handoff range. |
 
-##### `.eject(destination: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
+##### `.eject(destination: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult` *(self only)*
+
+Only the machine's own script can call it; a remote call raises "Cannot call input.eject() ... remotely, hardware methods only work from the machine's own script (self)". Reads such as `count()`/`stacks()` work remotely.
 
 Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `"inventory"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard any, subset, or exact selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 

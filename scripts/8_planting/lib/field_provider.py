@@ -84,16 +84,38 @@ class FieldProviderController:
 
     # --------------------------------------------------------------- demand
 
+    def is_stray(self, layout=None):
+        """True when the full layout doesn't reserve this machine's cell for its kind."""
+        layout = archive.get(LAYOUT_KEY, {}) if layout is None else layout
+        if not isinstance(layout, dict) or layout.get("mode") != "full":
+            return False
+        return (layout.get("reserved") or {}).get(self.sector()) != self.kind
+
+    def empty_input(self):
+        """Stray: ejects the input buffer (Dispenser salt) to Inventory, so the Harvester can undeploy it (eject() is self-only)."""
+        port = getattr(self.machine, "input", None)
+        if not port:
+            return
+        try:
+            for stack in port.stacks():
+                res = port.eject("inventory", stack.id, stack.count)
+                self.log.print(f"[{self.name}] Not in the field layout: ejected {stack.count} {stack.id} to Inventory -> {getattr(res, 'status', '?')}.")
+        except Exception as error:
+            swallowed("field_provider.FieldProviderController.empty_input: port.eject", error)
+
     def served_crops(self):
         """
         [(sector, species)] of layout crops beside this machine that need its
         service, or None when there is no stored layout yet (then the machine
-        just runs).
+        just runs). [] for a machine the full layout doesn't reserve (left
+        over from an older layout; the Harvester removes it).
         """
         layout = archive.get(LAYOUT_KEY, {})
         cells = layout.get("cells") if isinstance(layout, dict) else None
         if not isinstance(cells, dict) or not cells:
             return None
+        if self.is_stray(layout):
+            return []
         rules = field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
         out = []
         for n in field_layout.neighbours(self.sector()):
@@ -210,6 +232,8 @@ class FieldProviderController:
             self.ensure_water(curr_tick)
         elif needed and self.kind == "dispenser":
             self.ensure_salt()
+        elif self.is_stray():
+            self.empty_input()
 
         enabled = needed and not shedded
         self.set_enabled(enabled)
