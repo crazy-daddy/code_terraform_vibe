@@ -3,20 +3,25 @@
 # The operator queues a new Pioneer on the COMMISSION card
 # (control_panel/fleet_commission_panel.py); lib/fleet_commission.py, run by the
 # headless automation_panel.py, buys the chassis and every part of the role's
-# preset, deploys the chassis and waits for a script on it. A freshly deployed
+# preset, deploys the chassis at the home outpost (where the parts are) and
+# waits for a script on it. A freshly deployed
 # chassis is bare, and mount()/install() are self-only (docs/components/pioneer.md),
 # so the Pioneer's own script fits the parts: PioneerFittingMixin runs at the
 # top of PioneerController.run(), before detect_role() -- a bare chassis would
 # otherwise be detected as a hauler with no battery.
 #
-# One archive dict, fleet.commission (CLAUDE.md rule 7):
-#   {"jobs": [job, ...],               # queue, head is worked on
+# One archive dict, fleet.commission (CLAUDE.md rule 7), shared with the
+# drone jobs (lib/drone_commission.py):
+#   {"jobs": [job, ...],               # queue; one pioneer and one drone job worked at a time
 #    "lineage": {vehicle_id: {...}},   # commissioned Pioneers not fitted yet
-#    "target_outpost": id | None,      # COMMISSION card's outpost picker
+#    "target_home": id | None,         # card's HOME_BASE picker for new Pioneers
+#    "drone_outpost": id | None,       # card's outpost picker for new drones
 #    "status": str}                    # coordinator's one-line status
-# job     = {"id", "role", "outpost", "state", "spec", "known", "new_id", "reason"}
-# lineage = {"role", "job", "spec", "fitted", "missing": {item_id: n}}
+# job     = {"id", "kind": "pioneer" | "drone", "role", "state", "spec", "known", "new_id", "reason",
+#            "home_base" (pioneer: HOME_BASE, None = home), "outpost" (drone: deploy outpost, None = home)}
+# lineage = {"role", "job", "spec", "home_base", "fitted", "missing": {item_id: n}}
 # spec    = {"modules": [item_id, ...] (mount order), "battery_fill", "bin_fill"}
+# A drone's lineage lives in fleet.upgrade instead (lib/drone_upgrade.py).
 
 from archive import archive
 from vehicle_upgrade import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, _BAY_COUNTS

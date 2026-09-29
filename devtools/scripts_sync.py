@@ -260,10 +260,11 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
     `plant_recipes` is the number of discovered seed recipes
     (`state.planet.plants.discoveredRecipes`, the Flora journal), used by the
     `plant_recipes` criterion (8_planting unlocks once all 15 are known).
-    Also carries two fleet-upgrade handoff fields read from the same parse
-    (see upgrade_fill_for()): `machine_types` ({machine id: typeId}) and
-    `fleet_upgrade` (the `fleet.upgrade` Data Archive entry, stored in the
-    save under `state.notebook.entries[key].value`, or None).
+    Also carries three fleet handoff fields read from the same parse
+    (see upgrade_fill_for()): `machine_types` ({machine id: typeId}),
+    `fleet_upgrade` and `fleet_commission` (the `fleet.upgrade` /
+    `fleet.commission` Data Archive entries, stored in the save under
+    `state.notebook.entries[key].value`, or None).
     Returns None if the save's state file can't be found or parsed - callers
     treat that as "nothing unlocked", i.e. tier 0.
     """
@@ -291,6 +292,7 @@ def read_save_state(save_dir: Path) -> Optional[dict]:
             },
             "plant_recipes": len(state.get("planet", {}).get("plants", {}).get("discoveredRecipes", []) or []),
             "fleet_upgrade": (state.get("notebook", {}).get("entries", {}).get(FLEET_UPGRADE_KEY) or {}).get("value"),
+            "fleet_commission": (state.get("notebook", {}).get("entries", {}).get(FLEET_COMMISSION_KEY) or {}).get("value"),
         }
     except (OSError, ValueError, KeyError):
         return None
@@ -869,6 +871,14 @@ def save_params_cache(cache: dict) -> None:
 # TODO.md.
 FLEET_UPGRADE_KEY = "fleet.upgrade"
 UPGRADE_SLOT_KEY = "drone"  # match_key() of the only slots a drone swap creates
+# COMMISSION card handoff (scripts/4_controlpanel/lib/fleet_commission.py):
+# a commissioned drone gets a `fleet.upgrade` lineage entry with "job" (no
+# "from") whose params carry HOME_DEPOT; a commissioned Pioneer gets
+# `fleet.commission` lineage[new_id]["home_base"] (None = home). Both are
+# written in the same pass as the deploy, so they reach the save together
+# with the new machine.
+FLEET_COMMISSION_KEY = "fleet.commission"
+COMMISSION_SLOT_KEY = "pioneer"  # match_key() of a commissioned Pioneer's slot
 UPGRADE_PENDING_STATES = ("announced", "swapping")
 
 # Slots upgrade_fill_for() said to hold (save not caught up yet). `watch`
@@ -880,16 +890,43 @@ HELD_SLOTS: set = set()
 ROLELESS_WARNED: dict = {}
 
 
-def upgrade_fill_for(save_dir: Path, stem: str):
-    """How sync_file() should treat an empty slot with respect to a fleet upgrade.
+def commission_fill_for(state: dict, stem: str):
+    """upgrade_fill_for() for a Pioneer slot: ("inherit", source, {"HOME_BASE"})
+    when the COMMISSION card deployed it, ("hold", reason, None) while a
+    commissioned Pioneer is being deployed and the save predates this slot's
+    machine, else ("normal", None, None)."""
+    commission = state.get("fleet_commission") or {}
+    if not isinstance(commission, dict):
+        return ("normal", None, None)
+    lineage = commission.get("lineage") or {}
+    entry = lineage.get(stem) if isinstance(lineage, dict) else None
+    if isinstance(entry, dict):
+        home = entry.get("home_base")
+        return ("inherit", "commission %s" % entry.get("job"), {"HOME_BASE": home if home else "None"})
+    if (state.get("machine_types") or {}).get(stem) is None:
+        deploying = [
+            j for j in commission.get("jobs") or []
+            if isinstance(j, dict) and j.get("kind", "pioneer") == "pioneer" and j.get("state") == "deploying"
+        ]
+        if deploying:
+            return ("hold", "machine not in save yet, Pioneer %s deploying (waiting for the next autosave)" % deploying[0].get("id"), None)
+    return ("normal", None, None)
 
-    Returns ("inherit", old_id, params) when the slot is a replacement drone
+
+def upgrade_fill_for(save_dir: Path, stem: str):
+    """How sync_file() should treat an empty slot with respect to a fleet
+    upgrade or a COMMISSION card deploy.
+
+    Returns ("inherit", source, params) when the slot is a replacement drone
     (lineage names it, or it is a new drone slot of the kind the one pending
-    announced swap deploys), ("hold", reason, None) when the save file is too
-    old to tell yet, else ("normal", None, None)."""
+    announced swap deploys), a commissioned drone (lineage with "job") or a
+    commissioned Pioneer (commission_fill_for()), ("hold", reason, None) when
+    the save file is too old to tell yet, else ("normal", None, None)."""
     state = read_save_state(save_dir)
     if not state:
         return ("normal", None, None)
+    if match_key(stem) == COMMISSION_SLOT_KEY:
+        return commission_fill_for(state, stem)
     upgrade = state.get("fleet_upgrade") or {}
     if not isinstance(upgrade, dict):
         return ("normal", None, None)
@@ -897,6 +934,8 @@ def upgrade_fill_for(save_dir: Path, stem: str):
     entry = lineage.get(stem) if isinstance(lineage, dict) else None
     if isinstance(entry, dict) and entry.get("from"):
         return ("inherit", entry["from"], entry.get("params") or {})
+    if isinstance(entry, dict) and entry.get("job"):
+        return ("inherit", "commission %s" % entry["job"], entry.get("params") or {})
     if match_key(stem) != UPGRADE_SLOT_KEY:
         return ("normal", None, None)
 
