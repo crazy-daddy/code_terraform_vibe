@@ -1000,10 +1000,9 @@ class BioLabController:
 
         # Stage 1: Analyze
         if specimen.stage == "collected":
-            self.log.print(f"[{self.name}] Analyzing specimen...")
+            self.log.start(f"[{self.name}] Analyzing specimen...")
             a_res = self.machine.analyze()
             if a_res.status == "ok":
-                self.log.print(f"[{self.name}] Analyzed: {a_res.info.name} ({a_res.info.fragment_id}). Recipe: {a_res.info.required_recipe}")
                 try:
                     def update_recipes(curr):
                         d = dict(curr or {})
@@ -1016,6 +1015,9 @@ class BioLabController:
                     archive.transaction("bio.fragment_recipes", {}, update_recipes)
                 except Exception as error:
                     swallowed("bio.BioLabController.step: archive.transaction", error)
+                self.log.end(f"[{self.name}] Analyzed: {a_res.info.name} ({a_res.info.fragment_id}). Recipe: {a_res.info.required_recipe}")
+            else:
+                self.log.end(f"[{self.name}] analyze() -> {a_res.status}")
             flush_all()
             sleep(0.5)
             return
@@ -1116,25 +1118,31 @@ class BioLabController:
                     break
 
             if not needs_loading:
-                self.log.print(f"[{self.name}] Extracting sample for {specimen.fragment_id}...")
-                ext_res = self.machine.extract()
-                if ext_res.status == "ok":
-                    sample_id = specimen.fragment_id
-                    self.log.print(f"[{self.name}] Extracted sample: {sample_id}!")
-                    if not processor_idle:
-                        self._wait_for_processor()
-                        return
-                    if not self.drain_output():
-                        return
+                self.log.start(f"[{self.name}] Extracting sample for {specimen.fragment_id}...")
+                outcome = self._extract_specimen(specimen, processor_idle)
+                self.log.end(f"[{self.name}] Extract {outcome}")
 
-                    # Notify Exchange over Signal Bus for immediate delivery
-                    if self.comms:
-                        try:
-                            self.comms.send("sample_ready", {"sample_id": sample_id})
-                        except Exception as error:
-                            swallowed("bio.BioLabController.step: self.comms.send", error)
-                else:
-                    self.log.debug(f"[{self.name}] extract() -> {ext_res.status}: {getattr(ext_res, 'message', '')}")
+    def _extract_specimen(self, specimen, processor_idle):
+        """Runs extract() on the chamber specimen and hands the sample over; returns an outcome string for the enclosing log block."""
+        ext_res = self.machine.extract()
+        if ext_res.status != "ok":
+            self.log.debug(f"[{self.name}] extract() -> {ext_res.status}: {getattr(ext_res, 'message', '')}")
+            return f"failed ({ext_res.status})"
+        sample_id = specimen.fragment_id
+        self.log.print(f"[{self.name}] Extracted sample: {sample_id}!")
+        if not processor_idle:
+            self._wait_for_processor()
+            return f"done: {sample_id} (waiting on processor)"
+        if not self.drain_output():
+            return f"done: {sample_id} (output not drained)"
+
+        # Notify Exchange over Signal Bus for immediate delivery
+        if self.comms:
+            try:
+                self.comms.send("sample_ready", {"sample_id": sample_id})
+            except Exception as error:
+                swallowed("bio.BioLabController.step: self.comms.send", error)
+        return f"done: {sample_id}"
 
     def run(self):
         self.log.print(f"Bio Lab ({self.name}) online via Shared Library & Signal Bus.")
@@ -1227,6 +1235,7 @@ class BioCollectorController:
                 self.pending_analysis.discard(self.coord_key(loc.coords))
 
         target_coords = None
+        harvest_label = ""
 
         # Priority 1: Collect what is actively needed by local orders --
         # prefer the current/focus order's own fragments first, falling back
@@ -1246,7 +1255,7 @@ class BioCollectorController:
                         continue
                     loc = location_by_fragment[fragment_id]
                     target_coords = loc.coords
-                    self.log.print(f"[{self.name}] Harvesting needed specimen ({tier_label}): {fragment_id} at {loc.coords}")
+                    harvest_label = f"Harvesting needed specimen ({tier_label}): {fragment_id} at {loc.coords}"
                     break
                 if target_coords is not None:
                     break
@@ -1263,18 +1272,22 @@ class BioCollectorController:
                     if not loc.cataloged and self.coord_key(loc.coords) not in self.pending_analysis:
                         target_coords = loc.coords
                         self.pending_analysis.add(self.coord_key(loc.coords))
-                        self.log.print(f"[{self.name}] Harvesting uncataloged fragment at {loc.coords} (discovery)")
+                        harvest_label = f"Harvesting uncataloged fragment at {loc.coords} (discovery)"
                         break
             else:
                 self.log.debug(f"[{self.name}] Skipping uncataloged discovery -- lab already holds a collected specimen awaiting analysis.")
 
         if target_coords:
+            self.log.start(f"[{self.name}] {harvest_label}")
             res = self.machine.collect(target_coords)
             if res.status != "ok":
                 self.log.debug(f"[{self.name}] collect({target_coords}) -> {res.status}: {getattr(res, 'message', '')} -- releasing pending_analysis claim.")
                 self.pending_analysis.discard(self.coord_key(target_coords))
+                self.log.end(f"[{self.name}] Harvest failed ({res.status})")
                 flush_all()
                 sleep(1.0)
+            else:
+                self.log.end(f"[{self.name}] Harvest started")
         else:
             # Idle cleanly
             self.log.trace(f"[{self.name}] No harvest target this cycle ({len(locations)} location(s) scanned) -- idling.")

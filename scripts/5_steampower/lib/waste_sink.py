@@ -133,9 +133,14 @@ class WasteSinkController:
             self.log.trace(f"[{self.name}] input room {room} < {FEED_MIN_ROOM_UNITS}; waiting.")
             return
         depots = logistics_requests.local_depots(self._outpost())
-        for item_id, depot_surplus, stored_surplus in self.life_form_surplus(depots):
+        surplus = self.life_form_surplus(depots)
+        if not surplus:
+            return
+        fed = 0
+        self.log.start(f"[{self.name}] Feeding surplus ({len(surplus)} life form(s), room {room})")
+        for item_id, depot_surplus, stored_surplus in surplus:
             if room < FEED_MIN_ROOM_UNITS:
-                return
+                break
             moved = 0
             for depot_id, units in depot_surplus.items():
                 want = min(room - moved, units)
@@ -147,8 +152,10 @@ class WasteSinkController:
                 moved += take_item(self.processor.input, item_id, want, outpost=self._outpost())
             if moved > 0:
                 room -= moved
+                fed += moved
                 self._destroyed[item_id] = self._destroyed.get(item_id, 0) + moved
                 self.log.print(f"[{self.name}] Staged {moved}x surplus '{item_id}' for destruction.")
+        self.log.end(f"[{self.name}] Staged {fed} unit(s) for destruction")
 
     def publish_telemetry(self):
         try:

@@ -414,10 +414,11 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                 # conserve mode nothing to spend but the slowest possible crawl home).
                 curr_wh, _, _ = self.get_battery()
                 if curr_wh <= self.energy_needed_to_return_comfortably():
-                    self.log.print(f"[{self.name}] Return reserve reached in field; returning to nearest station to recharge.")
+                    self.log.start(f"[{self.name}] Return reserve reached in field; returning to nearest station to recharge.")
                     nearest_st, _ = self.get_nearest_charging_station()
                     self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                     self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
+                    self.log.end(f"[{self.name}] Field recharge done.")
                     continue
 
                 # Query paused and pending constructions
@@ -503,17 +504,18 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         break
                     elif self.distance_to_home() > 3.0:
                         # Cannot reach safely from current field position; recharge at nearest station
-                        self.log.level("warn").print(f"[{self.name}] Insufficient energy to reach paused job safely; recharging at nearest station.")
+                        self.log.level("warn").start(f"[{self.name}] Insufficient energy to reach paused job safely; recharging at nearest station.")
                         nearest_st, _ = self.get_nearest_charging_station()
                         self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                         self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
+                        self.log.end(f"[{self.name}] Recharge before paused job done.")
                         break
 
                 if active_job:
                     job_id = getattr(active_job, "id", None)
                     coords = self.extract_coords(getattr(active_job, "position", None))
                     if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
-                        self.log.print(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
+                        self.log.debug(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
                         success = self.execute_construction(job_id, coords, kind=getattr(active_job, "kind", None))
                         if not success:
                             failed_jobs.add(job_id)
@@ -564,7 +566,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         job_id = getattr(candidate, "id", getattr(candidate, "blueprint_id", None))
                         coords = self.extract_coords(getattr(candidate, "position", None))
                         if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
-                            self.log.print(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
+                            self.log.debug(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
                             success = self.execute_construction(job_id, coords, kind=getattr(candidate, "kind", None))
                             if not success:
                                 failed_jobs.add(job_id)
@@ -580,15 +582,17 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         # We have cargo matching pending jobs, but cannot reach any right now
                         nearest_st, _ = self.get_nearest_charging_station()
                         if self.distance_between(current_pos, nearest_st) > 3.0:
-                            self.log.level("warn").print(f"[{self.name}] Insufficient energy to reach next construction site; recharging at nearest station.")
+                            self.log.level("warn").start(f"[{self.name}] Insufficient energy to reach next construction site; recharging at nearest station.")
                             self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                             self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
+                            self.log.end(f"[{self.name}] Recharge before next site done.")
                             continue
                         else:
                             curr_wh, cap_wh, lvl = self.get_battery()
                             if lvl < 0.98:
-                                self.log.print(f"[{self.name}] At station with materials but need charge ({lvl*100:.0f}%); recharging to full.")
+                                self.log.start(f"[{self.name}] At station with materials but need charge ({lvl*100:.0f}%); recharging to full.")
                                 self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
+                                self.log.end(f"[{self.name}] Recharged with materials aboard.")
                                 continue
                             else:
                                 # candidate selection above already gated on minimum_wh_per_meter()
@@ -701,8 +705,10 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
 
                     # Check if we already have the materials loaded
                     if self.cargo_count(required_item) < required_count:
-                        self.log.print(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
-                        if not self.load_construction_materials(target_job, target_count=batch_needed):
+                        self.log.start(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
+                        loaded = self.load_construction_materials(target_job, target_count=batch_needed)
+                        self.log.end(f"[{self.name}] Stocking {'done' if loaded else 'failed'}.")
+                        if not loaded:
                             # required_item genuinely isn't obtainable right now (e.g. Inventory
                             # empty and nothing produces it yet) -- defer this job rather than
                             # retrying it forever and starving every other pending job behind it

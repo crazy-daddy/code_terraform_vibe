@@ -37,7 +37,7 @@ class VehicleSurveyMixin:
             log.level("error").print(f"[{self._host.name}] Error: No SonarModule mounted!")
             return []
 
-        log.print(f"[{self._host.name}] Activating Sonar sweep...")
+        log.start(f"[{self._host.name}] Sonar sweep")
         log.debug(f"[{self._host.name}] scan_and_survey(): current_target_key={self.current_target_key!r}")
         self._host.publish_telemetry("SCANNING")
         res = self._host.vehicle.sonar.scan()
@@ -50,6 +50,7 @@ class VehicleSurveyMixin:
         )
         if res.status not in ["ok", "too_hard", "tier_too_low", "research_required", "wrong_scanner"]:
             log.level("warn").print(f"[{self._host.name}] Sonar scan status: {res.status} - {res.message}")
+            log.end(f"[{self._host.name}] Sonar sweep failed: {res.status}")
             return []
 
         # A wide/deep sonar's range routinely covers several "?" contacts at
@@ -102,6 +103,7 @@ class VehicleSurveyMixin:
             flush_all()
             sleep(0.5)
 
+        log.end(f"[{self._host.name}] Sonar sweep done: {len(sites)} site(s) in range, {len(surveyed_sites)} returned")
         log.trace(f"[{self._host.name}] scan_and_survey() exit: {len(sites)} candidate site(s) in range, {len(surveyed_sites)} returned.")
         return surveyed_sites
 
@@ -347,33 +349,40 @@ class VehicleSurveyMixin:
                 target_key = chosen["key"]
                 target_label = chosen["label"]
 
-            self._host.claim_target(target_key, {"coords": target, "name": target_key, "type": "poi"})
-            self.current_target_key = target_key
-            self.current_target = {"coords": target, "name": target_key, "type": "poi"}
-            self._host.save_mission("poi_survey", self.current_target)
-            self._host.set_intent(f"surveying POI_{target[0]}_{target[1]}")
-            self._host.publish_telemetry("SURVEY_POI", f"POI_{target[0]}_{target[1]}")
-            self._host.log.print(f"[{self._host.name}] Surveying known {target_label} at {target} ({self._host.distance_between(current_pos, target):.1f} m leg).")
-            if not self._host.drive_to(target[0], target[1]):
-                self._host.log.level("warn").print(f"[{self._host.name}] Could not safely reach POI at {target}; ending survey pass.")
-                self._host.release_target_claim(target_key)
-                break
-            self._host.vehicle.nav.brake()
-            scan_reserve = self._host.SONAR_WH_BUDGET * 4 * self._host.SAFETY_MARGIN_MULTIPLIER
-            # Comfortable reserve, not the bare floor -- keeps the return leg fast.
-            if self._host.get_battery()[0] <= self._host.energy_needed_to_return_comfortably() + scan_reserve:
-                self._host.log.level("warn").print(f"[{self._host.name}] Insufficient energy to scan POI at {target}; returning home.")
-                self._host.release_target_claim(target_key)
-                break
-            sites = self.scan_and_survey()
-            self._host.release_target_claim(target_key)
-            self.save_survey_waypoint(completed, target, sites)
-            completed += 1
-            if self._host.get_battery()[0] < self._host.energy_needed_to_return_comfortably():
+            self._host.log.start(f"[{self._host.name}] Surveying known {target_label} at {target} ({self._host.distance_between(current_pos, target):.1f} m leg)")
+            scanned, stop = self._survey_poi_leg(target_key, target, completed)
+            self._host.log.end(f"[{self._host.name}] {'POI scan complete' if scanned else 'POI leg aborted'}")
+            if scanned:
+                completed += 1
+            if stop:
                 break
         if completed:
             self._host.log.print(f"[{self._host.name}] Completed {completed} POI scans on one outward route; returning home.")
         return completed
+
+    def _survey_poi_leg(self, target_key, target, completed):
+        """Drives to one POI and scans it; returns (scanned, stop_pass)."""
+        self._host.claim_target(target_key, {"coords": target, "name": target_key, "type": "poi"})
+        self.current_target_key = target_key
+        self.current_target = {"coords": target, "name": target_key, "type": "poi"}
+        self._host.save_mission("poi_survey", self.current_target)
+        self._host.set_intent(f"surveying POI_{target[0]}_{target[1]}")
+        self._host.publish_telemetry("SURVEY_POI", f"POI_{target[0]}_{target[1]}")
+        if not self._host.drive_to(target[0], target[1]):
+            self._host.log.level("warn").print(f"[{self._host.name}] Could not safely reach POI at {target}; ending survey pass.")
+            self._host.release_target_claim(target_key)
+            return False, True
+        self._host.vehicle.nav.brake()
+        scan_reserve = self._host.SONAR_WH_BUDGET * 4 * self._host.SAFETY_MARGIN_MULTIPLIER
+        # Comfortable reserve, not the bare floor -- keeps the return leg fast.
+        if self._host.get_battery()[0] <= self._host.energy_needed_to_return_comfortably() + scan_reserve:
+            self._host.log.level("warn").print(f"[{self._host.name}] Insufficient energy to scan POI at {target}; returning home.")
+            self._host.release_target_claim(target_key)
+            return False, True
+        sites = self.scan_and_survey()
+        self._host.release_target_claim(target_key)
+        self.save_survey_waypoint(completed, target, sites)
+        return True, self._host.get_battery()[0] < self._host.energy_needed_to_return_comfortably()
 
     def run_survey_loop(self, max_points=160, spiral_fallback=False):
         """Autonomous survey loop: scans known POIs first, optionally falls back to spiral."""
@@ -429,6 +438,7 @@ class VehicleSurveyMixin:
                 progress = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
                 start_index = progress.get("next_index", 0)
                 completed = 0
+                self._host.log.start(f"[{self._host.name}] Spiral survey pass from index {start_index}")
                 for point_index, target_x, target_y in self.survey_spiral_points(
                     start_index=start_index,
                     max_points=max_points,
@@ -491,8 +501,8 @@ class VehicleSurveyMixin:
                 spiral_data = archive.get(SURVEY_SPIRAL_KEY, {}) or {}
                 next_index = spiral_data.get("next_index", start_index)
                 self._host.publish_telemetry("SURVEY_COMPLETE", f"{completed} waypoints; next {next_index}")
-                self._host.log.print(f"[{self._host.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}. Recharging before continuing.")
                 self._host.recharge_at_station(target_level=1.0)
+                self._host.log.end(f"[{self._host.name}] Survey pass complete ({completed} waypoints). Next spiral index: {next_index}")
                 flush_all()
                 sleep(5.0)
             except Exception as e:

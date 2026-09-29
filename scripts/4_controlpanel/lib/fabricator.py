@@ -625,6 +625,7 @@ class FabricatorController:
             # completion (never interrupted mid-craft), it just isn't fed
             # more, so draw winds down to 0 W on its own instead of an
             # abrupt breaker cut.
+            self.log.debug(f"[{self.name}] step: shedded by Power Guard, not starting or topping up production")
             return
 
         active_recipe, active_remaining = get_fabricator_active_recipe(self.machine)
@@ -633,6 +634,7 @@ class FabricatorController:
         # its target is met, cut the feed and switch even while running.
         winding_down = self.is_fluid_only(active_recipe) and active_remaining <= 0
         if winding_down:
+            self.log.debug(f"[{self.name}] step: fluid-only recipe '{getattr(active_recipe, 'id', '?')}' target met, cutting the fluid feed")
             self.stop_fluid_feed(active_recipe)
         else:
             self.ensure_fluid_connections(active_recipe)
@@ -662,6 +664,8 @@ class FabricatorController:
                     self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to build {output_item} for {reason}.")
                 else:
                     self.log.debug(f"[{self.name}] set_recipe({recipe_id}): {result.status} - retrying next poll")
+            else:
+                self.log.debug(f"[{self.name}] step: '{recipe_id}' preferred over running '{prior_recipe_id}', switching once the current craft finishes")
             return
 
         if self.machine.get_stockpile_used() < self.machine.get_stockpile_capacity():

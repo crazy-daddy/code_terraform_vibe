@@ -338,11 +338,14 @@ class SmelterController:
         # available. Recover its staged input before clearing the stale state.
         if current_recipe and current_recipe not in unlocked_recipes:
             if not self.smelter.is_running():
+                self.log.start(f"[{self.name}] Clearing locked recipe '{current_recipe}'")
                 self.recover_input()
                 clear_res = self.smelter.clear_recipe()
                 if clear_res.status == "ok":
                     self.release_recipe(current_recipe)
-                    self.log.print(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
+                    self.log.end(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
+                else:
+                    self.log.end(f"[{self.name}] Locked recipe '{current_recipe}' not cleared ({clear_res.status}).")
                 # Breaker cycling disabled: power_draw only applies while a
                 # recipe is running (see docs), so idle draw is already 0 W.
                 # self.power_down_if_idle()
