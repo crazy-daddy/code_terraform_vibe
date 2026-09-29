@@ -9,8 +9,10 @@ Three levels, same tree formatting:
   visible overview (major blocks, outcomes) a player can skim at a glance.
 - `debug()` logs the deeper "why" (candidates considered, computed
   thresholds, per-item reasoning) at **debug** level, hidden from the ALL
-  view unless the player opts into debug output. Cheap enough to leave on
-  everywhere.
+  view unless the player opts into debug output. Every console call costs
+  0.1 s of simulation time whether or not the line is displayed
+  (docs/BENCHMARK.md), so consecutive debug/trace lines are buffered and
+  written as one multi-line message; see "Buffering" below.
 - `trace()` is for genuinely high-volume noise (method entry/exit, per-item
   loop detail) — a true no-op (no `console` call, no disk write) unless the
   caller's `module` name is listed as `"verbose"` in the `console.log_levels`
@@ -24,6 +26,21 @@ Three levels, same tree formatting:
   badge shown in the normal ALL view, which would defeat the point of
   gating this as opt-in output.
 
+Buffering: debug lines (and trace lines that pass the gate) collect in one
+module-level buffer shared by every TreeConsole in the script, so log order
+is kept across modules. The buffer is written out as a single
+`console.print` when
+- a line at another level, channel or color is logged (info, warn and error
+  print immediately, after flushing pending debug lines),
+- the outermost `start()`/`end()` block closes,
+- the next line would exceed the size cap (half the interpreter's string
+  limit, at most `MAX_BUFFER_CHARS`), or
+- `flush()` / `flush_all()` is called.
+Lines still buffered when a script sleeps or crashes are not shown until the
+next flush, so run loops call `log.flush()` before `sleep()`. `swallowed()`
+flushes before it prints. `buffered=False` on a TreeConsole prints its debug
+lines immediately.
+
 Construct one instance per controller in `__init__` (or once before a
 `run_*_loop()`'s `while True:`, never inside it) and store it as `self.log`/
 `log` -- constructing it reads the `console.log_levels` archive dict, so
@@ -33,13 +50,83 @@ re-constructing per call or per tick defeats the point. Name it `log`, not
 See docs/AI_CHEATSHEET.md #0a for the usage pattern.
 """
 
+import re
+
 from archive import archive
+import swallow
 
 _BRANCH = "┃   "  # "┃   "
 _START = "┏━ "  # "┏━ "
 _END = "┗━ "  # "┗━ "
 
 LOG_LEVELS_KEY = "console.log_levels"
+
+MAX_BUFFER_CHARS = 20000  # largest single console.print measured to render (docs/BENCHMARK.md)
+FALLBACK_BUFFER_CHARS = 4000
+_BUFFERED_LEVELS = ("debug",)
+_PROBE_CHARS = 200000  # above the highest Advanced Scripting string limit (100,000)
+
+# One buffer for every TreeConsole in the script. `key` is (level, channel, color) of the pending run.
+_BUFFER = {"console": None, "key": None, "lines": [], "chars": 0, "cap": 0}
+
+
+def _cap_from_error(message):
+    """Buffer cap from an OverflowError message ("string length 200,000 exceeds the current limit of
+    100,000."): half the limit, at most MAX_BUFFER_CHARS. FALLBACK_BUFFER_CHARS if it has no limit."""
+    numbers = re.findall("[0-9][0-9,]*", message)
+    if len(numbers) < 2:
+        return FALLBACK_BUFFER_CHARS
+    return min(int(numbers[1].replace(",", "")) // 2, MAX_BUFFER_CHARS)
+
+
+def _buffer_cap():
+    """Size cap for one buffered message, read once from the interpreter's string limit by building a
+    string larger than any Advanced Scripting setting allows."""
+    if _BUFFER["cap"] > 0:
+        return _BUFFER["cap"]
+    cap = MAX_BUFFER_CHARS
+    try:
+        len("x" * _PROBE_CHARS)
+    except OverflowError as error:
+        cap = _cap_from_error(str(error))
+    _BUFFER["cap"] = max(cap, 200)
+    return _BUFFER["cap"]
+
+
+def flush_all():
+    """Write the pending debug run as one console.print and empty the buffer."""
+    lines = _BUFFER["lines"]
+    if not lines:
+        return
+    level, channel, color = _BUFFER["key"]
+    console = _BUFFER["console"]
+    _BUFFER["lines"] = []
+    _BUFFER["key"] = None
+    _BUFFER["chars"] = 0
+    _BUFFER["console"] = None
+    console.print("\n".join(lines), level=level, channel=channel, color=color, timestamp=True)
+
+
+def _write(console, text, level, channel, color, buffered):
+    if not buffered or level not in _BUFFERED_LEVELS:
+        flush_all()
+        console.print(text, level=level, channel=channel, color=color, timestamp=True)
+        return
+    cap = _buffer_cap()
+    if len(text) > cap:
+        text = text[: cap - 1] + "…"
+    key = (level, channel, color)
+    if _BUFFER["lines"] and (_BUFFER["key"] != key or _BUFFER["console"] is not console):
+        flush_all()
+    if _BUFFER["chars"] + len(text) + 1 > cap:
+        flush_all()
+    _BUFFER["console"] = console
+    _BUFFER["key"] = key
+    _BUFFER["lines"].append(text)
+    _BUFFER["chars"] += len(text) + 1
+
+
+swallow.set_flush_hook(flush_all)
 
 
 class TreeConsole:
@@ -48,9 +135,11 @@ class TreeConsole:
         console: "Console | None" = None,
         default_level: str = "info",
         module: str = "",
+        buffered: bool = True,
     ) -> None:
         self.console = console if console is not None else get_component("console")
         self.default_level = default_level
+        self.buffered = buffered
         self._indent = 0
         self._pending_color = ""
         self._pending_level = ""
@@ -99,6 +188,12 @@ class TreeConsole:
         """Dedent and close the block opened by the matching `start()`."""
         self._indent = max(0, self._indent - 1)
         self.print(_END + msg, channel)
+        if self._indent == 0:
+            flush_all()
+
+    def flush(self) -> None:
+        """Write any buffered debug lines now (call before `sleep()` in run loops)."""
+        flush_all()
 
     def _emit(self, msg: str, channel: str) -> None:
         if self.console is None:
@@ -106,6 +201,6 @@ class TreeConsole:
         prefix = _BRANCH * self._indent
         level = self._pending_level or self.default_level
         color = self._pending_color
-        self.console.print(prefix + msg, level=level, channel=channel, color=color, timestamp=True)
+        _write(self.console, prefix + msg, level, channel, color, self.buffered)
         self._pending_color = ""
         self._pending_level = ""
