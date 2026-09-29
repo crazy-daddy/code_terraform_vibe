@@ -10,7 +10,7 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 - **Sensors Online**: Pressure Sensor (Repaired), Oxygen Sensor (Calibrated), Thermometer (Active).
 - **Core Generators**: Solar Tracker (`solar_1.py`), Battery buffer, Oxygen Generator (`o2gen_1.py`), Thermal Cap / Steam Turbine geothermal power (`lib/thermal_cap.py`, `lib/steam_turbine.py`).
 - **Milestones Reached**: First Contact, Contracts unlocked, Auto Feeders research unlocked.
-- **Current Focus**: Phase 8 — Planting
+- **Current Focus**: Phase 8 — Planting (next: Phase 9 — Wildlife, tier `9_wildlife`, planned)
 - **Operational Focus**: Demand-driven production (multi-smelter/multi-fabricator aware), inventory capacity protection, recipe-aware Rover/Pioneer missions, and the emerging multi-outpost mining network.
 - **Selected Work from Inspirations (other ppls code)**: Capability discovery, stale-aware coordination, vehicle recovery, production planning, survey persistence, and dashboard telemetry are selected for implementation from `TODO_inspirations.md`.
 
@@ -258,6 +258,36 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
   - [ ] Keep local tanks above feed thresholds and avoid overfilling Habitat inputs.
 - [ ] Accumulate shared **Insight** points and unlock creature trait nodes.
 - [ ] Upgrade Habitats to **Mk II** (350,000 capacity per species) to achieve full planetary biodiversity.
+
+---
+
+## 🦎 Phase 9: Wildlife automation (tier `9_wildlife`, plan only)
+Automates Phase 6 end to end as a new `scripts/9_wildlife/` tier (thin entrypoints in `bio/`, shared logic in `lib/`; **tier unlock = the first deployed Feed Maker**: `.criteria` `"buildings": {"feed_maker": 1}` in `devtools/scripts_sync.py`, the same mechanism `7_miningdrills` uses; the project's current-focus phase shifts to Phase 9 at that moment). Nothing here is built yet. Design rules: portable (auto-discover outposts/biomes/buildings), one shared archive dict per concern, demand published through the existing channels (`logistics.requests` for materials, `bio_orders` for fragments), every recovering `except` calls `swallowed()`, `TreeConsole` logging.
+- [ ] **Placement policy (home vs outposts).** One `lib/` module owns it; scripts stay thin.
+  - [ ] Home outpost keeps only the **current rearing targets** (species being revived or actively grown) in Habitats, plus the Feed Makers; home building slots are scarce (Plant Terraformers, Feed Makers, worked Habitats).
+  - [ ] Any established species that is **not a current target** is moved out with `rehouse()` to a Habitat at another outpost (destination capacity must fit the whole colony; `"insufficient_capacity"` moves nothing). Pick the destination by free building slots, fluid availability, and how few Habitats it already holds.
+  - [ ] Ordering: rehouse only when the destination Habitat is powered, has its feed/gas/liquid connections, and the colony is not mid-rearing. Restart-safe placement state in one archive dict `wildlife.placement` `{creature_id: outpost_id}`, pruned for removed Habitats.
+  - [ ] Define "current target" (archive `wildlife.targets`, operator-editable from the Control Panel) and when a target is demoted (reached the stage the operator asked for, or capped and Insight-farmed out).
+  - [ ] Home does not need the Habitat outposts stocked with Forage: only feed travels (see Feed below), so remote Habitats are requester-driven pulls like any other outpost stock.
+- [ ] **Feed is made at home.** Feed needs **Forage**, which is produced at home (Crop Automators / Harvester, §Phase 8), so Feed Makers stay at home.
+  - [ ] `lib/feed_maker.py` controller: `list_recipes()` (only unlocked recipes), pick the recipe by demand (below), stock `input` from Crop Automator Forage + local life forms with `storage.take_item()`, drain `output` to a local Warehouse, Mk II aware.
+  - [ ] Demand-driven: feed target per species = what its Habitats (home and remote) need, published as `logistics.requests` under a `feed_maker`/`habitat` requester, so haulers move feed to remote Habitats the same way as other stock. Do not overproduce when output/storage is full.
+  - [ ] Ingredient planning: recipes use cross-biome life forms; compute per-recipe ingredient deficits and publish them like other material demand; life-form retention rules (§2h/§2i) already keep stock on hand.
+  - [ ] Validate live: recipe ids/inputs from `list_recipes()`, `input.take()` of Forage and life forms, the Feed Maker's 200-unit shared stockpile and 50-unit output buffer.
+- [ ] **Bio Labs reactivated, at least one outpost per biome.** The fragment pipeline (Collector → Lab → processor → Exchange, `lib/bio.py` + per-biome modules) already exists; it is currently not running for wildlife.
+  - [ ] Reinstate (deploy and re-enable) one Collector + Lab (+ the biome processor) at one outpost in each of the five biomes; the outpost must actually be in that biome (`get_my_biome()` reads live), so this is auto-discovered, not hardcoded. Human approval still gates founding any new Outpost (CLAUDE.md rule 5); reuse existing outposts unless the building planner exists.
+  - [ ] Check which biome already has a usable outpost and list the biomes that would need a new one (operator decision, no auto-founding).
+  - [ ] Note the Bio Lab is shed **first** under brownout (`docs/cheatsheet/power_fluids.md` §1a); confirm the chosen outposts have power.
+  - [ ] Reagents at remote Labs are buyable pull requests (see the Pioneer HOME_BASE item above).
+- [ ] **Fragment demand from the Feed Maker.** The wildlife controller works out, for every target creature, which of its 5 fragments are not yet cataloged (`journal.cataloged_fragments()` / `cataloged_creatures()`, catalog needed before the feed recipe unlocks) and publishes that demand so each biome's Bio Collector/Lab reacts.
+  - [ ] Publish per-biome demand on the existing `bio_orders` broadcast shape (or an equivalent `wildlife` channel) with a `latest_info()` stale check; readers fall back to their local `exchange.orders()` view when the publisher is missing or stale.
+  - [ ] Extend `_bio_demand_totals()` so a demanded uncataloged fragment counts as "analysis-only" demand: analyze, catalog, then `discard()` without spending reagents unless a sample is also needed.
+  - [ ] Stage at least 2 samples of each creature to revive (Bio Orders and Exchange delivery keep samples out of Inventory, see Phase 6).
+  - [ ] Stop demanding a creature's fragments once its recipe is unlocked.
+- [ ] **Habitat controller** (`lib/habitat.py`): `set_revival_target()`, stage feed + rarity-scaled reagents, `revive()` and branch on `.status`, then per-stage gas/liquid regulation using the two-sided-band pattern from the Husbandry guide (`next_*` fields to prep upcoming fluids, `purge_reserve()` on overfill). Insight spending via `unlock_bonus()`. Fluid supply and tank routing follow Phase 6 (exotic prospecting) and `FluidInputRouter`.
+- [ ] **Telemetry and Control Panel card**: per-species stage, population, breeding rate, efficiency, current outpost, blocker; archive `wildlife.status`, bounded.
+- [ ] **Docs**: new cheatsheet section for the constants above and the `9_wildlife` module map entry in `docs/AI_CHEATSHEET.md`, updated in the same change as each constant.
+- [ ] **Open questions for later:** which biome outposts exist today; exact demotion rule for a target; confirm the Feed Maker's building type id for the `.criteria` key (check a save's `state.planet.outposts` buildings).
 
 ---
 
