@@ -82,6 +82,13 @@ class VehicleNavigationMixin:
         2. Heartbeat claim renewal.
         3. Stall / obstacle detection.
         """
+        self._host.log.start(f"[{self._host.name}] Drive leg to ({target_x:.1f}, {target_y:.1f})")
+        arrived = self._drive_leg(target_x, target_y, precision, timeout_ticks)
+        self._host.log.end(f"[{self._host.name}] Drive leg {'arrived' if arrived else 'aborted'}")
+        return arrived
+
+    def _drive_leg(self, target_x, target_y, precision, timeout_ticks):
+        """Body of drive_to(); returns True on arrival within precision."""
         entry_tick = self._host.get_current_tick()
         self._host.log.trace(f"[{self._host.name}] drive_to(target=({target_x:.1f}, {target_y:.1f}), precision={precision}, timeout_ticks={timeout_ticks}) called at tick {entry_tick}.")
 
@@ -303,19 +310,21 @@ class VehicleNavigationMixin:
         self._host.publish_telemetry("RETURNING_HOME")
         slot_x, slot_y = self._host.get_home_slot_coords()
         self.assigned_slot_coords = (slot_x, slot_y)
-        self._host.log.print(f"[{self._host.name}] Returning to base slot ({slot_x:.1f}, {slot_y:.1f})...")
+        self._host.log.start(f"[{self._host.name}] Returning to base slot ({slot_x:.1f}, {slot_y:.1f})")
         reached = self.drive_with_recharge(slot_x, slot_y, precision=1.0)
 
         if self._host.current_target_key:
             self._host.release_target_claim(self._host.current_target_key)
 
+        self._host.log.end(f"[{self._host.name}] {'Back at base slot' if reached else 'Return to base incomplete'}")
         return reached
 
     def return_to_nearest_station(self):
         """Drives to the nearest charging station in the network to recharge."""
         st_coords, st_info = self._host.get_nearest_charging_station()
         st_id = st_info.get("id", "charging_station")
-        self._host.log.print(f"[{self._host.name}] Heading to nearest charging station '{st_id}' at {st_coords}...")
+        self._host.log.start(f"[{self._host.name}] Heading to nearest charging station '{st_id}' at {st_coords}")
         self._host.publish_telemetry("RETURNING_TO_STATION")
         reached = self.drive_to(st_coords[0], st_coords[1], precision=1.0)
+        self._host.log.end(f"[{self._host.name}] {'Reached' if reached else 'Did not reach'} station '{st_id}'")
         return reached

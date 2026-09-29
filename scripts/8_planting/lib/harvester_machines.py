@@ -221,6 +221,13 @@ class HarvesterMachinesMixin:
         if not cash.can_spend(CASH_CONSUMER, price, planned=wanted * price, label=f"{wanted} Crop Automator(s)"):
             h.log.debug(f"[{h.name}] {wanted} Crop Automator(s) missing; {credits()} cr, cash manager holds {price} cr back, saving up.")
             return False
+        h.log.start(f"[{h.name}] Buying a Crop Automator kit ({price} cr)")
+        bought = self._buy_kit(kit, price, wanted)
+        h.log.end("Bought" if bought else "Not bought")
+        return bought
+
+    def _buy_kit(self, kit, price, wanted):
+        h = self._host
         try:
             shop = get_component("shop")
             res = shop.buy(kit, 1) if shop else None
@@ -263,6 +270,13 @@ class HarvesterMachinesMixin:
         """Deploys kind's kit in the current cell (collects a loose item there first)."""
         h = self._host
         here = h.get_position()
+        h.log.start(f"[{h.name}] Deploying {kind} at {here}")
+        deployed = self._deploy(kind, here)
+        h.log.end(f"Deployed {kind}" if deployed else f"Deploy of {kind} failed")
+        return deployed
+
+    def _deploy(self, kind, here):
+        h = self._host
         kit = MACHINE_KITS[kind]
         if getattr(h.harvester.cell(here), "status", "") == "item":
             h.collect_at_current()

@@ -183,6 +183,7 @@ class PowerGridManager:
 
     def handle_sunset(self, current_day, current_hour, grid_id_str, capacity_wh, consumed_w):
         """Handles sunset detection, night duration calibration, and daytime capacity advisories."""
+        self.log.start(f"[POWER] Sunset on '{grid_id_str}'")
         self.sunset_hour = current_hour
         self.night_wh_accumulated = 0.0
         self.last_energy_sample_hour = current_hour
@@ -221,11 +222,13 @@ class PowerGridManager:
                     notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
                 except Exception as error:
                     swallowed("power.PowerGridManager.handle_sunset: notify #2", error)
+        self.log.end(f"[POWER] Sunset handled on '{grid_id_str}' (night mode active)")
 
     def handle_sunrise(self, current_hour, grid_id_str):
         """Handles sunrise detection and historical overnight energy averaging.
         Night duration itself is fixed (NIGHT_DURATION_HOURS); calibration tracks
         the actual Wh consumed overnight."""
+        self.log.start(f"[POWER] Sunrise on '{grid_id_str}'")
         if self.sunset_hour is not None and self.night_wh_accumulated > 10.0:
             hist_key = f"power.night_wh:{self.grid_anchor}" if self.grid_anchor else "power.night_wh"
             curr_hist = archive.get(hist_key, None)
@@ -245,6 +248,7 @@ class PowerGridManager:
         self.has_observed_day = True
         self.night_wh_accumulated = 0.0
         self.last_energy_sample_hour = None
+        self.log.end(f"[POWER] Sunrise handled on '{grid_id_str}' (day mode active)")
 
     def manage_night_loads(self, current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w):
         """Calculates night energy endurance and sheds loads as required."""
@@ -295,6 +299,7 @@ class PowerGridManager:
         )
 
         if tier_to_shed > 0:
+            self.log.start(f"[POWER GUARD] Load shedding on '{grid_id_str}' (tier {tier_to_shed}/{num_tiers})")
             if self.last_night_battery_advisory_day != current_day:
                 self.last_night_battery_advisory_day = current_day
                 shortfall = wh_needed - stored_wh
@@ -359,6 +364,7 @@ class PowerGridManager:
 
             if shed_changed:
                 self.update_archive_shedded()
+            self.log.end(f"[POWER GUARD] Load shedding on '{grid_id_str}' done ({len(self.shedded_machines)} machine(s) shedded)")
 
         # Nighttime partial recovery if battery stabilizes above requirement + safety margin
         if self.shedded_machines and stored_wh >= (wh_needed * 1.10) and battery_pct >= 0.30:

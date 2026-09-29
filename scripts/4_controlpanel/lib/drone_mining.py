@@ -302,19 +302,10 @@ class DroneMiningMixin:
                 self.current_target = {"coords": target["coords"], "name": target["target_key"], "sample_type": target["sample_type"]}
                 self._host.save_mission("mine", self.current_target)
 
-                log.print(f"[{self._host.name}] Reserved biosite {target['target_key']} ({target['sample_type']}) at {target['coords']} (Est. trip cost: {budget['total_required_wh']:.1f} {self._host.energy_unit()}).")
-                self._host.set_intent(fleet_intent.describe("sampling", [target["sample_type"]], at=target["target_key"], root=fleet_intent.haul_root([target["sample_type"]])))
-                self._host.publish_telemetry("OUTBOUND", target["target_key"])
-
-                if not self._host.fly_to(target["coords"][0], target["coords"][1], precision=1.0):
-                    log.level("warn").print(f"[{self._host.name}] Could not reach biosite {target['coords']}; releasing claim and retrying later.")
-                    self._host.release_biosite_claim(target["target_key"])
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-
-                self._extract_until_done(target["coords"])
-                if not self._return_and_unload():
+                log.start(f"[{self._host.name}] Reserved biosite {target['target_key']} ({target['sample_type']}) at {target['coords']} (Est. trip cost: {budget['total_required_wh']:.1f} {self._host.energy_unit()}).")
+                needs_backoff, outcome = self._run_mission(log, target)
+                log.end(outcome)
+                if needs_backoff:
                     flush_all()
                     sleep(poll_interval)
             except Exception as e:
@@ -325,6 +316,21 @@ class DroneMiningMixin:
                     swallowed("drone_mining.DroneMiningMixin.run_miner_loop: self._host.release_biosite_claim", error)
                 flush_all()
                 sleep(5.0)
+
+    def _run_mission(self, log, target):
+        """Flies to the reserved biosite, extracts and unloads; returns (caller should back off, outcome text)."""
+        self._host.set_intent(fleet_intent.describe("sampling", [target["sample_type"]], at=target["target_key"], root=fleet_intent.haul_root([target["sample_type"]])))
+        self._host.publish_telemetry("OUTBOUND", target["target_key"])
+
+        if not self._host.fly_to(target["coords"][0], target["coords"][1], precision=1.0):
+            log.level("warn").print(f"[{self._host.name}] Could not reach biosite {target['coords']}; releasing claim and retrying later.")
+            self._host.release_biosite_claim(target["target_key"])
+            return True, "unreachable, claim released"
+
+        self._extract_until_done(target["coords"])
+        if not self._return_and_unload():
+            return True, "extracted, unload deferred"
+        return False, "extracted and unloaded"
 
     def _adopt_interrupted_extraction(self, log):
         """
@@ -372,6 +378,8 @@ class DroneMiningMixin:
         """
         self._host.log.trace(f"[{self._host.name}] _extract_until_done({coords}) entry.")
         settle_retries = 5
+        extracted_total = 0.0
+        self._host.log.start(f"[{self._host.name}] Extracting at {coords}")
         while True:
             if self.current_target_key:
                 self._host.refresh_biosite_claim(self.current_target_key)
@@ -382,6 +390,7 @@ class DroneMiningMixin:
                 break
 
             if res.status == "ok":
+                extracted_total += res.extracted
                 self._host.log.print(f"[{self._host.name}] Extracted {res.extracted:.1f}t at {coords}.")
                 if self._host.cargo_full():
                     break
@@ -404,6 +413,7 @@ class DroneMiningMixin:
             else:
                 self._host.log.level("warn").print(f"[{self._host.name}] Extraction notice at {coords}: {res.status} - {res.message}")
                 break
+        self._host.log.end(f"{extracted_total:.1f}t extracted")
         self._host.log.trace(f"[{self._host.name}] _extract_until_done({coords}) exit.")
 
     def _wait_for_depot_space(self, log, depot_id, ticks_left):
@@ -463,7 +473,13 @@ class DroneMiningMixin:
             return False
         outpost_id, depots = best
         depot = self._host._pick_free_depot(depots)
-        log.print(f"[{self._host.name}] Home Depot full {self._depot_full_count}x; delivering {contents} to '{depot['id']}' ({outpost_id}), which requests {best_units} unit(s).")
+        log.start(f"[{self._host.name}] Home Depot full {self._depot_full_count}x; delivering {contents} to '{depot['id']}' ({outpost_id}), which requests {best_units} unit(s).")
+        delivered = self._deliver_to_depot(log, depot)
+        log.end("delivered" if delivered else "not delivered")
+        return delivered
+
+    def _deliver_to_depot(self, log, depot):
+        """Docks at the other outpost's Depot and unloads the stalled cargo; True when anything was unloaded."""
         self._host.publish_telemetry("DELIVERING", depot["id"])
         if not self._host.fly_to_station(depot["id"], target_coords=depot["coords"]):
             log.level("warn").print(f"[{self._host.name}] Could not dock at '{depot['id']}' for the stalled cargo; back to waiting at home.")
@@ -477,6 +493,45 @@ class DroneMiningMixin:
         self._depot_full_count = 0
         self._depot_full_retry_tick = 0
         return True
+
+    def _unload_and_leave(self, depot_id):
+        """Unloads at the docked Depot, maintains modules, leaves the berth; returns the unloaded count (negative when the Depot is full)."""
+        unloaded = self._host.unload_cargo_at_depot()
+        if unloaded < 0:
+            self._host.log.level("warn").print(f"[{self._host.name}] Drone Depot has no free slot for this cargo; leaving aboard until space opens.")
+            self._host.publish_telemetry("WAITING_DEPOT_SPACE")
+        elif unloaded > 0:
+            self._host.log.print(f"[{self._host.name}] Unloaded {unloaded} units at Drone Depot.")
+
+        if unloaded < 0:
+            self._depot_full_retry_tick = self._host.get_current_tick() + self.DEPOT_FULL_RETRY_TICKS
+            self._depot_full_count = getattr(self, "_depot_full_count", 0) + 1
+            self._depot_full_id = depot_id
+            self._host.log.debug(f"[{self._host.name}] Depot '{depot_id}' full ({self._depot_full_count}x in a row); next unload attempt in {self.DEPOT_FULL_RETRY_TICKS} ticks.")
+        elif self._host.cargo_count() == 0:
+            self._depot_full_count = 0
+            self._depot_full_id = None
+
+        self._host.release_biosite_claim()
+        if unloaded >= 0 and self._host.cargo_count() == 0:
+            # Docked and empty: the one moment couple()/uncouple() can run.
+            self._host.maintain_modules_at_depot()
+        # Leave the berth now, even with no next mining target picked yet --
+        # a miner otherwise sits docked here between trips, occupying a bay
+        # a peer drone (or this one, on a later retry) may be waiting in
+        # line for. Also releases the bay when the Depot is full (unloaded
+        # < 0): staying docked wouldn't make its stuck cargo unloadable any
+        # sooner, but it would keep the bay from a drone unloading a
+        # different item that DOES have space.
+        self._host.leave_station()
+        if unloaded < 0:
+            # Re-docking at a full depot every few seconds burns time and
+            # battery for nothing; the miner loop hovers here until the retry
+            # tick passes (_wait_for_depot_space()).
+            self._wait_for_depot_space(self._host.log, depot_id, self.DEPOT_FULL_RETRY_TICKS)
+        else:
+            self._host.publish_telemetry("READY_AT_DEPOT")
+        return unloaded
 
     def _return_and_unload(self):
         """Flies to the home Depot and unloads. Returns True on success, False when the caller should back off before retrying."""
@@ -516,41 +571,9 @@ class DroneMiningMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach Drone Depot to unload; will retry.")
             return False
 
-        unloaded = self._host.unload_cargo_at_depot()
-        if unloaded < 0:
-            self._host.log.level("warn").print(f"[{self._host.name}] Drone Depot has no free slot for this cargo; leaving aboard until space opens.")
-            self._host.publish_telemetry("WAITING_DEPOT_SPACE")
-        elif unloaded > 0:
-            self._host.log.print(f"[{self._host.name}] Unloaded {unloaded} units at Drone Depot.")
-
-        if unloaded < 0:
-            self._depot_full_retry_tick = self._host.get_current_tick() + self.DEPOT_FULL_RETRY_TICKS
-            self._depot_full_count = getattr(self, "_depot_full_count", 0) + 1
-            self._depot_full_id = depot_id
-            self._host.log.debug(f"[{self._host.name}] Depot '{depot_id}' full ({self._depot_full_count}x in a row); next unload attempt in {self.DEPOT_FULL_RETRY_TICKS} ticks.")
-        elif self._host.cargo_count() == 0:
-            self._depot_full_count = 0
-            self._depot_full_id = None
-
-        self._host.release_biosite_claim()
-        if unloaded >= 0 and self._host.cargo_count() == 0:
-            # Docked and empty: the one moment couple()/uncouple() can run.
-            self._host.maintain_modules_at_depot()
-        # Leave the berth now, even with no next mining target picked yet --
-        # a miner otherwise sits docked here between trips, occupying a bay
-        # a peer drone (or this one, on a later retry) may be waiting in
-        # line for. Also releases the bay when the Depot is full (unloaded
-        # < 0): staying docked wouldn't make its stuck cargo unloadable any
-        # sooner, but it would keep the bay from a drone unloading a
-        # different item that DOES have space.
-        self._host.leave_station()
-        if unloaded < 0:
-            # Re-docking at a full depot every few seconds burns time and
-            # battery for nothing; the miner loop hovers here until the retry
-            # tick passes (_wait_for_depot_space()).
-            self._wait_for_depot_space(self._host.log, depot_id, self.DEPOT_FULL_RETRY_TICKS)
-        else:
-            self._host.publish_telemetry("READY_AT_DEPOT")
+        self._host.log.start(f"[{self._host.name}] Unloading at Drone Depot '{depot_id}'")
+        unloaded = self._unload_and_leave(depot_id)
+        self._host.log.end("depot full, cargo kept aboard" if unloaded < 0 else f"unloaded {unloaded} unit(s)")
         self._host.log.trace(f"[{self._host.name}] _return_and_unload() exit: unloaded={unloaded}.")
         # Depot full counts as failure: cargo is still aboard, so the caller
         # should back off before retrying.

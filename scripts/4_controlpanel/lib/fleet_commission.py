@@ -228,6 +228,13 @@ class FleetCommissionCoordinator:
         shop = _component("shop")
         if not shop:
             return f"{label}: no Shop"
+        self.log.start(f"[fleet_commission] {label}: buying {needed} for {cost}cr")
+        failure = self._buy_parts(shop, needed, catalogue, consumer, label)
+        self.log.end(f"[fleet_commission] {label}: bought {needed} for {cost}cr." if failure is None else f"[fleet_commission] {label}: purchase incomplete ({failure})")
+        return failure
+
+    def _buy_parts(self, shop, needed, catalogue, consumer, label):
+        """Buys each of needed {item_id: n}; books what was paid. None on success, else the waiting reason."""
         paid = 0
         for item, n in needed.items():
             res = shop.buy(item, n)
@@ -237,7 +244,6 @@ class FleetCommissionCoordinator:
                 return f"{label}: buy {item} {res.status}"
             paid += catalogue[item] * n
         cash.spent(consumer, paid)
-        self.log.print(f"[fleet_commission] {label}: bought {needed} for {cost}cr.")
         return None
 
     # ------------------------------------------------------------ main step

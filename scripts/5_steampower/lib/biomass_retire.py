@@ -208,6 +208,7 @@ def sell_retired_machines():
     if not computer or not shop:
         return "computer or shop unavailable"
 
+    log.start("Selling retired biomass machines")
     sold = []
     credits = 0
     skipped = []
@@ -248,5 +249,5 @@ def sell_retired_machines():
         summary += f"; skipped {', '.join(skipped)}"
     state["last_sale"] = summary
     archive.set(RETIRE_KEY, state)
-    log.print(f"Biomass chain sale: {summary}.")
+    log.end(f"Biomass chain sale: {summary}.")
     return summary

@@ -124,14 +124,14 @@ class HarvesterController:
         if heat <= target:
             return
 
-        self.log.print(f"[{self.name}] High heat ({heat:.1f}°C). Pausing for passive cooling to {target:.0f}°C...")
+        self.log.start(f"[{self.name}] High heat ({heat:.1f}°C). Pausing for passive cooling to {target:.0f}°C...")
         while True:
             flush_all()
             sleep(2.0)
             heat = self.get_heat()
             if heat <= target or not self.harvester.is_overheated() and heat <= target:
-                self.log.print(f"[{self.name}] Cooled down ({heat:.1f}°C). Resuming operations.")
                 break
+        self.log.end(f"[{self.name}] Cooled down ({heat:.1f}°C). Resuming operations.")
 
     def store_held_if_any(self):
         """Ensures the single held item slot is empty by storing into Inventory."""
@@ -296,19 +296,21 @@ class HarvesterController:
         if target:
             target_sec = target["sector"]
             t_type = target["type"]
-            self.log.print(f"[{self.name}] Routing to {t_type} at {target_sec}...")
+            self.log.start(f"[{self.name}] Routing to {t_type} at {target_sec}...")
             reached = self.move_to(target_sec)
             if reached:
                 if t_type == "item":
                     self.collect_at_current()
                 elif t_type == "crop":
                     self.harvest_at_current()
+            self.log.end(f"[{self.name}] Trip to {target_sec}: {'reached' if reached else 'not reached'}.")
             return
 
         # Step 4: No active targets on the field - return to base depot and cool down
         if self.base_sector and curr_pos != self.base_sector:
-            self.log.print(f"[{self.name}] No active targets. Returning to base depot ({self.base_sector})...")
-            self.move_to(self.base_sector)
+            self.log.start(f"[{self.name}] No active targets. Returning to base depot ({self.base_sector})...")
+            home = self.move_to(self.base_sector)
+            self.log.end(f"[{self.name}] Base depot: {'reached' if home else 'not reached'}.")
 
         # Cool down completely while resting
         self.cool_down(25.0)

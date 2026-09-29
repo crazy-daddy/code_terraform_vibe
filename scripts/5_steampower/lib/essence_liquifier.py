@@ -391,6 +391,8 @@ class EssenceLiquifierController:
             self.log.debug(f"[{self.name}] retired: input empty; waiting for the breaker/undeploy.")
             return
         outpost = getattr(self.liquifier, "outpost", None)
+        self.log.start(f"[{self.name}] Retiring: ejecting {len(stacks)} staged life form stack(s)")
+        ejected = 0
         for item_id, count in stacks:
             target = best_unload_target(item_id, 1, outpost=outpost)
             if target is None:
@@ -406,9 +408,11 @@ class EssenceLiquifierController:
                 continue
             moved = getattr(res, "moved", 0) or 0
             if moved > 0:
+                ejected += 1
                 self.log.print(f"[{self.name}] Biomass complete: ejected {moved}x '{item_id}' -> '{target}'.")
             else:
                 self.log.debug(f"[{self.name}] retired: eject '{item_id}' -> '{target}': {getattr(res, 'status', '?')} {getattr(res, 'message', '')}")
+        self.log.end(f"[{self.name}] Retire pass: ejected {ejected}/{len(stacks)} stack(s)")
 
     def step(self):
         if biomass_complete():

@@ -154,6 +154,12 @@ class HarvesterPlantingMixin:
             self.garden = list(stored.get("garden") or [])
             return dict(stored["cells"])
 
+        self._host.log.start(f"[{self._host.name}] Building field layout ({mode})")
+        layout = self._build_layout(cells, rules, stored, mode, fill, chunks, stored_mode)
+        self._host.log.end(f"Layout ready: {len(layout)} plant(s)")
+        return layout
+
+    def _build_layout(self, cells, rules, stored, mode, fill, chunks, stored_mode):
         status = {s: getattr(c, "status", None) for s, c in cells.items()}
         base = self.base_from_cells(cells)
         if mode == "full" and base != field_layout.FULL_LAYOUT_BASE:
@@ -391,10 +397,13 @@ class HarvesterPlantingMixin:
                 return
             status = "empty"
         if status in ("empty", "unknown") and h.stock_count("seed_" + species) >= 1:
-            h.log.debug(f"[{h.name}] Passing {sector}: planting {species} on the way.")
+            h.log.start(f"[{h.name}] Passing {sector}: planting {species} on the way")
             if self.plant_here(species):
                 rules = getattr(h, "_rules", None) or self.load_rules()
                 h.care_current(rules)
+                h.log.end("Planted on the way")
+            else:
+                h.log.end("Not planted")
 
     def harvest_here(self):
         here = self._host.get_position()

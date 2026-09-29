@@ -763,6 +763,7 @@ class VehicleEnergyMixin:
             self._host.log.print(f"[{self._host.name}] Battery already charged ({lvl*100:.0f}%).")
             return True
 
+        self._host.log.start(f"[{self._host.name}] Recharging ({lvl*100:.0f}% -> {target_level*100:.0f}%)")
         cs = None
         if station_coords is None:
             station_coords, st_info = self.get_nearest_charging_station()
@@ -793,6 +794,7 @@ class VehicleEnergyMixin:
                         station_id = fallback.get("id")
 
         cs_coords = station_coords or self._host.home_coords
+        self._host.log.debug(f"[{self._host.name}] recharge_at_station: station '{station_id or 'station'}' at {cs_coords}, controller {'found' if cs else 'missing'}.")
 
         # Verify whether vehicle is actually inside the station's docked set
         is_docked = False
@@ -866,4 +868,5 @@ class VehicleEnergyMixin:
             flush_all()
             sleep(2.0)
 
+        self._host.log.end(f"[{self._host.name}] Recharge finished at {lvl*100:.0f}%.")
         return True

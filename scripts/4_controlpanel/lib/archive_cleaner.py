@@ -82,6 +82,13 @@ def safe_get_component(name):
         return None
 
 
+class _SilentConsole:
+    """Console stand-in that drops every line, for a non-verbose cleaner's info blocks."""
+
+    def print(self, *args, **kwargs):
+        pass
+
+
 class ArchiveCleaner:
     """
     Validates, repairs, and purges obsolete or corrupted entries from the Data Archive.
@@ -93,6 +100,7 @@ class ArchiveCleaner:
         self.verbose = verbose
         self.log_messages = []
         self.console = TreeConsole(module="archive_cleaner")
+        self._log = self.console if verbose else TreeConsole(console=_SilentConsole(), module="archive_cleaner")
         self.stats = {
             "keys_scanned": 0,
             "claims_checked": 0,
@@ -119,6 +127,14 @@ class ArchiveCleaner:
         self.log_messages.append(msg)
         if self.verbose:
             self.console.print(msg)
+
+    def _stage(self, title, stage, *args):
+        """Runs one cleanup stage inside a log block; the stage returns its outcome line."""
+        self.log_messages.append(title)
+        self._log.start(title)
+        outcome = stage(*args)
+        self.log_messages.append(outcome)
+        self._log.end(outcome)
 
     def is_available(self):
         return self.archive is not None and getattr(self.archive, "available", False)
@@ -214,7 +230,6 @@ class ArchiveCleaner:
         Cleans stale, completed, or malformed claims in survey.claims and rover.claims.
         Deduplicates and synchronizes valid active claims.
         """
-        self.log("\n--- Checking Survey & Rover Claims ---")
         shared_claims = self.archive.get(SURVEY_CLAIMS_KEY, {})
         legacy_claims = self.archive.get(LEGACY_ROVER_CLAIMS_KEY, {})
 
@@ -291,7 +306,7 @@ class ArchiveCleaner:
             clean_claims_map[key] = claim
 
         self.stats["claims_removed"] += claims_removed
-        self.log(f"  Result: {len(clean_claims_map)} active claims retained, {claims_removed} obsolete claims purged.")
+        outcome = f"{len(clean_claims_map)} active claims retained, {claims_removed} obsolete claims purged"
 
         if not self.dry_run and (claims_removed > 0 or shared_claims != clean_claims_map or legacy_claims != clean_claims_map):
             self.archive.set(SURVEY_CLAIMS_KEY, clean_claims_map)
@@ -305,6 +320,7 @@ class ArchiveCleaner:
             if legacy_claims and isinstance(legacy_claims, dict):
                 if self.archive.has(LEGACY_ROVER_CLAIMS_KEY):
                     self.archive.delete(LEGACY_ROVER_CLAIMS_KEY)
+        return outcome
 
     def clean_unsupported_targets(self, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords):
         """
@@ -314,7 +330,6 @@ class ArchiveCleaner:
         - Normalizes keys into canonical 'poi_x_y' format.
         - Purges transient invalid errors (e.g. out_of_range).
         """
-        self.log("\n--- Checking Unsupported / Blacklisted Targets ---")
         shared_unsupported = self.archive.get(SURVEY_UNSUPPORTED_KEY, {})
         legacy_rover = self.archive.get(LEGACY_ROVER_UNSUPPORTED_KEY, {})
         legacy_pioneer = self.archive.get(LEGACY_PIONEER_SONAR_KEY, {})
@@ -411,7 +426,7 @@ class ArchiveCleaner:
             clean_unsupported[canonical_key] = entry
 
         self.stats["unsupported_removed"] += removed_count
-        self.log(f"  Result: {len(clean_unsupported)} unsupported targets retained, {removed_count} obsolete entries purged.")
+        outcome = f"{len(clean_unsupported)} unsupported targets retained, {removed_count} obsolete entries purged"
 
         if not self.dry_run:
             self.archive.set(SURVEY_UNSUPPORTED_KEY, clean_unsupported)
@@ -429,20 +444,19 @@ class ArchiveCleaner:
             if legacy_pioneer and isinstance(legacy_pioneer, dict):
                 if self.archive.has(LEGACY_PIONEER_SONAR_KEY):
                     self.archive.delete(LEGACY_PIONEER_SONAR_KEY)
+        return outcome
 
     def clean_survey_spiral(self):
         """
         Validates survey.spiral and pioneer.survey_spiral.
         Deduplicates waypoints by index and coordinate, ensuring proper ordering and structure.
         """
-        self.log("\n--- Checking Survey Spiral Data ---")
         spiral_shared = self.archive.get(SURVEY_SPIRAL_KEY, None)
         spiral_legacy = self.archive.get(LEGACY_PIONEER_SPIRAL_KEY, None)
 
         spiral_data = spiral_shared or spiral_legacy
         if not spiral_data:
-            self.log("  No survey spiral data stored.")
-            return
+            return "no survey spiral data stored"
 
         if not isinstance(spiral_data, dict):
             self.log("  [REPAIR] Spiral data is malformed (not a dict). Resetting.")
@@ -450,7 +464,7 @@ class ArchiveCleaner:
                 self.archive.set(SURVEY_SPIRAL_KEY, {"waypoints": [], "next_index": 0})
                 if self.archive.has(LEGACY_PIONEER_SPIRAL_KEY):
                     self.archive.delete(LEGACY_PIONEER_SPIRAL_KEY)
-            return
+            return "malformed spiral data reset"
 
         waypoints = spiral_data.get("waypoints", [])
         if not isinstance(waypoints, list):
@@ -500,7 +514,7 @@ class ArchiveCleaner:
             next_idx = len(clean_waypoints)
 
         self.stats["waypoints_cleaned"] += cleaned_count
-        self.log(f"  Result: {len(clean_waypoints)} valid waypoints ({cleaned_count} duplicates/corrupted removed), next_index={next_idx}.")
+        outcome = f"{len(clean_waypoints)} valid waypoints ({cleaned_count} duplicates/corrupted removed), next_index={next_idx}"
 
         if not self.dry_run and (cleaned_count > 0 or spiral_shared != spiral_legacy or self.archive.has(LEGACY_PIONEER_SPIRAL_KEY)):
             cleaned_payload = {
@@ -516,6 +530,7 @@ class ArchiveCleaner:
             # so just delete it outright.
             if self.archive.has(LEGACY_PIONEER_SPIRAL_KEY):
                 self.archive.delete(LEGACY_PIONEER_SPIRAL_KEY)
+        return outcome
 
     def clean_telemetry(self, active_vehicles):
         """
@@ -525,7 +540,6 @@ class ArchiveCleaner:
         or whose payload is empty/malformed. Pruning by existence is skipped when
         the fleet query came back empty, so a failed query never wipes the dict.
         """
-        self.log("\n--- Checking Vehicle Fleet Telemetry ---")
         telemetry_removed = 0
 
         for prefix in LEGACY_FLEET_STATUS_PREFIXES:
@@ -565,7 +579,7 @@ class ArchiveCleaner:
         telemetry_removed += len(stale)
 
         self.stats["telemetry_removed"] += telemetry_removed
-        self.log(f"  Result: {telemetry_removed} obsolete telemetry entries purged.")
+        return f"{telemetry_removed} obsolete telemetry entries purged"
 
     def clean_calibration(self):
         """
@@ -575,7 +589,6 @@ class ArchiveCleaner:
         Two key formats exist: dot-suffix (e.g. "<vehicle>.wh_per_meter") and
         colon-prefix ("vehicle.wh_per_meter:<vehicle_id>") -- both purged here.
         """
-        self.log("\n--- Purging Obsolete Wh/m Calibration Entries ---")
         all_keys = self.archive.keys()
         calib_keys = [
             k for k in all_keys
@@ -591,7 +604,7 @@ class ArchiveCleaner:
                 self.archive.delete(k)
 
         self.stats["calibration_purged"] += calib_purged
-        self.log(f"  Result: {calib_purged} obsolete calibration entries purged.")
+        return f"{calib_purged} obsolete calibration entries purged"
 
     def clean_recall_flags(self):
         """
@@ -604,12 +617,10 @@ class ArchiveCleaner:
         vehicle absent from it just reads as not-recalled), so consolidating
         costs nothing at rest either.
         """
-        self.log("\n--- Migrating Legacy Per-Vehicle Recall Flags ---")
         all_keys = self.archive.keys()
         legacy_keys = [k for k in all_keys if k.startswith(LEGACY_RECALL_KEY_PREFIX)]
         if not legacy_keys:
-            self.log("  No legacy per-vehicle recall keys found.")
-            return
+            return "no legacy per-vehicle recall keys found"
 
         consolidated = self.archive.get(RECALL_KEY, {})
         consolidated = dict(consolidated) if isinstance(consolidated, dict) else {}
@@ -629,11 +640,10 @@ class ArchiveCleaner:
             self.archive.set(RECALL_KEY, consolidated)
 
         self.stats["recall_flags_migrated"] += len(legacy_keys)
-        self.log(f"  Result: {len(legacy_keys)} legacy recall key(s) migrated/removed ({migrated} were actively recalled).")
+        return f"{len(legacy_keys)} legacy recall key(s) migrated/removed ({migrated} were actively recalled)"
 
     def clean_retired_keys(self):
         """Deletes every key under RETIRED_KEY_PREFIXES (families no script uses any more)."""
-        self.log("\n--- Purging Retired Key Families ---")
         purged = 0
         for prefix in RETIRED_KEY_PREFIXES:
             for k in self.archive.keys(prefix):
@@ -642,7 +652,7 @@ class ArchiveCleaner:
                 if not self.dry_run:
                     self.archive.delete(k)
         self.stats["retired_keys_purged"] += purged
-        self.log(f"  Result: {purged} retired key(s) purged.")
+        return f"{purged} retired key(s) purged"
 
     def clean_missions(self, active_vehicles):
         """
@@ -653,7 +663,6 @@ class ArchiveCleaner:
         vehicle/drone no longer exists (existence check skipped when the
         fleet query came back empty).
         """
-        self.log("\n--- Checking Resumable Mission Records ---")
         for key, legacy_prefix in MISSION_KEYS.items():
             missions = self.archive.get(key, {})
             missions = dict(missions) if isinstance(missions, dict) else {}
@@ -691,7 +700,7 @@ class ArchiveCleaner:
             if changed and not self.dry_run:
                 self.archive.set(key, missions)
 
-        self.log(f"  Result: {self.stats['missions_migrated']} mission(s) migrated, {self.stats['missions_removed']} removed.")
+        return f"{self.stats['missions_migrated']} mission(s) migrated, {self.stats['missions_removed']} removed"
 
     def clean_machine_status(self):
         """
@@ -700,7 +709,6 @@ class ArchiveCleaner:
         of that type at all (not unlocked yet, or discovery failed), so a
         failed walk never wipes the dict.
         """
-        self.log("\n--- Checking Machine Status Dicts ---")
         removed = 0
         for key, type_id in MACHINE_STATUS_KEYS.items():
             status = self.archive.get(key, None)
@@ -734,7 +742,7 @@ class ArchiveCleaner:
                 self.archive.transaction(key, {}, updater)
             removed += len(stale)
         self.stats["machine_status_removed"] += removed
-        self.log(f"  Result: {removed} stale machine status entr{'y' if removed == 1 else 'ies'} purged.")
+        return f"{removed} stale machine status entr{'y' if removed == 1 else 'ies'} purged"
 
     def clean_power_grid_state(self, active_grid_anchors):
         """
@@ -748,7 +756,6 @@ class ArchiveCleaner:
         power.last_night_wh, and power.shedded_machines. None of these are
         written by current code.
         """
-        self.log("\n--- Checking Per-Grid Power State ---")
         purged = 0
 
         if active_grid_anchors:
@@ -776,7 +783,7 @@ class ArchiveCleaner:
                     self.archive.delete(k)
 
         self.stats["grid_state_purged"] += purged
-        self.log(f"  Result: {purged} obsolete per-grid/retired power entries purged.")
+        return f"{purged} obsolete per-grid/retired power entries purged"
 
     def clean_profiling(self, current_tick):
         """
@@ -792,7 +799,6 @@ class ArchiveCleaner:
         "last_tick"} shape (a bare list) has no way to check staleness at
         all, so it's always purged -- one-time migration cleanup.
         """
-        self.log("\n--- Checking Profiling Entries ---")
         profiling_keys = self.archive.keys("profiling.") if hasattr(self.archive, "keys") else []
         removed = 0
 
@@ -817,7 +823,7 @@ class ArchiveCleaner:
                         self.archive.delete(k)
 
         self.stats["profiling_removed"] += removed
-        self.log(f"  Result: {len(profiling_keys) - removed} active profiling entries retained, {removed} stale/legacy entries purged.")
+        return f"{len(profiling_keys) - removed} active profiling entries retained, {removed} stale/legacy entries purged"
 
     def clean_power_and_heat(self):
         """
@@ -827,7 +833,7 @@ class ArchiveCleaner:
         (power.night_duration and power.last_night_wh are retired outright by
         clean_power_grid_state() instead of range-checked here.)
         """
-        self.log("\n--- Checking Power & Heating Terraforming State ---")
+        repaired_before = self.stats["corrupted_keys_deleted"]
         heat_key = "heat.optimal_setpoints"
         if self.archive.has(heat_key):
             heat_val = self.archive.get(heat_key)
@@ -853,6 +859,7 @@ class ArchiveCleaner:
                         self.archive.delete(k)
                 else:
                     self.console.debug(f"  Key '{k}'={v} within valid range [{min_v}, {max_v}]")
+        return f"{self.stats['corrupted_keys_deleted'] - repaired_before} invalid key(s) removed"
 
     def clean_logistics_and_bio(self):
         """
@@ -862,7 +869,7 @@ class ArchiveCleaner:
         - bio.completed_orders
         - bio.fragment_recipes
         """
-        self.log("\n--- Checking Logistics & Bio State ---")
+        repaired_before = self.stats["corrupted_keys_deleted"]
         route_key = "pioneer.transport.route"
         if self.archive.has(route_key):
             route = self.archive.get(route_key)
@@ -904,14 +911,15 @@ class ArchiveCleaner:
                 self.stats["corrupted_keys_deleted"] += 1
                 if not self.dry_run:
                     self.archive.delete(bio_orders_key)
+        return f"{self.stats['corrupted_keys_deleted'] - repaired_before} corrupted key(s) removed"
 
     def clean_corrupted_or_empty_keys(self):
         """
         Scans all keys in the archive for None or corrupted empty payloads.
         """
-        self.log("\n--- Checking for Corrupted or Orphaned Keys ---")
         all_keys = self.archive.keys()
         self.stats["keys_scanned"] = len(all_keys)
+        deleted_before = self.stats["corrupted_keys_deleted"]
 
         for k in all_keys:
             try:
@@ -927,17 +935,21 @@ class ArchiveCleaner:
                 self.stats["errors"] += 1
 
         self.console.debug(f"clean_corrupted_or_empty_keys: scanned {len(all_keys)} keys, {self.stats['corrupted_keys_deleted']} corrupted-so-far, {self.stats['errors']} inspection errors")
+        return f"{len(all_keys)} keys scanned, {self.stats['corrupted_keys_deleted'] - deleted_before} empty key(s) removed"
 
     def run(self):
         """Executes full archive validation and cleaning workflow."""
         mode_str = "[DRY-RUN INSPECTION]" if self.dry_run else "[LIVE COMMIT]"
-        self.log("=" * 60)
-        self.log(f" DATA ARCHIVE VALIDATOR & CLEANER {mode_str}")
-        self.log("=" * 60)
+        self.log_messages.append(f"DATA ARCHIVE VALIDATOR & CLEANER {mode_str}")
+        self._log.start(f"Data archive validator & cleaner {mode_str}")
+        outcome = self._run_stages()
+        self._log.end(outcome)
+        return self.stats
 
+    def _run_stages(self):
         if not self.is_available():
             self.log("[CRITICAL] Data Archive (notebook) component is unavailable or locked!")
-            return self.stats
+            return "aborted: Data Archive (notebook) unavailable or locked"
 
         current_tick = self.get_current_tick()
         scanned_poi_keys, scanned_poi_coords = self.get_scanned_pois()
@@ -952,27 +964,22 @@ class ArchiveCleaner:
         self.log(f"  - Active Fleet Vehicles: {list(active_vehicles) if active_vehicles else 'None detected'}")
         self.log(f"  - Active Power Grids: {list(active_grid_anchors) if active_grid_anchors else 'None detected'}")
 
-        # Run cleanup stages
-        self.clean_claims(current_tick, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords)
-        self.clean_unsupported_targets(scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords)
-        self.clean_survey_spiral()
-        self.clean_telemetry(active_vehicles)
-        self.clean_calibration()
-        self.clean_recall_flags()
-        self.clean_retired_keys()
-        self.clean_missions(active_vehicles)
-        self.clean_machine_status()
-        self.clean_profiling(current_tick)
-        self.clean_power_and_heat()
-        self.clean_power_grid_state(active_grid_anchors)
-        self.clean_logistics_and_bio()
-        self.clean_corrupted_or_empty_keys()
+        self._stage("Checking survey & rover claims", self.clean_claims, current_tick, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords)
+        self._stage("Checking unsupported / blacklisted targets", self.clean_unsupported_targets, scanned_poi_keys, scanned_poi_coords, surveyed_site_ids, surveyed_site_coords)
+        self._stage("Checking survey spiral data", self.clean_survey_spiral)
+        self._stage("Checking vehicle fleet telemetry", self.clean_telemetry, active_vehicles)
+        self._stage("Purging obsolete Wh/m calibration entries", self.clean_calibration)
+        self._stage("Migrating legacy per-vehicle recall flags", self.clean_recall_flags)
+        self._stage("Purging retired key families", self.clean_retired_keys)
+        self._stage("Checking resumable mission records", self.clean_missions, active_vehicles)
+        self._stage("Checking machine status dicts", self.clean_machine_status)
+        self._stage("Checking profiling entries", self.clean_profiling, current_tick)
+        self._stage("Checking power & heating terraforming state", self.clean_power_and_heat)
+        self._stage("Checking per-grid power state", self.clean_power_grid_state, active_grid_anchors)
+        self._stage("Checking logistics & bio state", self.clean_logistics_and_bio)
+        self._stage("Checking for corrupted or orphaned keys", self.clean_corrupted_or_empty_keys)
 
-        self.log("\n" + "=" * 60)
-        self.log(f" ARCHIVE VALIDATION SUMMARY {mode_str}")
-        self.log("=" * 60)
+        self.log("Summary:")
         for k, v in self.stats.items():
             self.log(f"  {k.replace('_', ' ').capitalize():<30}: {v}")
-        self.log("=" * 60 + "\n")
-
-        return self.stats
+        return f"{self.stats['keys_scanned']} keys scanned, {self.stats['errors']} error(s)"

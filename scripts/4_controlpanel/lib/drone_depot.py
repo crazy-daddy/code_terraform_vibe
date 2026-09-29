@@ -345,11 +345,13 @@ class DroneDepotController:
             room, slots = self._stockpile_room(stock)
             if room <= 0 or (item_id not in stock and slots <= 0):
                 self.log.debug(f"[{self.name}] stage for hauler: no room for {item_id} ({room} unit(s), {slots} slot(s) free); draining the stockpile first.")
+                self.log.start(f"[{self.name}] Making stockpile room for {item_id}")
                 self.drain_freight()
                 self.stage_life_forms()
                 self.flush_surplus(for_stage=True)
                 stock = logistics_requests.depot_stock(self.station)
                 room, slots = self._stockpile_room(stock)
+                self.log.end(f"[{self.name}] Stockpile room for {item_id}: {room} unit(s), {slots} slot(s) free")
                 if item_id not in stock and slots <= 0:
                     self.log.debug(f"[{self.name}] stage for hauler: still no free slot for {item_id} (stockpile {stock}); retrying next cycle.")
                     continue
