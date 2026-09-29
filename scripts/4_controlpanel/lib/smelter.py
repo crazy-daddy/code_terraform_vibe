@@ -4,8 +4,8 @@
 # automation panel, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, smelter_recipe_peers
-from storage import take_item, drain_port_inventory_first
+from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, smelter_recipe_peers, machine_outpost_id
+from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -65,6 +65,11 @@ class SmelterController:
     both start the same recipe while a second simultaneously-demanded ore sits
     untouched. The "inventory manager" sweep runs centrally by the headless
     automation panel (see module docstring), so no per-smelter election is needed.
+
+    Outpost-aware: at home the ports use Inventory + home Warehouses; at any
+    other outpost only that outpost's own Warehouses (Inventory is home-only,
+    docs/components/smelter.md). Ore stock, fair share and output all stay
+    local; demand is the network-wide get_smelter_demands().
     """
     RECIPE_MAP = {
         "iron_ore": "smelt_iron_ingot",
@@ -86,6 +91,7 @@ class SmelterController:
 
         self.connected_in = False
         self.connected_out = False
+        self._warned_no_local_storage = False
         self.log = TreeConsole(module="smelter")
         self._select_miss_reason = "no_demand"
 
@@ -155,19 +161,39 @@ class SmelterController:
         except Exception as error:
             swallowed("smelter.SmelterController.release_recipe: archive.transaction", error)
 
+    def outpost(self):
+        """OutpostRef this Smelter is deployed at (None if not exposed = home)."""
+        return getattr(self.smelter, "outpost", None)
+
+    def at_home(self):
+        return outpost_is_home(self.outpost())
+
     def ensure_connections(self):
-        """Ensures input and output ports are connected to home inventory."""
+        """Connects input and output ports to Inventory at home, or to a
+        local Warehouse elsewhere (storage.local_port_target())."""
+        if self.connected_in and self.connected_out:
+            return
+        target = local_port_target(self.outpost())
+        if target is None:
+            if not self._warned_no_local_storage:
+                self._warned_no_local_storage = True
+                self.log.level("warn").print(f"[{self.name}] No Warehouse at outpost '{machine_outpost_id(self.smelter)}' -- a remote Smelter can only feed from local storage.")
+            return
+        self._warned_no_local_storage = False
+
         if not self.connected_in and hasattr(self.smelter, "input"):
             try:
-                self.smelter.input.connect("inventory")
-                self.connected_in = True
+                result = self.smelter.input.connect(target)
+                self.connected_in = getattr(result, "status", "ok") == "ok"
+                self.log.debug(f"[{self.name}] ensure_connections: input -> '{target}' ({getattr(result, 'status', '?')})")
             except Exception as error:
                 swallowed("smelter.SmelterController.ensure_connections: self.smelter.input.connect", error)
 
         if not self.connected_out and hasattr(self.smelter, "output"):
             try:
-                self.smelter.output.connect("inventory")
-                self.connected_out = True
+                result = self.smelter.output.connect(target)
+                self.connected_out = getattr(result, "status", "ok") == "ok"
+                self.log.debug(f"[{self.name}] ensure_connections: output -> '{target}' ({getattr(result, 'status', '?')})")
             except Exception as error:
                 swallowed("smelter.SmelterController.ensure_connections: self.smelter.output.connect", error)
 
@@ -189,16 +215,20 @@ class SmelterController:
 
     def drain_output(self):
         """Sends all finished ingots from output buffer to Inventory, or to a
-        Warehouse when Inventory is full (storage.drain_port_inventory_first())."""
+        Warehouse when Inventory is full or the Smelter is off-home
+        (storage.drain_port_inventory_first())."""
         if not hasattr(self.smelter, "output"):
             return 0
 
         total = 0
         if self.smelter.get_output_count() > 0:
-            for item_id, moved, destination, status, message in drain_port_inventory_first(self.smelter.output, outpost=getattr(self.smelter, "outpost", None)):
+            at_home = self.at_home()
+            for item_id, moved, destination, status, message in drain_port_inventory_first(self.smelter.output, outpost=self.outpost()):
                 if moved > 0:
                     total += moved
-                    if destination == "warehouse":
+                    if not at_home:
+                        self.log.print(f"[{self.name}] Sent {moved}x {item_id} to a local Warehouse.")
+                    elif destination == "warehouse":
                         self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
                     else:
                         self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
@@ -225,11 +255,18 @@ class SmelterController:
         output_count = max(1, getattr(recipe, "output_count", 1))
         return max(1, prefill * output_count // per_run)
 
+    def local_ore(self, ore, cache):
+        """Units of `ore` in storage this Smelter's input can reach (the
+        step's SourceCache.local_stock(): Inventory + Warehouses at home,
+        the outpost's own Warehouses elsewhere)."""
+        return cache.local_stock(ore, self.outpost())
+
     def available_ore(self, ore, cache, dock_reserved):
-        """Units of `ore` this Smelter may refine: total stock (Inventory +
-        Warehouses, from the step's SourceCache) minus whatever an active
-        Supply Dock order still needs to ship as raw ore."""
-        return max(0, cache.stock(ore) - (dock_reserved or {}).get(ore, 0))
+        """Units of `ore` this Smelter may refine: local stock minus, at home,
+        whatever an active Supply Dock order still needs to ship as raw ore
+        (docks are home-only, so remote ore is never owed to one)."""
+        reserved = (dock_reserved or {}).get(ore, 0) if self.at_home() else 0
+        return max(0, self.local_ore(ore, cache) - reserved)
 
     def step(self):
         self.ensure_connections()
@@ -339,19 +376,21 @@ class SmelterController:
             output_count = max(1, getattr(recipe, "output_count", 1))
             units_per_run = recipe_inputs.get(ore_to_process, 1)
             demand_qty = demands.get(getattr(recipe, "output_item", None), 0)
-            worker_count, peers_buffered = smelter_recipe_peers(recipe_id)
+            worker_count, _network_buffered = smelter_recipe_peers(recipe_id)
+            local_workers, peers_buffered = smelter_recipe_peers(recipe_id, machine_outpost_id(self.smelter))
             # This smelter's fair slice of the TOTAL current demand, ceil
-            # divided across every Smelter joined on this recipe -- mirrors
-            # lib/fabricator.py's crafts_remaining split.
+            # divided across every Smelter on the network joined on this
+            # recipe (demand is network-wide) -- mirrors lib/fabricator.py's
+            # crafts_remaining split.
             share = -(-demand_qty // worker_count)
             max_ore_for_share = (share * units_per_run + output_count - 1) // output_count
-            # Fair-share cap on what's actually AVAILABLE: (ore in storage
+            # Fair-share cap on what's actually AVAILABLE locally: (local ore
             # not reserved for a dock + ore already buffered by every peer on
-            # this recipe, this one included) // worker_count is the most any
-            # one should hold. Prevents hoarding scarce stock; plentiful stock
-            # never binds.
+            # this recipe at the same outpost, this one included) //
+            # local_workers is the most any one should hold. Prevents
+            # hoarding scarce stock; plentiful stock never binds.
             available = self.available_ore(ore_to_process, cache, dock_reserved)
-            fair_total = (available + peers_buffered) // worker_count
+            fair_total = (available + peers_buffered) // local_workers
             prefill_cap = craft_prefill_units(recipe, ore_to_process, SMELTER_PREFILL_SECONDS)
             caps = {
                 "hardware": 50 - in_buf,
@@ -361,13 +400,16 @@ class SmelterController:
                 "fair_share": fair_total - in_buf,
             }
             take_count = max(0, min(caps.values()))
-            outcome_detail.update({"demand": demand_qty, "workers": worker_count, "available": available, "fair_total": fair_total})
-            self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} workers={worker_count} peers_buffered={peers_buffered} available={available} caps={caps} -> take_count={take_count}")
+            outcome_detail.update({"demand": demand_qty, "workers": worker_count, "local_workers": local_workers, "available": available, "fair_total": fair_total})
+            self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} workers={worker_count} local_workers={local_workers} peers_buffered={peers_buffered} available={available} caps={caps} -> take_count={take_count}")
 
             if take_count > 0:
                 self.ensure_connections()
                 report = {}
-                moved = take_item(self.smelter.input, ore_to_process, take_count, cache=cache, report=report)
+                # outpost=None keeps take_item() on the SourceCache's home
+                # snapshot; off-home it counts the local Warehouses itself.
+                take_outpost = None if self.at_home() else self.outpost()
+                moved = take_item(self.smelter.input, ore_to_process, take_count, outpost=take_outpost, cache=cache, report=report)
                 sources = report.get("sources", [])
                 statuses = [entry[1] for entry in sources]
                 outcome_detail["last_take"] = {"asked": take_count, "moved": moved, "sources": [list(entry) for entry in sources]}
@@ -429,13 +471,19 @@ class SmelterController:
                 #         pass
 
     def recover_input(self):
-        """Return staged material to Inventory before clearing a stale recipe."""
+        """Return staged material to Inventory (home) or a local Warehouse
+        with room (elsewhere) before clearing a stale recipe."""
         if not hasattr(self.smelter, "input"):
             return False
+        at_home = self.at_home()
         for stack in self.smelter.input.stacks():
-            result = self.smelter.input.eject("inventory", stack.id, stack.count)
+            destination = "inventory" if at_home else best_unload_target(stack.id, 1, outpost=self.outpost())
+            if destination is None:
+                self.log.level("warn").print(f"[{self.name}] No local Warehouse has room for {stack.count}x {stack.id}; left in the input buffer.")
+                continue
+            result = self.smelter.input.eject(destination, stack.id, stack.count)
             if result.status in ["ok", "partial"]:
-                self.log.print(f"[{self.name}] Recovered {result.moved}x {stack.id} from stale recipe input.")
+                self.log.print(f"[{self.name}] Recovered {result.moved}x {stack.id} from stale recipe input to '{destination}'.")
         return self.smelter.get_input_count() == 0
 
     def power_down_if_idle(self):
@@ -518,9 +566,10 @@ class SmelterController:
                 if ore not in self.RECIPE_MAP:
                     continue
                 if ore not in buffered_ore and self.available_ore(ore, cache, dock_reserved) <= 0:
-                    if cache.stock(ore) > 0:
+                    local = self.local_ore(ore, cache)
+                    if local > 0:
                         reserved_any = True
-                        self.log.debug(f"[{self.name}] select_needed_ore: {ore} in stock ({cache.stock(ore)}) but all of it is owed raw to a Supply Dock order ({dock_reserved.get(ore, 0)}), skipping")
+                        self.log.debug(f"[{self.name}] select_needed_ore: {ore} in stock ({local}) but all of it is owed raw to a Supply Dock order ({dock_reserved.get(ore, 0)}), skipping")
                     continue
                 sourceable.append((recipe, ore))
                 self.log.debug(f"[{self.name}] select_needed_ore: candidate {getattr(recipe, 'id', '?')} via {ore} (demand={demands.get(output_item, 0)}, {'already buffered' if ore in buffered_ore else 'in stock'})")

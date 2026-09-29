@@ -1,6 +1,6 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
-from storage import total_stock, discover_storage_buildings
+from storage import total_stock, discover_storage_buildings, outpost_is_home
 from outpost_mining import stock_target_for, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
@@ -94,27 +94,53 @@ def _component(component_id):
 SMELTER_TYPE_ID = "smelter"
 
 
-def discover_smelter_ids(outpost=None):
-    """
-    All Smelter building ids at outpost (default: home). Mirrors
-    storage.discover_storage_buildings()'s shape. Recipe *availability* is
-    tech-gated and identical across same-type buildings, so any one
-    discovered smelter's list_recipes() is a representative stand-in
-    everywhere that just needs "a" smelter. Demand-cascade functions use
-    discovery, not a hardcoded id, so multiple Smelters on the network
-    each drive their own mining based on their unlocked recipes.
-    """
-    ids = []
-    outpost = outpost or _home_outpost()
-    if outpost and hasattr(outpost, "buildings"):
+def _all_outposts():
+    """Every owned OutpostRef (outpost_network.outposts()), or just home when
+    the network can't be listed."""
+    network = _component("outpost_network")
+    if network and hasattr(network, "outposts"):
         try:
-            for building in outpost.buildings(SMELTER_TYPE_ID):
+            return list(network.outposts())
+        except Exception as error:
+            swallowed("production._all_outposts: network.outposts", error)
+    home = _home_outpost()
+    return [home] if home else []
+
+
+def _discover_building_ids(type_id, outpost=None):
+    """Ids of every `type_id` building at `outpost`, or at every outpost when
+    `outpost` is None (home first, then outpost_network order)."""
+    outposts = [outpost] if outpost is not None else _all_outposts()
+    ids = []
+    for candidate in outposts:
+        if not candidate or not hasattr(candidate, "buildings"):
+            continue
+        try:
+            for building in candidate.buildings(type_id):
                 b_id = getattr(building, "id", None)
-                if b_id:
+                if b_id and b_id not in ids:
                     ids.append(b_id)
         except Exception as error:
-            swallowed("production.discover_smelter_ids: outpost.buildings", error)
+            swallowed("production._discover_building_ids: outpost.buildings", error)
     return ids
+
+
+def discover_smelter_ids(outpost=None):
+    """
+    All Smelter building ids at `outpost`, or network-wide when omitted --
+    a Smelter at a factory outpost is a peer like any home one. Recipe
+    *availability* is tech-gated and identical across same-type buildings,
+    so any one discovered smelter's list_recipes() is a representative
+    stand-in everywhere that just needs "a" smelter. Demand-cascade functions
+    use discovery, not a hardcoded id.
+    """
+    return _discover_building_ids(SMELTER_TYPE_ID, outpost)
+
+
+def machine_outpost_id(machine):
+    """Id of the outpost a Smelter/Fabricator is deployed at (its .outpost
+    OutpostRef), or None when the component doesn't expose one."""
+    return getattr(getattr(machine, "outpost", None), "id", None)
 
 
 def _home_outpost():
@@ -136,18 +162,8 @@ FABRICATOR_TYPE_ID = "fabricator"
 
 
 def discover_fabricator_ids(outpost=None):
-    """All Fabricator building ids at outpost (default: home). Same shape/reasoning as discover_smelter_ids()."""
-    ids = []
-    outpost = outpost or _home_outpost()
-    if outpost and hasattr(outpost, "buildings"):
-        try:
-            for building in outpost.buildings(FABRICATOR_TYPE_ID):
-                b_id = getattr(building, "id", None)
-                if b_id:
-                    ids.append(b_id)
-        except Exception as error:
-            swallowed("production.discover_fabricator_ids: outpost.buildings", error)
-    return ids
+    """All Fabricator building ids at `outpost`, or network-wide when omitted. Same shape/reasoning as discover_smelter_ids()."""
+    return _discover_building_ids(FABRICATOR_TYPE_ID, outpost)
 
 
 def _default_fabricator():
@@ -163,22 +179,13 @@ SUPPLY_DOCK_TYPE_ID = "supply_dock"
 
 def discover_supply_dock_ids(outpost=None):
     """
-    All Supply Dock building ids at outpost (default: home). Same shape/reasoning
-    as discover_smelter_ids()/discover_fabricator_ids(). A second dock's own
-    active order must count toward Fabricator targets/raw-material demand, not
-    just whichever order the first dock is running.
+    All Supply Dock building ids at outpost (default: home only, unlike
+    Smelter/Fabricator discovery). A second dock's own active order must
+    count toward Fabricator targets/raw-material demand, not just whichever
+    order the first dock is running.
     """
-    ids = []
     outpost = outpost or _home_outpost()
-    if outpost and hasattr(outpost, "buildings"):
-        try:
-            for building in outpost.buildings(SUPPLY_DOCK_TYPE_ID):
-                b_id = getattr(building, "id", None)
-                if b_id:
-                    ids.append(b_id)
-        except Exception as error:
-            swallowed("production.discover_supply_dock_ids: outpost.buildings", error)
-    return ids
+    return _discover_building_ids(SUPPLY_DOCK_TYPE_ID, outpost) if outpost else []
 
 
 def _all_dock_orders():
@@ -925,7 +932,8 @@ def get_fabricator_targets(cache=None):
 
 def get_fabricator_worker_ids(recipe_id):
     """
-    Sorted ids of every discovered Fabricator currently holding recipe_id
+    Sorted ids of every discovered Fabricator (network-wide, since the demand
+    it splits is network-wide) currently holding recipe_id
     (get_recipe() == recipe_id) right now -- a live roster, not an
     archive-tracked one, so it reflects joiners too (lib/fabricator.py's
     choose_recipe() lets a Fabricator "join" a recipe another one already
@@ -963,7 +971,7 @@ def get_fabricator_worker_count(recipe_id):
 def get_fabricator_pipeline(cache=None):
     """
     {item_id: units} already finished or being finished inside ANY Fabricator
-    but not yet in storage: every Fabricator's output-buffer stacks, plus one
+    on the network but not yet in storage: every Fabricator's output-buffer stacks, plus one
     craft's output for each craft in progress (is_running()). Netted out of
     every "still needed" figure alongside total_stock().
 
@@ -1241,12 +1249,15 @@ def dock_remaining_requirements():
     return remaining_by_item
 
 
-def smelter_recipe_peers(recipe_id):
+def smelter_recipe_peers(recipe_id, outpost_id=None):
     """(worker_count, buffered_units) across every discovered Smelter currently
     holding recipe_id -- get_smelter_worker_count() plus the sum of their
-    input buffers, in one walk. lib/smelter.py's fair-share cap uses both:
-    (available ore + everything already buffered by these peers) // workers
-    is the most any one of them should hold. worker_count is at least 1."""
+    input buffers, in one walk. With `outpost_id`, only Smelters deployed at
+    that outpost count: they draw from the same local ore pool, which is what
+    lib/smelter.py's fair-share cap splits ((available ore + everything
+    already buffered by these peers) // workers). Without it, every Smelter
+    on the network counts, which is what splitting network-wide demand
+    needs. worker_count is at least 1."""
     count = 0
     buffered = 0
     for smelter_id in discover_smelter_ids():
@@ -1255,6 +1266,8 @@ def smelter_recipe_peers(recipe_id):
             continue
         try:
             if candidate.get_recipe() != recipe_id:
+                continue
+            if outpost_id is not None and machine_outpost_id(candidate) != outpost_id:
                 continue
             count += 1
             buffered += candidate.get_input_count() if hasattr(candidate, "get_input_count") else 0
@@ -1386,6 +1399,7 @@ class SourceCache:
         self._building_stock = None  # {source_id: {item_id: units}}, filled alongside _stock_map
         self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
         self._fabricator_pipeline = None  # get_fabricator_pipeline() memo -- see its docstring
+        self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
 
     def _build_stock_map(self):
         log.trace("SourceCache._build_stock_map: one-shot stock scan across Inventory + Warehouses starting")
@@ -1438,6 +1452,31 @@ class SourceCache:
             for source_id, held in (self._building_stock or {}).items()
             if held.get(item_id, 0) > 0
         ]
+
+    def local_stock(self, item_id, outpost=None):
+        """Units of item_id a machine at `outpost` can reach: stock() at home
+        (Inventory + home Warehouses), only that outpost's own Warehouses
+        elsewhere (Inventory is home-only). One .stacks() sweep per remote
+        outpost per pass, like _build_stock_map()."""
+        if outpost_is_home(outpost):
+            return self.stock(item_id)
+        outpost_id = getattr(outpost, "id", None)
+        held = self._outpost_stock.get(outpost_id)
+        if held is None:
+            held = {}
+            for building in discover_storage_buildings(outpost):
+                component = building["component"]
+                if not component or not hasattr(component, "stacks"):
+                    continue
+                try:
+                    for stack in component.stacks():
+                        stack_item_id = getattr(stack, "id", None)
+                        if stack_item_id:
+                            held[stack_item_id] = held.get(stack_item_id, 0) + getattr(stack, "count", 0)
+                except Exception as error:
+                    swallowed("production.SourceCache.local_stock: component.stacks", error)
+            self._outpost_stock[outpost_id] = held
+        return held.get(item_id, 0)
 
     def smelter_recipes(self):
         if self._smelter_recipes is None:

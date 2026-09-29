@@ -53,13 +53,14 @@ after cargo loaded (cargo not tracked here).
 
 ### 2a-0-2. Multi-Fabricator Support (`lib/production.py`, `lib/fabricator.py`)
 
-`production.discover_fabricator_ids()`/`_default_fabricator()` find Fabricators at runtime (no hardcoded ids). `claim_recipe()`/`release_recipe()` (`lib/fabricator.py`,
+`production.discover_fabricator_ids()`/`_default_fabricator()` find Fabricators at runtime (no hardcoded ids), network-wide (every `outpost_network.outposts()` entry; pass `outpost=` for one outpost). `discover_smelter_ids()` same; `discover_supply_dock_ids()` stays home-only. `claim_recipe()`/`release_recipe()` (`lib/fabricator.py`,
 `STALE_TICKS=600`, archive key `"fabricator.recipe_claims"`) stop multiple Fabricators converging on same recipe: `choose_recipe()`'s candidate loop claims each sourceable candidate in shortfall order, next on claim fail.
 
 - **Pile-on fallback + even split**: if NO candidate exclusively claimable (only one recipe demanded), `choose_recipe()` joins biggest-shortfall one anyway, no idle.
   `get_fabricator_worker_ids(recipe_id)` (sorted live roster of Fabricators on that recipe) splits `crafts_remaining` floor-plus-remainder: first `crafts % workers` ids get one extra, shares sum exactly (a worker may get 0 and idle).
 - **Pipeline netting**: every "still needed" (`get_fabricator_active_recipe()`, `choose_recipe()`) = target − `total_stock()` − `production.get_fabricator_pipeline(cache)` = every Fabricator's output-buffer stacks + one craft's output per running craft (memoized on `SourceCache`).
-- **Output drain fallback**: Fabricator and Smelter `drain_output()` use `storage.drain_port_inventory_first()`: Inventory first, a local Warehouse only on `INVENTORY_FULL_STATUSES = ("partial", "target_full", "slots_full")`. Costs consumers an Auto Feeder hop, beats a stalled output bin. Applies to `INVENTORY_ONLY_ITEM_IDS` too; `take_item()` still finds them for docks/Fabricators, drone `couple()`/`deploy()` can't until moved back.
+- **Outpost-aware machines** (off-home Smelter/Fabricator): ports rest on `storage.local_port_target(outpost)` (`"inventory"` at home, else first local Warehouse; none → one warn, no connect). `take_item(outpost=)` pulls from local Warehouses only, output drains and `recover_input()`/`eject_excess_inputs()` go to a local Warehouse (`best_unload_target(outpost=)`), Smelter ore stock = `SourceCache.local_stock(item, outpost)` (home: `stock()`; elsewhere that outpost's Warehouses, one `.stacks()` sweep each per pass). Dock raw-ore reserve applies to home Smelters only (docks are home-only). Demand (`get_smelter_demands()`, `get_fabricator_targets()`, stock netting vs home `total_stock()`) and demand splits (`get_fabricator_worker_ids()`, Smelter demand share) stay network-wide. `production.machine_outpost_id(machine)` = `machine.outpost.id`.
+- **Output drain fallback**: Fabricator and Smelter `drain_output()` use `storage.drain_port_inventory_first()`: Inventory first, a local Warehouse only on `INVENTORY_FULL_STATUSES = ("partial", "target_full", "slots_full")`; off-home straight to a local Warehouse. Costs consumers an Auto Feeder hop, beats a stalled output bin. Applies to `INVENTORY_ONLY_ITEM_IDS` too; `take_item()` still finds them for docks/Fabricators, drone `couple()`/`deploy()` can't until moved back.
 - **Load chunking**: `load_inputs()` capped to `FABRICATOR_LOAD_CHUNK_SIZE = 10` units per call. `lib/smelter.py` ore top-up has matching `SMELTER_LOAD_CHUNK_SIZE = 10`; Supply Dock loading has `SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10`.
 - **`production.craft_prefill_units(recipe, item_id, prefill_seconds=INPUT_PREFILL_SECONDS)`**
   (`INPUT_PREFILL_SECONDS = 30`, no archive state) = real fairness mechanism. Asks "how much staged to keep crafting next ~30 real seconds", not "how much left to load": `ceil(prefill_seconds / craft_seconds(recipe))` crafts' worth, floor one craft's requirement. `craft_seconds()` converts `recipe.duration_game_hours` via
@@ -77,9 +78,11 @@ after cargo loaded (cargo not tracked here).
   - `prefill_cap = craft_prefill_units(recipe, ore, SMELTER_PREFILL_SECONDS)` —
     `SMELTER_PREFILL_SECONDS = 30`, split out from the shared `INPUT_PREFILL_SECONDS` so Smelters can
     be tuned alone. At 0.08 h/craft (2 s) that's 15 ore.
-  - **Fair-share cap** (`fair_total`): `(available ore + Σ input buffers of every Smelter on this
-    recipe, this one included) // workers`, from `production.smelter_recipe_peers(recipe_id)` →
-    `(workers, buffered)`. Plentiful stock never binds; scarce stock splits evenly.
+  - `workers` = every Smelter on the network holding the recipe (`smelter_recipe_peers(recipe_id)`).
+  - **Fair-share cap** (`fair_total`): `(available local ore + Σ input buffers of every Smelter on this
+    recipe at the same outpost, this one included) // local_workers`, from
+    `production.smelter_recipe_peers(recipe_id, outpost_id)` → `(workers, buffered)` scoped to that
+    outpost. Plentiful stock never binds; scarce stock splits evenly among machines sharing it.
 - **Recipe switching hysteresis** (`select_needed_ore()`): while current recipe still demanded + sourceable, Smelter keeps it outright if it holds (or can take) claim; joiner (peer holds claim) may move to *unclaimed* recipe only if that recipe's demand ≥ `switch_min_demand()` = one `SMELTER_PREFILL_SECONDS` window of output (15 units for 2 s 1:1 recipe); each switch ejects the buffer and skips a step. Smelter releases old recipe's claim on switch.
 - **Join gate** (same function): pile-on joining recipe peer already claims needs
   `demand ≥ switch_min_demand() × (workers after joining)`; else Smelter idles, outcome `demand_covered_by_peers`.
@@ -160,6 +163,7 @@ Recipe's `fluid_inputs` (e.g. `{"water_in": 1.0}`) delivered via `FluidPort` con
 Makes whole production chain aware of Warehouse/Large Warehouse buildings, not just central home `"inventory"` endpoint. Scope: Warehouse + Large Warehouse only (`STORAGE_TYPE_IDS`) — Storage Bin uses different single-material API, not included yet. Everything defaults to home outpost, matching Inventory only participating at Nocturna Base.
 
 - `total_stock(item_id)` = `inventory.count(item_id)` + every discovered Warehouse's `count(item_id)` — what every demand/mining-priority function nets against.
+- `outpost_is_home(outpost=None)`: `None` counts as home (every helper's default); reads `OutpostRef.is_home` (bool) or the Outpost component's `is_home()`. `local_port_target(outpost=None)`: resting port endpoint for a machine there (`"inventory"` at home, first local Warehouse id elsewhere, `None` if none).
 - `best_unload_target(item_id, min_amount=1)`: among Warehouses at `outpost` with `space_for(item_id) >= min_amount`, prefers one **already holding `item_id`** (consolidate onto existing stack), falls back to least-full (`fill_percent()`) only when none stocks it; `"inventory"` if no Warehouse qualifies. `vehicle_cargo.py`'s `unload_cargo()` picks destination **per stack**.
 - `consolidate_cross_warehouse_stock(outpost=None)`: calls `.compact()` on every discovered Warehouse/Large Warehouse at `outpost` to merge same-item stock split across several — genuinely pulls from *other* storage endpoints, not purely intra-building (confirmed live; `.compact()` locks its Warehouse as material endpoint whole cycle).
   Runs once per `STORAGE_TICK_INTERVAL` cycle from headless automation panel's AUTOMATION section for **every** outpost (unlike Inventory-only, home-scoped rebalance sweep below).

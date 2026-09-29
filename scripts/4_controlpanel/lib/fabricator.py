@@ -1,7 +1,7 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
+from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id
 from archive import archive
-from storage import take_item, total_stock, best_unload_target, drain_port_to_storage, drain_port_inventory_first
+from storage import take_item, total_stock, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -44,13 +44,19 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 
 
 class FabricatorController:
-    """Selects unlocked pipe/power recipes and feeds them from Inventory or a Warehouse."""
+    """Selects unlocked pipe/power recipes and feeds them from Inventory or a Warehouse.
+
+    Outpost-aware: at home the ports use Inventory + home Warehouses; at any
+    other outpost only that outpost's own Warehouses (Inventory is home-only,
+    docs/components/fabricator.md). Demand, targets and worker splits stay
+    network-wide."""
 
     def __init__(self, machine):
         self.machine = machine
         self.name = getattr(machine, "id", "fabricator_1")
         self.connected_input = False
         self.connected_output = False
+        self._warned_no_local_storage = False
         self.clock = get_component("clock")
         self.log = TreeConsole(module="fabricator")
 
@@ -129,14 +135,32 @@ class FabricatorController:
         shedded = archive.get("power.shedded", [])
         return isinstance(shedded, list) and self.name in shedded
 
+    def outpost(self):
+        """OutpostRef this Fabricator is deployed at (None if not exposed = home)."""
+        return getattr(self.machine, "outpost", None)
+
+    def at_home(self):
+        return outpost_is_home(self.outpost())
+
     def ensure_connection(self):
+        """Connects input and output ports to Inventory at home, or to a
+        local Warehouse elsewhere (storage.local_port_target())."""
+        if self.connected_input and self.connected_output:
+            return
+        target = local_port_target(self.outpost())
+        if target is None:
+            if not self._warned_no_local_storage:
+                self._warned_no_local_storage = True
+                self.log.level("warn").print(f"[{self.name}] No Warehouse at outpost '{machine_outpost_id(self.machine)}' -- a remote Fabricator can only feed from local storage.")
+            return
+        self._warned_no_local_storage = False
         if not self.connected_input and hasattr(self.machine, "input"):
-            result = self.machine.input.connect("inventory")
+            result = self.machine.input.connect(target)
             self.connected_input = result.status == "ok"
             if not self.connected_input and result.status not in ["busy"]:
                 self.log.level("warn").print(f"[{self.name}] Input connection notice: {result.status} - {result.message}")
         if not self.connected_output and hasattr(self.machine, "output"):
-            result = self.machine.output.connect("inventory")
+            result = self.machine.output.connect(target)
             self.connected_output = result.status == "ok"
             if not self.connected_output and result.status not in ["busy"]:
                 self.log.level("warn").print(f"[{self.name}] Output connection notice: {result.status} - {result.message}")
@@ -411,11 +435,14 @@ class FabricatorController:
     def drain_output(self):
         if not hasattr(self.machine, "output"):
             return
-        # Inventory first, a Warehouse only when Inventory is full -- see
-        # storage.drain_port_inventory_first().
-        for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=getattr(self.machine, "outpost", None)):
+        # Inventory first, a Warehouse only when Inventory is full or this
+        # Fabricator is off-home -- see storage.drain_port_inventory_first().
+        at_home = self.at_home()
+        for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=self.outpost()):
             if moved > 0:
-                if destination == "warehouse":
+                if not at_home:
+                    self.log.print(f"[{self.name}] Sent {moved}x {item_id} to a local Warehouse.")
+                elif destination == "warehouse":
                     self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
                 else:
                     self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
@@ -442,7 +469,7 @@ class FabricatorController:
             return
         if staged <= 0:
             return
-        moved = drain_port_to_storage(port, outpost=getattr(self.machine, "outpost", None), allow_partial=True)
+        moved = drain_port_to_storage(port, outpost=self.outpost(), allow_partial=True)
         if moved > 0:
             self.log.print(f"[{self.name}] Drained {moved}x byproduct to storage.")
         capacity = port.capacity() if hasattr(port, "capacity") else 0
@@ -488,9 +515,9 @@ class FabricatorController:
             # openings for a peer Fabricator to get its own share too.
             amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, craft_prefill_units(recipe, item_id) - staged))
             self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={craft_prefill_units(recipe, item_id)} -> amount={amount}")
-            # take_item() checks Inventory first, then rotates through any
-            # Warehouse holding this item -- see lib/storage.py.
-            moved = take_item(self.machine.input, item_id, amount)
+            # take_item() checks Inventory first (home only), then rotates
+            # through any local Warehouse holding this item -- see lib/storage.py.
+            moved = take_item(self.machine.input, item_id, amount, outpost=None if self.at_home() else self.outpost())
             if moved <= 0:
                 continue
             self.log.print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
@@ -536,7 +563,10 @@ class FabricatorController:
             excess = staged - keep
             if excess <= 0:
                 continue
-            destination = best_unload_target(item_id, excess)
+            destination = best_unload_target(item_id, excess, outpost=self.outpost())
+            if destination is None:
+                self.log.debug(f"[{self.name}] eject_excess_inputs: no local storage has room for {excess}x {item_id}, keeping it staged")
+                continue
             try:
                 result = self.machine.input.eject(destination, item_id, excess)
             except Exception as error:
