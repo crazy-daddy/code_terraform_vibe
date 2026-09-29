@@ -961,9 +961,39 @@ def infer_placeholders(template: str, current: str) -> dict:
     return found
 
 
+# The Pioneer template has no DESTINATION_OUTPOST_ID: every hauler pulls TO
+# its HOME_BASE. A slot (cache or code) still holding a real destination id
+# from push-hauler days is re-homed there, so an ore hauler parked at a mine
+# pulls to home instead of toward the mine.
+# "*"/"any"/"%" (the old pull wildcard) and empty keep HOME_BASE.
+RETIRED_DESTINATION = "DESTINATION_OUTPOST_ID"
+RETIRED_DESTINATION_KEEP = ("", "None", "*", "any", "%")
+RETIRED_DESTINATION_LINE = re.compile(r'^DESTINATION_OUTPOST_ID\s*=\s*"([^"]*)"\s*$', re.MULTILINE)
+
+
+def rehome_retired_destination(stem: str, placeholders: list, slot_cache: dict, current: str) -> Optional[str]:
+    """New HOME_BASE for a slot that still carries a retired push-hauler
+    DESTINATION_OUTPOST_ID (see RETIRED_DESTINATION), else None. Drops the
+    retired key from slot_cache either way. Only for templates that ask for
+    HOME_BASE and no longer ask for the destination."""
+    names = {name for name, _default in placeholders}
+    if "HOME_BASE" not in names or RETIRED_DESTINATION in names:
+        return None
+    value = slot_cache.pop(RETIRED_DESTINATION, None)
+    if value is None and current.strip():
+        hit = RETIRED_DESTINATION_LINE.search(current)
+        value = hit.group(1) if hit else None
+    if value is None or value in RETIRED_DESTINATION_KEEP:
+        return None
+    home = "None" if value == "outpost_home" else value
+    warn("  note  %-28s push hauler to %s: re-homed there (HOME_BASE=%s), now pulls to it" % (stem, value, home))
+    return home
+
+
 def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run: bool,
                          template: str = "", current: str = "") -> dict:
-    """Answers for every (name, default) in placeholders, from: this save
+    """Answers for every (name, default) in placeholders, from: a retired
+    push-hauler destination (rehome_retired_destination()), this save
     slot's cached answers, the value the slot's current code holds
     (infer_placeholders()), the template default when the slot already has
     code (it predates the placeholder), an interactive prompt for an empty
@@ -977,7 +1007,11 @@ def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run:
     slot_cache = dict(cache.get(key, {}))
     inferred = infer_placeholders(template, current) if current.strip() else {}
     answers: dict = {}
-    dirty = False
+    had_retired = RETIRED_DESTINATION in slot_cache
+    rehomed = rehome_retired_destination(stem, placeholders, slot_cache, current)
+    dirty = (had_retired or rehomed is not None) and not dry_run
+    if rehomed is not None:
+        slot_cache["HOME_BASE"] = rehomed
     for name, default in placeholders:
         if name in slot_cache:
             answers[name] = slot_cache[name]
@@ -1582,7 +1616,10 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
             body = template
             names = find_placeholders(template)
             if names:
-                cached = load_params_cache().get("%s/%s" % (opts.save_dir.name, path.stem), {})
+                cached = dict(load_params_cache().get("%s/%s" % (opts.save_dir.name, path.stem), {}))
+                rehomed = rehome_retired_destination(path.stem, names, cached, text)
+                if rehomed is not None:
+                    cached["HOME_BASE"] = rehomed
                 inferred = infer_placeholders(template, text)
                 body = render_placeholders(template, {n: cached.get(n, inferred.get(n, d)) for n, d in names})
             if opts.renumber:
