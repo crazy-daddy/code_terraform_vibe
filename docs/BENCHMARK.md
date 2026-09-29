@@ -86,7 +86,7 @@ Operations over a 1000-element list:
 | --- | --- | --- |
 | `transmitter.connect("earth")` | none | Re-opens the Earth link. |
 | `power_control.set_powered` off + on | `BENCH_POWER_MACHINE_ID` | Switches one machine off and on again; skipped unless `can_power_off()` allows it; the original state is restored. |
-| Storage bin transfer in + out | `BENCH_TRANSFER_BIN_ID`, `BENCH_TRANSFER_ITEM` | Moves one item from the inventory to the bin and back each iteration; any leftover is moved back at the end. |
+| Storage bin transfer in + out | `BENCH_TRANSFER_BIN_ID`, `BENCH_TRANSFER_ITEM` | Moves one item from the inventory to the bin and back each iteration; any leftover is moved back at the end. Needs Auto Feeders research, and each call waits for the feeder cycle, so the time is the game's transfer cycle, not interpreter cost. The last returned statuses are printed; only `ok` timings mean anything. |
 
 Not covered on purpose: shop buy/sell (spends credits), vehicle and drone commands, blueprint placement, order submission.
 

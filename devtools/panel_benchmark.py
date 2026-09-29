@@ -743,8 +743,9 @@ def intr_power_toggle(n):
 def intr_transfer_roundtrip(n):
     bin_ = env["transfer_bin"]
     for i in range(n):
-        bin_.transfer_from_inventory(BENCH_TRANSFER_ITEM, 1)
-        bin_.transfer_to_inventory(1)
+        out = bin_.transfer_from_inventory(BENCH_TRANSFER_ITEM, 1)
+        back = bin_.transfer_to_inventory(1)
+        env["transfer_status"] = (out.status, back.status)
 
 
 def build_interruptive_cases():
@@ -764,11 +765,13 @@ def build_interruptive_cases():
         env["transfer_bin"] = find_component(BENCH_TRANSFER_BIN_ID)
         if env["transfer_bin"] is not None:
             env["transfer_before"] = env["transfer_bin"].count(BENCH_TRANSFER_ITEM)
-            c.append(("storage_bin transfer in+out (1 item)", intr_transfer_roundtrip, 5))
+            c.append(("storage_bin transfer in+out (feeder cycle time, not interpreter cost)", intr_transfer_roundtrip, 2))
     return c
 
 
 def cleanup_interruptive():
+    if "transfer_status" in env:
+        print(f"transfer statuses (out, back): {env['transfer_status']}; only 'ok' timings are meaningful")
     if "power_was_on" in env:
         res = env["power"].set_powered(BENCH_POWER_MACHINE_ID, env["power_was_on"])
         print(f"cleanup: restore power of {BENCH_POWER_MACHINE_ID} -> {res.status}")
