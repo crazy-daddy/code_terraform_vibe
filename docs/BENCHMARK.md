@@ -61,6 +61,35 @@ Operations over a 1000-element list:
 9. **`frozenset` is not available** in the interpreter.
 10. **The Playground aborts long-running code.** Run anything that takes more than a few seconds in a script slot instead.
 
+## API cases
+
+`devtools/panel_benchmark.py` also times game API calls. Each case is skipped with a message when its component is missing in the save. Costs are reported in the same units as above (µs per call, and × the empty loop). Results for this section are added to this file after the first run in game.
+
+**Non-interruptive** (`RUN_API`, on by default): read-only calls, plus one scratch archive key and one scratch Signal Bus channel (`bench.tmp` for both) that are removed at the end, also when the run fails.
+
+| Group | Cases |
+| --- | --- |
+| Lookup | `get_component("clock")`, `get_component(<building id>)` |
+| Clock / scheduler | `clock.tick()`, `clock.get_time()`, `sleep(0.1)` |
+| Console | `console.now()`, `console.debug()` |
+| Archive (`notebook`) | `get` and `has` on a missing key; `set`, `get`, `transaction` on a small dict and on a 100-entry dict; `keys(prefix)`; reading `.status` from an `ActionResult` |
+| Signal Bus (`comms`) | `broadcast`, `latest`, `latest_info`, `send` + `receive`, `queue_size`, `pending`, `channels` |
+| Outposts | `outposts()`, `home()`, `coords()`, `buildings()`, `buildings(type_id)`, reading `.type_id` over the building refs |
+| Machines | storage bin `count` / `fill_percent` / `stacks`, battery `get_level`, `inventory` `count` / `get_used` / `stacks` |
+| Power / fleet | `power_control.total()`, `grids()`, `is_powered(id)`, `fleet.vehicles()`, `fleet.drones()` |
+| World | `nocturna` `terraform_progress` / `biome_at` / `points_of_interest`, `atmosphere.get_o2()` |
+| Reference data | `research.unlocked()` / `is_unlocked()`, `item_catalog.lookup()`, `shop.get_catalogue()`, `orders.list_orders()`, `journal` `is_empty` / `biomass_coords` |
+
+**Interruptive** (`RUN_INTERRUPTIVE`, off by default): each case briefly changes real game state and restores it in a `finally` block.
+
+| Case | Constants that enable it | Effect |
+| --- | --- | --- |
+| `transmitter.connect("earth")` | none | Re-opens the Earth link. |
+| `power_control.set_powered` off + on | `BENCH_POWER_MACHINE_ID` | Switches one machine off and on again; skipped unless `can_power_off()` allows it; the original state is restored. |
+| Storage bin transfer in + out | `BENCH_TRANSFER_BIN_ID`, `BENCH_TRANSFER_ITEM` | Moves one item from the inventory to the bin and back each iteration; any leftover is moved back at the end. |
+
+Not covered on purpose: shop buy/sell (spends credits), vehicle and drone commands, blueprint placement, order submission.
+
 ## Reproducing
 
-Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, and takes a few minutes. Lower `MIN_SECONDS` to shorten it.
+Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.

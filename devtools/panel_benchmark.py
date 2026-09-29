@@ -3,9 +3,20 @@
 # range(n) materialises a list (item limit applies), so each case runs a small fixed chunk per call
 # and the number of calls doubles until one timed run lasts >= MIN_SECONDS of simulation time.
 
+# Switches. Interruptive cases change game state briefly (see the INTERRUPTIVE section); off by default.
+RUN_LOCAL = True
+RUN_API = True
+RUN_INTERRUPTIVE = False
+# Interruptive inputs (a case is skipped while its constant is empty):
+BENCH_POWER_MACHINE_ID = ""  # machine id to switch off and on repeatedly; state is restored afterwards
+BENCH_TRANSFER_BIN_ID = ""  # storage bin id that receives and returns one item per iteration
+BENCH_TRANSFER_ITEM = ""  # item id held in the inventory, moved to that bin and back
+
 clock = get_component("clock")
 MIN_SECONDS = 2.0
 MAX_REPS = 20000
+BENCH_KEY = "bench.tmp"
+BENCH_CHANNEL = "bench.tmp"
 
 data = list(range(1000))
 row3 = [0, 1, 2]
@@ -243,17 +254,563 @@ def time_case(fn, chunk):
         reps = reps * 2
 
 
-print(f"Benchmark start, target >= {MIN_SECONDS}s per case (simulation seconds)")
-results = []
-for name, fn, chunk in CASES:
-    n, dt = time_case(fn, chunk)
-    per_us = dt / n * 1000000.0
-    results.append((name, n, dt, per_us))
-    print(f"{name}: n={n} dt={dt:.2f}s -> {per_us:.2f} us/iter")
+def run_group(title, cases):
+    print(f"--- {title} ---")
+    rows = []
+    for name, fn, chunk in cases:
+        n, dt = time_case(fn, chunk)
+        per_us = dt / n * 1000000.0
+        rows.append((name, per_us))
+        print(f"{name}: n={n} dt={dt:.2f}s -> {per_us:.2f} us/iter")
+    return rows
 
-base = results[0][3]
-if base > 0:
-    print("--- relative to empty loop iteration ---")
-    for name, n, dt, per_us in results:
+
+def report(title, rows, base):
+    print(f"--- {title}: relative to empty loop iteration ---")
+    for name, per_us in rows:
         print(f"{name}: {per_us / base:.1f}x")
+
+
+# ---------------------------------------------------------------------------
+# API section. Every case only reads game state, or writes one scratch key/channel that is removed at
+# the end. Components missing in this save are skipped with a message.
+# ---------------------------------------------------------------------------
+
+env = {}
+
+
+def find_component(comp_id):
+    try:
+        comp = get_component(comp_id)
+    except Exception as err:
+        print(f"  skip {comp_id}: {err}")
+        return None
+    if comp is None:
+        print(f"  skip {comp_id}: not available")
+    return comp
+
+
+def bump(v):
+    return v
+
+
+def api_get_component_lookup(n):
+    for i in range(n):
+        get_component("clock")
+
+
+def api_get_component_lookup_building(n):
+    bid = env["storage_id"]
+    for i in range(n):
+        get_component(bid)
+
+
+def api_clock_tick(n):
+    for i in range(n):
+        clock.tick()
+
+
+def api_clock_get_time(n):
+    for i in range(n):
+        clock.get_time()
+
+
+def api_sleep(n):
+    for i in range(n):
+        sleep(0.1)
+
+
+def api_console_debug(n):
+    console = env["console"]
+    for i in range(n):
+        console.debug("bench")
+
+
+def api_console_now(n):
+    console = env["console"]
+    for i in range(n):
+        console.now()
+
+
+def api_archive_get_missing(n):
+    nb = env["notebook"]
+    for i in range(n):
+        nb.get("bench.missing")
+
+
+def api_archive_has_missing(n):
+    nb = env["notebook"]
+    for i in range(n):
+        nb.has("bench.missing")
+
+
+def api_archive_set_small(n):
+    nb = env["notebook"]
+    v = {"a": 1, "b": [1, 2, 3]}
+    for i in range(n):
+        nb.set(BENCH_KEY, v)
+
+
+def api_archive_get_small(n):
+    nb = env["notebook"]
+    for i in range(n):
+        nb.get(BENCH_KEY)
+
+
+def api_archive_transaction_small(n):
+    nb = env["notebook"]
+    for i in range(n):
+        nb.transaction(BENCH_KEY, {}, bump)
+
+
+def api_archive_keys(n):
+    nb = env["notebook"]
+    for i in range(n):
+        nb.keys("bench.")
+
+
+def api_archive_set_big(n):
+    nb = env["notebook"]
+    v = env["big"]
+    for i in range(n):
+        nb.set(BENCH_KEY, v)
+
+
+def api_archive_get_big(n):
+    nb = env["notebook"]
+    for i in range(n):
+        nb.get(BENCH_KEY)
+
+
+def api_archive_transaction_big(n):
+    nb = env["notebook"]
+    for i in range(n):
+        nb.transaction(BENCH_KEY, {}, bump)
+
+
+def api_archive_result_status(n):
+    res = env["notebook"].set(BENCH_KEY, {"a": 1})
+    for i in range(n):
+        res.status
+
+
+def api_bus_broadcast(n):
+    bus = env["comms"]
+    for i in range(n):
+        bus.broadcast(BENCH_CHANNEL, i)
+
+
+def api_bus_latest(n):
+    bus = env["comms"]
+    for i in range(n):
+        bus.latest(BENCH_CHANNEL)
+
+
+def api_bus_latest_info(n):
+    bus = env["comms"]
+    for i in range(n):
+        bus.latest_info(BENCH_CHANNEL)
+
+
+def api_bus_send_receive(n):
+    bus = env["comms"]
+    for i in range(n):
+        bus.send(BENCH_CHANNEL, i)
+        bus.receive(BENCH_CHANNEL)
+
+
+def api_bus_queue_size(n):
+    bus = env["comms"]
+    for i in range(n):
+        bus.queue_size(BENCH_CHANNEL)
+
+
+def api_bus_pending(n):
+    bus = env["comms"]
+    for i in range(n):
+        bus.pending(BENCH_CHANNEL)
+
+
+def api_bus_channels(n):
+    bus = env["comms"]
+    for i in range(n):
+        bus.channels()
+
+
+def api_network_outposts(n):
+    net = env["net"]
+    for i in range(n):
+        net.outposts()
+
+
+def api_network_home(n):
+    net = env["net"]
+    for i in range(n):
+        net.home()
+
+
+def api_home_coords(n):
+    home = env["home"]
+    for i in range(n):
+        home.coords()
+
+
+def api_home_buildings(n):
+    home = env["home"]
+    for i in range(n):
+        home.buildings()
+
+
+def api_home_buildings_filtered(n):
+    home = env["home"]
+    for i in range(n):
+        home.buildings("storage_bin")
+
+
+def api_building_fields(n):
+    blds = env["blds"]
+    for i in range(n):
+        for b in blds:
+            b.type_id
+
+
+def api_storage_count(n):
+    bin_ = env["storage"]
+    for i in range(n):
+        bin_.count("iron_ore")
+
+
+def api_storage_fill(n):
+    bin_ = env["storage"]
+    for i in range(n):
+        bin_.fill_percent()
+
+
+def api_storage_stacks(n):
+    bin_ = env["storage"]
+    for i in range(n):
+        bin_.stacks()
+
+
+def api_battery_level(n):
+    bat = env["battery"]
+    for i in range(n):
+        bat.get_level()
+
+
+def api_inventory_count(n):
+    inv = env["inventory"]
+    for i in range(n):
+        inv.count("iron_ore")
+
+
+def api_inventory_used(n):
+    inv = env["inventory"]
+    for i in range(n):
+        inv.get_used()
+
+
+def api_inventory_stacks(n):
+    inv = env["inventory"]
+    for i in range(n):
+        inv.stacks()
+
+
+def api_power_total(n):
+    power = env["power"]
+    for i in range(n):
+        power.total()
+
+
+def api_power_grids(n):
+    power = env["power"]
+    for i in range(n):
+        power.grids()
+
+
+def api_power_is_powered(n):
+    power = env["power"]
+    mid = env["storage_id"]
+    for i in range(n):
+        power.is_powered(mid)
+
+
+def api_fleet_vehicles(n):
+    fleet = env["fleet"]
+    for i in range(n):
+        fleet.vehicles()
+
+
+def api_fleet_drones(n):
+    fleet = env["fleet"]
+    for i in range(n):
+        fleet.drones()
+
+
+def api_nocturna_progress(n):
+    world = env["nocturna"]
+    for i in range(n):
+        world.terraform_progress()
+
+
+def api_nocturna_biome_at(n):
+    world = env["nocturna"]
+    for i in range(n):
+        world.biome_at(0, 0)
+
+
+def api_nocturna_poi(n):
+    world = env["nocturna"]
+    for i in range(n):
+        world.points_of_interest()
+
+
+def api_atmosphere_o2(n):
+    atmo = env["atmosphere"]
+    for i in range(n):
+        atmo.get_o2()
+
+
+def api_research_unlocked(n):
+    research = env["research"]
+    for i in range(n):
+        research.unlocked()
+
+
+def api_research_is_unlocked(n):
+    research = env["research"]
+    for i in range(n):
+        research.is_unlocked("bench_unknown")
+
+
+def api_catalog_lookup(n):
+    catalog = env["catalog"]
+    for i in range(n):
+        catalog.lookup("iron_ore")
+
+
+def api_shop_catalogue(n):
+    shop = env["shop"]
+    for i in range(n):
+        shop.get_catalogue()
+
+
+def api_orders_list(n):
+    orders = env["orders"]
+    for i in range(n):
+        orders.list_orders()
+
+
+def api_journal_is_empty(n):
+    journal = env["journal"]
+    for i in range(n):
+        journal.is_empty(0, 0)
+
+
+def api_journal_biomass_coords(n):
+    journal = env["journal"]
+    for i in range(n):
+        journal.biomass_coords()
+
+
+def add_case(cases, comp_key, name, fn, chunk):
+    if comp_key is None or env.get(comp_key) is not None:
+        cases.append((name, fn, chunk))
+
+
+def setup_api():
+    print("API setup: discovering components")
+    env["console"] = find_component("console")
+    env["notebook"] = find_component("notebook")
+    env["comms"] = find_component("comms")
+    env["net"] = find_component("outpost_network")
+    env["inventory"] = find_component("inventory")
+    env["power"] = find_component("power_control")
+    env["fleet"] = find_component("fleet")
+    env["nocturna"] = find_component("nocturna")
+    env["atmosphere"] = find_component("atmosphere")
+    env["research"] = find_component("research")
+    env["catalog"] = find_component("item_catalog")
+    env["shop"] = find_component("shop")
+    env["orders"] = find_component("orders")
+    env["journal"] = find_component("journal")
+    env["big"] = {f"k{i}": i for i in range(100)}
+    env["home"] = None
+    env["blds"] = []
+    env["storage_id"] = None
+    env["storage"] = None
+    env["battery"] = None
+    if env["net"] is not None:
+        env["home"] = env["net"].home()
+        env["blds"] = env["home"].buildings()
+        for b in env["blds"]:
+            if b.type_id == "storage_bin" and env["storage"] is None:
+                env["storage_id"] = b.id
+                env["storage"] = find_component(b.id)
+            if b.type_id == "battery" and env["battery"] is None:
+                env["battery"] = find_component(b.id)
+    print(f"  home buildings: {len(env['blds'])}, storage bin: {env['storage_id']}")
+
+
+def build_api_cases():
+    c = []
+    add_case(c, None, "get_component('clock') lookup", api_get_component_lookup, 20)
+    add_case(c, "storage", "get_component(building id) lookup", api_get_component_lookup_building, 20)
+    add_case(c, None, "clock.tick()", api_clock_tick, 50)
+    add_case(c, None, "clock.get_time()", api_clock_get_time, 50)
+    add_case(c, None, "sleep(0.1)", api_sleep, 5)
+    add_case(c, "console", "console.now()", api_console_now, 50)
+    add_case(c, "console", "console.debug('bench')", api_console_debug, 20)
+    add_case(c, "notebook", "archive.get missing key", api_archive_get_missing, 50)
+    add_case(c, "notebook", "archive.has missing key", api_archive_has_missing, 50)
+    add_case(c, "notebook", "archive.set small dict", api_archive_set_small, 20)
+    add_case(c, "notebook", "archive.get small dict", api_archive_get_small, 50)
+    add_case(c, "notebook", "archive.transaction small dict", api_archive_transaction_small, 20)
+    add_case(c, "notebook", "archive.keys('bench.')", api_archive_keys, 20)
+    add_case(c, "notebook", "archive result .status read", api_archive_result_status, 50)
+    add_case(c, "notebook", "archive.set 100-entry dict", api_archive_set_big, 10)
+    add_case(c, "notebook", "archive.get 100-entry dict", api_archive_get_big, 20)
+    add_case(c, "notebook", "archive.transaction 100-entry dict", api_archive_transaction_big, 10)
+    add_case(c, "comms", "bus.broadcast", api_bus_broadcast, 20)
+    add_case(c, "comms", "bus.latest", api_bus_latest, 50)
+    add_case(c, "comms", "bus.latest_info", api_bus_latest_info, 50)
+    add_case(c, "comms", "bus.send + bus.receive", api_bus_send_receive, 10)
+    add_case(c, "comms", "bus.queue_size", api_bus_queue_size, 50)
+    add_case(c, "comms", "bus.pending (empty)", api_bus_pending, 50)
+    add_case(c, "comms", "bus.channels()", api_bus_channels, 50)
+    add_case(c, "net", "outpost_network.outposts()", api_network_outposts, 20)
+    add_case(c, "net", "outpost_network.home()", api_network_home, 20)
+    add_case(c, "home", "home.coords()", api_home_coords, 20)
+    add_case(c, "home", "home.buildings()", api_home_buildings, 10)
+    add_case(c, "home", "home.buildings('storage_bin')", api_home_buildings_filtered, 10)
+    add_case(c, "home", f"read .type_id over {len(env['blds'])} building refs", api_building_fields, 5)
+    add_case(c, "storage", "storage_bin.count()", api_storage_count, 20)
+    add_case(c, "storage", "storage_bin.fill_percent()", api_storage_fill, 20)
+    add_case(c, "storage", "storage_bin.stacks()", api_storage_stacks, 20)
+    add_case(c, "battery", "battery.get_level()", api_battery_level, 20)
+    add_case(c, "inventory", "inventory.count()", api_inventory_count, 20)
+    add_case(c, "inventory", "inventory.get_used()", api_inventory_used, 20)
+    add_case(c, "inventory", "inventory.stacks()", api_inventory_stacks, 20)
+    add_case(c, "power", "power_control.total()", api_power_total, 20)
+    add_case(c, "power", "power_control.grids()", api_power_grids, 10)
+    if env["storage"] is not None:
+        add_case(c, "power", "power_control.is_powered(id)", api_power_is_powered, 20)
+    add_case(c, "fleet", "fleet.vehicles()", api_fleet_vehicles, 10)
+    add_case(c, "fleet", "fleet.drones()", api_fleet_drones, 10)
+    add_case(c, "nocturna", "nocturna.terraform_progress()", api_nocturna_progress, 20)
+    add_case(c, "nocturna", "nocturna.biome_at(0, 0)", api_nocturna_biome_at, 20)
+    add_case(c, "nocturna", "nocturna.points_of_interest()", api_nocturna_poi, 10)
+    add_case(c, "atmosphere", "atmosphere.get_o2()", api_atmosphere_o2, 20)
+    add_case(c, "research", "research.unlocked()", api_research_unlocked, 10)
+    add_case(c, "research", "research.is_unlocked(id)", api_research_is_unlocked, 20)
+    add_case(c, "catalog", "item_catalog.lookup(id)", api_catalog_lookup, 20)
+    add_case(c, "shop", "shop.get_catalogue()", api_shop_catalogue, 10)
+    add_case(c, "orders", "orders.list_orders()", api_orders_list, 10)
+    add_case(c, "journal", "journal.is_empty(0, 0)", api_journal_is_empty, 20)
+    add_case(c, "journal", "journal.biomass_coords()", api_journal_biomass_coords, 10)
+    return c
+
+
+def cleanup_api():
+    if env.get("notebook") is not None:
+        res = env["notebook"].delete(BENCH_KEY)
+        print(f"cleanup: archive.delete({BENCH_KEY}) -> {res.status}")
+    if env.get("comms") is not None:
+        res = env["comms"].clear(BENCH_CHANNEL)
+        print(f"cleanup: bus.clear({BENCH_CHANNEL}) -> {res.status}")
+
+
+# ---------------------------------------------------------------------------
+# INTERRUPTIVE section (RUN_INTERRUPTIVE). Each case briefly changes real game state and restores it.
+# Not included on purpose: shop buy/sell (credits), vehicle/drone commands, blueprint placement, orders.
+# ---------------------------------------------------------------------------
+
+
+def intr_transmitter_connect(n):
+    tx = env["transmitter"]
+    for i in range(n):
+        tx.connect("earth")
+
+
+def intr_power_toggle(n):
+    power = env["power"]
+    mid = BENCH_POWER_MACHINE_ID
+    for i in range(n):
+        power.set_powered(mid, False)
+        power.set_powered(mid, True)
+
+
+def intr_transfer_roundtrip(n):
+    bin_ = env["transfer_bin"]
+    for i in range(n):
+        bin_.transfer_from_inventory(BENCH_TRANSFER_ITEM, 1)
+        bin_.transfer_to_inventory(1)
+
+
+def build_interruptive_cases():
+    c = []
+    env["transmitter"] = find_component("transmitter")
+    if env["transmitter"] is not None:
+        c.append(("transmitter.connect('earth')", intr_transmitter_connect, 5))
+    env["power"] = find_component("power_control")
+    if BENCH_POWER_MACHINE_ID and env["power"] is not None:
+        if env["power"].can_power_off(BENCH_POWER_MACHINE_ID):
+            env["power_was_on"] = env["power"].is_powered(BENCH_POWER_MACHINE_ID)
+            c.append(("power_control.set_powered off+on", intr_power_toggle, 5))
+        else:
+            print(f"  skip power toggle: {BENCH_POWER_MACHINE_ID} cannot be powered off")
+    env["inventory"] = find_component("inventory")
+    if BENCH_TRANSFER_BIN_ID and BENCH_TRANSFER_ITEM and env["inventory"] is not None:
+        env["transfer_bin"] = find_component(BENCH_TRANSFER_BIN_ID)
+        if env["transfer_bin"] is not None:
+            env["transfer_before"] = env["transfer_bin"].count(BENCH_TRANSFER_ITEM)
+            c.append(("storage_bin transfer in+out (1 item)", intr_transfer_roundtrip, 5))
+    return c
+
+
+def cleanup_interruptive():
+    if "power_was_on" in env:
+        res = env["power"].set_powered(BENCH_POWER_MACHINE_ID, env["power_was_on"])
+        print(f"cleanup: restore power of {BENCH_POWER_MACHINE_ID} -> {res.status}")
+    if "transfer_before" in env:
+        bin_ = env["transfer_bin"]
+        extra = bin_.count(BENCH_TRANSFER_ITEM) - env["transfer_before"]
+        if extra > 0:
+            res = bin_.transfer_to_inventory(extra)
+            print(f"cleanup: moved {extra} {BENCH_TRANSFER_ITEM} back -> {res.status}")
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+print(f"Benchmark start, target >= {MIN_SECONDS}s per case (simulation seconds)")
+n0, dt0 = time_case(bench_empty_loop, 500)
+base = dt0 / n0 * 1000000.0
+print(f"baseline empty loop: {base:.2f} us/iter")
+
+if RUN_LOCAL:
+    rows = run_group("LOCAL", CASES)
+    report("LOCAL", rows, base)
+
+if RUN_API:
+    try:
+        setup_api()
+        rows = run_group("API (non-interruptive)", build_api_cases())
+        report("API", rows, base)
+    finally:
+        cleanup_api()
+
+if RUN_INTERRUPTIVE:
+    print("INTERRUPTIVE cases enabled: game state is changed briefly and restored")
+    try:
+        icases = build_interruptive_cases()
+        if icases:
+            rows = run_group("INTERRUPTIVE", icases)
+            report("INTERRUPTIVE", rows, base)
+        else:
+            print("no interruptive case available (set the BENCH_* constants)")
+    finally:
+        cleanup_interruptive()
+
 print("Benchmark done")
