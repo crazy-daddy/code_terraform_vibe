@@ -3,7 +3,7 @@
 # drone dispatch for stranded or critically low-battery vehicles in the field.
 from vehicle_energy import rescue_wh_per_meter_for
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 class ChargingStationController:
@@ -301,6 +301,7 @@ class ChargingStationController:
     def step(self):
         """Single supervision cycle for dock charging and field rescue."""
         if not self.is_station_powered():
+            flush_all()
             sleep(2.0)
             return
 
@@ -318,4 +319,5 @@ class ChargingStationController:
                 self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
+            flush_all()
             sleep(poll_interval)

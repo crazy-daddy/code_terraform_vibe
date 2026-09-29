@@ -7,7 +7,7 @@
 # resume beyond that cache -- repeat scans are free (docs/types/biosphere.md:
 # "Repeat scans are free").
 
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from unsupported_markers import clear_wrong_scanner_marker
@@ -78,16 +78,19 @@ class DroneScoutMixin:
                 if self._host.is_stranded():
                     log.level("warn").print(f"[{self._host.name}] {self._host.status()}; awaiting drone_service rescue.")
                     self._host.publish_telemetry("STRANDED")
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
                 if self._host.handle_recall_if_active():
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
                 curr_wh, _, _ = self._host.get_battery()
                 if curr_wh <= self._host.energy_needed_to_return_comfortably():
                     self._host.return_to_service_for_charge(log, f"Battery low ({curr_wh:.1f} {self._host.energy_unit()})")
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -103,10 +106,12 @@ class DroneScoutMixin:
                     # idles wherever its last scan left it, forever.
                     if self._host.return_to_service_for_charge(log, "No scan targets remain"):
                         log.print(f"[{self._host.name}] Survey complete; standing by at drone_service.")
+                    flush_all()
                     sleep(30.0)
                     continue
 
                 if self._host.hold_for_launch_charge(log):
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -127,6 +132,7 @@ class DroneScoutMixin:
                         # scout trip -- top up now instead of idling here forever,
                         # since nothing else in this loop will ever send it home.
                         self._host.return_to_service_for_charge(log, f"No candidate reachable at {lvl*100:.0f}% charge")
+                    flush_all()
                     sleep(30.0)
                     continue
 
@@ -136,6 +142,7 @@ class DroneScoutMixin:
                 log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
                 if not self._host.fly_to(target[0], target[1], precision=1.0):
                     log.level("warn").print(f"[{self._host.name}] Could not safely reach POI {target}; will retry.")
+                    flush_all()
                     sleep(poll_interval)
                     continue
                 log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}) exit: reached.")
@@ -166,7 +173,9 @@ class DroneScoutMixin:
                 else:
                     log.level("warn").print(f"[{self._host.name}] Scan at {target} notice: {res.status} - {res.message}")
 
+                flush_all()
                 sleep(poll_interval)
             except Exception as e:
                 log.level("error").print(f"[{self._host.name}] Scout loop exception: {e}")
+                flush_all()
                 sleep(5.0)

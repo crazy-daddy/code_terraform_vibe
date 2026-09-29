@@ -11,6 +11,7 @@ import mining_reservations
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
+from tree_console import flush_all
 
 class RoverController(VehicleController):
     """
@@ -170,10 +171,12 @@ class RoverController(VehicleController):
                 self.log.print(f"[{self.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
                 if not self.return_to_base():
                     self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+                    flush_all()
                     sleep(5.0)
                     return
             if self.unload_cargo() < 0:
                 self.publish_telemetry("WAITING_INVENTORY_SPACE")
+                flush_all()
                 sleep(10.0)
                 return
 
@@ -191,6 +194,7 @@ class RoverController(VehicleController):
                 reason = f"targets blocked by active claims ({diagnostics.get('claim_count', 0)} claims)"
             self.log.level("warn").print(f"[{self.name}] No mission target: {reason}. Standing by at base slot.")
             self.publish_telemetry("IDLE_AT_BASE")
+            flush_all()
             sleep(10.0)
             return
 
@@ -228,6 +232,7 @@ class RoverController(VehicleController):
         # service area, and will just fail with "not_at_target" otherwise.
         if not self.return_to_base():
             self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+            flush_all()
             sleep(5.0)
             return
 
@@ -242,6 +247,7 @@ class RoverController(VehicleController):
         # Step 7: Offload and recharge
         if self.unload_cargo() < 0:
             self.publish_telemetry("WAITING_INVENTORY_SPACE")
+            flush_all()
             sleep(10.0)
             return
         self.recharge_at_station(target_level=1.0)
@@ -255,6 +261,7 @@ class RoverController(VehicleController):
         while True:
             try:
                 if self.handle_recall_if_active():
+                    flush_all()
                     sleep(5.0)
                     continue
                 self.run_expedition_cycle()
@@ -272,4 +279,5 @@ class RoverController(VehicleController):
                         self.current_target_reserved = False
                 except Exception as error:
                     swallowed("rover.RoverController.run: self.release_target_claim", error)
+                flush_all()
                 sleep(5.0)

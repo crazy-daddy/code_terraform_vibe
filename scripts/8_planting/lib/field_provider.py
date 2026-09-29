@@ -23,7 +23,7 @@ import field_layout
 import fluid_routing
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 from storage import take_item
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -262,4 +262,5 @@ class FieldProviderController:
                 self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Field provider exception: {e}")
+            flush_all()
             sleep(POLL_INTERVAL_S)

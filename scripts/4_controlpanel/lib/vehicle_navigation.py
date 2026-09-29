@@ -5,6 +5,7 @@ from swallow import swallowed
 
 
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -127,6 +128,7 @@ class VehicleNavigationMixin:
 
         ticks = 0
         while ticks < timeout_ticks:
+            flush_all()
             sleep(1.0)
             ticks += 10
 
@@ -191,6 +193,7 @@ class VehicleNavigationMixin:
                     throttle = self._host.MIN_SPEEDMODE_THROTTLE
                     self._host.log.level("warn").print(f"[{self._host.name}] Vehicle appears stalled/stuck at {curr_pos}. Re-issuing drive command at {throttle*100:.0f}% throttle (attempt {stall_recoveries}/3).")
                     self._host.vehicle.nav.brake()
+                    flush_all()
                     sleep(0.5)
                     self._host.vehicle.nav.set_target(target_x, target_y)
                     self._host.vehicle.nav.set_throttle(throttle)

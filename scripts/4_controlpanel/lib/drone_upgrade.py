@@ -23,6 +23,7 @@
 from archive import archive
 from swallow import swallowed
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -440,6 +441,7 @@ class DroneUpgradeMixin:
             gained = [m for m in ALL_MODULE_IDS if self._inventory_count(m) > before.get(m, 0)]
             if gained:
                 return gained
+            flush_all()
             sleep(SERVICE_POLL_S)
         return []
 

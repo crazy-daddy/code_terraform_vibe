@@ -16,7 +16,7 @@
 # Bus ("comms") is unavailable or not yet researched.
 
 from archive import archive
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 
 GOOD_VERSION_KEY = "system.good_version"
 VERSION_CONFIRMED_CHANNEL = "system.version_confirmed"
@@ -71,5 +71,6 @@ def validate_game_version():
         if comms:
             comms.wait_broadcast(VERSION_CONFIRMED_CHANNEL)
         else:
+            flush_all()
             sleep(POLL_FALLBACK_SECONDS)
     log.print(f"Version confirmed ({get_game_version()}); resuming.")

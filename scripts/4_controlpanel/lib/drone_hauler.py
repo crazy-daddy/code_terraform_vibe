@@ -44,6 +44,7 @@ from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
 from swallow import swallowed
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -516,6 +517,7 @@ class DroneHaulerMixin:
             if status == "waiting_oil" and not warned_oil:
                 self._host.log.level("warn").print(f"[{self._host.name}] Service station has no oil; waiting.")
                 warned_oil = True
+            flush_all()
             sleep(2.0)
             waited += 2.0
         self._host.log.level("warn").print(f"[{self._host.name}] Refuel timed out after {REFUEL_TIMEOUT_S:.0f}s.")
@@ -560,6 +562,7 @@ class DroneHaulerMixin:
             if self._host.status() != "waiting_bay" or waited >= DEPOT_BAY_WAIT_S:
                 self._host.log.level("warn").print(f"[{self._host.name}] Could not dock at Drone Depot '{depot['id']}' (status {self._host.status()}).")
                 return None
+            flush_all()
             sleep(DEPOT_UNLOAD_RETRY_S)
             waited += DEPOT_UNLOAD_RETRY_S
 
@@ -628,6 +631,7 @@ class DroneHaulerMixin:
             if not remaining:
                 break
             idle = 0.0 if moved_round else idle + DEPOT_UNLOAD_RETRY_S
+            flush_all()
             sleep(DEPOT_UNLOAD_RETRY_S)
             waited += DEPOT_UNLOAD_RETRY_S
 
@@ -714,6 +718,7 @@ class DroneHaulerMixin:
                 idle += DEPOT_UNLOAD_RETRY_S
             else:
                 idle = 0.0
+            flush_all()
             sleep(DEPOT_UNLOAD_RETRY_S)
             waited += DEPOT_UNLOAD_RETRY_S
         left = self._cargo_contents()
@@ -741,6 +746,7 @@ class DroneHaulerMixin:
         if not dest_id:
             self._host.log.level("warn").print(f"[{self._host.name}] Cargo {contents} aboard but no Drone Depot to deliver to (all on stall cooldown or none deployed).")
             self._host.hover_wait("STUCK_WITH_CARGO")
+            flush_all()
             sleep(poll_interval)
             return
         # Re-assert the debits from what's physically aboard (a restart may
@@ -757,6 +763,7 @@ class DroneHaulerMixin:
         needed = self._route_fuel([self._host.position(), dest_coords], services)
         level, _, _ = self._host.get_battery()
         if level < needed and not self._refuel(needed, f"Low fuel for delivery ({level:.1f} < {needed:.1f} {self._host.energy_unit()})"):
+            flush_all()
             sleep(poll_interval)
             return
         if not self._deliver(dest_id):
@@ -764,6 +771,7 @@ class DroneHaulerMixin:
                 # Requeue at the back: forget the saved destination so the
                 # next cycle picks the next-best one for this cargo.
                 self._host.clear_mission()
+            flush_all()
             sleep(poll_interval)
 
     def run_hauler_loop(self, poll_interval=5.0):
@@ -776,13 +784,16 @@ class DroneHaulerMixin:
         while True:
             try:
                 if self._host.handle_recall_if_active():
+                    flush_all()
                     sleep(poll_interval)
                     continue
                 if self._host.handle_upgrade_request_if_active():
+                    flush_all()
                     sleep(poll_interval)
                     continue
                 if self._host.is_stranded() or self._host.drone.is_being_rescued():
                     self._host.publish_telemetry("AWAITING_RESCUE")
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -796,11 +807,13 @@ class DroneHaulerMixin:
                 if self._docked_at_service() and frac < self._host.LAUNCH_MIN_SOC:
                     self._host.log.debug(f"[{self._host.name}] At service with {frac*100:.0f}% < {self._host.LAUNCH_MIN_SOC*100:.0f}% launch floor; waiting for top-up.")
                     self._host.publish_telemetry("REFUELING", "launch floor")
+                    flush_all()
                     sleep(poll_interval)
                     continue
                 if frac < HAUL_RECHARGE_SOC:
                     self._host.publish_telemetry("REFUELING", "recharge floor")
                     if self._go_to_nearest_service(f"Charge {frac*100:.0f}% < {HAUL_RECHARGE_SOC*100:.0f}% recharge floor"):
+                        flush_all()
                         sleep(poll_interval)
                         continue
 
@@ -808,6 +821,7 @@ class DroneHaulerMixin:
                 job = self._plan_haul_job(curr_tick)
                 if job is None:
                     self._idle("No haul job")
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -819,6 +833,7 @@ class DroneHaulerMixin:
                 self._run_job(job, curr_tick)
             except Exception as error:
                 self._host.log.level("error").print(f"[{self._host.name}] Hauler exception: {error}")
+            flush_all()
             sleep(poll_interval)
 
     def _claim_route(self, job, curr_tick):

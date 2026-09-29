@@ -19,6 +19,7 @@
 from version_guard import version_mismatch
 from warehouse_upgrade import WarehouseUpgrader
 from tank_upgrade import TankUpgrader
+from tree_console import flush_all
 
 # Seconds between passes while nothing is being drained.
 IDLE_SLEEP_S = 3.0
@@ -36,4 +37,5 @@ while True:
             tank_upgrader.step()
         except Exception as e:
             print(f"[TANK] Upgrade error: {e}")
+    flush_all()
     sleep(IDLE_SLEEP_S)

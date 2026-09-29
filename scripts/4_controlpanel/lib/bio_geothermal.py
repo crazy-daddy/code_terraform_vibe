@@ -4,7 +4,7 @@
 from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 
@@ -174,6 +174,7 @@ class DnaSequencerController:
         chamber = self.machine.chamber
         if chamber is None:
             self._load_next_sample(orders, snapshot)
+            flush_all()
             sleep(0.5)
             return
 
@@ -182,6 +183,7 @@ class DnaSequencerController:
             # docs/components/dna_sequencer.md, so just let it flow to delivery.
             self.log.debug(f"[{self.name}] {chamber.fragment_id} already spliced -- discarding to flow toward delivery.")
             self.machine.discard()
+            flush_all()
             sleep(0.5)
             return
 
@@ -190,6 +192,7 @@ class DnaSequencerController:
             # No local order needs this fragment spliced right now -- pass through unchanged.
             self.log.debug(f"[{self.name}] No local order requires {chamber.fragment_id} spliced right now -- discarding unchanged.")
             self.machine.discard()
+            flush_all()
             sleep(0.5)
             return
 
@@ -199,6 +202,7 @@ class DnaSequencerController:
         if unknown:
             self.log.debug(f"[{self.name}] Target genes {target_genes} include unrecognized ids {unknown} -- discarding rather than risk splice().")
             self.machine.discard()
+            flush_all()
             sleep(0.5)
             return
 
@@ -209,6 +213,7 @@ class DnaSequencerController:
             self.log.print(f"[{self.name}] WARNING: splice({target_genes}) on {chamber.fragment_id} destroyed the target.", channel="")
         elif splice_res.status != "busy":
             self.log.debug(f"[{self.name}] splice() -> {splice_res.status}: {splice_res.message}")
+        flush_all()
         sleep(0.5)
 
     def run(self):

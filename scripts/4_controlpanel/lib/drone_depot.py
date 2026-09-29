@@ -34,7 +34,7 @@
 from archive import archive
 from storage import discover_storage_buildings, warehouse_stock, drain_port_to_storage
 import logistics_requests
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
 from drone_upgrade import retiring_depot_ids
@@ -487,4 +487,5 @@ class DroneDepotController:
                     interval = min(poll_interval, FREIGHT_POLL_INTERVAL)
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
+            flush_all()
             sleep(interval)

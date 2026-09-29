@@ -11,6 +11,7 @@ from swallow import swallowed
 # mid-leg) without reusing any of its NavModule-specific implementation.
 
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -152,6 +153,7 @@ class DroneNavigationMixin:
 
         ticks = 0
         while ticks < timeout_ticks:
+            flush_all()
             sleep(1.0)
             ticks += 10
 
@@ -234,6 +236,7 @@ class DroneNavigationMixin:
 
         ticks = 0
         while ticks < timeout_ticks:
+            flush_all()
             sleep(1.0)
             ticks += 10
             if self.is_stranded():
@@ -326,6 +329,7 @@ class DroneNavigationMixin:
 
         ticks = 0
         while ticks < timeout_ticks:
+            flush_all()
             sleep(1.0)
             ticks += 10
             if self.is_stranded():

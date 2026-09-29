@@ -19,7 +19,7 @@
 # the same way, mirroring order_return_to_station() exactly.
 
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -305,6 +305,7 @@ class DroneServiceController:
 
     def step(self):
         if not self.is_station_powered():
+            flush_all()
             sleep(2.0)
             return
         self.manage_docked_drones()
@@ -319,4 +320,5 @@ class DroneServiceController:
                 self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
+            flush_all()
             sleep(poll_interval)

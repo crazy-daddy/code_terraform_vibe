@@ -20,6 +20,7 @@ import fleet_intent
 import cash
 from swallow import swallowed
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -118,6 +119,7 @@ class VehicleCargoMixin:
                     self._host.log.print(f"[{self._host.name}] Transferred {moved}x {item_id} to '{target}'.")
                     return moved, False
                 elif res.status == "busy":
+                    flush_all()
                     sleep(0.5)
                     retries += 1
                 elif res.status in ["target_full", "slots_full", "inventory_full"]:
@@ -130,6 +132,7 @@ class VehicleCargoMixin:
                 else:
                     self._host.log.level("warn").print(f"[{self._host.name}] Offload notice: {res.status} - {res.message}")
                     return 0, False
+                flush_all()
                 sleep(0.3)
             return 0, False
 
@@ -545,6 +548,7 @@ class VehicleCargoMixin:
         while True:
             try:
                 if self._host.handle_recall_if_active():
+                    flush_all()
                     sleep(poll_interval)
                     continue
                 upgrade_cycle = getattr(self._host, "handle_upgrade_cycle_if_idle", None)
@@ -584,6 +588,7 @@ class VehicleCargoMixin:
                     else:
                         self._host.log.debug(f"[{self._host.name}] pull: planned {planned} unit(s) < minimum {wanted}; waiting.")
                         self._host.publish_telemetry("IDLE_AT_OUTPOST", "wanted items not available anywhere yet")
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -599,6 +604,7 @@ class VehicleCargoMixin:
                 if not route or claimed < wanted:
                     self._host.log.debug(f"[{self._host.name}] pull: {claimed} unit(s) left after claim < minimum {wanted}; replanning next cycle.")
                     logistics_requests.release_pickups(self._host.name)
+                    flush_all()
                     sleep(poll_interval)
                     continue
 
@@ -641,6 +647,7 @@ class VehicleCargoMixin:
                     self._host.vehicle.nav.brake()
                 except Exception as exc:
                     swallowed("vehicle_cargo.VehicleCargoMixin.run_pull_loop: self._host.vehicle.nav.brake", exc)
+            flush_all()
             sleep(poll_interval)
 
     def _plan_salt_reserve(self, capacity, curr_tick):
@@ -670,10 +677,12 @@ class VehicleCargoMixin:
         self._host.publish_telemetry("RETURNING", f"returning to '{self._host.home_base}' with pickups")
         if not self._host.return_to_base():
             self._host.log.level("warn").print(f"[{self._host.name}] Could not reach home to unload; will retry.")
+            flush_all()
             sleep(poll_interval)
             return
         if self.unload_cargo() < 0:
             self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
+            flush_all()
             sleep(poll_interval)
             return
         logistics_requests.release_pickups(self._host.name)

@@ -7,7 +7,7 @@ from archive import archive
 from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
 from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 # A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
@@ -674,4 +674,5 @@ class SmelterController:
                 self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Smelter exception: {e}")
+            flush_all()
             sleep(poll_interval)

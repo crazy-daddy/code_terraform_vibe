@@ -1,4 +1,5 @@
 from swallow import swallowed
+from tree_console import flush_all
 # Scanner 1 Grid Survey Automation Script
 # Maps all sectors of the Harvester grid (A1..H24) around base to locate loose items and resources.
 
@@ -35,9 +36,11 @@ while True:
             except Exception as e:
                 # Catch invalid coordinates or transient pauses
                 swallowed("scanner: self.scan", e)
+            flush_all()
             sleep(0.05)
         print("[Scanner] Grid survey sweep complete. All sectors mapped.")
 
     # Periodic idle sleep before verifying grid status
+    flush_all()
     sleep(15.0)
 

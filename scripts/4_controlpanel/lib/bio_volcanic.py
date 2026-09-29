@@ -19,7 +19,7 @@ from production import set_upgrade_order, fabricator_unlocked_outputs, FLUID_SOU
 import logistics_requests
 import fluid_routing
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 # Crucible temperature control (_drive_temperature): proportional toward the
@@ -618,6 +618,7 @@ class BioCasterController:
         if fragment_id is None:
             self._set_knobs(0, 0)
             self._load_next_sample(orders, snapshot)
+            flush_all()
             sleep(0.5)
             return
 
@@ -627,6 +628,7 @@ class BioCasterController:
             # Nothing local needs this fragment forged right now -- pass through unchanged.
             self.log.debug(f"[{self.name}] {fragment_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining} -- nothing needs it forged, ejecting unchanged.")
             self.machine.eject()
+            flush_all()
             sleep(0.5)
             return
 
@@ -635,11 +637,13 @@ class BioCasterController:
         if not required_range:
             self.log.debug(f"[{self.name}] No recipe selected despite a loaded fragment -- ejecting.")
             self.machine.eject()
+            flush_all()
             sleep(0.5)
             return
 
         if self._return_staged_surplus(required_materials, f"surplus for {fragment_id}"):
             self._drive_temperature(required_range)
+            flush_all()
             sleep(0.5)
             return
 
@@ -651,6 +655,7 @@ class BioCasterController:
         self._drive_temperature(required_range)
         if not materials_ready:
             self._load_materials(required_materials, outpost)
+            flush_all()
             sleep(0.5)
             return
 
@@ -665,6 +670,7 @@ class BioCasterController:
                 self.log.debug(f"[{self.name}] cast() -> {cast_res.status}: {cast_res.message}")
         else:
             self.log.trace(f"[{self.name}] temperature={temp:.1f}C outside target [{low:.1f},{high:.1f}] -- holding cast(), still driving toward range.")
+        flush_all()
         sleep(0.5)
 
     def run(self):

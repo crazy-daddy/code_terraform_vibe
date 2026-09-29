@@ -78,6 +78,7 @@ from fleet_commission import FleetCommissionCoordinator
 from cash import CashManager
 from site_supply import publish_site_requests
 from site_plan import plan_sites
+from tree_console import flush_all
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
@@ -245,4 +246,5 @@ while True:
 
             archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}")
 
+    flush_all()
     sleep(1.0)

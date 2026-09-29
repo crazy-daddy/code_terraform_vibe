@@ -13,7 +13,7 @@ from archive import archive
 from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 # Bounded history length for bio.conditioner_observations, per the Data Archive
@@ -231,6 +231,7 @@ class BioConditionerController:
             # Every quizzed property should be one of the 10 known ids; an
             # unrecognized one means the rulebook is stale -- don't guess blind.
             self.log.print(f"[{self.name}] WARNING: unrecognized QC property '{current}', halting to avoid a blind guess.")
+            flush_all()
             sleep(1.0)
             return
 
@@ -273,10 +274,12 @@ class BioConditionerController:
             # ever calling load()/accept()/reject() blind.
             self.log.debug(f"[{self.name}] Fragment present with no active run -- ejecting.")
             self.machine.eject()
+            flush_all()
             sleep(0.5)
             return
 
         self._load_next_sample(orders, snapshot)
+        flush_all()
         sleep(0.5)
 
     def run(self):

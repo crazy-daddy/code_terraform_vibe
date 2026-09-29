@@ -3,7 +3,7 @@
 # safe heat management, surface item collection, crop harvesting, and inventory offloading.
 
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 class HarvesterController:
@@ -126,6 +126,7 @@ class HarvesterController:
 
         self.log.print(f"[{self.name}] High heat ({heat:.1f}°C). Pausing for passive cooling to {target:.0f}°C...")
         while True:
+            flush_all()
             sleep(2.0)
             heat = self.get_heat()
             if heat <= target or not self.harvester.is_overheated() and heat <= target:
@@ -182,6 +183,7 @@ class HarvesterController:
                     self.log.level("warn").print(f"[{self.name}] Move failed after cooling: {res.status} - {res.message}")
                     return False
             elif res.status in ["moving", "busy"]:
+                flush_all()
                 sleep(1.0)
             else:
                 self.log.level("warn").print(f"[{self.name}] Move error to {next_sec}: {res.status} - {res.message}")
@@ -310,6 +312,7 @@ class HarvesterController:
 
         # Cool down completely while resting
         self.cool_down(25.0)
+        flush_all()
         sleep(5.0)
 
     def run(self):
@@ -319,7 +322,9 @@ class HarvesterController:
         while True:
             try:
                 self.step()
+                flush_all()
                 sleep(0.5)
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Exception in harvester loop: {e}")
+                flush_all()
                 sleep(5.0)

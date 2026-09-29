@@ -1,7 +1,7 @@
 import fluid_routing
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from biomass_retire import biomass_complete
 
@@ -226,4 +226,5 @@ class BiomassMixerController:
                 self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Biomass Mixer exception: {error}")
+            flush_all()
             sleep(poll_interval)

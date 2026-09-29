@@ -4,7 +4,7 @@ from storage import take_item, discover_storage_buildings, warehouse_stock
 from biomass_retire import biomass_complete
 from drone_depot import buffer_target, lifeform_buffer_cap
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 # Waste Processor automation: destroys surplus items at its own outpost.
@@ -178,4 +178,5 @@ class WasteSinkController:
                 self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Waste sink exception: {error}")
+            flush_all()
             sleep(poll_interval)

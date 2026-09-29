@@ -1,6 +1,6 @@
 import fluid_routing
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
@@ -184,4 +184,5 @@ class FluidPumpController:
                 self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] {self.label} exception: {error}")
+            flush_all()
             sleep(poll_interval)

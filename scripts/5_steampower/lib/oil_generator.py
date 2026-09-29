@@ -1,7 +1,7 @@
 import fluid_routing
 import power
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 # Oil Generator automation: LAST-RESORT power only.
@@ -245,4 +245,5 @@ class OilGeneratorController:
                 self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Oil Generator exception: {error}")
+            flush_all()
             sleep(poll_interval)

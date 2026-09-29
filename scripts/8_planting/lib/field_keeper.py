@@ -50,7 +50,7 @@ from harvester_planting import HarvesterPlantingMixin
 from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
 from storage import total_stock, discover_storage_buildings
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -186,6 +186,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             if status == "overheated":
                 self.cool_down()
             elif status in ("busy", "moving"):
+                flush_all()
                 sleep(1.0)
             else:
                 return res
@@ -260,6 +261,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.step_machine_map = None
         cells = self.read_cells()
         if not cells:
+            flush_all()
             sleep(IDLE_POLL_SECONDS)
             return
         # One statuses dict per step: target choice (nearest) and the route
@@ -378,6 +380,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             return
 
         # 7. Nothing due: wait in place and cool passively.
+        flush_all()
         sleep(IDLE_POLL_SECONDS)
 
     def plant_if_open(self, active):
@@ -404,7 +407,9 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         while True:
             try:
                 self.step()
+                flush_all()
                 sleep(0.5)
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Field Keeper exception: {e}")
+                flush_all()
                 sleep(5.0)

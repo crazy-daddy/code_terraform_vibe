@@ -14,7 +14,7 @@
 from archive import archive
 from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 import outpost_reagents
 import cash
@@ -791,6 +791,7 @@ class BioExchangeController:
 
                     deliv_res = self.machine.deliver()
                     while deliv_res.status == "busy":
+                        flush_all()
                         sleep(0.2)
                         deliv_res = self.machine.deliver()
 
@@ -854,6 +855,7 @@ class BioExchangeController:
                 except Exception as error:
                     swallowed("bio.BioExchangeController.run: self.comms.receive", error)
 
+            flush_all()
             sleep(self.sweep_delay)
 
 
@@ -888,6 +890,7 @@ class BioLabController:
                     self.log.print(f"[{self.name}] Sent {res_send.moved}x {stack.id} to '{target}'.")
                     self.inventory_full_notified = False
                 elif res_send.status == "busy":
+                    flush_all()
                     sleep(0.2)
                     return False
                 elif res_send.status in ["target_full", "slots_full", "inventory_full"]:
@@ -895,6 +898,7 @@ class BioLabController:
                     return False
                 else:
                     self.log.level("warn").print(f"[{self.name}] Output notice: {res_send.status} - {res_send.message}")
+                    flush_all()
                     sleep(0.5)
                     return False
         return True
@@ -908,6 +912,7 @@ class BioLabController:
             except Exception as error:
                 swallowed("bio.BioLabController.handle_storage_full: notify", error)
             self.inventory_full_notified = True
+        flush_all()
         sleep(2.0)
 
     def _wait_for_processor(self):
@@ -933,6 +938,7 @@ class BioLabController:
             except Exception:
                 self.log.trace(f"[{self.name}] _wait_for_processor: wait_broadcast errored -- falling back to sleep(0.5)")
                 pass
+        flush_all()
         sleep(0.5)
 
     def step(self):
@@ -984,6 +990,7 @@ class BioLabController:
                     self.log.debug(f"[{self.name}] take_from(collector) -> {t_res.status}: {getattr(t_res, 'message', '')}")
             else:
                 self.log.debug(f"[{self.name}] No specimen to pull -- collector={'none' if not collector else 'found'} cargo={'empty' if not collector or collector.cargo is None else 'present'}.")
+            flush_all()
             sleep(0.5)
             return
 
@@ -1005,6 +1012,7 @@ class BioLabController:
                     archive.transaction("bio.fragment_recipes", {}, update_recipes)
                 except Exception as error:
                     swallowed("bio.BioLabController.step: archive.transaction", error)
+            flush_all()
             sleep(0.5)
             return
 
@@ -1028,6 +1036,7 @@ class BioLabController:
                 if demand_totals.get(fragment_id, 0) <= local_stock(fragment_id, outpost):
                     self.log.debug(f"[{self.name}] {fragment_id} not needed by any order -- discarding instead of extracting.")
                     self.machine.discard()
+                    flush_all()
                     sleep(0.5)
                     return
 
@@ -1038,6 +1047,7 @@ class BioLabController:
             if mismatched:
                 self.log.debug(f"[{self.name}] Reagent mismatch vs recipe {recipe} -- loaded={loaded}. Unloading mismatched reagents...")
                 self.machine.unload_reagents()
+                flush_all()
                 sleep(0.5)
                 return
 
@@ -1054,6 +1064,7 @@ class BioLabController:
                             self.machine.input.eject(destination, stack.id, stack.count)
                         except Exception as error:
                             swallowed("bio.BioLabController.step: best_unload_target #2", error)
+                flush_all()
                 sleep(0.5)
                 return
 
@@ -1075,6 +1086,7 @@ class BioLabController:
                             cash_id = f"bio_reagents:{self.name}"
                             if not cash.can_spend(cash_id, cost, label=f"{buy_qty}x {reagent_id}"):
                                 self.log.debug(f"[{self.name}] {buy_qty}x {reagent_id} ({cost} cr): cash manager holds it back.")
+                                flush_all()
                                 sleep(1.0)
                                 break
                             buy_res = self.shop.buy(reagent_id, buy_qty)
@@ -1083,16 +1095,19 @@ class BioLabController:
                                 self.log.print(f"[{self.name}] Purchased {buy_qty}x {reagent_id} from shop.")
                             else:
                                 cash.release(cash_id)
+                                flush_all()
                                 sleep(1.0)
                                 break
                         else:
                             self.log.level("warn").print(f"[{self.name}] Waiting on {reagent_id} resupply ({local_have}/{missing} on hand locally).")
+                            flush_all()
                             sleep(2.0)
                             break
 
                     moved = take_item(self.machine.input, reagent_id, missing, outpost=outpost)
                     if moved > 0:
                         self.machine.load(reagent_id, moved)
+                    flush_all()
                     sleep(0.5)
                     break
 
@@ -1122,6 +1137,7 @@ class BioLabController:
         validate_game_version()
         while True:
             self.step()
+            flush_all()
             sleep(0.5)
 
 
@@ -1145,6 +1161,7 @@ class BioCollectorController:
     def step(self):
         if self.machine.cargo is not None:
             self.log.trace(f"[{self.name}] step: cargo already occupied -- skipping this cycle.")
+            flush_all()
             sleep(0.5)
             return
 
@@ -1189,6 +1206,7 @@ class BioCollectorController:
         total_demanded_local = _total_demanded_artifacts(snapshot, demand_totals.keys())
         if total_demanded_local >= MAX_LOCAL_BIO_ARTIFACTS:
             self.log.debug(f"[{self.name}] Safety net tripped: {total_demanded_local} demanded artifact(s) already sitting locally >= MAX_LOCAL_BIO_ARTIFACTS={MAX_LOCAL_BIO_ARTIFACTS} -- pausing harvest this cycle.")
+            flush_all()
             sleep(1.0)
             return
 
@@ -1196,6 +1214,7 @@ class BioCollectorController:
         locations = self.machine.scan()
         if not locations:
             self.log.trace(f"[{self.name}] scan() returned no locations this cycle.")
+            flush_all()
             sleep(2.0)
             return
 
@@ -1250,10 +1269,12 @@ class BioCollectorController:
             if res.status != "ok":
                 self.log.debug(f"[{self.name}] collect({target_coords}) -> {res.status}: {getattr(res, 'message', '')} -- releasing pending_analysis claim.")
                 self.pending_analysis.discard(self.coord_key(target_coords))
+                flush_all()
                 sleep(1.0)
         else:
             # Idle cleanly
             self.log.trace(f"[{self.name}] No harvest target this cycle ({len(locations)} location(s) scanned) -- idling.")
+            flush_all()
             sleep(2.0)
 
     def run(self):

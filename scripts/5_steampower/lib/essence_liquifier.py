@@ -4,7 +4,7 @@ from archive import archive
 from storage import take_item, warehouse_stock, discover_storage_buildings, best_unload_target
 from biomass_retire import biomass_complete
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
@@ -431,4 +431,5 @@ class EssenceLiquifierController:
                 self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Essence Liquifier exception: {error}")
+            flush_all()
             sleep(poll_interval)

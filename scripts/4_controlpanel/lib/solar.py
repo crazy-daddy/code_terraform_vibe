@@ -1,4 +1,4 @@
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from version_guard import validate_game_version
 
 # Shared Library for Solar Generator Automation
@@ -35,4 +35,5 @@ class SolarController:
         validate_game_version()
         while True:
             self.step()
+            flush_all()
             sleep(poll_interval)

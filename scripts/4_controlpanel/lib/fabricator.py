@@ -3,7 +3,7 @@ from production import get_site_fabricator_targets, get_fabricator_active_recipe
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
-from tree_console import TreeConsole
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 import fluid_routing
 
@@ -675,4 +675,5 @@ class FabricatorController:
                 self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Fabricator exception: {error}")
+            flush_all()
             sleep(poll_interval)

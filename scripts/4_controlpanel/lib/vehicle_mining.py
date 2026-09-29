@@ -21,6 +21,7 @@ import mining_reservations
 import fleet_intent
 from swallow import swallowed
 from typing import TYPE_CHECKING
+from tree_console import flush_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -410,6 +411,7 @@ class VehicleMiningMixin:
                     self._host.clear_unsupported_target(self.current_target_key)
                 self._host.log.print(f"[{self._host.name}] Mined unit {mined_count}/{max_units}. Cargo: {self._host.vehicle.cargo.count()}/{cargo_capacity}.")
             elif m_res.status == "busy":
+                flush_all()
                 sleep(0.5)
             else:
                 self._host.log.print(f"[{self._host.name}] Drill finished or stopped: {m_res.status} - {m_res.message}")
@@ -504,6 +506,7 @@ class VehicleMiningMixin:
         while True:
             try:
                 if self._host.handle_recall_if_active():
+                    flush_all()
                     sleep(5.0)
                     continue
                 self._stationed_mining_cycle(outpost_id)
@@ -517,6 +520,7 @@ class VehicleMiningMixin:
                     self._host.release_target_claim()
                 except Exception as error:
                     swallowed("vehicle_mining.VehicleMiningMixin.run_stationed_mining_loop: self._host.release_target_claim", error)
+                flush_all()
                 sleep(5.0)
 
     def _stationed_mining_cycle(self, outpost_id):
@@ -558,10 +562,12 @@ class VehicleMiningMixin:
                 self._host.log.print(f"[{self._host.name}] Cargo aboard but not at base (resuming after an interruption). Returning to base first.")
                 if not self._host.return_to_base():
                     self._host.log.level("warn").print(f"[{self._host.name}] Return trip incomplete this cycle; will retry.")
+                    flush_all()
                     sleep(5.0)
                     return
             if self._host.unload_cargo() < 0:
                 self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
+                flush_all()
                 sleep(10.0)
                 return
 
@@ -583,6 +589,7 @@ class VehicleMiningMixin:
         if not target or not budget:
             self._host.log.print(f"[{self._host.name}] No stockpile target at outpost '{outpost_id}': every assigned ore is at its stock target, unreachable, or claimed by a peer. Standing by.")
             self._host.publish_telemetry("IDLE_AT_OUTPOST")
+            flush_all()
             sleep(30.0)
             return
 
@@ -614,6 +621,7 @@ class VehicleMiningMixin:
 
         if not self._host.return_to_base():
             self._host.log.level("warn").print(f"[{self._host.name}] Return trip incomplete this cycle; will retry.")
+            flush_all()
             sleep(5.0)
             return
 
@@ -630,6 +638,7 @@ class VehicleMiningMixin:
 
         if self._host.unload_cargo() < 0:
             self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
+            flush_all()
             sleep(10.0)
             return
         self._host.recharge_at_station(target_level=1.0)
