@@ -79,6 +79,34 @@ def _home_outpost():
     return None
 
 
+def outpost_is_home(outpost=None):
+    """True for the home outpost. None counts as home, matching every helper
+    here that defaults `outpost` to home. Reads OutpostRef.is_home (a plain
+    bool) and tolerates the Outpost component's is_home() method."""
+    if outpost is None:
+        return True
+    is_home = getattr(outpost, "is_home", False)
+    try:
+        return bool(is_home() if callable(is_home) else is_home)
+    except Exception as error:
+        swallowed("storage.outpost_is_home: outpost.is_home", error)
+        return False
+
+
+def local_port_target(outpost=None):
+    """
+    Default endpoint for a machine port at `outpost`: "inventory" at home,
+    else the first local Warehouse id (Inventory only connects at home,
+    docs/components/smelter.md / fabricator.md), None when the outpost has no
+    Warehouse. take_item()/drain_port_to_storage() reconnect per holder
+    anyway; this is only the resting connection.
+    """
+    if outpost_is_home(outpost):
+        return "inventory"
+    buildings = discover_storage_buildings(outpost)
+    return buildings[0]["id"] if buildings else None
+
+
 def discover_storage_buildings(outpost=None, type_ids=STORAGE_TYPE_IDS):
     """
     [{"id": str, "component": obj}, ...] for every Warehouse/Large Warehouse
@@ -524,7 +552,9 @@ def drain_port_inventory_first(port, outpost=None):
     such an item waits in the Warehouse until someone takes it.
 
     Reconnects the port to "inventory" before each send, since a previous
-    fallback leaves it pointed at a Warehouse.
+    fallback leaves it pointed at a Warehouse. Off-home (`outpost` resolves
+    to a non-home outpost) every stack goes straight to a local Warehouse,
+    since Inventory only connects at home.
 
     Returns [(item_id, moved, destination, status, message), ...] per stack,
     destination "inventory" or "warehouse"; a stack neither accepted is
@@ -537,6 +567,16 @@ def drain_port_inventory_first(port, outpost=None):
         stacks = port.stacks()
     except Exception as exc:
         swallowed("storage.drain_port_inventory_first: port.stacks", exc)
+        return results
+
+    if not outpost_is_home(outpost):
+        # No Inventory off-home: straight to a local Warehouse, per stack.
+        for stack in stacks:
+            item_id = getattr(stack, "id", None)
+            if not item_id or getattr(stack, "count", 0) <= 0:
+                continue
+            moved = drain_port_to_storage(port, outpost=outpost, include=lambda i, wanted=item_id: i == wanted, allow_partial=True)
+            results.append((item_id, moved, "warehouse", "ok" if moved > 0 else "target_full", "" if moved > 0 else "no local Warehouse has room"))
         return results
 
     for stack in stacks:

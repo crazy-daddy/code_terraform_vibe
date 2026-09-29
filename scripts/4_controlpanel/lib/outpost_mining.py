@@ -2,7 +2,7 @@
 # mining network (docs/AI_CHEATSHEET.md, TODO.md Phase 3). Answers two
 # questions for a vehicle stationed at a mining outpost: "which ores should I
 # mine here?" (assigned_ores_for()) and "how much of each should I stockpile
-# before stopping?" (stock_target_for()).
+# before stopping?" (ore_stock_target()).
 #
 # "Which ores" is answered LIVE from the Planet Map, not an archive list: every
 # surveyed mineral site gets a "resource.poi_X_Y" marker (mirroring
@@ -23,18 +23,21 @@
 # is the explicit, player-triggered sweep for "I just founded a new outpost,
 # hand it any still-unassigned sites nearby" (see sync_resource_markers.py).
 #
-# stock_target_for() keeps the same seed-once-then-editable convention already
+# ore_stock_target() keeps the same seed-once-then-editable convention already
 # established by lib/production.py's FABRICATOR_STOCK_TARGETS_KEY: the first
-# time an outpost/item is ever looked up, a sensible default is computed and
-# written to archive; every read after that returns the stored value untouched,
-# so a player's manual edit is never silently clobbered by a background loop.
+# time an ore is ever looked up, a sensible default is computed and written to
+# archive; every read after that returns the stored value untouched, so a
+# player's manual edit is never silently clobbered by a background loop.
 
 from tree_console import TreeConsole
 from swallow import swallowed
 
 log = TreeConsole(module="outpost_mining")
 
-OUTPOST_ORE_STOCK_TARGETS_KEY = "outposts.ore_stock_targets"
+# One {ore_item_id: units} dict for every outpost: a mining outpost's
+# stockpile target, home's standing ore floor and a smelting site's ore
+# buffer (5_steampower lib/site_supply.py) all read the same number.
+ORE_STOCK_TARGETS_KEY = "mining.ore_stock_targets"
 
 # One Warehouse slot's worth (docs/components/warehouse.md: 5 slots x 2000
 # capacity = 10,000 total) -- fixed regardless of research, unlike
@@ -58,8 +61,7 @@ DEFAULT_RESOURCE_ASSIGNMENT_RANGE_M = 200.0
 RESOURCE_PURITY_LABELS = {"standard": "Standard", "rich": "Rich", "pure": "Pure"}
 
 # Every raw ore item_id mineable in this save (docs/types/world_and_sites.md).
-# Shared by production.py's home-buffer floor (see stock_target_for()'s
-# module docstring) so both the mining-outpost stockpile target and the home
+# Shared by production.py's home-buffer floor (see ore_stock_target()) so both the mining-outpost stockpile target and the home
 # buffer target iterate the exact same ore set.
 RAW_ORE_ITEM_IDS = ("iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "neutronium", "lead_ore")
 
@@ -305,28 +307,26 @@ def assigned_ores_for(outpost_id):
     return result
 
 
-def stock_target_for(outpost_id, item_id):
+def ore_stock_target(item_id):
     """
-    Stockpile target (units) for item_id at outpost_id -- seed-once-then-
-    editable, same convention as assigned_ores_for() used to follow, default
-    one Warehouse slot's worth (WAREHOUSE_SLOT_CAPACITY). Also used for
-    outpost_id=HOME_OUTPOST_ID by production.py's get_raw_material_demands()
-    as a standing home ore buffer -- same "1 Warehouse slot per ore" default,
-    freely drawn down by Smelter/Supply Dock (not a reserved stockpile), just
-    a floor that creates mining/haul demand to top itself back up.
+    Stock target (units) for raw ore item_id, the same at every outpost --
+    seed-once-then-editable under ORE_STOCK_TARGETS_KEY, default one
+    Warehouse slot's worth (WAREHOUSE_SLOT_CAPACITY). Read as a stationed
+    miner's stockpile target at its mining outpost, as production.py's
+    standing home ore floor (get_raw_material_demands(), freely drawn down
+    by Smelter/Supply Dock, just a floor that creates mining/haul demand),
+    and as a smelting site's ore buffer tier.
     """
     archive = _archive()
-    targets = archive.get(OUTPOST_ORE_STOCK_TARGETS_KEY, {}) or {}
-    outpost_targets = targets.get(outpost_id)
-    if not isinstance(outpost_targets, dict):
-        outpost_targets = None
-    if outpost_targets is not None and item_id in outpost_targets:
-        return outpost_targets[item_id]
+    targets = archive.get(ORE_STOCK_TARGETS_KEY, {}) or {}
+    if not isinstance(targets, dict):
+        targets = {}
+    value = targets.get(item_id)
+    if isinstance(value, (int, float)) and value >= 0:
+        return int(value)
 
     targets = dict(targets)
-    outpost_targets = dict(outpost_targets) if outpost_targets is not None else {}
-    outpost_targets[item_id] = WAREHOUSE_SLOT_CAPACITY
-    targets[outpost_id] = outpost_targets
-    archive.set(OUTPOST_ORE_STOCK_TARGETS_KEY, targets)
-    log.debug(f"stock_target_for({outpost_id}, {item_id}): seeding default target {WAREHOUSE_SLOT_CAPACITY} (first lookup)")
+    targets[item_id] = WAREHOUSE_SLOT_CAPACITY
+    archive.set(ORE_STOCK_TARGETS_KEY, targets)
+    log.debug(f"ore_stock_target({item_id}): seeding default target {WAREHOUSE_SLOT_CAPACITY} (first lookup)")
     return WAREHOUSE_SLOT_CAPACITY

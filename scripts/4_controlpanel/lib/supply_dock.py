@@ -17,8 +17,15 @@
 # `pick_best_order()` if no plan is available yet (automation_panel not running this
 # cycle, or not running at all) so a dock never sits idle waiting on a planner
 # that may not be online.
-from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, SourceCache
-from storage import take_item, total_stock
+#
+# Docks at any outpost (production.discover_supply_dock_ids() is network-wide):
+# a dock off home loads from and drains to its own outpost's Warehouses
+# (Inventory is home-only), and plan_dock_assignments() breaks priority ties
+# toward the dock whose outpost already holds or plans to build (production
+# SITE_PLAN_KEY) the order's items -- the order's items are then consumed at
+# that outpost, so its whole tree builds there (lib/site_plan.py).
+from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
+from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole
@@ -111,6 +118,22 @@ def _score_weekly_order(order, reserved):
     return prio
 
 
+def _dock_affinity(order, outpost, cache, site_plan):
+    """How well a dock at `outpost` suits order: units of its still-owed items
+    already stocked there, plus one per item whose tree the site plan builds
+    there. Only breaks ties between equally ranked orders/docks."""
+    site_id = getattr(outpost, "id", None) or home_outpost_id()
+    requires = getattr(order, "requires", {}) or {}
+    shipped = getattr(order, "shipped", {}) or {}
+    score = 0
+    for item_id, req_count in requires.items():
+        still_needed = max(0, req_count - shipped.get(item_id, 0))
+        score += min(still_needed, cache.local_stock(item_id, outpost))
+        if site_id in (site_plan.get(item_id) or []):
+            score += 1
+    return score
+
+
 def plan_dock_assignments(clock=None):
     """
     Central per-cycle decision, run once from automation_panel.py's AUTOMATION section:
@@ -199,8 +222,11 @@ def plan_dock_assignments(clock=None):
             log.debug(f"plan_dock_assignments: {dock_id} is idle/unfulfillable ({'no current order' if not curr else 'current order no longer fulfillable'}), needs a new assignment")
 
     if candidates:
+        site_plan = archive.get(SITE_PLAN_KEY, {})
+        site_plan = site_plan if isinstance(site_plan, dict) else {}
         for dock_id in idle_dock_ids:
-            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"]))
+            outpost = getattr(docks[dock_id], "outpost", None)
+            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -_dock_affinity(c["order"], outpost, cache, site_plan)))
             best = candidates[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
@@ -226,21 +252,38 @@ class SupplyDockController:
         self.orders_api = get_component("orders")
         self.inventory = get_component("inventory")
         self.connected = False
+        self._warned_no_local_storage = False
         self.log = TreeConsole(module="supply_dock")
 
+    def outpost(self):
+        """OutpostRef this dock is deployed at (None if not exposed = home)."""
+        return getattr(self.dock, "outpost", None)
+
+    def at_home(self):
+        return outpost_is_home(self.outpost())
+
     def ensure_connected(self):
-        """Ensures the dock input port is connected to base Inventory."""
-        if not self.connected and hasattr(self.dock, "input"):
-            try:
-                self.dock.input.connect("inventory")
-                self.connected = True
-            except Exception as error:
-                swallowed("supply_dock.SupplyDockController.ensure_connected: self.dock.input.connect", error)
+        """Connects the dock input port to Inventory at home, or to a local
+        Warehouse elsewhere (storage.local_port_target())."""
+        if self.connected or not hasattr(self.dock, "input"):
+            return
+        target = local_port_target(self.outpost())
+        if target is None:
+            if not self._warned_no_local_storage:
+                self._warned_no_local_storage = True
+                self.log.level("warn").print(f"[{self.name}] No Warehouse at outpost '{machine_outpost_id(self.dock)}' -- a remote Supply Dock can only load from local storage.")
+            return
+        self._warned_no_local_storage = False
+        try:
+            self.dock.input.connect(target)
+            self.connected = True
+        except Exception as error:
+            swallowed("supply_dock.SupplyDockController.ensure_connected: self.dock.input.connect", error)
 
     def drain_dock_cargo(self):
         """
         Ejects any cargo still physically loaded in the dock's slots back to
-        Inventory. clear_order() explicitly does not drain cargo -- it just
+        Inventory (a local Warehouse off home). clear_order() explicitly does not drain cargo -- it just
         releases the assignment and leaves loaded materials in place -- so
         set_order() for a *new* order keeps rejecting with "cargo_present"
         until something actively empties the dock first.
@@ -253,9 +296,13 @@ class SupplyDockController:
                 count = getattr(slot, "count", 0)
                 if not item_id or count <= 0:
                     continue
-                res = self.dock.input.eject("inventory", item_id, count)
+                target = "inventory" if self.at_home() else best_unload_target(item_id, 1, outpost=self.outpost())
+                if target is None:
+                    self.log.level("warn").print(f"[{self.name}] No local Warehouse room for {count}x {item_id} -- left in the dock.")
+                    continue
+                res = self.dock.input.eject(target, item_id, count)
                 if res.status == "ok":
-                    self.log.print(f"[{self.name}] Ejected {count}x {item_id} from dock back to Inventory.")
+                    self.log.print(f"[{self.name}] Ejected {count}x {item_id} from dock back to {'Inventory' if target == 'inventory' else target}.")
                 elif res.status not in ["busy", "no_op"]:
                     self.log.level("warn").print(f"[{self.name}] Eject notice for {item_id}: {res.status} - {res.message}")
         except Exception as error:
@@ -383,8 +430,13 @@ class SupplyDockController:
         # may be contesting the same Inventory/Warehouse stock for the same
         # item -- see the module docstring's note on the fairness fix this
         # mirrors from Fabricator/Smelter loading.
+        # Off home only the outpost's own Warehouses count; blueprint
+        # reservations hold home stock only.
         if curr_order and hasattr(curr_order, "requires"):
-            reserved = get_construction_material_reservations()
+            at_home = self.at_home()
+            outpost = None if at_home else self.outpost()
+            reserved = get_construction_material_reservations() if at_home else {}
+            cache = None if at_home else SourceCache()
             shipped = getattr(curr_order, "shipped", {}) or {}
             for item_id, req_total in curr_order.requires.items():
                 already_shipped = shipped.get(item_id, 0)
@@ -393,12 +445,12 @@ class SupplyDockController:
                 if needed <= 0:
                     continue
 
-                avail = total_stock(item_id)
+                avail = total_stock(item_id) if cache is None else cache.local_stock(item_id, outpost)
                 available_after_reservation = max(0, avail - reserved.get(item_id, 0))
                 to_take = min(available_after_reservation, needed, SUPPLY_DOCK_LOAD_CHUNK_SIZE)
                 self.log.debug(f"[{self.name}] {item_id}: needed={needed} avail={avail} reserved={reserved.get(item_id, 0)} available_after_reservation={available_after_reservation} -> to_take={to_take}")
                 if to_take > 0:
-                    moved = take_item(self.dock.input, item_id, to_take)
+                    moved = take_item(self.dock.input, item_id, to_take, outpost=outpost)
                     if moved > 0:
                         self.log.print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
                 elif avail > 0 and item_id in reserved:

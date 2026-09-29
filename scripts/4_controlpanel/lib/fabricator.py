@@ -1,7 +1,7 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims
 from archive import archive
-from storage import take_item, total_stock, best_unload_target, drain_port_to_storage, drain_port_inventory_first
+from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -14,6 +14,7 @@ import fluid_routing
 # claim on the recipe id it's about to set lets a Fabricator move on to its
 # next-best sourceable candidate if another Fabricator already holds it.
 FABRICATOR_RECIPE_CLAIM_STALE_TICKS = 600
+# Shape {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}, per outpost like smelter.recipe_claims.
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
 # load_inputs() caps each take_item() call to this many units, preventing
@@ -44,13 +45,19 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 
 
 class FabricatorController:
-    """Selects unlocked pipe/power recipes and feeds them from Inventory or a Warehouse."""
+    """Selects unlocked pipe/power recipes and feeds them from Inventory or a Warehouse.
+
+    Outpost-aware: at home the ports use Inventory + home Warehouses; at any
+    other outpost only that outpost's own Warehouses (Inventory is home-only,
+    docs/components/fabricator.md). Demand, targets and worker splits stay
+    network-wide."""
 
     def __init__(self, machine):
         self.machine = machine
         self.name = getattr(machine, "id", "fabricator_1")
         self.connected_input = False
         self.connected_output = False
+        self._warned_no_local_storage = False
         self.clock = get_component("clock")
         self.log = TreeConsole(module="fabricator")
 
@@ -72,9 +79,12 @@ class FabricatorController:
         current_tick = self.get_current_tick()
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
+        site_id = claim_site_id(self.machine)
+
         def updater(claims):
-            claims = dict(claims or {})
-            existing = claims.get(recipe_id)
+            claims = site_recipe_claims(claims, "fabricator")
+            site = claims.setdefault(site_id, {})
+            existing = site.get(recipe_id)
             if not isinstance(existing, dict):
                 existing = None
             if existing is not None and existing.get("fabricator") != self.name:
@@ -82,7 +92,7 @@ class FabricatorController:
                 if current_tick == 0 or age <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
                 notes.append(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('fabricator')}' is stale (age={age} > {FABRICATOR_RECIPE_CLAIM_STALE_TICKS}), taking over")
-            claims[recipe_id] = {"fabricator": self.name, "tick": current_tick}
+            site[recipe_id] = {"fabricator": self.name, "tick": current_tick}
             return claims
 
         try:
@@ -93,8 +103,8 @@ class FabricatorController:
         for note in notes:
             self.log.debug(note)
 
-        claims = archive.get(RECIPE_CLAIMS_KEY, {}) or {}
-        owner = (claims.get(recipe_id) or {}).get("fabricator")
+        claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "fabricator")
+        owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("fabricator")
         won = owner == self.name
         self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): {'won' if won else f'held by other fabricator {owner!r}'}")
         return won
@@ -103,10 +113,15 @@ class FabricatorController:
         if not recipe_id:
             return
 
+        site_id = claim_site_id(self.machine)
+
         def updater(claims):
-            claims = dict(claims or {})
-            if (claims.get(recipe_id) or {}).get("fabricator") == self.name:
-                del claims[recipe_id]
+            claims = site_recipe_claims(claims, "fabricator")
+            site = claims.get(site_id) or {}
+            if (site.get(recipe_id) or {}).get("fabricator") == self.name:
+                del site[recipe_id]
+            if not site:
+                claims.pop(site_id, None)
             return claims
 
         try:
@@ -129,14 +144,32 @@ class FabricatorController:
         shedded = archive.get("power.shedded", [])
         return isinstance(shedded, list) and self.name in shedded
 
+    def outpost(self):
+        """OutpostRef this Fabricator is deployed at (None if not exposed = home)."""
+        return getattr(self.machine, "outpost", None)
+
+    def at_home(self):
+        return outpost_is_home(self.outpost())
+
     def ensure_connection(self):
+        """Connects input and output ports to Inventory at home, or to a
+        local Warehouse elsewhere (storage.local_port_target())."""
+        if self.connected_input and self.connected_output:
+            return
+        target = local_port_target(self.outpost())
+        if target is None:
+            if not self._warned_no_local_storage:
+                self._warned_no_local_storage = True
+                self.log.level("warn").print(f"[{self.name}] No Warehouse at outpost '{machine_outpost_id(self.machine)}' -- a remote Fabricator can only feed from local storage.")
+            return
+        self._warned_no_local_storage = False
         if not self.connected_input and hasattr(self.machine, "input"):
-            result = self.machine.input.connect("inventory")
+            result = self.machine.input.connect(target)
             self.connected_input = result.status == "ok"
             if not self.connected_input and result.status not in ["busy"]:
                 self.log.level("warn").print(f"[{self.name}] Input connection notice: {result.status} - {result.message}")
         if not self.connected_output and hasattr(self.machine, "output"):
-            result = self.machine.output.connect("inventory")
+            result = self.machine.output.connect(target)
             self.connected_output = result.status == "ok"
             if not self.connected_output and result.status not in ["busy"]:
                 self.log.level("warn").print(f"[{self.name}] Output connection notice: {result.status} - {result.message}")
@@ -283,7 +316,15 @@ class FabricatorController:
         return "building stock target"
 
     def choose_recipe(self):
-        targets = get_fabricator_targets()
+        # One snapshot for the whole pass: targets, stock, pipeline and the
+        # sourceability checks below all read it.
+        cache = SourceCache()
+        site_id = claim_site_id(self.machine)
+        outpost = self.outpost()
+        # This site's share of every root target and its own intermediates
+        # (production.get_site_fabricator_targets(); the global targets with
+        # only home Fabricators).
+        targets = get_site_fabricator_targets(site_id, cache)
         manual_items = get_manual_orders()
         upgrade_items = get_upgrade_orders()
         try:
@@ -297,21 +338,20 @@ class FabricatorController:
         # Computed once per pass, not per candidate (each is a stock walk).
         blueprint_items = blueprint_demand_items()
         upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items) if upgrade_items else set()
-        # Every Fabricator's output buffers + in-progress crafts, not just
-        # this one's output buffer -- see production.get_fabricator_pipeline().
-        pipeline = get_fabricator_pipeline()
+        # Output buffers + in-progress crafts of every Fabricator at this
+        # site, not just this one's -- see production.get_fabricator_pipeline().
+        pipeline = get_fabricator_pipeline(cache, site_id)
 
         candidates = []
         for recipe in recipes:
             target = targets.get(getattr(recipe, "output_item", None), 0)
             if target <= 0:
                 continue
-            # total_stock() (not just Inventory) since the rebalance sweep
-            # (storage.rebalance_inventory_to_warehouses()) can move a
-            # finished fabricated item out to a Warehouse too once it piles
-            # up -- an Inventory-only count would look artificially low and
-            # over-produce past the real target.
-            current = total_stock(recipe.output_item)
+            # Local stock: Inventory + home Warehouses at home (the rebalance
+            # sweep moves finished goods out to Warehouses too), only the
+            # outpost's own Warehouses elsewhere -- a site's stock counts
+            # only for its own targets.
+            current = cache.local_stock(recipe.output_item, outpost)
             in_pipeline = pipeline.get(recipe.output_item, 0)
             missing = max(0, target - current - in_pipeline)
             if missing > 0:
@@ -360,7 +400,6 @@ class FabricatorController:
         candidates.sort(key=lambda pair: (_priority_tier(pair[1]), -pair[0]))
         blocked = []
         sourceable = []
-        cache = SourceCache()  # shared across every candidate below -- see recipe_unsourceable_reason()
         for missing, recipe in candidates:
             reason = self.recipe_unsourceable_reason(recipe, cache)
             if reason is not None:
@@ -397,7 +436,7 @@ class FabricatorController:
         for missing, recipe in sourceable:
             recipe_id = getattr(recipe, "id", "?")
             crafts_needed = -(-missing // max(1, getattr(recipe, "output_count", 1)))  # ceil division
-            workers = get_fabricator_worker_count(recipe_id)
+            workers = get_fabricator_worker_count(recipe_id, site_id)
             if current_recipe_id == recipe_id:
                 workers -= 1  # don't count ourselves as a peer
             if crafts_needed <= workers:
@@ -411,11 +450,14 @@ class FabricatorController:
     def drain_output(self):
         if not hasattr(self.machine, "output"):
             return
-        # Inventory first, a Warehouse only when Inventory is full -- see
-        # storage.drain_port_inventory_first().
-        for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=getattr(self.machine, "outpost", None)):
+        # Inventory first, a Warehouse only when Inventory is full or this
+        # Fabricator is off-home -- see storage.drain_port_inventory_first().
+        at_home = self.at_home()
+        for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=self.outpost()):
             if moved > 0:
-                if destination == "warehouse":
+                if not at_home:
+                    self.log.print(f"[{self.name}] Sent {moved}x {item_id} to a local Warehouse.")
+                elif destination == "warehouse":
                     self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
                 else:
                     self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
@@ -442,7 +484,7 @@ class FabricatorController:
             return
         if staged <= 0:
             return
-        moved = drain_port_to_storage(port, outpost=getattr(self.machine, "outpost", None), allow_partial=True)
+        moved = drain_port_to_storage(port, outpost=self.outpost(), allow_partial=True)
         if moved > 0:
             self.log.print(f"[{self.name}] Drained {moved}x byproduct to storage.")
         capacity = port.capacity() if hasattr(port, "capacity") else 0
@@ -488,9 +530,9 @@ class FabricatorController:
             # openings for a peer Fabricator to get its own share too.
             amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, craft_prefill_units(recipe, item_id) - staged))
             self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={craft_prefill_units(recipe, item_id)} -> amount={amount}")
-            # take_item() checks Inventory first, then rotates through any
-            # Warehouse holding this item -- see lib/storage.py.
-            moved = take_item(self.machine.input, item_id, amount)
+            # take_item() checks Inventory first (home only), then rotates
+            # through any local Warehouse holding this item -- see lib/storage.py.
+            moved = take_item(self.machine.input, item_id, amount, outpost=None if self.at_home() else self.outpost())
             if moved <= 0:
                 continue
             self.log.print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
@@ -536,7 +578,10 @@ class FabricatorController:
             excess = staged - keep
             if excess <= 0:
                 continue
-            destination = best_unload_target(item_id, excess)
+            destination = best_unload_target(item_id, excess, outpost=self.outpost())
+            if destination is None:
+                self.log.debug(f"[{self.name}] eject_excess_inputs: no local storage has room for {excess}x {item_id}, keeping it staged")
+                continue
             try:
                 result = self.machine.input.eject(destination, item_id, excess)
             except Exception as error:

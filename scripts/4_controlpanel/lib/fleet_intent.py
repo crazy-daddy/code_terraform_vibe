@@ -14,7 +14,7 @@
 #   "<dock id>"             Supply Dock active orders
 #   "<requester>"           logistics.requests "by" (seed_maker, ...)
 #   "stock_target"          fabricator.stock_targets
-#   "ore_buffer"            home raw-ore floor (outpost_mining.stock_target_for())
+#   "ore_buffer"            home raw-ore floor (outpost_mining.ore_stock_target())
 # Two passes: first only along items still short of stock (the path demand
 # actually propagates), then along any recipe path.
 
