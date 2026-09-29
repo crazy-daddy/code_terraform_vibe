@@ -7,6 +7,10 @@
 RUN_LOCAL = True
 RUN_API = True
 RUN_INTERRUPTIVE = False
+# Console-only quick run: skips LOCAL and every non-console API case. Run it twice, once with debug output
+# enabled in the console UI and once disabled, and set CONSOLE_DEBUG_STATE to match so the rows are labelled.
+CONSOLE_ONLY = False
+CONSOLE_DEBUG_STATE = "unknown"  # "shown" or "hidden"
 # Interruptive inputs (a case is skipped while its constant is empty):
 BENCH_POWER_MACHINE_ID = ""  # machine id to switch off and on repeatedly; state is restored afterwards
 
@@ -317,6 +321,17 @@ def api_clock_get_time(n):
 def api_sleep(n):
     for i in range(n):
         sleep(0.1)
+
+
+def api_print_builtin(n):
+    for i in range(n):
+        print("bench")
+
+
+def api_console_info(n):
+    console = env["console"]
+    for i in range(n):
+        console.info("bench")
 
 
 def api_console_debug(n):
@@ -663,7 +678,9 @@ def build_api_cases():
     add_case(c, None, "clock.get_time()", api_clock_get_time, 50)
     add_case(c, None, "sleep(0.1)", api_sleep, 5)
     add_case(c, "console", "console.now()", api_console_now, 50)
-    add_case(c, "console", "console.debug('bench')", api_console_debug, 20)
+    add_case(c, None, "print('bench')", api_print_builtin, 20)
+    add_case(c, "console", "console.info('bench')", api_console_info, 20)
+    add_case(c, "console", f"console.debug('bench') [debug output {CONSOLE_DEBUG_STATE}]", api_console_debug, 20)
     add_case(c, "notebook", "archive.get missing key", api_archive_get_missing, 50)
     add_case(c, "notebook", "archive.has missing key", api_archive_has_missing, 50)
     add_case(c, "notebook", "archive.set small dict", api_archive_set_small, 20)
@@ -687,9 +704,9 @@ def build_api_cases():
     add_case(c, "home", "home.buildings()", api_home_buildings, 10)
     add_case(c, "home", "home.buildings('storage_bin')", api_home_buildings_filtered, 10)
     add_case(c, "home", f"read .type_id over {len(env['blds'])} building refs", api_building_fields, 5)
-    add_case(c, "storage", "storage_bin.count()", api_storage_count, 20)
-    add_case(c, "storage", "storage_bin.fill_percent()", api_storage_fill, 20)
-    add_case(c, "storage", "storage_bin.stacks()", api_storage_stacks, 20)
+    add_case(c, "storage", "storage.count()", api_storage_count, 20)
+    add_case(c, "storage", "storage.fill_percent()", api_storage_fill, 20)
+    add_case(c, "storage", "storage.stacks()", api_storage_stacks, 20)
     add_case(c, "battery", "battery.get_level()", api_battery_level, 20)
     add_case(c, "inventory", "inventory.count()", api_inventory_count, 20)
     add_case(c, "inventory", "inventory.get_used()", api_inventory_used, 20)
@@ -711,6 +728,8 @@ def build_api_cases():
     add_case(c, "orders", "orders.list_orders()", api_orders_list, 10)
     add_case(c, "journal", "journal.is_empty(0, 0)", api_journal_is_empty, 20)
     add_case(c, "journal", "journal.biomass_coords()", api_journal_biomass_coords, 10)
+    if CONSOLE_ONLY:
+        return [case for case in c if "console" in case[0] or case[0].startswith("print")]
     return c
 
 
@@ -774,7 +793,7 @@ n0, dt0 = time_case(bench_empty_loop, 500)
 base = dt0 / n0 * 1000000.0
 print(f"baseline empty loop: {base:.2f} us/iter")
 
-if RUN_LOCAL:
+if RUN_LOCAL and not CONSOLE_ONLY:
     rows = run_group("LOCAL", CASES)
     report("LOCAL", rows, base)
 

@@ -71,14 +71,16 @@ Operations over a 1000-element list:
 | --- | --- |
 | Lookup | `get_component("clock")`, `get_component(<building id>)` |
 | Clock / scheduler | `clock.tick()`, `clock.get_time()`, `sleep(0.1)` |
-| Console | `console.now()`, `console.debug()` |
+| Console | `console.now()`, `print()`, `console.info()`, `console.debug()` (labelled with `CONSOLE_DEBUG_STATE`) |
 | Archive (`notebook`) | `get` and `has` on a missing key; `set`, `get`, `transaction` on a small dict and on a 100-entry dict; `keys(prefix)`; reading `.status` from an `ActionResult` |
 | Signal Bus (`comms`) | `broadcast`, `latest`, `latest_info`, `send` + `receive`, `queue_size`, `pending`, `channels` |
 | Outposts | `outposts()`, `home()`, `coords()`, `buildings()`, `buildings(type_id)`, reading `.type_id` over the building refs |
-| Machines | storage bin `count` / `fill_percent` / `stacks`, battery `get_level`, `inventory` `count` / `get_used` / `stacks` |
+| Machines | storage building (`storage_bin`, `warehouse` or `large_warehouse`) `count` / `fill_percent` / `stacks`, battery `get_level`, `inventory` `count` / `get_used` / `stacks` |
 | Power / fleet | `power_control.total()`, `grids()`, `is_powered(id)`, `fleet.vehicles()`, `fleet.drones()` |
 | World | `nocturna` `terraform_progress` / `biome_at` / `points_of_interest`, `atmosphere.get_o2()` |
 | Reference data | `research.unlocked()` / `is_unlocked()`, `item_catalog.lookup()`, `shop.get_catalogue()`, `orders.list_orders()`, `journal` `is_empty` / `biomass_coords` |
+
+**Console comparison** (`CONSOLE_ONLY`): runs only the console cases. Run it once with debug output enabled in the console UI and once with it disabled, setting `CONSOLE_DEBUG_STATE` to `"shown"` or `"hidden"` each time, to see whether the 0.1 s cost of `console.debug()` depends on the debug filter. `print()` is documented as equivalent to `console.info()`; `warn` and `error` only change the level, so they are not benchmarked separately.
 
 **Interruptive** (`RUN_INTERRUPTIVE`, off by default): each case briefly changes real game state and restores it in a `finally` block.
 
@@ -96,6 +98,7 @@ Same units and container as above (empty loop = 350 µs). Every call is a single
 | Call | µs / call | × empty loop |
 | --- | ---: | ---: |
 | `get_component("clock")` lookup | 1,523 | 4.5 |
+| `get_component(<building id>)` lookup | 1,602 | 4.7 |
 | `clock.tick()` / `clock.get_time()` | 1,438 | 4.3 |
 | `console.now()` | 1,500 | 4.4 |
 | archive `get` (missing key) / `has` | 1,750 | 5.2 |
@@ -115,9 +118,13 @@ Same units and container as above (empty loop = 350 µs). Every call is a single
 | `home.buildings()` (30 refs) | 1,797 | 5.3 |
 | `home.buildings("storage_bin")` | 2,109 | 6.2 |
 | read `.type_id` over 30 refs (whole loop) | 32,500 | 96.3 |
-| `inventory.get_used()` / `stacks()` | 1,563 | 4.6 |
-| `inventory.count(id)` | 1,875 | 5.6 |
-| `power_control.total()` | 1,563 | 4.6 |
+| storage `fill_percent()` / `stacks()` (large warehouse) | 1,602 | 4.7 |
+| storage `count(id)` (large warehouse) | 1,953 | 5.8 |
+| `battery.get_level()` | 1,602 | 4.7 |
+| `inventory.get_used()` / `stacks()` | 1,602 | 4.7 |
+| `inventory.count(id)` | 1,953 | 5.8 |
+| `power_control.total()` | 1,602 | 4.7 |
+| `power_control.is_powered(id)` | 1,953 | 5.8 |
 | `power_control.grids()` | 1,797 | 5.3 |
 | `fleet.vehicles()` / `drones()` | 1,797 | 5.3 |
 | `nocturna.terraform_progress()` | 1,563 | 4.6 |
@@ -134,7 +141,7 @@ Same units and container as above (empty loop = 350 µs). Every call is a single
 | `transmitter.connect("earth")` (interruptive) | 2,500 | 7.4 |
 | `power_control.set_powered` off + on (interruptive) | 5,000 | 14.8 |
 
-Not measured yet: storage bin / warehouse reads, battery reads and `power_control.is_powered(id)`. The first run had no `storage_bin` at home and no battery at home; discovery now searches every outpost, accepts `warehouse` and `large_warehouse` as storage, and prints the building types it found.
+Storage, battery and `is_powered` were measured on a large warehouse and a battery found across all outposts. The baseline empty loop was 337.5 µs in that run, so the × column moves by a few percent against the earlier table.
 
 ### API interpretation
 
@@ -145,8 +152,9 @@ Not measured yet: storage bin / warehouse reads, battery reads and `power_contro
 5. **Attribute reads on returned objects cost about 2 steps.** Reading `.type_id` over 30 refs costs 3.2 steps per element including the loop iteration; a `.status` read costs 2.4. Read each field once and keep it in a local.
 6. **`get_component()` lookup is cheap** (4.5×), so wrapper creation does not need caching for cost reasons. Cache it only where a wrapper carries state (for example the transmitter connection).
 7. **`sleep(0.1)` and `console.debug()` each cost exactly 0.1 s of simulation time**, about 285 steps. The debug result comes from a loop of 40 calls taking 4.00 s. `console.now()` costs a normal 4.4×. `info`, `warn`, `error` and `print` have not been measured. Until they are, treat every console write as an expensive call: build one string and log once instead of logging inside hot loops.
-8. **Switching power and re-opening the Earth link are instant for the script.** `transmitter.connect` costs 7.4×; `set_powered` off + on costs 14.8× for two calls, so there is no settle time to wait for.
-9. **Budget:** with about 350 µs per step and about 1.5–2.3 ms per API call, a script can make roughly 450–650 API calls per simulation second, and none of them cost more when the returned collection is large.
+8. **Storage, battery and power reads follow the same rule** (`fill_percent`, `stacks`, `get_level`, `total` at 4.7×; calls that take an item or machine id at 5.8×) on the warehouse in that save; how the cost scales for a much fuller warehouse has not been measured.
+9. **Switching power and re-opening the Earth link are instant for the script.** `transmitter.connect` costs 7.4×; `set_powered` off + on costs 14.8× for two calls, so there is no settle time to wait for.
+10. **Budget:** with about 350 µs per step and about 1.5–2.3 ms per API call, a script can make roughly 450–650 API calls per simulation second, and none of them cost more when the returned collection is large.
 
 ## Reproducing
 
