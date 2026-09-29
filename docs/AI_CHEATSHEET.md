@@ -14,7 +14,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 0, 0a, 0b | `lib/` module map, runtime limits, `TreeConsole` logging, `swallowed()` | this file |
 | 1 | Terraforming formula table | this file |
 | 1a, 1a-0, 1a-1 | Brownout load-shedding, steam-aware Power Guard, grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
-| 1b, 1c, 1c-1, 1c-2 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
+| 1b, 1c, 1c-1, 1c-2, 1c-3 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1d | Tick-cost profiling | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
@@ -47,7 +47,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 
 | Concern | Module(s) |
 | :--- | :--- |
-| Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`) |
+| Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`; `Mk3FluidFeed` routes Mk III `steam_in`/`water_in`, §1c-3) |
 | Power grid & brownout | `power.py` (`PowerGridManager` — generic, solar/oil/reactor/turbine grids, owned centrally by headless automation panel, one instance per grid, no election — see §1a-1); `solar.py` (`SolarController` — pure sun tracking, no grid supervision) |
 | Vehicles (Rover/Pioneer base) | `vehicle.py` (`VehicleController`, composes mixins below) |
 | &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
@@ -111,7 +111,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Biomass completion: retire Liquifiers/Mixers, sell button | `biomass_retire.py` — see §1h-1 (tier 5 lib; imported by `drone_mining.py`/`drone_depot.py`/`status_panel.py`/`automation_panel.py`) |
 | Waste Processor (destroy surplus at its outpost, today life forms after biomass completion) | `waste_sink.py` — see §1h-1 (tier 5) |
 | Waste Processor water overflow (last-resort drain when every Water tank at the outpost is full and a Water Pump stalls) | `water_sink.py` — see §1c (tier 5) |
-| Shared network-wide fluid-target discovery/blacklist/reconnect | `fluid_routing.py` — `FluidOutputRouter` (`thermal_cap.py`/`fluid_pump.py`/`essence_liquifier.py`/`steam_condenser.py`), `FluidInputRouter` (`steam_turbine.py`/`fabricator.py`/`biomass_mixer.py`/`oil_generator.py`/`steam_condenser.py`); see §1b |
+| Shared network-wide fluid-target discovery/blacklist/reconnect | `fluid_routing.py` — `FluidOutputRouter` (`thermal_cap.py`/`fluid_pump.py`/`essence_liquifier.py`/`steam_condenser.py`), `FluidInputRouter` (`steam_turbine.py`/`fabricator.py`/`biomass_mixer.py`/`oil_generator.py`/`steam_condenser.py`/`terraforming.py`); see §1b |
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
 | Outpost ore-assignment & stock-target scaffolding (multi-outpost mining) | `outpost_mining.py` — see §2d |
 | Data Archive persistence layer | `archive.py` |

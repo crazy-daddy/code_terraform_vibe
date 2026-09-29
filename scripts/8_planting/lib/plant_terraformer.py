@@ -20,16 +20,20 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 #   - Everything is consumed when a cycle starts, so the holders are empty
 #     again while the 3 h cycle runs -- the next batch is preloaded then.
 #   - A cycle takes 3 h no matter how many Forage it holds, and the machine
-#     draws power (Mk I 180 W) the whole time it is enabled. The km² per
-#     Forage is fixed per phase, so a small batch loses no km², only power.
-#     Forage supply (one field) is far below the machine's 400 Forage/h, so
-#     the machine is never the bottleneck: it waits for MIN_START_FORAGE
-#     before starting, and is disabled while it has nothing to do. An enabled
-#     machine starts the next batch the moment one ends, so while a batch
-#     runs, Forage is only preloaded once enough is in stock to reach
-#     MIN_START_FORAGE -- otherwise a trickle would become a 3 h mini-batch.
-#   - Blocked on Water/Salt/etc. with Forage onboard, the machine stays
-#     enabled: disabled, status() reads "disabled" and hides what's missing.
+#     draws power (Mk I 180 W, Mk II 900 W) the whole time it is enabled,
+#     blocked or not. The km² per Forage is fixed per phase, so a small batch
+#     loses no km², only power.
+#   - A cycle commits the largest Forage batch EVERY loaded material supports
+#     (a half-full water tank halves the batch). supported_batch() computes
+#     that from the holders and the water_in level; an idle machine is
+#     enabled only once it reaches start_threshold() (START_BATCH_FRACTION of
+#     a full batch) and is disabled otherwise -- also while an input (e.g.
+#     Fertilizer nobody crafts yet) is missing entirely. The limiting
+#     material is logged and published as `blocker`.
+#   - An enabled machine starts the next batch the moment one ends, so while
+#     a batch runs, Forage is preloaded only once the other materials already
+#     support start_threshold() and stock can reach it. Water and support
+#     items only rise until the next start, so the preloaded batch is full.
 #   - Stopping the script resets enabled to False and pauses an in-flight
 #     batch in place. On restart the batch is found again from get_progress()
 #     or the last published state, and the machine is re-enabled.
@@ -80,13 +84,20 @@ STATUS_STALE_TICKS = 36000
 # Feeders: ~9 s). Polling every 10 s loses nothing.
 POLL_INTERVAL_S = 10.0
 
-# Onboard Forage needed before an idle machine is enabled (or the full
-# batch_requirements() amount, when that is smaller -- e.g. right before a
-# phase threshold). Keeps the 3 h cycle's power cost from being spent on a
-# handful of Forage.
+# Share of a full batch (batch_requirements()["forage"], which already
+# shrinks near a phase threshold) the loaded materials must support before
+# an idle machine is enabled. Keeps the 3 h cycle's power cost from being
+# spent on a partial batch.
+START_BATCH_FRACTION = 0.95
+
+# Floor on the start threshold (a full batch below it is used as is).
 MIN_START_FORAGE = 100
 
-# Salt / Growth Accelerant / each Fertilizer tier: onboard holder cap.
+# Forage one Salt item treats (plant_terraformer_guide: 1 Salt per 500).
+SALT_FORAGE_PER_ITEM = 500
+
+# Growth Accelerant / each Fertilizer tier: onboard holder cap. The Salt
+# holder fits a full batch's need (Mk II: 14).
 SUPPORT_HOLDER_CAP = 10
 
 # Fertilizer item ids, best potency first (fertilizer_potency(): 50/30/10).
@@ -94,7 +105,7 @@ FERTILIZER_ITEM_IDS = ("fertilizer_mk3", "fertilizer_mk2", "fertilizer")
 
 # Salt / Growth Accelerant / Fertilizer staged at the outpost, in batches'
 # worth (Mk I full batch: 3 Salt; Mk II: 14 Salt, 27 potency, 1
-# Accelerant; per-batch amounts capped by the holder), so one batch is on
+# Accelerant; Fertilizer/Accelerant capped by the holder), so one batch is on
 # hand while a hauler brings the next.
 SUPPORT_REQUEST_BATCHES = 2
 
@@ -127,6 +138,7 @@ class PlantTerraformerController:
         self.log = TreeConsole(module="plant_terraformer")
         self._last_status = None
         self._last_phase = None
+        self._last_blocker = None
         self._water_router = None
         self._published_targets = None
         self._published_tick = None
@@ -255,10 +267,50 @@ class PlantTerraformerController:
         return moved_total
 
     def start_threshold(self, full_batch):
-        """Onboard Forage an idle machine waits for before it is enabled."""
-        return max(min(MIN_START_FORAGE, full_batch) if full_batch > 0 else MIN_START_FORAGE, 1)
+        """Batch (Forage) the loaded materials must support before an idle machine is enabled."""
+        if full_batch <= 0:
+            return MIN_START_FORAGE
+        return max(min(full_batch, max(MIN_START_FORAGE, int(full_batch * START_BATCH_FRACTION))), 1)
 
-    def load_forage(self, wanted, held, in_flight, requests):
+    def water_level(self):
+        port = getattr(self.machine, "water_in", None)
+        if not port or not hasattr(port, "level"):
+            return 0.0
+        try:
+            return float(port.level() or 0.0)
+        except Exception as error:
+            swallowed("plant_terraformer.PlantTerraformerController.water_level: port.level", error)
+            return 0.0
+
+    def support_limits(self, reqs, required, held):
+        """
+        {material: Forage it supports} for every non-Forage input the phase
+        needs, from the holders and the water_in level. Fertilizer counts
+        unopened items only (opened potency isn't readable), so it errs low.
+        """
+        full = int(reqs.get("forage", 0) or 0)
+        if full <= 0:
+            return {}
+        limits = {}
+        if "water" in required and reqs.get("water"):
+            limits["water"] = int(self.water_level() * full / float(reqs["water"]))
+        if "salt" in required and reqs.get("salt"):
+            limits["salt"] = held.get("salt", 0) * SALT_FORAGE_PER_ITEM
+        if reqs.get("fertilizer_potency"):
+            potency = sum(held.get(i, 0) * self._potency(i) for i in FERTILIZER_ITEM_IDS)
+            limits["fertilizer"] = potency * full // int(reqs["fertilizer_potency"])
+        if "growth_accelerant" in required and reqs.get("growth_accelerant"):
+            limits["growth_accelerant"] = held.get("growth_accelerant", 0) * full // int(reqs["growth_accelerant"])
+        return limits
+
+    def supported_batch(self, reqs, required, held):
+        """(Forage batch the loaded materials support, limiting material)."""
+        limits = self.support_limits(reqs, required, held)
+        limits["forage"] = held.get("forage", 0)
+        limiter = min(limits, key=lambda k: limits[k])
+        return limits[limiter], limiter
+
+    def load_forage(self, wanted, held, in_flight, requests, support_limit):
         """Top the holders up to `wanted` Forage. Returns units moved."""
         onboard = held.get("forage", 0)
         missing = wanted - onboard
@@ -266,6 +318,9 @@ class PlantTerraformerController:
             return 0
         if in_flight:
             start_at = self.start_threshold(wanted)
+            if support_limit < start_at:
+                self.log.debug(f"[{self.name}] batch running; not preloading Forage: other inputs support {support_limit} (next batch starts at {start_at}).")
+                return 0
             available = self.available("forage", requests)
             if onboard + available < start_at:
                 self.log.debug(f"[{self.name}] batch running; not preloading {available} Forage (next batch starts at {start_at}).")
@@ -273,8 +328,7 @@ class PlantTerraformerController:
         return self._take("forage", missing, requests)
 
     def load_salt(self, need, held, requests):
-        want = min(need, SUPPORT_HOLDER_CAP)
-        return self._take("salt", want - held.get("salt", 0), requests)
+        return self._take("salt", need - held.get("salt", 0), requests)
 
     def load_accelerant(self, need, held, requests):
         want = min(need, SUPPORT_HOLDER_CAP)
@@ -315,15 +369,20 @@ class PlantTerraformerController:
         """Loads every material the current recipe needs. Returns {item_id: moved}."""
         moved = {}
         held = self.onboard()
-        forage = int(reqs.get("forage", 0) or 0)
-        if forage > 0:
-            moved["forage"] = self.load_forage(forage, held, in_flight, requests)
         if "salt" in required and reqs.get("salt"):
             moved["salt"] = self.load_salt(int(reqs["salt"]), held, requests)
         if reqs.get("fertilizer_potency"):
             moved["fertilizer"] = self.load_fertilizer(int(reqs["fertilizer_potency"]), held, requests)
         if "growth_accelerant" in required and reqs.get("growth_accelerant"):
             moved["growth_accelerant"] = self.load_accelerant(int(reqs["growth_accelerant"]), held, requests)
+        forage = int(reqs.get("forage", 0) or 0)
+        if forage > 0:
+            # Support items load first so the Forage preload gate sees them.
+            if any(moved.values()):
+                held = self.onboard()
+            limits = self.support_limits(reqs, required, held)
+            support_limit = min(limits.values()) if limits else forage
+            moved["forage"] = self.load_forage(forage, held, in_flight, requests, support_limit)
         return {k: v for k, v in moved.items() if v}
 
     # --------------------------------------------------------------- water
@@ -393,7 +452,7 @@ class PlantTerraformerController:
         if not self.is_home and reqs.get("forage"):
             targets["forage"] = int(reqs["forage"])
         if "salt" in required and reqs.get("salt"):
-            targets["salt"] = min(int(reqs["salt"]), SUPPORT_HOLDER_CAP) * SUPPORT_REQUEST_BATCHES
+            targets["salt"] = int(reqs["salt"]) * SUPPORT_REQUEST_BATCHES
         if reqs.get("fertilizer_potency"):
             per_batch = -(-int(reqs["fertilizer_potency"]) // max(self._potency("fertilizer"), 1))
             targets["fertilizer"] = min(per_batch, SUPPORT_HOLDER_CAP) * SUPPORT_REQUEST_BATCHES
@@ -452,16 +511,26 @@ class PlantTerraformerController:
             return
         self.log.debug(f"[{self.name}] {'enabled' if enabled else 'disabled'}: {reason}.")
 
-    def decide(self, status, in_flight, onboard_forage, full_batch):
-        """(enable, reason) for this step."""
+    def decide(self, status, in_flight, supported, limiter, full_batch):
+        """(enable, reason, blocker) for this step; blocker is the limiting material while idle, else None."""
         if status in STOP_STATUSES:
-            return False, status
+            return False, status, None
         if in_flight:
-            return True, "batch in flight"
+            return True, "batch in flight", None
         start_at = self.start_threshold(full_batch)
-        if onboard_forage >= start_at:
-            return True, f"{onboard_forage} Forage onboard (start at {start_at})"
-        return False, f"{onboard_forage} Forage onboard, waiting for {start_at}"
+        if supported >= start_at:
+            return True, f"loaded inputs support {supported} Forage (start at {start_at})", None
+        return False, f"{limiter} supports {supported} Forage, waiting for {start_at}", limiter
+
+    def report_blocker(self, blocker, supported, full_batch):
+        """Info line when the idle machine's limiting input changes; the per-step reason stays debug."""
+        if blocker == self._last_blocker:
+            return
+        if blocker:
+            self.log.print(f"[{self.name}] Idle, switched off: {blocker} supports {supported}/{full_batch} Forage.")
+        elif self._last_blocker:
+            self.log.print(f"[{self.name}] Inputs ready ({self._last_blocker} no longer short).")
+        self._last_blocker = blocker
 
     def report_transitions(self, status, phase, remaining):
         if phase != self._last_phase:
@@ -532,9 +601,10 @@ class PlantTerraformerController:
             self._published_targets = {}
 
         held = self.onboard()
-        onboard_forage = held.get("forage", 0)
         full_batch = int(reqs.get("forage", 0) or 0)
-        enable, reason = self.decide(status, in_flight, onboard_forage, full_batch)
+        supported, limiter = self.supported_batch(reqs, required, held)
+        enable, reason, blocker = self.decide(status, in_flight, supported, limiter, full_batch)
+        self.report_blocker(blocker, supported, full_batch)
         self.set_enabled(enable, reason)
         if self._resume_pending:
             # One enabled step is enough to see whether a batch really was in flight.
@@ -555,6 +625,8 @@ class PlantTerraformerController:
             "km2_rate": round(float(self._call("km2_rate", 0.0)), 1),
             "onboard": held,
             "enabled": enable,
+            "blocker": blocker,
+            "supported_batch": supported,
             "in_flight": running or progress > 0,
             "tick": curr_tick,
         }, curr_tick)

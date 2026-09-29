@@ -40,7 +40,10 @@ BIGGER_STACKS_SIZE = 20
 #   - "module" / "portable": vehicle equipment-slot gear (battery holders,
 #     cargo racks, portable batteries/bins/scanners) that has to be in
 #     Inventory to equip a newly-built or refitted Pioneer/Rover.
-NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable")
+#   - "upgrade_pack": Mk II+ building upgrade packs (e.g.
+#     pressure_upgrade_pack_mk2) apply to a placed building from Inventory
+#     only.
+NON_WAREHOUSABLE_CATEGORIES = ("equipment", "module", "portable", "upgrade_pack")
 # Explicit ids on top of the categories above: drone hardware must also sit in
 # Inventory -- computer.deploy() takes Depot kits and chassis from there, and
 # drone.couple() takes modules from there (docs/components/drone.md). Listed

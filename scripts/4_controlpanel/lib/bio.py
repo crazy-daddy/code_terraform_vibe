@@ -177,6 +177,41 @@ def _processor_is_idle(processor, processor_type):
     return True
 
 
+def processor_fragment_preference(processor, processor_type, fragment_ids):
+    """
+    fragment_ids ordered so the local processor switches setup as rarely as
+    possible. Bio Caster: its selected recipe() first (repeat casts need no
+    re-heat), then the smallest gap between temperature() and each recipe's
+    temperature_range. Other processor types have no setup cost, so the input
+    order is kept. Collector and Caster both rank with this, so the Collector
+    harvests the fragment the Caster wants next.
+    """
+    fragment_ids = list(fragment_ids)
+    if not processor or processor_type != "bio_caster":
+        return fragment_ids
+    try:
+        current = processor.recipe()
+        temp = processor.temperature()
+    except Exception as error:
+        swallowed("bio.processor_fragment_preference: processor.recipe", error)
+        return fragment_ids
+
+    def gap(fragment_id):
+        try:
+            recipe = processor.find_recipe(fragment_id)
+            band = getattr(recipe, "temperature_range", None) if recipe is not None else None
+        except Exception as error:
+            swallowed("bio.processor_fragment_preference: processor.find_recipe", error)
+            band = None
+        if not band:
+            return float("inf")
+        return max(0.0, band[0] - temp, temp - band[1])
+
+    ordered = sorted(fragment_ids, key=lambda fragment_id: (fragment_id != current, gap(fragment_id)))
+    log.debug(f"processor_fragment_preference({processor_type}): recipe={current} temp={temp:.0f}C -> {ordered}")
+    return ordered
+
+
 def _local_sources(outpost):
     """[(source_id, component), ...] for every storage location this outpost can pull
     from: "inventory" first if home, then every discovered Warehouse at `outpost`."""
@@ -392,7 +427,7 @@ def _order_fragment_remaining(order, fragment_id, snapshot):
     target_properties = _order_target_properties(order, fragment_id)
     already_matching = _snapshot_property_count(snapshot, fragment_id, target_properties)
     final = max(0, remaining - already_matching)
-    log.debug(
+    log.trace(
         f"_order_fragment_remaining({getattr(order, 'id', '?')}, {fragment_id}): needed={needed} "
         f"delivered={delivered} in_transit={in_transit} remaining_raw={remaining} "
         f"target_properties={target_properties} already_matching_local={already_matching} -> final={final}"
@@ -443,7 +478,7 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
         if fragment_id is not None and fragment_id not in (order.requires or {}):
             continue
         candidates.append(order)
-    log.debug(f"_focus_local_order: {len(candidates)} local/incomplete/non-frozen candidate(s) survived filtering (of {len(orders)} total).")
+    log.trace(f"_focus_local_order: {len(candidates)} local/incomplete/non-frozen candidate(s) survived filtering (of {len(orders)} total).")
 
     if not candidates:
         log.trace("_focus_local_order: exit, no candidates.")
@@ -454,7 +489,7 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
             if _order_fragment_remaining(order, fragment_id, snapshot) > 0:
                 log.trace(f"_focus_local_order: exit, chose {order.id} (still needs {fragment_id}).")
                 return order
-        log.debug(f"_focus_local_order: every candidate already has {fragment_id} fully covered/matched -- none chosen.")
+        log.trace(f"_focus_local_order: every candidate already has {fragment_id} fully covered/matched -- none chosen.")
         return None
 
     for order in candidates:
@@ -811,7 +846,8 @@ class BioExchangeController:
                     # Non-blocking check for instant delivery trigger
                     msg = self.comms.receive("sample_ready")
                     if msg.status == "ok" and msg.packet:
-                        sample_id = (msg.packet.value or {}).get("sample_id")
+                        value = msg.packet.value
+                        sample_id = value.get("sample_id") if isinstance(value, dict) else None  # type: ignore[union-attr]  # game isinstance stub does not narrow
                         self.log.print(f"[EXCHANGE] Received sample_ready event ({sample_id}), triggering immediate sweep!")
                         continue
                 except Exception as error:
@@ -1163,19 +1199,25 @@ class BioCollectorController:
         # Priority 1: Collect what is actively needed by local orders --
         # prefer the current/focus order's own fragments first, falling back
         # to any other incomplete order's fragment if none of those are
-        # discoverable nearby right now.
+        # discoverable nearby right now. Within each tier, rank fragments by
+        # the local processor's setup preference (processor_fragment_preference()).
         if needed_fragments:
+            location_by_fragment = {}
             for loc in locations:
-                if loc.cataloged and loc.fragment_id in needed_fragments and loc.fragment_id in preferred_fragments:
+                if loc.cataloged and loc.fragment_id in needed_fragments and loc.fragment_id not in location_by_fragment:
+                    location_by_fragment[loc.fragment_id] = loc
+            processor, processor_type = local_biome_processor(outpost)
+            ranked = processor_fragment_preference(processor, processor_type, location_by_fragment.keys())
+            for tier_label, in_tier in (("current order", True), ("other order", False)):
+                for fragment_id in ranked:
+                    if (fragment_id in preferred_fragments) != in_tier:
+                        continue
+                    loc = location_by_fragment[fragment_id]
                     target_coords = loc.coords
-                    self.log.print(f"[{self.name}] Harvesting needed specimen (current order): {loc.fragment_id} at {loc.coords}")
+                    self.log.print(f"[{self.name}] Harvesting needed specimen ({tier_label}): {fragment_id} at {loc.coords}")
                     break
-            if target_coords is None:
-                for loc in locations:
-                    if loc.cataloged and loc.fragment_id in needed_fragments:
-                        target_coords = loc.coords
-                        self.log.print(f"[{self.name}] Harvesting needed specimen (other order): {loc.fragment_id} at {loc.coords}")
-                        break
+                if target_coords is not None:
+                    break
 
         if needed_fragments and target_coords is None:
             self.log.debug(f"[{self.name}] needed_fragments={needed_fragments} but none of the {len(locations)} scanned location(s) are cataloged as a matching fragment yet.")

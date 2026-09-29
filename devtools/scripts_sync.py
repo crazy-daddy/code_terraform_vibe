@@ -93,10 +93,10 @@ A source script may itself contain `${VAR}` / `${VAR:default}` placeholders
 (same syntax as `early_game_runner/auto_deploy.py`'s substitution, kept
 identical on purpose) for values only the operator knows at deploy time -
 e.g. `pioneer.py`'s destination outpost. `sync_file()` resolves each one
-per save slot from, in order: the answer cached in
-`devtools/.sync-backups/script_params.json` (gitignored), the value the
-slot's current code holds at the placeholder's position (see
-infer_placeholders()), the template default when the slot already has code
+per save slot from, in order: the value the slot's current code holds at
+the placeholder's position (see infer_placeholders()) - so an in-game edit
+sticks and replaces the cached answer - the answer cached in
+`devtools/.sync-backups/script_params.json` (gitignored), the template default when the slot already has code
 (code that predates a placeholder never set it), an interactive prompt for
 an empty slot. Answers are cached.
 """
@@ -993,9 +993,10 @@ def rehome_retired_destination(stem: str, placeholders: list, slot_cache: dict, 
 def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run: bool,
                          template: str = "", current: str = "") -> dict:
     """Answers for every (name, default) in placeholders, from: a retired
-    push-hauler destination (rehome_retired_destination()), this save
-    slot's cached answers, the value the slot's current code holds
-    (infer_placeholders()), the template default when the slot already has
+    push-hauler destination (rehome_retired_destination(); beats both
+    below), the value the slot's current code holds (infer_placeholders();
+    an in-game edit overrides the cache), this save slot's cached answers,
+    the template default when the slot already has
     code (it predates the placeholder), an interactive prompt for an empty
     slot (blocking - fine under
     `watch`: the filesystem observer runs on its own thread and just queues
@@ -1011,13 +1012,20 @@ def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run:
     rehomed = rehome_retired_destination(stem, placeholders, slot_cache, current)
     dirty = (had_retired or rehomed is not None) and not dry_run
     if rehomed is not None:
+        # The slot's code still says the old push-hauler HOME_BASE; the
+        # re-homed value must beat it.
         slot_cache["HOME_BASE"] = rehomed
+        inferred["HOME_BASE"] = rehomed
     for name, default in placeholders:
-        if name in slot_cache:
+        if name in inferred:
+            # The slot's own code wins: an operator edit made in-game is the
+            # newest answer and replaces the cached one.
+            answers[name] = inferred[name]
+            if slot_cache.get(name) == answers[name]:
+                continue
+        elif name in slot_cache:
             answers[name] = slot_cache[name]
             continue
-        if name in inferred:
-            answers[name] = inferred[name]
         elif dry_run:
             answers[name] = default
             continue
@@ -1618,10 +1626,10 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
             if names:
                 cached = dict(load_params_cache().get("%s/%s" % (opts.save_dir.name, path.stem), {}))
                 rehomed = rehome_retired_destination(path.stem, names, cached, text)
-                if rehomed is not None:
-                    cached["HOME_BASE"] = rehomed
                 inferred = infer_placeholders(template, text)
-                body = render_placeholders(template, {n: cached.get(n, inferred.get(n, d)) for n, d in names})
+                if rehomed is not None:
+                    inferred["HOME_BASE"] = rehomed
+                body = render_placeholders(template, {n: inferred.get(n, cached.get(n, d)) for n, d in names})
             if opts.renumber:
                 body, _, _ = renumber(body, source.stem, path.stem)
             if body == text:

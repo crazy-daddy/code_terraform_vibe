@@ -108,3 +108,8 @@ inspirations/vakermit/tools/build_docs.py | 2026-09-28 | Diff skipped per tools-
 # STATUS (2026-09-28): reviewed vakermit 2ffa380..aa5568f, covering both submodule bumps (the
 # 9a5319d bump from 2026-09-27 was never assessed). Findings under "vakermit Controller,
 # Pioneer & Storage Update (Reviewed 2026-09-28)" in TODO_inspirations.md.
+inspirations/vakermit/scripts/rover/pioneer_1.py | 2026-09-29 | Diff only (aa5568f..b1887c9): long-run throttle, persisted Wh/m, keep kit, skip-reason log, role survives conserve. All matched or not applicable.
+inspirations/vakermit/scripts/lib/control.py | 2026-09-29 | Diff only: docstring for conserve exemption. Nothing new.
+
+# STATUS (2026-09-29): reviewed vakermit aa5568f..b1887c9. Findings under "vakermit Pioneer
+# Range & Conserve Fixes (Reviewed 2026-09-29)" in TODO_inspirations.md.

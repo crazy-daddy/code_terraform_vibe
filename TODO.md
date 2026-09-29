@@ -175,6 +175,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
   - [ ] Waste Processing is researched: deploy one Waste Processor per outpost with miner drones (`5_steampower/factory/garbage_disposal.py`, `lib/waste_sink.py`), outpost_6 first (Depot full of crystal_spores blocks stone_lichen hauls home, which starves Crowncap seeds). Until then the Depot's `flush_surplus()` (hand-deploy updated `drone_depot.py`) clears forms it can't stage.
   - [ ] Deploy a Waste Processor at home for Water overflow (`lib/water_sink.py`, new, syncs): drains one tank to 80 % only when every Water tank there is >= 90 % and a Water Pump stalls, so the pumps keep making salt. Then check salt pickup keeps up — pumps 3/4 already vent salt (full 20-unit bins).
   - [ ] Steam Condenser (`5_steampower/lib/steam_condenser.py`, new, syncs; slot `steam_condenser_1`): condense steam into water, idle when the grid steam pool is low or the water tank is near full (§1c-2). Validate live: `water_out` spreads across water tanks, steam/water/sink guards trigger, steam pool stays >= 85 % through dormancy. Hand-deploy updated `steam_condenser.py`/`water_sink.py` (already in save lib).
+  - [ ] Mk III terraforming fluid feed (`lib/terraforming.py` `Mk3FluidFeed`): Mk III heater `steam_in`, pressure/O2 `water_in`, heater releases steam below 50 % grid steam pool (§1c-3). Hand-deploy updated `terraforming.py`. Validate live: ports exist and connect, `is_degraded()` clears, steam guard disconnect works, retune 0.50/0.70 against turbine dormancy.
   - [ ] Drain or repurpose the essence Liquid Tanks (leftover essence; `fluid_routing.tank_assignments` entries) — e.g. Waste Processor `"liquid"` mode or reassign for Wildlife supply fluids.
 
 ---
@@ -196,7 +197,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
     - [x] Crop Automator controller (`lib/crop_automator.py`, thin `harvesting/crop_automator.py`): owns the layout cells nearest to it, harvests mature crops, plants open cells once their providers are deployed (seeds batch-loaded into its input, netted against queued jobs), unblocks a stuck head job, keeps Forage in its output (the home Plant Terraformer and pull haulers take it from there; no drain to Warehouses), republishes `plant.seed_demand` if the Harvester's goes stale, `plant.automators` telemetry. Kits are Shop items (30,000 cr), auto-bought by the Harvester above a credit reserve; `automators_wanted` in `plant.status`.
       - [ ] Validate live: job results (`next_result()` fields), `cells()` ids match sectors, `input` accepts seeds via `take_item()`, CropJob `state`/`blocker` values (`"blocked"`, `"no_seed"`, `"output_full"`), the Plant Terraformer's `input.connect()` + `take("forage")` from an automator output.
       - [ ] Validate live: a Plant Terraformer `input.connect(<automator id>)` + `take("forage")` works, and `harvesting_machines("crop_automator")` refs carry the id `get_component()` accepts.
-      - [ ] Validate live: the Harvester harvests a clogged garden automator's cells (debug `Clogged Crop Automators: ...`); drones go for garden forms first (`supply requests` debug, `Garden forms short`).
+      - [ ] Validate live: drones go for garden forms first (`supply requests` debug, `Garden forms short`).
       - [ ] Forage throughput: the full field (~3,175/h) outruns one Plant Terraformer (Mk I 400/h, Mk II 2,200/h); more consumers are handled in game. Show `plant.automators[*].forage` fill on a panel to watch how fast automators clog.
       - [ ] Optional: count seeds sitting in automator inputs (up to `SEED_PULL_BATCH` per species each) against Seed Maker demand, if live logs show overproduction.
       - [ ] Water budget: phase 2 needs 8 Sprinklers (garden), phase 3 up to 37 x 2 t/h at Mk I (x2 per tier) vs home water supply.
@@ -227,6 +228,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
 ## 🐾 Phase 6: Biosphere Tier 3 — Wildlife Husbandry & Endgame
 - [ ] Catalog all 5 DNA fragments per target creature in Bio Lab to unlock their feed recipes.
   - [ ] Use Bio Orders to drive specimen collection and keep completed samples out of Inventory through Exchange delivery.
+  - [ ] Bio Caster bulk material demand (`lib/bio_volcanic.py`, requester `bio_caster`, §1g): deploy `bio_volcanic.py` + `production.py` by hand; live-verify `find_recipe()` returns materials for never-analyzed fragments, forged stacks carry a property (forged-stock subtraction), Fabricator builds the floor and a hauler serves the Volcanic outpost; steam_in/water_in connect via `FluidInputRouter` (steam source must be reachable by gas pipe if not local).
 - [ ] Deploy **Habitats** and assign target species (`set_revival_target(creature_id)`).
   - [ ] Stage at least 2 of each required creature's samples before attempting revival.
 - [ ] Produce species-specific feed in **Feed Makers**.

@@ -220,6 +220,17 @@ Not actionable (already matched or exceeded):
 - `rover/pioneer_explorer.py` survey census (per-biome open contacts vs one-way range, sonar-tier refusals counted separately): covered. Blocked contacts get map markers, and `survey_known_pois()` already logs each accepted or rejected candidate with its Wh budget at debug level.
 - `tools/build_docs.py` diff: skipped (tools code, operator decision 2026-09-16).
 
+## vakermit Pioneer Range & Conserve Fixes (Reviewed 2026-09-29)
+
+Covers vakermit commits `aa5568f..b1887c9` (three commits, `scripts/rover/pioneer_1.py` and a docstring in `scripts/lib/control.py`). All three fix one symptom: an assigned builder kept loading an outpost kit, leaving, turning back, and unloading it. Nothing new to adopt.
+
+Not actionable (already matched or exceeded):
+- Long-run throttle (`cruise_for()`: 0.35 beyond 250 m, 0.6 otherwise). Our `select_cruise_throttle()`/`max_safe_throttle_for_leg()` in `lib/vehicle_energy.py` already pick the throttle per leg from the power/speed model. vakermit's comment claims a fixed draw makes very low throttle cost more per meter. That claim is not measured, and `docs/` documents no fixed travel draw. Our model (Wh/m rises with throttle) has no such term, so there is nothing to change unless in-game data shows it.
+- Persisted Wh/m (`fleet.cost.<id>` on the Signal Bus, recalled at startup). vakermit needed it because its EMA restarted from an optimistic guess. Our budget comes from the analytic model, so a restart cannot reset it to an optimistic value.
+- Keep the kit aboard on an aborted run (`needed_kits()`). Our `PioneerController.run_construction_loop()` already unloads only when the cargo holds none of the job's `required_item`.
+- Log why a planned build is skipped. Our loop already warns when a kit cannot be loaded and defers the job through `failed_jobs`.
+- Assigned build/scout role works through conserve, not emergency. Our `PowerGridManager` sheds buildings only and does not gate vehicle construction, so a builder is never held back by conserve mode.
+
 ## Jasmine Control Room Panel Mockups (Reviewed 2026-09-18)
 
 `inspirations/discord-panels/jasmine/` (screenshots `2.png`–`9.png`, `10.png`==`2.png` and `image.png`==`9.png` are exact duplicates) and `inspirations/discord-panels/manual_craft.png` are UI mockups of a tabbed "Colony Control Room" (OVERVIEW / STRATEGY / PRODUCTION / FLEET / OUTPOSTS / INFRA / SYSTEM), attributed to a "Control Room" platform distinct from our own panel API (its own `docs`/`Manage`/`+ New Card`/column-layout chrome is not ours — treat only the information architecture as a pattern, not the widget implementation). These are mockups/concept art, not runnable code, so nothing here is a drop-in reference file the way `graviadaemon`'s `lib/` is — reimplement against this save's own `panel_*.py` + Signal Bus conventions.

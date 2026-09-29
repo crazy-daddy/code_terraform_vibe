@@ -1,4 +1,4 @@
-# Power & Fluids (§1a–§1c-2)
+# Power & Fluids (§1a–§1c-3)
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §1.
 
@@ -170,3 +170,13 @@ every cycle — delivery self-limits to what connected tank accepts.
 - **steam_in**: `FluidInputRouter` with the Steam Turbine's candidates and constants (§1b); starved = `steam_in.level() == 0` while the steam guard is open.
 - **water_out**: `FluidOutputRouter` with the Fluid Pump's targets and constants (§1c, `fluid_id="water"`) except the switch line above; stall signal = `water_out` buffer full.
 - No archive state: game resets throttle to 0 on script stop; guards re-evaluate from live readings on the first step.
+
+### 1c-3. Mk III Terraforming Fluid Feed (`lib/terraforming.py` `Mk3FluidFeed`)
+
+`HeatController`/`PressureController`/`OxygenController` each run one `Mk3FluidFeed` per `step()`. Mk III Heat Generator takes `steam_in`, Mk III Pressure/Oxygen Generator take `water_in`. A starved Mk III runs as Mk II (`is_degraded()`), it never stops.
+
+- Routes only while `tier() == 3` (Mk IV burns Fuel Rods; below Mk III the port does nothing). At most every `FLUID_CHECK_INTERVAL_TICKS = 20` ticks.
+- **steam_in**: `FluidInputRouter`, steam Gas Tanks then Thermal Caps, own outpost first (Steam Turbine candidates, §1b). **water_in**: `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, own outpost first. Router constants = Plant Terraformer's water router (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `flow_rate() == 0` with room left.
+- **Steam guard (heater only)**: grid steam pool (`power.measure_grid()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.50` → `steam_in.disconnect()`, heater runs as Mk II; reconnects at `>= STEAM_POOL_START_FRACTION = 0.70`. Keeps the turbines' dormancy buffer. No measurable steam tank, or tier-4 `power.py` (no `measure_grid()`) → guard open. Water has no guard.
+- `is_degraded()` transitions logged at info level (warn when starved).
+- No archive state.

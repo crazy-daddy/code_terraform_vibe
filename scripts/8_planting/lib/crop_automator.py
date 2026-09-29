@@ -17,7 +17,9 @@
 #      `output_full` -> wait until a consumer pulls (see 7); QUIET_BLOCKERS
 #      are normal states, logged at debug only
 #   5. harvest every mature layout crop it owns (status "mature" or
-#      growth >= 1.0)
+#      growth >= 1.0), except garden crops (field_layout.kept_crop()): they
+#      are planted once and never harvested, since a mature crop still
+#      counts toward the species multiplier. A garden automator only plants.
 #   6. plant every open layout cell it owns, once the machines beside the
 #      cell give every care service the species needs (Crop Automators only
 #      apply Fertilizer / Growth Accelerant: light, water and salt must come
@@ -31,8 +33,7 @@
 #      Warehouses, so auto-loaders stay free. A clogged automator is
 #      accepted over clogged Warehouses. Consumers (the Plant Terraformer via
 #      storage.take_item()) take it from there directly, clogged automators
-#      first, then garden ones (storage.crop_automator_forage(), which reads
-#      this module's `garden` telemetry flag)
+#      first (storage.crop_automator_forage())
 # Nothing is queued while the Power Guard has shed it (`power.shedded`) or
 # while the layout is still the starter one. Loose items on its cells are
 # swept by the Harvester (a plant job needs an empty cell).
@@ -135,8 +136,9 @@ class CropAutomatorController:
         """
         Fallback while the Harvester is offline: the first deployed automator
         republishes plant.seed_demand once it is SEED_DEMAND_FALLBACK_TICKS
-        old. Only automated cells count (layout cells in some automator's
-        area): nobody plants the rest while the Harvester is away.
+        old. Only automated fill cells count (layout cells in some
+        automator's area): nobody plants the rest while the Harvester is
+        away, and garden cells are planted once, never replanted.
         """
         if not automators or automators[0] != self.sector:
             return
@@ -148,8 +150,9 @@ class CropAutomatorController:
         for ca in automators:
             served |= set(field_layout.automator_area(ca))
         rotation = {}
+        garden = set(layout.get("garden") or [])
         for sector, species in layout_cells.items():
-            if sector in served:
+            if sector in served and sector not in garden:
                 seed_id = (rules.get(species) or {}).get("seed_id") or "seed_" + species
                 rotation[seed_id] = rotation.get(seed_id, 0) + 1
         priority = field_layout.priority_seeds(layout_cells, layout.get("garden"), layout.get("fill"), rules)
@@ -319,6 +322,7 @@ class CropAutomatorController:
             self.log.debug(f"[{self.name}] cells() failed: {e}")
             return
 
+        garden = set(layout.get("garden") or [])
         mature = []
         open_cells = []
         waiting = []
@@ -331,7 +335,8 @@ class CropAutomatorController:
             plant = getattr(cell, "plant", None)
             growth = getattr(cell, "growth", 0) or 0
             if (status == "mature" or growth >= 1.0) and plant:
-                mature.append(sector)
+                if not field_layout.kept_crop(sector, plant, layout_cells, garden):
+                    mature.append(sector)
             elif status in ("empty", "unknown"):
                 if self.services_ready(sector, species, rules, deployed):
                     open_cells.append(sector)
