@@ -8,7 +8,7 @@ from version_guard import validate_game_version
 import outpost_mining
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -396,6 +396,7 @@ class VehicleSurveyMixin:
         self._host.log.print(f"[{self._host.name}] Survey Controller online. Starting battery-safe survey.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 if self._host.handle_recall_if_active():
                     flush_all()

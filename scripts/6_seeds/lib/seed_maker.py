@@ -30,7 +30,7 @@
 from archive import archive
 from storage import take_item, drain_port_to_storage, best_unload_target
 import logistics_requests
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -481,6 +481,7 @@ class SeedMakerController:
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] Recovery failed: {e}")
         while True:
+            reset_all()
             try:
                 delay = self.step()
             except Exception as e:

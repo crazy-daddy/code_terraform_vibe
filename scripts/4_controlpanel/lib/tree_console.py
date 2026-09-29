@@ -46,6 +46,9 @@ and a script stopped from the UI or crashed is killed without unwinding
 flushes before it prints. `buffered=False` on a TreeConsole prints its debug
 lines immediately.
 
+Exceptions: an exception escaping a `start()`/`end()` pair leaves its indent open, so run loops call
+`reset_all()` at the top of every tick (`tests/test_reset_in_run_loops.py`).
+
 Construct one instance per controller in `__init__` (or once before a
 `run_*_loop()`'s `while True:`, never inside it) and store it as `self.log`/
 `log` -- constructing it reads the `console.log_levels` archive dict, so
@@ -73,6 +76,9 @@ _PROBE_CHARS = 200000  # above the highest Advanced Scripting string limit (100,
 
 # One buffer for every TreeConsole in the script. `key` is (level, channel, color) of the pending run.
 _BUFFER = {"console": None, "key": None, "lines": [], "chars": 0, "cap": 0}
+
+# Every TreeConsole in the script, so reset_all() can drop indent leaked by an exception.
+_INSTANCES = []
 
 
 def _cap_from_error(message):
@@ -110,6 +116,14 @@ def flush_all():
     _BUFFER["chars"] = 0
     _BUFFER["console"] = None
     console.print("\n".join(lines), level=level, channel=channel, color=color, timestamp=True)
+
+
+def reset_all():
+    """Drop every open block on every TreeConsole. Run loops call it at the top of each tick: an exception
+    that escapes a start()/end() pair leaves its indent open, so every later line would sit one level
+    deeper. Never call it inside a block that is meant to stay open."""
+    for log in _INSTANCES:
+        log._indent = 0
 
 
 def _write(console, text, level, channel, color, buffered):
@@ -152,6 +166,7 @@ class TreeConsole:
         levels = archive.get(LOG_LEVELS_KEY, {}) or {}
         self.module = module
         self.verbose = levels.get(module, "normal") == "verbose"
+        _INSTANCES.append(self)
 
     def color(self, color: str) -> "TreeConsole":
         """Set the color for the *next* line only, then reset to default."""
@@ -195,6 +210,10 @@ class TreeConsole:
         self.print(_END + msg, channel)
         if self._indent == 0:
             flush_all()
+
+    def reset(self) -> None:
+        """Drop this instance's open blocks (see `reset_all()`)."""
+        self._indent = 0
 
     def flush(self) -> None:
         """Write any buffered debug lines now (call before `sleep()` in run loops)."""

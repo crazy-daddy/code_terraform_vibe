@@ -1,6 +1,6 @@
 import fluid_routing
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
@@ -215,6 +215,7 @@ class ThermalCapController:
         self.log.print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

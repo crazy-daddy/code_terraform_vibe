@@ -1,7 +1,7 @@
 import fluid_routing
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from biomass_retire import biomass_complete
 
@@ -222,6 +222,7 @@ class BiomassMixerController:
         self.log.print(f"Biomass Mixer Controller ({self.name}) online (Mk {self._read('tier', 1)}, phase {self._read('phase', '?')}).")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

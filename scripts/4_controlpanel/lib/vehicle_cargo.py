@@ -20,7 +20,7 @@ import fleet_intent
 import cash
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -548,6 +548,7 @@ class VehicleCargoMixin:
         self._host.log.print(f"[{self._host.name}] Pull Controller online. Fetching what '{home_id}' needs from outposts and drills.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 if self._host.handle_recall_if_active():
                     flush_all()

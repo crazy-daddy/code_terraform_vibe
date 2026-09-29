@@ -44,7 +44,7 @@ from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -789,6 +789,7 @@ class DroneHaulerMixin:
         """
         self._host.log.print(f"[{self._host.name}] Floating hauler online ({self._host.engine}, cargo capacity {self._host.cargo_capacity()}).")
         while True:
+            reset_all()
             try:
                 if self._host.handle_recall_if_active():
                     flush_all()

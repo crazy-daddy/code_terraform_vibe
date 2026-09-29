@@ -34,7 +34,7 @@
 from archive import archive
 from storage import discover_storage_buildings, warehouse_stock, drain_port_to_storage
 import logistics_requests
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 from drone_upgrade import retiring_depot_ids
@@ -482,6 +482,7 @@ class DroneDepotController:
         self.log.print(f"Drone Depot Controller ({self.name}) online ({bay_count} bay(s)).")
         validate_game_version()
         while True:
+            reset_all()
             interval = poll_interval
             try:
                 self.step()

@@ -19,7 +19,7 @@
 # the same way, mirroring order_return_to_station() exactly.
 
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -325,6 +325,7 @@ class DroneServiceController:
         self.log.print(f"Drone Service Station ({self.name}) online via Shared Library ({bay_count} bay(s)).")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

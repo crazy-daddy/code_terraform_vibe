@@ -21,7 +21,7 @@ import logistics_requests
 from seed_maker import SeedMakerController, STATUS_KEY, REQUESTER_ID, REQUEST_REFRESH_TICKS
 from seed_maker import IDLE_POLL_SECONDS, combo_key, _now_tick
 from storage import total_stock, drain_port_to_storage
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
 
 RECIPES_KEY = "plant.recipes"
@@ -290,6 +290,7 @@ class SeedSupplyController(SeedMakerController):
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] Recovery failed: {e}")
         while True:
+            reset_all()
             try:
                 delay = self.step()
             except Exception as e:

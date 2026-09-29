@@ -25,7 +25,7 @@
 # nobody requests come along; the Drone Depot and a Waste Processor deal with
 # them (lib/drone_depot.py, lib/waste_sink.py).
 
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 import logistics_requests
 import fleet_intent
@@ -202,6 +202,7 @@ class DroneMiningMixin:
         log.print(f"Drone Miner Controller ({self._host.name}) online. Home biome: {self._host.home_biome or 'unknown'}.")
         self._adopt_interrupted_extraction(log)
         while True:
+            reset_all()
             try:
                 if self._host.is_stranded():
                     log.level("warn").print(f"[{self._host.name}] {self._host.status()}; awaiting drone_service rescue.")

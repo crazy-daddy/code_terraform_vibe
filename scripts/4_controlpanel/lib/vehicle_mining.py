@@ -21,7 +21,7 @@ import mining_reservations
 import fleet_intent
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -511,6 +511,7 @@ class VehicleMiningMixin:
         self._host.log.print(f"Pioneer Mining Controller ({self._host.name}) online. Assigned base slot: {self._host.assigned_slot_coords}. Stationed at '{outpost_id}'.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 if self._host.handle_recall_if_active():
                     flush_all()

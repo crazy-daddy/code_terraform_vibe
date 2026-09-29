@@ -50,7 +50,7 @@ from harvester_planting import HarvesterPlantingMixin
 from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
 from storage import total_stock, discover_storage_buildings
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -432,6 +432,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.log.print(f"Field Keeper ({self.name}) online. Home outpost: {self.home_id}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
                 flush_all()

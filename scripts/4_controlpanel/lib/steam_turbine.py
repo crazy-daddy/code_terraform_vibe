@@ -1,6 +1,6 @@
 import fluid_routing
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
@@ -209,6 +209,7 @@ class SteamTurbineController:
         self.log.print(f"Steam Turbine Controller ({self.name}) online.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

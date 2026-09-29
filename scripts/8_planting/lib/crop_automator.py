@@ -48,7 +48,7 @@ from archive import archive
 import field_layout
 from storage import take_item
 from seed_supply import seed_buffer
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -416,6 +416,7 @@ class CropAutomatorController:
         self.log.print(f"Crop Automator ({self.name}) online at {self.sector}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

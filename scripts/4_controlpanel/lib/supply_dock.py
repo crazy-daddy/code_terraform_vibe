@@ -28,7 +28,7 @@ from production import can_fulfill_order, get_construction_material_reservations
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 log = TreeConsole(module="supply_dock")
@@ -487,6 +487,7 @@ class SupplyDockController:
         self.log.print(f"Supply Dock Controller ({self.name}) online. Initializing logistics loop...")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

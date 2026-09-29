@@ -1,7 +1,7 @@
 import fluid_routing
 import power
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Steam Condenser automation: turn banked steam into clean water (1:1 by
@@ -312,6 +312,7 @@ class SteamCondenserController:
         self.log.print(f"Steam Condenser Controller ({self.name}) online.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

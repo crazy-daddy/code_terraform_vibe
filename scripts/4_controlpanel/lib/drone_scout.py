@@ -7,7 +7,7 @@
 # resume beyond that cache -- repeat scans are free (docs/types/biosphere.md:
 # "Repeat scans are free").
 
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from unsupported_markers import clear_wrong_scanner_marker
@@ -113,6 +113,7 @@ class DroneScoutMixin:
         log = TreeConsole(module="drone_scout")
         log.print(f"Drone Scout Controller ({self._host.name}) online. Home outpost biome: {self._host.home_biome or 'unknown'}.")
         while True:
+            reset_all()
             try:
                 if self._host.is_stranded():
                     log.level("warn").print(f"[{self._host.name}] {self._host.status()}; awaiting drone_service rescue.")

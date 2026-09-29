@@ -11,7 +11,7 @@ import mining_reservations
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 class RoverController(VehicleController):
     """
@@ -266,6 +266,7 @@ class RoverController(VehicleController):
         self.log.print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 if self.handle_recall_if_active():
                     flush_all()

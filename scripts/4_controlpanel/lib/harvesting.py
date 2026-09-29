@@ -3,7 +3,7 @@
 # safe heat management, surface item collection, crop harvesting, and inventory offloading.
 
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 class HarvesterController:
@@ -322,6 +322,7 @@ class HarvesterController:
         self.log.print(f"Harvester Controller ({self.name}) online. Base depot: {self.base_sector}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
                 flush_all()

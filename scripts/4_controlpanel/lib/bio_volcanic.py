@@ -19,7 +19,7 @@ from production import set_upgrade_order, fabricator_unlocked_outputs, FLUID_SOU
 import logistics_requests
 import fluid_routing
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Crucible temperature control (_drive_temperature): proportional toward the
@@ -677,4 +677,5 @@ class BioCasterController:
         self.log.print(f"Bio Caster ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()

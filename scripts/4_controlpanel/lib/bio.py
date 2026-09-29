@@ -14,7 +14,7 @@
 from archive import archive
 from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 import outpost_reagents
 import cash
@@ -843,6 +843,7 @@ class BioExchangeController:
         self.log.print(f"Bio Exchange ({self.name}) online via Shared Library & Signal Bus.")
         validate_game_version()
         while True:
+            reset_all()
             self.sweep_and_deliver()
 
             # Wait for either the next sweep interval OR an instant 'sample_ready' signal from the lab
@@ -1148,6 +1149,7 @@ class BioLabController:
         self.log.print(f"Bio Lab ({self.name}) online via Shared Library & Signal Bus.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(0.5)
@@ -1298,4 +1300,5 @@ class BioCollectorController:
         self.log.print(f"Bio Collector ({self.name}) online via Shared Library & Signal Bus.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()

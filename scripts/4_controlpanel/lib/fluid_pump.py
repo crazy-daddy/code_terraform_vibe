@@ -1,6 +1,6 @@
 import fluid_routing
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
@@ -180,6 +180,7 @@ class FluidPumpController:
         self.log.print(f"{self.label} Controller ({self.name}) online. Routing {self.fluid_id} to network Liquid Tanks.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

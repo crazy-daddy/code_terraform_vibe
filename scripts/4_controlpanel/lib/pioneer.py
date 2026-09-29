@@ -17,7 +17,7 @@ import drill_sites
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMixin):
     """
@@ -396,6 +396,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
 
         validate_game_version()
         while True:
+            reset_all()
             try:
                 if self.handle_recall_if_active():
                     flush_all()
@@ -760,6 +761,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         """
         self.log.print(f"Pioneer Mining Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         while True:
+            reset_all()
             try:
                 if self.handle_recall_if_active():
                     flush_all()

@@ -4,7 +4,7 @@
 
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 import fluid_routing
@@ -285,6 +285,7 @@ class HeatController:
         self.log.print(f"Heat Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(poll_interval)
@@ -333,6 +334,7 @@ class PressureController:
         self.log.print(f"Pressure Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(poll_interval)
@@ -371,6 +373,7 @@ class OxygenController:
         self.log.print(f"Oxygen Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(poll_interval)
