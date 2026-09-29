@@ -244,8 +244,9 @@ class SeedSupplyController(SeedMakerController):
         key = combo_key(*sorted(chamber.keys())) if len(chamber) == 3 else None
         for seed_id, recipe in by_seed.items():
             if key and combo_key(*recipe.blend) == key and all(v == 1 for v in chamber.values()):
-                self.log.print(f"[{self.name}] Resuming loaded blend for '{seed_id}'.")
-                self._craft(seed_id, recipe)
+                self.log.start(f"[{self.name}] Resuming loaded blend for '{seed_id}'.")
+                made = self._craft(seed_id, recipe)
+                self.log.end(f"[{self.name}] Resumed craft of '{seed_id}' {'done' if made else 'not completed'}")
                 return
         self._eject_chamber()
 
@@ -274,9 +275,10 @@ class SeedSupplyController(SeedMakerController):
             self._publish_supply_status("waiting_material", deficits)
             return IDLE_POLL_SECONDS
 
-        self.log.debug(f"[{self.name}] Crafting '{seed_id}' (deficit {deficits[seed_id]}, blend {by_seed[seed_id].blend}).")
-        self._craft(seed_id, by_seed[seed_id])
+        self.log.start(f"[{self.name}] Crafting '{seed_id}' (deficit {deficits[seed_id]}, blend {by_seed[seed_id].blend}).")
+        made = self._craft(seed_id, by_seed[seed_id])
         self._drain_output()
+        self.log.end(f"[{self.name}] Craft of '{seed_id}' {'done' if made else 'not completed'}")
         self._publish_supply_status("supplying", deficits)
         return 0.0
 

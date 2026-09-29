@@ -16,6 +16,8 @@ def is_log_call(node, method):
     if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == method):
         return False
     owner = node.func.value
+    while isinstance(owner, ast.Call) and isinstance(owner.func, ast.Attribute) and owner.func.attr in ("level", "color"):
+        owner = owner.func.value
     name = owner.id if isinstance(owner, ast.Name) else owner.attr if isinstance(owner, ast.Attribute) else ""
     return name in ("log", "_log")
 
@@ -127,6 +129,10 @@ class CheckerSelfTests(unittest.TestCase):
     def test_flags_loop_that_leaks(self):
         src = "def f(self):\n    for i in x:\n        log.start('a')\n"
         self.assertTrue(check_source(src))
+
+    def test_sees_through_level_and_color_chains(self):
+        src = "def f(self):\n    self.log.level('warn').start('a')\n"
+        self.assertEqual(len(check_source(src)), 1)
 
     def test_accepts_balanced_loop(self):
         src = "def f(self):\n    for i in x:\n        log.start('a')\n        log.end('b')\n"

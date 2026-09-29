@@ -398,8 +398,9 @@ class SeedMakerController:
         if len(forms) == 3 and all(chamber[f] == 1 for f in forms):
             key = combo_key(*forms)
             if self._is_open(key, curr_tick, allow_own_claim=True) and self._claim(key, "loading", curr_tick):
-                self.log.print(f"[{self.name}] Resuming loaded triple {key}.")
-                self._run_trial(key, forms, curr_tick)
+                self.log.start(f"[{self.name}] Resuming loaded triple {key}.")
+                consumed = self._run_trial(key, forms, curr_tick)
+                self.log.end(f"[{self.name}] Resumed triple {key} {'consumed' if consumed else 'aborted, triple released'}")
                 own.pop(key, None)
             else:
                 self._eject_chamber()
@@ -463,8 +464,10 @@ class SeedMakerController:
             self.log.debug(f"[{self.name}] Lost claim on {key} to a peer; re-picking.")
             return 0.5
 
-        self._run_trial(key, blend, curr_tick)
+        self.log.start(f"[{self.name}] Trial {key}")
+        consumed = self._run_trial(key, blend, curr_tick)
         self._drain_output()
+        self.log.end(f"[{self.name}] Trial {key} {'consumed' if consumed else 'aborted, triple released'}")
         self._publish_status("running", self._recipes(), saturated, open_total if open_total is not None else -1)
         return 0.0
 

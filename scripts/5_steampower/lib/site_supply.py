@@ -238,6 +238,7 @@ def _publish(site_id, requester, wants, requests, tick):
     """set_requests() unless the published entries already match; True when written."""
     existing = {i: e for i, e in requests.get(site_id, {}).items() if e.get("by") == requester}
     if (not wants and not existing) or _unchanged(existing, wants, tick):
+        log.trace(f"_publish({site_id}, {requester}): unchanged, {len(wants)} item(s)")
         return False
     set_requests(site_id, requester, wants, tick)
     return True
@@ -318,6 +319,7 @@ def publish_site_requests(curr_tick):
     _roots, consumers, _outputs = fabricator_root_targets(cache)
     sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o)]
     published = {}
+    notes = []
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)
         if site_id is None:
@@ -328,9 +330,14 @@ def publish_site_requests(curr_tick):
         if not _publish(site_id, SITE_SUPPLY_REQUESTER, wants, requests, curr_tick):
             continue
         if wants:
-            log.print(f"Site supply at '{site_id}': {', '.join(f'{i} {t}' for i, (t, _h, _m) in sorted(wants.items()))}.")
+            notes.append(f"Site supply at '{site_id}': {', '.join(f'{i} {t}' for i, (t, _h, _m) in sorted(wants.items()))}.")
         else:
-            log.print(f"Site supply at '{site_id}': withdrawn (no Smelter/Fabricator demand).")
+            notes.append(f"Site supply at '{site_id}': withdrawn (no Smelter/Fabricator demand).")
+    if notes:
+        log.start(f"Publishing site supply requests ({len(notes)} site(s) changed)")
+        for note in notes:
+            log.print(note)
+        log.end(f"Published {len(notes)} site supply update(s)")
     # Re-read: this pass's withdrawals free ore for eviction right away.
     evict_stranded(outposts, active_requests(curr_tick), curr_tick)
     return published

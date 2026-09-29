@@ -504,7 +504,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         break
                     elif self.distance_to_home() > 3.0:
                         # Cannot reach safely from current field position; recharge at nearest station
-                        self.log.level("warn").start(f"[{self.name}] Insufficient energy to reach paused job safely; recharging at nearest station.")
+                        self.log.start(f"[{self.name}] Insufficient energy to reach paused job safely; recharging at nearest station.")
                         nearest_st, _ = self.get_nearest_charging_station()
                         self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                         self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
@@ -582,7 +582,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         # We have cargo matching pending jobs, but cannot reach any right now
                         nearest_st, _ = self.get_nearest_charging_station()
                         if self.distance_between(current_pos, nearest_st) > 3.0:
-                            self.log.level("warn").start(f"[{self.name}] Insufficient energy to reach next construction site; recharging at nearest station.")
+                            self.log.start(f"[{self.name}] Insufficient energy to reach next construction site; recharging at nearest station.")
                             self.drive_to(nearest_st[0], nearest_st[1], precision=1.0)
                             self.recharge_at_station(target_level=1.0, station_coords=nearest_st)
                             self.log.end(f"[{self.name}] Recharge before next site done.")
@@ -849,52 +849,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     sleep(15.0)
                     continue
 
-                coords = target["coords"]
-                self.log.print(
-                    f"[{self.name}] Reserved {target['name']} to harvest "
-                    f"{target['harvest_item']} for {target['reason']} at {coords} "
-                    f"(Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
-                )
-                self.set_intent(fleet_intent.describe("mining", [target["harvest_item"]], at=target["name"], root=fleet_intent.haul_root([target["harvest_item"]], HOME_OUTPOST_ID)))
-                self.publish_telemetry("OUTBOUND", target["name"])
-
-                # Step 4: Drive to target (using intermediate recharge stops if needed)
-                if not self.drive_with_recharge(coords[0], coords[1]):
-                    self.log.level("warn").print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
-                    self.return_to_base()
-                    continue
-
-                # Step 5: Mine (recharges and resumes in place as needed)
-                self.mine_until_full_or_exhausted(coords, max_units=target.get("estimated_units"))
-
-                # Step 6: Return to base (releases target claim upon return).
-                # A failed return (e.g. a rescue interrupts drive_to() mid-trip)
-                # must not fall through to Step 7 -- unload_cargo() requires
-                # actually being at the home outpost's service area, and will
-                # just fail with "not_at_target" otherwise.
-                if not self.return_to_base():
-                    self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
-                    flush_all()
-                    sleep(5.0)
-                    continue
-
-                # Back at base -- release the claim regardless of how this trip
-                # ended so the next cycle always re-evaluates fresh demand
-                # instead of blindly resuming the same site forever.
-                self.release_target_claim()
-                if self.current_target_reserved:
-                    mining_reservations.release_yield(self.name)
-                    self.current_target_reserved = False
-
-                # Step 7: Offload and recharge
-                if self.unload_cargo() < 0:
-                    self.publish_telemetry("WAITING_INVENTORY_SPACE")
-                    flush_all()
-                    sleep(10.0)
-                    continue
-                self.recharge_at_station(target_level=1.0)
-                self.publish_telemetry("READY_AT_BASE")
-                self.log.print(f"[{self.name}] Mining expedition complete and Pioneer secured at base.")
+                self.log.start(f"[{self.name}] Mining trip to {target['name']}")
+                outcome = self._run_mining_trip(target, budget)
+                self.log.end(f"[{self.name}] {outcome}")
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Mining loop exception: {e}. Executing emergency failsafe brake.")
                 try:
@@ -910,3 +867,53 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     swallowed("pioneer.PioneerController.run_mining_loop: self.release_target_claim", error)
                 flush_all()
                 sleep(5.0)
+
+    def _run_mining_trip(self, target, budget):
+        """Steps 4-7 of a mining expedition for a reserved target. Returns a short outcome for the enclosing log block."""
+        coords = target["coords"]
+        self.log.print(
+            f"[{self.name}] Reserved {target['name']} to harvest "
+            f"{target['harvest_item']} for {target['reason']} at {coords} "
+            f"(Est. trip cost: {budget['total_required_wh']:.1f} Wh)."
+        )
+        self.set_intent(fleet_intent.describe("mining", [target["harvest_item"]], at=target["name"], root=fleet_intent.haul_root([target["harvest_item"]], HOME_OUTPOST_ID)))
+        self.publish_telemetry("OUTBOUND", target["name"])
+
+        # Step 4: Drive to target (using intermediate recharge stops if needed)
+        if not self.drive_with_recharge(coords[0], coords[1]):
+            self.log.level("warn").print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
+            self.return_to_base()
+            return "outbound trip failed"
+
+        # Step 5: Mine (recharges and resumes in place as needed)
+        self.mine_until_full_or_exhausted(coords, max_units=target.get("estimated_units"))
+
+        # Step 6: Return to base (releases target claim upon return).
+        # A failed return (e.g. a rescue interrupts drive_to() mid-trip)
+        # must not fall through to Step 7 -- unload_cargo() requires
+        # actually being at the home outpost's service area, and will
+        # just fail with "not_at_target" otherwise.
+        if not self.return_to_base():
+            self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
+            flush_all()
+            sleep(5.0)
+            return "return trip incomplete"
+
+        # Back at base -- release the claim regardless of how this trip
+        # ended so the next cycle always re-evaluates fresh demand
+        # instead of blindly resuming the same site forever.
+        self.release_target_claim()
+        if self.current_target_reserved:
+            mining_reservations.release_yield(self.name)
+            self.current_target_reserved = False
+
+        # Step 7: Offload and recharge
+        if self.unload_cargo() < 0:
+            self.publish_telemetry("WAITING_INVENTORY_SPACE")
+            flush_all()
+            sleep(10.0)
+            return "waiting for inventory space"
+        self.recharge_at_station(target_level=1.0)
+        self.publish_telemetry("READY_AT_BASE")
+        self.log.print(f"[{self.name}] Mining expedition complete and Pioneer secured at base.")
+        return "mining expedition complete"
