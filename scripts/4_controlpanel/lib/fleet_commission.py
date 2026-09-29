@@ -10,8 +10,8 @@
 #   queued    -> spec built from the role preset at the best unlocked tiers
 #                (Shop catalogue); a locked part blocks the job
 #   buying    -> buys the chassis and every part the Inventory doesn't already
-#                hold, all at once, only while credits stay above
-#                WAREHOUSE_UPGRADE_CREDIT_RESERVE afterwards
+#                hold, all at once, once the cash manager grants the whole
+#                cost (lib/cash.py can_spend("pioneer_commission"))
 #   deploying -> snapshot of owned Pioneers first (a restart adopts a new one
 #                instead of deploying twice), then computer.deploy("pioneer")
 #   attach    -> a deployed machine has no script and scripts cannot attach
@@ -27,9 +27,11 @@
 
 import fleet_status
 from pioneer_commission import PIONEER_KIT_ID, commission_state, update_commission, build_spec, spec_parts
-from warehouse_upgrade import WAREHOUSE_UPGRADE_CREDIT_RESERVE
+import cash
 from tree_console import TreeConsole
 from swallow import swallowed
+
+CASH_CONSUMER = "pioneer_commission"   # lib/cash.py consumer id
 
 # States the COMMISSION card may cancel: nothing deployed yet (or given up).
 CANCELLABLE_STATES = ("queued", "buying", "blocked")
@@ -144,7 +146,7 @@ class FleetCommissionCoordinator:
     def _buy_missing(self, parts, catalogue, label):
         """
         Buys whatever of parts {item_id: n} the Inventory lacks, all or nothing
-        against the credit reserve. Returns None once everything is in
+        once the cash manager grants the whole cost. Returns None once everything is in
         Inventory, else a short waiting reason.
         """
         needed = {item: n - self._inventory_count(item) for item, n in parts.items()}
@@ -155,18 +157,22 @@ class FleetCommissionCoordinator:
         if unpriced:
             return f"{label}: not in Shop {unpriced}"
         cost = sum(catalogue[item] * n for item, n in needed.items())
-        credits = self._credits()
-        if credits - cost < WAREHOUSE_UPGRADE_CREDIT_RESERVE:
-            self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {credits}cr, reserve {WAREHOUSE_UPGRADE_CREDIT_RESERVE}cr.")
-            return f"{label}: waiting for credits ({cost}cr + {WAREHOUSE_UPGRADE_CREDIT_RESERVE}cr reserve)"
+        queued = sum(1 for j in (commission_state().get("jobs") or []) if isinstance(j, dict) and j.get("state") == "queued")
+        if not cash.can_spend(CASH_CONSUMER, cost, planned=cost * (1 + queued), label=label):
+            self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {self._credits()}cr; cash manager holds it back.")
+            return f"{label}: waiting for credits ({cost}cr)"
         shop = _component("shop")
         if not shop:
             return f"{label}: no Shop"
+        paid = 0
         for item, n in needed.items():
             res = shop.buy(item, n)
             self.log.debug(f"[fleet_commission] {label}: buy('{item}', {n}) -> {res.status}")
             if res.status != "ok":
+                cash.spent(CASH_CONSUMER, paid)
                 return f"{label}: buy {item} {res.status}"
+            paid += catalogue[item] * n
+        cash.spent(CASH_CONSUMER, paid)
         self.log.print(f"[fleet_commission] {label}: bought {needed} for {cost}cr.")
         return None
 
@@ -179,6 +185,7 @@ class FleetCommissionCoordinator:
         self._prune(state, pioneers)
         jobs = [j for j in (commission_state().get("jobs") or []) if isinstance(j, dict)]
         if not jobs:
+            cash.release(CASH_CONSUMER)
             self._set_status("idle")
             return "commission idle"
         # Blocked jobs wait for the operator's cancel; the next one goes on.

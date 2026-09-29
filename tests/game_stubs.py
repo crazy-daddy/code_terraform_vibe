@@ -411,9 +411,46 @@ class Notebook:
 class Clock:
     def __init__(self):
         self.now = 1000
+        self.hours = 0.0
 
     def tick(self):
         return self.now
+
+    def elapsed_game_hours(self):
+        return self.hours
+
+
+class Commander:
+    def __init__(self, credits=0):
+        self.credits = credits
+
+    def get_credits(self):
+        return self.credits
+
+
+class CatalogueEntry:
+    def __init__(self, item_id, cost):
+        self.id = item_id
+        self.cost = cost
+
+
+class Shop:
+    """`shop`: catalogue prices only; buy() debits the commander."""
+
+    def __init__(self, world, prices=None):
+        self._world = world
+        self.prices = dict(prices or {})
+
+    def get_catalogue(self):
+        return [CatalogueEntry(i, c) for i, c in self.prices.items()]
+
+    def buy(self, item_id, qty):
+        cost = self.prices.get(item_id, 0) * qty
+        commander = self._world.services["commander"]
+        if commander.credits < cost:
+            return Result("insufficient_credits")
+        commander.credits -= cost
+        return Result("ok")
 
 
 class Console:
@@ -462,7 +499,9 @@ class World:
             "inventory": self.inventory,
             "journal": Journal(),
             "orders": Orders(),
+            "commander": Commander(),
         }
+        self.services["shop"] = Shop(self)
 
     # -- building the world --
     def add_outpost(self, outpost_id, is_home=False):
