@@ -17,7 +17,7 @@ min_length = self.contract.min_length
 
 xs = real_bits(x_signal, min_length)
 ys = real_bits(y_signal, min_length)
-print("[CROSSTALK] real bits x=%d y=%d" % (len(xs), len(ys)))
+print(f"[CROSSTALK] real bits x={len(xs)} y={len(ys)}")
 
 result_bits = [(x & (1 - y)) | ((1 - x) & y) for x, y in zip(xs, ys)]
 
@@ -29,9 +29,9 @@ for i in range(0, len(result_bits) - 4, 5):
     if 1 <= value <= 26:
         letters.append(chr(ord("A") + value - 1))
     else:
-        print("[CROSSTALK] group %d out of range: %d" % (i // 5, value))
+        print(f"[CROSSTALK] group {i // 5} out of range: {value}")
 message = "".join(letters)
-print("[CROSSTALK] message: %s" % message)
+print(f"[CROSSTALK] message: {message}")
 
 transmitter = get_component("transmitter")
 if not transmitter:
