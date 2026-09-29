@@ -47,8 +47,9 @@
 #     docs/AI_CHEATSHEET.md #2a-0-5).
 #   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
 #     chassis swaps to the best unlocked tier, one at a time, once per cycle.
-#   - Fleet commissioning (lib/fleet_commission.py): buys, deploys and fits the
-#     Pioneers queued on the COMMISSION card, one job at a time.
+#   - Fleet commissioning (lib/fleet_commission.py): buys or crafts, deploys
+#     and fits the Pioneers and drones queued on the COMMISSION card, one job
+#     of each kind at a time.
 #   - Cash manager pass (lib/cash.py CashManager): balance history, income and
 #     reagent burn, dynamic floor, ask queue with ETAs for the CASH card. Runs
 #     first each storage pass so the consumers below see a fresh floor.

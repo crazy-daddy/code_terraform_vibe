@@ -22,7 +22,7 @@
 #   - demand per outpost: logistics_requests.outpost_deficits_tiered() (net
 #     of in-flight logistics.pickups), plus get_raw_material_demands() at
 #     home (net of mining.reserved_yield) as need tier. Need is served first
-#     (scored NEED_SCORE_WEIGHT x); buffer deficits are capped at the fair
+#     (logistics_requests.haul_rank()); buffer deficits are capped at the fair
 #     share of what the sources hold (fair_buffer_caps());
 #   - planned units reserved per source (logistics.pickups "source") and, for
 #     home-bound ore, debited from mining.reserved_yield.
@@ -343,9 +343,9 @@ class DroneHaulerMixin:
     def _plan_haul_job(self, curr_tick):
         """
         Best job network-wide, or None: for every destination, plan a route
-        over drills and other Depot outposts and score weighted units /
-        (route meters + HAUL_TRIP_OVERHEAD_M), need-tier units counting
-        NEED_SCORE_WEIGHT times. Jobs not flyable even on a full tank are
+        over drills and other Depot outposts and rank it by need-tier units,
+        then all units, per (route meters + HAUL_TRIP_OVERHEAD_M)
+        (logistics_requests.haul_rank()). Jobs not flyable even on a full tank are
         dropped; the caller refuels first when the chosen job needs more
         than is aboard.
         Returns {"dest", "route", "units", "fuel"}.
@@ -373,7 +373,7 @@ class DroneHaulerMixin:
         _, full_tank, _ = self._host.get_battery()
         start = self._host.position()
 
-        best, best_score = None, 0.0
+        best, best_rank = None, None
         for dest, route in self._candidate_routes(dests, sources, capacity, start):
             units = sum(n for _s, loads in route for _i, n in loads)
             wanted = min(HAUL_MIN_LOAD_UNITS, self._reachable(dest, sources))
@@ -387,10 +387,10 @@ class DroneHaulerMixin:
                 self._host.log.debug(f"[{self._host.name}] haul: '{dest['outpost_id']}' needs {fuel:.1f} {self._host.energy_unit()} > full tank {full_tank:.1f}; out of range.")
                 continue
             need_units = self._need_units(dest, route)
-            score = (units + need_units * (logistics_requests.NEED_SCORE_WEIGHT - 1)) / (meters + HAUL_TRIP_OVERHEAD_M)
-            self._host.log.debug(f"[{self._host.name}] haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({need_units} need), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, score {score:.3f}.")
-            if score > best_score:
-                best, best_score = {"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen}, score
+            rank = logistics_requests.haul_rank(units, need_units, meters, HAUL_TRIP_OVERHEAD_M)
+            self._host.log.debug(f"[{self._host.name}] haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({need_units} need), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, need rate {rank[0]:.4f}, rate {rank[1]:.3f}.")
+            if logistics_requests.rank_beats(rank, best_rank):
+                best, best_rank = {"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen}, rank
         return best
 
     # ------------------------------------------------------------ reservations / mission

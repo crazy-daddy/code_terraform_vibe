@@ -55,10 +55,27 @@ DRONE_YIELD_KEY = "logistics.drone_yield"
 # gap (the field Harvester republishes between care tours, ~5 minutes).
 REQUEST_STALE_TICKS = 6000
 
-# Planner scoring: a need-tier unit counts this many times a buffer-tier
-# unit, so topping up a requester that is about to stall beats filling
-# another outpost's buffer.
-NEED_SCORE_WEIGHT = 4
+def haul_rank(units, need_units, meters, overhead_m):
+    """
+    Planner ranking of one haul/pull candidate: (need-tier units, all
+    units) per (route m + overhead_m). Compared with rank_beats(): need
+    throughput decides, all units only break a tie, so a trip serving a
+    requester that is about to stall always beats filling a buffer however
+    big the buffer load is.
+    """
+    per = meters + overhead_m
+    if per <= 0:
+        per = 1.0
+    return (need_units / per, units / per)
+
+
+def rank_beats(rank, best):
+    """True when haul_rank() `rank` beats `best` (None = no candidate yet)."""
+    if best is None:
+        return True
+    if rank[0] != best[0]:
+        return rank[0] > best[0]
+    return rank[1] > best[1]
 
 # A drone hauler counts as present (drone_served_source()) while its
 # fleet.status heartbeat is younger than this (10 minutes).

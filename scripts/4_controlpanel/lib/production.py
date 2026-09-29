@@ -3,6 +3,7 @@ from archive import archive
 from storage import total_stock, discover_storage_buildings, outpost_is_home
 from outpost_mining import ore_stock_target, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
+from logistics_requests import active_requests, in_flight, outpost_free_tiers
 from tree_console import TreeConsole
 from swallow import swallowed
 import mining_reservations
@@ -24,6 +25,14 @@ SECONDS_PER_GAME_HOUR = DAY_CYCLE_DURATION_SECONDS / 24.0
 # filling toward the machine's full hardware buffer cap regardless of how
 # long that material would then sit idle.
 INPUT_PREFILL_SECONDS = 30
+
+# Ship-before-craft (ship_units()): a site short of an item that sits spare at
+# another outpost has it hauled in instead of making it, unless it can make
+# it from local stock in under SHIP_OVER_CRAFT_SECONDS real seconds (its own
+# crafts plus making its locally missing inputs). Spare of at least
+# SHIP_SURPLUS_FACTOR x the shortfall always ships (surplus piles like tar).
+SHIP_OVER_CRAFT_SECONDS = 300
+SHIP_SURPLUS_FACTOR = 10
 
 
 def _ceil(x):
@@ -539,7 +548,8 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # from another script must be listed here. "field_keeper" = the Harvester's
 # field-machine kits (8_planting/lib/harvester_machines.py). "bio_caster" = the
 # Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster")
+# "fleet_commission" = a drone kit the COMMISSION card queued (lib/drone_commission.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission")
 
 
 def get_upgrade_orders():
@@ -638,7 +648,7 @@ def _recipe_inputs_for(item_id, cache=None):
     return None
 
 
-def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=None, stock=None):
+def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=None, stock=None, supply=None):
     """
     Breadth-first demand cascade seeded from seed_targets (Fabricator stock
     targets/Supply Dock orders, restricted to items the Fabricator itself
@@ -658,8 +668,13 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=No
     aren't Fabricator targets -- get_raw_material_demands() handles those).
     `stock` overrides the stock read (item_id -> units), e.g. one site's
     local stock for get_site_fabricator_targets().
+    `supply(item_id, shortfall) -> units` (optional) says how much of a
+    non-seed item's shortfall arrives from elsewhere (in flight or to be
+    shipped, see get_site_fabricator_targets()): those units come off that
+    item's target and are not cascaded into its inputs.
     """
     stock = stock or _stock_fn(cache)
+    seeds = set(seed_targets)
     targets = {}
     frontier = dict(seed_targets)
     depth = 0
@@ -667,9 +682,13 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=No
         depth += 1
         next_frontier = {}
         for item_id, want in frontier.items():
-            if item_id in fabricator_outputs:
-                targets[item_id] = max(targets.get(item_id, 0), want)
             shortfall = max(0, want - stock(item_id))
+            covered = 0
+            if supply is not None and shortfall > 0 and item_id not in seeds:
+                covered = min(shortfall, supply(item_id, shortfall))
+                shortfall -= covered
+            if item_id in fabricator_outputs:
+                targets[item_id] = max(targets.get(item_id, 0), want - covered)
             if shortfall <= 0:
                 log.trace(f"_cascade_fabricator_output_demand depth={depth}: {item_id} has no shortfall (want={want}), not cascading further")
                 continue
@@ -1192,23 +1211,67 @@ def get_site_fabricator_targets(site_id, cache=None):
     a target of local stock + local pipeline + share. Intermediates cascade
     from those against this site's local stock only, so a site's stock
     counts only for its own trees. Memoized on `cache`.
+
+    Ship-before-craft: an intermediate short at this site that sits spare
+    at another outpost is hauled in instead of built when ship_units() says
+    so. Units in flight to the site and units to ship come off its target;
+    the units to ship are this site's ship plan (get_site_ship_plan(), which
+    lib/site_supply.py publishes as requests). Roots are never shipped here.
     """
     cache = SourceCache() if cache is None else cache
     if site_id in cache._site_targets:
         return dict(cache._site_targets[site_id])
-    fab_sites = fab_site_counts(cache)
-    if set(fab_sites) <= {home_outpost_id(), HOME_OUTPOST_ID}:
+    if _single_fab_site(cache):
         targets = get_fabricator_targets(cache)
         cache._site_targets[site_id] = dict(targets)
+        cache._site_ship_plan[site_id] = {}
         return targets
 
-    roots, consumers, fabricator_outputs = fabricator_root_targets(cache)
-    plan = archive.get(SITE_PLAN_KEY, {}) or {}
-    outpost = outpost_by_site_id(site_id)
+    seed, fabricator_outputs, outpost = _site_seed(site_id, cache)
+    flying = in_flight(site_id)
+    ship_plan = {}
 
     def local(item_id):
         return cache.local_stock(item_id, outpost)
 
+    def supply(item_id, shortfall):
+        coming = min(shortfall, flying.get(item_id, 0))
+        ship = ship_units(item_id, shortfall - coming, outpost, site_id, cache)
+        if ship > 0:
+            ship_plan[item_id] = max(ship_plan.get(item_id, 0), ship)
+        return coming + ship
+
+    targets = dict(seed)
+    for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=local, supply=supply).items():
+        targets[item_id] = max(targets.get(item_id, 0), count)
+    cache._site_targets[site_id] = dict(targets)
+    cache._site_ship_plan[site_id] = ship_plan
+    if ship_plan:
+        log.debug(f"get_site_fabricator_targets({site_id}): ship plan {ship_plan}")
+    return targets
+
+
+def get_site_ship_plan(site_id, cache=None):
+    """{item_id: units} this site should have hauled in rather than build --
+    see get_site_fabricator_targets()."""
+    cache = SourceCache() if cache is None else cache
+    get_site_fabricator_targets(site_id, cache)
+    return dict(cache._site_ship_plan.get(site_id, {}))
+
+
+def _single_fab_site(cache):
+    """True when every Fabricator is at home (site targets = global targets)."""
+    return set(fab_site_counts(cache)) <= {home_outpost_id(), HOME_OUTPOST_ID}
+
+
+def _site_seed(site_id, cache):
+    """(seed, fabricator_outputs, outpost): this site's root targets -- each
+    root's remaining units split across the sites planned for it, as local
+    stock + local pipeline + share."""
+    fab_sites = fab_site_counts(cache)
+    roots, consumers, fabricator_outputs = fabricator_root_targets(cache)
+    plan = archive.get(SITE_PLAN_KEY, {}) or {}
+    outpost = outpost_by_site_id(site_id)
     pipeline = get_fabricator_pipeline(cache, site_id)
     seed = {}
     for item_id, target in roots.items():
@@ -1221,14 +1284,131 @@ def get_site_fabricator_targets(site_id, cache=None):
         sites = [s for s in (planned or []) if s in fab_sites] or default_root_sites(consumers.get(item_id), fab_sites)
         share = split_units(remaining, sites, fab_sites).get(site_id, 0)
         if share > 0:
-            seed[item_id] = local(item_id) + pipeline.get(item_id, 0) + share
+            seed[item_id] = cache.local_stock(item_id, outpost) + pipeline.get(item_id, 0) + share
             log.debug(f"get_site_fabricator_targets({site_id}): root {item_id} remaining={remaining} sites={sites} -> share={share}, target={seed[item_id]}")
+    return seed, fabricator_outputs, outpost
 
-    targets = dict(seed)
-    for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=local).items():
-        targets[item_id] = max(targets.get(item_id, 0), count)
-    cache._site_targets[site_id] = dict(targets)
+
+def _site_base_targets(site_id, cache):
+    """A site's targets without ship-before-craft (only local stock nets):
+    what that site keeps for its own trees when another site asks for its
+    spare (site_spare_elsewhere()). Memoized on `cache`."""
+    if site_id in cache._site_base_targets:
+        return cache._site_base_targets[site_id]
+    if _single_fab_site(cache):
+        targets = get_fabricator_targets(cache)
+    else:
+        seed, fabricator_outputs, outpost = _site_seed(site_id, cache)
+        targets = dict(seed)
+        for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.local_stock(i, outpost)).items():
+            targets[item_id] = max(targets.get(item_id, 0), count)
+    cache._site_base_targets[site_id] = targets
     return targets
+
+
+def _recipe_for_output(item_id, cache):
+    """("fabricator"|"smelter", Recipe) building item_id, (None, None) when none does."""
+    for kind, recipes in (("fabricator", cache.fabricator_recipes()), ("smelter", cache.smelter_recipes())):
+        for recipe in recipes:
+            if getattr(recipe, "output_item", None) == item_id:
+                return kind, recipe
+    return None, None
+
+
+def _site_has_machine(kind, outpost, cache):
+    """True when `outpost` has at least one Fabricator/Smelter (kind). Memoized on `cache`."""
+    key = f"{getattr(outpost, 'id', None)}|{kind}"
+    if key not in cache._site_machines:
+        ids = discover_fabricator_ids(outpost) if kind == "fabricator" else discover_smelter_ids(outpost)
+        cache._site_machines[key] = bool(ids)
+    return cache._site_machines[key]
+
+
+def local_make_seconds(item_id, units, outpost, cache, depth=0):
+    """
+    Real seconds to make `units` of item_id at `outpost` from its local
+    stock: crafts x craft_seconds() of its Fabricator/Smelter recipe, plus
+    making every input the site doesn't hold enough of the same way. None
+    when the site can't (no machine of that kind there, or an input that no
+    recipe makes -- raw ore -- is missing). Fluid inputs count as available.
+    One machine's time: parallel Fabricators are not credited.
+    """
+    if units <= 0:
+        return 0.0
+    if depth >= 6:
+        return None
+    kind, recipe = _recipe_for_output(item_id, cache)
+    if recipe is None or not _site_has_machine(kind, outpost, cache):
+        return None
+    crafts = _ceil(units / max(1, getattr(recipe, "output_count", 1) or 1))
+    seconds = crafts * craft_seconds(recipe)
+    for input_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
+        missing = crafts * per_craft - cache.local_stock(input_id, outpost)
+        if missing <= 0:
+            continue
+        sub = local_make_seconds(input_id, missing, outpost, cache, depth + 1)
+        if sub is None:
+            return None
+        seconds += sub
+    return seconds
+
+
+def site_spare_elsewhere(item_id, site_id, cache):
+    """
+    Units of item_id free for site_id at every other outpost: the
+    outpost_free_tiers() need tier (storage minus what that outpost's own
+    requests keep and other haulers reserved), minus what another fab site
+    keeps for its own targets (_site_base_targets()). Memoized on `cache`.
+    """
+    key = f"{site_id}|{item_id}"
+    if key in cache._spare_elsewhere:
+        return cache._spare_elsewhere[key]
+    if cache._requests is None:
+        cache._requests = active_requests()
+    fab_sites = fab_site_counts(cache)
+    total = 0
+    for outpost in _all_outposts():
+        other_id = getattr(outpost, "id", None)
+        if other_id is None or other_id == site_id:
+            continue
+        for_need, _for_buffer = outpost_free_tiers(outpost, [item_id], cache._requests)
+        free = for_need.get(item_id, 0)
+        if free > 0 and other_id in fab_sites:
+            keep = min(cache.local_stock(item_id, outpost), _site_base_targets(other_id, cache).get(item_id, 0))
+            free -= keep
+        total += max(0, int(free))
+    cache._spare_elsewhere[key] = total
+    return total
+
+
+def ship_units(item_id, shortfall, outpost, site_id, cache):
+    """
+    Units of a site's shortfall of item_id to haul in instead of making
+    them: min(shortfall, spare elsewhere) when spare >= SHIP_SURPLUS_FACTOR
+    x shortfall, or when the site can't make it locally
+    (local_make_seconds() None) or only in >= SHIP_OVER_CRAFT_SECONDS;
+    0 otherwise (make it locally). Delivery time is not estimated.
+    """
+    shortfall = _ceil(shortfall) if shortfall > 0 else 0
+    if shortfall <= 0:
+        return 0
+    spare = site_spare_elsewhere(item_id, site_id, cache)
+    if spare <= 0:
+        log.debug(f"ship_units({site_id}): {item_id} short={shortfall}, nothing spare elsewhere -> make")
+        return 0
+    ship = min(shortfall, spare)
+    if spare >= SHIP_SURPLUS_FACTOR * shortfall:
+        log.debug(f"ship_units({site_id}): {item_id} short={shortfall} spare={spare} >= {SHIP_SURPLUS_FACTOR}x -> ship {ship} (surplus)")
+        return ship
+    seconds = local_make_seconds(item_id, shortfall, outpost, cache)
+    if seconds is None:
+        log.debug(f"ship_units({site_id}): {item_id} short={shortfall} spare={spare}, can't make locally -> ship {ship}")
+        return ship
+    if seconds >= SHIP_OVER_CRAFT_SECONDS:
+        log.debug(f"ship_units({site_id}): {item_id} short={shortfall} spare={spare}, local make {seconds:.0f}s >= {SHIP_OVER_CRAFT_SECONDS}s -> ship {ship}")
+        return ship
+    log.debug(f"ship_units({site_id}): {item_id} short={shortfall} spare={spare}, local make {seconds:.0f}s < {SHIP_OVER_CRAFT_SECONDS}s -> make")
+    return 0
 
 
 def get_smelter_worker_count(recipe_id):
@@ -1458,6 +1638,59 @@ def get_smelter_demands(cache=None):
     return demands
 
 
+def fab_site_gross_need(fabricator_ids, smelter_outputs, cache):
+    """{smelter_output: units} the Fabricators' active recipes still need
+    staged: inputs x crafts_remaining (their split share) - stockpile."""
+    need = {}
+    for fabricator_id in fabricator_ids:
+        fabricator = _component(fabricator_id)
+        if not fabricator:
+            continue
+        recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)
+        if not recipe or crafts_remaining <= 0:
+            continue
+        try:
+            stockpile = fabricator.get_stockpile() or {}
+        except Exception as error:
+            swallowed("production.fab_site_gross_need: fabricator.get_stockpile", error)
+            stockpile = {}
+        for item_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
+            if item_id not in smelter_outputs:
+                continue
+            missing = per_craft * crafts_remaining - stockpile.get(item_id, 0)
+            if missing > 0:
+                need[item_id] = need.get(item_id, 0) + missing
+    return need
+
+
+def site_smelter_demands(outpost, cache=None):
+    """
+    {smelter_output: units} a non-home site's own Fabricators still need
+    (fab_site_gross_need()) minus that output's local stock and units in
+    flight to the site. lib/smelter.py merges it (per item max) with
+    get_smelter_demands() for a Smelter away from home: the network-wide
+    figure nets against stock anywhere, so it misses a site short of an
+    output that sits at another outpost.
+    """
+    cache = SourceCache() if cache is None else cache
+    smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()}
+    smelter_outputs.discard(None)
+    if not smelter_outputs:
+        return {}
+    gross = fab_site_gross_need(discover_fabricator_ids(outpost), smelter_outputs, cache)
+    if not gross:
+        return {}
+    flying = in_flight(getattr(outpost, "id", None))
+    demands = {}
+    for item_id, units in gross.items():
+        local = cache.local_stock(item_id, outpost)
+        net = units - local - flying.get(item_id, 0)
+        if net > 0:
+            demands[item_id] = net
+        log.debug(f"site_smelter_demands({getattr(outpost, 'id', None)}): {item_id} gross={units} local={local} in_flight={flying.get(item_id, 0)} -> net={max(0, net)}")
+    return demands
+
+
 def dock_remaining_requirements():
     """{item_id: units} still owed (required - shipped - already loaded into
     the dock) across every active Supply Dock order. lib/smelter.py subtracts
@@ -1621,6 +1854,11 @@ class SourceCache:
         self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
         self._root_targets = None  # fabricator_root_targets() memo
         self._site_targets = {}  # {site_id: get_site_fabricator_targets()} memo
+        self._site_base_targets = {}  # {site_id: _site_base_targets()} memo
+        self._site_ship_plan = {}  # {site_id: {item_id: units}}, filled by get_site_fabricator_targets()
+        self._spare_elsewhere = {}  # {"site_id|item_id": units}, site_spare_elsewhere() memo
+        self._site_machines = {}  # {"outpost_id|kind": bool}, _site_has_machine() memo
+        self._requests = None  # logistics_requests.active_requests() snapshot
         self._fab_sites = None  # fab_site_counts() memo
         self._pipeline_by_site = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()

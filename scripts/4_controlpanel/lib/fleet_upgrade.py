@@ -36,6 +36,7 @@ from drone_upgrade import DRONE_LOADOUTS_KEY, fleet_upgrade_state, update_fleet_
 from drone_energy import HOME_DEPOTS_KEY
 from drone_claims import DRONE_RECALL_KEY, MISSION_KEY
 from drone_depot import DEPOT_STATUS_KEY
+from drone_commission import DRONE_CHASSIS_TIERS
 from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -43,7 +44,6 @@ from swallow import swallowed
 # Worst -> best, kit id -> the Depot typeId it deploys (lib/drone_energy.py).
 DEPOT_KIT_TIERS = ["drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large"]
 DEPOT_TYPE_TIERS = ["drone_station", "drone_station_medium", "drone_station_large"]
-DRONE_CHASSIS_TIERS = ["drone_small", "drone_medium", "drone_large"]
 UPGRADE_ROLES = ("miner", "hauler")
 
 # fabricator.upgrade_orders requester id for the coordinator's own orders
@@ -493,7 +493,9 @@ class FleetUpgradeCoordinator:
             drones = self._drones()
 
         if not new_id:
-            known = set(entry.get("known") or [])
+            # A drone the COMMISSION card deployed meanwhile has a lineage
+            # entry of its own ("job"); it is not this swap's.
+            known = set(entry.get("known") or []) | set((fleet_upgrade_state().get("lineage") or {}).keys())
             new_id = next((d_id for d_id, ref in drones.items() if d_id not in known and getattr(ref, "kind", "") == kind), None)
             if new_id is None:
                 res = computer.deploy(kind, outpost_id)

@@ -191,6 +191,7 @@ class VehicleController(
             "level": round(lvl, 2),
             "target": target_desc or (self.current_target["name"] if self.current_target else "none"),
             "intent": self.intent,
+            "home": self.home_base,
             "tick": self.get_current_tick()
         }
         wrote = fleet_status.publish(self.name, telemetry)

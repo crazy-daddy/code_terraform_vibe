@@ -4,7 +4,7 @@
 # automation panel, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
+from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
 from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole
@@ -71,7 +71,8 @@ class SmelterController:
     Outpost-aware: at home the ports use Inventory + home Warehouses; at any
     other outpost only that outpost's own Warehouses (Inventory is home-only,
     docs/components/smelter.md). Ore stock, fair share and output all stay
-    local; demand is the network-wide get_smelter_demands().
+    local; demand is the network-wide get_smelter_demands(), raised to the
+    site's own Fabricator need away from home (demands()).
     """
     RECIPE_MAP = {
         "iron_ore": "smelt_iron_ingot",
@@ -178,6 +179,19 @@ class SmelterController:
 
     def at_home(self):
         return outpost_is_home(self.outpost())
+
+    def demands(self, cache):
+        """get_smelter_demands(), merged per item (max) with this site's own
+        Fabricators' need (production.site_smelter_demands()) when this
+        Smelter is away from home."""
+        demands = get_smelter_demands(cache)
+        if self.at_home():
+            return demands
+        for item_id, units in site_smelter_demands(self.outpost(), cache).items():
+            if units > demands.get(item_id, 0):
+                self.log.debug(f"[{self.name}] demands: {item_id} site need {units} > network {demands.get(item_id, 0)}")
+                demands[item_id] = units
+        return demands
 
     def ensure_connections(self):
         """Connects input and output ports to Inventory at home, or to a
@@ -300,7 +314,7 @@ class SmelterController:
             self.log_outcome("shedded")
             return
 
-        demands = get_smelter_demands(cache)
+        demands = self.demands(cache)
         # Raw ore an active Supply Dock order still ships AS ore -- never
         # refined away, now that real ingot demand can be large enough to
         # consume every unit on hand (see available_ore()).
@@ -540,7 +554,7 @@ class SmelterController:
             return None, None
 
         cache = SourceCache() if cache is None else cache
-        demands = get_smelter_demands(cache) if demands is None else demands
+        demands = self.demands(cache) if demands is None else demands
         dock_reserved = dock_remaining_requirements() if dock_reserved is None else dock_reserved
         buffered_ore = set()
         if hasattr(self.smelter, "input") and hasattr(self.smelter.input, "stacks"):

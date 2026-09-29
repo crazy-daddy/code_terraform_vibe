@@ -35,7 +35,7 @@ PULL_MIN_LOAD_UNITS = 10
 # the cargo off first costs (almost) nothing extra, so the stop is left for
 # the next trip instead of driving straight past home.
 PULL_CHAIN_MAX_DETOUR_RATIO = 0.75
-# Candidate pull trips (one per possible first stop) are scored
+# Candidate pull trips (one per possible first stop) are ranked by
 # units / (round-trip m + this overhead), like the drone hauler's
 # HAUL_TRIP_OVERHEAD_M, so a nearby source holding a 1-unit top-up can't
 # shadow a farther one holding what's actually missing.
@@ -270,9 +270,9 @@ class VehicleCargoMixin:
         source, need tier first, then largest deficits, until capacity,
         PULL_MAX_STOPS_PER_TRIP or the deficits run out. Stops after the
         first must pass _pull_chain_worthwhile() (no driving past home). The
-        chain with the best weighted units / (round-trip m +
-        PULL_TRIP_OVERHEAD_M) wins, need units counting NEED_SCORE_WEIGHT
-        times. Returns (route, reachable): route is
+        chain with the most need-tier units, then all units, per
+        (round-trip m + PULL_TRIP_OVERHEAD_M) wins
+        (logistics_requests.haul_rank()). Returns (route, reachable): route is
         [(source, [(item_id, amount), ...]), ...], reachable the units of
         the (capped) deficits any source can cover at all.
         """
@@ -305,7 +305,7 @@ class VehicleCargoMixin:
             home_coords = None
         start = self._host.get_position()
 
-        best_route, best_score = [], -1.0
+        best_route, best_rank = [], None
         for first in sources:
             route = self._plan_pull_chain(first, sources, need, buffer, capacity, start, home_coords)
             if not route:
@@ -321,10 +321,10 @@ class VehicleCargoMixin:
                 meters += self._host.distance_between(pos, source["coords"])
                 pos = source["coords"]
             meters += self._host.distance_between(pos, home_coords) if home_coords is not None else 0.0
-            score = (units + need_units * (logistics_requests.NEED_SCORE_WEIGHT - 1)) / (meters + PULL_TRIP_OVERHEAD_M)
-            self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) ({need_units} need) over {meters:.0f}m ({len(route)} stop(s)), score {score:.4f}.")
-            if score > best_score:
-                best_route, best_score = route, score
+            rank = logistics_requests.haul_rank(units, need_units, meters, PULL_TRIP_OVERHEAD_M)
+            self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) ({need_units} need) over {meters:.0f}m ({len(route)} stop(s)), need rate {rank[0]:.4f}, rate {rank[1]:.4f}.")
+            if logistics_requests.rank_beats(rank, best_rank):
+                best_route, best_rank = route, rank
         return best_route, reachable
 
     def _shop_source(self, need, buffer, curr_tick):

@@ -267,6 +267,27 @@ class FabricatorController:
             elif event.kind == "waiting":
                 self.log.level("warn").print(f"[{self.name}] Every known {fluid_key} source is still within its blacklist window; waiting for one to expire.")
 
+    @staticmethod
+    def is_fluid_only(recipe):
+        """True for a recipe with fluid inputs and no item inputs (e.g. craft_tar)."""
+        return bool(recipe) and not (getattr(recipe, "inputs", {}) or {}) and bool(getattr(recipe, "fluid_inputs", {}) or {})
+
+    def stop_fluid_feed(self, recipe):
+        """Disconnects every fluid port the recipe feeds from, so no new
+        craft starts. ensure_fluid_connections() reconnects once a recipe
+        needing that fluid is active again."""
+        for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
+            port = getattr(self.machine, fluid_key, None)
+            if not port or not hasattr(port, "disconnect"):
+                continue
+            try:
+                if hasattr(port, "connected_id") and not port.connected_id():
+                    continue
+                result = port.disconnect()
+                self.log.print(f"[{self.name}] Target met for fluid-only '{getattr(recipe, 'id', '?')}': disconnected {fluid_key} ({getattr(result, 'status', '?')}).")
+            except Exception as error:
+                swallowed("fabricator.FabricatorController.stop_fluid_feed: port.disconnect", error)
+
     def recipe_is_sourceable(self, recipe, cache=None):
         """Whether every input of this recipe -- solid and fluid alike -- has a currently known supply."""
         return self.recipe_unsourceable_reason(recipe, cache) is None
@@ -606,22 +627,32 @@ class FabricatorController:
             # abrupt breaker cut.
             return
 
-        active_recipe, _ = get_fabricator_active_recipe(self.machine)
-        self.ensure_fluid_connections(active_recipe)
+        active_recipe, active_remaining = get_fabricator_active_recipe(self.machine)
+        # A fluid-only recipe (e.g. craft_tar) never goes idle while its
+        # fluid flows, so the idle-only switch below would never fire: once
+        # its target is met, cut the feed and switch even while running.
+        winding_down = self.is_fluid_only(active_recipe) and active_remaining <= 0
+        if winding_down:
+            self.stop_fluid_feed(active_recipe)
+        else:
+            self.ensure_fluid_connections(active_recipe)
         prior_recipe_id = self.machine.get_recipe()
         recipe = self.choose_recipe()
         if recipe is None:
             # clear_recipe() preserves the stockpile (it's staged material,
             # not tied to the recipe), so a partial load must not block this.
-            if prior_recipe_id and not self.machine.is_running():
-                self.log.print(f"[{self.name}] Clearing recipe: every buildable stock target/order item is met or unreachable.")
-                self.machine.clear_recipe()
-                self.release_recipe(prior_recipe_id)
+            if prior_recipe_id and (winding_down or not self.machine.is_running()):
+                result = self.machine.clear_recipe()
+                if result.status == "ok":
+                    self.log.print(f"[{self.name}] Clearing recipe: every buildable stock target/order item is met or unreachable.")
+                    self.release_recipe(prior_recipe_id)
+                else:
+                    self.log.debug(f"[{self.name}] clear_recipe(): {result.status} - retrying next poll")
             return
 
         recipe_id = getattr(recipe, "id", "")
         if prior_recipe_id != recipe_id:
-            if not self.machine.is_running():
+            if winding_down or not self.machine.is_running():
                 result = self.machine.set_recipe(recipe_id)
                 if result.status == "ok":
                     if prior_recipe_id:
@@ -629,6 +660,8 @@ class FabricatorController:
                     output_item = getattr(recipe, "output_item", "?")
                     reason = self.target_reason(output_item)
                     self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to build {output_item} for {reason}.")
+                else:
+                    self.log.debug(f"[{self.name}] set_recipe({recipe_id}): {result.status} - retrying next poll")
             return
 
         if self.machine.get_stockpile_used() < self.machine.get_stockpile_capacity():
