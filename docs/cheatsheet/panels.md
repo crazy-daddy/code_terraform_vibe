@@ -15,7 +15,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 | PRODUCTION | `production_panel.py` | |
 | Automation calculator (headless) | `automation_panel.py` | position irrelevant, draws nothing |
 | DRONE FLEET | `drones_panel.py` | cruise-throttle slider + drone roster + fleet auto-upgrade switch/status (§2k) |
-| COMMISSION (new Pioneers) | `fleet_commission_panel.py` | role buttons + outpost picker + job queue with cancel (§2k-2); `2 x 1`, `2 x 2` for a long queue |
+| COMMISSION (new Pioneers and drones) | `fleet_commission_panel.py` | Pioneer role buttons + HOME_BASE picker, drone role buttons + deploy-outpost picker (outposts with a Drone Depot), job queue with cancel (§2k-2); `2 x 2` |
 | Warehouse upgrade worker (headless) | `warehouse_upgrade_panel.py` | runs `lib/warehouse_upgrade.py` (§2k-1) then `lib/tank_upgrade.py` (§2k-3) each pass; the Warehouse drain blocks for long, so kept out of `automation_panel.py` |
 
 **New panel in-game:** create the empty Custom Panel. When exactly one role has no slot yet, the sync tool fills it with that role and starts it. Otherwise type `# ct-panel: <role>` (e.g. `# ct-panel: drones_panel`) into it first.

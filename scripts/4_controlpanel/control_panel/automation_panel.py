@@ -47,8 +47,9 @@
 #     docs/AI_CHEATSHEET.md #2a-0-5).
 #   - Fleet hardware upgrades (lib/fleet_upgrade.py): Drone Depot and drone
 #     chassis swaps to the best unlocked tier, one at a time, once per cycle.
-#   - Fleet commissioning (lib/fleet_commission.py): buys, deploys and fits the
-#     Pioneers queued on the COMMISSION card, one job at a time.
+#   - Fleet commissioning (lib/fleet_commission.py): buys or crafts, deploys
+#     and fits the Pioneers and drones queued on the COMMISSION card, one job
+#     of each kind at a time.
 #   - Factory outposts (5_steampower libs, deployed at every tier like the
 #     Mixer gate): lib/site_plan.py places each root Fabricator target at the
 #     fab sites that build its tree, then lib/site_supply.py publishes the

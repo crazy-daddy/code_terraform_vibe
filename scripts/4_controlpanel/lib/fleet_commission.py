@@ -1,12 +1,17 @@
-# Fleet commissioning coordinator: launches new Pioneers queued on the
-# COMMISSION card (control_panel/fleet_commission_panel.py). Run by the headless
-# automation_panel.py every storage tick. Operator-triggered only: nothing is
-# queued here on its own.
+# Fleet commissioning coordinator: launches new Pioneers and drones queued on
+# the COMMISSION card (control_panel/fleet_commission_panel.py). Run by the
+# headless automation_panel.py every storage tick. Operator-triggered only:
+# nothing is queued here on its own.
 #
-# One job at a time, head of fleet.commission["jobs"] (layout in
-# lib/pioneer_commission.py). Each pass re-reads the dict, advances the head
-# job at most one state and writes back, so a restart resumes where it stopped.
+# Pioneer and drone jobs are separate queues in one list,
+# fleet.commission["jobs"] (layout in lib/pioneer_commission.py): each pass
+# works the first non-blocked job of each kind, so a drone waiting on the
+# Fabricator doesn't hold up a Pioneer. Each pass re-reads the dict, advances
+# a job at most one state and writes back, so a restart resumes where it
+# stopped.
 #
+# Pioneer (always deployed at the home outpost, where its parts are; the job's
+# home_base becomes its HOME_BASE):
 #   queued    -> spec built from the role preset at the best unlocked tiers
 #                (Shop catalogue); a locked part blocks the job
 #   buying    -> buys the chassis and every part the Inventory doesn't already
@@ -14,26 +19,51 @@
 #                WAREHOUSE_UPGRADE_CREDIT_RESERVE afterwards
 #   deploying -> snapshot of owned Pioneers first (a restart adopts a new one
 #                instead of deploying twice), then computer.deploy("pioneer")
+#                at home; lineage[new_id] carries home_base for scripts_sync
 #   attach    -> a deployed machine has no script and scripts cannot attach
 #                one: waits for devtools/scripts_sync.py (or the operator) to
 #                fill the slot, retrying run_control.start() until the
 #                Pioneer reports in fleet.status
 #   fitting   -> the Pioneer mounts/installs its own parts
-#                (PioneerFittingMixin); parts it reports missing are bought
+#                (PioneerFittingMixin); parts it reports missing are bought.
+#                Done once fitted and its fleet.status "home" is the job's
+#                home_base
+#
+# Drone (lib/drone_commission.py; crafted, not bought; deployed at the job's
+# outpost, which needs a Drone Depot):
+#   queued    -> spec: best craftable chassis + LOADOUTS modules
+#   crafting  -> kit ordered via fabricator.upgrade_orders until Inventory
+#                holds all of it
+#   deploying -> waits while a fleet_upgrade drone swap is deploying (both
+#                adopt "the new drone"), snapshots owned drones, then
+#                computer.deploy(chassis, outpost); a full Depot waits;
+#                fleet.upgrade lineage[new_id] = {"job", role, engine, kind,
+#                params: {HOME_DEPOT}, fitted: False}
+#   attach    -> as for Pioneers
+#   fitting   -> the drone couples its kit (fit_loadout_if_new()); done once
+#                its lineage says fitted
+#
 #   blocked   -> refused for good (locked part, deploy_limit, vehicle gone);
 #                skipped by later passes until the operator cancels it on the
-#                card. Bought parts stay in Inventory and are reused by the
-#                next job.
+#                card. Bought or crafted parts stay in Inventory and are
+#                reused by the next job.
 
 import fleet_status
 from pioneer_commission import PIONEER_KIT_ID, commission_state, update_commission, build_spec, spec_parts
+from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_spec_parts
+from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
+from production import set_upgrade_order, fabricator_unlocked_outputs
 from warehouse_upgrade import WAREHOUSE_UPGRADE_CREDIT_RESERVE
+from outpost_mining import HOME_OUTPOST_ID
 from tree_console import TreeConsole
 from swallow import swallowed
 
 # States the COMMISSION card may cancel: nothing deployed yet (or given up).
-CANCELLABLE_STATES = ("queued", "buying", "blocked")
-DEPLOY_BLOCKING_STATUSES = ("deploy_limit", "location_not_found", "not_deployable", "locked", "wrong_biome_for_machine")
+CANCELLABLE_STATES = ("queued", "buying", "crafting", "blocked")
+DEPLOY_BLOCKING_STATUSES = ("deploy_limit", "location_not_found", "not_deployable", "locked", "wrong_biome_for_machine", "missing_drone_station")
+# fleet_upgrade drone swap states between "about to deploy" and "adopted".
+SWAP_DEPLOYING_STATES = ("announced", "swapping")
+JOB_KINDS = ("pioneer", "drone")
 
 
 def _component(component_id):
@@ -44,17 +74,38 @@ def _component(component_id):
         return None
 
 
-def queue_pioneer(role, outpost_id=None):
-    """Appends a Pioneer job (COMMISSION card button). Returns the job id."""
+def job_kind(job):
+    """"pioneer" or "drone" (jobs queued before drones existed carry no kind)."""
+    return "drone" if job.get("kind") == "drone" else "pioneer"
+
+
+def job_home_base(job):
+    """A Pioneer job's HOME_BASE outpost id, None = home."""
+    return job.get("home_base", job.get("outpost"))
+
+
+def _queue(kind, role, fields):
     created = []
 
     def mutate(state):
         seq = int(state.get("seq", 0)) + 1
         state["seq"] = seq
-        created[:] = [f"p{seq}"]
-        state.setdefault("jobs", []).append({"id": created[0], "role": role, "outpost": outpost_id, "state": "queued"})
+        created[:] = [f"{kind[0]}{seq}"]
+        job = {"id": created[0], "kind": kind, "role": role, "state": "queued"}
+        job.update(fields)
+        state.setdefault("jobs", []).append(job)
     update_commission(mutate)
     return created[0] if created else ""
+
+
+def queue_pioneer(role, home_base=None):
+    """Appends a Pioneer job (COMMISSION card button); it deploys at home and works for home_base. Returns the job id."""
+    return _queue("pioneer", role, {"home_base": None if home_base == HOME_OUTPOST_ID else home_base})
+
+
+def queue_drone(role, outpost_id=None):
+    """Appends a drone job (COMMISSION card button); it deploys at outpost_id (None = home). Returns the job id."""
+    return _queue("drone", role, {"outpost": None if outpost_id == HOME_OUTPOST_ID else outpost_id})
 
 
 def cancel_job(job_id):
@@ -111,6 +162,17 @@ class FleetCommissionCoordinator:
             return sorted(getattr(v, "id", "") for v in fleet.vehicles() if getattr(v, "kind", "") == "pioneer" and getattr(v, "id", ""))
         except Exception as error:
             swallowed("fleet_commission.FleetCommissionCoordinator._pioneers: fleet.vehicles", error)
+            return None
+
+    def _drones(self):
+        """{drone_id: chassis kind} of every owned drone, or None when the fleet can't be read."""
+        fleet = _component("fleet")
+        if not fleet:
+            return None
+        try:
+            return {getattr(d, "id", ""): getattr(d, "kind", "") for d in fleet.drones() if getattr(d, "id", "")}
+        except Exception as error:
+            swallowed("fleet_commission.FleetCommissionCoordinator._drones: fleet.drones", error)
             return None
 
     def _start_script(self, machine_id):
@@ -176,24 +238,45 @@ class FleetCommissionCoordinator:
         """One coordinator pass. Returns a short summary for automation_panel's automation line."""
         state = commission_state()
         pioneers = self._pioneers()
-        self._prune(state, pioneers)
+        drones = self._drones()
+        self._prune(state, pioneers, drones)
         jobs = [j for j in (commission_state().get("jobs") or []) if isinstance(j, dict)]
+        crafting = next((j for j in jobs if job_kind(j) == "drone" and j.get("state") == "crafting"), None)
+        self._sync_craft_order(crafting)
         if not jobs:
             self._set_status("idle")
             return "commission idle"
-        # Blocked jobs wait for the operator's cancel; the next one goes on.
-        job = next((j for j in jobs if j.get("state") != "blocked"), None)
-        blocked = sum(1 for j in jobs if j.get("state") == "blocked")
-        queued = sum(1 for j in jobs if j is not job and j.get("state") != "blocked")
-        text = self._advance(job, pioneers) if job else "nothing to do"
-        extras = [f"+{queued} queued"] if queued else []
-        extras += [f"{blocked} blocked"] if blocked else []
-        text = f"{text} ({', '.join(extras)})" if extras else text
+
+        parts = []
+        for kind in JOB_KINDS:
+            mine = [j for j in jobs if job_kind(j) == kind]
+            if not mine:
+                continue
+            # Blocked jobs wait for the operator's cancel; the next one goes on.
+            job = next((j for j in mine if j.get("state") != "blocked"), None)
+            blocked = sum(1 for j in mine if j.get("state") == "blocked")
+            queued = sum(1 for j in mine if j is not job and j.get("state") != "blocked")
+            if job is None:
+                text = f"{kind}s: nothing to do"
+            elif kind == "pioneer":
+                text = self._advance(job, pioneers)
+            else:
+                text = self._advance_drone(job, drones)
+            extras = [f"+{queued} queued"] if queued else []
+            extras += [f"{blocked} blocked"] if blocked else []
+            parts.append(f"{text} ({', '.join(extras)})" if extras else text)
+        text = "; ".join(parts)
         self._set_status(text)
         return f"commission: {text}"
 
+    def _sync_craft_order(self, job):
+        """The Fabricator order for the crafting drone job's kit, or none (cancelled/advanced)."""
+        wanted = drone_spec_parts(job["spec"]) if job and job.get("spec") else {}
+        set_upgrade_order(COMMISSION_REQUESTER, wanted)
+
     def _advance(self, job, pioneers):
-        job_id, role, outpost_id, state = job["id"], job.get("role"), job.get("outpost"), job.get("state")
+        job_id, role, state = job["id"], job.get("role"), job.get("state")
+        home_base = job_home_base(job)
         label = f"{job_id} {role}"
         self.log.debug(f"[fleet_commission] {label}: state '{state}'.")
 
@@ -202,7 +285,7 @@ class FleetCommissionCoordinator:
             if spec is None:
                 return self._block(job, reason)
             self._patch(job_id, state="buying", spec=spec)
-            self.log.print(f"[fleet_commission] {label} at '{outpost_id or 'home'}': {spec['modules']}, bays {spec['battery_fill']}/{spec['bin_fill']}.")
+            self.log.print(f"[fleet_commission] {label} for '{home_base or 'home'}': {spec['modules']}, bays {spec['battery_fill']}/{spec['bin_fill']}.")
             return f"{label}: buying"
 
         spec = job.get("spec") or {}
@@ -226,7 +309,9 @@ class FleetCommissionCoordinator:
                 computer = _component("computer")
                 if not computer or not hasattr(computer, "deploy"):
                     return f"{label}: no Ship Computer"
-                res = computer.deploy(PIONEER_KIT_ID, outpost_id)
+                # Always at home: the parts sit in the home Inventory and
+                # the Pioneer fits them in the home service area.
+                res = computer.deploy(PIONEER_KIT_ID)
                 if res.status != "ok":
                     if res.status in DEPLOY_BLOCKING_STATUSES:
                         return self._block(job, f"deploy {res.status}")
@@ -235,7 +320,7 @@ class FleetCommissionCoordinator:
                     self.log.debug(f"[fleet_commission] {label}: deploy -> {res.status} - {res.message}")
                     return f"{label}: deploy {res.status}"
                 new_id = res.machine_id
-            lineage = {"role": role, "job": job_id, "spec": spec, "fitted": False, "missing": {}}
+            lineage = {"role": role, "job": job_id, "spec": spec, "home_base": home_base, "fitted": False, "missing": {}}
 
             def mutate(s):
                 for j in s.get("jobs") or []:
@@ -243,7 +328,7 @@ class FleetCommissionCoordinator:
                         j.update({"state": "attach", "new_id": new_id})
                 s.setdefault("lineage", {})[new_id] = lineage
             update_commission(mutate)
-            self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' at '{outpost_id or 'home'}'; waiting for its script.")
+            self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' at home, HOME_BASE '{home_base or 'home'}'; waiting for its script.")
             return f"{label}: deployed {new_id}"
 
         new_id = job.get("new_id")
@@ -258,35 +343,137 @@ class FleetCommissionCoordinator:
 
         if state == "fitting":
             entry = (commission_state().get("lineage") or {}).get(new_id) or {}
+            status = fleet_status.get(new_id) or {}
             if entry.get("fitted"):
+                wrong_home = self._wrong_home(status, home_base)
+                if wrong_home:
+                    self.log.debug(f"[fleet_commission] {label}: '{new_id}' runs with HOME_BASE '{wrong_home}', job wants '{home_base or HOME_OUTPOST_ID}'.")
+                    return f"{label}: {new_id} has HOME_BASE {wrong_home}, set it to {home_base or 'None'}"
+
                 def finish(s):
                     s["jobs"] = [j for j in s.get("jobs") or [] if j.get("id") != job_id]
                     s.get("lineage", {}).pop(new_id, None)
                 update_commission(finish)
-                self.log.print(f"[fleet_commission] {label}: '{new_id}' fitted and running.")
+                self.log.print(f"[fleet_commission] {label}: '{new_id}' fitted and running for '{home_base or 'home'}'.")
                 return f"{label}: {new_id} done"
             missing = entry.get("missing") or {}
             if missing:
                 waiting = self._buy_missing(missing, self._catalogue(), f"{label} refit")
                 if waiting:
                     return waiting
-            status = fleet_status.get(new_id) or {}
             return f"{label}: {new_id} fitting ({status.get('target') or status.get('state', '?')})"
+
+        return f"{label}: unknown state {state!r}"
+
+    def _wrong_home(self, status, home_base):
+        """The HOME_BASE a Pioneer reports when it isn't the job's, else None (also when not reported)."""
+        reported = status.get("home")
+        if reported is None:
+            return None
+        wanted = home_base or HOME_OUTPOST_ID
+        return None if reported == wanted else str(reported)
+
+    # ------------------------------------------------------------ drones
+
+    def _advance_drone(self, job, drones):
+        job_id, role, state = job["id"], job.get("role"), job.get("state")
+        outpost_id = job.get("outpost")
+        label = f"{job_id} drone {role}"
+        self.log.debug(f"[fleet_commission] {label}: state '{state}'.")
+
+        if state == "queued":
+            spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), self._inventory_count)
+            if spec is None:
+                return self._block(job, reason)
+            self._patch(job_id, state="crafting", spec=spec)
+            self._sync_craft_order(dict(job, spec=spec))
+            self.log.print(f"[fleet_commission] {label} at '{outpost_id or 'home'}': {spec['kind']} with {spec['modules'][1:]}.")
+            return f"{label}: crafting"
+
+        spec = job.get("spec") or {}
+        if state == "crafting":
+            parts = drone_spec_parts(spec)
+            short = {item: n - self._inventory_count(item) for item, n in parts.items() if self._inventory_count(item) < n}
+            if short:
+                self.log.debug(f"[fleet_commission] {label}: waiting on the Fabricator for {short}.")
+                return f"{label}: crafting ({', '.join(f'{n}x {i}' for i, n in short.items())})"
+            if drones is None:
+                return f"{label}: fleet unreadable"
+            self._patch(job_id, state="deploying", known=sorted(drones))
+            self._sync_craft_order(None)
+            return f"{label}: kit ready, deploying"
+
+        if state == "deploying":
+            if drones is None:
+                return f"{label}: fleet unreadable"
+            swapping = [k for k, e in (fleet_upgrade_state().get("drones") or {}).items()
+                        if isinstance(e, dict) and e.get("state") in SWAP_DEPLOYING_STATES]
+            if swapping:
+                return f"{label}: waiting for the chassis swap of {swapping[0]}"
+            known = set(job.get("known") or [])
+            new_id = next((d for d, kind in drones.items() if d not in known and kind == spec.get("kind")), None)
+            if new_id is None:
+                computer = _component("computer")
+                if not computer or not hasattr(computer, "deploy"):
+                    return f"{label}: no Ship Computer"
+                res = computer.deploy(spec.get("kind"), outpost_id)
+                if res.status != "ok":
+                    if res.status in DEPLOY_BLOCKING_STATUSES:
+                        return self._block(job, f"deploy {res.status}")
+                    if res.status == "no_kit":
+                        self._patch(job_id, state="crafting")
+                    self.log.debug(f"[fleet_commission] {label}: deploy('{spec.get('kind')}', '{outpost_id}') -> {res.status} - {res.message}")
+                    if res.status == "drone_station_full":
+                        return f"{label}: waiting for a free Depot bay at {outpost_id or 'home'}"
+                    return f"{label}: deploy {res.status}"
+                new_id = res.machine_id
+            lineage = {
+                "from": None, "job": job_id, "role": role, "engine": spec.get("engine"), "kind": spec.get("kind"),
+                "params": {"HOME_DEPOT": outpost_id or "None", "CRUISE_THROTTLE": "None"}, "fitted": False,
+            }
+            update_fleet_upgrade(lambda s: s.setdefault("lineage", {}).update({new_id: lineage}))
+            self._patch(job_id, state="attach", new_id=new_id)
+            self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' ({spec.get('kind')}) at '{outpost_id or 'home'}'; waiting for its script.")
+            return f"{label}: deployed {new_id}"
+
+        new_id = job.get("new_id")
+        lineage = (fleet_upgrade_state().get("lineage") or {}).get(new_id)
+        if state == "attach":
+            if fleet_status.get(new_id) is not None or (isinstance(lineage, dict) and lineage.get("fitted")):
+                self._patch(job_id, state="fitting")
+                return f"{label}: {new_id} running"
+            if self._start_script(new_id) != "ok":
+                return f"{label}: waiting for a script on {new_id} (run scripts_sync)"
+            return f"{label}: started {new_id}"
+
+        if state == "fitting":
+            # fleet_upgrade prunes nothing of a live drone, so a missing entry
+            # means the operator cleared it: nothing left to wait for.
+            if not isinstance(lineage, dict) or lineage.get("fitted"):
+                update_commission(lambda s: s.update({"jobs": [j for j in s.get("jobs") or [] if j.get("id") != job_id]}))
+                self.log.print(f"[fleet_commission] {label}: '{new_id}' fitted and flying from '{outpost_id or 'home'}'.")
+                return f"{label}: {new_id} done"
+            status = fleet_status.get(new_id) or {}
+            return f"{label}: {new_id} fitting ({status.get('state', '?')})"
 
         return f"{label}: unknown state {state!r}"
 
     # ------------------------------------------------------------ pruning
 
-    def _prune(self, state, pioneers):
-        """Blocks jobs whose deployed Pioneer vanished and drops orphan lineage. Skipped when the fleet can't be read."""
-        if pioneers is None:
-            return
-        alive = set(pioneers)
-        gone_jobs = [j.get("id") for j in state.get("jobs") or []
-                     if isinstance(j, dict) and j.get("state") in ("attach", "fitting") and j.get("new_id") not in alive]
+    def _prune(self, state, pioneers, drones):
+        """Blocks jobs whose deployed vehicle vanished and drops orphan Pioneer lineage. Each kind is skipped when its fleet list can't be read."""
+        alive = {"pioneer": pioneers, "drone": drones}
+        gone_jobs = []
+        for j in state.get("jobs") or []:
+            if not isinstance(j, dict) or j.get("state") not in ("attach", "fitting"):
+                continue
+            ids = alive[job_kind(j)]
+            if ids is not None and j.get("new_id") not in ids:
+                gone_jobs.append(j.get("id"))
         job_ids = {j.get("id") for j in state.get("jobs") or [] if isinstance(j, dict)}
-        orphans = [k for k, e in (state.get("lineage") or {}).items()
-                   if k not in alive or not isinstance(e, dict) or e.get("job") not in job_ids]
+        orphans = [] if pioneers is None else [
+            k for k, e in (state.get("lineage") or {}).items()
+            if k not in pioneers or not isinstance(e, dict) or e.get("job") not in job_ids]
         if not gone_jobs and not orphans:
             return
 
