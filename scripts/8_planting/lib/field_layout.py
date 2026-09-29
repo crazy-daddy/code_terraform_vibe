@@ -17,13 +17,17 @@
 # docs/database/items_agriculture_and_feeds.md for when nothing is published.
 #
 # Two layouts, one switch (made once, when Field Automation is researched):
-#   starter (STARTER_LAYOUT): the 2 x 4 block of the 8 species that are
-#     neither spacers nor clusters (x8 diversity). Every cell touches the
-#     next, so the Harvester walks plant cells only (+1 heat) and never needs
-#     a paved path. Hand care for all 15 species needs ~38 Harvester hours a
-#     day, so 8 is what one Harvester sustains. Machines unlocked before
-#     automation (lamp, sprinkler, dispenser) only save hand-care time, which
-#     isn't worth a rebuild, so the starter has no machine cells.
+#   starter (STARTER_LAYOUT): 13 species (x13 diversity) cared for by hand,
+#     no machine cells. A plant counts toward diversity while its conditions
+#     are met, mature or not, so the STARTER_KEEP species are planted once,
+#     kept cared for and never harvested (starter_kept()); the Harvester's
+#     remaining time goes to a Crowncap crop (care-free, the best Forage per
+#     Harvester hour) and to the salt trio, Glowvine and Grandbloom, which
+#     get a daily care visit anyway. Pondmoss (a 2x2 needing 4 waterings a
+#     day) and Sunspur (a lit spacer, 2 extra hops a day) aren't worth their
+#     hand care. Actions cost no heat and plant cells +1 per hop against 3/h
+#     cooling, so the Harvester's budget here is time, not heat; the gap
+#     cells between patches are paved (path_cells()).
 #   full: the whole 8 x 24 field, worked by Crop Automators and grown in
 #     automator chunks (full_layout()), sized to what the Plant Terraformers
 #     can use. A diversity garden with all 15 species (x15) in columns 1-5
@@ -116,12 +120,27 @@ _MACHINE_ABBREV = {
 # Service each machine kind provides (CARE_KINDS); Crop Automators provide none.
 MACHINE_SERVICE = {"grow_lamp": "light", "sprinkler": "water", "dispenser": "salt"}
 
-# 2 rows x 4 columns: the 8 species that are neither spacers nor clusters.
-# TV beside DW (companion), SM beside SB (companion), SP away from packfern.
+# 6 rows x 8 columns, anchored nearest the base (anchor_layout()). Found by
+# a search that scores D x Forage/day with the real daily care tour (Manhattan
+# hops over every light/water/salt cell, 0.5 h each): SU GV DW SB SM form one
+# chain and the spacers BT, GB sit two hops apart, so the tour is 10 hops
+# (~7.3 h/day with treatments) and ~17 Crowncap fill the rest of the day.
+# Sunspur is left out: a lit spacer adds 2 hops + a treatment a day, more
+# than its +1 diversity earns. TV beside DW and SM beside SB (companions), SP
+# away from Packfern; "." cells stay empty (spacer gaps, the tour's walkway).
 STARTER_LAYOUT = """
-DW TV SB SM
-SU GV SP SH
+.  CC CC CC .  .  .  .
+CC CC .  CC .  SH .  .
+CC CC CC CC PF PF CC CC
+CC CC CC .  PF PF CC CC
+.  SP .  BT .  SM SB .
+LT .  GB .  SU GV DW TV
 """
+# Starter species planted once and never harvested: they only carry the
+# diversity multiplier (care-free, or one care stop on the daily tour). Every
+# other starter species is harvested and replanted.
+STARTER_KEEP = ("sunpetal", "shadeleaf", "dewmoss", "lonethorn", "packfern",
+                "twinvine", "spitebud")
 
 # The whole field, fixed to the grid (column 1 = A1). XX is the Harvester
 # base pad, which is always E13. Columns 1-5 are the diversity garden (all
@@ -423,12 +442,18 @@ def priority_seeds(cells, garden, fill, rules):
     return sorted(out)
 
 
+def starter_kept(cells):
+    """Sorted sectors of a starter layout whose species is in STARTER_KEEP (never harvested)."""
+    return sorted(s for s, sp in cells.items() if sp in STARTER_KEEP)
+
+
 def kept_crop(sector, plant, cells, garden):
     """
-    True for a full-layout garden cell holding its own layout species: never
-    harvested. A mature crop still counts toward the species multiplier, and
-    replanting risks a garden species missing its seed; the fill carries the
-    Forage. A wrong species in a garden cell (after a rebuild) is not kept.
+    True for a kept cell (full-layout garden, starter_kept()) holding its
+    own layout species: never harvested. A mature crop still counts toward
+    the species multiplier while its conditions are met, and replanting
+    risks a species missing its seed; the other cells carry the Forage. A
+    wrong species in a kept cell (after a rebuild) is not kept.
     """
     return bool(plant) and sector in (garden or ()) and cells.get(sector) == plant
 

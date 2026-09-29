@@ -106,7 +106,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self._layout_tick = -LAYOUT_RECHECK_TICKS
         self.layout_mode = "starter"   # set by load_layout()
         self.reserved = {}             # {sector: machine kind}, set by load_layout()
-        self.garden = []               # garden sectors, set by load_layout()
+        self.garden = []               # kept sectors (full garden / starter keepers), set by load_layout()
         self.work_groups = []          # field_layout.work_order() of the full layout
         self.step_mine = {}            # this step's harvester_layout(), for work_on_pass()
         self.step_machine_map = None   # deployed field machines, read once per step
@@ -231,7 +231,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             "species_productive": len(productive),
             "layout": len(layout),
             "active": len(active),
-            "care_due": len(self.care_targets(cells, rules)),
+            "care_due": len(self.care_targets(cells, rules, kept=self.kept_garden())),
             "unpaved": len(self.unpaved(layout, cells)),
             "mode": self.layout_mode,
             "machines_missing": len(self.missing_machines(cells)),
@@ -321,9 +321,10 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # 2. Care tour first: a lapsed treatment stalls growth, while a mature
         #    crop just waits with its Forage banked. Harvest-first starved care
         #    (7 plants stalled for a whole day with crops always mature).
-        batch = self.care_targets(cells, rules, CARE_BATCH_H)
+        kept = self.kept_garden()
+        batch = self.care_targets(cells, rules, CARE_BATCH_H, kept)
         self.care_batch = {s: k for s, k in batch.items() if s in self.care_batch}
-        if not self.care_batch and self.care_targets(cells, rules):
+        if not self.care_batch and self.care_targets(cells, rules, kept=kept):
             self.care_batch = batch
             self.log.debug(f"[{self.name}] Care tour: {len(batch)} cell(s) below {CARE_BATCH_H} h.")
         if self.care_batch:
@@ -391,8 +392,9 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
 
     def care_current(self, rules):
         """Renews every treatment below CARE_BATCH_H on the current cell (no move needed)."""
-        cell = self.harvester.cell(self.get_position())
-        due = self.care_due(cell, rules, CARE_BATCH_H)
+        here = self.get_position()
+        cell = self.harvester.cell(here)
+        due = self.care_due(cell, rules, CARE_BATCH_H, here in self.kept_garden())
         if due:
             self.care_here(due)
 

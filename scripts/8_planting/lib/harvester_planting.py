@@ -4,8 +4,11 @@
 # The layout is built from lib/field_layout.py and stored in `plant.layout`,
 # so a restart (or a Harvester that stopped mid-field) keeps the same cells.
 # Three phases:
-#   1. "starter" (the 2 x 4 block) until Field Automation is researched.
-#      Never rebuilt (machines unlocked earlier aren't worth it; an older
+#   1. "starter" (field_layout.STARTER_LAYOUT) until Field Automation is
+#      researched. Its STARTER_KEEP cells (field_layout.starter_kept(), stored
+#      as "garden") are planted once, cared for and never harvested; the
+#      rest is harvested and replanted. Rebuilt only when STARTER_VERSION
+#      changes (machines unlocked earlier aren't worth a rebuild; an older
 #      stored layout without "mode" counts as starter).
 #   2. "full" with the crowncap fill: garden + solid Crowncap over the whole
 #      field (no machines, power or water; Crowncap Forage and life forms are
@@ -29,8 +32,8 @@
 #
 # Archive (one shared dict per concern, CLAUDE.md rule 7):
 #   plant.layout      = {"version", "mode", "fill", "chunks", "base", "anchor",
-#                        "cells": {sector: species}, "reserved": {sector: machine kind},
-#                        "garden": [sectors]}
+#                        "starter_version", "cells": {sector: species},
+#                        "reserved": {sector: machine kind}, "garden": [kept sectors]}
 #   plant.seed_demand = {"now": {seed_id: n}, "rotation": {seed_id: cells},
 #                        "priority": [garden seed_id], "tick"}
 #                       read by lib/seed_supply.py (garden seeds first)
@@ -46,9 +49,12 @@ if TYPE_CHECKING:
 
 LAYOUT_KEY = "plant.layout"
 # Bump when field_layout changes what a full layout looks like: a stored full
-# layout from an older version is rebuilt once (starter layouts never are).
+# layout from an older version is rebuilt once.
 # 4 = CROWNCAP_GARDEN (replaced the FULL_LAYOUT garden + FILL_KEEP C7).
 LAYOUT_VERSION = 4
+# Same for the starter layout: a stored starter with an older
+# "starter_version" is rebuilt once. 2 = keepers + Crowncap (STARTER_KEEP).
+STARTER_VERSION = 2
 TERRAFORMER_KEY = "plant.terraformer"
 FIELD_FILL_KEY = "plant.field_fill"   # operator override: "crowncap" | "grandbloom"
 
@@ -138,7 +144,10 @@ class HarvesterPlantingMixin:
         mode, fill, chunks = self.wanted_layout(stored)
         stored_mode = stored.get("mode") or "starter"
         same_fill = mode == "starter" or stored.get("fill", "grandbloom") == fill
-        current = mode == "starter" or int(stored.get("version") or 0) >= LAYOUT_VERSION
+        if mode == "starter":
+            current = int(stored.get("starter_version") or 1) >= STARTER_VERSION
+        else:
+            current = int(stored.get("version") or 0) >= LAYOUT_VERSION
         if stored.get("cells") and stored_mode == mode and same_fill and current and (mode == "starter" or int(stored.get("chunks") or 0) >= chunks):
             self.layout_mode = stored_mode
             self.reserved = dict(stored.get("reserved") or {})
@@ -162,7 +171,7 @@ class HarvesterPlantingMixin:
             block = field_layout.parse_block(field_layout.STARTER_LAYOUT)
             machines = field_layout.parse_machines(field_layout.STARTER_LAYOUT)
             offset, layout, reserved = field_layout.anchor_layout(base, status, block, machines)
-            garden = sorted(layout)
+            garden = field_layout.starter_kept(layout)
             if not layout:
                 self._host.log.level("error").print(f"[{self._host.name}] No room on the field for the planting block.")
                 return {}
@@ -177,11 +186,11 @@ class HarvesterPlantingMixin:
         bad = field_layout.validate(layout, rules)
         if bad:
             self._host.log.level("warn").print(f"[{self._host.name}] Layout breaks {len(bad)} rule(s): {bad[:5]}")
-        archive.set(LAYOUT_KEY, {"version": LAYOUT_VERSION, "mode": mode, "fill": fill, "chunks": chunks, "base": base, "anchor": offset,
-                                 "cells": layout, "reserved": reserved, "garden": garden})
+        archive.set(LAYOUT_KEY, {"version": LAYOUT_VERSION, "starter_version": STARTER_VERSION, "mode": mode, "fill": fill, "chunks": chunks,
+                                 "base": base, "anchor": offset, "cells": layout, "reserved": reserved, "garden": garden})
         self._host.log.print(f"[{self._host.name}] Field layout set ({mode}{', ' + str(fill) + ' fill, ' + str(chunks) + ' chunk(s)' if mode == 'full' else ''}): "
                              f"{len(layout)} plants, {len(set(layout.values()))} species, {len(reserved)} machine cells, "
-                             f"~{round(field_layout.forage_per_hour(layout, rules, garden if mode == 'full' else ()))} Forage/h at Mk I (base {base}).")
+                             f"~{round(field_layout.forage_per_hour(layout, rules, garden))} Forage/h at Mk I (base {base}).")
         return layout
 
     def active_layout(self, layout, rules, inactive_species):
@@ -256,8 +265,8 @@ class HarvesterPlantingMixin:
     # ---------------------------------------------------------- seed demand
 
     def kept_garden(self):
-        """Garden sectors whose crops are never harvested (full layout only; field_layout.kept_crop())."""
-        return set(self.garden or []) if self.layout_mode == "full" else set()
+        """Sectors whose crops are never harvested (full-layout garden, starter keepers; field_layout.kept_crop())."""
+        return set(self.garden or [])
 
     def seed_demand(self, active, cells, rules):
         """
