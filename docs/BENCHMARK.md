@@ -55,7 +55,7 @@ Operations over a 1000-element list:
 3. **A comprehension is far cheaper than a loop that appends.** The comprehension costs 1.0 per element; `for` + `append` costs 4.9. Build lists with comprehensions where the element expression is simple.
 4. **A function call costs about 4 steps plus about 0.8 per argument.** Inline helpers that sit in the innermost loop.
 5. **`dict` access is dearer than `list` indexing** (11.4 vs 5.9 for the same read/write pattern with a modulo). Prefer flat lists indexed by integer for dense grids.
-6. **A component call is as cheap as a builtin** (`clock.elapsed_seconds()` costs the same as `len()`). This says nothing about heavier component methods; see the API benchmark when one exists.
+6. **A component call is as cheap as a builtin** (`clock.elapsed_seconds()` costs the same as `len()`). The API section below extends this to the other read-only components.
 7. **Slices and native counting beat neighbour loops.** The 3×3 neighbourhood count costs 18.9 steps with three slices, a concatenation and `count`, against 81.1 for an 8-element Python loop. Padding a grid with a wall ring turns neighbour lookups into index offsets with no bounds checks.
 8. **`range(n)` materialises a list.** It is bounded by the collection limit in Settings → Game → Advanced Scripting (50,000 items at most), so long loops need a chunked outer loop or a `while`. A `while` pass costs about 5 steps against 1 for `for`.
 9. **`frozenset` is not available** in the interpreter.
@@ -63,7 +63,7 @@ Operations over a 1000-element list:
 
 ## API cases
 
-`devtools/panel_benchmark.py` also times game API calls. Each case is skipped with a message when its component is missing in the save. Costs are reported in the same units as above (µs per call, and × the empty loop). Results for this section are added to this file after the first run in game.
+`devtools/panel_benchmark.py` also times game API calls. Each case is skipped with a message when its component is missing in the save. Costs are reported in the same units as above (µs per call, and × the empty loop).
 
 **Non-interruptive** (`RUN_API`, on by default): read-only calls, plus one scratch archive key and one scratch Signal Bus channel (`bench.tmp` for both) that are removed at the end, also when the run fails.
 
@@ -82,13 +82,71 @@ Operations over a 1000-element list:
 
 **Interruptive** (`RUN_INTERRUPTIVE`, off by default): each case briefly changes real game state and restores it in a `finally` block.
 
-| Case | Constants that enable it | Effect |
+| Case | Constant that enables it | Effect |
 | --- | --- | --- |
 | `transmitter.connect("earth")` | none | Re-opens the Earth link. |
 | `power_control.set_powered` off + on | `BENCH_POWER_MACHINE_ID` | Switches one machine off and on again; skipped unless `can_power_off()` allows it; the original state is restored. |
-| Storage bin transfer in + out | `BENCH_TRANSFER_BIN_ID`, `BENCH_TRANSFER_ITEM` | Moves one item from the inventory to the bin and back each iteration; any leftover is moved back at the end. Needs Auto Feeders research, and each call waits for the feeder cycle, so the time is the game's transfer cycle, not interpreter cost. The last returned statuses are printed; only `ok` timings mean anything. |
 
-Not covered on purpose: shop buy/sell (spends credits), vehicle and drone commands, blueprint placement, order submission.
+Not covered on purpose: inventory transfers (each call waits for the feeder cycle, so it measures game time, not interpreter cost), shop buy/sell (spends credits), vehicle and drone commands, blueprint placement, order submission.
+
+### API results
+
+Same units and container as above (empty loop = 350 µs). Every call is a single call from a loop, so each figure includes about 1 step of loop overhead.
+
+| Call | µs / call | × empty loop |
+| --- | ---: | ---: |
+| `get_component("clock")` lookup | 1,523 | 4.5 |
+| `clock.tick()` / `clock.get_time()` | 1,438 | 4.3 |
+| `console.now()` | 1,500 | 4.4 |
+| archive `get` (missing key) / `has` | 1,750 | 5.2 |
+| archive `get` small dict | 1,750 | 5.2 |
+| archive `get` 100-entry dict | 1,875 | 5.6 |
+| archive `keys(prefix)` | 1,875 | 5.6 |
+| archive `set` small dict | 2,422 | 7.2 |
+| archive `set` 100-entry dict | 2,578 | 7.6 |
+| archive `transaction` small dict | 3,281 | 9.7 |
+| archive `transaction` 100-entry dict | 3,438 | 10.2 |
+| archive result `.status` read | 1,156 | 3.4 |
+| Signal Bus `latest` / `latest_info` / `queue_size` / `pending` | 1,750 | 5.2 |
+| Signal Bus `channels()` | 1,500 | 4.4 |
+| Signal Bus `broadcast` | 2,266 | 6.7 |
+| Signal Bus `send` + `receive` | 4,219 | 12.5 |
+| `outpost_network.outposts()` / `home()` / `home.coords()` | 1,563 | 4.6 |
+| `home.buildings()` (30 refs) | 1,797 | 5.3 |
+| `home.buildings("storage_bin")` | 2,109 | 6.2 |
+| read `.type_id` over 30 refs (whole loop) | 32,500 | 96.3 |
+| `inventory.get_used()` / `stacks()` | 1,563 | 4.6 |
+| `inventory.count(id)` | 1,875 | 5.6 |
+| `power_control.total()` | 1,563 | 4.6 |
+| `power_control.grids()` | 1,797 | 5.3 |
+| `fleet.vehicles()` / `drones()` | 1,797 | 5.3 |
+| `nocturna.terraform_progress()` | 1,563 | 4.6 |
+| `nocturna.biome_at(0, 0)` | 2,266 | 6.7 |
+| `nocturna.points_of_interest()` | 1,797 | 5.3 |
+| `atmosphere.get_o2()` | 1,563 | 4.6 |
+| `research.unlocked()` | 1,797 | 5.3 |
+| `research.is_unlocked(id)` / `item_catalog.lookup(id)` | 1,875 | 5.6 |
+| `shop.get_catalogue()` / `orders.list_orders()` | 1,797 | 5.3 |
+| `journal.is_empty(0, 0)` | 2,266 | 6.7 |
+| `journal.biomass_coords()` | 1,797 | 5.3 |
+| `sleep(0.1)` | 100,000 | 296 |
+| `console.debug("bench")` | 100,000 | 296 |
+| `transmitter.connect("earth")` (interruptive) | 2,500 | 7.4 |
+| `power_control.set_powered` off + on (interruptive) | 5,000 | 14.8 |
+
+Not measured yet: storage bin / warehouse reads, battery reads and `power_control.is_powered(id)`. No `storage_bin` or `battery` was found among the 30 home buildings in the first run; storage discovery now also accepts `warehouse` and `large_warehouse`, and the setup prints the building types it found.
+
+### API interpretation
+
+1. **A read-only API call costs about one builtin call.** Everything that only reads state sits between 4.3× and 6.7× (a plain `len()` is 4.1×). The result size does not matter: `home.buildings()` with 30 refs costs 5.3×, `archive.get` of a 100-entry dict costs 5.6× against 5.2× for a small one.
+2. **Arguments and heavier bookkeeping add about 1 step each.** Calls with two arguments (`biome_at(0, 0)`, `journal.is_empty(0, 0)`) and calls taking a type filter cost 6.2–6.7×; `archive.set` costs 7.2–7.6×; `broadcast` 6.7×.
+3. **`archive.transaction` costs about 4 steps more than `set`** (9.7–10.2×), the price of one call to the updater function. Use `set` when the previous value is not needed, and keep one `transaction` per logical update.
+4. **`send` + `receive` is two calls** (12.5×, about 6 steps each). `latest()` on a broadcast channel is 5.2×.
+5. **Attribute reads on returned objects cost about 2 steps.** Reading `.type_id` over 30 refs costs 3.2 steps per element including the loop iteration; a `.status` read costs 2.4. Read each field once and keep it in a local.
+6. **`get_component()` lookup is cheap** (4.5×), so wrapper creation does not need caching for cost reasons. Cache it only where a wrapper carries state (for example the transmitter connection).
+7. **`sleep(0.1)` and `console.debug()` each cost exactly 0.1 s of simulation time**, about 285 steps. The debug result comes from a loop of 40 calls taking 4.00 s. `console.now()` costs a normal 4.4×. `info`, `warn`, `error` and `print` have not been measured. Until they are, treat every console write as an expensive call: build one string and log once instead of logging inside hot loops.
+8. **Switching power and re-opening the Earth link are instant for the script.** `transmitter.connect` costs 7.4×; `set_powered` off + on costs 14.8× for two calls, so there is no settle time to wait for.
+9. **Budget:** with about 350 µs per step and about 1.5–2.3 ms per API call, a script can make roughly 450–650 API calls per simulation second, and none of them cost more when the returned collection is large.
 
 ## Reproducing
 

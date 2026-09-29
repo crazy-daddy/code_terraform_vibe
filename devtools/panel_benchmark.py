@@ -9,12 +9,11 @@ RUN_API = True
 RUN_INTERRUPTIVE = False
 # Interruptive inputs (a case is skipped while its constant is empty):
 BENCH_POWER_MACHINE_ID = ""  # machine id to switch off and on repeatedly; state is restored afterwards
-BENCH_TRANSFER_BIN_ID = ""  # storage bin id that receives and returns one item per iteration
-BENCH_TRANSFER_ITEM = ""  # item id held in the inventory, moved to that bin and back
 
 clock = get_component("clock")
 MIN_SECONDS = 2.0
 MAX_REPS = 20000
+STORAGE_TYPES = ("storage_bin", "warehouse", "large_warehouse")
 BENCH_KEY = "bench.tmp"
 BENCH_CHANNEL = "bench.tmp"
 
@@ -643,13 +642,17 @@ def setup_api():
     if env["net"] is not None:
         env["home"] = env["net"].home()
         env["blds"] = env["home"].buildings()
+        counts = {}
         for b in env["blds"]:
-            if b.type_id == "storage_bin" and env["storage"] is None:
+            counts[b.type_id] = counts.get(b.type_id, 0) + 1
+        print(f"  home building types: {counts}")
+        for b in env["blds"]:
+            if b.type_id in STORAGE_TYPES and env["storage"] is None:
                 env["storage_id"] = b.id
                 env["storage"] = find_component(b.id)
             if b.type_id == "battery" and env["battery"] is None:
                 env["battery"] = find_component(b.id)
-    print(f"  home buildings: {len(env['blds'])}, storage bin: {env['storage_id']}")
+    print(f"  home buildings: {len(env['blds'])}, storage: {env['storage_id']}")
 
 
 def build_api_cases():
@@ -722,7 +725,8 @@ def cleanup_api():
 
 # ---------------------------------------------------------------------------
 # INTERRUPTIVE section (RUN_INTERRUPTIVE). Each case briefly changes real game state and restores it.
-# Not included on purpose: shop buy/sell (credits), vehicle/drone commands, blueprint placement, orders.
+# Not included on purpose: inventory transfers (they wait for the feeder cycle), shop buy/sell (credits),
+# vehicle/drone commands, blueprint placement, orders.
 # ---------------------------------------------------------------------------
 
 
@@ -740,14 +744,6 @@ def intr_power_toggle(n):
         power.set_powered(mid, True)
 
 
-def intr_transfer_roundtrip(n):
-    bin_ = env["transfer_bin"]
-    for i in range(n):
-        out = bin_.transfer_from_inventory(BENCH_TRANSFER_ITEM, 1)
-        back = bin_.transfer_to_inventory(1)
-        env["transfer_status"] = (out.status, back.status)
-
-
 def build_interruptive_cases():
     c = []
     env["transmitter"] = find_component("transmitter")
@@ -760,27 +756,13 @@ def build_interruptive_cases():
             c.append(("power_control.set_powered off+on", intr_power_toggle, 5))
         else:
             print(f"  skip power toggle: {BENCH_POWER_MACHINE_ID} cannot be powered off")
-    env["inventory"] = find_component("inventory")
-    if BENCH_TRANSFER_BIN_ID and BENCH_TRANSFER_ITEM and env["inventory"] is not None:
-        env["transfer_bin"] = find_component(BENCH_TRANSFER_BIN_ID)
-        if env["transfer_bin"] is not None:
-            env["transfer_before"] = env["transfer_bin"].count(BENCH_TRANSFER_ITEM)
-            c.append(("storage_bin transfer in+out (feeder cycle time, not interpreter cost)", intr_transfer_roundtrip, 2))
     return c
 
 
 def cleanup_interruptive():
-    if "transfer_status" in env:
-        print(f"transfer statuses (out, back): {env['transfer_status']}; only 'ok' timings are meaningful")
     if "power_was_on" in env:
         res = env["power"].set_powered(BENCH_POWER_MACHINE_ID, env["power_was_on"])
         print(f"cleanup: restore power of {BENCH_POWER_MACHINE_ID} -> {res.status}")
-    if "transfer_before" in env:
-        bin_ = env["transfer_bin"]
-        extra = bin_.count(BENCH_TRANSFER_ITEM) - env["transfer_before"]
-        if extra > 0:
-            res = bin_.transfer_to_inventory(extra)
-            print(f"cleanup: moved {extra} {BENCH_TRANSFER_ITEM} back -> {res.status}")
 
 
 # ---------------------------------------------------------------------------
