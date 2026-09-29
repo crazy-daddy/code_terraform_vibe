@@ -157,6 +157,23 @@ Storage, battery and `is_powered` were measured on a large warehouse and a batte
 9. **Switching power and re-opening the Earth link are instant for the script.** `transmitter.connect` costs 7.4×; `set_powered` off + on costs 14.8× for two calls, so there is no settle time to wait for.
 10. **Budget:** with about 350 µs per step and about 1.5–2.3 ms per API call, a script can make roughly 450–650 API calls per simulation second, and none of them cost more when the returned collection is large.
 
+## Console and limits
+
+Measured with [`devtools/console_multiline_test.py`](../devtools/console_multiline_test.py) (Advanced Scripting settings at their maximum).
+
+| Finding | Result |
+| --- | --- |
+| One `console.print` of a 20-line string | 0.10 s |
+| Five single-line prints | 0.50 s |
+| `\n` inside one message | Renders as separate lines; blank lines are kept. The timestamp prefixes only the first line. |
+| `console.print` of 1,000 / 5,000 / 9,000 / 20,000 characters | All accepted. Larger sizes were not tested. |
+| String limit at the maximum setting | 100,000 characters (a 128,000-character string raises `OverflowError`). |
+| Collection limit at the maximum setting | 50,000 items (a 64,000-item list raises `OverflowError`). |
+
+- **Cost per console call, not per line:** a call costs 0.1 s whatever its length, so joining lines into one message costs a fraction of printing them separately.
+- **Limits raise `OverflowError` and name themselves.** The message reads `string length 128,000 exceeds the current limit of 100,000` or `list exceeds the current limit of 50,000 items`. A script can read the active limit by building an oversized string inside `try/except OverflowError` and parsing the last number in the message. Both limits can be set lower in Settings → Game → Advanced Scripting (10,000 at the default), so any buffered console text needs a cap that adapts to the setting.
+- **`type(x)` returns a string,** so `type(x).__name__` raises `AttributeError`. Use `type(x)` directly.
+
 ## Reproducing
 
 Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.
