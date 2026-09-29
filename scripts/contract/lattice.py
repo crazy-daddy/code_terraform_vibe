@@ -4,7 +4,8 @@
 UNKNOWN = 0
 CLEAR = 1
 NODE = 2
-MAX_COMPONENT = 40
+MAX_COMPONENT = 60
+SEARCH_BUDGET = 20000
 
 c = self.contract
 print(f"Contract: {c.name} ({c.id}), Reward: {c.reward} credits")
@@ -32,112 +33,126 @@ for idx in range(CELLS):
 
 state = [UNKNOWN] * CELLS
 reading = [-1] * CELLS
+unk_cnt = [len(nbrs[i]) for i in range(CELLS)]
+flag_cnt = [0] * CELLS
+read_cells = []
 pending = []
+work = []
 failed = False
 
 
+def set_state(i, new):
+    """Record a proven cell and queue the read cells whose counters it changes."""
+    state[i] = new
+    for j in nbrs[i]:
+        unk_cnt[j] -= 1
+        if new == NODE:
+            flag_cnt[j] += 1
+        if reading[j] >= 0:
+            work.append(j)
+    if new == CLEAR:
+        pending.append(i)
+
+
 def mark_clear(i):
-    state[i] = CLEAR
-    pending.append(i)
+    set_state(i, CLEAR)
 
 
 def mark_node(i):
-    state[i] = NODE
+    set_state(i, NODE)
 
 
-def probe_pending():
-    """Probe every proven-clear cell not yet read; True if any were read."""
+def probe_one():
     global failed
-    did = False
-    while pending and not failed:
-        i = pending.pop()
-        res = grid.probe(i % W, i // W)
-        if res.status != "ok" or res.reading is None:
-            print(f"Probe ({i % W},{i // W}) failed: {res.status} - {res.message}")
-            failed = True
-            break
-        reading[i] = res.reading
-        did = True
-    return did
+    i = pending.pop()
+    res = grid.probe(i % W, i // W)
+    if res.status != "ok" or res.reading is None:
+        print(f"Probe ({i % W},{i // W}) failed: {res.status} - {res.message}")
+        failed = True
+        return
+    reading[i] = res.reading
+    read_cells.append(i)
+    work.append(i)
+
+
+def propagate():
+    """Single-cell rule, driven by a work list of read cells whose neighborhood changed."""
+    while work:
+        i = work.pop()
+        unk = unk_cnt[i]
+        if unk == 0:
+            continue
+        need = reading[i] - flag_cnt[i]
+        if need == 0:
+            for j in nbrs[i]:
+                if state[j] == UNKNOWN:
+                    mark_clear(j)
+        elif need == unk:
+            for j in nbrs[i]:
+                if state[j] == UNKNOWN:
+                    mark_node(j)
 
 
 def constraints():
     """(unknown cells, nodes still to place) for each read cell with unknown neighbors."""
     out = []
-    for i in range(CELLS):
-        if reading[i] < 0:
-            continue
-        unk = []
-        flagged = 0
-        for j in nbrs[i]:
-            if state[j] == UNKNOWN:
-                unk.append(j)
-            elif state[j] == NODE:
-                flagged += 1
-        if unk:
-            out.append((unk, reading[i] - flagged))
+    for i in read_cells:
+        if unk_cnt[i] > 0:
+            unk = [j for j in nbrs[i] if state[j] == UNKNOWN]
+            out.append((unk, reading[i] - flag_cnt[i]))
     return out
 
 
 def apply(unk, need):
-    """Resolve a constraint that is all-clear or all-node; True if it changed anything."""
+    """Resolve a set that is all-clear or all-node; True if it changed anything."""
+    changed = False
     if need == 0:
         for j in unk:
             if state[j] == UNKNOWN:
                 mark_clear(j)
-        return True
-    if need == len(unk):
+                changed = True
+    elif need == len(unk):
         for j in unk:
             if state[j] == UNKNOWN:
                 mark_node(j)
-        return True
-    return False
-
-
-def simple_rules():
-    changed = False
-    for unk, need in constraints():
-        if apply(unk, need):
-            changed = True
+                changed = True
     return changed
 
 
 def subset_rules():
+    """If one constraint's cells sit inside another's, the difference is resolved by the counts."""
     cons = constraints()
     by_cell = {}
     for k, (unk, need) in enumerate(cons):
         for j in unk:
             by_cell.setdefault(j, []).append(k)
+    changed = False
     for ka, (ua, na) in enumerate(cons):
-        peers = by_cell[ua[0]]
-        for kb in peers:
-            if kb == ka:
-                continue
+        for kb in by_cell[ua[0]]:
             ub, nb = cons[kb]
-            if len(ub) <= len(ua):
+            if kb == ka or len(ub) <= len(ua):
                 continue
             inside = True
             for j in ua:
                 if j not in ub:
                     inside = False
                     break
-            if not inside:
-                continue
-            diff = [j for j in ub if j not in ua]
-            if apply(diff, nb - na):
-                return True
-    return False
+            if inside:
+                diff = [j for j in ub if j not in ua]
+                if apply(diff, nb - na):
+                    changed = True
+    return changed
 
 
 def enumerate_frontier():
-    """Cells that are node/clear in every valid assignment of a small constraint component."""
+    """Cells that are node/clear in every valid assignment of a constraint component."""
     cons = constraints()
     by_cell = {}
     for k, (unk, need) in enumerate(cons):
         for j in unk:
             by_cell.setdefault(j, []).append(k)
     seen = {}
-    changed = False
+    comps = []
     for start in by_cell:
         if start in seen:
             continue
@@ -156,10 +171,12 @@ def enumerate_frontier():
                     if j not in seen:
                         seen[j] = True
                         cells.append(j)
+        comps.append((cells, list(comp_cons)))
+    comps.sort(key=lambda comp: len(comp[0]))
+    changed = False
+    for cells, klist in comps:
         if len(cells) > MAX_COMPONENT:
-            print(f"  debug: component of {len(cells)} cells too large to enumerate")
             continue
-        klist = list(comp_cons)
         pos = {}
         for p, cell in enumerate(cells):
             pos[cell] = p
@@ -172,18 +189,22 @@ def enumerate_frontier():
         assign = [0] * len(cells)
         node_hits = [0] * len(cells)
         total = [0]
+        steps = [0]
 
         def search(p):
+            if steps[0] > SEARCH_BUDGET:
+                return
+            steps[0] += 1
             if p == len(cells):
                 total[0] += 1
                 for q in range(len(cells)):
                     node_hits[q] += assign[q]
                 return
             for v in (0, 1):
-                ok = True
                 for k in member_of[p]:
                     placed[k] += v
                     left[k] -= 1
+                ok = True
                 for k in member_of[p]:
                     if placed[k] > cons[k][1] or placed[k] + left[k] < cons[k][1]:
                         ok = False
@@ -196,6 +217,9 @@ def enumerate_frontier():
                     left[k] += 1
 
         search(0)
+        if steps[0] > SEARCH_BUDGET:
+            print(f"  debug: component of {len(cells)} cells exceeded search budget")
+            continue
         if total[0] == 0:
             continue
         for p, cell in enumerate(cells):
@@ -207,6 +231,8 @@ def enumerate_frontier():
             elif node_hits[p] == 0:
                 mark_clear(cell)
                 changed = True
+        if changed:
+            return True
     return changed
 
 
@@ -214,23 +240,23 @@ start = grid.start()
 mark_clear(start[1] * W + start[0])
 print(f"Start cell: ({start[0]},{start[1]}), grid {W}x{H}")
 
-rounds = 0
+stalls = 0
 while not failed:
-    rounds += 1
-    progress = probe_pending()
-    if simple_rules():
-        progress = True
-    if not progress and subset_rules():
-        progress = True
-    if not progress and enumerate_frontier():
-        progress = True
-    if not progress:
-        break
+    propagate()
+    if pending:
+        probe_one()
+        continue
+    stalls += 1
+    if subset_rules():
+        continue
+    if enumerate_frontier():
+        continue
+    break
 
 nodes = state.count(NODE)
 clears = state.count(CLEAR)
 unresolved = state.count(UNKNOWN)
-print(f"Solved in {rounds} rounds: {nodes} nodes, {clears} clear, {unresolved} unresolved")
+print(f"Solved with {stalls} stalls: {nodes} nodes, {clears} clear, {unresolved} unresolved")
 
 if failed:
     print("Lattice faulted; resetting and aborting without transmitting.")
