@@ -9,6 +9,14 @@
       "extraPaths": [".pyright-resolved/lib"]
     },
     {
+      "root": "tests",
+      "extraPaths": [
+        ".pyright-resolved/lib",
+        "scripts/4_controlpanel/lib",
+        ".pyright-resolved/stubs"
+      ]
+    },
+    {
       "root": ".",
       "extraPaths": [
         ".pyright-resolved/lib",
