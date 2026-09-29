@@ -18,6 +18,7 @@
 # something that fires on its own every cycle.
 
 from archive import archive
+import cash
 from swallow import swallowed
 from typing import TYPE_CHECKING
 
@@ -107,6 +108,10 @@ class VehicleUpgradeMixin:
         """Guarded Shop component accessor -- buy()/sell() call sites below all check this for None first."""
         return get_component("shop")
 
+    def _cash_id(self):
+        """lib/cash.py consumer id: one pioneer_upgrade ask per Pioneer."""
+        return f"pioneer_upgrade:{self._host.name}"
+
     def _credits(self):
         commander = get_component("commander")
         if not commander or not hasattr(commander, "get_credits"):
@@ -150,8 +155,8 @@ class VehicleUpgradeMixin:
             return
 
         cost = catalogue.get(best, 0)
-        if self._credits() < cost:
-            self._host.log.debug(f"[{self._host.name}] auto-upgrade: '{best}' costs {cost}cr, can't afford yet; retrying later.")
+        if not cash.can_spend(self._cash_id(), cost, label=f"{self._host.name}: {best}"):
+            self._host.log.debug(f"[{self._host.name}] auto-upgrade: '{best}' costs {cost}cr, cash manager holds it back; retrying later.")
             return
 
         shop = self._shop()
@@ -168,7 +173,9 @@ class VehicleUpgradeMixin:
         if buy_res.status != "ok":
             self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: buy('{best}') failed ({buy_res.status}); remounting '{old_id}'.")
             self._host.vehicle.mount(slot_index, old_id)
+            cash.release(self._cash_id())
             return
+        cash.spent(self._cash_id(), cost)
 
         mount_res = self._host.vehicle.mount(slot_index, best)
         if mount_res.status != "ok":
@@ -234,8 +241,8 @@ class VehicleUpgradeMixin:
             new_bay_count = _BAY_COUNTS.get(best, len(slot.internal_items))
 
             total_cost = catalogue.get(best, 0) + new_bay_count * catalogue.get(fill_item, 0)
-            if self._credits() < total_cost:
-                self._host.log.debug(f"[{self._host.name}] auto-upgrade: '{best}' + {new_bay_count}x '{fill_item}' costs {total_cost}cr total, can't afford yet; retrying later.")
+            if not cash.can_spend(self._cash_id(), total_cost, label=f"{self._host.name}: {best}"):
+                self._host.log.debug(f"[{self._host.name}] auto-upgrade: '{best}' + {new_bay_count}x '{fill_item}' costs {total_cost}cr total, cash manager holds it back; retrying later.")
                 continue
 
             if needs_full_charge:
@@ -271,6 +278,7 @@ class VehicleUpgradeMixin:
                 continue
 
             self._fill_container_bays(slot_index, fill_item)
+            cash.spent(self._cash_id(), total_cost)
             self._host.log.print(f"[{self._host.name}] Auto-upgraded slot {slot_index}: '{old_id}' -> '{best}', bays filled with '{fill_item}'.")
 
     def _top_up_container_density(self, tiers, portable_tiers, needs_full_charge):
@@ -299,8 +307,8 @@ class VehicleUpgradeMixin:
             if needs_full_charge:
                 self._ensure_full_charge_for_sale()
             for internal_index in stale_bays:
-                if self._credits() < heavy_cost:
-                    self._host.log.debug(f"[{self._host.name}] auto-upgrade: '{heavy_portable}' costs {heavy_cost}cr, can't afford yet; retrying later.")
+                if not cash.can_spend(self._cash_id(), heavy_cost, label=f"{self._host.name}: {heavy_portable}"):
+                    self._host.log.debug(f"[{self._host.name}] auto-upgrade: '{heavy_portable}' costs {heavy_cost}cr, cash manager holds it back; retrying later.")
                     break
                 uninstall_res = self._host.vehicle.uninstall(slot.index, internal_index)
                 if uninstall_res.status != "ok":
@@ -308,6 +316,7 @@ class VehicleUpgradeMixin:
                     continue
                 shop.sell(base_portable, 1)
                 buy_res = shop.buy(heavy_portable, 1)
+                cash.spent(self._cash_id(), heavy_cost if buy_res.status == "ok" else 0)
                 if buy_res.status != "ok":
                     self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: density buy('{heavy_portable}') failed ({buy_res.status}) after selling '{base_portable}' -- bay {internal_index} left empty.")
                     continue

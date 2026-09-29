@@ -17,6 +17,7 @@ import logistics_requests
 import drill_sites
 import pump_salt
 import fleet_intent
+import cash
 from swallow import swallowed
 from typing import TYPE_CHECKING
 
@@ -366,10 +367,17 @@ class VehicleCargoMixin:
         loaded = 0
         while loaded < amount:
             qty = min(amount - loaded, stack_size)
+            cost = qty * cash.shop_price(item_id)
+            cash_id = f"pioneer_reagents:{self._host.name}"
+            if not cash.can_spend(cash_id, cost, label=f"{qty}x {item_id}"):
+                self._host.log.debug(f"[{self._host.name}] {qty}x {item_id} ({cost} cr): cash manager holds it back.")
+                break
             res = shop.buy(item_id, qty)
             if res.status != "ok":
+                cash.release(cash_id)
                 self._host.log.level("warn").print(f"[{self._host.name}] Shop refused {qty}x {item_id}: {res.status} - {getattr(res, 'message', '')}")
                 break
+            cash.spent(cash_id, cost)
             moved = take_item(self._host.vehicle.input, item_id, qty, outpost=outpost)
             self._host.log.debug(f"[{self._host.name}] Bought {qty}x {item_id}, loaded {moved}.")
             if moved <= 0:

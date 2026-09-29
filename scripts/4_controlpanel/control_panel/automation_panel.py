@@ -50,6 +50,9 @@
 #   - Fleet commissioning (lib/fleet_commission.py): buys or crafts, deploys
 #     and fits the Pioneers and drones queued on the COMMISSION card, one job
 #     of each kind at a time.
+#   - Cash manager pass (lib/cash.py CashManager): balance history, income and
+#     reagent burn, dynamic floor, ask queue with ETAs for the CASH card. Runs
+#     first each storage pass so the consumers below see a fresh floor.
 #   - Factory outposts (5_steampower libs, deployed at every tier like the
 #     Mixer gate): lib/site_plan.py places each root Fabricator target at the
 #     fab sites that build its tree, then lib/site_supply.py publishes the
@@ -72,6 +75,7 @@ import outpost_mining
 import supply_dock
 from fleet_upgrade import FleetUpgradeCoordinator
 from fleet_commission import FleetCommissionCoordinator
+from cash import CashManager
 from site_supply import publish_site_requests
 from site_plan import plan_sites
 
@@ -99,6 +103,7 @@ biomass_retirement = None   # BiomassRetirement, created once biomass is complet
 grid_count = 0              # last solar-sync grid census; carries over on ticks solar_due is False
 fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state lives in archive)
 fleet_commissioner = FleetCommissionCoordinator()  # same
+cash_manager = CashManager()  # same
 
 while True:
     clock = get_component("clock")
@@ -152,6 +157,12 @@ while True:
 
         if storage_due:
             last_storage_tick = current_tick
+            cash_summary = "cash idle"
+            try:
+                cash_summary = cash_manager.step(current_tick)
+            except Exception as e:
+                print(f"[AUTOMATION] Cash manager error: {e}")
+
             try:
                 rebalance_inventory_to_warehouses()
             except Exception as e:
@@ -232,6 +243,6 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet commission error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {mixer_gate_summary}")
+            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}")
 
     sleep(1.0)

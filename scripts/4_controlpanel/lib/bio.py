@@ -17,6 +17,7 @@ from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
 import outpost_reagents
+import cash
 
 # Module-level singleton for the shared, biome-agnostic helper functions below
 # (get_my_biome, local_sibling, _local_stock_snapshot, _focus_local_order,
@@ -1070,10 +1071,18 @@ class BioLabController:
                     if local_have < missing:
                         if is_home and self.shop:
                             buy_qty = missing - local_have
+                            cost = buy_qty * cash.shop_price(reagent_id)
+                            cash_id = f"bio_reagents:{self.name}"
+                            if not cash.can_spend(cash_id, cost, label=f"{buy_qty}x {reagent_id}"):
+                                self.log.debug(f"[{self.name}] {buy_qty}x {reagent_id} ({cost} cr): cash manager holds it back.")
+                                sleep(1.0)
+                                break
                             buy_res = self.shop.buy(reagent_id, buy_qty)
                             if buy_res.status == "ok":
+                                cash.spent(cash_id, cost)
                                 self.log.print(f"[{self.name}] Purchased {buy_qty}x {reagent_id} from shop.")
                             else:
+                                cash.release(cash_id)
                                 sleep(1.0)
                                 break
                         else:

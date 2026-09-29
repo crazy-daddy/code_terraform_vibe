@@ -3,7 +3,7 @@
 #
 # Same gate as the fleet upgrade (drone_upgrade.upgrades_active(): drones_panel.py
 # switch on AND mining-drill phase reached), plus the Large Warehouse research
-# and enough credits: price + WAREHOUSE_UPGRADE_CREDIT_RESERVE.
+# and the cash manager's go-ahead (lib/cash.py can_spend("warehouse_upgrade")).
 #
 # One swap at a time, network-wide. A swap replaces TWO Warehouses at the same
 # outpost with ONE Large Warehouse (10 slots -> 15, 20k -> 30k units): more
@@ -39,6 +39,7 @@
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
 from tree_console import TreeConsole
 from swallow import swallowed
+import cash
 
 SMALL_TYPE_ID = "warehouse"
 LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id
@@ -46,8 +47,7 @@ LARGE_RESEARCH_ID = "research_high_bay_warehousing"
 LARGE_PRICE_FALLBACK = 60000           # docs/database/equipment_production.md
 SWAP_RATIO = 2                         # Warehouses retired per Large Warehouse
 
-# Credits that must remain AFTER buying the Large Warehouse.
-WAREHOUSE_UPGRADE_CREDIT_RESERVE = 100000
+CASH_CONSUMER = "warehouse_upgrade"    # lib/cash.py consumer id
 # Units per transfer_to() call. A whole 2000-unit slot would block ~8 game
 # minutes with no status update; this keeps the old Warehouse just as busy
 # (calls run back to back) while the loop can still log and notice cargo_present.
@@ -220,17 +220,17 @@ class WarehouseUpgrader:
             if len(smalls) >= SWAP_RATIO:
                 candidates.append((-len(smalls), getattr(outpost, "id", ""), smalls))
         if not candidates:
+            cash.release(CASH_CONSUMER)
             return None
         candidates.sort()
         _, outpost_id, smalls = candidates[0]
         self.log.debug(f"[warehouse_upgrade] Outposts with >= {SWAP_RATIO} Warehouses: {[(c[1], -c[0]) for c in candidates]}; picked '{outpost_id}'.")
 
         price = self._price()
-        credits = self._credits()
-        needed = price + WAREHOUSE_UPGRADE_CREDIT_RESERVE
-        if credits < needed and self._inventory_count(LARGE_TYPE_ID) <= 0:
-            self.log.debug(f"[warehouse_upgrade] {credits} cr < {price} + reserve {WAREHOUSE_UPGRADE_CREDIT_RESERVE}; waiting.")
-            return f"saving up ({credits}/{needed} cr)"
+        pairs = sum(-c[0] // SWAP_RATIO for c in candidates)
+        if self._inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=pairs * price, label=f"{pairs} Large Warehouse(s)"):
+            self.log.debug(f"[warehouse_upgrade] cash manager holds back {price} cr for '{outpost_id}'; waiting.")
+            return f"saving up ({self._credits()}/{price} cr)"
 
         fills = sorted((self._total(w), w) for w in smalls)
         old_ids = [w for _, w in fills[:SWAP_RATIO]]
@@ -281,6 +281,7 @@ class WarehouseUpgrader:
                 if status != "ok":
                     self.log.debug(f"[warehouse_upgrade] buy('{LARGE_TYPE_ID}'): {status} - {getattr(res, 'message', '')}")
                     return f"{outpost_id}: buy {status}, retrying"
+                cash.spent(CASH_CONSUMER, price)
                 self.log.print(f"[warehouse_upgrade] Bought a Large Warehouse ({price} cr).")
             outpost = self._outpost(outpost_id)
             known = self._ids_of(outpost, LARGE_TYPE_ID) if outpost else []

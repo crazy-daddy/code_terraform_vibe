@@ -14,8 +14,8 @@
 #      up with kits. Pre-ordered from PREORDER_MIN_KM2 Plants km² on, for the
 #      full layout the switch will build, so kits are waiting when it comes.
 #   2. Crop Automator kits come from the Shop (30,000 cr each): bought one at
-#      a time while one is missing and none is at home, keeping
-#      AUTOMATOR_CREDIT_RESERVE credits back. The count still missing is
+#      a time while one is missing and none is at home, once the cash
+#      manager grants it (lib/cash.py can_spend("crop_automator")). The count still missing is
 #      published in plant.status ("automators_wanted").
 #   3. deploy (full layout only): with a kit at home, drive to the cell,
 #      collect a loose item there if any, stage the kit into Inventory and
@@ -30,6 +30,7 @@
 import field_layout
 from production import set_upgrade_order
 from swallow import swallowed
+import cash
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -56,8 +57,7 @@ PREORDER_MIN_KM2 = 550000
 DEPLOY_STATUSES = ("empty", "unknown", "item")
 # A cell whose deploy just failed is skipped this long (~5 min).
 DEPLOY_FAIL_COOLDOWN_TICKS = 3000
-# Crop Automator kits are bought only while credits stay above price + this.
-AUTOMATOR_CREDIT_RESERVE = 100000
+CASH_CONSUMER = "crop_automator"   # lib/cash.py consumer id
 AUTOMATOR_PRICE_FALLBACK = 30000
 # deployables() is research state: re-read this often.
 DEPLOYABLES_REFRESH_TICKS = 3000
@@ -209,16 +209,17 @@ class HarvesterMachinesMixin:
         have = self._host.stock_count(MACHINE_KITS["crop_automator"]) if wanted else 0
         if wanted > have and have == 0 and self._host.layout_mode == "full":
             self.buy_automator_kit(wanted)
+        elif not wanted:
+            cash.release(CASH_CONSUMER)
         return order, wanted
 
     def buy_automator_kit(self, wanted):
-        """Buys one Crop Automator kit from the Shop if credits stay above the reserve."""
+        """Buys one Crop Automator kit from the Shop once the cash manager grants it."""
         h = self._host
         kit = MACHINE_KITS["crop_automator"]
         price = shop_price(kit, AUTOMATOR_PRICE_FALLBACK)
-        have_cr = credits()
-        if have_cr < price + AUTOMATOR_CREDIT_RESERVE:
-            h.log.debug(f"[{h.name}] {wanted} Crop Automator(s) missing; {have_cr} cr < {price} + reserve {AUTOMATOR_CREDIT_RESERVE}, saving up.")
+        if not cash.can_spend(CASH_CONSUMER, price, planned=wanted * price, label=f"{wanted} Crop Automator(s)"):
+            h.log.debug(f"[{h.name}] {wanted} Crop Automator(s) missing; {credits()} cr, cash manager holds {price} cr back, saving up.")
             return False
         try:
             shop = get_component("shop")
@@ -230,6 +231,7 @@ class HarvesterMachinesMixin:
         if status != "ok":
             h.log.debug(f"[{h.name}] buy('{kit}') -> {status}: {getattr(res, 'message', '')}")
             return False
+        cash.spent(CASH_CONSUMER, price)
         h.stock_memo.pop(kit, None)
         h.log.print(f"[{h.name}] Bought a Crop Automator kit ({price} cr, {wanted - 1} more to go).")
         return True

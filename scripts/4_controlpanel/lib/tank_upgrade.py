@@ -2,8 +2,8 @@
 # run from the same headless Custom Panel (control_panel/warehouse_upgrade_panel.py).
 #
 # Same gate as the warehouse upgrade (drone_upgrade.upgrades_active()), plus the
-# Large Liquid Tank research and credits >= price + WAREHOUSE_UPGRADE_CREDIT_RESERVE
-# (one reserve shared by every upgrader).
+# Large Liquid Tank research and the cash manager's go-ahead (lib/cash.py
+# can_spend("tank_upgrade")).
 #
 # One swap at a time, network-wide. A swap replaces up to SWAP_RATIO Liquid Tanks
 # holding the same liquid at one outpost with ONE Large Liquid Tank (100 t each ->
@@ -37,7 +37,8 @@
 from archive import archive
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
 from fluid_routing import TANK_ASSIGNMENTS_KEY, RETIRING_ASSIGNMENT, get_tank_assignments, declared_connection_state, BROKEN_CONNECTION_STATES
-from warehouse_upgrade import WAREHOUSE_UPGRADE_CREDIT_RESERVE, TRANSIENT_UNDEPLOY_STATUSES
+from warehouse_upgrade import TRANSIENT_UNDEPLOY_STATUSES
+import cash
 from tree_console import TreeConsole
 from swallow import swallowed
 
@@ -46,6 +47,7 @@ LARGE_TYPE_ID = "bulk_liquid_reservoir"   # also the Shop/Inventory kit id
 LARGE_RESEARCH_ID = "research_reservoir_engineering"
 LARGE_PRICE_FALLBACK = 15000              # docs/database/equipment_fluids.md
 SWAP_RATIO = 5                            # at most this many Liquid Tanks per Large Liquid Tank
+CASH_CONSUMER = "tank_upgrade"            # lib/cash.py consumer id
 MAX_ATTEMPTS = 5                          # refused undeploy/connect answers before "blocked"
 
 SWAP_KEY = "tank_swap"                    # section of fleet.upgrade
@@ -236,17 +238,17 @@ class TankUpgrader:
     def _start_next(self):
         groups = self._groups()
         if not groups:
+            cash.release(CASH_CONSUMER)
             return None
         groups.sort(key=lambda g: (-g[0], g[1], g[2]))
         _, outpost_id, liquid, tanks = groups[0]
         self.log.debug(f"[tank_upgrade] Liquid Tank groups: {[(g[1], g[2], g[0]) for g in groups]}; picked '{outpost_id}' {liquid}.")
 
         price = self._price()
-        credits = self._credits()
-        needed = price + WAREHOUSE_UPGRADE_CREDIT_RESERVE
-        if credits < needed and self._inventory_count(LARGE_TYPE_ID) <= 0:
-            self.log.debug(f"[tank_upgrade] {credits} cr < {price} + reserve {WAREHOUSE_UPGRADE_CREDIT_RESERVE}; waiting.")
-            return f"saving up ({credits}/{needed} cr)"
+        swaps = sum(-(-g[0] // SWAP_RATIO) for g in groups)
+        if self._inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=swaps * price, label=f"{swaps} Large Liquid Tank(s)"):
+            self.log.debug(f"[tank_upgrade] cash manager holds back {price} cr for '{outpost_id}' {liquid}; waiting.")
+            return f"saving up ({self._credits()}/{price} cr)"
 
         old_ids = [tank_id for _, tank_id in tanks[:SWAP_RATIO]]
         self.log.debug(f"[tank_upgrade] Levels at '{outpost_id}': {tanks}; retiring the emptiest {old_ids}.")
@@ -290,6 +292,7 @@ class TankUpgrader:
                 if status != "ok":
                     self.log.debug(f"[tank_upgrade] buy('{LARGE_TYPE_ID}'): {status} - {getattr(res, 'message', '')}")
                     return f"{outpost_id}: buy {status}, retrying"
+                cash.spent(CASH_CONSUMER, price)
                 self.log.print(f"[tank_upgrade] Bought a Large Liquid Tank ({price} cr).")
             outpost = self._outpost(outpost_id)
             known = self._ids_of(outpost, LARGE_TYPE_ID) if outpost else []

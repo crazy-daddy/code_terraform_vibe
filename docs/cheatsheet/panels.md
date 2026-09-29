@@ -4,7 +4,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 
 ## 🖥️ 7. Control Room Panel Cards (`scripts/4_controlpanel/control_panel/*_panel.py`)
 
-**Headless calculator + UI card split (`automation_panel.py` + `status_panel.py`).** Automation calculator (grid supervision, rebalance sweep, outpost sync, `supply_dock.plan_dock_assignments()`, fleet hardware upgrade §2k, Pioneer commissioning §2k-2) is **headless**: no `panel.*` calls, paced by `sleep(1.0)`. It publishes result summary to `archive` (`AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"`). STATUS/AUTOMATION UI card reads that summary back, doesn't compute it. Reason: multi-second automation stall must never block script that renders every tick. Custom Panel is only slot that can host "always-on, not tied to one building" process. Background: `DESIGN_HISTORY.md`.
+**Headless calculator + UI card split (`automation_panel.py` + `status_panel.py`).** Automation calculator (grid supervision, rebalance sweep, outpost sync, `supply_dock.plan_dock_assignments()`, fleet hardware upgrade §2k, Pioneer commissioning §2k-2, cash manager §2l) is **headless**: no `panel.*` calls, paced by `sleep(1.0)`. It publishes result summary to `archive` (`AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"`). STATUS/AUTOMATION UI card reads that summary back, doesn't compute it. Reason: multi-second automation stall must never block script that renders every tick. Custom Panel is only slot that can host "always-on, not tied to one building" process. Background: `DESIGN_HISTORY.md`.
 
 **Source files are named by role; live slot numbers are not.** The game assigns Custom Panel ids on creation. They **only ever increment**: deleting a panel doesn't free its number. Cards **can't be drag-reordered** once placed. So a role's live `panel_N.py` slot differs per save and says nothing about the role. Source files carry the role in their name and a `# ct-panel: <role>` marker on line 1; `devtools/scripts_sync.py` pairs each live slot with its source by that marker (details: [dev_workflow.md §9](dev_workflow.md)). Run `python devtools/scripts_sync.py status` to see the current slot-to-role pairing of the active save.
 
@@ -16,6 +16,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 | Automation calculator (headless) | `automation_panel.py` | position irrelevant, draws nothing |
 | DRONE FLEET | `drones_panel.py` | cruise-throttle slider + drone roster + fleet auto-upgrade switch/status (§2k) |
 | COMMISSION (new Pioneers and drones) | `fleet_commission_panel.py` | Pioneer role buttons + HOME_BASE picker, drone role buttons + deploy-outpost picker (outposts with a Drone Depot), job queue with cancel (§2k-2); `2 x 2` |
+| CASH (budget) | `cash_panel.py` | balance/floor/income/reagent burn/order pipeline + one row per consumer kind with next cost, planned total, ETA and ^/v priority buttons (§2l); `2 x 2` |
 | Warehouse upgrade worker (headless) | `warehouse_upgrade_panel.py` | runs `lib/warehouse_upgrade.py` (§2k-1) then `lib/tank_upgrade.py` (§2k-3) each pass; the Warehouse drain blocks for long, so kept out of `automation_panel.py` |
 
 **New panel in-game:** create the empty Custom Panel. When exactly one role has no slot yet, the sync tool fills it with that role and starts it. Otherwise type `# ct-panel: <role>` (e.g. `# ct-panel: drones_panel`) into it first.
