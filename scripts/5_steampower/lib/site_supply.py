@@ -13,8 +13,13 @@
 #     (outpost_free_tiers() need tier). Ingot request for min(D, S), the rest
 #     D - S as an ore request -- or all of D as ingots when no local Smelter
 #     can refine that ore. Preference: local ingots > local ore > remote
-#     ingots > remote ore. In-flight units count on both sides, so a split
-#     that flips after a hauler commits can't double-order (no hysteresis).
+#     ingots > remote ore, except remote ingots go ahead of local ore when
+#     production.ship_units() says ship (slow local smelt or big surplus).
+#     In-flight units count on both sides, so a split that flips after a
+#     hauler commits can't double-order (no hysteresis).
+#     Its ship plan (production.get_site_ship_plan(): intermediates spare
+#     elsewhere that it hauls in instead of building) is requested too,
+#     level = local + in flight + to ship, kept while units are in flight.
 #   - Smelting site (>= 1 Smelter, not home): one ore request per ore it has
 #     an unlocked Smelter recipe for. Buffer tier up to
 #     outpost_mining.ore_stock_target(ore); need tier = local + in-flight ore
@@ -39,7 +44,7 @@
 
 from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, REQUEST_STALE_TICKS
-from production import discover_smelter_ids, discover_fabricator_ids, get_fabricator_active_recipe, fabricator_root_targets, SourceCache
+from production import discover_smelter_ids, discover_fabricator_ids, fab_site_gross_need, fabricator_root_targets, get_site_ship_plan, ship_units, SourceCache
 from storage import outpost_is_home
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
@@ -104,31 +109,6 @@ def site_ore_outputs(smelter_ids):
     return {}
 
 
-def fab_site_gross_need(fabricator_ids, smelter_outputs, cache):
-    """{smelter_output: units} the Fabricators' active recipes still need
-    staged: inputs x crafts_remaining (their split share) - stockpile."""
-    need = {}
-    for fabricator_id in fabricator_ids:
-        fabricator = _component(fabricator_id)
-        if not fabricator:
-            continue
-        recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)
-        if not recipe or crafts_remaining <= 0:
-            continue
-        try:
-            stockpile = fabricator.get_stockpile() or {}
-        except Exception as error:
-            swallowed("site_supply.fab_site_gross_need: fabricator.get_stockpile", error)
-            stockpile = {}
-        for item_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
-            if item_id not in smelter_outputs:
-                continue
-            missing = per_craft * crafts_remaining - stockpile.get(item_id, 0)
-            if missing > 0:
-                need[item_id] = need.get(item_id, 0) + missing
-    return need
-
-
 def free_elsewhere(item_ids, site_id, outposts, requests, tick):
     """{item_id: units} free for another outpost's need at every outpost but site_id."""
     totals = {}
@@ -165,6 +145,27 @@ def consumer_wants(outpost, consumers, sources, requests, tick, flying):
     return wants
 
 
+def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
+    """Adds this fab site's ship plan (production.get_site_ship_plan():
+    intermediates spare elsewhere it hauls in instead of building) to wants,
+    level = local + in flight + to ship, all need tier. An item this
+    requester already asked for stays requested while units are in flight."""
+    site_id = getattr(outpost, "id", None)
+    plan = get_site_ship_plan(site_id, cache)
+    own = requests.get(site_id, {})
+    kept = {i for i, e in own.items() if e.get("by") == SITE_SUPPLY_REQUESTER and flying.get(i, 0) > 0}
+    kept = {i for i in kept if i not in smelter_outputs and i not in RAW_ORE_ITEM_IDS}
+    item_ids = sorted(set(plan) | kept)
+    if not item_ids:
+        return
+    have = outpost_stock(item_ids, outpost)
+    for item_id in item_ids:
+        level = have.get(item_id, 0) + flying.get(item_id, 0) + plan.get(item_id, 0)
+        if level > 0 and level >= wants.get(item_id, (0,))[0]:
+            wants[item_id] = (level, have.get(item_id, 0), level)
+        log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
+
+
 def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None):
     """{item_id: (target, have, min)} this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
@@ -181,6 +182,9 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     ore_for = {output: ore for ore, output in ore_outputs.items()}
     smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()} - {None}
 
+    if fabricator_ids:
+        ship_wants(outpost, requests, cache, flying, smelter_outputs, wants)
+
     gross = fab_site_gross_need(fabricator_ids, smelter_outputs, cache)
     item_ids = sorted(set(gross) | set(ore_outputs) | {ore_for[i] for i in gross if i in ore_for})
     have = outpost_stock(item_ids, outpost)
@@ -191,14 +195,21 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
         ore = ore_for.get(ingot)
         local_ingots = have.get(ingot, 0) + flying.get(ingot, 0)
         local_ore = (have.get(ore, 0) + flying.get(ore, 0)) if ore else 0
-        deficit = max(0, units - local_ingots - local_ore)
-        remote_ingots = min(deficit, spare.get(ingot, 0)) if ore else deficit
+        short = max(0, units - local_ingots)
+        free = spare.get(ingot, 0)
+        # Ship-before-craft: remote ingots ahead of local ore when smelting
+        # them here is slow or the spare is a big surplus (ship_units()).
+        first = 0
+        if ore and short > 0 and free > 0 and ship_units(ingot, short, outpost, site_id, cache) > 0:
+            first = min(short, free)
+        deficit = max(0, short - first - local_ore)
+        remote_ingots = first + (min(deficit, free - first) if ore else deficit)
         if ore:
-            ore_short[ore] = ore_short.get(ore, 0) + deficit - remote_ingots
+            ore_short[ore] = ore_short.get(ore, 0) + deficit - (remote_ingots - first)
         level = local_ingots + remote_ingots
         if (not at_home or remote_ingots > 0) and level >= wants.get(ingot, (0,))[0]:
             wants[ingot] = (level, have.get(ingot, 0), level)
-        log.debug(f"plan_site({site_id}): {ingot} gross={units} local_ingots={local_ingots} local_ore={local_ore} -> D={deficit}, free elsewhere={spare.get(ingot, 0)}, ingots from remote={remote_ingots}, ore short={deficit - remote_ingots if ore else 0}")
+        log.debug(f"plan_site({site_id}): {ingot} gross={units} local_ingots={local_ingots} local_ore={local_ore} -> shipped first={first}, D={deficit}, free elsewhere={free}, ingots from remote={remote_ingots}, ore short={deficit - (remote_ingots - first) if ore else 0}")
 
     if not at_home:
         for ore, output in sorted(ore_outputs.items()):
