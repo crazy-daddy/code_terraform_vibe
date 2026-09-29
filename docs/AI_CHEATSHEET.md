@@ -20,12 +20,12 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1j | Field Mining Drill telemetry | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2a-0 … 2a-3 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, `SourceCache` | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2a-0 … 2a-3 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache` | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2b, 2b-1 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2c, 2d | Storage management, outpost ore assignment | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2g | Stationed mining, hauler role (pulls to HOME_BASE), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2h, 2j, 2k, 2k-2 | Drones (energy, home, claims, depot, service), drone hauler, fleet upgrade, Pioneer commissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2i, 2i-1, 2k-1, 2k-3 | Pull logistics + reverse hauler, factory outpost site supply requests, Warehouse → Large Warehouse, Liquid Tank → Large Liquid Tank | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 2i, 2i-1, 2k-1, 2k-3 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore eviction, Warehouse → Large Warehouse, Liquid Tank → Large Liquid Tank | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | this file |
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |
 | 7 | Control Room panels | [`cheatsheet/panels.md`](cheatsheet/panels.md) |
@@ -90,7 +90,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |
 | Pull logistics (outpost item requests, need/buffer tiers, fair share, in-flight pickups, source retention) | `logistics_requests.py` — see §2i; reverse hauler lives in `vehicle_cargo.py` `run_pull_loop()` |
-| Factory outpost site supply (per-outpost ingot/ore requests from its Smelters/Fabricators), run by headless `automation_panel.py` | `site_supply.py` — see §2i-1 (tier 5 lib, deployed at every tier) |
+| Factory outpost site supply (per-outpost ingot/ore/finished-root requests, stranded ore eviction), run by headless `automation_panel.py` | `site_supply.py` — see §2i-1 (tier 5 lib, deployed at every tier) |
+| Fab site plan (which fab outposts build each root target's tree), run by headless `automation_panel.py` | `site_plan.py` — see §2a-0-6 (tier 5 lib, deployed at every tier) |
 | Seed Maker (fair recipe sweep, stage A) | `seed_maker.py` — see §1i (tier `6_seeds`) |
 | Seed Maker on-demand seed production (stage B, once all 15 recipes are known) | `seed_supply.py` — see §1k (tier `6_seeds`; `bio/seed_maker.py` dispatches on `len(recipes())`) |
 | Field layout (species rules, starter block, full-field layout in automator chunks, rarity-weighted expansion; pure logic) | `field_layout.py` — see §1k (tier `8_planting`) |

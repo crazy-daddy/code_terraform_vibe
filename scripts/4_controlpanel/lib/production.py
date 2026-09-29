@@ -176,6 +176,11 @@ def _home_outpost():
     return None
 
 
+def home_outpost_id():
+    """Id of the home outpost (outpost_network.home()), HOME_OUTPOST_ID when unavailable."""
+    return getattr(_home_outpost(), "id", None) or HOME_OUTPOST_ID
+
+
 def _default_smelter():
     """First discovered Smelter component (dynamic stand-in for the old hardcoded 'smelter_1')."""
     ids = discover_smelter_ids()
@@ -205,13 +210,13 @@ SUPPLY_DOCK_TYPE_ID = "supply_dock"
 
 def discover_supply_dock_ids(outpost=None):
     """
-    All Supply Dock building ids at outpost (default: home only, unlike
-    Smelter/Fabricator discovery). A second dock's own active order must
-    count toward Fabricator targets/raw-material demand, not just whichever
-    order the first dock is running.
+    All Supply Dock building ids at outpost (default: every outpost, like
+    Smelter/Fabricator discovery -- a dock at a fab outpost ships what that
+    site builds). A second dock's own active order must count toward
+    Fabricator targets/raw-material demand, not just whichever order the
+    first dock is running.
     """
-    outpost = outpost or _home_outpost()
-    return _discover_building_ids(SUPPLY_DOCK_TYPE_ID, outpost) if outpost else []
+    return _discover_building_ids(SUPPLY_DOCK_TYPE_ID, outpost)
 
 
 def _all_dock_orders():
@@ -285,6 +290,19 @@ def _dock_order_remaining():
             swallowed("production._dock_order_remaining: loaded_by_order.get", error)
     log.trace(f"_dock_order_remaining: {len(orders_by_id)} distinct active order(s) -> {result}")
     return result
+
+
+def _dock_order_sites():
+    """{order_id: [outpost ids of every dock holding it]} -- where each active
+    order's items are consumed."""
+    sites = {}
+    for dock, order in _all_dock_orders():
+        order_id = getattr(order, "id", None)
+        site_id = machine_outpost_id(dock) or home_outpost_id()
+        bucket = sites.setdefault(order_id, [])
+        if site_id not in bucket:
+            bucket.append(site_id)
+    return sites
 
 
 def find_dock_order_requiring(item_id):
@@ -620,7 +638,7 @@ def _recipe_inputs_for(item_id, cache=None):
     return None
 
 
-def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=None):
+def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=None, stock=None):
     """
     Breadth-first demand cascade seeded from seed_targets (Fabricator stock
     targets/Supply Dock orders, restricted to items the Fabricator itself
@@ -638,8 +656,10 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=No
     Returns {item_id: target_quantity} for every reached item still short of
     stock, restricted to fabricator_outputs (Smelter-built intermediates
     aren't Fabricator targets -- get_raw_material_demands() handles those).
+    `stock` overrides the stock read (item_id -> units), e.g. one site's
+    local stock for get_site_fabricator_targets().
     """
-    stock = _stock_fn(cache)
+    stock = stock or _stock_fn(cache)
     targets = {}
     frontier = dict(seed_targets)
     depth = 0
@@ -864,7 +884,44 @@ def get_fabricator_targets(cache=None):
     if cache is not None and cache._fabricator_targets is not None:
         return dict(cache._fabricator_targets)
 
+    targets, _consumers, fabricator_outputs = fabricator_root_targets(cache)
+
+    # Cascade demand for a targeted Fabricator output down through its own
+    # recipe inputs when those inputs are themselves Fabricator-built (e.g.
+    # Control Unit needs Circuit Panel) -- see
+    # _cascade_fabricator_output_demand(). Without this, an order/blueprint
+    # target set only on the top-level item (Control Unit) never becomes a
+    # target for the intermediate (Circuit Panel), so no Fabricator ever
+    # builds it and the top-level item stalls forever waiting on stock that
+    # nothing produces.
+    for item_id, count in _cascade_fabricator_output_demand(targets, fabricator_outputs, cache).items():
+        targets[item_id] = max(targets.get(item_id, 0), count)
+        log.trace(f"get_fabricator_targets: output-demand cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
+
+    log.trace(f"get_fabricator_targets: final targets={targets}")
+    if cache is not None:
+        cache._fabricator_targets = dict(targets)
+    return targets
+
+
+def fabricator_root_targets(cache=None):
+    """
+    (roots, consumers, fabricator_outputs): the root Fabricator targets
+    before the intermediate cascade -- standing stock targets, manual orders,
+    upgrade orders, Supply Dock orders and blueprint demand, max()-folded per
+    item into {item_id: qty} -- plus {item_id: {site_id: qty}}, where each
+    root is consumed (its Supply Dock's outpost for dock orders, home for
+    everything else; dock order items the Fabricator can't build included,
+    for hauling), plus the set of Fabricator-buildable item ids.
+    Memoized on `cache`.
+    """
+    if cache is not None and cache._root_targets is not None:
+        roots, consumers, outputs = cache._root_targets
+        return dict(roots), {i: dict(c) for i, c in consumers.items()}, set(outputs)
+
     targets = get_fabricator_stock_targets()
+    home_id = home_outpost_id()
+    home_wants = dict(targets)  # the non-dock roots, all consumed at home
 
     fabricator_outputs = set()
     if cache is not None:
@@ -898,6 +955,7 @@ def get_fabricator_targets(cache=None):
     # proof the order is unfulfillable.
     for item_id, quantity in get_manual_orders().items():
         targets[item_id] = max(targets.get(item_id, 0), quantity)
+        home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
@@ -908,10 +966,16 @@ def get_fabricator_targets(cache=None):
     # orders; their lower priority is again choose_recipe()'s job.
     for item_id, quantity in get_upgrade_orders().items():
         targets[item_id] = max(targets.get(item_id, 0), quantity)
+        home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: fleet upgrade order raises target for {item_id} -> {targets[item_id]}")
 
+    order_sites = _dock_order_sites()
+    consumers = {}
     for order_id, remaining_by_item in _dock_order_remaining().items():
         for item_id, remaining in remaining_by_item.items():
+            for site_id in order_sites.get(order_id, (home_id,)):
+                site = consumers.setdefault(item_id, {})
+                site[site_id] = max(site.get(site_id, 0), remaining)
             # Only order items the Fabricator can actually build become
             # targets; other order items (raw/mined) are handled by
             # the dock demand loop in get_material_demands() and must
@@ -936,32 +1000,27 @@ def get_fabricator_targets(cache=None):
     for item_id, count in _cascade_blueprint_demand(cache).items():
         if item_id in fabricator_outputs:
             targets[item_id] = max(targets.get(item_id, 0), count)
+            home_wants[item_id] = max(home_wants.get(item_id, 0), count)
             log.trace(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
 
-    # Cascade demand for a targeted Fabricator output down through its own
-    # recipe inputs when those inputs are themselves Fabricator-built (e.g.
-    # Control Unit needs Circuit Panel) -- see
-    # _cascade_fabricator_output_demand(). Without this, an order/blueprint
-    # target set only on the top-level item (Control Unit) never becomes a
-    # target for the intermediate (Circuit Panel), so no Fabricator ever
-    # builds it and the top-level item stalls forever waiting on stock that
-    # nothing produces.
-    for item_id, count in _cascade_fabricator_output_demand(targets, fabricator_outputs, cache).items():
-        targets[item_id] = max(targets.get(item_id, 0), count)
-        log.trace(f"get_fabricator_targets: output-demand cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
+    # Everything but dock orders is consumed at home (Inventory-side stock
+    # targets, manual/upgrade orders, blueprint loading).
+    for item_id, qty in home_wants.items():
+        site = consumers.setdefault(item_id, {})
+        site[home_id] = max(site.get(home_id, 0), qty)
 
-    log.trace(f"get_fabricator_targets: final targets={targets}")
     if cache is not None:
-        cache._fabricator_targets = dict(targets)
-    return targets
+        cache._root_targets = (dict(targets), {i: dict(c) for i, c in consumers.items()}, set(fabricator_outputs))
+    return targets, consumers, fabricator_outputs
 
 
-def get_fabricator_worker_ids(recipe_id):
+def get_fabricator_worker_ids(recipe_id, site_id=None):
     """
-    Sorted ids of every discovered Fabricator (network-wide, since the demand
-    it splits is network-wide) currently holding recipe_id
-    (get_recipe() == recipe_id) right now -- a live roster, not an
-    archive-tracked one, so it reflects joiners too (lib/fabricator.py's
+    Sorted ids of every discovered Fabricator currently holding recipe_id
+    (get_recipe() == recipe_id) right now, only those at `site_id`
+    (claim_site_id()) when given -- demand is per fab site
+    (get_site_fabricator_targets()), so its split is too. A live roster, not
+    an archive-tracked one, so it reflects joiners too (lib/fabricator.py's
     choose_recipe() lets a Fabricator "join" a recipe another one already
     holds the coordination claim on, when no other demanded recipe is
     available -- see its pile-on fallback). Sorted so every worker computes
@@ -974,51 +1033,40 @@ def get_fabricator_worker_ids(recipe_id):
         if not candidate or not hasattr(candidate, "get_recipe"):
             continue
         try:
-            if candidate.get_recipe() == recipe_id:
-                ids.append(fabricator_id)
+            if candidate.get_recipe() != recipe_id:
+                continue
+            if site_id is not None and claim_site_id(candidate) != site_id:
+                continue
+            ids.append(fabricator_id)
         except Exception as error:
             swallowed("production.get_fabricator_worker_ids: candidate.get_recipe", error)
     return sorted(ids)
 
 
-def get_fabricator_worker_count(recipe_id):
+def get_fabricator_worker_count(recipe_id, site_id=None):
     """
-    How many discovered Fabricators currently have recipe_id selected -- see
-    get_fabricator_worker_ids(). Used to split crafts_remaining fairly below:
-    without this, every Fabricator working the same recipe would each
-    independently load_inputs() for the FULL remaining shortfall,
-    overshooting the target well before total_stock() catches up on the next
-    poll. Returns at least 1 (the caller itself, even if the network walk
-    finds nothing -- e.g. outpost_network unavailable).
+    How many discovered Fabricators (at `site_id` when given) currently have
+    recipe_id selected -- see get_fabricator_worker_ids(). Used to split
+    crafts_remaining fairly below: without this, every Fabricator working the
+    same recipe would each independently load_inputs() for the FULL remaining
+    shortfall, overshooting the target well before total_stock() catches up
+    on the next poll. Returns at least 1 (the caller itself, even if the
+    network walk finds nothing -- e.g. outpost_network unavailable).
     """
-    return max(1, len(get_fabricator_worker_ids(recipe_id)))
+    return max(1, len(get_fabricator_worker_ids(recipe_id, site_id)))
 
 
-def get_fabricator_pipeline(cache=None):
-    """
-    {item_id: units} already finished or being finished inside ANY Fabricator
-    on the network but not yet in storage: every Fabricator's output-buffer stacks, plus one
-    craft's output for each craft in progress (is_running()). Netted out of
-    every "still needed" figure alongside total_stock().
-
-    Used to be each Fabricator's OWN get_output_count() only. Peers' output
-    buffers and every in-progress craft were invisible, so each Fabricator on
-    a recipe kept building past the order (seen live: 7 surplus Oil Tank
-    (Medium) after vestibule_15). Worst when Inventory is full: finished
-    data-bearing items (oil tanks carry oilTons, one slot each) pile up in
-    output bins where only their own Fabricator counted them.
-
-    Memoized on `cache` (SourceCache) for the pass, like
-    get_fabricator_targets() -- get_material_demands() asks once per
-    Fabricator.
-    """
-    if cache is not None and cache._fabricator_pipeline is not None:
-        return dict(cache._fabricator_pipeline)
-    pipeline = {}
+def _pipeline_by_site(cache=None):
+    """{site_id: {item_id: units}} finished or being finished inside the
+    Fabricators at each site (claim_site_id()) but not yet in storage."""
+    if cache is not None and cache._pipeline_by_site is not None:
+        return cache._pipeline_by_site
+    by_site = {}
     for fabricator_id in discover_fabricator_ids():
         fabricator = _component(fabricator_id)
         if not fabricator:
             continue
+        pipeline = by_site.setdefault(claim_site_id(fabricator), {})
         try:
             output = getattr(fabricator, "output", None)
             if output and hasattr(output, "stacks"):
@@ -1033,11 +1081,154 @@ def get_fabricator_pipeline(cache=None):
                 if output_item:
                     pipeline[output_item] = pipeline.get(output_item, 0) + max(1, getattr(recipe, "output_count", 1))
         except Exception as error:
-            swallowed("production.get_fabricator_pipeline: output.stacks", error)
-    log.trace(f"get_fabricator_pipeline: {pipeline}")
+            swallowed("production._pipeline_by_site: output.stacks", error)
+    log.trace(f"_pipeline_by_site: {by_site}")
     if cache is not None:
-        cache._fabricator_pipeline = dict(pipeline)
+        cache._pipeline_by_site = by_site
+    return by_site
+
+
+def get_fabricator_pipeline(cache=None, site_id=None):
+    """
+    {item_id: units} already finished or being finished inside ANY Fabricator
+    on the network (only those at `site_id` when given) but not yet in
+    storage: every Fabricator's output-buffer stacks, plus one craft's output
+    for each craft in progress (is_running()). Netted out of every "still
+    needed" figure alongside total_stock().
+
+    Used to be each Fabricator's OWN get_output_count() only. Peers' output
+    buffers and every in-progress craft were invisible, so each Fabricator on
+    a recipe kept building past the order (seen live: 7 surplus Oil Tank
+    (Medium) after vestibule_15). Worst when Inventory is full: finished
+    data-bearing items (oil tanks carry oilTons, one slot each) pile up in
+    output bins where only their own Fabricator counted them.
+
+    Memoized on `cache` (SourceCache) for the pass, like
+    get_fabricator_targets() -- get_material_demands() asks once per
+    Fabricator.
+    """
+    by_site = _pipeline_by_site(cache)
+    if site_id is not None:
+        return dict(by_site.get(site_id, {}))
+    pipeline = {}
+    for site_pipeline in by_site.values():
+        for item_id, units in site_pipeline.items():
+            pipeline[item_id] = pipeline.get(item_id, 0) + units
     return pipeline
+
+
+# Fab sites (outposts with >= 1 Fabricator) and the per-site plan of which
+# sites build each root target's tree -- written by the 5_steampower lib
+# site_plan.py planner, read here by every Fabricator.
+# Shape {root_item_id: [site_id, ...]}; a site listed first gets the remainder.
+SITE_PLAN_KEY = "fabricator.site_plan"
+
+
+def fab_site_counts(cache=None):
+    """{site_id: Fabricators there} for every outpost with a Fabricator."""
+    if cache is not None and cache._fab_sites is not None:
+        return dict(cache._fab_sites)
+    counts = {}
+    for fabricator_id in discover_fabricator_ids():
+        fabricator = _component(fabricator_id)
+        if fabricator:
+            site_id = claim_site_id(fabricator)
+            counts[site_id] = counts.get(site_id, 0) + 1
+    if cache is not None:
+        cache._fab_sites = dict(counts)
+    return counts
+
+
+def split_units(units, site_ids, counts):
+    """{site_id: whole units} splitting `units` across site_ids by Fabricator
+    count (counts), floor plus remainder in site_ids order; sums to units."""
+    weights = [(site_id, max(1, counts.get(site_id, 1))) for site_id in site_ids]
+    total = sum(w for _s, w in weights)
+    shares = {site_id: units * w // total for site_id, w in weights}
+    left = units - sum(shares.values())
+    for site_id, _w in weights:
+        if left <= 0:
+            break
+        shares[site_id] += 1
+        left -= 1
+    return shares
+
+
+def default_root_sites(consumer_sites, fab_sites):
+    """Fallback site list for a root the planner hasn't placed yet: the fab
+    site consuming it, else home when it has Fabricators, else the first fab
+    site by id."""
+    for site_id in sorted(consumer_sites or {}):
+        if site_id in fab_sites:
+            return [site_id]
+    home_id = home_outpost_id()
+    if home_id in fab_sites:
+        return [home_id]
+    return sorted(fab_sites)[:1]
+
+
+def outpost_by_site_id(site_id):
+    """OutpostRef with this id, None when not found."""
+    for outpost in _all_outposts():
+        if getattr(outpost, "id", None) == site_id:
+            return outpost
+    return None
+
+
+def root_remaining(item_id, target, cache):
+    """Units of a root target still to build anywhere: target minus stock
+    anywhere on the network and every Fabricator's pipeline."""
+    return max(0, target - cache.network_stock(item_id) - get_fabricator_pipeline(cache).get(item_id, 0))
+
+
+def get_site_fabricator_targets(site_id, cache=None):
+    """
+    {item_id: target} for the Fabricators at one fab site, in the same
+    "keep at least N" shape as get_fabricator_targets(). With Fabricators at
+    home only, that is get_fabricator_targets() itself. Otherwise each root
+    target (fabricator_root_targets()) builds at the sites SITE_PLAN_KEY
+    lists for it (default_root_sites() until planned): its remaining units
+    (root_remaining()) split by split_units(), and this site's share becomes
+    a target of local stock + local pipeline + share. Intermediates cascade
+    from those against this site's local stock only, so a site's stock
+    counts only for its own trees. Memoized on `cache`.
+    """
+    cache = SourceCache() if cache is None else cache
+    if site_id in cache._site_targets:
+        return dict(cache._site_targets[site_id])
+    fab_sites = fab_site_counts(cache)
+    if set(fab_sites) <= {home_outpost_id(), HOME_OUTPOST_ID}:
+        targets = get_fabricator_targets(cache)
+        cache._site_targets[site_id] = dict(targets)
+        return targets
+
+    roots, consumers, fabricator_outputs = fabricator_root_targets(cache)
+    plan = archive.get(SITE_PLAN_KEY, {}) or {}
+    outpost = outpost_by_site_id(site_id)
+
+    def local(item_id):
+        return cache.local_stock(item_id, outpost)
+
+    pipeline = get_fabricator_pipeline(cache, site_id)
+    seed = {}
+    for item_id, target in roots.items():
+        if item_id not in fabricator_outputs:
+            continue
+        remaining = root_remaining(item_id, target, cache)
+        if remaining <= 0:
+            continue
+        planned = plan.get(item_id) if isinstance(plan, dict) else None
+        sites = [s for s in (planned or []) if s in fab_sites] or default_root_sites(consumers.get(item_id), fab_sites)
+        share = split_units(remaining, sites, fab_sites).get(site_id, 0)
+        if share > 0:
+            seed[item_id] = local(item_id) + pipeline.get(item_id, 0) + share
+            log.debug(f"get_site_fabricator_targets({site_id}): root {item_id} remaining={remaining} sites={sites} -> share={share}, target={seed[item_id]}")
+
+    targets = dict(seed)
+    for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=local).items():
+        targets[item_id] = max(targets.get(item_id, 0), count)
+    cache._site_targets[site_id] = dict(targets)
+    return targets
 
 
 def get_smelter_worker_count(recipe_id):
@@ -1069,16 +1260,15 @@ def get_smelter_worker_count(recipe_id):
 def get_fabricator_active_recipe(fabricator=None, cache=None):
     """Returns (recipe, crafts_remaining) for the Fabricator's selected recipe,
     where crafts_remaining covers the full remaining shortfall against its
-    output target/order (not just one craft's worth), net of stock and every
-    Fabricator's pipeline (get_fabricator_pipeline()), divided across every
-    Fabricator currently working this same recipe (see
-    get_fabricator_worker_ids()) so several Fabricators piled onto one
-    large order split its remaining work instead of each independently
-    re-loading the full shortfall. The split is floor-plus-remainder: the
-    first (crafts % workers) ids in sorted order get one extra craft, so the
-    shares sum to exactly crafts_remaining. A worker can get 0 and idles
-    until demand changes (the old ceil split gave every worker at least one
-    craft, up to workers-1 surplus per order)."""
+    site's output target (get_site_fabricator_targets(), not just one craft's
+    worth), net of the site's local stock and its Fabricators' pipeline
+    (get_fabricator_pipeline()), divided across every Fabricator at the same
+    site currently working this same recipe (see get_fabricator_worker_ids())
+    so several Fabricators piled onto one large order split its remaining
+    work instead of each independently re-loading the full shortfall. The
+    split is floor-plus-remainder: the first (crafts % workers) ids in
+    sorted order get one extra craft, so the shares sum to exactly
+    crafts_remaining. A worker can get 0 and idles until demand changes."""
     if fabricator is None:
         fabricator = _default_fabricator()
     if not fabricator or not hasattr(fabricator, "get_recipe") or not hasattr(fabricator, "list_recipes"):
@@ -1090,15 +1280,17 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
         recipe = next((r for r in fabricator.list_recipes() if getattr(r, "id", None) == current_recipe_id), None)
         if not recipe:
             return None, 0
+        cache = SourceCache() if cache is None else cache
+        site_id = claim_site_id(fabricator)
         output_item = getattr(recipe, "output_item", None)
         output_count = max(1, getattr(recipe, "output_count", 1))
-        current = _stock_fn(cache)(output_item)
-        in_pipeline = get_fabricator_pipeline(cache).get(output_item, 0)
-        target = get_fabricator_targets(cache).get(output_item, 0)
+        current = cache.local_stock(output_item, getattr(fabricator, "outpost", None))
+        in_pipeline = get_fabricator_pipeline(cache, site_id).get(output_item, 0)
+        target = get_site_fabricator_targets(site_id, cache).get(output_item, 0)
         still_needed = max(0, target - current - in_pipeline)
         crafts_remaining = -(-still_needed // output_count)  # ceil division
         fabricator_id = getattr(fabricator, "id", None)
-        worker_ids = get_fabricator_worker_ids(current_recipe_id)
+        worker_ids = get_fabricator_worker_ids(current_recipe_id, site_id)
         if len(worker_ids) > 1:
             pre_split = crafts_remaining
             if fabricator_id in worker_ids:
@@ -1107,7 +1299,7 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
             else:
                 crafts_remaining = -(-crafts_remaining // len(worker_ids))  # id unknown: old ceil split, overshoots at most workers-1
             log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): recipe={current_recipe_id} split {pre_split} crafts across {len(worker_ids)} workers {worker_ids} -> {crafts_remaining} for this one")
-        log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} still_needed={still_needed} crafts_remaining={crafts_remaining}")
+        log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): site={site_id} recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} still_needed={still_needed} crafts_remaining={crafts_remaining}")
         return recipe, crafts_remaining
     except Exception as error:
         swallowed("production.get_fabricator_active_recipe: fabricator.get_recipe", error)
@@ -1227,7 +1419,7 @@ def get_smelter_demands(cache=None):
             _add_demand(gross, item_id, target)
             log.trace(f"get_smelter_demands: direct target on smelter output {item_id} -> gross += {target}")
             continue
-        deficit = target - cache.stock(item_id)
+        deficit = target - cache.network_stock(item_id)
         if deficit <= 0:
             continue
         for input_id, ratio in (_recipe_inputs_for(item_id, cache) or {}).items():
@@ -1427,7 +1619,10 @@ class SourceCache:
         self._stock_map = None
         self._building_stock = None  # {source_id: {item_id: units}}, filled alongside _stock_map
         self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
-        self._fabricator_pipeline = None  # get_fabricator_pipeline() memo -- see its docstring
+        self._root_targets = None  # fabricator_root_targets() memo
+        self._site_targets = {}  # {site_id: get_site_fabricator_targets()} memo
+        self._fab_sites = None  # fab_site_counts() memo
+        self._pipeline_by_site = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
 

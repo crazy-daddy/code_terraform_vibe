@@ -65,9 +65,11 @@ import fabricator  # noqa: E402
 import outpost_mining  # noqa: E402
 import logistics_requests  # noqa: E402
 import site_supply  # noqa: E402
+import site_plan  # noqa: E402
+import supply_dock  # noqa: E402
 from tree_console import TreeConsole  # noqa: E402
 
-LIB_MODULES = (archive, production, storage, swallow, smelter, fabricator, outpost_mining, logistics_requests, site_supply)
+LIB_MODULES = (archive, production, storage, swallow, smelter, fabricator, outpost_mining, logistics_requests, site_supply, site_plan, supply_dock)
 
 
 def _reset_module_state(world):

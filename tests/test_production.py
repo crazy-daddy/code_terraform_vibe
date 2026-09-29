@@ -73,17 +73,19 @@ class PeerTests(StubTestCase):
         self.assertEqual(production.smelter_recipe_peers("smelt_iron_ingot", "outpost_2"), (1, 10))
         self.assertEqual(production.smelter_recipe_peers("smelt_glass", "home"), (1, 0))
 
-    def test_fabricator_split_is_network_wide(self):
+    def test_fabricator_split_follows_site_plan(self):
         w = self.world
         remote = w.add_outpost("outpost_2")
         f1 = w.add_fabricator("fabricator_1", w.home)
         f2 = w.add_fabricator("fabricator_2", remote)
         f1.recipe = f2.recipe = "craft_gas_pipe_segment"
-        # 10 gas pipe wanted, split floor-plus-remainder across both sites.
-        _, share_1 = production.get_fabricator_active_recipe(f1)
-        _, share_2 = production.get_fabricator_active_recipe(f2)
-        self.assertEqual(share_1 + share_2, 10)
-        self.assertEqual((share_1, share_2), (5, 5))
+        # 10 gas pipe wanted, unplanned: built where it is consumed (home).
+        shares = [production.get_fabricator_active_recipe(f)[1] for f in (f1, f2)]
+        self.assertEqual(shares, [10, 0])
+        # Planned at both sites: split by Fabricator count, first listed gets the remainder.
+        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["outpost_2", "home"]})
+        shares = [production.get_fabricator_active_recipe(f)[1] for f in (f1, f2)]
+        self.assertEqual(shares, [5, 5])
 
     def test_pipeline_counts_remote_output_and_running_craft(self):
         w = self.world
@@ -103,6 +105,7 @@ class PeerTests(StubTestCase):
         f2 = w.add_fabricator("fabricator_2", remote)
         f2.recipe = "craft_steel_plate"
         production.set_upgrade_order("field_keeper", {"steel_plate": 4})
+        w.notebook.set(production.SITE_PLAN_KEY, {"steel_plate": ["outpost_2"]})
         demands = production.get_material_demands()
         self.assertEqual(demands.get("iron_ingot"), 12)
 

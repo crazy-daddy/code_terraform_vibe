@@ -2,8 +2,9 @@
 Fake game world for offline stub tests of the `lib/` production modules.
 
 Models just enough of the game API (docs/components/, docs/types/) for
-production.py, storage.py, smelter.py and fabricator.py: outposts with
-Warehouses, home Inventory, Smelters, Fabricators, the Data Archive
+production.py, storage.py, smelter.py, fabricator.py and supply_dock.py:
+outposts with Warehouses, home Inventory, Smelters, Fabricators, Supply
+Docks and Earth Orders, the Data Archive
 (notebook), clock and console. Port locality follows the docs: Inventory
 works at home only, and a remote machine's ports only reach storage at its
 own outpost (anything else answers "not_local").
@@ -294,6 +295,90 @@ class Fabricator(Machine):
         return sum(self.output_buffer.values())
 
 
+class Order:
+    """Earth Order (campaign or weekly): requires/shipped per item."""
+
+    def __init__(self, order_id, requires, shipped=None, reward_kind="credits"):
+        self.id = order_id
+        self.name = order_id
+        self.requires = dict(requires)
+        self.shipped = dict(shipped or {})
+        self.status = "active"
+        self.reward_kind = reward_kind
+        self.reward_credits = 100
+        self.reward_label = ""
+        self.expires_day = None
+
+
+class Orders:
+    """`orders` service: campaign orders only (no weekly ones)."""
+
+    def __init__(self):
+        self.orders = {}
+
+    def list_orders(self):
+        return list(self.orders.values())
+
+    def list_weekly_orders(self):
+        return []
+
+    def get_order(self, order_id):
+        return self.orders.get(order_id)
+
+
+class SupplyDock(Machine):
+    """Supply Dock: input port loads cargo into `input_buffer`; set_order()
+    rejects while cargo is present. Nothing ships on its own."""
+    type_id = "supply_dock"
+
+    def __init__(self, world, dock_id, outpost):
+        super().__init__(world, dock_id, outpost, [])
+        self.input = Slot(self, self.input_buffer, 200)
+        self.order = None
+        self.enabled = False
+
+    def current_order(self):
+        return self.order
+
+    def set_order(self, order_id):
+        if self.total() > 0:
+            return Result("cargo_present")
+        order = self.world.services["orders"].get_order(order_id)
+        if order is None:
+            return Result("not_found")
+        self.order = order
+        return Result("ok")
+
+    def clear_order(self):
+        self.order = None
+        return Result("ok")
+
+    def count(self, item_id):
+        return self.input_buffer.get(item_id, 0)
+
+    def total(self):
+        return sum(self.input_buffer.values())
+
+    def slots(self):
+        return [type("DockSlot", (), {"item_id": i, "count": n})() for i, n in self.input_buffer.items() if n > 0]
+
+    def is_enabled(self):
+        return self.enabled
+
+    def set_enabled(self, enabled):
+        self.enabled = enabled
+        return Result("ok")
+
+    def dispatch_rate(self):
+        return 25.0
+
+    def current_dispatch(self):
+        return None
+
+    def dispatch_progress(self):
+        return 0.0
+
+
 class Notebook:
     """Data Archive: JSON-ish key/value store with transaction()."""
 
@@ -376,6 +461,7 @@ class World:
             "outpost_network": OutpostNetwork(self),
             "inventory": self.inventory,
             "journal": Journal(),
+            "orders": Orders(),
         }
 
     # -- building the world --
@@ -398,6 +484,16 @@ class World:
         machine = Fabricator(self, fabricator_id, outpost, recipes)
         self.components[fabricator_id] = machine
         return machine
+
+    def add_supply_dock(self, dock_id, outpost):
+        dock = SupplyDock(self, dock_id, outpost)
+        self.components[dock_id] = dock
+        return dock
+
+    def add_order(self, order_id, requires, shipped=None):
+        order = Order(order_id, requires, shipped)
+        self.services["orders"].orders[order_id] = order
+        return order
 
     # -- game API --
     def get_component(self, component_id):

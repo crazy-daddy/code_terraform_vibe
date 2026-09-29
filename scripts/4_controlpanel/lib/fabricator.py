@@ -1,7 +1,7 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims
 from archive import archive
-from storage import take_item, total_stock, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
+from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -316,7 +316,15 @@ class FabricatorController:
         return "building stock target"
 
     def choose_recipe(self):
-        targets = get_fabricator_targets()
+        # One snapshot for the whole pass: targets, stock, pipeline and the
+        # sourceability checks below all read it.
+        cache = SourceCache()
+        site_id = claim_site_id(self.machine)
+        outpost = self.outpost()
+        # This site's share of every root target and its own intermediates
+        # (production.get_site_fabricator_targets(); the global targets with
+        # only home Fabricators).
+        targets = get_site_fabricator_targets(site_id, cache)
         manual_items = get_manual_orders()
         upgrade_items = get_upgrade_orders()
         try:
@@ -330,21 +338,20 @@ class FabricatorController:
         # Computed once per pass, not per candidate (each is a stock walk).
         blueprint_items = blueprint_demand_items()
         upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items) if upgrade_items else set()
-        # Every Fabricator's output buffers + in-progress crafts, not just
-        # this one's output buffer -- see production.get_fabricator_pipeline().
-        pipeline = get_fabricator_pipeline()
+        # Output buffers + in-progress crafts of every Fabricator at this
+        # site, not just this one's -- see production.get_fabricator_pipeline().
+        pipeline = get_fabricator_pipeline(cache, site_id)
 
         candidates = []
         for recipe in recipes:
             target = targets.get(getattr(recipe, "output_item", None), 0)
             if target <= 0:
                 continue
-            # total_stock() (not just Inventory) since the rebalance sweep
-            # (storage.rebalance_inventory_to_warehouses()) can move a
-            # finished fabricated item out to a Warehouse too once it piles
-            # up -- an Inventory-only count would look artificially low and
-            # over-produce past the real target.
-            current = total_stock(recipe.output_item)
+            # Local stock: Inventory + home Warehouses at home (the rebalance
+            # sweep moves finished goods out to Warehouses too), only the
+            # outpost's own Warehouses elsewhere -- a site's stock counts
+            # only for its own targets.
+            current = cache.local_stock(recipe.output_item, outpost)
             in_pipeline = pipeline.get(recipe.output_item, 0)
             missing = max(0, target - current - in_pipeline)
             if missing > 0:
@@ -393,7 +400,6 @@ class FabricatorController:
         candidates.sort(key=lambda pair: (_priority_tier(pair[1]), -pair[0]))
         blocked = []
         sourceable = []
-        cache = SourceCache()  # shared across every candidate below -- see recipe_unsourceable_reason()
         for missing, recipe in candidates:
             reason = self.recipe_unsourceable_reason(recipe, cache)
             if reason is not None:
@@ -430,7 +436,7 @@ class FabricatorController:
         for missing, recipe in sourceable:
             recipe_id = getattr(recipe, "id", "?")
             crafts_needed = -(-missing // max(1, getattr(recipe, "output_count", 1)))  # ceil division
-            workers = get_fabricator_worker_count(recipe_id)
+            workers = get_fabricator_worker_count(recipe_id, site_id)
             if current_recipe_id == recipe_id:
                 workers -= 1  # don't count ourselves as a peer
             if crafts_needed <= workers:

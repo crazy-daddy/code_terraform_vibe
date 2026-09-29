@@ -49,9 +49,11 @@
 #     chassis swaps to the best unlocked tier, one at a time, once per cycle.
 #   - Fleet commissioning (lib/fleet_commission.py): buys, deploys and fits the
 #     Pioneers queued on the COMMISSION card, one job at a time.
-#   - Factory outpost site supply requests (lib/site_supply.py, 5_steampower
-#     lib, deployed at every tier like the Mixer gate): each outpost's
-#     Smelters/Fabricators publish the ingots/ore they need hauled in.
+#   - Factory outposts (5_steampower libs, deployed at every tier like the
+#     Mixer gate): lib/site_plan.py places each root Fabricator target at the
+#     fab sites that build its tree, then lib/site_supply.py publishes the
+#     ingots/ore/finished goods each outpost needs hauled in and evicts ore
+#     stranded at an outpost that lost its Smelters.
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController no
 # longer do any of this themselves -- it's a hard dependency on this script
 # running (see legacy/README.md for pre-Control-Room saves). The manual
@@ -70,6 +72,7 @@ import supply_dock
 from fleet_upgrade import FleetUpgradeCoordinator
 from fleet_commission import FleetCommissionCoordinator
 from site_supply import publish_site_requests
+from site_plan import plan_sites
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
@@ -204,6 +207,11 @@ while True:
                     mixer_gate_summary = biomass_retirement.step(current_tick)
             except Exception as e:
                 print(f"[AUTOMATION] Biomass retirement error: {e}")
+
+            try:
+                plan_sites()
+            except Exception as e:
+                print(f"[AUTOMATION] Fab site plan error: {e}")
 
             site_count = 0
             try:
