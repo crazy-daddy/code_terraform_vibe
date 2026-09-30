@@ -600,3 +600,6 @@ lose value when bought late. The optimizer showed that letting it skip the Adapt
 species reaches 600,000 Wildlife about 5 % sooner (breadth earns Insight sooner), so the gate was
 dropped: the schedule marks each revival `revive` or `revive_raw`. Schedules are stored per Habitat
 count because the best order changes with it.
+The shipped schedules assume no Refiner: they cost at most ~3.5 % if refining arrives early, and
+they avoid making colony growth depend on Refiner, tar and raw-deposit infrastructure the model
+does not price.

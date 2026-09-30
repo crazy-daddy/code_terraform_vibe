@@ -106,14 +106,18 @@ Policy: `magmatic_annelid` and `salt_tortoise` revive first, without an Adaptati
 
 Optimizer defaults: common fluids 72 h and refined fluids 168 h after Exotic Husbandry (1,000 Wildlife), deep fluids 168 h after Deep Exotics, 2 Feed Makers. Results (2026-09-30, beam width 8):
 
-| Scenario | Hours to 600k | 1k / 250k / 500k at | Peak feed / Forage per h |
-|---|---|---|---|
-| 16 Habitats, Adaptation optional (`WILDLIFE_SCHEDULES[16]`) | 1,602 (67 d) | 322 / 1,333 / 1,543 h | 160 / 800 |
-| 10 Habitats, Adaptation optional (`WILDLIFE_SCHEDULES[10]`) | 1,675 (70 d) | 337 / 1,350 / 1,603 h | 120 / 600 |
-| 16 Habitats, Adaptation always first | 1,672 | 376 / 1,389 / 1,607 h | 131 / 654 |
-| 10 Habitats, Adaptation always first | 1,763 | 380 / 1,406 / 1,680 h | 103 / 515 |
-| 10 Habitats, default order (rarity, founding first) | 1,959 | 414 / 1,534 / 1,836 h | 80 / 400 |
-| 10 Habitats, Insight held early for the `salt_tortoise` Breakthrough | 2,149 | 399 / 1,566 / 2,006 h | 54 / 270 |
+The shipped schedules assume no Refiner (`--refined-lead 50000`). They favour the species whose Adaptation keeps the base fluid (vent_drifter, bone_walker, tidal_cephalopod), so no colony waits on sulfur_gas/cryofluid. If refining arrives anyway, they lose at most ~3.5 % against a schedule tuned for it.
+
+| Scenario (Adaptation optional unless noted) | Hours to 600k | 1k / 250k / 500k at |
+|---|---|---|
+| 16 Habitats, no Refiner (`WILDLIFE_SCHEDULES[16]`) | 1,723 (72 d) | 331 / 1,348 / 1,632 h |
+| 10 Habitats, no Refiner (`WILDLIFE_SCHEDULES[10]`) | 1,752 (73 d) | 342 / 1,367 / 1,659 h |
+| 10 Habitats, no-Refiner schedule, refined fluids at 168 h / 1,000 h after 1k | 1,734 / 1,741 | |
+| 16 Habitats, refined fluids 168 h after 1k (schedule tuned for it) | 1,602 | 322 / 1,333 / 1,543 h |
+| 10 Habitats, refined fluids 168 h after 1k (schedule tuned for it) | 1,675 | 337 / 1,350 / 1,603 h |
+| 10 Habitats, Adaptation always first | 1,763 | 380 / 1,406 / 1,680 h |
+| 10 Habitats, default order (rarity, founding first) | 1,959 | 414 / 1,534 / 1,836 h |
+| 10 Habitats, Insight held early for the `salt_tortoise` Breakthrough | 2,149 | 399 / 1,566 / 2,006 h |
 
 What the runs show:
 - Filling every Habitat early matters most. The order among the early revivals changes the result by under 1 %.
@@ -121,7 +125,7 @@ What the runs show:
 - Breakthroughs come late on their own. The Commons reach 10,000 first, at about 815 h (`magmatic_annelid`) and 920 h (`salt_tortoise`).
 - Reviving some species without their Adaptation saves about 5 %, because breadth earns Insight sooner. The optimizer keeps the Adaptation first where it pays: founding bonuses (hive_sentinel, crustal_echo, spire_drake) and early speed (mantle_strider, hollow_choir).
 - 6 more Habitats save about 4 % to 600k. The added Rares and Legendaries grow slowly and contribute little by then, but every species needs a Habitat for *Nocturna Reborn* and later growth.
-- Fluid timing barely matters to 600k. Commons need gas only from 25,000, and the others stall at 250 while still earning Insight.
+- Refined fluids are worth ~5 % to 600k. Without them, Rares stall at 2,500 unless their Adaptation keeps the base fluid, which is why the schedules buy it for those species. Commons need gas only from 25,000.
 - Forage, not Feed Maker count, is the likely real limit: peak demand is up to 800 Forage/h.
 
 Re-run by hand when an assumption changes: `python devtools/wildlife_optimizer.py --help`.
