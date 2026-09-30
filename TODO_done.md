@@ -243,6 +243,9 @@ Finished items moved out of [TODO.md](TODO.md), grouped under the same section h
 - [ ] Design and construct orthogonal farm layout:
   - [x] Install **Grow Lamps** (Light), **Sprinklers** (Piped Water), and **Dispensers** (Salt). (auto-ordered + deployed, see Field machines above; validate live)
 
+## 🦎 Phase 9: Wildlife automation
+- [x] **Bio Labs reactivated per biome: not needed** (checked 2026-09-30). All 80 fragments are cataloged and all 80 Bio Orders the game defines are completed; revival, breeding, `rehouse()` and `unlock_bonus()` don't touch the Bio Lab (decompiled Habitat result codes). The last Collector/Lab/Exchange/Caster set stays parked at its outpost.
+
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations
 
 - [x] **Consolidated fleet telemetry into one `fleet.status` dict** (`lib/fleet_status.py`): replaces `fleet.status.<id>` and its exact duplicates `rover.status.<id>`/`drone.status.<id>` (−23 keys on the live save). Throttled heartbeat writes (`FLEET_STATUS_MIN_INTERVAL_TICKS`). Also fixed `ArchiveCleaner.get_active_vehicle_names()` ignoring `fleet.drones()`, which made `clean_telemetry()` delete every drone's telemetry as orphaned.

@@ -18,6 +18,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1d, 1d-1 | Tick-cost profiling, script cost model (cost scales with running-script count) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
+| 1l | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
 | 1j | Field Mining Drill telemetry | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2a-0 … 2a-3 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache` | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
