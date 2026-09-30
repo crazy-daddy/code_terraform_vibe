@@ -7,6 +7,12 @@ a budget check inside it, capped at 10,000 steps per call (StepLimitError
 beyond). The budget is only checked between callbacks and resets every tick,
 so work run as one callback costs at most one tick instead of many.
 
+The cap is `stepsPerTick × 10` from the game's fixed interpreter config; the
+Advanced Scripting settings (string and collection limits) do not change it.
+StepLimitError cannot be caught (`try/except` only sees Python exceptions and
+RecursionError) and ends the script, so there is no probing the cap at run
+time: size every chunk well below it, measured at its worst case.
+
 Purity rule for everything passed to run_atomic()/run_chunked(): no game API
 calls (no reads either, to be safe), no logging (a TreeConsole call reads the
 clock and may write to the console, which raises inside a callback), no

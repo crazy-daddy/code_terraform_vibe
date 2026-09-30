@@ -43,7 +43,7 @@ MOVE_COST_SEED = {
     "growing": 1.0, "stalled": 1.0, "mature": 1.0,
 }
 COST_SCALE = 2                # Dial buckets: hop costs rounded to 1/COST_SCALE heat
-EXPAND_CHUNK_NODES = 100      # bucket entries per atomic search chunk (~50 steps each, cap 10,000; lib/atomic.py)
+EXPAND_CHUNK_NODES = 40       # bucket entries + bucket advances per atomic search chunk; worst chunk ~4,000 steps, well under the 10,000-step cap (lib/atomic.py)
 CALIBRATION_ALPHA = 0.3       # EMA weight of a new measurement
 # Field work heats the Harvester too (undocumented amounts). Work hours per
 # action (docs/components/harvester.md) let the measured heat rise be
@@ -149,6 +149,7 @@ def _expand_chunk(ctx):
             break
         pos = 0
         d += 1
+        budget -= 1  # advancing past a bucket costs steps too, empty or not
         if remaining == 0 or (first_only and hit):
             state[3] = d
             state[4] = size
