@@ -47,7 +47,7 @@ Headless automation panel AUTOMATION section (§7 — `automation_panel.py` in s
   `power_control.grids()` (two grids merged via new power line). Restores anything still in manager's `shedded_machines` (guarded same as `manage_day_recovery()`), clears per-anchor `power.shedded:<anchor>` mirror.
 - **Battery-less grids skipped**: `if capacity_wh <= 0: return` near top of
   `supervise_grid()` (avoids divide by zero on `battery_pct`). No strategy for battery-less grids yet.
-- **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` `POLL_SECONDS = 1.0` at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`; `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
+- **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` sleeps `CAP_WAKE_FRACTION = 0.5` of the time the fastest pressure rise seen so far (learned from successive reads) needs to reach `PRESSURE_BAND_CRITICAL`, clamped to `POLL_SECONDS = 1.0` … `CAP_MAX_POLL_SECONDS = 30.0`; before any rise is seen, 1 s at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`. No breaker parking: an unpowered cap stops releasing but may keep capturing; `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
   dependency**: Solar Grid brownout supervision only while headless automation panel running — see
@@ -113,7 +113,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     blacklist/drop, so a newly built/assigned tank is seen within ~10 s.
 - **Thermal Cap** — keeps `pressure()` off `1.0` overpressure ceiling (hit = *entire* chamber blown to atmosphere — `.is_overpressured()`). Proportional release-valve (`steam_out`,
   via `set_throttle()`) bands on `pressure()`: `≥0.90→1.0`, `≥0.60→0.6`, `≥0.30→0.3`, else
-  `THROTTLE_TRICKLE=0.1`. Relief valve (`set_relief()`, dumps to atmosphere) engages only once
+  `THROTTLE_TRICKLE=0.3` (release below 30% pressure, into Gas Tank/Turbines, not lost). Relief valve (`set_relief()`, dumps to atmosphere) engages only once
   release valve wide open (`throttle==1.0`) and pressure still climbs past
   `PRESSURE_RELIEF_THRESHOLD=0.95`.
 - **Steam Turbine** — throttle from `choose_throttle()`, priority order:

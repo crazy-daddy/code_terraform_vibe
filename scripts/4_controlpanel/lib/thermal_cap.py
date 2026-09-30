@@ -20,9 +20,9 @@ from swallow import swallowed
 PRESSURE_BAND_CRITICAL = 0.90   # throttle 1.0 (wide open)
 PRESSURE_BAND_HIGH = 0.60       # throttle 0.6
 PRESSURE_BAND_MODERATE = 0.30   # throttle 0.3
-THROTTLE_TRICKLE = 0.1          # below PRESSURE_BAND_MODERATE: gentle trickle,
-                                 # keeps the pipe/downstream buffer topped up
-                                 # without needlessly draining banked steam
+THROTTLE_TRICKLE = 0.3          # below PRESSURE_BAND_MODERATE: steady release into the
+                                 # Gas Tank / Turbines; steam moved downstream is not lost,
+                                 # and a lower chamber leaves more time between polls
 
 # Relief valve only opens once the release valve is already wide open and
 # still can't prevent pressure climbing past this point -- a small relief
@@ -31,6 +31,12 @@ THROTTLE_TRICKLE = 0.1          # below PRESSURE_BAND_MODERATE: gentle trickle,
 PRESSURE_RELIEF_THRESHOLD = 0.95
 POLL_SECONDS = 1.0       # pressure at/above PRESSURE_BAND_MODERATE: chamber can reach the ceiling quickly
 POLL_SECONDS_LOW = 3.0   # pressure below PRESSURE_BAND_MODERATE: far from overpressure
+# Once a pressure rise has been seen, the sleep is CAP_WAKE_FRACTION of the time the
+# fastest rise seen so far would take to reach PRESSURE_BAND_CRITICAL, clamped to
+# POLL_SECONDS .. CAP_MAX_POLL_SECONDS. Worst-case rate, so a vent turning active
+# mid-sleep cannot outrun it.
+CAP_WAKE_FRACTION = 0.5
+CAP_MAX_POLL_SECONDS = 30.0
 
 # Only abandon the currently-targeted Gas Tank once it's essentially full
 # (not merely "over 85%") -- this is re-evaluated every single step(), so a
@@ -92,6 +98,10 @@ class ThermalCapController:
         self.cap = cap
         self.name = getattr(cap, "id", "thermal_cap")
         self.last_phase = None
+        self.last_pressure = None
+        self.last_pressure_tick = None
+        self.max_rise_per_tick = 0.0  # fastest confirmed chamber rise (fraction per tick)
+        self.last_rise = 0.0
         self.clock = get_component("clock")
         self.log = TreeConsole(module="thermal_cap")
         # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
@@ -214,7 +224,28 @@ class ThermalCapController:
                 notify(f"[{self.name}] Thermal Cap overpressured; banked steam lost.", level="warn", duration_seconds=8.0)
             except Exception as error:
                 swallowed("thermal_cap.ThermalCapController.step: notify", error)
-        return POLL_SECONDS if pressure >= PRESSURE_BAND_MODERATE else POLL_SECONDS_LOW
+        return self.next_poll_seconds(pressure)
+
+    def next_poll_seconds(self, pressure):
+        """Sleep before the next poll (see CAP_WAKE_FRACTION); learns the fastest rise from successive reads."""
+        tick = self.get_current_tick()
+        rise = 0.0
+        if self.last_pressure is not None and tick > self.last_pressure_tick:
+            rise = (pressure - self.last_pressure) / (tick - self.last_pressure_tick)
+        # A rise only counts as a rate once the interval before it rose too: the first
+        # rising interval after dormancy may have been active for only part of its length.
+        confirmed = rise > 0 and self.last_rise > 0
+        if confirmed:
+            self.max_rise_per_tick = max(self.max_rise_per_tick, rise)
+        self.last_rise = rise
+        self.last_pressure = pressure
+        self.last_pressure_tick = tick
+        band_seconds = POLL_SECONDS if pressure >= PRESSURE_BAND_MODERATE else POLL_SECONDS_LOW
+        if self.max_rise_per_tick <= 0 or (rise > 0 and not confirmed):
+            return band_seconds
+        headroom = max(0.0, PRESSURE_BAND_CRITICAL - pressure)
+        seconds = headroom / max(self.max_rise_per_tick, rise) / 10.0 * CAP_WAKE_FRACTION
+        return min(CAP_MAX_POLL_SECONDS, max(POLL_SECONDS, seconds))
 
     def run(self, poll_interval=None):
         self.log.print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")

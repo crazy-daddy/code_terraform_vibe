@@ -3,6 +3,7 @@ import power
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 
 # Oil Generator automation: LAST-RESORT power only.
 #
@@ -77,6 +78,7 @@ class OilGeneratorController:
     def __init__(self, generator):
         self.generator = generator
         self.name = getattr(generator, "id", "oil_generator")
+        self.parker = ParkRequester(self.name, "oil_generator")
         self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="oil_generator")
@@ -253,9 +255,12 @@ class OilGeneratorController:
         validate_game_version()
         while True:
             reset_all()
+            idle = False
             try:
                 self.step()
+                idle = not self.burning
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Oil Generator exception: {error}")
+            self.parker.update(idle)
             flush_all()
             sleep(poll_interval)

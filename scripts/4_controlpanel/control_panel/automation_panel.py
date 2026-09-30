@@ -79,6 +79,7 @@ from cash import CashManager
 from site_supply import publish_site_requests
 from site_plan import plan_sites
 from mining_drill import publish_all_drills
+from script_parking import ScriptParking
 from tree_console import flush_all
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
@@ -101,12 +102,17 @@ DOCK_PLAN_TICK_INTERVAL = 50
 # Mining Drill telemetry for every drill (lib/mining_drill.py publish_all_drills()); drills need no
 # script of their own, and a stockpile fills over hours.
 DRILL_TELEMETRY_TICK_INTERVAL = 600
+# Script parking pass (lib/script_parking.py): parks idle machines, wakes them, stops solar at night.
+PARKING_TICK_INTERVAL = 50
 
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
 last_mixer_gate_tick = 0
 last_drill_tick = 0
+last_parking_tick = 0
+parking = None              # ScriptParking, created once power_control is available
+parking_summary = "nothing parked"
 drill_summary = "no drills"
 dock_plan = {"last_tick": 0, "count": 0}  # count = docks assigned by the last plan, carried between passes
 
@@ -190,6 +196,20 @@ while True:
                 drill_summary = f"{drill_count} drill(s) reported" if drill_count else "no drills"
             except Exception as e:
                 print(f"[AUTOMATION] Drill telemetry error: {e}")
+
+        if last_parking_tick == 0 or current_tick - last_parking_tick >= PARKING_TICK_INTERVAL:
+            last_parking_tick = current_tick
+            try:
+                if parking is None and power:
+                    parking = ScriptParking(power=power, clock=clock)
+                if parking is not None:
+                    parking_summary = parking.step(
+                        power.grids() if hasattr(power, "grids") else [],
+                        clock.get_elevation() if clock and hasattr(clock, "get_elevation") else None,
+                        archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {},
+                    )
+            except Exception as e:
+                print(f"[AUTOMATION] Script parking error: {e}")
 
         if storage_due:
             last_storage_tick = current_tick
@@ -277,7 +297,7 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet commission error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan['count']} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}, {drill_summary}")
+            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan['count']} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}, {drill_summary}, {parking_summary}")
 
     flush_all()
     sleep(1.0)

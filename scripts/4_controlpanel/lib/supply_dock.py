@@ -30,6 +30,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 
 log = TreeConsole(module="supply_dock")
 
@@ -261,6 +262,8 @@ class SupplyDockController:
         self.connected = False
         self._warned_no_local_storage = False
         self._last_report = ""
+        self.idle = False  # standing by: no order, no cargo (set by step())
+        self.parker = ParkRequester(self.name, "supply_dock")
         self.log = TreeConsole(module="supply_dock")
 
     def outpost(self):
@@ -422,6 +425,7 @@ class SupplyDockController:
         return assigned
 
     def step(self):
+        self.idle = False
         self.ensure_connected()
 
         curr_order = self.dock.current_order()
@@ -450,6 +454,7 @@ class SupplyDockController:
 
             desired_id = self.desired_order_id()
             if not desired_id:
+                self.idle = True
                 self.report("standby", f"[{self.name}] No active Earth Orders available. Standing by.")
                 return
 
@@ -529,5 +534,7 @@ class SupplyDockController:
                 self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Exception in supply dock loop: {e}")
+                self.idle = False
+            self.parker.update(self.idle)
             flush_all()
             sleep(poll_interval)

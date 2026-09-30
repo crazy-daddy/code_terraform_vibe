@@ -9,6 +9,7 @@ from storage import take_item, drain_port_inventory_first, best_unload_target, l
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 
 # A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
 # this fresh -- if the owning smelter stalls/crashes without releasing it
@@ -105,7 +106,8 @@ class SmelterController:
         self._warned_no_local_storage = False
         self.log = TreeConsole(module="smelter")
         self._select_miss_reason = "no_demand"
-        self._claim_ticks = {}  # recipe_id -> tick of the last archive-confirmed claim
+        self._claim_ticks = {}
+        self.parker = ParkRequester(self.name, "smelter")  # recipe_id -> tick of the last archive-confirmed claim
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -732,5 +734,7 @@ class SmelterController:
                 active = self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Smelter exception: {e}")
+                active = True
+            self.parker.update(not active)
             flush_all()
             sleep(ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS)

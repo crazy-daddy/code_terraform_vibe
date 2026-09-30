@@ -5,6 +5,7 @@ from storage import take_item, best_unload_target, drain_port_to_storage, drain_
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 import fluid_routing
 
 # Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
@@ -76,6 +77,7 @@ class FabricatorController:
         self._fluid_routers = {}
         # recipe_id -> tick of the last claim this Fabricator won and wrote to the archive.
         self._claim_ticks = {}
+        self.parker = ParkRequester(self.name, "fabricator")
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -733,5 +735,7 @@ class FabricatorController:
                 active = self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Fabricator exception: {error}")
+                active = True
+            self.parker.update(not active)
             flush_all()
             sleep(active_poll_interval if active else poll_interval)

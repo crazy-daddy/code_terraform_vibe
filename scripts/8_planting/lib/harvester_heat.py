@@ -24,6 +24,7 @@ from swallow import swallowed
 
 from typing import TYPE_CHECKING
 from tree_console import flush_all
+from atomic import run_atomic, run_chunked
 
 if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
@@ -42,6 +43,7 @@ MOVE_COST_SEED = {
     "growing": 1.0, "stalled": 1.0, "mature": 1.0,
 }
 COST_SCALE = 2                # Dial buckets: hop costs rounded to 1/COST_SCALE heat
+EXPAND_CHUNK_NODES = 100      # bucket entries per atomic search chunk (~50 steps each, cap 10,000; lib/atomic.py)
 CALIBRATION_ALPHA = 0.3       # EMA weight of a new measurement
 # Field work heats the Harvester too (undocumented amounts). Work hours per
 # action (docs/components/harvester.md) let the measured heat rise be
@@ -102,6 +104,63 @@ def _grid(host):
         neighbours.append(())
         _GRID.append((sectors, index, neighbours))
     return _GRID[0]
+
+
+def _weights(sectors, statuses, status_weight, default_w):
+    """Hop weight per grid index (+ the off-grid slot). Pure: runs atomically."""
+    status_of = statuses.get
+    weight = [status_weight.get(status_of(sector, _NO_STATUS), default_w) for sector in sectors]
+    weight.append(default_w)
+    return weight
+
+
+def _expand_chunk(ctx):
+    """
+    Up to EXPAND_CHUNK_NODES bucket entries of the search behind expand_until().
+    ctx: [state, neighbours, mark, remaining, first_only, hit, position in the
+    current bucket]. Returns True once the search is done. Pure: runs atomically.
+    """
+    state, neighbours, mark, remaining, first_only, hit, pos = ctx
+    dist, prev, buckets, d, size, weight = state
+    budget = EXPAND_CHUNK_NODES
+    while d < size:
+        bucket = buckets[d]
+        end = min(len(bucket), pos + budget)
+        for k in range(pos, end):
+            x = bucket[k]
+            if dist[x] != d:
+                continue
+            if mark[x]:
+                mark[x] = False
+                remaining -= 1
+                hit = True
+            for n in neighbours[x]:
+                nd = d + weight[n]
+                if nd < dist[n]:
+                    dist[n] = nd
+                    prev[n] = x
+                    if nd >= size:
+                        buckets.extend([[] for _ in range(nd + 1 - size)])
+                        size = nd + 1
+                    buckets[nd].append(n)
+        budget -= end - pos
+        if end < len(bucket):
+            pos = end
+            break
+        pos = 0
+        d += 1
+        if remaining == 0 or (first_only and hit):
+            state[3] = d
+            state[4] = size
+            return True
+        if budget <= 0:
+            break
+    state[3] = d
+    state[4] = size
+    ctx[3] = remaining
+    ctx[5] = hit
+    ctx[6] = pos
+    return d >= size
 
 
 class HarvesterHeatMixin:
@@ -218,9 +277,7 @@ class HarvesterHeatMixin:
         status_weight = {}
         for status in set(statuses.values()):
             status_weight[status] = max(1, int(round((self.move_cost(status) + HOP_TIME_WEIGHT) * COST_SCALE)))
-        status_of = statuses.get
-        weight = [status_weight.get(status_of(sector, _NO_STATUS), default_w) for sector in sectors]
-        weight.append(default_w)
+        weight = run_atomic(_weights, sectors, statuses, status_weight, default_w)
         dist = [INFINITE_COST] * (len(sectors) + 1)
         prev = [-1] * (len(sectors) + 1)
         first = index.get(start)
@@ -248,29 +305,7 @@ class HarvesterHeatMixin:
                 remaining += 1
         if remaining == 0 or (first_only and remaining < len(set(goals))):
             return
-        hit = False
-        while d < size:
-            for x in buckets[d]:
-                if dist[x] != d:
-                    continue
-                if mark[x]:
-                    mark[x] = False
-                    remaining -= 1
-                    hit = True
-                for n in neighbours[x]:
-                    nd = d + weight[n]
-                    if nd < dist[n]:
-                        dist[n] = nd
-                        prev[n] = x
-                        if nd >= size:
-                            buckets.extend([[] for _ in range(nd + 1 - size)])
-                            size = nd + 1
-                        buckets[nd].append(n)
-            d += 1
-            if remaining == 0 or (first_only and hit):
-                break
-        state[3] = d
-        state[4] = size
+        run_chunked(_expand_chunk, [state, neighbours, mark, remaining, first_only, False, 0])
 
     def route(self, start, target, statuses):
         """(path, cost in heat units): the heat-cheapest route from start to target."""
