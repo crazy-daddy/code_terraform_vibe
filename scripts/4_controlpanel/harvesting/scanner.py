@@ -1,5 +1,5 @@
 from swallow import swallowed
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 # Scanner 1 Grid Survey Automation Script
 # Maps all sectors of the Harvester grid (A1..H24) around base to locate loose items and resources.
 
@@ -9,6 +9,7 @@ COLS = range(1, 25)
 print("[Scanner] Scanner 1 online. Initializing grid survey across 192 sectors...")
 
 while True:
+    reset_all()
     scanned = {}
     try:
         scanned = self.get_scanned() or {}

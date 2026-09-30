@@ -19,7 +19,7 @@
 from version_guard import version_mismatch
 from warehouse_upgrade import WarehouseUpgrader
 from tank_upgrade import TankUpgrader
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 # Seconds between passes while nothing is being drained.
 IDLE_SLEEP_S = 3.0
@@ -28,6 +28,7 @@ upgrader = WarehouseUpgrader()
 tank_upgrader = TankUpgrader()
 
 while True:
+    reset_all()
     if not version_mismatch():
         try:
             upgrader.step()

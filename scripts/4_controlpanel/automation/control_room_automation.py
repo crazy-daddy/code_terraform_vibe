@@ -64,7 +64,7 @@ from site_supply import publish_site_requests
 from site_plan import plan_sites
 from mining_drill import publish_all_drills
 from script_parking import ScriptParking
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
@@ -167,6 +167,7 @@ fleet_commissioner = FleetCommissionCoordinator()  # same
 cash_manager = CashManager()  # same
 
 while True:
+    reset_all()
     clock = get_component("clock")
     power = get_component("power_control")
 

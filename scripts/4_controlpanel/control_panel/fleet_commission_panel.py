@@ -28,7 +28,7 @@ from drone_energy import DRONE_DEPOT_TYPE_IDS
 from fleet_commission import queue_pioneer, queue_drone, cancel_job, job_kind, job_home_base, CANCELLABLE_STATES
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
-from tree_console import TreeConsole
+from tree_console import TreeConsole, reset_all
 
 PIONEER_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("scout", "+ Scout"), ("constructor", "+ Builder")]
 DRONE_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner")]
@@ -149,6 +149,7 @@ outposts, depot_outposts = read_outposts()
 loops = 0
 
 while True:
+    reset_all()
     loops += 1
     log.flush()
     if loops % OUTPOST_REFRESH_LOOPS == 0:
