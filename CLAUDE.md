@@ -44,6 +44,7 @@ You are an expert automation engineer and Python developer specializing in the g
 ## Development Workflow
 1. **Check Requirements**: Read [TODO.md](TODO.md) and relevant `/docs/` components before modifying or generating code.
 2. **Type Check & Lint**: Ensure Python code conforms to project typing standards and Pyright config (`pyrightconfig.json`).
+   - **Game imports only**: the game has no Python standard library. Import only our own `lib/` modules and the game's modules listed in [`docs/cheatsheet/dev_workflow.md` §10](docs/cheatsheet/dev_workflow.md) (no `math`, `operator`, `collections`, `itertools`, ...). CPython tests pass either way; `tests/test_game_imports.py` enforces it.
 3. **Graceful Fallbacks**: Include runtime capability checks (`caps`) and error handling for missing or unpowered game components.
    - **Never swallow silently.** Every `except Exception` that recovers must call `swallowed(where, error)` from `lib/swallow.py` as its first line. A broad except can't tell a missing component from a bug in our own call. Exceptions and details are in [`docs/AI_CHEATSHEET.md`](docs/AI_CHEATSHEET.md#0b-no-silent-except-exception-libswallowpy-swallowed).
 4. **Clean Code**: Use clear function/variable names, explicit status tracking, and structured logging.

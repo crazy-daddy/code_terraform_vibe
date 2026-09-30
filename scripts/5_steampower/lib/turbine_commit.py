@@ -19,8 +19,6 @@
 # start at their 15% line). Turbines switched off by anything else than this module are
 # left alone.
 
-import math
-
 from archive import archive
 from script_parking import PARKED_KEY
 from tree_console import TreeConsole
@@ -58,12 +56,17 @@ def _now_tick():
         return 0
 
 
+def _ceil(x):
+    """Smallest int >= x (the game interpreter has no math module)."""
+    return int(-(-x // 1))
+
+
 def turbine_needed(consumed_w, other_w, bat_wh, bat_cap, managed):
     """
     (needed, spare, reason) turbines for one grid. `other_w` = generation not from turbines.
     Pure; see the module comment for the rule.
     """
-    spare = max(TURBINE_MIN_SPARE, math.ceil(managed * TURBINE_SPARE_FRACTION)) if managed else 0
+    spare = max(TURBINE_MIN_SPARE, _ceil(managed * TURBINE_SPARE_FRACTION)) if managed else 0
     bat_frac = bat_wh / bat_cap if bat_cap > 0 else 1.0
     if bat_cap > 0 and bat_frac < TURBINE_EMERGENCY_BATTERY_FRACTION:
         return managed, spare, f"battery {bat_frac * 100:.0f}% < {TURBINE_EMERGENCY_BATTERY_FRACTION * 100:.0f}%: all turbines"
@@ -71,7 +74,7 @@ def turbine_needed(consumed_w, other_w, bat_wh, bat_cap, managed):
     topup_w = 0.0
     if bat_cap > 0 and bat_frac < TURBINE_TOPUP_BELOW_FRACTION:
         topup_w = (bat_cap - bat_wh) / TOPUP_HOURS
-    needed = math.ceil((need_w + topup_w) / TURBINE_FULL_W)
+    needed = _ceil((need_w + topup_w) / TURBINE_FULL_W)
     return min(managed, needed + spare), spare, (
         f"con {consumed_w:.0f} W - other {other_w:.0f} W + top-up {topup_w:.0f} W -> {needed} + {spare} spare")
 
