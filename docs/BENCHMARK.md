@@ -175,6 +175,19 @@ Measured with [`devtools/console_multiline_test.py`](../devtools/console_multili
 - **Stopping a script from the UI does not unwind it.** A `try/finally` around a loop never runs its `finally` block when Stop is clicked, so cleanup and log flushing cannot rely on it.
 - **`type(x)` returns a string,** so `type(x).__name__` raises `AttributeError`. Use `type(x)` directly.
 
+## Load dependence
+
+The per-step cost is not fixed: scripts appear to share one interpreter budget. The same Harvester planning step (script freshly started, same field) measured with its own tick counter:
+
+| Other scripts | Planning step | Phases (ticks) |
+| --- | ---: | --- |
+| All running | 598 ticks | cells 11, reload 291, publish 75, decide 196 |
+| All stopped | 181 ticks | cells 3, reload 87, publish 24, decide 59 |
+
+About 3.3× slower with everything running, and the `cells` phase (one API call plus a 192-item comprehension, ~2 ticks at the 350 µs figure above) took 11. So every script's per-tick work, including idle polling, slows every other script: prefer longer idle sleeps and less work per poll over faster polling. The `QUICK` switch below measures the empty-loop cost under each load.
+
 ## Reproducing
 
 Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.
+
+**Quick load comparison** (`QUICK = True`, label the run with `QUICK_LABEL`): times only the empty loop, `len()`, a 0-arg call and `clock.elapsed_seconds()`, `QUICK_ROUNDS = 5` times each for `QUICK_SECONDS = 1.0`, and prints min / median / max plus one summary line (under a minute). Run it with everything running, with the other scripts stopped, and in an empty game, at the same game speed and Advanced Scripting settings.
