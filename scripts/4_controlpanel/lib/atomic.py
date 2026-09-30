@@ -13,10 +13,14 @@ StepLimitError cannot be caught (`try/except` only sees Python exceptions and
 RecursionError) and ends the script, so there is no probing the cap at run
 time: size every chunk well below it, measured at its worst case.
 
-Purity rule for everything passed to run_atomic()/run_chunked(): no game API
-calls (no reads either, to be safe), no logging (a TreeConsole call reads the
-clock and may write to the console, which raises inside a callback), no
-sleep()/waits. Plain mutation of your own Python objects is fine.
+What a callback may call (the interpreter checks every game call made inside
+one): reads without side effects (get_component(), stacks(), count(),
+fleet.vehicles(), ...) are allowed and not charged to the tick budget. A call
+that changes game state or observes (set_enabled, connect, take, archive
+writes, scans) or suspends (sleep(), waits, mine) raises RuntimeError. A
+catchable Python exception, but it aborts the callback. Remote-write
+PermissionError applies as everywhere. Keep logging out: a TreeConsole call
+may write to the console. Plain mutation of your own Python objects is fine.
 
 ATOMIC_ENABLED = False makes run_atomic() call fn directly, for the case that
 a game update closes the quirk.
