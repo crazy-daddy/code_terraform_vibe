@@ -6,17 +6,12 @@
 # oil_in; floors/targets use each drone's own fuel unit (Wh / t Oil, see
 # lib/drone_energy.py ENGINE_PROFILES).
 #
-# Open question flagged in the plan: whether a station script's cross-script
-# drone.go_to() call actually works given drone.md's "(self only)" tag.
-# Resolved by precedent already relied on in this codebase: nav_module.md
-# tags NavModule.set_target()/set_throttle() "(self only)" too, yet
-# lib/charging.py's order_return_to_station() already calls
-# get_component(vehicle_ref.id).nav.set_target(...) successfully from a
-# DIFFERENT script (the charging station's), and that behavior is production
-# code, not a workaround. "(self only)" therefore documents the METHOD's
-# intended caller convention, not an engine-enforced same-script restriction
-# -- so order_return_to_service() below calls get_component(drone_id).go_to()
-# the same way, mirroring order_return_to_station() exactly.
+# order_return_to_service() calls get_component(drone_id).go_to() from this
+# station's script. The game blocks that remote write (PermissionError, see
+# docs/AI_CHEATSHEET.md "Remote writes are blocked"), so the nudge does
+# nothing and swallowed() records it; same for lib/charging.py's
+# order_return_to_station() (nav.set_target()). Rescue dispatch is this
+# station's own call and works. See TODO.md.
 
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
 from tree_console import TreeConsole, flush_all, reset_all

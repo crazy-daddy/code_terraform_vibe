@@ -239,6 +239,19 @@ class StationParkingTests(StubTestCase):
         self.assertEqual(self.power.calls, [])
         self.assertGreater(self.world.notebook.data[script_parking.HOLDS_KEY]["charging_station_2"], self.world.clock.now)
 
+    def test_only_depot_parks_and_a_visit_hold_keeps_it_up(self):
+        self.world.components["drone_station_1"] = _Machine()
+        self.grids[0].members.append(_Member("drone_station_1", "drone_station"))
+        requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
+        requests["drone_station_1"] = {"kind": "drone_depot", "tick": self.world.clock.now}
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("drone_station_1", False)])  # no last-awake rule for depots
+        self.assertTrue(script_parking.wake_for_visit("drone_station_1", "test"))
+        requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
+        requests["drone_station_1"] = {"kind": "drone_depot", "tick": self.world.clock.now}
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("drone_station_1", True))
+
     def test_parked_nearest_hands_over_only_to_a_nearer_parked_station(self):
         class Ref:
             x, y = 0.0, 0.0

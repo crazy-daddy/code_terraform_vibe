@@ -15,6 +15,7 @@
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+from script_parking import wake_for_visit
 
 log = TreeConsole(module="depot_stage")
 
@@ -74,6 +75,8 @@ def request_stage(depot_id, drone_name, item_id, units, curr_tick=None):
 
     archive.transaction(STAGE_KEY, {}, updater)
     log.debug(f"request_stage({depot_id!r}, {drone_name!r}): {units}x {item_id}.")
+    if units > 0:
+        wake_for_visit(depot_id, f"{drone_name} pickup staged")
 
 
 def clear_stage(drone_name, depot_id=None):

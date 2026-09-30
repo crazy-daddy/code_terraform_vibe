@@ -42,6 +42,7 @@ from biomass_retire import biomass_complete
 from storage import take_item
 import depot_stage
 import fleet_status
+from script_parking import ParkRequester
 
 # One shared dict {depot_id: telemetry} (not one key per depot, CLAUDE.md
 # rule 7). Old per-depot "drone_depot.status.<id>" keys are purged by
@@ -121,6 +122,7 @@ class DroneDepotController:
         self._stage_state = None  # last logged staging state; debug line only on change
         self.nocturna = get_component("nocturna")
         self.log = TreeConsole(module="drone_depot")
+        self.parker = ParkRequester(self.name, "drone_depot")
 
     def _find_local_liquifier(self):
         """
@@ -265,6 +267,25 @@ class DroneDepotController:
             return True
         stock = logistics_requests.depot_stock(self.station)
         return any(u > 0 and not self._is_life_form(i) for i, u in stock.items())
+
+    def parkable(self):
+        """
+        True when this Depot has nothing to do until a drone comes (lib/script_parking.py):
+        not retiring, no drone docked, no stage request, and an empty stockpile
+        (life forms included: the Liquifier and a Waste Processor take() them from it).
+        Drones wake it on the way (drone_navigation.fly_to_station(), depot_stage.request_stage()).
+        """
+        if self.name in retiring_depot_ids():
+            return False
+        try:
+            if list(self.station.get_docked()):
+                return False
+        except Exception as error:
+            swallowed("drone_depot.DroneDepotController.parkable: self.station.get_docked", error)
+            return False
+        if depot_stage.staged_for(self.name):
+            return False
+        return not any(u > 0 for u in logistics_requests.depot_stock(self.station).values())
 
     def _is_life_form(self, item_id):
         if not self.nocturna:
@@ -510,7 +531,9 @@ class DroneDepotController:
                 self.step()
                 if self.has_freight_activity():
                     interval = min(poll_interval, FREIGHT_POLL_INTERVAL)
+                self.parker.update(self.parkable())
             except Exception as e:
+                self.parker.update(False)
                 self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
             flush_all()
             sleep(interval)

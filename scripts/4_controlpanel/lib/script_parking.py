@@ -16,10 +16,11 @@ Two ways out of the count:
   scripts with `run_control.stop()` once the sun is down and starts them again
   at sunrise. A stopped panel drops its tilt, which does not matter at 0 W.
 
-Charging Stations and Drone Service Stations park the same way, with two
+Charging Stations, Drone Service Stations and Drone Depots park the same way, with two
 safeguards: a vehicle or drone heading to one (or waiting at it) wakes it
 itself (`wake_for_visit()`, which also holds it awake for STATION_HOLD_TICKS),
-and the last awake station of each type never parks. Awake stations leave
+and the last awake station of each type never parks (depots have no such rule:
+they do no fleet watching). Awake stations leave
 parked ones out of their nearest-station responsibility (`parked_ids()`) and
 wake a parked station that is nearest to a stranded vehicle, so it rescues.
 
@@ -60,6 +61,7 @@ WAKE_AFTER_TICKS = {
     "crop_automator": 600,
     "charging_station": 3000,
     "drone_service_station": 3000,
+    "drone_depot": 3000,
 }
 # Station kinds: never park the last awake one of a type (see the module docstring).
 STATION_KINDS = ("charging_station", "drone_service_station")
@@ -67,6 +69,9 @@ STATION_KINDS = ("charging_station", "drone_service_station")
 # once a vehicle is docked the station's own script reports busy. Callers
 # waiting at a station call wake_for_visit() again, which renews it.
 STATION_HOLD_TICKS = 3000
+# Kinds a wake_for_visit() hold keeps from parking: stations plus Drone Depots
+# (every drone_navigation.fly_to_station() and depot_stage.request_stage() wakes its depot).
+HELD_KINDS = STATION_KINDS + ("drone_depot",)
 # Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
 MAX_WAKE_AFTER_TICKS = 6000
 
@@ -271,7 +276,9 @@ class ScriptParking:
                 continue
             if kind == "oil_generator" and members[machine_id][0] in low_grids:
                 continue  # reserve already low: stay ready instead of parking and waking again
-            if kind in STATION_KINDS and (self._last_awake(kind, machine_id, members, parked, shed) or _held(machine_id, now)):
+            if kind in STATION_KINDS and self._last_awake(kind, machine_id, members, parked, shed):
+                continue
+            if kind in HELD_KINDS and _held(machine_id, now):
                 continue
             if self._set_powered(machine_id, False):
                 parked[machine_id] = {"kind": kind, "mode": "breaker", "since": now}
