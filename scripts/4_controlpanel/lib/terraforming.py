@@ -297,6 +297,14 @@ class HeatController:
             sleep(poll_interval)
 
 
+# PressureController pacing: poll every tick only near the sync window, otherwise sleep most of the way
+# to it (the gauge rises a fixed amount per tick, measured from two reads).
+TICKS_PER_SECOND = 10
+PRESSURE_MIN_POLL_S = 0.1
+PRESSURE_MAX_POLL_S = 5.0
+PRESSURE_WAKE_FRACTION = 0.7
+
+
 class PressureController:
     """
     Manages resonance sweep gauge synchronization for Pressure Generators.
@@ -308,21 +316,36 @@ class PressureController:
         self.name = getattr(machine, "id", "pressure")
         self.synced_this_sweep = False
         self.last_gauge = self.machine.gauge()
+        self.clock = get_component("clock")
+        self.last_tick = self._tick()
+        self.gauge_per_tick = 0.0  # measured sweep speed (gauge units per tick), 0 until two reads a tick apart
         self.log = TreeConsole(module="terraforming")
         self.feed = Mk3FluidFeed(machine, "water_in", self.name, self.log)
 
+    def _tick(self):
+        try:
+            return self.clock.tick() if self.clock else 0
+        except Exception as error:
+            swallowed("terraforming.PressureController._tick: clock.tick", error)
+            return 0
+
     def step(self):
+        """One poll. Returns the seconds to sleep before the next one (see next_poll_seconds())."""
         self.feed.step()
         gauge = self.machine.gauge()
         low = self.machine.next_window_low()
         high = self.machine.next_window_high()
+        tick = self._tick()
 
         # Gauge wrap detection (~100 to ~0) resets the sync flag for the new sweep
         if gauge < self.last_gauge and (self.last_gauge - gauge) > 20:
             self.synced_this_sweep = False
             self.log.debug(f"[{self.name}] Gauge wrap detected ({self.last_gauge:.1f} -> {gauge:.1f}); resetting synced flag for new sweep, next window [{low:.1f}, {high:.1f}].")
+        elif tick > self.last_tick and gauge > self.last_gauge:
+            self.gauge_per_tick = (gauge - self.last_gauge) / (tick - self.last_tick)
 
         self.last_gauge = gauge
+        self.last_tick = tick
 
         in_window = (low <= gauge <= high) if low <= high else (gauge >= low or gauge <= high)
 
@@ -335,15 +358,43 @@ class PressureController:
                 self.log.print(f"[{self.name}] Sync hit! Gauge: {gauge:.1f} in [{low:.1f}, {high:.1f}] -> Eff: {eff:.0f}%, Output: {self.machine.output():.4f} kPa/h")
             elif res.status != "busy":
                 self.log.level("warn").print(f"[{self.name}] Sync status: {res.status} - {res.message}")
+        return self.next_poll_seconds(gauge, low, high)
 
-    def run(self, poll_interval=0.1):
+    def next_poll_seconds(self, gauge, low, high):
+        """
+        Sleep that wakes just before the gauge reaches the next target: the
+        window's low edge while this sweep is unsynced, else (synced, or the window
+        already passed) the wrap at 100.
+        PRESSURE_WAKE_FRACTION of the predicted time, at least
+        PRESSURE_MIN_POLL_S and at most PRESSURE_MAX_POLL_S; PRESSURE_MIN_POLL_S
+        while the sweep speed is unknown or the gauge is at/inside the target.
+        """
+        rate = self.gauge_per_tick
+        if rate <= 0:
+            return PRESSURE_MIN_POLL_S
+        if self.synced_this_sweep or (low <= high and gauge > high):  # synced, or this sweep's window already passed
+            distance = 100.0 - gauge
+        elif gauge < low:
+            distance = low - gauge
+        elif low > high and gauge > high:  # window wraps past 100; low edge still ahead
+            distance = low - gauge
+        else:
+            return PRESSURE_MIN_POLL_S
+        seconds = distance / rate / TICKS_PER_SECOND * PRESSURE_WAKE_FRACTION
+        return min(PRESSURE_MAX_POLL_S, max(PRESSURE_MIN_POLL_S, seconds))
+
+    def run(self):
         self.log.print(f"Pressure Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
             reset_all()
-            self.step()
+            wait = PRESSURE_MIN_POLL_S
+            try:
+                wait = self.step()
+            except Exception as error:
+                self.log.level("error").print(f"[{self.name}] Pressure exception: {error}")
             flush_all()
-            sleep(poll_interval)
+            sleep(wait)
 
 
 class OxygenController:
