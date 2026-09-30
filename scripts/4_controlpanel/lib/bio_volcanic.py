@@ -120,8 +120,9 @@ class BioCasterController:
         return None
 
     def _load_next_sample(self, orders, snapshot):
+        self.log.start(f"[{self.name}] _load_next_sample", level="debug")
         outpost = self.machine.outpost
-        self.log.trace(f"[{self.name}] _load_next_sample: entry")
+        self.log.trace("entry")
 
         staged_stacks = []
         if hasattr(self.machine.input, "stacks"):
@@ -138,7 +139,7 @@ class BioCasterController:
             if not staged_id or count <= 0:
                 continue
             if self.machine.find_recipe(staged_id) is None:
-                self.log.debug(f"[{self.name}] Staged {staged_id} has no matching recipe -- treating as a fabricated material, not a raw fragment.")
+                self.log.debug(f"Staged {staged_id} has no matching recipe -- treating as a fabricated material, not a raw fragment.")
                 continue  # a staged fabricated material, not a forgeable raw fragment
             properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
             if properties:
@@ -146,9 +147,10 @@ class BioCasterController:
                 try:
                     destination = best_unload_target(staged_id, count, outpost=outpost)
                     eject_res = self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                    self.log.debug(f"[{self.name}] Staged {staged_id} {properties} is forged, not raw -- eject {count} to '{destination}' -> {getattr(eject_res, 'status', None)}.")
+                    self.log.debug(f"Staged {staged_id} {properties} is forged, not raw -- eject {count} to '{destination}' -> {getattr(eject_res, 'status', None)}.")
                 except Exception as error:
                     swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.eject forged", error)
+                self.log.end()
                 return
             if raw_candidate is None:
                 raw_candidate = (staged_id, properties)
@@ -157,7 +159,7 @@ class BioCasterController:
             staged_id, properties = raw_candidate
             order = self._find_local_order(orders, snapshot, staged_id)
             remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
-            self.log.trace(f"[{self.name}] Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
+            self.log.trace(f"Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
             if order and remaining > 0:
                 set_res = self.machine.set_recipe(staged_id)
                 if set_res.status == "ok":
@@ -165,17 +167,19 @@ class BioCasterController:
                     if load_res.status == "ok":
                         self.log.print(f"[{self.name}] Loaded {staged_id} into crucible.")
                     else:
-                        self.log.debug(f"[{self.name}] load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+                        self.log.debug(f"load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
                 else:
-                    self.log.debug(f"[{self.name}] set_recipe({staged_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
+                    self.log.debug(f"set_recipe({staged_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
+                self.log.end()
                 return
             try:
                 count = self.machine.input.count()
                 destination = best_unload_target(staged_id, count, outpost=outpost)
                 self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.log.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
+                self.log.debug(f"Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
             except Exception as error:
                 swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.count", error)
+            self.log.end()
             return
 
         if staged_stacks:
@@ -183,11 +187,13 @@ class BioCasterController:
             # hands over the next sample only once self.input is empty
             # (bio._processor_is_idle()), so leftovers here block the pipeline.
             self._return_staged_surplus({}, "chamber empty")
+            self.log.end()
             return
 
         order = self._find_local_order(orders, snapshot)
         if not order:
-            self.log.trace(f"[{self.name}] _load_next_sample: exit, no local order to focus on.")
+            self.log.trace("exit, no local order to focus on.")
+            self.log.end()
             return
 
         for fragment_id in processor_fragment_preference(self.machine, "bio_caster", (order.requires or {}).keys()):
@@ -195,54 +201,61 @@ class BioCasterController:
                 continue  # not a Bio Caster recipe -- some other biome's fragment
             remaining = _order_fragment_remaining(order, fragment_id, snapshot)
             if remaining <= 0:
-                self.log.trace(f"[{self.name}] {order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
+                self.log.trace(f"{order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
                 continue
             found = self._find_raw_stack(fragment_id, outpost)
             if not found:
-                self.log.trace(f"[{self.name}] {order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
+                self.log.trace(f"{order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
                 continue
             source_id, properties, count = found
-            self.log.debug(f"[{self.name}] Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
+            self.log.debug(f"Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
             if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
                 self.machine.input.connect(source_id)
             take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
             if take_res.status != "ok":
-                self.log.debug(f"[{self.name}] take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
+                self.log.debug(f"take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
                 continue
             set_res = self.machine.set_recipe(fragment_id)
             if set_res.status != "ok":
-                self.log.debug(f"[{self.name}] set_recipe({fragment_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
+                self.log.debug(f"set_recipe({fragment_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
                 self.log.print(f"[{self.name}] Loaded {fragment_id} into crucible.")
             else:
-                self.log.debug(f"[{self.name}] load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+                self.log.debug(f"load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+            self.log.end()
             return
-        self.log.trace(f"[{self.name}] _load_next_sample: exit, no fragment of {order.id} both needed and locally available as raw stock.")
+        self.log.trace(f"exit, no fragment of {order.id} both needed and locally available as raw stock.")
+        self.log.end()
 
     def _load_materials(self, required_materials, outpost):
         """Stages the first still-short fabricated material into self.input from
         local storage, one material per cycle (mirrors BioLabController's reagent
         loop) -- see the module header's live-verification note on how staged
         materials actually reach the crucible's materials() count."""
+        self.log.start(f"[{self.name}] _load_materials", level="debug")
         if self._staging_settling():
+            self.log.end()
             return
         if self.machine.output.count() > 0:
-            self.log.trace(f"[{self.name}] Output not drained yet -- holding material staging.")
+            self.log.trace("Output not drained yet -- holding material staging.")
+            self.log.end()
             return
         loaded = self.machine.materials() or {}
         for material_id, required_qty in required_materials.items():
             have = loaded.get(material_id, 0)
             missing = required_qty - have
             if missing <= 0:
-                self.log.trace(f"[{self.name}] Material {material_id}: have={have} required={required_qty} -- already sufficient.")
+                self.log.trace(f"Material {material_id}: have={have} required={required_qty} -- already sufficient.")
                 continue
             moved = take_item(self.machine.input, material_id, missing, outpost=outpost)
             if moved > 0:
                 self.last_stage_tick = self._tick()
-            self.log.debug(f"[{self.name}] Staged {moved}x {material_id} toward {required_qty} required (have={have}, missing={missing}).")
+            self.log.debug(f"Staged {moved}x {material_id} toward {required_qty} required (have={have}, missing={missing}).")
+            self.log.end()
             return
+        self.log.end()
 
     def _tick(self):
         clock = get_component("clock")
@@ -330,6 +343,7 @@ class BioCasterController:
         Material stock in local storage and on haulers is left to the consumers
         (_publish_material_demand()).
         """
+        self.log.start(f"[{self.name}] _aggregate_material_demand", level="debug")
         my_biome = get_my_biome(self.machine)
         _, by_properties = snapshot
 
@@ -345,7 +359,7 @@ class BioCasterController:
                 if open_units <= 0:
                     continue
                 if not self._recipe_materials(fragment_id):
-                    self.log.debug(f"[{self.name}] {getattr(order, 'id', '?')} {fragment_id}: no caster recipe/materials known -- skipped in material demand.")
+                    self.log.debug(f"{getattr(order, 'id', '?')} {fragment_id}: no caster recipe/materials known -- skipped in material demand.")
                     continue
                 casts[fragment_id] = casts.get(fragment_id, 0) + open_units
 
@@ -393,7 +407,7 @@ class BioCasterController:
                 focus_casts = min(max(0, open_units), casts[fragment_id])
                 for material_id, qty in (self._recipe_materials(fragment_id) or {}).items():
                     urgent[material_id] = urgent.get(material_id, 0) + qty * focus_casts
-            self.log.debug(f"[{self.name}] urgent tier = focus order {getattr(focus, 'id', '?')}: {urgent}")
+            self.log.debug(f"urgent tier = focus order {getattr(focus, 'id', '?')}: {urgent}")
         if current_cast_wanted:
             loaded = self.machine.materials() or {}
             for material_id, qty in (self.machine.required_materials() or {}).items():
@@ -415,6 +429,7 @@ class BioCasterController:
 
         need = {m: q for m, q in need.items() if q > 0}
         urgent = {m: min(q, need.get(m, 0)) for m, q in urgent.items() if q > 0 and m in need}
+        self.log.end()
         return need, urgent
 
     def _publish_material_demand(self, orders, snapshot):
@@ -543,11 +558,12 @@ class BioCasterController:
         """Sets heat/cool only when the value changes. A knob above 0 needs fluid in its
         buffer (set_heat()/set_cool() return "empty" otherwise), so it stays at 0 while
         steam_in/water_in is dry; _ensure_fluid_inputs() is what refills them."""
+        self.log.start(f"[{self.name}] _set_knobs", level="debug")
         if heat_pct > 0 and self._port_level(getattr(self.machine, "steam_in", None)) <= 0:
-            self.log.trace(f"[{self.name}] steam_in empty -- holding heat at 0 (wanted {heat_pct}).")
+            self.log.trace(f"steam_in empty -- holding heat at 0 (wanted {heat_pct}).")
             heat_pct = 0
         if cool_pct > 0 and self._port_level(getattr(self.machine, "water_in", None)) <= 0:
-            self.log.trace(f"[{self.name}] water_in empty -- holding cool at 0 (wanted {cool_pct}).")
+            self.log.trace(f"water_in empty -- holding cool at 0 (wanted {cool_pct}).")
             cool_pct = 0
         for knob, pct, setter in (("heat", heat_pct, self.machine.set_heat), ("cool", cool_pct, self.machine.set_cool)):
             current = self.machine.heat() if knob == "heat" else self.machine.cool()
@@ -555,7 +571,8 @@ class BioCasterController:
                 continue
             res = setter(pct)
             if res.status != "ok":
-                self.log.debug(f"[{self.name}] set_{knob}({pct}) -> {res.status}: {getattr(res, 'message', '')}")
+                self.log.debug(f"set_{knob}({pct}) -> {res.status}: {getattr(res, 'message', '')}")
+        self.log.end()
 
     def _measure_step_seconds(self):
         """EMA of game seconds between consecutive _drive_temperature() calls. A gap

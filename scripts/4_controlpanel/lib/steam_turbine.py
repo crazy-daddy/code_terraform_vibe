@@ -159,22 +159,26 @@ class SteamTurbineController:
         return False
 
     def choose_throttle(self):
+        self.log.start(f"[{self.name}] choose_throttle", level="debug")
         fraction = self.buffer_fraction()
 
         # A thin buffer always wins -- running flat out against a near-empty
         # pipe is exactly what produces is_stalled(), regardless of day/night
         # or grid demand.
         if fraction < STEAM_BUFFER_LOW_FRACTION:
-            self.log.debug(f"[{self.name}] Buffer {fraction*100:.0f}% < low threshold {STEAM_BUFFER_LOW_FRACTION*100:.0f}%; easing to {THROTTLE_LOW_BUFFER} to avoid a dry stall.")
+            self.log.debug(f"Buffer {fraction*100:.0f}% < low threshold {STEAM_BUFFER_LOW_FRACTION*100:.0f}%; easing to {THROTTLE_LOW_BUFFER} to avoid a dry stall.")
+            self.log.end()
             return THROTTLE_LOW_BUFFER
         if fraction < STEAM_BUFFER_HEALTHY_FRACTION:
-            self.log.debug(f"[{self.name}] Buffer {fraction*100:.0f}% below healthy threshold {STEAM_BUFFER_HEALTHY_FRACTION*100:.0f}%; moderate throttle {THROTTLE_MARGINAL_BUFFER} while rebuilding.")
+            self.log.debug(f"Buffer {fraction*100:.0f}% below healthy threshold {STEAM_BUFFER_HEALTHY_FRACTION*100:.0f}%; moderate throttle {THROTTLE_MARGINAL_BUFFER} while rebuilding.")
+            self.log.end()
             return THROTTLE_MARGINAL_BUFFER
 
         # Buffer is healthy: steam is the only generator at night, so run flat
         # out to carry the grid regardless of current battery/demand state.
         if self.is_night():
-            self.log.debug(f"[{self.name}] Buffer healthy ({fraction*100:.0f}%) and night -- full throttle 1.0 (only generation source overnight).")
+            self.log.debug(f"Buffer healthy ({fraction*100:.0f}%) and night -- full throttle 1.0 (only generation source overnight).")
+            self.log.end()
             return 1.0
 
         # Daytime with a healthy buffer: ease off once the battery is full and
@@ -189,10 +193,12 @@ class SteamTurbineController:
             battery_full = capacity > 0 and stored >= (capacity * BATTERY_FULL_FRACTION)
             demand_met = generated >= consumed
             if battery_full and demand_met:
-                self.log.debug(f"[{self.name}] Buffer healthy ({fraction*100:.0f}%), daytime, battery full ({stored:.0f}/{capacity:.0f} Wh) and demand met ({generated:.0f} W >= {consumed:.0f} W); easing to {THROTTLE_DEMAND_MET} to save steam for night.")
+                self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, battery full ({stored:.0f}/{capacity:.0f} Wh) and demand met ({generated:.0f} W >= {consumed:.0f} W); easing to {THROTTLE_DEMAND_MET} to save steam for night.")
+                self.log.end()
                 return THROTTLE_DEMAND_MET
-            self.log.debug(f"[{self.name}] Buffer healthy ({fraction*100:.0f}%), daytime, but battery_full={battery_full} demand_met={demand_met} (stored={stored:.0f}/{capacity:.0f} Wh, gen={generated:.0f} W, con={consumed:.0f} W); full throttle 1.0.")
+            self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, but battery_full={battery_full} demand_met={demand_met} (stored={stored:.0f}/{capacity:.0f} Wh, gen={generated:.0f} W, con={consumed:.0f} W); full throttle 1.0.")
 
+        self.log.end()
         return 1.0
 
     def step(self):

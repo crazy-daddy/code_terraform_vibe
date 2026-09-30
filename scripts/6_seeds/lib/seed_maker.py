@@ -187,8 +187,10 @@ class SeedMakerController:
 
     def _load_one(self, item_id):
         """Takes 1 t of item_id into the chamber from local Warehouses/Inventory, else a local Drone Depot."""
+        self.log.start(f"[{self.name}] _load_one", level="debug")
         port = self.maker.input
         if take_item(port, item_id, 1, outpost=self.outpost) >= 1:
+            self.log.end()
             return True
         for depot in logistics_requests.local_depots(self.outpost):
             if logistics_requests.depot_stock(depot).get(item_id, 0) < 1:
@@ -198,11 +200,13 @@ class SeedMakerController:
                     port.connect(depot.id)
                 res = port.take(item_id, 1)
             except Exception as e:
-                self.log.debug(f"[{self.name}] take('{item_id}') from depot '{depot.id}' raised: {e}")
+                self.log.debug(f"take('{item_id}') from depot '{depot.id}' raised: {e}")
                 continue
             if (getattr(res, "moved", 0) or 0) >= 1:
+                self.log.end()
                 return True
-            self.log.debug(f"[{self.name}] take('{item_id}') from depot '{depot.id}' -> {getattr(res, 'status', '?')}")
+            self.log.debug(f"take('{item_id}') from depot '{depot.id}' -> {getattr(res, 'status', '?')}")
+        self.log.end()
         return False
 
     def _eject_chamber(self):
@@ -220,11 +224,14 @@ class SeedMakerController:
 
     def _drain_output(self):
         """Sends a waiting seed to home Inventory (where planting starts), else to local storage."""
+        self.log.start(f"[{self.name}] _drain_output", level="debug")
         try:
             if self.maker.get_output_count() <= 0:
+                self.log.end()
                 return True
         except Exception as error:
             swallowed("seed_maker.SeedMakerController._drain_output: self.maker.get_output_count", error)
+            self.log.end()
             return True
         port = self.maker.output
         try:
@@ -235,15 +242,19 @@ class SeedMakerController:
                 if getattr(res, "status", "") in ("ok", "partial"):
                     self.log.print(f"[{self.name}] Seed '{stack.id}' sent to Inventory.")
                 else:
-                    self.log.debug(f"[{self.name}] send '{stack.id}' to Inventory -> {getattr(res, 'status', '?')}; trying local storage.")
+                    self.log.debug(f"send '{stack.id}' to Inventory -> {getattr(res, 'status', '?')}; trying local storage.")
                     drain_port_to_storage(port, outpost=self.outpost)
         except Exception as e:
-            self.log.debug(f"[{self.name}] output drain raised: {e}")
+            self.log.debug(f"output drain raised: {e}")
         try:
-            return self.maker.get_output_count() <= 0
+            _ret = self.maker.get_output_count() <= 0
+            self.log.end()
+            return _ret
         except Exception as error:
             swallowed("seed_maker.SeedMakerController._drain_output: self.maker.get_output_count #2", error)
+            self.log.end()
             return False
+        self.log.end()
 
     # ---------------------------------------------------------- planning
 

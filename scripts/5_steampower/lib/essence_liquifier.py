@@ -180,14 +180,17 @@ class EssenceLiquifierController:
 
     def feed_from_depot(self):
         """Pulls native samples from the local Depot(s) into .input while there's at least FEED_MIN_ROOM_UNITS of room."""
+        self.log.start(f"[{self.name}] feed_from_depot", level="debug")
         room = self._input_room()
         if room < FEED_MIN_ROOM_UNITS:
-            self.log.trace(f"[{self.name}] feed: input room {room} < {FEED_MIN_ROOM_UNITS}; not topping up yet.")
+            self.log.trace(f"feed: input room {room} < {FEED_MIN_ROOM_UNITS}; not topping up yet.")
+            self.log.end()
             return
 
         depots = self._local_depots()
         if not depots:
-            self.log.debug(f"[{self.name}] feed: no Drone Depot at this outpost; nothing to take from.")
+            self.log.debug("feed: no Drone Depot at this outpost; nothing to take from.")
+            self.log.end()
             return
 
         input_slot = self.liquifier.input
@@ -208,7 +211,7 @@ class EssenceLiquifierController:
                         # Keep what the local Warehouse stash still lacks; lib/drone_depot.py stages it there.
                         held = max(0, retain - warehouse_stock(item_id, outpost))
                         stock[item_id] = units - held
-                        self.log.debug(f"[{self.name}] feed: '{item_id}' requested (retain {retain}); holding back {held}, {stock[item_id]} usable.")
+                        self.log.debug(f"feed: '{item_id}' requested (retain {retain}); holding back {held}, {stock[item_id]} usable.")
                         if stock[item_id] <= 0:
                             continue
                     native.append(item_id)
@@ -218,12 +221,12 @@ class EssenceLiquifierController:
                     self._warned_foreign.add(item_id)
                     self.log.level("warn").print(f"[{self.name}] '{depot.id}' holds '{item_id}', which is not native to '{self.biome}' -- this Liquifier can't process it. Move it to a matching-biome outpost.")
             if not native:
-                self.log.debug(f"[{self.name}] feed: '{depot.id}' has no native '{self.biome}' samples (stock={stock}).")
+                self.log.debug(f"feed: '{depot.id}' has no native '{self.biome}' samples (stock={stock}).")
                 continue
 
             # Whatever species is already in the bin first -- a different one may be refused until it drains.
             native.sort(key=lambda i: (i not in loaded, -stock[i]))
-            self.log.debug(f"[{self.name}] feed: '{depot.id}' native candidates {[(i, stock[i]) for i in native]}, input room {room}, loaded={sorted(loaded)}.")
+            self.log.debug(f"feed: '{depot.id}' native candidates {[(i, stock[i]) for i in native]}, input room {room}, loaded={sorted(loaded)}.")
 
             if self._ensure_input_source(input_slot, depot.id) is False:
                 continue
@@ -242,18 +245,22 @@ class EssenceLiquifierController:
                     self._last_fed = item_id
                     room -= moved
                     if room < FEED_MIN_ROOM_UNITS:
+                        self.log.end()
                         return
                 elif status == "research_required":
                     if not self._warned_research:
                         self._warned_research = True
                         self.log.level("warn").print(f"[{self.name}] Cannot pull samples: {res.message} (Auto Feeders research).")
+                    self.log.end()
                     return
                 elif status == "busy":
-                    self.log.debug(f"[{self.name}] feed: input busy with another transfer; retrying next cycle.")
+                    self.log.debug("feed: input busy with another transfer; retrying next cycle.")
+                    self.log.end()
                     return
                 else:
                     # target_wrong_material / slots_full: bin still holds another species -- expected, try the next.
-                    self.log.debug(f"[{self.name}] feed: take('{item_id}', {want}) -> {status}: {getattr(res, 'message', '')}")
+                    self.log.debug(f"feed: take('{item_id}', {want}) -> {status}: {getattr(res, 'message', '')}")
+        self.log.end()
 
     def feed_from_warehouse(self):
         """

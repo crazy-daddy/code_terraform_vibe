@@ -131,6 +131,7 @@ class FieldProviderController:
     # --------------------------------------------------------------- supply
 
     def _discover_water_sources(self):
+        self.log.start(f"[{self.name}] _discover_water_sources", level="debug")
         type_ids = FLUID_SOURCE_TYPE_IDS["water_in"]
         pairs = []
         home_id = None
@@ -147,10 +148,11 @@ class FieldProviderController:
                             if b_id and fluid_building_is_viable("water_in", type_id, building):
                                 pairs.append((b_id, o_id))
             except Exception as error:
-                self.log.debug(f"[{self.name}] water source discovery failed: {error}")
+                self.log.debug(f"water source discovery failed: {error}")
         # Field machines always stand on the home field.
         ids = fluid_routing.rank_own_outpost_first(pairs, home_id)
-        self.log.debug(f"[{self.name}] water_in: sources (home first): {ids}.")
+        self.log.debug(f"water_in: sources (home first): {ids}.")
+        self.log.end()
         return ids
 
     @staticmethod
@@ -192,23 +194,28 @@ class FieldProviderController:
             self.log.debug(f"[{self.name}] no water source on the network.")
 
     def ensure_salt(self):
+        self.log.start(f"[{self.name}] ensure_salt", level="debug")
         port = getattr(self.machine, "input", None)
         if not port:
+            self.log.end()
             return
         try:
             have = port.count()
         except Exception as error:
             swallowed("field_provider.FieldProviderController.ensure_salt: port.count", error)
+            self.log.end()
             return
         if have >= DISPENSER_REFILL_BELOW:
-            self.log.debug(f"[{self.name}] salt buffer {have} >= {DISPENSER_REFILL_BELOW}; no top-up.")
+            self.log.debug(f"salt buffer {have} >= {DISPENSER_REFILL_BELOW}; no top-up.")
+            self.log.end()
             return
         report = {}
         moved = take_item(port, "salt", DISPENSER_FILL - have, report=report)
         if moved:
             self.log.print(f"[{self.name}] Loaded {moved} salt (buffer {have} -> {have + moved}).")
         else:
-            self.log.debug(f"[{self.name}] No salt loaded ({report.get('sources')}).")
+            self.log.debug(f"No salt loaded ({report.get('sources')}).")
+        self.log.end()
 
     # ----------------------------------------------------------------- step
 

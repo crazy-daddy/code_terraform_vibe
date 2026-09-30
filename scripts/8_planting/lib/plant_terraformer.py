@@ -247,6 +247,7 @@ class PlantTerraformerController:
         return moved_total
 
     def _take_from_depots(self, port, item_id, amount):
+        self.log.start(f"[{self.name}] _take_from_depots", level="debug")
         moved_total = 0
         for depot in logistics_requests.local_depots(self.outpost):
             if moved_total >= amount:
@@ -259,11 +260,12 @@ class PlantTerraformerController:
                     port.connect(depot.id)
                 res = port.take(item_id, want)
             except Exception as error:
-                self.log.debug(f"[{self.name}] take {item_id} from depot '{depot.id}' raised: {error}")
+                self.log.debug(f"take {item_id} from depot '{depot.id}' raised: {error}")
                 continue
             moved = getattr(res, "moved", 0) or 0
-            self.log.debug(f"[{self.name}] take {item_id} x{want} from depot '{depot.id}': {getattr(res, 'status', None)}, moved {moved}.")
+            self.log.debug(f"take {item_id} x{want} from depot '{depot.id}': {getattr(res, 'status', None)}, moved {moved}.")
             moved_total += moved
+        self.log.end()
         return moved_total
 
     def start_threshold(self, full_batch):
@@ -312,20 +314,26 @@ class PlantTerraformerController:
 
     def load_forage(self, wanted, held, in_flight, requests, support_limit):
         """Top the holders up to `wanted` Forage. Returns units moved."""
+        self.log.start(f"[{self.name}] load_forage", level="debug")
         onboard = held.get("forage", 0)
         missing = wanted - onboard
         if missing <= 0:
+            self.log.end()
             return 0
         if in_flight:
             start_at = self.start_threshold(wanted)
             if support_limit < start_at:
-                self.log.debug(f"[{self.name}] batch running; not preloading Forage: other inputs support {support_limit} (next batch starts at {start_at}).")
+                self.log.debug(f"batch running; not preloading Forage: other inputs support {support_limit} (next batch starts at {start_at}).")
+                self.log.end()
                 return 0
             available = self.available("forage", requests)
             if onboard + available < start_at:
-                self.log.debug(f"[{self.name}] batch running; not preloading {available} Forage (next batch starts at {start_at}).")
+                self.log.debug(f"batch running; not preloading {available} Forage (next batch starts at {start_at}).")
+                self.log.end()
                 return 0
-        return self._take("forage", missing, requests)
+        _ret = self._take("forage", missing, requests)
+        self.log.end()
+        return _ret
 
     def load_salt(self, need, held, requests):
         return self._take("salt", need - held.get("salt", 0), requests)
@@ -388,6 +396,7 @@ class PlantTerraformerController:
     # --------------------------------------------------------------- water
 
     def _discover_water_sources(self):
+        self.log.start(f"[{self.name}] _discover_water_sources", level="debug")
         type_ids = FLUID_SOURCE_TYPE_IDS["water_in"]
         pairs = []
         network = get_component("outpost_network")
@@ -401,9 +410,10 @@ class PlantTerraformerController:
                             if b_id and fluid_building_is_viable("water_in", type_id, building):
                                 pairs.append((b_id, o_id))
             except Exception as error:
-                self.log.debug(f"[{self.name}] water source discovery failed: {error}")
+                self.log.debug(f"water source discovery failed: {error}")
         ids = fluid_routing.rank_own_outpost_first(pairs, self.outpost_id)
-        self.log.debug(f"[{self.name}] water_in: sources (own outpost first): {ids}.")
+        self.log.debug(f"water_in: sources (own outpost first): {ids}.")
+        self.log.end()
         return ids
 
     @staticmethod

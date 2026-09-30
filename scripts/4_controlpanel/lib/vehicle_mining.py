@@ -93,13 +93,16 @@ class VehicleMiningMixin:
         get priority=3 instead of priority=2, so select_best_mining_target()
         tries them last -- a soft preference, not exclusion.
         """
+        self._host.log.start(f"[{self._host.name}] build_mineral_site_candidates()", level="debug")
         journal = get_component("journal")
         if not journal or not hasattr(journal, "surveyed_sites"):
+            self._host.log.end()
             return []
 
         raw_demands = get_raw_material_demands()
         if not raw_demands:
-            self._host.log.debug(f"[{self._host.name}] build_mineral_site_candidates(): no active raw-material demand; skipping candidate search.")
+            self._host.log.debug("no active raw-material demand; skipping candidate search.")
+            self._host.log.end()
             return []
 
         max_drill_hardness = 1.0
@@ -128,20 +131,20 @@ class VehicleMiningMixin:
                     continue
                 hardness = getattr(site, "hardness", 99)
                 if hardness > max_drill_hardness:
-                    self._host.log.debug(f"[{self._host.name}] site_{site.id}: hardness {hardness} exceeds drill limit {max_drill_hardness}; skipped.")
+                    self._host.log.debug(f"site_{site.id}: hardness {hardness} exceeds drill limit {max_drill_hardness}; skipped.")
                     continue
 
                 key = f"site_{site.id}"
                 if key in unsupported_targets:
                     can_attempt, reason = self._host.can_attempt_target(key, unsupported_targets[key])
                     if not can_attempt:
-                        self._host.log.debug(f"[{self._host.name}] {key}: blocked by unsupported-target record ({reason}); skipped.")
+                        self._host.log.debug(f"{key}: blocked by unsupported-target record ({reason}); skipped.")
                         continue
 
                 priority = 2
                 if deprioritize_hardness_at_or_below is not None and hardness <= deprioritize_hardness_at_or_below:
                     priority = 3
-                    self._host.log.debug(f"[{self._host.name}] {key}: hardness {hardness} deprioritized (<= {deprioritize_hardness_at_or_below}); priority=3.")
+                    self._host.log.debug(f"{key}: hardness {hardness} deprioritized (<= {deprioritize_hardness_at_or_below}); priority=3.")
 
                 candidates.append({
                     "key": key,
@@ -156,7 +159,8 @@ class VehicleMiningMixin:
         except Exception as error:
             swallowed("vehicle_mining.VehicleMiningMixin.build_mineral_site_candidates: journal.surveyed_sites", error)
 
-        self._host.log.debug(f"[{self._host.name}] build_mineral_site_candidates(): {len(candidates)} candidate(s) built.")
+        self._host.log.debug(f"{len(candidates)} candidate(s) built.")
+        self._host.log.end()
         return candidates
 
     def build_local_stockpile_candidates(self, outpost_id):
@@ -268,6 +272,7 @@ class VehicleMiningMixin:
         base forever despite live demand and a perfectly reachable smaller
         load. Only 0 affordable units is a genuine rejection.
         """
+        self._host.log.start(f"[{self._host.name}] select_best_mining_target", level="debug")
         pos = self._host.get_position()
         candidates = sorted(
             candidates,
@@ -278,7 +283,7 @@ class VehicleMiningMixin:
             ),
         )
 
-        self._host.log.trace(f"[{self._host.name}] select_best_mining_target() enter: {len(candidates)} candidate(s), reserve_demand={reserve_demand}")
+        self._host.log.trace(f"select_best_mining_target() enter: {len(candidates)} candidate(s), reserve_demand={reserve_demand}")
         budget_candidates = 0
         for cand in candidates:
             planned_mine = 10 if cand["type"] == "mine" else 0
@@ -305,7 +310,7 @@ class VehicleMiningMixin:
             if not budget["is_achievable"] and cand["type"] == "mine":
                 affordable = self._host.max_mineable_units(cand["coords"], cand["harvest_item"], cand.get("purity"))
                 if affordable > 0:
-                    self._host.log.debug(f"[{self._host.name}] {cand['key']}: full {planned_mine}-unit load needs {budget['total_required_wh']:.1f} Wh, not affordable; retrying at {affordable} units.")
+                    self._host.log.debug(f"{cand['key']}: full {planned_mine}-unit load needs {budget['total_required_wh']:.1f} Wh, not affordable; retrying at {affordable} units.")
                     planned_mine = affordable
                     budget = self._host.calculate_trip_energy(
                         cand["coords"],
@@ -320,7 +325,7 @@ class VehicleMiningMixin:
                 budget_candidates += 1
                 claimed = self._host.claim_target(cand["key"], cand)
                 if not claimed:
-                    self._host.log.debug(f"[{self._host.name}] {cand['key']}: within budget ({budget['total_required_wh']:.1f} Wh) but claim lost to a peer; trying next candidate.")
+                    self._host.log.debug(f"{cand['key']}: within budget ({budget['total_required_wh']:.1f} Wh) but claim lost to a peer; trying next candidate.")
                     continue
                 self._host.log.debug(
                     f"[{self._host.name}] select_best_mining_target(): won {cand['key']} (priority={cand.get('priority')}, "
@@ -338,13 +343,17 @@ class VehicleMiningMixin:
                 self.current_target = cand
                 self.current_target_key = cand["key"]
                 self._host.save_mission(cand["type"], cand)
-                self._host.log.trace(f"[{self._host.name}] select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")
-                return cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+                self._host.log.trace(f"select_best_mining_target() exit: chose {cand['key']}, estimated_units={cand.get('estimated_units')}")
+                _ret = cand, budget, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+                self._host.log.end()
+                return _ret
             else:
-                self._host.log.debug(f"[{self._host.name}] {cand['key']}: unreachable within budget ({budget['total_required_wh']:.1f} Wh required); rejected.")
+                self._host.log.debug(f"{cand['key']}: unreachable within budget ({budget['total_required_wh']:.1f} Wh required); rejected.")
 
-        self._host.log.trace(f"[{self._host.name}] select_best_mining_target() exit: no achievable candidate ({budget_candidates}/{len(candidates)} within budget).")
-        return None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+        self._host.log.trace(f"select_best_mining_target() exit: no achievable candidate ({budget_candidates}/{len(candidates)} within budget).")
+        _ret = None, None, {"candidate_count": len(candidates), "budget_candidates": budget_candidates}
+        self._host.log.end()
+        return _ret
 
     def restore_yield_reservation_flag(self):
         """

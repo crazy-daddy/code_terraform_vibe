@@ -86,6 +86,7 @@ class HarvesterPavingMixin:
 
     def _pave(self, layout, cells, rules, spare_items, unpaved):
         h = self._host
+        h.log.start("_pave", level="debug")
         if h.harvester.get_held():
             h.store_held_if_any()
 
@@ -93,34 +94,42 @@ class HarvesterPavingMixin:
         if spare_items:
             source = h.nearest(spare_items, cells)
             if not h.move_to(source):
+                h.log.end()
                 return False
             res = h.act("collect")
             if getattr(res, "status", "") != "ok":
                 h.log.debug(f"[{h.name}] Paving: collect at {source} -> {getattr(res, 'status', '?')}")
+                h.log.end()
                 return False
         elif PAVE_WITH_SEEDS:
             seed_id = self.pave_seed_id(rules)
             if not seed_id or h.stock_count(seed_id) < 1:
+                h.log.end()
                 return False
             h.stage(seed_id)
             res = h.act("load_seed", seed_id)
             if getattr(res, "status", "") != "ok":
                 h.log.debug(f"[{h.name}] Paving: load_seed('{seed_id}') -> {getattr(res, 'status', '?')}")
+                h.log.end()
                 return False
         else:
+            h.log.end()
             return False
 
         target = h.nearest(unpaved, cells)
         held = h.harvester.get_held()
         if not h.move_to(target):
             h.store_held_if_any()
+            h.log.end()
             return False
         res = h.act("drop")
         status = getattr(res, "status", "?")
         if status == "dropped":
             h.log.print(f"[{h.name}] Paved {target} with '{held}'{' from ' + source if source else ''}.")
             h.last_action = f"pave@{target}"
+            h.log.end()
             return True
         h.log.debug(f"[{h.name}] Paving: drop at {target} -> {status}: {getattr(res, 'message', '')}")
         h.store_held_if_any()
+        h.log.end()
         return False

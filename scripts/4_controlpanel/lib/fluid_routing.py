@@ -569,8 +569,11 @@ class FluidInputRouter:
             on_dropped(source_id, reason)
 
     def ensure(self, port, curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
+        log.start("ensure", level="debug")
         if not port or not hasattr(port, "connect"):
-            return FluidInputEvent("no_port")
+            _ret = FluidInputEvent("no_port")
+            log.end()
+            return _ret
 
         self.stall_streak = self.stall_streak + 1 if is_starved else 0
         starved_out = self.stall_streak_threshold is not None and self.stall_streak >= self.stall_streak_threshold
@@ -579,7 +582,9 @@ class FluidInputRouter:
         if peer and not starved_out:
             if self.stall_streak:
                 log.debug(f"FluidInputRouter({self.label}): healthy link via '{peer}' but starved {self.stall_streak}/{self.stall_streak_threshold} -- waiting (source may be temporarily dry)")
-            return FluidInputEvent("healthy", peer)
+            _ret = FluidInputEvent("healthy", peer)
+            log.end()
+            return _ret
 
         self.steps_since_connect += 1
         try:
@@ -604,12 +609,16 @@ class FluidInputRouter:
                 self._drop(own_id, curr_tick, f"starved {self.stall_streak} consecutive checks (link state '{own_state}')", on_dropped)
             elif self.steps_since_connect < self.neutral_grace_steps:
                 log.debug(f"FluidInputRouter({self.label}): '{own_id}' is {own_state!r}, within grace ({self.steps_since_connect}/{self.neutral_grace_steps})")
-                return FluidInputEvent("pending", own_id)
+                _ret = FluidInputEvent("pending", own_id)
+                log.end()
+                return _ret
             else:
                 others = [c for c in self.blacklist.filter_reachable(self._cache.get(curr_tick, self.discover), curr_tick) if c != own_id]
                 if not others:
                     log.debug(f"FluidInputRouter({self.label}): '{own_id}' still {own_state!r} but no alternative source; keeping it")
-                    return FluidInputEvent("pending", own_id)
+                    _ret = FluidInputEvent("pending", own_id)
+                    log.end()
+                    return _ret
                 self._drop(own_id, curr_tick, f"link still {own_state!r} after {self.steps_since_connect} checks", on_dropped)
 
         all_known = self._cache.get(curr_tick, self.discover)
@@ -618,7 +627,9 @@ class FluidInputRouter:
             # Deliberately never wipe the blacklist here -- each entry expires on its own
             # schedule (see PerEntryBlacklist for the ping-pong this avoids).
             log.debug(f"FluidInputRouter({self.label}): {'every known source still blacklisted' if all_known else 'no known sources at all'}")
-            return FluidInputEvent("waiting") if all_known else FluidInputEvent("not_found")
+            _ret = FluidInputEvent("waiting") if all_known else FluidInputEvent("not_found")
+            log.end()
+            return _ret
 
         log.debug(f"FluidInputRouter({self.label}): trying candidates in order {candidates}")
         for source_id in candidates:
@@ -636,12 +647,16 @@ class FluidInputRouter:
                 self.steps_since_connect = 0
                 self.stall_streak = 0
                 log.debug(f"FluidInputRouter({self.label}): connected -> '{source_id}' (link state '{link_state}')")
-                return FluidInputEvent("connected", source_id)
+                _ret = FluidInputEvent("connected", source_id)
+                log.end()
+                return _ret
             if res.status != "busy" and on_connect_notice:
                 on_connect_notice(source_id, res.status, res.message)
 
         log.debug(f"FluidInputRouter({self.label}): every candidate rejected, busy or broken this pass -- exhausted")
-        return FluidInputEvent("exhausted")
+        _ret = FluidInputEvent("exhausted")
+        log.end()
+        return _ret
 
 
 class FluidOutputEvent:
@@ -729,6 +744,7 @@ class FluidOutputRouter:
 
     def ensure_connection(self, port, curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
         """Returns a FluidOutputEvent. See class docstring for callback timing. Caller is responsible for the port-null guard before calling (matches the original methods' early-return ordering)."""
+        log.start("ensure_connection", level="debug")
         warn_about_unassigned_tanks(curr_tick)
 
         if not self._id_synced:
@@ -762,7 +778,9 @@ class FluidOutputRouter:
         if (current_id and not self.blacklist.is_blacklisted(current_id, curr_tick)
                 and (self.fluid_id is None or tank_is_eligible_target(self._resolve_target(current_id), self.fluid_id))
                 and fill_pct_of(self._resolve_target(current_id)) < self.rebalance_fill_fraction):
-            return FluidOutputEvent("healthy")
+            _ret = FluidOutputEvent("healthy")
+            log.end()
+            return _ret
 
         all_known_targets = self._discover_targets_cached(curr_tick)
         targets = self.blacklist.filter_reachable(all_known_targets, curr_tick, key=lambda t: t.id)
@@ -771,7 +789,9 @@ class FluidOutputRouter:
             # (or none exist at all) -- deliberately do NOT wipe the
             # blacklist here; each entry expires on its own schedule.
             log.debug(f"FluidOutputRouter({self.type_ids}): {'every known target still blacklisted' if all_known_targets else 'no known targets at all'}")
-            return FluidOutputEvent("waiting") if all_known_targets else FluidOutputEvent("not_found")
+            _ret = FluidOutputEvent("waiting") if all_known_targets else FluidOutputEvent("not_found")
+            log.end()
+            return _ret
 
         # Try the least-full known target first (load-balances across
         # several), falling through to the next since not every target is
@@ -789,10 +809,14 @@ class FluidOutputRouter:
                 self.ticks_since_connect = 0
                 self._connected_id = target.id
                 log.debug(f"FluidOutputRouter({self.type_ids}): connected -> '{target.id}' (fill={fill_pct_of(target):.2f})")
-                return FluidOutputEvent("connected", target_id=target.id, fill_pct=fill_pct_of(target))
+                _ret = FluidOutputEvent("connected", target_id=target.id, fill_pct=fill_pct_of(target))
+                log.end()
+                return _ret
             elif res.status != "busy":
                 if on_connect_notice:
                     on_connect_notice(target.id, res.status, res.message)
 
         log.debug(f"FluidOutputRouter({self.type_ids}): every candidate rejected or busy this pass -- exhausted")
-        return FluidOutputEvent("exhausted")
+        _ret = FluidOutputEvent("exhausted")
+        log.end()
+        return _ret

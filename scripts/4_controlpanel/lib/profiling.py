@@ -85,6 +85,7 @@ def _record(name, delta, current_tick):
     apart from "nobody's called end() for this name in a long time, purge
     it" -- last_tick is what makes that distinction possible.
     """
+    log.start("_record", level="debug")
     log.trace(f"_record start: name='{name}' delta={delta} current_tick={current_tick}")
     key = ARCHIVE_KEY_PREFIX + name
     entry = archive.get(key, None)
@@ -96,6 +97,7 @@ def _record(name, delta, current_tick):
         history = history[-HISTORY_LEN:]
     archive.set(key, {"history": history, "last_tick": current_tick})
     log.trace(f"_record end: name='{name}' stored history_len={len(history)} last_tick={current_tick}")
+    log.end()
 
 
 def report(names=None):

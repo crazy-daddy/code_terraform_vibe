@@ -456,6 +456,10 @@ class Shop:
 class Console:
     def __init__(self):
         self.lines = []
+        self.time_of_day = "12:00:00"
+
+    def now(self):
+        return self.time_of_day
 
     def print(self, msg, level="info", **_kwargs):
         self.lines.append((level, msg))

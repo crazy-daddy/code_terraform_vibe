@@ -98,6 +98,7 @@ class Mk3FluidFeed:
         return getattr(getattr(self.machine, "outpost", None), "id", None)
 
     def _discover_sources(self):
+        self.log.start(f"[{self.name}] _discover_sources", level="debug")
         own_outpost_id = self._own_outpost_id()
         if self.fluid_key == "steam_in":
             # Same candidates and order as the Steam Turbine / Condenser: steam Gas Tanks, then Caps.
@@ -105,7 +106,8 @@ class Mk3FluidFeed:
             for type_id in ("gas_tank", "thermal_cap"):
                 pairs = fluid_routing.discover_network_buildings(type_id, resolve=False, fluid_id="steam")
                 ranked.extend(fluid_routing.rank_own_outpost_first(pairs, own_outpost_id))
-            self.log.debug(f"[{self.name}] steam_in: sources (steam tanks, then Caps; own outpost first): {ranked}.")
+            self.log.debug(f"steam_in: sources (steam tanks, then Caps; own outpost first): {ranked}.")
+            self.log.end()
             return ranked
         pairs = []
         network = get_component("outpost_network")
@@ -121,7 +123,8 @@ class Mk3FluidFeed:
             except Exception as error:
                 swallowed("terraforming.Mk3FluidFeed._discover_sources: network.outposts", error)
         ids = fluid_routing.rank_own_outpost_first(pairs, own_outpost_id)
-        self.log.debug(f"[{self.name}] {self.fluid_key}: sources (own outpost first): {ids}.")
+        self.log.debug(f"{self.fluid_key}: sources (own outpost first): {ids}.")
+        self.log.end()
         return ids
 
     def _tier(self):
@@ -152,10 +155,12 @@ class Mk3FluidFeed:
         return now["steam_t"] / now["steam_cap"]
 
     def _update_guard(self, port):
+        self.log.start(f"[{self.name}] _update_guard", level="debug")
         fraction = self._steam_pool_fraction()
         if fraction is None:
-            self.log.debug(f"[{self.name}] No measurable steam pool on this grid; steam guard stays open.")
+            self.log.debug("No measurable steam pool on this grid; steam guard stays open.")
             self.guard_open = True
+            self.log.end()
             return
         if self.guard_open and fraction < STEAM_POOL_STOP_FRACTION:
             self.guard_open = False
@@ -165,7 +170,8 @@ class Mk3FluidFeed:
             self.guard_open = True
             self.log.print(f"[{self.name}] Grid steam pool back to {fraction*100:.0f}% (>= {STEAM_POOL_START_FRACTION*100:.0f}%) -- reconnecting steam_in.")
         else:
-            self.log.debug(f"[{self.name}] Steam pool {fraction*100:.0f}%, guard {'open' if self.guard_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
+            self.log.debug(f"Steam pool {fraction*100:.0f}%, guard {'open' if self.guard_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
+        self.log.end()
 
     def _disconnect(self, port):
         if not hasattr(port, "disconnect"):

@@ -258,8 +258,10 @@ class FleetUpgradeCoordinator:
         return f"{pick['id']}: ordering {target_kit}"
 
     def _start_next_drone(self, state, drones, unlocked_outputs, current_tick):
+        self.log.start("[fleet_upgrade] _start_next_drone", level="debug")
         available = self._unlocked(DRONE_CHASSIS_TIERS, unlocked_outputs)
         if not available:
+            self.log.end()
             return None
         target_kind = available[-1]
         target_tier = DRONE_CHASSIS_TIERS.index(target_kind)
@@ -273,37 +275,42 @@ class FleetUpgradeCoordinator:
             status = telemetry.get(drone_id) or {}
             role = status.get("role")
             if role not in UPGRADE_ROLES:
-                self.log.trace(f"[fleet_upgrade] Skipping drone '{drone_id}': role {role!r} (not {UPGRADE_ROLES}).")
+                self.log.trace(f"Skipping drone '{drone_id}': role {role!r} (not {UPGRADE_ROLES}).")
                 continue
             if current_tick - (status.get("tick") or 0) > DRONE_ALIVE_TICKS:
-                self.log.trace(f"[fleet_upgrade] Skipping drone '{drone_id}': no recent heartbeat.")
+                self.log.trace(f"Skipping drone '{drone_id}': no recent heartbeat.")
                 continue
             candidates.append((DRONE_CHASSIS_TIERS.index(kind), drone_id, role, getattr(ref, "engine", "") or "electric"))
         if not candidates:
+            self.log.end()
             return None
         candidates.sort()
         _, drone_id, role, engine = candidates[0]
         old_name = getattr(drones[drone_id], "name", "") or ""
         self._patch("drones", drone_id, state="ordered", target_kind=target_kind, role=role, engine=engine, old_name=old_name, new_id=None)
         self.log.print(f"[fleet_upgrade] Drone '{drone_id}' ({role}, {engine}) -> '{target_kind}'.")
+        self.log.end()
         return f"{drone_id}: ordering {target_kind}"
 
     # ------------------------------------------------------------ Depot swap
 
     def _advance_depot(self, old_id, entry, depots, computer, current_tick):
+        self.log.start("[fleet_upgrade] _advance_depot", level="debug")
         state = entry.get("state")
         kit = entry.get("target_kit")
         outpost_id = entry.get("outpost")
         new_type = DEPOT_TYPE_TIERS[DEPOT_KIT_TIERS.index(kit)] if kit in DEPOT_KIT_TIERS else None
-        self.log.debug(f"[fleet_upgrade] Depot '{old_id}': state '{state}'.")
+        self.log.debug(f"Depot '{old_id}': state '{state}'.")
 
         if state == "ordered":
             if self._inventory_count(kit) <= 0:
                 set_upgrade_order(REQUESTER, {kit: 1})
+                self.log.end()
                 return f"{old_id}: waiting for {kit}"
             set_upgrade_order(REQUESTER, {})
             known = [d["id"] for d in depots if d["outpost_id"] == outpost_id and d["type_id"] == new_type]
             self._patch("depots", old_id, state="deploying", known=known)
+            self.log.end()
             return f"{old_id}: deploying {kit}"
 
         if state == "deploying":
@@ -315,9 +322,11 @@ class FleetUpgradeCoordinator:
                     if res.status in ("duplicate_outpost_machine", "deploy_limit", "wrong_biome_for_machine", "location_not_found"):
                         self._patch("depots", old_id, state="blocked", reason=res.status)
                         self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': deploy('{kit}', '{outpost_id}') refused ({res.status}: {res.message}); swap blocked.")
+                        self.log.end()
                         return f"{old_id}: blocked ({res.status})"
                     if res.status == "no_kit":
                         self._patch("depots", old_id, state="ordered")
+                    self.log.end()
                     return f"{old_id}: deploy {res.status}"
                 adopted = res.machine_id
             def mutate(s):
@@ -327,16 +336,20 @@ class FleetUpgradeCoordinator:
                     retiring.append(old_id)
             update_fleet_upgrade(mutate)
             self.log.print(f"[fleet_upgrade] Deployed '{adopted}' ({new_type}) at '{outpost_id}'; retiring '{old_id}'.")
+            self.log.end()
             return f"{old_id}: deployed {adopted}"
 
         new_id = entry.get("new_id")
         if state == "attach":
             if archive.get_entry(DEPOT_STATUS_KEY, new_id) is not None:
                 self._patch("depots", old_id, state="draining")
+                self.log.end()
                 return f"{old_id}: {new_id} running"
             started = self._start_script(new_id)
             if started != "ok":
+                self.log.end()
                 return f"{old_id}: waiting for a script on {new_id} (run scripts_sync or paste drone_station.py)"
+            self.log.end()
             return f"{old_id}: started {new_id}"
 
         if state == "draining":
@@ -346,10 +359,12 @@ class FleetUpgradeCoordinator:
                 try:
                     bays, slots = old.bays_occupied(), old.slots_used()
                 except Exception as e:
-                    self.log.debug(f"[fleet_upgrade] Depot '{old_id}': occupancy unreadable ({e}); trying undeploy.")
+                    self.log.debug(f"Depot '{old_id}': occupancy unreadable ({e}); trying undeploy.")
             if bays or slots:
+                self.log.end()
                 return f"{old_id}: draining ({bays} bay(s), {slots} slot(s) in use)"
             self._patch("depots", old_id, state="undeploying")
+            self.log.end()
             return f"{old_id}: empty"
 
         if state == "undeploying":
@@ -362,11 +377,14 @@ class FleetUpgradeCoordinator:
                     self._patch("depots", old_id, state="blocked", reason=res.status)
                     update_fleet_upgrade(lambda s: s.get("retiring_depots", []).remove(old_id) if old_id in s.get("retiring_depots", []) else None)
                     self.log.level("warn").print(f"[fleet_upgrade] Depot '{old_id}': undeploy refused {attempts}x ({res.status}: {res.message}); swap blocked, Depot back in service.")
+                    self.log.end()
                     return f"{old_id}: blocked ({res.status})"
                 self._patch("depots", old_id, state="draining", attempts=attempts)
+                self.log.end()
                 return f"{old_id}: undeploy {res.status}"
             self._patch("depots", old_id, state="renaming")
             self.log.print(f"[fleet_upgrade] Undeployed '{old_id}'; its kit is back in Inventory.")
+            self.log.end()
             return f"{old_id}: undeployed"
 
         if state == "renaming":
@@ -374,7 +392,7 @@ class FleetUpgradeCoordinator:
             if old_name and old_name != old_id:
                 res = computer.rename(new_id, old_name)
                 if res.status != "ok":
-                    self.log.debug(f"[fleet_upgrade] rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
+                    self.log.debug(f"rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
             self._repin_homes(old_id, new_id)
             def finish(s):
                 s.get("depots", {}).pop(old_id, None)
@@ -382,8 +400,10 @@ class FleetUpgradeCoordinator:
                     s["retiring_depots"].remove(old_id)
             update_fleet_upgrade(finish)
             self.log.print(f"[fleet_upgrade] Depot swap done: '{old_id}' -> '{new_id}'.")
+            self.log.end()
             return f"{old_id} -> {new_id} done"
 
+        self.log.end()
         return f"{old_id}: unknown state {state!r}"
 
     def _repin_homes(self, old_id, new_id):
@@ -399,65 +419,83 @@ class FleetUpgradeCoordinator:
     # ------------------------------------------------------------ drone swap
 
     def _advance_drone(self, old_id, entry, drones, computer, current_tick):
+        self.log.start("[fleet_upgrade] _advance_drone", level="debug")
         state = entry.get("state")
         kind = entry.get("target_kind")
-        self.log.debug(f"[fleet_upgrade] Drone '{old_id}': state '{state}'.")
+        self.log.debug(f"Drone '{old_id}': state '{state}'.")
 
         if state == "ordered":
             if old_id not in drones:
                 self._drop("drones", old_id)
+                self.log.end()
                 return f"{old_id}: gone, swap dropped"
             if self._inventory_count(kind) <= 0:
                 set_upgrade_order(REQUESTER, {kind: 1})
+                self.log.end()
                 return f"{old_id}: waiting for {kind}"
             set_upgrade_order(REQUESTER, {})
             self._patch("drones", old_id, state="requested")
             self.log.print(f"[fleet_upgrade] '{kind}' in Inventory; asking '{old_id}' to dock for the swap.")
+            self.log.end()
             return f"{old_id}: requested"
 
         if state == "requested":
             status = fleet_status.get(old_id) or {}
-            return f"{old_id}: waiting for drone ({status.get('state', 'no telemetry')})"
+            _ret = f"{old_id}: waiting for drone ({status.get('state', 'no telemetry')})"
+            self.log.end()
+            return _ret
 
         if state == "ready":
             self._patch("drones", old_id, state="announced", announced_tick=current_tick)
+            self.log.end()
             return f"{old_id}: announced"
 
         if state == "announced":
             waited = current_tick - int(entry.get("announced_tick") or current_tick)
             if waited < ANNOUNCE_SAVE_WAIT_TICKS:
+                self.log.end()
                 return f"{old_id}: waiting for autosave ({waited}/{ANNOUNCE_SAVE_WAIT_TICKS} ticks)"
             self._patch("drones", old_id, state="swapping", known=sorted(drones.keys()))
+            self.log.end()
             return f"{old_id}: swapping"
 
         if state == "swapping":
-            return self._swap_drone(old_id, entry, drones, computer)
+            _ret = self._swap_drone(old_id, entry, drones, computer)
+            self.log.end()
+            return _ret
 
         new_id = entry.get("new_id")
         if state == "attach":
             if fleet_status.get(new_id) is not None:
                 self._patch("drones", old_id, state="fitting")
+                self.log.end()
                 return f"{old_id}: {new_id} running"
             started = self._start_script(new_id)
             if started != "ok":
+                self.log.end()
                 return f"{old_id}: waiting for a script on {new_id} (run scripts_sync or paste drone.py)"
+            self.log.end()
             return f"{old_id}: started {new_id}"
 
         if state == "fitting":
             lineage = (fleet_upgrade_state().get("lineage") or {}).get(new_id) or {}
             if not lineage.get("fitted"):
                 status = fleet_status.get(new_id) or {}
-                return f"{old_id}: {new_id} fitting modules ({status.get('state', '?')})"
+                _ret = f"{old_id}: {new_id} fitting modules ({status.get('state', '?')})"
+                self.log.end()
+                return _ret
             # The old drone is undeployed by now, so its display name is free.
             old_name = entry.get("old_name")
             if old_name and old_name != old_id:
                 res = computer.rename(new_id, old_name)
                 if res.status != "ok":
-                    self.log.debug(f"[fleet_upgrade] rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
+                    self.log.debug(f"rename('{new_id}', '{old_name}'): {res.status}; keeping its own name.")
             self._drop("drones", old_id)
             self.log.print(f"[fleet_upgrade] Drone swap done: '{old_id}' -> '{new_id}' ({kind}).")
+            self.log.end()
             return f"{old_id} -> {new_id} done"
 
+        self.log.end()
         return f"{old_id}: unknown state {state!r}"
 
     def _swap_drone(self, old_id, entry, drones, computer):

@@ -247,8 +247,10 @@ class MixerGate:
         self.log.print(f"[{mixer_id}] Resumed: {reason}.")
 
     def _step_mixer(self, mixer, tick):
+        self.log.start("_step_mixer", level="debug")
         mixer_id = getattr(mixer, "id", None)
         if not mixer_id:
+            self.log.end()
             return None
         state = self._load_state(mixer_id)
         powered = self._is_powered(mixer_id)
@@ -257,6 +259,7 @@ class MixerGate:
         if state["state"] == STATE_RUN and not powered:
             state["reason"] = "off (not by gate)"
             self.log.debug(f"[{mixer_id}] off but not paused by gate; not touching it.")
+            self.log.end()
             return state
         if state["state"] == STATE_PAUSE and powered:
             state.update({"state": STATE_RUN, "paused_by_gate": False, "since": tick, "reason": "switched on externally", "progress": {}})
@@ -295,6 +298,7 @@ class MixerGate:
             if state["state"] == STATE_RUN:
                 state["expected"] = expected
                 state["levels"] = levels
+                self.log.end()
                 return state
 
         # Given-up biomes rejoin once refilled; forget biomes no longer expected.
@@ -321,16 +325,20 @@ class MixerGate:
 
         state["expected"] = expected
         state["levels"] = levels
+        self.log.end()
         return state
 
     def _step_paused(self, mixer_id, state, tick, active, required, readings, levels):
+        self.log.start(f"[{mixer_id}] _step_paused", level="debug")
         if len(active) < required:
             self._enter_run(mixer_id, state, tick, f"only {len(active)} expected essence(s) left, phase needs {required}")
+            self.log.end()
             return
 
         waiting = [b for b in active if levels[b] < RESUME_LEVEL_T]
         if not waiting:
             self._enter_run(mixer_id, state, tick, f"all {len(active)} expected essences >= {RESUME_LEVEL_T} t")
+            self.log.end()
             return
 
         # Track per-biome progress; stagnant ones get given up.
@@ -343,7 +351,7 @@ class MixerGate:
             progress[b] = entry
             if tick - entry["tick"] >= NO_PROGRESS_TICKS:
                 stagnant.append(b)
-        self.log.debug(f"[{mixer_id}] paused {tick - state['since']} ticks; waiting on {waiting}; stagnant={stagnant}.")
+        self.log.debug(f"paused {tick - state['since']} ticks; waiting on {waiting}; stagnant={stagnant}.")
 
         backed_up = [
             b for b in active
@@ -366,7 +374,8 @@ class MixerGate:
             elif all(levels[b] >= RESUME_LEVEL_T for b in remaining):
                 self._enter_run(mixer_id, state, tick, f"{why}; mixing {len(remaining)} without {', '.join(give_up)}")
             else:
-                self.log.debug(f"[{mixer_id}] gave up on {give_up} ({why}); still waiting on others.")
+                self.log.debug(f"gave up on {give_up} ({why}); still waiting on others.")
+        self.log.end()
 
     def step(self, tick=None):
         """One gate pass over every Mixer. Returns {mixer_id: state} (also persisted to archive)."""

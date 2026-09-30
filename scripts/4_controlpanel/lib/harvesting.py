@@ -234,6 +234,7 @@ class HarvesterController:
         Scans all known grid cells and selects the closest sector
         with an uncollected surface item or mature crop.
         """
+        self.log.start(f"[{self.name}] find_best_target", level="debug")
         curr_pos = self.get_position()
         candidates = []
 
@@ -261,13 +262,15 @@ class HarvesterController:
                     swallowed("harvesting.HarvesterController.find_best_target: scanner.get_scanned", error)
 
         if not candidates:
-            self.log.debug(f"[{self.name}] find_best_target: no item/crop candidates found via cells() or scanner fallback")
+            self.log.debug("no item/crop candidates found via cells() or scanner fallback")
+            self.log.end()
             return None
 
         # Sort candidates by Manhattan grid distance from current position (O(1))
         candidates.sort(key=lambda cand: self.distance(curr_pos, cand["sector"]))
         winner = candidates[0]
-        self.log.debug(f"[{self.name}] find_best_target: {len(candidates)} candidate(s), picked {winner['type']} at {winner['sector']} (distance={self.distance(curr_pos, winner['sector'])}) from {curr_pos}")
+        self.log.debug(f"{len(candidates)} candidate(s), picked {winner['type']} at {winner['sector']} (distance={self.distance(curr_pos, winner['sector'])}) from {curr_pos}")
+        self.log.end()
         return winner
 
     def step(self):

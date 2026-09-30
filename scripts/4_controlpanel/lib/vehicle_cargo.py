@@ -206,6 +206,7 @@ class VehicleCargoMixin:
         yield switch on, sources drone haulers can serve are dropped
         (logistics_requests.drone_served_source()).
         """
+        self._host.log.start(f"[{self._host.name}] _pull_sources", level="debug")
         home_id = getattr(self._host.home_outpost, "id", None)
         requests = logistics_requests.active_requests(curr_tick)
         sources = []
@@ -254,12 +255,13 @@ class VehicleCargoMixin:
         for src in sources:
             reason = logistics_requests.drone_served_source(src, self._host.home_outpost)
             if reason:
-                self._host.log.debug(f"[{self._host.name}] pull: skip {src['kind']}:{src['id']} ({reason}; drone yield on).")
+                self._host.log.debug(f"pull: skip {src['kind']}:{src['id']} ({reason}; drone yield on).")
             else:
                 kept.append(src)
         sources = kept
 
         self._host.log.debug(f"[{self._host.name}] pull: {len(sources)} source(s) hold wanted items: " + ", ".join(f"{src['kind']}:{src['id']}={src['available']}" for src in sources))
+        self._host.log.end()
         return sources
 
     def _plan_pull_route(self, need, buffer, capacity, curr_tick):
@@ -365,8 +367,10 @@ class VehicleCargoMixin:
         Stops at the first refused purchase (credits, Shop stock) or failed
         take. Returns units loaded.
         """
+        self._host.log.start(f"[{self._host.name}] _buy_and_take", level="debug")
         shop = get_component("shop")
         if not shop:
+            self._host.log.end()
             return 0
         stack_size = inventory_stack_size()
         loaded = 0
@@ -375,7 +379,7 @@ class VehicleCargoMixin:
             cost = qty * cash.shop_price(item_id)
             cash_id = f"pioneer_reagents:{self._host.name}"
             if not cash.can_spend(cash_id, cost, label=f"{qty}x {item_id}"):
-                self._host.log.debug(f"[{self._host.name}] {qty}x {item_id} ({cost} cr): cash manager holds it back.")
+                self._host.log.debug(f"{qty}x {item_id} ({cost} cr): cash manager holds it back.")
                 break
             res = shop.buy(item_id, qty)
             if res.status != "ok":
@@ -384,10 +388,11 @@ class VehicleCargoMixin:
                 break
             cash.spent(cash_id, cost)
             moved = take_item(self._host.vehicle.input, item_id, qty, outpost=outpost)
-            self._host.log.debug(f"[{self._host.name}] Bought {qty}x {item_id}, loaded {moved}.")
+            self._host.log.debug(f"Bought {qty}x {item_id}, loaded {moved}.")
             if moved <= 0:
                 break
             loaded += moved
+        self._host.log.end()
         return loaded
 
     def _plan_pull_chain(self, first, sources, need, buffer, capacity, start, home_coords):

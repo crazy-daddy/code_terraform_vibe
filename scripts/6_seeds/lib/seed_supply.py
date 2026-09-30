@@ -133,7 +133,9 @@ class SeedSupplyController(SeedMakerController):
         (their open deficit still counts), so drones fetch garden forms
         before the fill's bulk.
         """
+        self.log.start(f"[{self.name}] _publish_supply_requests", level="debug")
         if not force and curr_tick - self._last_request_tick < REQUEST_REFRESH_TICKS:
+            self.log.end()
             return
         self._last_request_tick = curr_tick
         def per_form(counts, seeds):
@@ -152,7 +154,7 @@ class SeedSupplyController(SeedMakerController):
         garden_short = sorted(f for f in set(prio_base) | set(prio_deficit)
                               if stock.get(f, 0) < min(SEED_SUPPLY_STASH_T, prio_base.get(f, 0) + prio_deficit.get(f, 0)))
         if garden_short:
-            self.log.debug(f"[{self.name}] Garden forms short {garden_short}: fill base stock held back.")
+            self.log.debug(f"Garden forms short {garden_short}: fill base stock held back.")
             other_base = {}
         need = {}
         for part in (prio_base, other_base, all_deficit):
@@ -165,7 +167,8 @@ class SeedSupplyController(SeedMakerController):
             else:
                 logistics_requests.clear_requests(REQUESTER_ID)
         short = sorted(f for f, pair in wants.items() if pair[1] < pair[0])
-        self.log.debug(f"[{self.name}] supply requests: {len(wants)} form(s), {len(short)} below target: {short}")
+        self.log.debug(f"supply requests: {len(wants)} form(s), {len(short)} below target: {short}")
+        self.log.end()
 
     def _pick(self, by_seed, deficits, stock, priority=()):
         """

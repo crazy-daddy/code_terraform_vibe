@@ -311,6 +311,7 @@ class DroneUpgradeMixin:
         drone_service, docks at its home Depot and marks itself "ready" with
         its script variables, and holds there until the coordinator swaps it.
         """
+        self._host.log.start(f"[{self._host.name}] handle_upgrade_request_if_active", level="debug")
         entry = drone_swap_entry(self._host.name)
         state = entry.get("state") if entry else None
         if state in HOLD_STATES:
@@ -318,31 +319,38 @@ class DroneUpgradeMixin:
                 # Knocked off the berth (rescue, operator): request again.
                 self._host.log.level("warn").print(f"[{self._host.name}] Upgrade hold: no longer docked at a Drone Depot; re-docking.")
                 update_fleet_upgrade(lambda s: s.get("drones", {}).get(self._host.name, {}).update({"state": "requested"}))
+                self._host.log.end()
                 return True
             self._host.publish_telemetry("UPGRADE_HOLD", f"waiting for chassis swap ({state})")
+            self._host.log.end()
             return True
         if state != "requested":
+            self._host.log.end()
             return False
 
         if self._host.current_target_key or self._host.cargo_count() > 0:
-            self._host.log.trace(f"[{self._host.name}] Upgrade requested; finishing current work first.")
+            self._host.log.trace("Upgrade requested; finishing current work first.")
+            self._host.log.end()
             return False
 
         _, _, level = self._host.get_battery()
         if level < UPGRADE_MIN_SOC:
             self._host.return_to_service_for_charge(self._host.log, f"Charging to {UPGRADE_MIN_SOC*100:.0f}% before chassis swap ({level*100:.0f}%)")
             self._host.publish_telemetry("UPGRADE_CHARGING")
+            self._host.log.end()
             return True
 
         depot_coords, depot = self._host.get_home_depot()
         depot_id = depot.get("id")
         if not depot_id:
             self._host.log.level("warn").print(f"[{self._host.name}] Upgrade requested but no home Drone Depot found; waiting.")
+            self._host.log.end()
             return True
         if self._host.current_station() != depot_id:
-            self._host.log.debug(f"[{self._host.name}] Upgrade requested; docking at home Drone Depot '{depot_id}'.")
+            self._host.log.debug(f"Upgrade requested; docking at home Drone Depot '{depot_id}'.")
             self._host.publish_telemetry("UPGRADE_DOCKING", depot_id)
             self._host.fly_to_station(depot_id, target_coords=depot_coords)
+            self._host.log.end()
             return True
 
         params = self.swap_params()
@@ -358,6 +366,7 @@ class DroneUpgradeMixin:
         update_fleet_upgrade(mark_ready)
         self._host.log.print(f"[{self._host.name}] Ready for chassis swap: docked at '{depot_id}', cargo empty, {level*100:.0f}% charge.")
         self._host.publish_telemetry("UPGRADE_HOLD", "ready for chassis swap")
+        self._host.log.end()
         return True
 
     # ------------------------------------------------------------ new chassis

@@ -149,8 +149,10 @@ def plan_dock_assignments(clock=None):
     candidate (mirrors production.get_fabricator_worker_count()'s
     spread-then-join pattern). Writes the plan to archive and returns it.
     """
+    log.start("plan_dock_assignments", level="debug")
     orders_api = get_component("orders")
     if not orders_api:
+        log.end()
         return {}
 
     docks = {}
@@ -159,6 +161,7 @@ def plan_dock_assignments(clock=None):
         if dock and hasattr(dock, "current_order"):
             docks[dock_id] = dock
     if not docks:
+        log.end()
         return {}
 
     reserved = get_construction_material_reservations()
@@ -185,7 +188,7 @@ def plan_dock_assignments(clock=None):
             if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
                 priority = _score_campaign_order(o, reserved)
                 candidates.append({"order": o, "priority": priority})
-                log.debug(f"plan_dock_assignments: campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
+                log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_orders", error)
     try:
@@ -198,11 +201,11 @@ def plan_dock_assignments(clock=None):
                 continue
             priority = _score_weekly_order(o, reserved)
             candidates.append({"order": o, "priority": priority})
-            log.debug(f"plan_dock_assignments: weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
+            log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_weekly_orders", error)
 
-    log.debug(f"plan_dock_assignments: {len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
+    log.debug(f"{len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
 
     plan = {}
     idle_dock_ids = []
@@ -216,10 +219,10 @@ def plan_dock_assignments(clock=None):
         if curr and can_fulfill_order(curr, cache):
             plan[dock_id] = curr.id
             assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
-            log.debug(f"plan_dock_assignments: {dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
+            log.debug(f"{dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
         else:
             idle_dock_ids.append(dock_id)
-            log.debug(f"plan_dock_assignments: {dock_id} is idle/unfulfillable ({'no current order' if not curr else 'current order no longer fulfillable'}), needs a new assignment")
+            log.debug(f"{dock_id} is idle/unfulfillable ({'no current order' if not curr else 'current order no longer fulfillable'}), needs a new assignment")
 
     if candidates:
         site_plan = archive.get(SITE_PLAN_KEY, {})
@@ -230,16 +233,17 @@ def plan_dock_assignments(clock=None):
             best = candidates[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
-            log.debug(f"plan_dock_assignments: assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, priority={candidates[0]['priority']})")
+            log.debug(f"assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, priority={candidates[0]['priority']})")
     else:
         for dock_id in idle_dock_ids:
             plan[dock_id] = None
-            log.debug(f"plan_dock_assignments: no fulfillable candidate orders at all, {dock_id} left unassigned")
+            log.debug(f"no fulfillable candidate orders at all, {dock_id} left unassigned")
 
     previous_plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {})
     if plan != previous_plan:
         log.print(f"[supply_dock planner] Dock assignments changed: {plan}")
     archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
+    log.end()
     return plan
 
 
@@ -327,7 +331,9 @@ class SupplyDockController:
         3. Other active campaign orders.
         4. Weekly Earth orders.
         """
+        self.log.start(f"[{self.name}] pick_best_order", level="debug")
         if not self.orders_api:
+            self.log.end()
             return None
 
         candidates = []
@@ -357,24 +363,29 @@ class SupplyDockController:
             swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
 
         if not candidates:
-            self.log.debug(f"[{self.name}] pick_best_order: no fulfillable candidate orders found")
+            self.log.debug("no fulfillable candidate orders found")
+            self.log.end()
             return None
 
         candidates.sort(key=lambda c: c["priority"], reverse=True)
         winner = candidates[0]["order"]
-        self.log.debug(f"[{self.name}] pick_best_order: picked '{getattr(winner, 'name', winner.id)}' (priority={candidates[0]['priority']}) among {len(candidates)} candidate(s)")
+        self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (priority={candidates[0]['priority']}) among {len(candidates)} candidate(s)")
+        self.log.end()
         return winner
 
     def desired_order_id(self):
         """Reads this dock's assignment from the central plan (see
         plan_dock_assignments()); falls back to this dock's own
         pick_best_order() if no plan has been computed yet (or ever)."""
+        self.log.start(f"[{self.name}] desired_order_id", level="debug")
         plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {}) or {}
         if self.name in plan:
-            self.log.debug(f"[{self.name}] desired_order_id: using central plan assignment -> {plan[self.name]!r}")
+            self.log.debug(f"using central plan assignment -> {plan[self.name]!r}")
+            self.log.end()
             return plan[self.name]
         best = self.pick_best_order()
-        self.log.debug(f"[{self.name}] desired_order_id: no central plan entry, fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
+        self.log.debug(f"no central plan entry, fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
+        self.log.end()
         return best.id if best else None
 
     def assign_order(self, desired_id, order_name, reward_desc):

@@ -148,8 +148,10 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         but load_seed()/dispense_salt() read Inventory only, so each is staged
         right before use. The rebalance sweep may move a leftover back later.
         """
+        self.log.start(f"[{self.name}] stage", level="debug")
         missing = n - self.inventory_count(item_id)
         if missing <= 0:
+            self.log.end()
             return True
         self.stock_memo.pop(item_id, None)
         for building in discover_storage_buildings():
@@ -159,13 +161,15 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
                     continue
                 res = component.transfer_to("inventory", item_id, missing)
             except Exception as e:
-                self.log.debug(f"[{self.name}] stage '{item_id}' from '{building['id']}' raised: {e}")
+                self.log.debug(f"stage '{item_id}' from '{building['id']}' raised: {e}")
                 continue
             missing -= getattr(res, "moved", 0) or 0
             if missing <= 0:
-                self.log.debug(f"[{self.name}] Staged {n}x '{item_id}' into Inventory.")
+                self.log.debug(f"Staged {n}x '{item_id}' into Inventory.")
+                self.log.end()
                 return True
-        self.log.debug(f"[{self.name}] Could not stage '{item_id}': {missing} short.")
+        self.log.debug(f"Could not stage '{item_id}': {missing} short.")
+        self.log.end()
         return missing <= 0
 
     def act(self, method, *args):

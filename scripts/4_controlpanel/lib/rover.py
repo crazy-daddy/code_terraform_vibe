@@ -78,7 +78,8 @@ class RoverController(VehicleController):
         # A target restored from a saved mission (see vehicle_claims.py) after a
         # script reload takes priority over discovery, so the rover continues
         # toward the same destination instead of restarting the search.
-        self.log.trace(f"[{self.name}] find_best_mission_target() enter")
+        self.log.start(f"[{self.name}] find_best_mission_target()", level="debug")
+        self.log.trace("find_best_mission_target() enter")
         if self.current_target_key and self.current_target and self.current_target.get("coords"):
             self.log.print(f"[{self.name}] Resuming previously claimed target '{self.current_target_key}' after reload.")
             is_mine = self.current_target.get("type") == "mine"
@@ -89,7 +90,8 @@ class RoverController(VehicleController):
                 mine_item_id=self.current_target.get("harvest_item") if is_mine else None,
                 mine_purity=self.current_target.get("purity") if is_mine else None,
             )
-            self.log.trace(f"[{self.name}] find_best_mission_target() exit: resumed target '{self.current_target_key}'")
+            self.log.trace(f"find_best_mission_target() exit: resumed target '{self.current_target_key}'")
+            self.log.end()
             return self.current_target, budget
 
         self.cleanup_stale_claims()
@@ -112,11 +114,12 @@ class RoverController(VehicleController):
         # Rover always treats a reachable mineral site as priority 2.
         mineral_candidates = self.build_mineral_site_candidates()
         candidates.extend(mineral_candidates)
-        self.log.debug(f"[{self.name}] find_best_mission_target(): {poi_candidate_count} unscanned POI(s), {len(mineral_candidates)} mineral site candidate(s).")
+        self.log.debug(f"{poi_candidate_count} unscanned POI(s), {len(mineral_candidates)} mineral site candidate(s).")
 
         target, budget, diagnostics = self.select_best_mining_target(candidates, reserve_demand=True)
         if target:
-            self.log.trace(f"[{self.name}] find_best_mission_target() exit: chose '{target['key']}' (type={target['type']})")
+            self.log.trace(f"find_best_mission_target() exit: chose '{target['key']}' (type={target['type']})")
+            self.log.end()
             return target, budget
 
         self.last_target_diagnostics = {
@@ -124,7 +127,8 @@ class RoverController(VehicleController):
             "claim_count": len(self.get_claims()),
             **diagnostics,
         }
-        self.log.trace(f"[{self.name}] find_best_mission_target() exit: no achievable target ({diagnostics})")
+        self.log.trace(f"find_best_mission_target() exit: no achievable target ({diagnostics})")
+        self.log.end()
         return None, None
 
     def run_expedition_cycle(self):

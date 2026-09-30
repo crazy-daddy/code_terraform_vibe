@@ -257,9 +257,11 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
 
     def _execute_construction(self, blueprint_id, coords, kind):
         """Body of execute_construction()."""
-        self.log.trace(f"[{self.name}] execute_construction() enter: blueprint_id={blueprint_id!r}, coords={coords}")
+        self.log.start(f"[{self.name}] _execute_construction", level="debug")
+        self.log.trace(f"execute_construction() enter: blueprint_id={blueprint_id!r}, coords={coords}")
         if not hasattr(self.vehicle, "constructor"):
             self.log.level("error").print(f"[{self.name}] Error: No ConstructorModule mounted on this Pioneer!")
+            self.log.end()
             return False
 
         self.set_intent(fleet_intent.describe("building", [kind or "blueprint"], at=f"{coords[0]:.0f},{coords[1]:.0f}" if coords else None))
@@ -267,7 +269,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
             self.log.print(f"[{self.name}] Driving to construction site at {coords}...")
             if not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
                 self.log.level("warn").print(f"[{self.name}] Could not reach construction site at {coords} safely.")
-                self.log.trace(f"[{self.name}] execute_construction() exit: could not reach site")
+                self.log.trace("execute_construction() exit: could not reach site")
+                self.log.end()
                 return False
 
         if hasattr(self.vehicle, "nav"):
@@ -296,33 +299,39 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         drill_sites.record_built_drill(self.vehicle.input, str(kind), coords)
                     except Exception as error:
                         self.log.level("warn").print(f"[{self.name}] Could not record new drill position: {error}")
-                self.log.trace(f"[{self.name}] execute_construction() exit: blueprint '{blueprint_id}' complete")
+                self.log.trace(f"execute_construction() exit: blueprint '{blueprint_id}' complete")
+                self.log.end()
                 return True
             if res.status not in ("paused_no_power", "paused"):
-                self.log.trace(f"[{self.name}] execute_construction() exit: genuine rejection ({res.status})")
+                self.log.trace(f"execute_construction() exit: genuine rejection ({res.status})")
+                self.log.end()
                 return False  # genuine rejection, not a power issue -- don't keep retrying
 
             if progress_after <= progress_before:
                 self.log.level("warn").print(f"[{self.name}] No progress made this cycle ({res.status}); leaving paused for a later attempt.")
-                self.log.trace(f"[{self.name}] execute_construction() exit: no progress made, leaving paused")
+                self.log.trace("execute_construction() exit: no progress made, leaving paused")
+                self.log.end()
                 return True
 
             self.log.print(f"[{self.name}] Construction paused ({res.status}) at {progress_after*100:.0f}% progress. Recharging nearby and resuming.")
             nearest_cs, _ = self.get_nearest_charging_station()
             if not self.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
                 self.log.level("warn").print(f"[{self.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")
-                self.log.trace(f"[{self.name}] execute_construction() exit: could not reach charging station")
+                self.log.trace("execute_construction() exit: could not reach charging station")
+                self.log.end()
                 return True
             self.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
             if coords and not self.drive_with_recharge(coords[0], coords[1], precision=2.0):
                 self.log.level("warn").print(f"[{self.name}] Could not return to construction site after recharge; leaving paused for a later attempt.")
-                self.log.trace(f"[{self.name}] execute_construction() exit: could not return to site after recharge")
+                self.log.trace("execute_construction() exit: could not return to site after recharge")
+                self.log.end()
                 return True
             if hasattr(self.vehicle, "nav"):
                 try:
                     self.vehicle.nav.brake()
                 except Exception as exc:
                     swallowed("pioneer.PioneerController.execute_construction: self.vehicle.nav.brake #2", exc)
+        self.log.end()
 
     def cargo_count(self, item_id):
         """Units of item_id currently sitting in the Pioneer's cargo, across all stacks."""

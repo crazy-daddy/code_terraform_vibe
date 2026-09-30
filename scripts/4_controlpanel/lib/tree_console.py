@@ -29,6 +29,23 @@ Three levels, same tree formatting:
   badge shown in the normal ALL view, which would defeat the point of
   gating this as opt-in output.
 
+Debug blocks: `start(msg, level="debug")` opens a block whose header is written
+only once something is logged inside it (an idle block prints nothing), and
+`end()` writes `┗━ END <name>` when the header was written, nothing otherwise. Use them for a function's decision
+trail so its lines sit indented under one header and drop their own
+`function_name:` prefix.
+
+Timestamps: buffered lines carry their own game time-of-day (`console.now()`), taken
+when the line is logged, so every line of a multi-line message is stamped, not
+just the first.
+
+Collapsing: a debug block that logs exactly one line is written as a single
+`name: message` line instead of header, line and END. The line carries the time the
+message was logged and ends with the game time the block then took (` (+4m05s)`,
+left off when no time passed). The first line is held back until a second line, a
+nested block or the end shows which of the two forms is needed; `flush()`, a line
+from another TreeConsole and `reset()` expand it first.
+
 Buffering: debug lines (and trace lines that pass the gate) collect in one
 module-level buffer shared by every TreeConsole in the script, so log order
 is kept across modules. The buffer is written out as a single
@@ -45,6 +62,10 @@ and a script stopped from the UI or crashed is killed without unwinding
 (`flush_all()`) before every `sleep()` and comms wait. `swallowed()`
 flushes before it prints. `buffered=False` on a TreeConsole prints its debug
 lines immediately.
+
+Warn and error lines are written without the tree indent: the console prints its own
+level badge in front of the message, so an indent behind it would not line up with
+the block. Their block still shows around them.
 
 Exceptions: an exception escaping a `start()`/`end()` pair leaves its indent open, so run loops call
 `reset_all()` at the top of every tick (`tests/test_reset_in_run_loops.py`).
@@ -72,10 +93,14 @@ LOG_LEVELS_KEY = "console.log_levels"
 MAX_BUFFER_CHARS = 20000  # largest single console.print measured to render (docs/BENCHMARK.md)
 FALLBACK_BUFFER_CHARS = 4000
 _BUFFERED_LEVELS = ("debug",)
+_UNINDENTED_LEVELS = ("warn", "error")  # the console puts its own badge in front of the line, so an indent would not line up
 _PROBE_CHARS = 200000  # above the highest Advanced Scripting string limit (100,000)
 
 # One buffer for every TreeConsole in the script. `key` is (level, channel, color) of the pending run.
 _BUFFER = {"console": None, "key": None, "lines": [], "chars": 0, "cap": 0}
+
+# TreeConsoles with a debug block that holds its first line back (see "Collapsing" in the module doc).
+_HOLDING = []
 
 # Every TreeConsole in the script, so reset_all() can drop indent leaked by an exception.
 _INSTANCES = []
@@ -105,7 +130,10 @@ def _buffer_cap():
 
 
 def flush_all():
-    """Write the pending debug run as one console.print and empty the buffer."""
+    """Write the pending debug run as one console.print and empty the buffer. A block still holding its
+    single line is expanded first, so the line is not lost if the script parks or is killed."""
+    for log in list(_HOLDING):
+        log._expand_held()
     lines = _BUFFER["lines"]
     if not lines:
         return
@@ -115,7 +143,18 @@ def flush_all():
     _BUFFER["key"] = None
     _BUFFER["chars"] = 0
     _BUFFER["console"] = None
-    console.print("\n".join(lines), level=level, channel=channel, color=color, timestamp=True)
+    console.print("\n".join(lines), level=level, channel=channel, color=color)
+
+
+def _stamp(console):
+    """Game time-of-day prefix ("HH:MM:SS "), or "" if the console has no `now()`."""
+    if not hasattr(console, "now"):
+        return ""
+    try:
+        return f"{console.now()} "
+    except Exception as error:
+        swallow.swallowed("tree_console._stamp: console.now", error)
+        return ""
 
 
 def reset_all():
@@ -123,15 +162,40 @@ def reset_all():
     that escapes a start()/end() pair leaves its indent open, so every later line would sit one level
     deeper. Never call it inside a block that is meant to stay open."""
     for log in _INSTANCES:
-        log._indent = 0
+        log.reset()
 
 
-def _write(console, text, level, channel, color, buffered):
+def _seconds(stamp):
+    """Seconds since midnight of an "HH:MM:SS " stamp, or -1 if it is not one."""
+    parts = stamp.strip().split(":")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        return -1
+    return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+
+
+def _elapsed(start_stamp, end_stamp):
+    """" (+4m05s)" for the game time between two stamps, "" if unknown or no time passed."""
+    first, last = _seconds(start_stamp), _seconds(end_stamp)
+    if first < 0 or last < 0:
+        return ""
+    seconds = (last - first) % 86400
+    if seconds == 0:
+        return ""
+    if seconds < 60:
+        return f" (+{seconds}s)"
+    return f" (+{seconds // 60}m{seconds % 60:02d}s)"
+
+
+def _write(console, text, level, channel, color, buffered, stamp=""):
     if not buffered or level not in _BUFFERED_LEVELS:
         flush_all()
-        console.print(text, level=level, channel=channel, color=color, timestamp=True)
+        if stamp:
+            console.print(stamp + text, level=level, channel=channel, color=color)
+        else:
+            console.print(text, level=level, channel=channel, color=color, timestamp=True)
         return
     cap = _buffer_cap()
+    text = (stamp or _stamp(console)) + text
     if len(text) > cap:
         text = text[: cap - 1] + "…"
     key = (level, channel, color)
@@ -160,6 +224,8 @@ class TreeConsole:
         self.default_level = default_level
         self.buffered = buffered
         self._indent = 0
+        # open blocks, outermost first: [level, header line, shown, channel, color, name, held first line]
+        self._blocks = []
         self._pending_color = ""
         self._pending_level = ""
 
@@ -199,32 +265,112 @@ class TreeConsole:
         self._pending_level = "debug"
         self._emit(msg, channel)
 
-    def start(self, msg: str, channel: str = "") -> None:
-        """Open a named block and indent everything logged until the matching `end()`."""
-        self.print(_START + msg, channel)
+    def start(self, msg: str, channel: str = "", level: str = "") -> None:
+        """Open a named block and indent everything logged until the matching `end()`. A block at
+        `level` "debug" writes its header only when a line is first logged inside it."""
+        block_level = level or self.default_level
+        block = [block_level, self._prefix() + _START + msg, False, channel, self._pending_color, msg, None]
+        self._pending_color = ""
+        self._pending_level = ""
+        self._blocks.append(block)
         self._indent += 1
+        if block_level not in _BUFFERED_LEVELS:
+            self._show_headers()
 
-    def end(self, msg: str, channel: str = "") -> None:
-        """Dedent and close the block opened by the matching `start()`."""
+    def end(self, msg: str = "", channel: str = "") -> None:
+        """Dedent and close the block opened by the matching `start()`. A debug block whose header was
+        written closes with `END <name>` unless given a message; one that never wrote it closes silently."""
         self._indent = max(0, self._indent - 1)
-        self.print(_END + msg, channel)
-        if self._indent == 0:
+        block = self._blocks.pop() if self._blocks else [self.default_level, "", True, "", "", "", None]
+        if block[0] in _BUFFERED_LEVELS:
+            if not block[2]:
+                if block[6] is None:
+                    return
+                if not msg:
+                    self._collapse(block)
+                    return
+                self._blocks.append(block)
+                self._show_headers()
+                self._blocks.pop()
+            msg = msg or "END " + block[5]
+        self._pending_level = self._pending_level or block[0]
+        self._emit(_END + msg, channel or block[3], headers=False)
+        if self._indent == 0 and block[0] not in _BUFFERED_LEVELS:
             flush_all()
 
     def reset(self) -> None:
         """Drop this instance's open blocks (see `reset_all()`)."""
+        self._expand_held()
         self._indent = 0
+        self._blocks = []
 
     def flush(self) -> None:
         """Write any buffered debug lines now (call before `sleep()` in run loops)."""
         flush_all()
 
-    def _emit(self, msg: str, channel: str) -> None:
+    def _prefix(self) -> str:
+        return _BRANCH * self._indent
+
+    def _show_headers(self, count=None) -> None:
+        """Write the headers of blocks that have not shown theirs yet, outermost first (only the first
+        `count` open blocks if given), each followed by the line it was holding back."""
+        blocks = self._blocks if count is None else self._blocks[:count]
+        entry = ""  # headers take the entry time of the held line, so stamps stay in order
+        for block in blocks:
+            if not block[2] and block[6] is not None:
+                entry = block[6][3]
+                break
+        for depth, block in enumerate(blocks):
+            if block[2]:
+                continue
+            block[2] = True
+            _write(self.console, block[1], block[0], block[3], block[4], self.buffered, entry)
+            held = block[6]
+            if held is not None:
+                block[6] = None
+                self._release_hold()
+                prefix = "" if held[0] in _UNINDENTED_LEVELS else _BRANCH * (depth + 1)
+                _write(self.console, prefix + held[4], held[0], held[1], held[2], self.buffered, held[3])
+
+    def _release_hold(self) -> None:
+        if self in _HOLDING:
+            _HOLDING.remove(self)
+
+    def _expand_held(self) -> None:
+        """Write the header and held line of the block holding its first line back, if any."""
+        for depth, block in enumerate(self._blocks):
+            if block[6] is not None:
+                self._show_headers(depth + 1)
+                return
+
+    def _collapse(self, block) -> None:
+        """Write a block's single held line as `name: message (+elapsed)` at the block's own depth."""
+        level, channel, color, stamp, msg = block[6]
+        block[6] = None
+        self._release_hold()
+        prefix = "" if level in _UNINDENTED_LEVELS else self._prefix()
+        text = prefix + block[5] + ": " + msg + _elapsed(stamp, _stamp(self.console))
+        _write(self.console, text, level, channel, color, self.buffered, stamp)
+
+    def _emit(self, msg: str, channel: str, headers: bool = True) -> None:
         if self.console is None:
+            self._pending_color = ""
+            self._pending_level = ""
             return
-        prefix = _BRANCH * self._indent
         level = self._pending_level or self.default_level
         color = self._pending_color
-        _write(self.console, prefix + msg, level, channel, color, self.buffered)
         self._pending_color = ""
         self._pending_level = ""
+        for other in list(_HOLDING):
+            if other is not self:
+                other._expand_held()
+        if headers:
+            block = self._blocks[-1] if self._blocks else None
+            if block is not None and block[0] in _BUFFERED_LEVELS and not block[2] and block[6] is None:
+                self._show_headers(len(self._blocks) - 1)
+                block[6] = (level, channel, color, _stamp(self.console), msg)
+                _HOLDING.append(self)
+                return
+            self._show_headers()
+        prefix = "" if headers and level in _UNINDENTED_LEVELS else self._prefix()
+        _write(self.console, prefix + msg, level, channel, color, self.buffered)

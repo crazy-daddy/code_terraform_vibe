@@ -147,18 +147,22 @@ def _path_to(seeds, item_id, cache, shortfall_only):
 
 def demand_root(item_id, roots=None, cache=None, curr_tick=None):
     """Label of the demand root whose recipe tree reaches item_id (see module header), or None."""
+    log.start(f"demand_root({item_id})", level="debug")
     cache = cache if cache is not None else SourceCache()
     roots = roots if roots is not None else demand_roots(curr_tick)
     for shortfall_only in (True, False):
         for label, seeds in roots:
             path = _path_to(seeds, item_id, cache, shortfall_only)
             if path:
-                log.debug(f"demand_root({item_id}): {label} via {' <- '.join(path)}{'' if shortfall_only else ' (no shortfall on path)'}.")
+                log.debug(f"{label} via {' <- '.join(path)}{'' if shortfall_only else ' (no shortfall on path)'}.")
+                log.end()
                 return label
     if item_id in RAW_ORE_ITEM_IDS:
-        log.debug(f"demand_root({item_id}): no root reaches it; home ore buffer floor.")
+        log.debug("no root reaches it; home ore buffer floor.")
+        log.end()
         return "ore_buffer"
-    log.debug(f"demand_root({item_id}): no root reaches it.")
+    log.debug("no root reaches it.")
+    log.end()
     return None
 
 

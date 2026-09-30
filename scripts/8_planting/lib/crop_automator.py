@@ -176,28 +176,33 @@ class CropAutomatorController:
     # ----------------------------------------------------------------- jobs
 
     def consume_results(self, curr_tick):
+        self.log.start(f"[{self.name}] consume_results", level="debug")
         for _ in range(MAX_RESULTS_PER_STEP):
             try:
                 if self.machine.result_count() <= 0:
+                    self.log.end()
                     return
                 res = self.machine.next_result()
             except Exception as e:
-                self.log.debug(f"[{self.name}] next_result() failed: {e}")
+                self.log.debug(f"next_result() failed: {e}")
+                self.log.end()
                 return
             status = getattr(res, "status", "?")
             if status == "empty":
+                self.log.end()
                 return
             action = getattr(res, "action", None)
             sector = getattr(res, "sector", None)
             if status == "ok":
                 collected = getattr(res, "collected", 0) or 0
-                self.log.debug(f"[{self.name}] {action} {sector} ok{' +' + str(collected) + ' Forage' if collected else ''}.")
+                self.log.debug(f"{action} {sector} ok{' +' + str(collected) + ' Forage' if collected else ''}.")
             elif status == "partial":
                 self.log.level("warn").print(f"[{self.name}] Harvest {sector}: output full, kept {getattr(res, 'collected', 0)}, discarded {getattr(res, 'discarded', 0)} Forage.")
             else:
-                self.log.debug(f"[{self.name}] {action} {sector} -> {status}: {getattr(res, 'message', '')}")
+                self.log.debug(f"{action} {sector} -> {status}: {getattr(res, 'message', '')}")
                 if sector:
                     self._failed[sector] = curr_tick
+        self.log.end()
 
     def queued_jobs_info(self):
         """Returns (queued_sectors: set, committed_seeds: dict[seed_id, int], blocked_job: CropJob | None)."""

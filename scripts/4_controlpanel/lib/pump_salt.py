@@ -48,15 +48,17 @@ def _now_tick():
 
 def pump_positions(curr_tick=None):
     """{pump_id: [x, y]} for every Water Pump standing on a surveyed well."""
+    log.start("pump_positions", level="debug")
     tick = curr_tick if curr_tick is not None else _now_tick()
     if _cache["tick"] is not None and tick - _cache["tick"] < PUMP_CACHE_TICKS:
+        log.end()
         return _cache["pumps"]
     pumps = {}
     journal = get_component("journal")
     try:
         sites = journal.surveyed_sites("nocturna") if journal else []
     except Exception as e:
-        log.debug(f"pump_positions: surveyed_sites() raised {e}")
+        log.debug(f"surveyed_sites() raised {e}")
         sites = []
     for site in sites or []:
         # Only WaterWell carries has_pump()/pump_id(); other Site kinds lack them.
@@ -75,7 +77,8 @@ def pump_positions(curr_tick=None):
             pumps[pump_id] = [site.x, site.y]
     _cache["tick"] = tick
     _cache["pumps"] = pumps
-    log.debug(f"pump_positions: {len(pumps)} Water Pump(s) on surveyed wells.")
+    log.debug(f"{len(pumps)} Water Pump(s) on surveyed wells.")
+    log.end()
     return pumps
 
 
