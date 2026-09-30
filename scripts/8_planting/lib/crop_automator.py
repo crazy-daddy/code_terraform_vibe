@@ -55,6 +55,7 @@ from storage import take_item
 from seed_supply import seed_buffer
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 from version_guard import validate_game_version
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
@@ -87,6 +88,8 @@ class CropAutomatorController:
     def __init__(self, machine):
         self.machine = machine
         self.name = getattr(machine, "id", "crop_automator")
+        self.parker = ParkRequester(self.name, "crop_automator")
+        self.parkable = False  # set by step(): in the layout, not shed, nothing queued or finished
         self.clock = get_component("clock")
         self.log = TreeConsole(module="crop_automator")
         self.sector = self._read_sector()
@@ -355,6 +358,7 @@ class CropAutomatorController:
 
     def step(self):
         """One poll. Returns True while it has work in flight (results, queued jobs, new jobs)."""
+        self.parkable = False
         curr_tick = self.get_current_tick()
         if not self.sector:
             self.sector = self._read_sector()
@@ -455,6 +459,7 @@ class CropAutomatorController:
                 committed_seeds[seed_id] = committed_seeds.get(seed_id, 0) + 1
         self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
         self.publish(curr_tick, mine, mature, open_cells, waiting)
+        self.parkable = not busy
         return busy
 
     def _note_state(self, text):
@@ -497,5 +502,7 @@ class CropAutomatorController:
                 busy = self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Crop Automator exception: {e}")
+                self.parkable = False
+            self.parker.update(self.parkable)
             flush_all()
             sleep(POLL_INTERVAL_S if busy else IDLE_POLL_SECONDS)

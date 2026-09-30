@@ -2,6 +2,7 @@ import fluid_routing
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
 # at a reachable Liquid Tank / Large Liquid Tank, load-balancing across
@@ -71,6 +72,8 @@ class FluidPumpController:
         self.clock = get_component("clock")
         self.log = TreeConsole(module="fluid_pump")
         self._was_dormant = None
+        # Only an Oil Pump has a dormant phase worth parking through (lib/script_parking.py).
+        self.parker = ParkRequester(self.name, "oil_pump") if hasattr(self.pump, "well_active") else None
         # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
         # the full rationale (per-entry blacklist expiry, BuildingRef
         # resolution, id-lookup/connected-id-sync caching) -- this router
@@ -186,5 +189,7 @@ class FluidPumpController:
                 self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] {self.label} exception: {error}")
+            if self.parker is not None:
+                self.parker.update(self._was_dormant is True)
             flush_all()
             sleep(poll_interval)

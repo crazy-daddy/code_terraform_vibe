@@ -33,7 +33,8 @@ Repo moved to a dev root (`C:\Users\Adrian\Code_Terraform`) separate from the li
 Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance = `min(1000, 50000 / N)` per script (165 running → 303 steps, 3.3× slower than ≤ 50).
 
 - [x] **On-demand script scheduler** (`lib/script_parking.py`, dev_workflow.md §1d-2): Smelters, Fabricators, Supply Docks and Oil Generators breaker-parked while idle; solar scripts stopped at night.
-- [ ] **Extend script parking** to Water/Oil Pumps (dormant well / tank full), Crop Automators (queue empty, nothing ripe), Drone Service / Charging Stations (no drone or vehicle needs them), after the first types have run in a real save.
+- [x] **Extend script parking** to Oil Pumps (dormant well) and Crop Automators (nothing to do).
+- [ ] **Park Drone Service / Charging Stations** only with a reliable arrival signal (a drone or vehicle heading there to charge); without one a parked station strands it.
 - [x] **Callback atomicity helper** (`lib/atomic.py`, dev_workflow.md §1d-1), used by the Harvester route search.
 - [x] **Harvester startup geometry**: `full_chunk_count()` (~48k of the ~55k startup steps) is stored in `plant.geometry` and reused across restarts (chunking it atomically was rejected: spread over thousands of small calls, uncatchable `StepLimitError` risk, saves ~20 s once per restart).
 - [ ] **More atomic work**: the Harvester's `publish` phase (seed demand, status counts: pure part only) and the demand cascade on a prefetched snapshot.

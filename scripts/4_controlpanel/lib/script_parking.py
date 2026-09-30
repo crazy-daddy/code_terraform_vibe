@@ -47,6 +47,8 @@ WAKE_AFTER_TICKS = {
     "supply_dock": 600,
     "oil_generator": 600,
     "thermal_cap": 600,
+    "oil_pump": 3000,
+    "crop_automator": 600,
 }
 # Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
 MAX_WAKE_AFTER_TICKS = 6000
@@ -193,7 +195,21 @@ class ScriptParking:
             return "order assigned"
         if kind == "oil_generator" and members.get(machine_id, (None,))[0] in low_grids:
             return "grid reserve low"
+        if kind == "oil_pump" and self._well_active(machine_id):
+            return "well active"
         return None
+
+    @staticmethod
+    def _well_active(machine_id):
+        """Oil Pump well_active() (readable from any script); True on a read failure so the pump wakes."""
+        pump = get_component(machine_id)
+        if pump is None or not hasattr(pump, "well_active"):
+            return False
+        try:
+            return bool(pump.well_active())
+        except Exception as error:
+            swallowed("script_parking._well_active: pump.well_active", error)
+            return True
 
     def _low_reserve_grids(self, grids, parked, requests, members):
         """Anchor ids of grids with a parked or park-requesting Oil Generator whose reserve is below OIL_WAKE_RESERVE_FRACTION."""

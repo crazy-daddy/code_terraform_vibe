@@ -161,6 +161,25 @@ class ScriptParkingTests(StubTestCase):
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("smelter_1", True))
 
+    def test_oil_pump_wakes_when_its_well_turns_active(self):
+        class _Pump:
+            active = False
+
+            def well_active(self):
+                return self.active
+
+        pump = _Pump()
+        self.world.components["oil_pump_1"] = pump
+        self.grids[0].members.append(_Member("oil_pump_1", "oil_pump"))
+        self.request("oil_pump_1", "oil_pump")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("oil_pump_1", False)])
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(len(self.power.calls), 1)
+        pump.active = True
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("oil_pump_1", True))
+
     def test_solar_stopped_at_night_and_started_at_sunrise(self):
         self.parking.step(self.grids, -3.0)
         self.assertNotIn("solar_1", self.run.running)
