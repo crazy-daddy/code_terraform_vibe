@@ -12,7 +12,8 @@ Two ways out of the count:
   it is idle and files a request (`ParkRequester`); the headless automation panel
   (`ScriptParking.step()`) switches the breaker off, and on again when the
   machine's kind is due for a re-check or a wake trigger fires.
-- Night stop (solar generators, which have no breaker): the panel stops their
+- Night stop (solar generators; they have a breaker too, but at 0 W a stop costs
+  nothing and a player-stopped script stays stopped): the panel stops their
   scripts with `run_control.stop()` once the sun is down and starts them again
   at sunrise. A stopped panel drops its tilt, which does not matter at 0 W.
 
@@ -62,6 +63,7 @@ WAKE_AFTER_TICKS = {
     "charging_station": 3000,
     "drone_service_station": 3000,
     "drone_depot": 3000,
+    "field_provider": 6000,
 }
 # Station kinds: never park the last awake one of a type (see the module docstring).
 STATION_KINDS = ("charging_station", "drone_service_station")
@@ -162,6 +164,41 @@ def parked_nearest(ref, station_refs, parked, awake_distance):
         if best is None or dist < best:
             best, best_id = dist, station["id"]
     return best_id
+
+
+def wake_kind(kind, reason):
+    """
+    Switches on every machine of `kind` parked here and drops them from PARKED_KEY,
+    for a change that may give all of them work (e.g. a new field layout wakes every
+    parked field provider). Callable from any script. Returns the ids woken.
+    """
+    ids = sorted(parked_ids(kind))
+    if not ids:
+        return []
+    power_control = get_component("power_control")
+    woken = []
+    for machine_id in ids:
+        try:
+            result = power_control.set_powered(machine_id, True) if power_control else None
+        except Exception as error:
+            swallowed("script_parking.wake_kind: power_control.set_powered", error)
+            continue
+        if getattr(result, "status", "") == "ok":
+            woken.append(machine_id)
+
+    def unpark(parked):
+        parked = parked if isinstance(parked, dict) else {}
+        for machine_id in woken:
+            parked.pop(machine_id, None)
+        return parked
+
+    if woken:
+        try:
+            archive.transaction(PARKED_KEY, {}, unpark)
+        except Exception as error:
+            swallowed("script_parking.wake_kind: archive.transaction", error)
+        log.print(f"[PARKING] Woke {len(woken)} {kind}(s) ({reason}).")
+    return woken
 
 
 def _held(machine_id, now):

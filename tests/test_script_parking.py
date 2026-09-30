@@ -261,5 +261,55 @@ class StationParkingTests(StubTestCase):
         self.assertIsNone(script_parking.parked_nearest(Ref(), refs, set(), 10.0))
 
 
+class FieldProviderParkingTests(StubTestCase):
+    def test_wake_kind_switches_on_every_parked_provider(self):
+        power = _PowerControl()
+        self.world.services["power_control"] = power
+        self.world.notebook.data[PARKED_KEY] = {
+            "grow_lamp_1": {"kind": "field_provider", "mode": "breaker", "since": 0},
+            "sprinkler_1": {"kind": "field_provider", "mode": "breaker", "since": 0},
+            "smelter_1": {"kind": "smelter", "mode": "breaker", "since": 0},
+        }
+        self.assertEqual(script_parking.wake_kind("field_provider", "test"), ["grow_lamp_1", "sprinkler_1"])
+        self.assertEqual(set(self.world.notebook.data[PARKED_KEY]), {"smelter_1"})
+        self.assertEqual(script_parking.wake_kind("field_provider", "test"), [])
+
+    def test_switched_off_provider_asks_to_park_and_a_needed_one_does_not(self):
+        import field_provider
+
+        class Lamp:
+            id = "grow_lamp_1"
+            enabled = True
+
+            def position(self):
+                return "B2"
+
+            def is_enabled(self):
+                return self.enabled
+
+            def set_enabled(self, on):
+                self.enabled = on
+                return _Result()
+
+            def status(self):
+                return "active" if self.enabled else "disabled"
+
+            def buffer(self):
+                return 0.0
+
+        self.world.notebook.data["plant.recipes"] = {}  # fallback rules: sunpetal needs light, dewmoss water
+        lamp = Lamp()
+        controller = field_provider.FieldProviderController(lamp, "grow_lamp")
+        self.world.notebook.data["plant.layout"] = {"mode": "starter", "cells": {"B3": "dewmoss"}}
+        for _ in range(script_parking.PARK_AFTER_IDLE_STEPS):
+            controller.step()
+        self.assertFalse(lamp.enabled)
+        self.assertIn("grow_lamp_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+        self.world.notebook.data["plant.layout"] = {"mode": "starter", "cells": {"B3": "sunpetal"}}
+        controller.step()
+        self.assertTrue(lamp.enabled)
+        self.assertNotIn("grow_lamp_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+
+
 if __name__ == "__main__":
     unittest.main()

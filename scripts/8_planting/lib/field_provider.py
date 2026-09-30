@@ -26,6 +26,7 @@ from storage import take_item
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
+from script_parking import ParkRequester
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
@@ -66,6 +67,7 @@ class FieldProviderController:
         self._last_status = None
         self._last_enabled = None
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
+        self.parker = ParkRequester(self.name, "field_provider")
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -244,6 +246,10 @@ class FieldProviderController:
 
         enabled = needed and not shedded
         self.set_enabled(enabled)
+        # Switched off (not shed, not a stray the Harvester removes) has nothing to do
+        # until the layout or the recipes change: lib/script_parking.py parks it (the
+        # breaker keeps set_enabled(False)); harvester_planting / seed_supply wake it.
+        self.parker.update(not enabled and not shedded and served is not None and not self.is_stray())
         if enabled != self._last_enabled:
             why = "shed by the Power Guard" if shedded else ("no crop beside it needs " + str(self.service) if not needed else "serving " + ", ".join(f"{sp}@{s}" for s, sp in (served or [])))
             self.log.print(f"[{self.name}] {'On' if enabled else 'Off'}: {why}.")
@@ -293,6 +299,7 @@ class FieldProviderController:
             try:
                 self.step()
             except Exception as e:
+                self.parker.update(False)
                 self.log.level("error").print(f"[{self.name}] Field provider exception: {e}")
             flush_all()
             sleep(POLL_INTERVAL_S)

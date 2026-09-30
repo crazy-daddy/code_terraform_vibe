@@ -44,6 +44,7 @@ import field_layout
 import harvester_pure
 from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
 from swallow import swallowed
+from script_parking import wake_kind
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -271,6 +272,7 @@ class HarvesterPlantingMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] Layout breaks {len(bad)} rule(s): {bad[:5]}")
         archive.set(LAYOUT_KEY, {"version": LAYOUT_VERSION, "starter_version": STARTER_VERSION, "mode": mode, "fill": fill, "chunks": chunks,
                                  "base": base, "anchor": offset, "cells": layout, "reserved": reserved, "garden": garden})
+        wake_kind("field_provider", "field layout changed")
         self._host.log.print(f"[{self._host.name}] Field layout set ({mode}{', ' + str(fill) + ' fill, ' + str(chunks) + ' chunk(s)' if mode == 'full' else ''}): "
                              f"{len(layout)} plants, {len(set(layout.values()))} species, {len(reserved)} machine cells, "
                              f"~{round(field_layout.forage_per_hour(layout, rules, garden))} Forage/h at Mk I (base {base}).")

@@ -38,7 +38,7 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
   - [ ] Validate live: an unpowered station still discoverable and dockable, visit wake arrives before docking, hand-off rescue from the woken station.
 - [x] **Park Drone Depots** (dev_workflow.md §1d-2): empty, idle depots park; `fly_to_station()` and `request_stage()` wake them.
 - [x] **Station low-charge nudge removed**: it was a remote write the game blocks (`PermissionError`); a unit whose script could read a signal already budgets its own way back, and rescue covers the rest.
-- [ ] **Park field providers** (Grow Lamp, Sprinkler, Dispenser): they have a breaker that keeps `set_enabled()`; park an unneeded (disabled) one, wake it from the Harvester when a neighbour needs its service. Sprinkler water routing needs a check first (same concern as Water Pumps).
+- [x] **Park field providers** (Grow Lamp, Sprinkler, Dispenser) while switched off; a new layout or changed recipes wake them (dev_workflow.md §1d-2). Lit/serving ones stay up (unpowered = no service).
 - [x] **Callback atomicity helper** (`lib/atomic.py`, dev_workflow.md §1d-1), used by the Harvester route search.
 - [x] **Harvester startup geometry**: `full_chunk_count()` (~48k of the ~55k startup steps) is stored in `plant.geometry` and reused across restarts (chunking it atomically was rejected: spread over thousands of small calls, uncatchable `StepLimitError` risk, saves ~20 s once per restart).
 - [ ] **More atomic work**: the Harvester's `publish` phase (seed demand, status counts: pure part only) and the demand cascade on a prefetched snapshot.
