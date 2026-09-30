@@ -142,24 +142,24 @@ The save has grown past a single production base: multiple outposts are founded,
   - [x] **Phase B: drones.** Drone row on the card (hauler/miner + deploy-outpost picker limited to outposts with a Depot); `lib/drone_commission.py` picks the best craftable chassis + `LOADOUTS` modules, crafted via `fabricator.upgrade_orders` (requester `fleet_commission`), deployed at the picked outpost, fitted by `drone_upgrade.fit_loadout_if_new()` through a `fleet.upgrade` lineage entry with `job` and `from: None`. Stub-tested only.
     - [ ] Validate live (ask first): one hauler drone at a remote Depot end to end. Confirm the kit is built at home and stays in Inventory, `deploy(chassis, outpost)` docks the new drone at that Depot so `couple()` works, and scripts_sync fills `HOME_DEPOT`.
   - [x] **Phase C: parameters chosen in game.** Card's HOME_BASE picker → `fleet.commission.lineage[id].home_base`; drone outpost → lineage `params.HOME_DEPOT`. `devtools/scripts_sync.py` reads both from the save (`upgrade_fill_for()`/`commission_fill_for()`) and fills the slot without prompting; a Pioneer job only finishes once `fleet.status[id].home` matches. Stub-tested only.
-  - [ ] **Phase D: semi-auto.** Target count per role (`fleet.commission["targets"]`) + auto switch: the coordinator queues a job when the live count is below target; later demand-driven targets (pickup backlog age, unserved ore demand). Matching "−" button = `recall_home_and_decommission()` below.
+  - [ ] **Phase D: semi-auto.** Target count per role (`fleet.commission["targets"]`) + auto switch: the coordinator queues a job when the live count is below target; later demand-driven targets (pickup backlog age, unserved ore demand). Matching "−" = the retire flow (`fleet_decommission.request_decommission()`, §2k-4).
 - [ ] **Cash manager: one budget owner for every Shop purchase** (`lib/cash.py`, CASH card `cash_panel.py`; see `docs/cheatsheet/production_logistics.md` §2l). Replaces the flat 100k reserves: reagents (Bio Lab, Pioneer Shop pulls) first down to 0, capital buys above a dynamic floor in operator-set priority with a savings goal (small buys may skip), no prespending of forecast income; income/burn measured from the balance history, Earth Order pipeline and per-ask ETAs on the card. Stub-tested only.
   - [ ] Validate live (ask first): create the `cash_panel` Custom Panel; check income/h and reagent burn/h against the credit history, and that a saving Crop Automator/Warehouse ask holds back lower-priority buys.
   - [ ] Potential improvement: score capital asks by payoff (e.g. Forage/h or throughput per credit) instead of the static priority list.
   - [ ] Early tiers (`1_early/bio/bio_lab.py` `CREDIT_FLOOR`, `1_early/power/solar.py` buyer) still use their own credit checks, outside the cash manager.
 - [ ] **Every Pioneer hauler pulls to its HOME_BASE** (no `DESTINATION_OUTPOST_ID`, no push hauler, no floating Pioneers; see `docs/cheatsheet/vehicles_drones.md` §2f/§2g). Remote Bio Lab reagents are buyable pull requests, bought at the Shop by the hauler homed at the lab. Stub-tested only.
   - [ ] Validate live: scripts_sync re-homes the old ore hauler to home and the reagent hauler to its lab outpost (`note ... re-homed` lines); the home hauler keeps home ore stocked; the lab hauler buys reagents at home (`Bought Nx ...` debug) and the remote Lab loads them.
-- [ ] **Pioneer `recall_home_and_decommission()`**: as drone haulers take over freight, retire Pioneers in an
-  orderly way. Recall to `outpost_home`, unload cargo, uncouple modules to Inventory, sell modules and any
-  leftover cargo, then undeploy/sell the chassis (Ship Computer deploy/undeploy API, v0.1.25). Operator-triggered
-  (Control Panel switch or script command), never automatic. Release its reservations and archive entries
-  (`vehicle.mission`, `vehicle.recall`, `fleet.status`, pickups/yield).
+- [x] **Fleet decommissioning** (`lib/fleet_decommission.py`, retire buttons on FLEET / DRONE FLEET; see
+  `docs/cheatsheet/vehicles_drones.md` §2k-4): recall home, unload, undeploy; Pioneer parts sold, drone parts kept
+  in Inventory; per-machine archive entries dropped. Operator-triggered only. Stub-tested only.
+  - [ ] Validate live (ask first): retire one Pioneer and one drone. Confirm `undeploy()` works with the Pioneer
+    parked at HOME_BASE (not only at home), that it returns the portables inside Holders/Racks, and the sale total.
 - [ ] **Semi-retire Pioneer haulers once drone freight is proven (target tier ~`8_`).** Drones carry far more
   per trip, so most Pioneer haulers become dead weight. Gate: drone hauler phases 1 + 2 validated live. Keep a
   small residual Pioneer fleet only for jobs drones can't serve: outposts without a Drone Depot, and Water Pump
   `salt_out` pickup (`DroneCargo.load()` -> `not_at_source`, see Phase 5). Plan: route selection prefers drones
   wherever a Depot exists at both ends; Pioneers keep only the uncovered jobs; retire the surplus via
-  `recall_home_and_decommission()` above (operator-triggered, never automatic). Re-check the residual set
+  the retire buttons (`lib/fleet_decommission.py`) (operator-triggered, never automatic). Re-check the residual set
   whenever a Depot is built at an outpost.
   - [ ] Validate live: switch on, pull hauler skips drills + Depot outposts, drone haulers pick the ore up.
 - [ ] Verify power subnet topology after every remote build:

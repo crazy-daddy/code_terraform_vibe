@@ -13,9 +13,9 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 | Role | Source file (slot) | Notes |
 | :--- | :--- | :--- |
 | STATUS + AUTOMATION UI | `status_panel.py` | keep at top of Control Room |
-| FLEET (ground vehicles) | `vehicles_panel.py` | |
+| FLEET (ground vehicles) | `vehicles_panel.py` | per-row recall switch + Pioneer retire button (§2k-4) |
 | PRODUCTION | `production_panel.py` | |
-| DRONE FLEET | `drones_panel.py` | cruise-throttle slider + drone roster + fleet auto-upgrade switch/status (§2k) |
+| DRONE FLEET | `drones_panel.py` | cruise-throttle slider + drone roster + fleet auto-upgrade switch/status (§2k) + per-row recall switch and retire button (§2k-4) |
 | COMMISSION (new Pioneers and drones) | `fleet_commission_panel.py` | Pioneer role buttons + HOME_BASE picker, drone role buttons + deploy-outpost picker (outposts with a Drone Depot), job queue with cancel (§2k-2); `2 x 2` |
 | CASH (budget) | `cash_panel.py` | balance/floor/income/reagent burn/order pipeline + one row per consumer kind with next cost, planned total, ETA and ^/v priority buttons (§2l); `2 x 2` |
 | Automation calculator | `control_room_automation.py` (Automation) | draws nothing; see above |
@@ -51,6 +51,7 @@ First number = columns (width), second = rows (height). `1x1` → `1x2` adds hei
 **General layout rules for any new card** (background: `DESIGN_HISTORY.md`):
 - Widget keys (`button`, `switch`, ...) are stored per card and never swept; a card holds at most 512. Never build a key from changing data (job id, tick, name) -- key per row slot (`cancel_{index}`) instead. A card whose widgets are all momentary buttons may call `panel.clear_inputs()` once above its loop.
 - `card(x, y, w, h, title)` already renders own title bar text. Never add second `panel.label()` re-rendering same title.
+- `panel.switch()` keeps its own stored state; `default_on` only seeds it the first time. A switch mirroring an archive flag that code also changes (recall: retire request, blocked retirement, §2k-4) must be synced: `synced_switch()` in `vehicles_panel.py`/`drones_panel.py` treats a stored state that moved since the last tick as a click and overwrites any other mismatch from the archive (`panel.set_switch()`). A plain `switch()` there re-writes the stale widget state into the archive.
 - Named widget that draws own label (`slider`, likely `switch`/`button` too): fold live value INTO that label string. Don't draw separate, separately-positioned text beside it.
 - `pill()` needs more vertical clearance below than plain text line. Leave ≥ ~24px, not ~16px, before placing anything under one.
 - Anchor right-side elements from right edge (`width - <fixed px>`), not width fraction (`width * 0.86`), for anything with roughly fixed pixel footprint (`switch`, `button`, short `pill`). Fractions of 500px vs 1000px canvas land very differently.

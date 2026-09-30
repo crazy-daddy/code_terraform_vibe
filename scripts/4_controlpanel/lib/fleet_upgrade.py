@@ -37,6 +37,7 @@ from drone_energy import HOME_DEPOTS_KEY
 from drone_claims import DRONE_RECALL_KEY, MISSION_KEY
 from drone_depot import DEPOT_STATUS_KEY
 from drone_commission import DRONE_CHASSIS_TIERS
+from fleet_decommission import decommission_state
 from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -265,7 +266,8 @@ class FleetUpgradeCoordinator:
             return None
         target_kind = available[-1]
         target_tier = DRONE_CHASSIS_TIERS.index(target_kind)
-        entries = state.get("drones") or {}
+        entries = dict(state.get("drones") or {})
+        entries.update(decommission_state())  # being retired: never swapped
         telemetry = fleet_status.get_all()
         candidates = []
         for drone_id, ref in drones.items():

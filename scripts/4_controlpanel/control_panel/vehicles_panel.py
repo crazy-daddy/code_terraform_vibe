@@ -12,12 +12,18 @@
 # A fleet too large to fit even a 2x2 card scrolls via a horizontal slider
 # (there's no vertical slider/scroll widget in the panel API) repurposed as a
 # scrollbar -- see the "vehicle_scroll" slider below.
+#
+# Pioneer rows also get a "retire" button left of the recall switch
+# (lib/fleet_decommission.py): recall home, unload, undeploy, sell the parts.
+# Pressed again while pending, it cancels. The battery bar is narrowed by the
+# button's width so the row still fits.
 
 from archive import archive
 from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
 from vehicle_upgrade import is_sport_nav_requested, request_sport_nav
 from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
+from fleet_decommission import decommission_state, request_decommission, cancel_decommission
 import fleet_status
 
 # Sport Nav button only fits alongside the existing wide-layout row content
@@ -33,6 +39,9 @@ SPORT_NAV_BTN_MIN_WIDTH = 1100
 INTENT_CHAR_PX = 6
 INTENT_LINES = 2
 INTENT_LINE_PX = 13
+
+RETIRE_BTN_W = 64
+RETIRE_BTN_GAP = 8
 
 
 def wrap_text(text, width_px, max_lines=INTENT_LINES):
@@ -60,11 +69,29 @@ def draw_intent(x, y, text, width_px):
         panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
 
 
-def vehicle_role(name):
-    lname = name.lower()
-    if lname.startswith("rover"):
+# A switch keeps its own stored state; default_on only seeds it once. Code
+# also changes a recall flag (retire request, blocked retirement), so the
+# switch is kept in step with the archive: a stored state that moved since
+# the last tick is a click, any other mismatch is overwritten from the archive.
+switch_seen = {}
+
+
+def synced_switch(key, x, y, value, label):
+    stored = panel.get_switch(key)
+    clicked = stored is not None and key in switch_seen and stored != switch_seen[key]
+    if not clicked and stored is not None and stored != value:
+        panel.set_switch(key, value)
+    on = panel.switch(key, x, y, value, label)
+    switch_seen[key] = on
+    return on
+
+
+def vehicle_role(vehicle):
+    """Role pill from VehicleRef.kind ("rover"/"pioneer"), so renamed vehicles keep theirs."""
+    kind = str(getattr(vehicle, "kind", "") or "").lower()
+    if kind == "rover":
         return "ROVER", "accent"
-    if lname.startswith("pioneer"):
+    if kind == "pioneer":
         return "PIONEER", "warning"
     return "VEHICLE", "text-muted"
 
@@ -119,6 +146,8 @@ while True:
     wide = width >= 900
     recall_x = width - 115  # fixed right-margin anchor: never overflows the card, at any width
     telemetry = fleet_status.get_all()
+    retiring = decommission_state()
+    controls_x = recall_x - RETIRE_BTN_W - RETIRE_BTN_GAP  # left edge of the right-hand controls
 
     if not vehicles:
         panel.label(24, 98, "No ground vehicles owned", "muted")
@@ -154,7 +183,7 @@ while True:
             # that's the key the vehicle's own script checks recall under, so this
             # card must key the archive flag the same way rather than by display name.
             vehicle_id = str(getattr(vehicle, "id", getattr(vehicle, "name", "vehicle")))
-            role_label, role_color = vehicle_role(name)
+            role_label, role_color = vehicle_role(vehicle)
             recalled = is_vehicle_recalled(vehicle_id)
             raw_status = str(getattr(vehicle, "status", "unknown"))
 
@@ -177,7 +206,7 @@ while True:
 
             level = getattr(vehicle, "battery_level", 0.0) or 0.0
             bar_x = 130
-            bar_w = width * 0.16 if wide else width * 0.20
+            bar_w = max(40, (width * 0.16 if wide else width * 0.20) - RETIRE_BTN_W)
             panel.progress_bar(bar_x, y + 5, bar_w, 11, level, "error" if level < 0.2 else "success")
             panel.draw_text(bar_x + bar_w + 8, y + 15, f"{level * 100:.0f}%", 10, "text-value")
 
@@ -191,10 +220,10 @@ while True:
             intent = str((telemetry.get(vehicle_id) or {}).get("intent") or "")
             if wide:
                 loc_x = status_x + 110
-                if loc_x + 90 < recall_x:
+                if loc_x + 90 < controls_x:
                     panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
                 intent_x = loc_x + 95
-                intent_right = recall_x - 12
+                intent_right = controls_x - 12
                 if role_label == "PIONEER" and width >= SPORT_NAV_BTN_MIN_WIDTH:
                     intent_right -= 92  # Sport Nav button below
                 if intent:
@@ -207,9 +236,11 @@ while True:
                 if intent:
                     draw_intent(135, y + 46, intent, width - 24 - 135)
 
-            switch_on = panel.switch(f"recall_{vehicle_id}", recall_x, y + 6, recalled, "recall")
+            switch_on = synced_switch(f"recall_{vehicle_id}", recall_x, y + 6, recalled, "recall")
             if switch_on != recalled:
                 set_vehicle_recalled(vehicle_id, switch_on)
+                if not switch_on and vehicle_id in retiring:
+                    cancel_decommission(vehicle_id)  # recall off = back to work
 
             # Sport Nav is a manual, one-shot request (see lib/vehicle_upgrade.py) --
             # the Pioneer's own script mounts it next time it's safely idle at
@@ -220,16 +251,34 @@ while True:
                 sport_nav_pending = is_sport_nav_requested(vehicle_id)
                 if wide and width >= SPORT_NAV_BTN_MIN_WIDTH:
                     sport_btn_w = 80
-                    sport_btn_x = recall_x - sport_btn_w - 12
+                    sport_btn_x = controls_x - sport_btn_w - 12
                     label = "requested" if sport_nav_pending else "+ Sport Nav"
                     if panel.button(f"sport_nav_{vehicle_id}", sport_btn_x, y + 6, sport_btn_w, 22, label) and not sport_nav_pending:
                         request_sport_nav(vehicle_id)
                         sport_nav_pending = True
 
+            # Retire (lib/fleet_decommission.py): Pioneers only. Pending -> "cancel".
+            retire_state = None
+            if role_label == "PIONEER":
+                entry = retiring.get(vehicle_id)
+                retire_state = entry.get("state") if isinstance(entry, dict) else None
+                pending = retire_state in ("requested", "ready")
+                if panel.button(f"retire_{vehicle_id}", controls_x, y + 6, RETIRE_BTN_W, 22, "cancel" if pending else "retire"):
+                    if pending:
+                        cancel_decommission(vehicle_id)
+                        retire_state = None
+                    else:
+                        request_decommission(vehicle_id, "pioneer")
+                        retire_state = "requested"
+
             rescue = getattr(vehicle, "rescue_status", "none")
             badge_y = y + 22 if wide else y + 38
             if rescue != "none":
                 panel.pill(status_x, badge_y, rescue, "warning")
+            elif retire_state == "blocked":
+                panel.pill(status_x, badge_y, "retire blocked", "error")
+            elif retire_state:
+                panel.pill(status_x, badge_y, "retiring", "warning")
             elif switch_on:
                 panel.pill(status_x, badge_y, "recalled", "warning")
             elif sport_nav_pending:

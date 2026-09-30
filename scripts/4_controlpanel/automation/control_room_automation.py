@@ -35,6 +35,9 @@
 #   - Fleet commissioning (lib/fleet_commission.py): buys or crafts, deploys
 #     and fits the Pioneers and drones queued on the COMMISSION card, one job
 #     of each kind at a time.
+#   - Fleet decommissioning (lib/fleet_decommission.py): undeploys the
+#     Pioneers and drones retired from the FLEET / DRONE FLEET cards once
+#     they are home and empty; sells a Pioneer's parts.
 #   - Cash manager pass (lib/cash.py CashManager): balance history, income and
 #     reagent burn, dynamic floor, ask queue with ETAs for the CASH card. Runs
 #     first each storage pass so the consumers below see a fresh floor.
@@ -59,6 +62,7 @@ import outpost_mining
 import supply_dock
 from fleet_upgrade import FleetUpgradeCoordinator
 from fleet_commission import FleetCommissionCoordinator, commission_fast
+from fleet_decommission import FleetDecommissionCoordinator
 from cash import CashManager
 from site_supply import publish_site_requests
 from site_plan import plan_sites
@@ -164,6 +168,7 @@ biomass_retirement = None   # BiomassRetirement, created once biomass is complet
 grid_count = 0              # last solar-sync grid census; carries over on ticks solar_due is False
 fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state lives in archive)
 fleet_commissioner = FleetCommissionCoordinator()  # same
+fleet_decommissioner = FleetDecommissionCoordinator()  # same
 cash_manager = CashManager()  # same
 
 while True:
@@ -323,10 +328,16 @@ while True:
 
             step_commission(current_tick)
 
+            decommission_summary = "decommission idle"
+            try:
+                decommission_summary = fleet_decommissioner.step(current_tick)
+            except Exception as e:
+                print(f"[AUTOMATION] Fleet decommission error: {e}")
+
             archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join([
                 f"{grid_count} grid(s) supervised", "rebalance swept", f"{outpost_new_count} new outpost(s)",
                 f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", str(upgrade_summary),
-                str(commission["summary"]), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
+                str(commission["summary"]), str(decommission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
             ]))
 
     flush_all()

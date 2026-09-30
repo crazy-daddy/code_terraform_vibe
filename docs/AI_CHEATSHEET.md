@@ -25,7 +25,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 2b, 2b-1 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2c, 2d | Storage management, outpost ore assignment | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2e, 2f, 2g | Stationed mining, hauler role (pulls to HOME_BASE), remote Bio Lab reagent resupply | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
-| 2h, 2j, 2k, 2k-2 | Drones (energy, home, claims, depot, service), drone hauler, fleet upgrade, fleet commissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
+| 2h, 2j, 2k, 2k-2, 2k-4 | Drones (energy, home, claims, depot, service), drone hauler, fleet upgrade, fleet commissioning, fleet decommissioning | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2i, 2i-1, 2k-1, 2k-3 | Pull logistics + reverse hauler, factory outpost site supply requests + stranded ore eviction, Warehouse → Large Warehouse, Liquid Tank → Large Liquid Tank | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2l | Cash manager (budget owner for every Shop purchase: floor, priority, savings goal, income/ETA) | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | this file |
@@ -87,6 +87,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | New Pioneers and drones from the COMMISSION card (queue, buy or craft, deploy, wait for script), run by the `control_room_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `PioneerFittingMixin` (the new Pioneer mounts/installs its own parts) | `pioneer_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ drone presets (best craftable chassis + `LOADOUTS` modules), `fleet_commission` upgrade-order requester | `drone_commission.py` — see §2k-2 |
+| Retiring Pioneers and drones from the FLEET / DRONE FLEET retire buttons (recall, unload, undeploy, sell Pioneer parts, archive cleanup), run by the `control_room_automation.py` Automation | `fleet_decommission.py` — see §2k-4 |
 | Warehouse pair → Large Warehouse swap (buy, deploy, greedy drain, undeploy, sell), run by the `warehouse_upgrade_automation.py` Automation | `warehouse_upgrade.py` — see §2k-1 |
 | Cash manager: `can_spend()`/`spent()` gate for every Shop purchase, income + floor pass in the `control_room_automation.py` Automation | `cash.py` — see §2l |
 | Liquid Tanks (≤ 5 of one liquid) → Large Liquid Tank swap (buy, deploy, retire via `tank_assignments`, pipe drain, undeploy, sell), same `warehouse_upgrade_automation.py` Automation | `tank_upgrade.py` — see §2k-3 |

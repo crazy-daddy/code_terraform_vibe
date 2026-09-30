@@ -191,6 +191,7 @@ class DroneClaimsMixin:
         if depot_id and self._host.current_station() == depot_id:
             self._host.log.debug(f"[{self._host.name}] Recall active and already docked at Drone Depot '{depot_id}'; idling in RECALLED state for re-equip.")
             self._host.publish_telemetry("RECALLED")
+            self._prepare_decommission()
             return True
 
         self._host.log.start(f"[{self._host.name}] Recall active; returning to Drone Depot '{depot_id or depot_coords}' for re-equip")
@@ -199,6 +200,28 @@ class DroneClaimsMixin:
         outcome = self._fly_recall_leg(depot_id, depot_coords)
         self._host.log.end(f"[{self._host.name}] Recall leg: {outcome}")
         return True
+
+    def _prepare_decommission(self):
+        """
+        Docked at the recall Depot while recalled for retirement
+        (lib/fleet_decommission.py): unloads cargo into the Depot, then marks
+        the entry ready for the coordinator to undeploy. No-op unless a
+        request is pending.
+        """
+        from fleet_decommission import is_decommission_requested, mark_decommission_ready
+        name = self._host.name
+        if not is_decommission_requested(name):
+            return
+        self._host.log.start(f"[{name}] Preparing for decommission")
+        if self._host.cargo_count() > 0:
+            self._host.unload_cargo_at_depot()
+            if self._host.cargo_count() > 0:
+                self._host.log.level("warn").print(f"[{name}] {self._host.cargo_count()} unit(s) still aboard (Depot full?); retrying.")
+                self._host.log.end("cargo aboard")
+                return
+        mark_decommission_ready(name)
+        self._host.publish_telemetry("DECOMMISSION_READY")
+        self._host.log.end(f"[{name}] Empty and docked; ready for undeploy.")
 
     def _fly_recall_leg(self, depot_id, depot_coords):
         """Flies to the recall depot; returns an outcome text for the enclosing block."""

@@ -22,6 +22,12 @@
 # the switch only writes fleet.upgrade["enabled"]; the coordinator reads it
 # each cycle. A drone mid-swap shows an "upgrading" pill on its row.
 #
+# Retire button per row, left of the recall switch (lib/fleet_decommission.py):
+# recall to the home Depot, unload, undeploy; the modules and chassis stay in
+# Inventory (drone parts are not sellable). Pressed again while pending, it
+# cancels. Hidden while the drone is in a chassis swap. The battery bar is
+# narrowed by the button's width so the row still fits.
+#
 # Recommended card size: 2 columns x 1 row for small fleets, 2 x 2 once you
 # have more than ~6 drones -- same sizing guidance as vehicles_panel.py (FLEET).
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
@@ -30,6 +36,7 @@ from archive import archive
 from drone_claims import is_drone_recalled, set_drone_recalled
 from drone_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
 from drone_upgrade import fleet_upgrade_state, set_upgrade_enabled
+from fleet_decommission import decommission_state, request_decommission, cancel_decommission
 import fleet_status
 
 KIND_COLORS = {
@@ -45,6 +52,9 @@ KIND_COLORS = {
 INTENT_CHAR_PX = 6
 INTENT_LINES = 2
 INTENT_LINE_PX = 13
+
+RETIRE_BTN_W = 64
+RETIRE_BTN_GAP = 8
 
 
 def wrap_text(text, width_px, max_lines=INTENT_LINES):
@@ -70,6 +80,23 @@ def wrap_text(text, width_px, max_lines=INTENT_LINES):
 def draw_intent(x, y, text, width_px):
     for index, line in enumerate(wrap_text(text, width_px)):
         panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
+
+
+# A switch keeps its own stored state; default_on only seeds it once. Code
+# also changes a recall flag (retire request, blocked retirement), so the
+# switch is kept in step with the archive: a stored state that moved since
+# the last tick is a click, any other mismatch is overwritten from the archive.
+switch_seen = {}
+
+
+def synced_switch(key, x, y, value, label):
+    stored = panel.get_switch(key)
+    clicked = stored is not None and key in switch_seen and stored != switch_seen[key]
+    if not clicked and stored is not None and stored != value:
+        panel.set_switch(key, value)
+    on = panel.switch(key, x, y, value, label)
+    switch_seen[key] = on
+    return on
 
 # Persists across loop iterations (this script is one continuous while-loop
 # process, not re-invoked per tick) -- see vehicles_panel.py's matching comment for
@@ -113,6 +140,8 @@ while True:
     wide = width >= 900
     recall_x = width - 115  # fixed right-margin anchor, matches vehicles_panel.py's vehicle card
     telemetry = fleet_status.get_all()
+    retiring = decommission_state()
+    controls_x = recall_x - RETIRE_BTN_W - RETIRE_BTN_GAP  # left edge of the right-hand controls
 
     if not drones:
         panel.label(24, 98, "No drones owned", "muted")
@@ -172,7 +201,7 @@ while True:
             else:
                 level = getattr(drone, "battery_level", None) or 0.0
             bar_x = 130
-            bar_w = width * 0.16 if wide else width * 0.20
+            bar_w = max(40, (width * 0.16 if wide else width * 0.20) - RETIRE_BTN_W)
             panel.progress_bar(bar_x, y + 5, bar_w, 11, level, "error" if level < 0.2 else "success")
             panel.draw_text(bar_x + bar_w + 8, y + 15, f"{level * 100:.0f}%", 10, "text-value")
 
@@ -186,11 +215,11 @@ while True:
             intent = str((telemetry.get(drone_id) or {}).get("intent") or "")
             if wide:
                 loc_x = status_x + 120
-                if loc_x + 90 < recall_x:
+                if loc_x + 90 < controls_x:
                     panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
                 intent_x = loc_x + 95
                 if intent:
-                    draw_intent(intent_x, y + 15, intent, recall_x - 12 - intent_x)
+                    draw_intent(intent_x, y + 15, intent, controls_x - 12 - intent_x)
             else:
                 # Below the kind pill, not overlapping it -- same clearance
                 # trade-off as vehicles_panel.py's narrow-layout location line.
@@ -198,14 +227,32 @@ while True:
                 if intent:
                     draw_intent(135, y + 46, intent, width - 24 - 135)
 
-            switch_on = panel.switch(f"recall_{drone_id}", recall_x, y + 6, recalled, "recall")
+            switch_on = synced_switch(f"recall_{drone_id}", recall_x, y + 6, recalled, "recall")
             if switch_on != recalled:
                 set_drone_recalled(drone_id, switch_on)
+                if not switch_on and drone_id in retiring:
+                    cancel_decommission(drone_id)  # recall off = back to work
+
+            entry = retiring.get(drone_id)
+            retire_state = entry.get("state") if isinstance(entry, dict) else None
+            if drone_id not in upgrading:
+                pending = retire_state in ("requested", "ready")
+                if panel.button(f"retire_{drone_id}", controls_x, y + 6, RETIRE_BTN_W, 22, "cancel" if pending else "retire"):
+                    if pending:
+                        cancel_decommission(drone_id)
+                        retire_state = None
+                    else:
+                        request_decommission(drone_id, "drone")
+                        retire_state = "requested"
 
             rescue = getattr(drone, "rescue_status", "none")
             badge_y = y + 22 if wide else y + 38
             if rescue != "none":
                 panel.pill(status_x, badge_y, rescue, "warning")
+            elif retire_state == "blocked":
+                panel.pill(status_x, badge_y, "retire blocked", "error")
+            elif retire_state:
+                panel.pill(status_x, badge_y, "retiring", "warning")
             elif switch_on:
                 panel.pill(status_x, badge_y, "recalled", "warning")
             elif drone_id in upgrading:
