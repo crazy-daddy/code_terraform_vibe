@@ -34,6 +34,26 @@ from biomass_retire import retire_state, sell_retired_machines
 
 # Must match automation_panel.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
+SUMMARY_SEPARATOR = " | "  # must match automation_panel.py
+
+# ALWAYS-ON summary grid: one item per cell, text size 10 monospace (~6 px per character).
+SUMMARY_ROW_H = 13
+SUMMARY_COL_MIN_W = 190
+SUMMARY_CHAR_W = 6
+VERSION_PILL_W = 70  # room kept right of the AUTOMATION card title for the game version pill
+
+
+def draw_summary_grid(x, y, w, items):
+    """Draws items column-major in as many SUMMARY_COL_MIN_W columns as fit in w, each cut to its
+    column with an ellipsis; returns the number of rows used."""
+    cols = max(1, int(w // SUMMARY_COL_MIN_W))
+    rows = -(-len(items) // cols)
+    col_w = w / cols
+    max_chars = max(4, int((col_w - 8) // SUMMARY_CHAR_W))
+    for i, item in enumerate(items):
+        text = item if len(item) <= max_chars else item[: max_chars - 1] + "…"
+        panel.draw_text(x + (i // rows) * col_w, y + (i % rows) * SUMMARY_ROW_H, text, 10, "text-secondary")
+    return rows
 
 # Loop-scoped state, created once and persisting across iterations (this
 # script is one continuous while-loop process, not re-invoked per tick --
@@ -118,27 +138,27 @@ while True:
     # VERSION SAFETY GATE -- see lib/version_guard.py. automation_panel.py's own
     # automation loop checks version_mismatch() independently and halts its
     # own mutating work; this card just surfaces the same gate and the
-    # confirm button so the operator can always reach it.
+    # confirm button so the operator can always reach it. The version pill sits
+    # in the card's title row so the summary grid gets the full card width.
     # ------------------------------------------------------------------
-    ver_x = width - 190
     mismatch = version_mismatch()
-    panel.label(ver_x, auto_y + 20, "VERSION", "caption")
-    panel.pill(ver_x, auto_y + 34, get_game_version(), "error" if mismatch else "success")
-    if mismatch:
-        panel.draw_text(ver_x, auto_y + 58, f"was {good_version()} -- new scripts halt on startup", 10, "text-secondary", 180)
-        if panel.button("confirm_new_version", ver_x, auto_y + 78, 172, 26, "Confirm New Version"):
-            try:
-                confirm_new_version()
-            except Exception as e:
-                print(f"[AUTOMATION] Confirm new version error: {e}")
+    panel.pill(width - VERSION_PILL_W - 24, auto_y + 6, get_game_version(), "error" if mismatch else "success")
 
     last_automation_summary = archive.get(AUTOMATION_SUMMARY_KEY, "not yet run")
     panel.label(24, auto_y + 34, "ALWAYS-ON", "caption")
     panel.status_dot(29, auto_y + 58, 5, "paused" if mismatch else "running")
-    panel.draw_text(42, auto_y + 64, "halted -- confirm new version above" if mismatch else last_automation_summary, 10, "text-secondary", width * 0.30)
+    summary_rows = draw_summary_grid(42, auto_y + 64, width - 16 - 42 - 16, ["halted -- confirm new version below"] if mismatch else str(last_automation_summary).split(SUMMARY_SEPARATOR))
 
-    btn_y = auto_y + 88
+    btn_y = auto_y + 70 + summary_rows * SUMMARY_ROW_H + 10
     btn_w = min(160, width * 0.22)
+
+    if mismatch:
+        if panel.button("confirm_new_version", 24, btn_y, 172, 26, "Confirm New Version"):
+            try:
+                confirm_new_version()
+            except Exception as e:
+                print(f"[AUTOMATION] Confirm new version error: {e}")
+        panel.draw_text(24 + 172 + 16, btn_y + 8, f"was {good_version()} -- new scripts halt on startup", 10, "text-secondary", width - 24 - 172 - 16 - 24)
 
     if not mismatch:
         if panel.button("run_archive_cleaner", 24, btn_y, btn_w, 26, "Clean Archive"):

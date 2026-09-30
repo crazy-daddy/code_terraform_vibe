@@ -30,6 +30,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 
 log = TreeConsole(module="supply_dock")
 
@@ -48,11 +49,13 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 
 
-def _order_readiness(order, reserved):
+def _order_readiness(order, reserved, stock=total_stock):
     """(items_ready, total_needed) for order -- how much of its still-owed
     requirement is already coverable from current Inventory/Warehouse stock,
     net of active Construction Blueprint reservations. Shared by the
-    per-instance and central scoring paths so both rank orders identically."""
+    per-instance and central scoring paths so both rank orders identically.
+    `stock(item_id)`: storage.total_stock(), or a SourceCache's stock()
+    snapshot (same Inventory + home Warehouses, one .stacks() sweep)."""
     items_ready = 0
     total_needed = 0
     requires = getattr(order, "requires", {}) or {}
@@ -60,7 +63,7 @@ def _order_readiness(order, reserved):
     for item_id, req_count in requires.items():
         still_needed = max(0, req_count - shipped.get(item_id, 0))
         total_needed += still_needed
-        in_stock = max(0, total_stock(item_id) - reserved.get(item_id, 0))
+        in_stock = max(0, stock(item_id) - reserved.get(item_id, 0))
         items_ready += min(in_stock, still_needed)
     return items_ready, total_needed
 
@@ -100,19 +103,19 @@ def _weekly_infeasible(order, current_day, dispatch_capacity_per_hour):
     return remaining > max_shippable
 
 
-def _score_campaign_order(order, reserved):
+def _score_campaign_order(order, reserved, stock=total_stock):
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
-    items_ready, total_needed = _order_readiness(order, reserved)
+    items_ready, total_needed = _order_readiness(order, reserved, stock)
     if total_needed > 0:
         prio += int((items_ready / total_needed) * 30)
     return prio
 
 
-def _score_weekly_order(order, reserved):
+def _score_weekly_order(order, reserved, stock=total_stock):
     prio = 5
-    items_ready, total_needed = _order_readiness(order, reserved)
+    items_ready, total_needed = _order_readiness(order, reserved, stock)
     if total_needed > 0:
         prio += int((items_ready / total_needed) * 20)
     return prio
@@ -132,6 +135,28 @@ def _dock_affinity(order, outpost, cache, site_plan):
         if site_id in (site_plan.get(item_id) or []):
             score += 1
     return score
+
+
+def plan_signature():
+    """
+    Cheap fingerprint of what plan_dock_assignments() decides on: every Earth
+    Order's (id, status) plus the discovered dock ids. The automation panel
+    replans when it changes (an order appears, completes or expires; a dock is
+    built or removed) and otherwise only on its backstop interval. Left out on
+    purpose: shipped progress and stock (they change constantly while docks
+    ship and only move ranking) and each dock's current order (a dock switching
+    orders passes through old -> none -> new; a finished order already shows in
+    its status).
+    """
+    orders = []
+    orders_api = get_component("orders")
+    if orders_api:
+        for getter in ("list_orders", "list_weekly_orders"):
+            try:
+                orders.extend((str(getattr(o, "id", "")), str(getattr(o, "status", ""))) for o in getattr(orders_api, getter)())
+            except Exception as error:
+                swallowed(f"supply_dock.plan_signature: orders_api.{getter}", error)
+    return (tuple(sorted(orders)), tuple(sorted(discover_supply_dock_ids())))
 
 
 def plan_dock_assignments(clock=None):
@@ -164,7 +189,12 @@ def plan_dock_assignments(clock=None):
         log.end()
         return {}
 
-    reserved = get_construction_material_reservations()
+    # Shared across every can_fulfill_order() call and readiness score in this
+    # pass (every candidate order, each dock's current order) -- see SourceCache's
+    # docstring in lib/production.py. The pass runs from the headless
+    # control_panel/automation_panel.py, never inside a per-tick UI loop.
+    cache = SourceCache()
+    reserved = get_construction_material_reservations(cache)
     current_day = clock.get_day() if clock and hasattr(clock, "get_day") else None
 
     total_dispatch_capacity = 0.0
@@ -174,19 +204,11 @@ def plan_dock_assignments(clock=None):
         except Exception as error:
             swallowed("supply_dock.plan_dock_assignments: dock.dispatch_rate", error)
 
-    # Shared across every can_fulfill_order() call in this pass (every
-    # candidate order below, plus each dock's current order) to avoid
-    # redundant discovery + list_recipes() calls -- see SourceCache's
-    # docstring in lib/production.py. Even cached, a pass takes ~2 s, so this
-    # must never run inside a per-tick UI loop: it runs from the headless
-    # control_panel/automation_panel.py (live slot automation_panel.py).
-    cache = SourceCache()
-
     candidates = []
     try:
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
-                priority = _score_campaign_order(o, reserved)
+                priority = _score_campaign_order(o, reserved, cache.stock)
                 candidates.append({"order": o, "priority": priority})
                 log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
@@ -199,7 +221,7 @@ def plan_dock_assignments(clock=None):
                 log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
-            priority = _score_weekly_order(o, reserved)
+            priority = _score_weekly_order(o, reserved, cache.stock)
             candidates.append({"order": o, "priority": priority})
             log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
@@ -229,7 +251,10 @@ def plan_dock_assignments(clock=None):
         site_plan = site_plan if isinstance(site_plan, dict) else {}
         for dock_id in idle_dock_ids:
             outpost = getattr(docks[dock_id], "outpost", None)
-            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -_dock_affinity(c["order"], outpost, cache, site_plan)))
+            # Scored before the sort: _dock_affinity() may read storage (a remote
+            # outpost's first local_stock()), which must not run inside a key callback.
+            affinity = {id(c): _dock_affinity(c["order"], outpost, cache, site_plan) for c in candidates}
+            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -affinity[id(c)]))
             best = candidates[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
@@ -261,6 +286,8 @@ class SupplyDockController:
         self.connected = False
         self._warned_no_local_storage = False
         self._last_report = ""
+        self.idle = False  # standing by: no order, no cargo (set by step())
+        self.parker = ParkRequester(self.name, "supply_dock")
         self.log = TreeConsole(module="supply_dock")
 
     def outpost(self):
@@ -422,6 +449,7 @@ class SupplyDockController:
         return assigned
 
     def step(self):
+        self.idle = False
         self.ensure_connected()
 
         curr_order = self.dock.current_order()
@@ -450,6 +478,7 @@ class SupplyDockController:
 
             desired_id = self.desired_order_id()
             if not desired_id:
+                self.idle = True
                 self.report("standby", f"[{self.name}] No active Earth Orders available. Standing by.")
                 return
 
@@ -529,5 +558,7 @@ class SupplyDockController:
                 self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Exception in supply dock loop: {e}")
+                self.idle = False
+            self.parker.update(self.idle)
             flush_all()
             sleep(poll_interval)

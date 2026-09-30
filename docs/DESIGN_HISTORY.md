@@ -552,13 +552,14 @@ on its own 5 s timer (Docks also re-check a planned order is still active).
 The measurements behind it (docs/BENCHMARK.md) first looked like one interpreter budget shared by the
 awake scripts, which argued for slower polls everywhere. Further runs disproved that: stopping all 8
 Control Room cards (always awake) changed nothing beyond their count, and stopping 19 solar trackers that
-sleep 10 s at a time helped exactly as much as their count predicts. Per-step cost is `99 + 1.37 × N` µs
-for N running scripts. The Smelter/Fabricator active poll therefore went back to 1 s: a faster poll costs
+sleep 10 s at a time helped exactly as much as their count predicts. The decompiled scheduler confirmed the rule: each script gets
+`min(1000, floor(50000 / N))` steps per tick, N counting running and sleeping scripts, so up to 50 scripts
+run at full speed and beyond that a fixed 50,000 steps per tick are split evenly. The Smelter/Fabricator active poll therefore went back to 1 s: a faster poll costs
 only the script itself.
 
 A rewrite with centralized control was considered and rejected: the slowness was pacing and
 recomputation, not structure, and *self only* setpoints (`set_tilt`, `set_throttle`, ...) reset to idle
 whenever a script ends or is stopped (measured on a solar panel), so machine scripts cannot be replaced by
 one central script. The remaining levers are fewer running scripts (retire machines that don't earn their
-~1.4%, merge Control Room cards, start scripts only while their machine has work) and computing shared
+share, merge Control Room cards, start scripts only while their machine has work) and computing shared
 results once centrally; both are in TODO.md.

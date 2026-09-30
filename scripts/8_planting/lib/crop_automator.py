@@ -55,6 +55,7 @@ from storage import take_item
 from seed_supply import seed_buffer
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 from version_guard import validate_game_version
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
@@ -87,6 +88,8 @@ class CropAutomatorController:
     def __init__(self, machine):
         self.machine = machine
         self.name = getattr(machine, "id", "crop_automator")
+        self.parker = ParkRequester(self.name, "crop_automator")
+        self.parkable = False  # set by step(): in the layout, not shed, nothing queued or finished
         self.clock = get_component("clock")
         self.log = TreeConsole(module="crop_automator")
         self.sector = self._read_sector()
@@ -355,10 +358,12 @@ class CropAutomatorController:
 
     def step(self):
         """One poll. Returns True while it has work in flight (results, queued jobs, new jobs)."""
+        self.parkable = False
         curr_tick = self.get_current_tick()
         if not self.sector:
             self.sector = self._read_sector()
-        busy = self.consume_results(curr_tick) > 0
+        consumed = self.consume_results(curr_tick) > 0
+        busy = consumed
 
         layout = archive.get(LAYOUT_KEY, {})
         layout = layout if isinstance(layout, dict) else {}
@@ -381,9 +386,13 @@ class CropAutomatorController:
         queued, committed_seeds, blocked_job = self.queued_jobs_info()
         if queued is None:
             return True
+        # Head job waiting only for its Forage to be pulled: nothing this script can
+        # do; storage.take_item() wakes a parked automator before pulling.
+        clog_wait = blocked_job is not None and getattr(blocked_job, "blocker", None) == "output_full"
         if blocked_job is not None:
             busy = True
             self.unblock_queue(blocked_job, curr_tick)
+        submitted = False
         try:
             queue_count = self.machine.queue_count()
             room = QUEUE_LIMIT - queue_count
@@ -431,7 +440,7 @@ class CropAutomatorController:
                 break
             if self.submit("harvest", sector):
                 room -= 1
-                busy = True
+                busy = submitted = True
         for sector in open_cells:
             if room <= 0:
                 break
@@ -451,10 +460,11 @@ class CropAutomatorController:
                 continue
             if self.submit("plant", sector, seed_id):
                 room -= 1
-                busy = True
+                busy = submitted = True
                 committed_seeds[seed_id] = committed_seeds.get(seed_id, 0) + 1
         self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
         self.publish(curr_tick, mine, mature, open_cells, waiting)
+        self.parkable = not busy or (clog_wait and not consumed and not submitted)
         return busy
 
     def _note_state(self, text):
@@ -497,5 +507,7 @@ class CropAutomatorController:
                 busy = self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Crop Automator exception: {e}")
+                self.parkable = False
+            self.parker.update(self.parkable)
             flush_all()
             sleep(POLL_INTERVAL_S if busy else IDLE_POLL_SECONDS)

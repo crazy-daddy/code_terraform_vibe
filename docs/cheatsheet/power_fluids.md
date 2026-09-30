@@ -47,7 +47,7 @@ Headless automation panel AUTOMATION section (§7 — `automation_panel.py` in s
   `power_control.grids()` (two grids merged via new power line). Restores anything still in manager's `shedded_machines` (guarded same as `manage_day_recovery()`), clears per-anchor `power.shedded:<anchor>` mirror.
 - **Battery-less grids skipped**: `if capacity_wh <= 0: return` near top of
   `supervise_grid()` (avoids divide by zero on `battery_pct`). No strategy for battery-less grids yet.
-- **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` `POLL_SECONDS = 1.0` at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`; `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
+- **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` sleeps `CAP_WAKE_FRACTION = 0.5` of the time the fastest pressure rise seen so far (learned from successive reads) needs to reach `PRESSURE_BAND_CRITICAL`, clamped to `POLL_SECONDS = 1.0` … `CAP_MAX_POLL_SECONDS = 30.0`; before any rise is seen, 1 s at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`. Breaker-parked while the vent is dormant and the chamber drained (dev_workflow.md §1d-2); `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
   dependency**: Solar Grid brownout supervision only while headless automation panel running — see
@@ -113,17 +113,26 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     blacklist/drop, so a newly built/assigned tank is seen within ~10 s.
 - **Thermal Cap** — keeps `pressure()` off `1.0` overpressure ceiling (hit = *entire* chamber blown to atmosphere — `.is_overpressured()`). Proportional release-valve (`steam_out`,
   via `set_throttle()`) bands on `pressure()`: `≥0.90→1.0`, `≥0.60→0.6`, `≥0.30→0.3`, else
-  `THROTTLE_TRICKLE=0.1`. Relief valve (`set_relief()`, dumps to atmosphere) engages only once
+  `THROTTLE_TRICKLE=0.3` (release below 30% pressure, into Gas Tank/Turbines, not lost). Relief valve (`set_relief()`, dumps to atmosphere) engages only once
   release valve wide open (`throttle==1.0`) and pressure still climbs past
   `PRESSURE_RELIEF_THRESHOLD=0.95`.
+- **Turbine commitment** (`lib/turbine_commit.py`, tier 5, `TurbineCommitment` owned by each `PowerGridManager`, `step()` every `supervise_grid()` before `_guard()`): runs just enough Steam Turbines at full output and switches the rest off at the breaker (`script.parked` entries `{"kind": "steam_turbine", "mode": "turbine", "since", "grid"}`; `ScriptParking` never touches mode `"turbine"`, the automation card counts them).
+  - **Managed**: the grid's `steam_turbine` members that are powered or parked here; one switched off by anything else stays off and out of the count (a hand-switched-on parked one drops its entry).
+  - **Target** (`turbine_needed()`): `ceil((consumed - other generation + top-up) / TURBINE_FULL_W=108)` + spare, capped at the managed count. Other generation = `grid.generated` minus the running turbines' output, each `max(power_output(), throttle() × 108 W)` (0 if stalled): `power_output()` reports the previous power tick, so it reads 0 right after a restart or a new throttle. Top-up below `TURBINE_TOPUP_BELOW_FRACTION=0.98` battery: missing Wh / `TOPUP_HOURS=2`. Spare = `ceil(TURBINE_SPARE_FRACTION=0.10` × managed), at least `TURBINE_MIN_SPARE=1`. Battery below `TURBINE_EMERGENCY_BATTERY_FRACTION=0.50` → every managed turbine (ahead of the Oil Generators' 15% line).
+  - **Which run** (`rank_turbines()`): per turbine, not per grid (a split steam network): able to deliver (own `steam_in` ≥ `TURBINE_CAPABLE_BUFFER_FRACTION=0.15`, not stalled) first, then own buffer fill, then the fill of the source `steam_in` is connected to (Gas Tank `fill_pct()`, Thermal Cap `pressure()`), then already running. The top `target` run; a dry running one is swapped for the best parked one. Fewer able turbines than the target → every managed turbine stays up.
+  - **Heartbeat**: each pass writes `{grid anchor: tick}` to `power.turbine_commit` (`COMMIT_HEARTBEAT_KEY`); a turbine whose grid entry is younger than `steam_turbine.COMMIT_FRESH_TICKS=1200` skips its own daytime easing (steps 4-5 below) and runs 1.0 with a healthy buffer, since surplus is handled by parking.
+  - **Churn guard**: a turbine woken here is not parked again for `TURBINE_MIN_ON_TICKS=600` unless it cannot deliver. Grid gone (`release_all()`) → its parked turbines are switched back on.
 - **Steam Turbine** — throttle from `choose_throttle()`, priority order:
   1. Buffer fraction (`steam_in.level()/capacity()`, this turbine's own 100 t buffer) `<
      STEAM_BUFFER_LOW_FRACTION=0.15` → `THROTTLE_LOW_BUFFER=0.15` regardless of day/night/demand.
   2. `< STEAM_BUFFER_HEALTHY_FRACTION=0.40` → `THROTTLE_MARGINAL_BUFFER=0.5` (buffer rebuilding).
-  3. Healthy buffer + night (`clock.get_elevation() <= 0`) → `1.0`.
+  3. Healthy buffer + night (`clock.get_elevation() <= 0`) → `1.0`. Healthy buffer + grid under turbine commitment (fresh `power.turbine_commit` entry, above) → `1.0`.
   4. Healthy buffer + day + grid battery `≥ BATTERY_FULL_FRACTION=0.98` of capacity AND
-     `generated >= consumed` → `THROTTLE_DEMAND_MET=0.3`.
-  5. Otherwise → `1.0`.
+     `generated >= consumed` → `THROTTLE_DEMAND_MET=0.3` (eased).
+  5. Eased and battery still `≥ BATTERY_EASE_RESUME_FRACTION=0.90` → stay at `0.3`: at 0.3 generation
+     no longer covers consumption, so step 4 alone flipped every turbine back to 1.0 on the next poll
+     (1.0 ↔ 0.3 every ~40 ticks). Night or a thin buffer clears the eased state.
+  6. Otherwise → `1.0`.
   Reads grid state same as `lib/power.py`'s `PowerGridManager`
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but no
   shedding itself — that's headless automation panel AUTOMATION section's job (§1a-1).

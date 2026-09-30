@@ -84,6 +84,7 @@ def _reset_module_state(world):
     storage.DISCOVERY_TTL_TICKS = 0  # see production.DISCOVERY_TTL_TICKS below
     production._WARNED_UNKNOWN_MANUAL_ITEMS.clear()
     production._DISCOVERY_MEMO.clear()
+    production._RECIPE_INDEX_MEMO.clear()
     production.DISCOVERY_TTL_TICKS = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
     for module in list(sys.modules.values()):
         module_file = getattr(module, "__file__", None) or ""

@@ -61,11 +61,11 @@ class HarvesterPavingMixin:
         best = min(with_blend, key=lambda sp: (field_layout.blend_cost(rules, sp), sp))
         return rules[best].get("seed_id", "seed_" + best)
 
-    def paving_seed_demand(self, layout, cells, rules, spare_items):
-        """{seed_id: n} seeds still needed for paving after using spare loose items."""
+    def paving_seed_demand(self, layout, cells, rules, spare_items, unpaved=None):
+        """{seed_id: n} seeds still needed for paving after using spare loose items (`unpaved`: unpaved(), when the caller has it)."""
         if not (PAVING_ENABLED and PAVE_WITH_SEEDS):
             return {}
-        need = len(self.unpaved(layout, cells)) - spare_items
+        need = len(self.unpaved(layout, cells) if unpaved is None else unpaved) - spare_items
         seed_id = self.pave_seed_id(rules)
         if need <= 0 or not seed_id:
             return {}

@@ -40,6 +40,13 @@ while True:
             sleep(0.05)
         print("[Scanner] Grid survey sweep complete. All sectors mapped.")
 
+    # Every sector mapped: the field needs no further scans, so the script ends and
+    # stops counting against the per-tick step budget (the Scanner has no breaker).
+    if not unscanned:
+        print("[Scanner] All 192 sectors mapped; script finished.")
+        flush_all()
+        break
+
     # Periodic idle sleep before verifying grid status
     flush_all()
     sleep(15.0)

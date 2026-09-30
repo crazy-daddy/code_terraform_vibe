@@ -30,12 +30,22 @@ Repo moved to a dev root (`C:\Users\Adrian\Code_Terraform`) separate from the li
 
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 
-Every running script slows every other by ~1.4% (165 running → 3.25× slower than one alone).
+Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance = `min(1000, 50000 / N)` per script (165 running → 303 steps, 3.3× slower than ≤ 50).
 
-- [ ] **On-demand script scheduler** in the headless automation panel: machine scripts end themselves when their machine has nothing to do; the panel restarts them with `run_control.start()` (hysteresis against flapping). Candidates where the idle state is acceptable: solar at night (19), oil generators without a power deficit (7), Smelters/Fabricators without demand (18; recipe and loaded material survive), Supply Docks without an order (5), pumps on a dormant well (10). Estimated 25–35 fewer running scripts on average (325 → ~284 µs per step).
+- [x] **On-demand script scheduler** (`lib/script_parking.py`, dev_workflow.md §1d-2): Smelters, Fabricators, Supply Docks and Oil Generators breaker-parked while idle; solar scripts stopped at night.
+- [x] **Extend script parking** to Oil Pumps (dormant well) and Crop Automators (nothing to do).
+- [x] **Park Drone Service / Charging Stations** (dev_workflow.md §1d-2): vehicles and drones wake the station they head to (`wake_for_visit()`); awake stations hand a vehicle nearest to a parked one over by waking it; the last awake station per type stays up.
+  - [ ] Validate live: an unpowered station still discoverable and dockable, visit wake arrives before docking, hand-off rescue from the woken station.
+- [x] **Park Drone Depots** (dev_workflow.md §1d-2): empty, idle depots park; `fly_to_station()` and `request_stage()` wake them.
+- [x] **Station low-charge nudge removed**: it was a remote write the game blocks (`PermissionError`); a unit whose script could read a signal already budgets its own way back, and rescue covers the rest.
+- [x] **Seed Maker parked while idle** (no seed deficit; Harvester wakes it on changed seed demand, 3000-tick re-check refreshes its requests) and **Scanner script ends** once all 192 sectors are mapped (no breaker).
+- [x] **Park field providers** (Grow Lamp, Sprinkler, Dispenser) while switched off; a new layout or changed recipes wake them (dev_workflow.md §1d-2). Lit/serving ones stay up (unpowered = no service).
+- [x] **Callback atomicity helper** (`lib/atomic.py`, dev_workflow.md §1d-1), used by the Harvester route search.
+- [x] **Harvester startup geometry**: `full_chunk_count()` (~48k of the ~55k startup steps) is stored in `plant.geometry` and reused across restarts (chunking it atomically was rejected: spread over thousands of small calls, uncatchable `StepLimitError` risk, saves ~20 s once per restart).
+- [ ] **More atomic work**: the Harvester's `publish` phase (seed demand, status counts: pure part only) and the demand cascade on a prefetched snapshot.
 - [ ] **Centralize Smelter/Fabricator demand — only if their reaction time is still a problem**: computing `get_smelter_demands()` / site Fabricator targets once in the headless panel would speed up the 18 machines but move the work onto the panel that also runs grid supervision and dock planning (duplicated work costs only the duplicating scripts, §1d-1). Measure first.
-- [ ] **Consider splitting the headless panel** (grid supervision vs. storage sweeps/planning) if storage passes measurably delay grid supervision; costs one running script (~1.4%).
-- [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts ≈ 26%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
+- [ ] **Consider splitting the headless panel** (grid supervision vs. storage sweeps/planning) if storage passes measurably delay grid supervision; costs one running script (~0.6% of everyone's allowance at N ≈ 165).
+- [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts: 303 → 342 steps per tick, +13%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
 - [ ] **Panels**: heavy cards re-read the fleet and archive every frame; refresh data every 10–20 frames (only helps the card itself).
 
 ---
@@ -255,6 +265,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
 ---
 
 ## 🐾 Phase 6: Biosphere Tier 3 — Wildlife Husbandry & Endgame
+- [ ] **Script parking for the bio machines** when this phase starts (dev_workflow.md §1d-2, `lib/script_parking.py`): every bio machine (Bio Lab, Collector, Exchange, Caster, Conditioner, Luminizer, DNA Sequencer, Habitat, Feed Maker) has a breaker. Decide per machine what "idle" means and what wakes it (a Bio Order, a docked collector drone, a sample arriving), like the depots' visit wake and the field providers' `wake_kind()`. Don't add always-running scripts where parking works.
 - [ ] Catalog all 5 DNA fragments per target creature in Bio Lab to unlock their feed recipes.
   - [ ] Use Bio Orders to drive specimen collection and keep completed samples out of Inventory through Exchange delivery.
   - [ ] Bio Caster bulk material demand (`lib/bio_volcanic.py`, requester `bio_caster`, §1g): deploy `bio_volcanic.py` + `production.py` by hand; live-verify `find_recipe()` returns materials for never-analyzed fragments, forged stacks carry a property (forged-stock subtraction), Fabricator builds the floor and a hauler serves the Volcanic outpost; steam_in/water_in connect via `FluidInputRouter` (steam source must be reachable by gas pipe if not local).

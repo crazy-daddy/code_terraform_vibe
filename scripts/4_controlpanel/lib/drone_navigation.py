@@ -12,11 +12,15 @@ from swallow import swallowed
 
 from typing import TYPE_CHECKING
 from tree_console import flush_all
+from script_parking import wake_for_visit
 
 if TYPE_CHECKING:
     from drone import DroneController
 
 STRANDED_STATUSES = ("stalled_no_battery", "stalled_no_oil", "scrambled")
+# fly_to_station() renews the target's wake_for_visit() hold this often (ticks),
+# well inside script_parking.STATION_HOLD_TICKS.
+VISIT_HOLD_RENEW_TICKS = 1000
 
 
 class DroneNavigationMixin:
@@ -235,6 +239,9 @@ class DroneNavigationMixin:
             self._host.log.trace(f"fly_to_station('{name}') exit: already there.")
             self._host.log.end()
             return True
+        # A parked Depot / Drone Service Station (lib/script_parking.py) is switched
+        # back on before we fly there; the hold is renewed on long flights below.
+        wake_for_visit(name, f"{self._host.name} on its way")
         res = self._host.drone.go_to_station(name)
         if res.status != "ok":
             self._log_route_rejection(f"go_to_station('{name}')", res)
@@ -272,6 +279,8 @@ class DroneNavigationMixin:
                 self._host.log.trace(f"fly_to_station('{name}') exit: waiting_bay after {ticks} ticks.")
                 self._host.log.end()
                 return False
+            if ticks % VISIT_HOLD_RENEW_TICKS == 0:
+                wake_for_visit(name, f"{self._host.name} on its way")
             if ticks % 100 == 0:
                 self._host.log.debug(f"fly_to_station('{name}') arrival-poll retry: still not docked after {ticks}/{timeout_ticks} ticks.")
 

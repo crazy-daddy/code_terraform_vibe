@@ -78,6 +78,8 @@ from fleet_commission import FleetCommissionCoordinator
 from cash import CashManager
 from site_supply import publish_site_requests
 from site_plan import plan_sites
+from mining_drill import publish_all_drills
+from script_parking import ScriptParking
 from tree_console import flush_all
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
@@ -88,32 +90,58 @@ OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 # same as the old combined script did -- status_panel.py shows its own fixed
 # "halted" message in that case rather than trusting a stale summary.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
+# Joins the summary's parts; status_panel.py splits on it (parts may contain commas).
+SUMMARY_SEPARATOR = " | "
 
 # ~1s and 10s at 10 ticks/sec (see lib/archive_cleaner.py's documented tick rate).
 SOLAR_TICK_INTERVAL = 10
 STORAGE_TICK_INTERVAL = 100
 MIXER_GATE_TICK_INTERVAL = 10
-# Dock planning runs on its own, shorter interval, checked at the top of every loop and again between
+# Dock planning is checked on its own, shorter interval, at the top of every loop and again between
 # the storage pass's sub-steps: those sweeps wait on feeder cycles, and a plan held back until they
-# finish lets docks read an assignment for an order that has already completed.
+# finish lets docks read an assignment for an order that has already completed. A check replans only
+# when supply_dock.plan_signature() changed (an order appeared, completed or expired; docks added or
+# removed) or DOCK_PLAN_MAX_TICK_INTERVAL
+# has passed (ranking by stock and shipped progress): a plan costs ~40 ticks in game.
 DOCK_PLAN_TICK_INTERVAL = 50
+DOCK_PLAN_MAX_TICK_INTERVAL = 600
+# Mining Drill telemetry for every drill (lib/mining_drill.py publish_all_drills()); drills need no
+# script of their own, and a stockpile fills over hours.
+DRILL_TELEMETRY_TICK_INTERVAL = 600
+# Script parking pass (lib/script_parking.py): parks idle machines, wakes them, stops solar at night.
+PARKING_TICK_INTERVAL = 50
 
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
 last_mixer_gate_tick = 0
-dock_plan = {"last_tick": 0, "count": 0}  # count = docks assigned by the last plan, carried between passes
+last_drill_tick = 0
+last_parking_tick = 0
+parking = None              # ScriptParking, created once power_control is available
+parking_summary = ["nothing parked"]  # one automation card item per parked kind
+drill_summary = "no drills"
+# count = docks assigned by the last plan; signature = plan_signature() at that plan; plan_tick = its tick
+dock_plan = {"last_tick": 0, "count": 0, "signature": None, "plan_tick": 0}
 
 
 def plan_docks_if_due(clock):
-    """Runs supply_dock.plan_dock_assignments() when DOCK_PLAN_TICK_INTERVAL has passed since the last run."""
+    """
+    Every DOCK_PLAN_TICK_INTERVAL: runs supply_dock.plan_dock_assignments() when
+    supply_dock.plan_signature() differs from the last plan's, or
+    DOCK_PLAN_MAX_TICK_INTERVAL has passed since it.
+    """
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
     if dock_plan["last_tick"] != 0 and now - dock_plan["last_tick"] < DOCK_PLAN_TICK_INTERVAL:
         return
     dock_plan["last_tick"] = now
     try:
+        signature = supply_dock.plan_signature()
+        if signature == dock_plan["signature"] and now - dock_plan["plan_tick"] < DOCK_PLAN_MAX_TICK_INTERVAL:
+            return
         plan = supply_dock.plan_dock_assignments(clock=clock)
         dock_plan["count"] = sum(1 for v in plan.values() if v)
+        dock_plan["signature"] = signature
+        dock_plan["plan_tick"] = now
     except Exception as e:
         print(f"[AUTOMATION] Supply Dock planning error: {e}")
 
@@ -171,11 +199,33 @@ while True:
                     gate_states = mixer_gate.step(current_tick)
                     if gate_states:
                         paused = sum(1 for st in gate_states.values() if st.get("state") == "pause")
-                        mixer_gate_summary = f"{len(gate_states)} Mixer(s), {paused} paused"
+                        mixer_gate_summary = f"{len(gate_states)} Mixer(s) ({paused} paused)"
             except Exception as e:
                 print(f"[AUTOMATION] Mixer gate error: {e}")
 
         plan_docks_if_due(clock)
+
+        if last_drill_tick == 0 or current_tick - last_drill_tick >= DRILL_TELEMETRY_TICK_INTERVAL:
+            last_drill_tick = current_tick
+            try:
+                drill_count = publish_all_drills()
+                drill_summary = f"{drill_count} drill(s) reported" if drill_count else "no drills"
+            except Exception as e:
+                print(f"[AUTOMATION] Drill telemetry error: {e}")
+
+        if last_parking_tick == 0 or current_tick - last_parking_tick >= PARKING_TICK_INTERVAL:
+            last_parking_tick = current_tick
+            try:
+                if parking is None and power:
+                    parking = ScriptParking(power=power, clock=clock)
+                if parking is not None:
+                    parking_summary = parking.step(
+                        power.grids() if hasattr(power, "grids") else [],
+                        clock.get_elevation() if clock and hasattr(clock, "get_elevation") else None,
+                        archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {},
+                    )
+            except Exception as e:
+                print(f"[AUTOMATION] Script parking error: {e}")
 
         if storage_due:
             last_storage_tick = current_tick
@@ -263,7 +313,11 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet commission error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan['count']} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}")
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join([
+                f"{grid_count} grid(s) supervised", "rebalance swept", f"{outpost_new_count} new outpost(s)",
+                f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", str(upgrade_summary),
+                str(commission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
+            ]))
 
     flush_all()
     sleep(1.0)

@@ -19,6 +19,7 @@ import pump_salt
 import fleet_intent
 import cash
 from swallow import swallowed
+from atomic import run_atomic
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
 
@@ -41,6 +42,8 @@ PULL_CHAIN_MAX_DETOUR_RATIO = 0.75
 # HAUL_TRIP_OVERHEAD_M, so a nearby source holding a 1-unit top-up can't
 # shadow a farther one holding what's actually missing.
 PULL_TRIP_OVERHEAD_M = 300
+# Chain checks listed per candidate in the debug log (the game caps strings at 10,000 characters).
+PULL_CHAIN_NOTES_MAX = 30
 
 
 class VehicleCargoMixin:
@@ -313,21 +316,17 @@ class VehicleCargoMixin:
         start = self._host.get_position()
 
         best_route, best_rank = [], None
+        atomic = logistics_requests.route_atomic_ok(sources)
         for first in sources:
-            route = self._plan_pull_chain(first, sources, need, buffer, capacity, start, home_coords)
+            if atomic:
+                candidate = run_atomic(self._pull_candidate, first, sources, need, buffer, capacity, start, home_coords)
+            else:
+                candidate = self._pull_candidate(first, sources, need, buffer, capacity, start, home_coords)
+            if candidate["chain_checks"]:
+                self._host.log.debug(f"[{self._host.name}] pull: via '{first['id']}', chain checks: {candidate['chain_checks']}.")
+            route, units, need_units, meters = candidate["route"], candidate["units"], candidate["need_units"], candidate["meters"]
             if not route:
                 continue
-            units = sum(a for _src, loads in route for _i, a in loads)
-            planned = {}
-            for _src, loads in route:
-                for item_id, amount in loads:
-                    planned[item_id] = planned.get(item_id, 0) + amount
-            need_units = sum(min(a, need.get(i, 0)) for i, a in planned.items())
-            meters, pos = 0.0, start
-            for source, _loads in route:
-                meters += self._host.distance_between(pos, source["coords"])
-                pos = source["coords"]
-            meters += self._host.distance_between(pos, home_coords) if home_coords is not None else 0.0
             rank = logistics_requests.haul_rank(units, need_units, meters, PULL_TRIP_OVERHEAD_M)
             self._host.log.debug(f"[{self._host.name}] pull: candidate via '{first['id']}' -> {units} unit(s) ({need_units} need) over {meters:.0f}m ({len(route)} stop(s)), need rate {rank[0]:.4f}, rate {rank[1]:.4f}.")
             if logistics_requests.rank_beats(rank, best_rank):
@@ -395,8 +394,42 @@ class VehicleCargoMixin:
         self._host.log.end()
         return loaded
 
-    def _plan_pull_chain(self, first, sources, need, buffer, capacity, start, home_coords):
-        """One candidate trip for _plan_pull_route(), starting at `first` (need tier before buffer, logistics_requests.plan_take())."""
+    def _pull_candidate(self, first, sources, need, buffer, capacity, start, home_coords):
+        """
+        _plan_pull_chain() from `first` plus its measures: {"route", "units",
+        "need_units", "meters" (start -> stops -> home), "chain_checks" (the
+        chain decisions as one text, "" when none)}. Pure; one lib/atomic.py
+        call per candidate.
+        """
+        notes = []
+        route = self._plan_pull_chain(first, sources, need, buffer, capacity, start, home_coords, notes)
+        planned = {}
+        for _src, loads in route:
+            for item_id, amount in loads:
+                planned[item_id] = planned.get(item_id, 0) + amount
+        meters, pos = 0.0, start
+        for source, _loads in route:
+            meters += self._host.distance_between(pos, source["coords"])
+            pos = source["coords"]
+        meters += self._host.distance_between(pos, home_coords) if (route and home_coords is not None) else 0.0
+        checks = "; ".join(f"'{source_id}' direct={direct:.0f}m vs via-home={via_home:.0f}m -> {'chain' if ok else 'skip (home is on the way; next trip)'}"
+                           for source_id, direct, via_home, ok in notes[:PULL_CHAIN_NOTES_MAX])
+        if len(notes) > PULL_CHAIN_NOTES_MAX:
+            checks += f"; +{len(notes) - PULL_CHAIN_NOTES_MAX} more"
+        return {"route": route,
+                "units": sum(a for _src, loads in route for _i, a in loads),
+                "need_units": sum(min(a, need.get(i, 0)) for i, a in planned.items()),
+                "meters": meters,
+                "chain_checks": checks}
+
+    def _plan_pull_chain(self, first, sources, need, buffer, capacity, start, home_coords, notes=None):
+        """
+        One candidate trip for _plan_pull_route(), starting at `first` (need
+        tier before buffer, logistics_requests.plan_take()). Pure (no game
+        calls, no logging): _plan_pull_route() runs it as a lib/atomic.py
+        call. Each chain check is appended to `notes` as (source_id, direct
+        m, via-home m, chained) for the caller to log.
+        """
         need_left = dict(need)
         buffer_left = dict(buffer)
         cap_left = capacity
@@ -404,11 +437,12 @@ class VehicleCargoMixin:
         pending = list(sources)
         route = []
         while pending and cap_left > 0 and len(route) < PULL_MAX_STOPS_PER_TRIP:
-            useful = [src for src in pending if any(sum(logistics_requests.plan_take(src, i, need_left, buffer_left, cap_left)) > 0 for i in src["available"])]
             if not route:
-                useful = [src for src in useful if src["id"] == first["id"]]
-            elif home_coords is not None:
-                useful = [src for src in useful if self._pull_chain_worthwhile(pos, src, home_coords)]
+                useful = [src for src in pending if src["id"] == first["id"] and logistics_requests.source_useful(src, need_left, buffer_left, cap_left)]
+            else:
+                useful = [src for src in pending if logistics_requests.source_useful(src, need_left, buffer_left, cap_left)]
+                if home_coords is not None:
+                    useful = [src for src in useful if self._pull_chain_worthwhile(pos, src, home_coords, notes)]
             if not useful:
                 break
             useful.sort(key=lambda src: self._host.distance_between(pos, src["coords"]))
@@ -431,17 +465,19 @@ class VehicleCargoMixin:
                 pos = source["coords"]
         return route
 
-    def _pull_chain_worthwhile(self, prev_coords, source, home_coords):
+    def _pull_chain_worthwhile(self, prev_coords, source, home_coords, notes=None):
         """
         True when chaining `source` straight after prev_coords beats
         dropping off at home first: direct leg <= PULL_CHAIN_MAX_DETOUR_RATIO
         * (prev -> home -> source). Rejects stops that lie "behind" home.
+        Pure; the check is appended to `notes` (see _plan_pull_chain()).
         """
         coords = source["coords"]
         direct = self._host.distance_between(prev_coords, coords)
         via_home = self._host.distance_between(prev_coords, home_coords) + self._host.distance_between(home_coords, coords)
         ok = via_home > 0 and direct <= PULL_CHAIN_MAX_DETOUR_RATIO * via_home
-        self._host.log.debug(f"[{self._host.name}] pull: chain to '{source['id']}' direct={direct:.0f}m vs via-home={via_home:.0f}m -> {'chain' if ok else 'skip (home is on the way; next trip)'}.")
+        if notes is not None:
+            notes.append((source["id"], direct, via_home, ok))
         return ok
 
     def _pull_yield_key(self, item_id):

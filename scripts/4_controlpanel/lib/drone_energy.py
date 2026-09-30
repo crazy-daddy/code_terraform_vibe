@@ -25,6 +25,7 @@
 from archive import archive
 from drone_upgrade import retiring_depot_ids
 from swallow import swallowed
+from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -701,6 +702,10 @@ class DroneEnergyMixin:
                 log.debug(f"[{self._host.name}] Home drone_service '{service_info.get('id')}' out of reach ({curr_wh:.1f} {self.energy_unit()} < {home_wh:.1f} {self.energy_unit()} needed); charging at nearest '{nearest_info.get('id')}' instead.")
                 service_coords, service_info = nearest_coords, nearest_info
         service_id = service_info.get("id")
+        if service_id:
+            # Switches a parked station back on (lib/script_parking.py) and holds it
+            # awake; hold_for_launch_charge() calls this again while we charge.
+            wake_for_visit(service_id, f"{self._host.name} charging")
         # Docked-at check by id, not by coords: a Drone Depot and Drone
         # Service Station often share the same outpost coords, so a drone
         # hovering at (or queued for) the Depot would otherwise count as

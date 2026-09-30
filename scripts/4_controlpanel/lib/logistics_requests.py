@@ -591,6 +591,41 @@ def plan_take(source, item_id, need_left, buffer_left, cap):
     return need, buffer
 
 
+def source_useful(source, need_left, buffer_left, cap):
+    """True when plan_take() would plan any units from `source` for some item
+    it holds: with cap > 0, an item with need left and units available, or
+    buffer left and buffer units available. Pure; route planners run it
+    inside lib/atomic.py calls."""
+    if cap <= 0:
+        return False
+    available = source["available"]
+    available_buffer = source.get("available_buffer", available)
+    for item_id, units in available.items():
+        if units > 0 and need_left.get(item_id, 0) > 0:
+            return True
+        if buffer_left.get(item_id, 0) > 0 and available_buffer.get(item_id, 0) > 0:
+            return True
+    return False
+
+
+# Upper-bound cost of one route-planner candidate (drone_hauler._haul_candidate(),
+# vehicle_cargo._pull_candidate()) in CPython opcodes, fitted on
+# devtools/step_profile.py worst cases: per source (three stops' usefulness
+# and chain checks) plus per item on the fullest source (sorting and planning
+# its loads). A candidate runs as one lib/atomic.py call only when the
+# estimate is within ROUTE_ATOMIC_MAX_COST: a game step costs 1.6-3 opcodes,
+# so that stays well under the 10,000-step callback cap.
+ROUTE_COST_PER_SOURCE = 600
+ROUTE_COST_PER_ITEM = 560
+ROUTE_ATOMIC_MAX_COST = 10000
+
+
+def route_atomic_ok(sources):
+    """True when one route candidate over `sources` is small enough for a lib/atomic.py call (ROUTE_ATOMIC_MAX_COST)."""
+    items = max([len(s["available"]) for s in sources] or [0])
+    return len(sources) * ROUTE_COST_PER_SOURCE + items * ROUTE_COST_PER_ITEM <= ROUTE_ATOMIC_MAX_COST
+
+
 def network_deficits(curr_tick=None):
     """
     {item_id: units still missing} summed over every requesting outpost,

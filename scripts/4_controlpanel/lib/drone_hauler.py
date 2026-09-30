@@ -43,6 +43,8 @@ from archive import archive
 from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
 from swallow import swallowed
+from atomic import run_atomic
+from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
 
@@ -229,32 +231,41 @@ class DroneHaulerMixin:
             return 0.0
         return min(self._host.distance_between(coords, s["coords"]) for s in services)
 
-    def _route_fuel(self, points, services):
+    def _fuel_rates(self):
+        """(cruise per m, speedmode-floor per m, safety margin, emergency reserve) for _route_fuel()."""
+        return (self._host.wh_per_meter_at_throttle(self._host.cruise_throttle), self._host.minimum_wh_per_meter(),
+                self._host.SAFETY_MARGIN_MULTIPLIER, self._host.emergency_reserve())
+
+    def _route_fuel(self, points, services, rates=None):
         """
         Fuel (Wh / t Oil) for flying `points` in order at cruise throttle,
         plus reaching the nearest drone_service from the last point at the
         speedmode floor, with safety margin and emergency reserve -- the
         floating hauler's "there-and-back": "back" is any service, not home.
+        Pure with `rates` (_fuel_rates(), read beforehand).
         """
+        per_m, floor_per_m, margin, reserve = rates or self._fuel_rates()
         legs = sum(self._host.distance_between(points[i], points[i + 1]) for i in range(len(points) - 1))
         tail = self._nearest_service_dist(points[-1], services)
-        fuel = legs * self._host.wh_per_meter_at_throttle(self._host.cruise_throttle) + tail * self._host.minimum_wh_per_meter()
-        return fuel * self._host.SAFETY_MARGIN_MULTIPLIER + self._host.emergency_reserve()
+        fuel = legs * per_m + tail * floor_per_m
+        return fuel * margin + reserve
 
     def _chain_worthwhile(self, prev_coords, coords, dest_coords):
         direct = self._host.distance_between(prev_coords, coords)
         via_dest = self._host.distance_between(prev_coords, dest_coords) + self._host.distance_between(dest_coords, coords)
         return via_dest > 0 and direct <= HAUL_CHAIN_MAX_DETOUR_RATIO * via_dest
 
-    def _plan_route_for(self, dest, sources, capacity, start, first=None):
+    def _plan_route_for(self, dest, sources, capacity, start, first, room):
         """
         Greedy nearest-neighbour route for one destination, starting at
         `first` (else the nearest useful source): need tier first, then the
         (fair-share capped) buffer tier, largest deficits first per stop, up
         to capacity / HAUL_MAX_STOPS_PER_TRIP, chained stops only when not
-        "behind" the destination. Per-item room is capped by
-        cargo.space_for() (one material per pod); the live load corrects any
-        over-optimism. Returns [(source, [(item, n), ...]), ...].
+        "behind" the destination. Per-item room is `room` ({item_id: units},
+        cargo.space_for() read before planning; one material per pod); the
+        live load corrects any over-optimism. Pure (no game calls, no
+        logging): _candidate_routes() runs it as a lib/atomic.py call.
+        Returns [(source, [(item, n), ...]), ...].
         """
         need_left = dict(dest["need"])
         buffer_left = dict(dest["buffer"])
@@ -263,11 +274,13 @@ class DroneHaulerMixin:
         pool = [s for s in sources if s["id"] != dest["outpost_id"]]
         route = []
         while pool and cap_left > 0 and len(route) < HAUL_MAX_STOPS_PER_TRIP:
-            useful = [s for s in pool if self._source_useful(s, need_left, buffer_left, cap_left)]
             if route:
-                useful = [s for s in useful if self._chain_worthwhile(pos, s["coords"], dest["coords"])]
+                useful = [s for s in pool if logistics_requests.source_useful(s, need_left, buffer_left, cap_left)
+                          and self._chain_worthwhile(pos, s["coords"], dest["coords"])]
             elif first is not None:
-                useful = [s for s in useful if s["id"] == first["id"]]
+                useful = [s for s in pool if s["id"] == first["id"] and logistics_requests.source_useful(s, need_left, buffer_left, cap_left)]
+            else:
+                useful = [s for s in pool if logistics_requests.source_useful(s, need_left, buffer_left, cap_left)]
             if not useful:
                 break
             source = min(useful, key=lambda s: self._host.distance_between(pos, s["coords"]))
@@ -275,8 +288,7 @@ class DroneHaulerMixin:
             loads = []
             order = sorted(source["available"], key=lambda i: (-need_left.get(i, 0), -buffer_left.get(i, 0)))
             for item_id in order:
-                room = min(cap_left, self._item_room(item_id))
-                need, buffer = logistics_requests.plan_take(source, item_id, need_left, buffer_left, room)
+                need, buffer = logistics_requests.plan_take(source, item_id, need_left, buffer_left, min(cap_left, room.get(item_id, 0)))
                 amount = need + buffer
                 if amount <= 0:
                     continue
@@ -290,10 +302,6 @@ class DroneHaulerMixin:
                 route.append((source, loads))
                 pos = source["coords"]
         return route
-
-    @staticmethod
-    def _source_useful(source, need_left, buffer_left, cap_left):
-        return any(sum(logistics_requests.plan_take(source, i, need_left, buffer_left, cap_left)) > 0 for i in source["available"])
 
     @staticmethod
     def _need_units(dest, route):
@@ -338,18 +346,43 @@ class DroneHaulerMixin:
             swallowed("drone_hauler.DroneHaulerMixin._item_room: self._host.drone.cargo.space_for", error)
             return 0
 
-    def _candidate_routes(self, dests, sources, capacity, start):
+    def _haul_candidate(self, dest, sources, capacity, start, first, room, services, rates):
         """
-        (dest, route) for every destination x every useful first drill. Only
+        _plan_route_for() plus its measures: {"route", "units", "need_units",
+        "meters", "fuel"} (fuel per _route_fuel(), start -> stops -> dest).
+        Pure; one lib/atomic.py call per candidate.
+        """
+        route = self._plan_route_for(dest, sources, capacity, start, first, room)
+        points = [start] + [s["coords"] for s, _l in route] + [dest["coords"]]
+        return {"route": route,
+                "units": sum(n for _s, loads in route for _i, n in loads),
+                "need_units": self._need_units(dest, route),
+                "meters": sum(self._host.distance_between(points[i], points[i + 1]) for i in range(len(points) - 1)),
+                "fuel": self._route_fuel(points, services, rates)}
+
+    def _candidate_routes(self, dests, sources, capacity, start, services):
+        """
+        (dest, _haul_candidate()) for every destination x every useful first drill. Only
         trying the nearest drill first let a small nearby deficit (28 iron)
         hide a big one further out (2000 neutronium) whose drill is "behind"
         the destination, so never chainable -- same fix as the Pioneer's
         _plan_pull_route() trying every first stop. Scoring picks the winner.
+        Each candidate is one lib/atomic.py call (one tick at most) when
+        logistics_requests.route_atomic_ok() says it fits the callback cap.
         """
+        items = set()
+        for s in sources:
+            items.update(s["available"])
+        room = {item_id: self._item_room(item_id) for item_id in items}
+        rates = self._fuel_rates()
+        atomic = logistics_requests.route_atomic_ok(sources)
         for dest in dests:
             firsts = [s for s in sources if s["id"] != dest["outpost_id"] and any(dest["deficits"].get(i, 0) > 0 for i in s["available"])]
             for first in firsts:
-                yield dest, self._plan_route_for(dest, sources, capacity, start, first=first)
+                if atomic:
+                    yield dest, run_atomic(self._haul_candidate, dest, sources, capacity, start, first, room, services, rates)
+                else:
+                    yield dest, self._haul_candidate(dest, sources, capacity, start, first, room, services, rates)
 
     def _plan_haul_job(self, curr_tick):
         """
@@ -389,19 +422,17 @@ class DroneHaulerMixin:
         start = self._host.position()
 
         best, best_rank = None, None
-        for dest, route in self._candidate_routes(dests, sources, capacity, start):
-            units = sum(n for _s, loads in route for _i, n in loads)
-            wanted = min(HAUL_MIN_LOAD_UNITS, self._reachable(dest, sources))
+        reachable = {dest["outpost_id"]: self._reachable(dest, sources) for dest in dests}
+        for dest, candidate in self._candidate_routes(dests, sources, capacity, start, services):
+            route, units, need_units, meters, fuel = (candidate["route"], candidate["units"], candidate["need_units"],
+                                                       candidate["meters"], candidate["fuel"])
+            wanted = min(HAUL_MIN_LOAD_UNITS, reachable[dest["outpost_id"]])
             if not route or units < wanted or units <= 0:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
                 continue
-            points = [start] + [s["coords"] for s, _l in route] + [dest["coords"]]
-            meters = sum(self._host.distance_between(points[i], points[i + 1]) for i in range(len(points) - 1))
-            fuel = self._route_fuel(points, services)
             if fuel > full_tank:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' needs {fuel:.1f} {self._host.energy_unit()} > full tank {full_tank:.1f}; out of range.")
                 continue
-            need_units = self._need_units(dest, route)
             rank = logistics_requests.haul_rank(units, need_units, meters, HAUL_TRIP_OVERHEAD_M)
             self._host.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({need_units} need), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, need rate {rank[0]:.4f}, rate {rank[1]:.3f}.")
             if logistics_requests.rank_beats(rank, best_rank):
@@ -503,6 +534,7 @@ class DroneHaulerMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] {reason}, but no drone_service_station is deployed.")
             return False
         self._host.log.debug(f"[{self._host.name}] {reason}; heading to drone_service '{service_id}'.")
+        wake_for_visit(service_id, f"{self._host.name} refuelling")
         return self._host.fly_to_station(service_id, target_coords=coords)
 
     def _refuel(self, needed, reason):
@@ -530,6 +562,8 @@ class DroneHaulerMixin:
             if frac >= REFUEL_FULL_LEVEL or (level >= needed and status not in ("charging", "refueling", "waiting_service")):
                 self._host.log.debug(f"[{self._host.name}] Refuel done: {level:.1f} {self._host.energy_unit()} ({frac*100:.0f}%), status={status}.")
                 return True
+            if int(waited) % 30 == 0:
+                wake_for_visit(self._host.current_station(), f"{self._host.name} refuelling")
             if status == "waiting_oil" and not warned_oil:
                 self._host.log.level("warn").print(f"[{self._host.name}] Service station has no oil; waiting.")
                 warned_oil = True

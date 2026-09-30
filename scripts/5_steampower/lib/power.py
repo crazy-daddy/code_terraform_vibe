@@ -16,7 +16,9 @@
 #   - Battery pool: grid.stored/.capacity plus Lightning Rod reserve.
 #   - Steam pool:   every steam Gas Tank on the grid's outposts, converted to
 #                   Wh at the Steam Turbine's own rate (108 W per 90 t/h).
-# It does two things only:
+# It does three things:
+#   0. Turbine commitment (lib/turbine_commit.py): runs just enough Steam
+#      Turbines at full output, plus spares, and parks the rest at the breaker.
 #   1. Daily balance: snapshot both pools at each day rollover, record the
 #      net gain/loss per day (bounded history), and notify() once per day
 #      when either pool lost more than DAILY_LOSS_WARN_FRACTION of its
@@ -28,6 +30,7 @@ from archive import archive
 from patterns import is_wildcard_pattern, filter_wildcard_matches
 from tree_console import TreeConsole
 from swallow import swallowed
+from turbine_commit import TurbineCommitment
 
 # lib/production.py imports this. Decompiled simworker's dayCycleDuration.
 DAY_CYCLE_DURATION_SECONDS = 600
@@ -169,6 +172,9 @@ class PowerGridManager:
         self.calls_since_tank_scan = TANK_FALLBACK_SCAN_INTERVAL_CALLS
         self.day_state = None
         self.calls_since_persist = 0
+        # Runs just enough Steam Turbines and parks the rest (lib/turbine_commit.py).
+        self.turbines = TurbineCommitment(self.power)
+        self.turbine_status = "no turbines"
 
         # The old manager may have left machines shed (it sheds at night by
         # battery alone). Its in-memory set died with the script, but it
@@ -348,7 +354,8 @@ class PowerGridManager:
         return True
 
     def release_all(self):
-        """Grid vanished (merged into another) -- give back everything shed."""
+        """Grid vanished (merged into another) -- give back everything shed, and every turbine parked here."""
+        self.turbines.release_all()
         for m_id in list(self.shedded_machines):
             soft = any(filter_wildcard_matches(p, [m_id]) for p in SOFT_SHED_PATTERNS)
             if self._restore(m_id, soft):
@@ -428,4 +435,9 @@ class PowerGridManager:
             return
 
         self._track_day(grid, now, grid_id_str)
+        # Turbines first: running more of them is the answer before shedding any load.
+        try:
+            self.turbine_status = self.turbines.step(grid, grid_id_str)
+        except Exception as error:
+            swallowed("power.PowerGridManager.supervise_grid: self.turbines.step", error)
         self._guard(now, grid_machines, grid_id_str)

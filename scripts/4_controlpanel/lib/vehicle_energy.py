@@ -55,6 +55,7 @@ def is_rover_chassis_for(vehicle):
 from archive import archive
 from swallow import swallowed
 from tree_console import flush_all
+from script_parking import wake_for_visit
 
 # get_all_charging_stations() runs on every drive poll's return-energy check; results are reused for this
 # many ticks (~2 s), so a newly placed station is seen at most that late.
@@ -829,6 +830,10 @@ class VehicleEnergyMixin:
                         station_id = fallback.get("id")
 
         cs_coords = station_coords or self._host.home_coords
+        # A parked station (lib/script_parking.py) is switched back on before we
+        # drive there, and held awake while we wait below.
+        if station_id and station_id != "home_slot":
+            wake_for_visit(station_id, f"{self._host.name} coming to charge")
         self._host.log.debug(f"[{self._host.name}] recharge_at_station: station '{station_id or 'station'}' at {cs_coords}, controller {'found' if cs else 'missing'}.")
 
         # Verify whether vehicle is actually inside the station's docked set
@@ -876,6 +881,8 @@ class VehicleEnergyMixin:
                 last_reported_lvl = lvl
 
             wait_cycles += 1
+            if wait_cycles % 5 == 0 and station_id and station_id != "home_slot":
+                wake_for_visit(station_id, f"{self._host.name} waiting to charge")
             if wait_cycles % 5 == 0 and cs:
                 try:
                     get_docked_fn = getattr(cs, "get_docked", None)
