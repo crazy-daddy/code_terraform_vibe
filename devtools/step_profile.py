@@ -131,8 +131,10 @@ def target_dock_plan(size):
 
 def target_raw_demands(size):
     import production
-    sample_world.build_sample_world(size)
+    sample = sample_world.build_sample_world(size)
     game_memos()
+    production.get_raw_material_demands()  # warm the per-script memos (discovery, recipe table)
+    sample.world.clock.now += 1
     return production.get_raw_material_demands
 
 

@@ -4,7 +4,8 @@ Synthetic mid-game save for stub tests and step profiling (devtools/step_profile
 build_sample_world(size) fills a fresh game_stubs.World with a bit of
 everything the stubs support: a home outpost plus remote outposts, a tiered
 recipe tree (ore -> ingot -> alloy -> part -> component -> kit), Inventory and
-Warehouses holding a random spread of those items, Smelters, Fabricators,
+Warehouses / Large Warehouses holding a random spread of those items (at
+most one item per slot: 5 / 15 slots), Smelters, Fabricators,
 Supply Docks (home and remote) and active Earth Orders. route_scenario(size)
 returns the pure dicts the drone hauler / Pioneer route planners work on
 (destinations with need/buffer tiers, drill and depot sources with coords).
@@ -16,17 +17,22 @@ are estimates for comparing code versions, not a prediction of a real save.
 import random
 
 import harness
-from game_stubs import Recipe, World
+from game_stubs import Recipe, Store, World
 
 SIZES = {
-    # outposts = remote outposts besides home; items_per_wh = distinct stacks per Warehouse
-    "small": {"outposts": 1, "warehouses": 4, "items_per_wh": 15, "smelters": 3, "fabricators": 3, "docks": 2, "orders": 4,
+    # outposts = remote outposts besides home; warehouses includes large_warehouses of them
+    "small": {"outposts": 1, "warehouses": 4, "large_warehouses": 1, "smelters": 3, "fabricators": 3, "docks": 2, "orders": 4,
               "route_dests": 2, "route_sources": 6, "route_items": 3},
-    "medium": {"outposts": 2, "warehouses": 8, "items_per_wh": 25, "smelters": 8, "fabricators": 8, "docks": 4, "orders": 8,
+    "medium": {"outposts": 2, "warehouses": 8, "large_warehouses": 3, "smelters": 8, "fabricators": 8, "docks": 4, "orders": 8,
                "route_dests": 3, "route_sources": 12, "route_items": 4},
-    "large": {"outposts": 4, "warehouses": 14, "items_per_wh": 35, "smelters": 14, "fabricators": 14, "docks": 6, "orders": 12,
+    "large": {"outposts": 4, "warehouses": 14, "large_warehouses": 5, "smelters": 14, "fabricators": 14, "docks": 6, "orders": 12,
               "route_dests": 4, "route_sources": 20, "route_items": 5},
 }
+# Material-locked slots per storage building, SLOT_UNITS each (docs/components/warehouse.md):
+# one item per slot, so a Warehouse holds at most 5 distinct items, a Large Warehouse 15.
+WAREHOUSE_SLOTS = {"warehouse": 5, "large_warehouse": 15}
+SLOT_UNITS = 2000
+INVENTORY_ITEMS = 30
 
 ORES = [f"ore_{i}" for i in range(12)]
 INGOTS = [f"ingot_{i}" for i in range(12)]
@@ -82,9 +88,12 @@ def build_sample_world(size="medium", seed=1):
         return world.home
 
     for i in range(spec["warehouses"]):
-        world.add_warehouse(f"warehouse_{i + 1}", site(i, 4), capacity=100000,
-                            items={item: rnd.randint(1, 80) for item in rnd.sample(ALL_ITEMS, spec["items_per_wh"])})
-    for item in rnd.sample(ALL_ITEMS, 30):
+        type_id = "large_warehouse" if i < spec["large_warehouses"] else "warehouse"
+        slots = WAREHOUSE_SLOTS[type_id]
+        store = Store(world, f"{type_id}_{i + 1}", type_id, site(i, 4), capacity=slots * SLOT_UNITS,
+                      items={item: rnd.randint(1, SLOT_UNITS) for item in rnd.sample(ALL_ITEMS, rnd.randint(slots - 2, slots))})
+        world.components[store.id] = store
+    for item in rnd.sample(ALL_ITEMS, INVENTORY_ITEMS):
         world.inventory.add(item, rnd.randint(1, 50))
     sample.smelters = [world.add_smelter(f"smelter_{i + 1}", site(i, 4), smelt) for i in range(spec["smelters"])]
     sample.fabricators = [world.add_fabricator(f"fabricator_{i + 1}", site(i, 4), fab) for i in range(spec["fabricators"])]

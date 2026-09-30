@@ -124,6 +124,14 @@ DISCOVERY_TTL_TICKS = 20
 # {(type_id, outpost_id or None): (tick, [ids])}
 _DISCOVERY_MEMO = {}
 
+# Recipe input table ({output_item: {input_item: qty per output unit}}), built from the
+# Fabricator + Smelter recipe lists. Recipes only change when research unlocks new ones,
+# which changes the list lengths; the table is rebuilt then, or after this many ticks.
+RECIPE_INDEX_TTL_TICKS = 6000
+
+# {"index": (tick, (fabricator count, smelter count), table)}
+_RECIPE_INDEX_MEMO = {}
+
 
 def _discover_building_ids(type_id, outpost=None):
     """Ids of every `type_id` building at `outpost`, or at every outpost when
@@ -640,36 +648,66 @@ def _stock_fn(cache):
     return cache.stock if cache is not None else total_stock
 
 
+def _recipe_lists(cache=None):
+    """[Fabricator recipes, Smelter recipes] (a cache's memoized lists, else one list_recipes() each)."""
+    if cache is not None:
+        return [cache.fabricator_recipes(), cache.smelter_recipes()]
+    lists = []
+    for component in (_default_fabricator(), _default_smelter()):
+        if not component or not hasattr(component, "list_recipes"):
+            lists.append([])
+            continue
+        try:
+            lists.append(list(component.list_recipes()))
+        except Exception as error:
+            swallowed("production._recipe_lists: component.list_recipes", error)
+            lists.append([])
+    return lists
+
+
+def _build_recipe_index(recipe_lists):
+    """{output_item: {input_item: qty / output_count}}; the first recipe per output wins (Fabricator before Smelter)."""
+    index = {}
+    for recipes in recipe_lists:
+        for recipe in recipes:
+            output = getattr(recipe, "output_item", None)
+            if not output or output in index:
+                continue
+            output_count = max(1, getattr(recipe, "output_count", 1))
+            inputs = getattr(recipe, "inputs", {}) or {}
+            index[output] = {in_id: qty / output_count for in_id, qty in inputs.items()}
+    return index
+
+
+def _recipe_index(cache=None):
+    """
+    The recipe input table, kept per script for RECIPE_INDEX_TTL_TICKS and rebuilt
+    early when a recipe list's length changes (a research unlock). Memoized on
+    `cache` for the rest of its pass. Shared: treat it and its dicts as read-only.
+    """
+    if cache is not None and cache._recipe_index is not None:
+        return cache._recipe_index
+    lists = _recipe_lists(cache)
+    signature = tuple(len(recipes) for recipes in lists)
+    now = _current_tick()
+    memo = _RECIPE_INDEX_MEMO.get("index")
+    if memo is not None and memo[1] == signature and 0 <= now - memo[0] < RECIPE_INDEX_TTL_TICKS:
+        index = memo[2]
+    else:
+        index = _build_recipe_index(lists)
+        _RECIPE_INDEX_MEMO["index"] = (now, signature, index)
+    if cache is not None:
+        cache._recipe_index = index
+    return index
+
+
 def _recipe_inputs_for(item_id, cache=None):
     """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
     Smelter builds item_id, or None if neither does. Shared by
     _cascade_blueprint_demand(), _cascade_fabricator_output_demand() and
-    get_smelter_demands(). With a `cache`, reads its memoized recipe lists
-    instead of calling list_recipes() again per item."""
-    if cache is not None:
-        recipe_lists = [cache.fabricator_recipes(), cache.smelter_recipes()]
-    else:
-        recipe_lists = []
-        for component in (_default_fabricator(), _default_smelter()):
-            if not component or not hasattr(component, "list_recipes"):
-                continue
-            try:
-                recipe_lists.append(list(component.list_recipes()))
-            except Exception as error:
-                swallowed("production._recipe_inputs_for: recipe_lists.append", error)
-                continue
-    for recipes in recipe_lists:
-        try:
-            for recipe in recipes:
-                if getattr(recipe, "output_item", None) != item_id:
-                    continue
-                output_count = max(1, getattr(recipe, "output_count", 1))
-                inputs = getattr(recipe, "inputs", {}) or {}
-                return {in_id: qty / output_count for in_id, qty in inputs.items()}
-        except Exception as error:
-            swallowed("production._recipe_inputs_for: inputs.items", error)
-            continue
-    return None
+    get_smelter_demands(). Reads the long-lived recipe table (_recipe_index());
+    the returned dict is shared, treat it as read-only."""
+    return _recipe_index(cache).get(item_id)
 
 
 def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=None, stock=None, supply=None):
@@ -1933,6 +1971,7 @@ class SourceCache:
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
         self._blueprint_demand = None  # _cascade_blueprint_demand() memo
+        self._recipe_index = None  # _recipe_index() for this pass
 
     def _build_stock_map(self):
         log.start("SourceCache._build_stock_map", level="debug")

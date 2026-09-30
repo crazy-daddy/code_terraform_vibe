@@ -157,6 +157,8 @@ Single source of truth for what Fabricator builds, feeds `get_material_demands()
 
 All three call sites default `cache=None` (private one-off `SourceCache()`), but hot paths build + share one: `plan_dock_assignments()` one per pass; `FabricatorController.step()` one per step.
 
+**Recipe input table** (across passes, per script): `production._recipe_index()` builds `{output_item: {input_item: qty per output unit}}` from the Fabricator + Smelter recipe lists (first recipe per output wins, Fabricator first) and keeps it `RECIPE_INDEX_TTL_TICKS = 6000`, rebuilt early when a list's length changes (a research unlock); also memoized on `SourceCache._recipe_index` for the pass. `_recipe_inputs_for()` is a dict lookup on it (shared, read-only). Replaced a scan of every recipe per item per call (~40% of a Smelter step).
+
 **Building discovery memo** (across passes, not on `SourceCache`): `production._discover_building_ids()` (Smelter/Fabricator/Supply Dock discovery) and `storage.discover_storage_buildings()` reuse their result for `DISCOVERY_TTL_TICKS = 20` ticks (~2 s) per `(type, outpost)`, so a new building is seen at most that late. A Smelter step alone runs about a dozen discoveries; `total_stock()` runs one per call. Cache = one-pass snapshot only — never held across ticks or reused between passes.
 
 ### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
@@ -182,7 +184,7 @@ Recipe's `fluid_inputs` (e.g. `{"water_in": 1.0}`) delivered via `FluidPort` con
 
 ### 2c. Storage Management (`lib/storage.py`)
 
-Makes whole production chain aware of Warehouse/Large Warehouse buildings, not just central home `"inventory"` endpoint. Scope: Warehouse + Large Warehouse only (`STORAGE_TYPE_IDS`) — Storage Bin uses different single-material API, not included yet. Everything defaults to home outpost, matching Inventory only participating at Nocturna Base.
+Makes whole production chain aware of Warehouse/Large Warehouse buildings, not just central home `"inventory"` endpoint. Scope: Warehouse (5 material-locked slots × 2,000) + Large Warehouse (15 × 2,000) only (`STORAGE_TYPE_IDS`) — Storage Bin uses different single-material API, not included yet. Everything defaults to home outpost, matching Inventory only participating at Nocturna Base.
 
 - `total_stock(item_id)` = `inventory.count(item_id)` + every discovered Warehouse's `count(item_id)` — what every demand/mining-priority function nets against.
 - `outpost_is_home(outpost=None)`: `None` counts as home (every helper's default); reads `OutpostRef.is_home` (bool) or the Outpost component's `is_home()`. `local_port_target(outpost=None)`: resting port endpoint for a machine there (`"inventory"` at home, first local Warehouse id elsewhere, `None` if none).
