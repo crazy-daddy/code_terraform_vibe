@@ -6,13 +6,20 @@ from harness import StubTestCase, swallow
 from tree_console import TreeConsole
 
 
-class BufferingTests(StubTestCase):
+STAMP = "12:00:00 "
+
+
+class ConsoleCase(StubTestCase):
     def make(self, **kwargs):
         return TreeConsole(console=self.world.console, module="buffer_test", **kwargs)
 
     def lines(self):
-        return self.world.console.lines
+        """Console lines with the per-line game-time stamp removed."""
+        return [(level, "\n".join(line.removeprefix(STAMP) for line in msg.split("\n")))
+                for level, msg in self.world.console.lines]
 
+
+class BufferingTests(ConsoleCase):
     def test_consecutive_debug_lines_become_one_message(self):
         log = self.make()
         log.debug("a")
@@ -119,6 +126,80 @@ class BufferingTests(StubTestCase):
         swallow.swallowed("test.where", ValueError("boom"))
         self.assertEqual(self.lines()[0], ("debug", "earlier"))
         self.assertIn("[swallowed] test.where", self.lines()[1][1])
+
+
+class BlockTests(ConsoleCase):
+    def test_every_buffered_line_carries_its_own_timestamp(self):
+        log = self.make()
+        log.debug("a")
+        log.debug("b")
+        log.flush()
+        self.assertEqual(self.world.console.lines, [("debug", f"{STAMP}a\n{STAMP}b")])
+
+    def test_debug_block_indents_its_lines_under_one_header(self):
+        log = self.make()
+        log.start("get_demands", level="debug")
+        log.debug("iron gross=6")
+        log.debug("glass gross=2")
+        log.end()
+        log.debug("after")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ get_demands\n┃   iron gross=6\n┃   glass gross=2\nafter")])
+
+    def test_idle_debug_block_prints_nothing(self):
+        log = self.make()
+        log.start("quiet", level="debug")
+        log.trace("gated off")
+        log.end()
+        log.flush()
+        self.assertEqual(self.lines(), [])
+
+    def test_nested_debug_blocks_show_outer_header_first_and_only_once(self):
+        log = self.make()
+        log.start("outer", level="debug")
+        log.start("inner", level="debug")
+        log.debug("x")
+        log.end()
+        log.debug("y")
+        log.end()
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ inner\n┃   ┃   x\n┃   y")])
+
+    def test_debug_block_end_with_message_writes_a_closing_line(self):
+        log = self.make()
+        log.start("job", level="debug")
+        log.debug("step")
+        log.end("done")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   step\n┗━ done")])
+
+    def test_debug_block_does_not_flush_buffer_at_outermost_end(self):
+        log = self.make()
+        log.start("one", level="debug")
+        log.debug("a")
+        log.end()
+        log.start("two", level="debug")
+        log.debug("b")
+        log.end()
+        self.assertEqual(self.lines(), [])
+        log.flush()
+        self.assertEqual(len(self.lines()), 1)
+
+    def test_info_block_inside_debug_block_shows_debug_header_first(self):
+        log = self.make()
+        log.start("dbg", level="debug")
+        log.start("Info block")
+        log.end("done")
+        log.end()
+        self.assertEqual(self.lines(), [("debug", "┏━ dbg"), ("info", "┃   ┏━ Info block"), ("info", "┃   ┗━ done")])
+
+    def test_reset_drops_open_debug_blocks(self):
+        log = self.make()
+        log.start("leaks", level="debug")
+        tree_console.reset_all()
+        log.debug("after")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "after")])
 
 
 if __name__ == "__main__":

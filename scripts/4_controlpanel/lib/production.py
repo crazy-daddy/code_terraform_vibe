@@ -1227,6 +1227,7 @@ def get_site_fabricator_targets(site_id, cache=None):
         cache._site_ship_plan[site_id] = {}
         return targets
 
+    log.start(f"get_site_fabricator_targets({site_id})", level="debug")
     seed, fabricator_outputs, outpost = _site_seed(site_id, cache)
     flying = in_flight(site_id)
     ship_plan = {}
@@ -1247,7 +1248,8 @@ def get_site_fabricator_targets(site_id, cache=None):
     cache._site_targets[site_id] = dict(targets)
     cache._site_ship_plan[site_id] = ship_plan
     if ship_plan:
-        log.debug(f"get_site_fabricator_targets({site_id}): ship plan {ship_plan}")
+        log.debug(f"ship plan {ship_plan}")
+    log.end()
     return targets
 
 
@@ -1285,7 +1287,7 @@ def _site_seed(site_id, cache):
         share = split_units(remaining, sites, fab_sites).get(site_id, 0)
         if share > 0:
             seed[item_id] = cache.local_stock(item_id, outpost) + pipeline.get(item_id, 0) + share
-            log.debug(f"get_site_fabricator_targets({site_id}): root {item_id} remaining={remaining} sites={sites} -> share={share}, target={seed[item_id]}")
+            log.debug(f"root {item_id} remaining={remaining} sites={sites} -> share={share}, target={seed[item_id]}")
     return seed, fabricator_outputs, outpost
 
 
@@ -1466,10 +1468,11 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
         output_count = max(1, getattr(recipe, "output_count", 1))
         current = cache.local_stock(output_item, getattr(fabricator, "outpost", None))
         in_pipeline = get_fabricator_pipeline(cache, site_id).get(output_item, 0)
+        fabricator_id = getattr(fabricator, "id", None)
+        log.start(f"get_fabricator_active_recipe({fabricator_id or '?'})", level="debug")
         target = get_site_fabricator_targets(site_id, cache).get(output_item, 0)
         still_needed = max(0, target - current - in_pipeline)
         crafts_remaining = -(-still_needed // output_count)  # ceil division
-        fabricator_id = getattr(fabricator, "id", None)
         worker_ids = get_fabricator_worker_ids(current_recipe_id, site_id)
         if len(worker_ids) > 1:
             pre_split = crafts_remaining
@@ -1478,8 +1481,9 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
                 crafts_remaining = share + (1 if worker_ids.index(fabricator_id) < extra else 0)
             else:
                 crafts_remaining = -(-crafts_remaining // len(worker_ids))  # id unknown: old ceil split, overshoots at most workers-1
-            log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): recipe={current_recipe_id} split {pre_split} crafts across {len(worker_ids)} workers {worker_ids} -> {crafts_remaining} for this one")
-        log.debug(f"get_fabricator_active_recipe({fabricator_id or '?'}): site={site_id} recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} still_needed={still_needed} crafts_remaining={crafts_remaining}")
+            log.debug(f"recipe={current_recipe_id} split {pre_split} crafts across {len(worker_ids)} workers {worker_ids} -> {crafts_remaining} for this one")
+        log.debug(f"site={site_id} recipe={current_recipe_id} output={output_item} target={target} current={current} in_pipeline={in_pipeline} still_needed={still_needed} crafts_remaining={crafts_remaining}")
+        log.end()
         return recipe, crafts_remaining
     except Exception as error:
         swallowed("production.get_fabricator_active_recipe: fabricator.get_recipe", error)
@@ -1592,12 +1596,13 @@ def get_smelter_demands(cache=None):
     if not smelter_outputs:
         return {}
 
+    log.start("get_smelter_demands", level="debug")
     gross = {}
     targets = get_fabricator_targets(cache)
     for item_id, target in targets.items():
         if item_id in smelter_outputs:
             _add_demand(gross, item_id, target)
-            log.trace(f"get_smelter_demands: direct target on smelter output {item_id} -> gross += {target}")
+            log.trace(f"direct target on smelter output {item_id} -> gross += {target}")
             continue
         deficit = target - cache.network_stock(item_id)
         if deficit <= 0:
@@ -1606,7 +1611,7 @@ def get_smelter_demands(cache=None):
             if input_id in smelter_outputs:
                 need = _ceil(deficit * ratio)
                 _add_demand(gross, input_id, need)
-                log.trace(f"get_smelter_demands: {item_id} deficit={deficit} x {ratio:.2f} -> {input_id} gross += {need}")
+                log.trace(f"{item_id} deficit={deficit} x {ratio:.2f} -> {input_id} gross += {need}")
 
     for order_id, remaining_by_item in _dock_order_remaining().items():
         for item_id, remaining in remaining_by_item.items():
@@ -1614,7 +1619,7 @@ def get_smelter_demands(cache=None):
                 continue  # not ours, or already counted via get_fabricator_targets()
             _add_demand(gross, item_id, remaining)
             if remaining > 0:
-                log.trace(f"get_smelter_demands: order {order_id} still needs {remaining}x {item_id}")
+                log.trace(f"order {order_id} still needs {remaining}x {item_id}")
 
     staged = {}
     for fabricator_id in discover_fabricator_ids():
@@ -1634,7 +1639,8 @@ def get_smelter_demands(cache=None):
         net = qty - stock - staged.get(item_id, 0)
         if net > 0:
             demands[item_id] = net
-        log.debug(f"get_smelter_demands: {item_id} gross={qty} network_stock={stock} staged_in_fabricators={staged.get(item_id, 0)} -> net={max(0, net)}")
+        log.debug(f"{item_id} gross={qty} network_stock={stock} staged_in_fabricators={staged.get(item_id, 0)} -> net={max(0, net)}")
+    log.end()
     return demands
 
 
@@ -1682,12 +1688,14 @@ def site_smelter_demands(outpost, cache=None):
         return {}
     flying = in_flight(getattr(outpost, "id", None))
     demands = {}
+    log.start(f"site_smelter_demands({getattr(outpost, 'id', None)})", level="debug")
     for item_id, units in gross.items():
         local = cache.local_stock(item_id, outpost)
         net = units - local - flying.get(item_id, 0)
         if net > 0:
             demands[item_id] = net
-        log.debug(f"site_smelter_demands({getattr(outpost, 'id', None)}): {item_id} gross={units} local={local} in_flight={flying.get(item_id, 0)} -> net={max(0, net)}")
+        log.debug(f"{item_id} gross={units} local={local} in_flight={flying.get(item_id, 0)} -> net={max(0, net)}")
+    log.end()
     return demands
 
 

@@ -433,6 +433,7 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
 
     moved_total = 0
     remaining = amount
+    log.start(f"take_item({item_id})", level="debug")
     for source_id, _held in _holder_candidates(item_id, outpost, cache):
         if remaining <= 0:
             break
@@ -453,10 +454,11 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
             _recent_busy[source_id] = _now_tick()
         if report is not None:
             report["sources"].append((source_id, status, moved))
-        log.debug(f"take_item({item_id}): '{source_id}' -> status={status} moved={moved}/{remaining}")
+        log.debug(f"'{source_id}' -> status={status} moved={moved}/{remaining}")
         moved_total += moved
         remaining -= moved
 
+    log.end()
     return moved_total
 
 

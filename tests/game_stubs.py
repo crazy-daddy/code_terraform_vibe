@@ -419,6 +419,9 @@ class Clock:
     def elapsed_game_hours(self):
         return self.hours
 
+    def get_time_of_day(self):
+        return "12:00:00"
+
 
 class Commander:
     def __init__(self, credits=0):

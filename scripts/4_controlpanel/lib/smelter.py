@@ -115,6 +115,7 @@ class SmelterController:
         so select_needed_ore() can move on to a different demanded ore instead
         of racing another smelter for the same one.
         """
+        self.log.start(f"[{self.name}] claim_recipe({recipe_id})", level="debug")
         current_tick = self.get_current_tick()
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
@@ -134,14 +135,15 @@ class SmelterController:
                 # vehicle_claims.py uses for the same edge case.
                 if current_tick == 0 or age <= SMELTER_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
-                notes.append(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
+                notes.append(f"existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
             site[recipe_id] = {"smelter": self.name, "tick": current_tick}
             return claims
 
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
         except Exception:
-            self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
+            self.log.debug("archive transaction failed, assuming claim granted")
+            self.log.end()
             return True  # can't verify; don't block production over an archive hiccup
         for note in notes:
             self.log.debug(note)
@@ -149,7 +151,8 @@ class SmelterController:
         claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "smelter")
         owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("smelter")
         won = owner == self.name
-        self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): {'won' if won else f'held by other smelter {owner!r}'}")
+        self.log.debug("won" if won else f"held by other smelter {owner!r}")
+        self.log.end()
         return won
 
     def release_recipe(self, recipe_id):
@@ -187,10 +190,12 @@ class SmelterController:
         demands = get_smelter_demands(cache)
         if self.at_home():
             return demands
+        self.log.start(f"[{self.name}] demands", level="debug")
         for item_id, units in site_smelter_demands(self.outpost(), cache).items():
             if units > demands.get(item_id, 0):
-                self.log.debug(f"[{self.name}] demands: {item_id} site need {units} > network {demands.get(item_id, 0)}")
+                self.log.debug(f"{item_id} site need {units} > network {demands.get(item_id, 0)}")
                 demands[item_id] = units
+        self.log.end()
         return demands
 
     def ensure_connections(self):
@@ -206,11 +211,12 @@ class SmelterController:
             return
         self._warned_no_local_storage = False
 
+        self.log.start(f"[{self.name}] ensure_connections", level="debug")
         if not self.connected_in and hasattr(self.smelter, "input"):
             try:
                 result = self.smelter.input.connect(target)
                 self.connected_in = getattr(result, "status", "ok") == "ok"
-                self.log.debug(f"[{self.name}] ensure_connections: input -> '{target}' ({getattr(result, 'status', '?')})")
+                self.log.debug(f"input -> '{target}' ({getattr(result, 'status', '?')})")
             except Exception as error:
                 swallowed("smelter.SmelterController.ensure_connections: self.smelter.input.connect", error)
 
@@ -218,9 +224,10 @@ class SmelterController:
             try:
                 result = self.smelter.output.connect(target)
                 self.connected_out = getattr(result, "status", "ok") == "ok"
-                self.log.debug(f"[{self.name}] ensure_connections: output -> '{target}' ({getattr(result, 'status', '?')})")
+                self.log.debug(f"output -> '{target}' ({getattr(result, 'status', '?')})")
             except Exception as error:
                 swallowed("smelter.SmelterController.ensure_connections: self.smelter.output.connect", error)
+        self.log.end()
 
     def is_shedded(self):
         """
@@ -529,6 +536,13 @@ class SmelterController:
                 swallowed("smelter.SmelterController.power_down_if_idle: self.power.can_power_off", error)
 
     def select_needed_ore(self, unlocked_recipes=None, demands=None, cache=None, dock_reserved=None):
+        """Logs the decision trail as one debug block around _select_needed_ore()."""
+        self.log.start(f"[{self.name}] select_needed_ore", level="debug")
+        choice = self._select_needed_ore(unlocked_recipes, demands, cache, dock_reserved)
+        self.log.end()
+        return choice
+
+    def _select_needed_ore(self, unlocked_recipes, demands, cache, dock_reserved):
         """
         Selects only ore whose unlocked recipe has an active downstream need,
         preferring a recipe no other live smelter already holds a fresh claim
@@ -586,7 +600,7 @@ class SmelterController:
         for recipe in recipes.values():
             output_item = getattr(recipe, "output_item", None)
             if demands.get(output_item, 0) <= 0:
-                self.log.trace(f"[{self.name}] select_needed_ore: {getattr(recipe, 'id', '?')} (output={output_item}) has no active demand, skipping")
+                self.log.trace(f"{getattr(recipe, 'id', '?')} (output={output_item}) has no active demand, skipping")
                 continue
             demanded_any = True
             inputs = getattr(recipe, "inputs", {}) or {}
@@ -597,10 +611,10 @@ class SmelterController:
                     local = self.local_ore(ore, cache)
                     if local > 0:
                         reserved_any = True
-                        self.log.debug(f"[{self.name}] select_needed_ore: {ore} in stock ({local}) but all of it is owed raw to a Supply Dock order ({dock_reserved.get(ore, 0)}), skipping")
+                        self.log.debug(f"{ore} in stock ({local}) but all of it is owed raw to a Supply Dock order ({dock_reserved.get(ore, 0)}), skipping")
                     continue
                 sourceable.append((recipe, ore))
-                self.log.debug(f"[{self.name}] select_needed_ore: candidate {getattr(recipe, 'id', '?')} via {ore} (demand={demands.get(output_item, 0)}, {'already buffered' if ore in buffered_ore else 'in stock'})")
+                self.log.debug(f"candidate {getattr(recipe, 'id', '?')} via {ore} (demand={demands.get(output_item, 0)}, {'already buffered' if ore in buffered_ore else 'in stock'})")
                 break  # one matching ore is enough to consider this recipe a candidate
 
         # Switching hysteresis: recipe changes eject the buffer, change recipe
@@ -614,7 +628,7 @@ class SmelterController:
         current = next(((r, o) for r, o in sourceable if getattr(r, "id", "") == current_id), None)
         if current is not None:
             if self.claim_recipe(current_id):
-                self.log.debug(f"[{self.name}] select_needed_ore: staying on '{current_id}' (claim held, still demanded)")
+                self.log.debug(f"staying on '{current_id}' (claim held, still demanded)")
                 return current
             candidates = []
             for recipe, ore in sourceable:
@@ -623,7 +637,7 @@ class SmelterController:
                 demand = demands.get(getattr(recipe, "output_item", None), 0)
                 minimum = self.switch_min_demand(recipe, ore)
                 if demand < minimum:
-                    self.log.debug(f"[{self.name}] select_needed_ore: not switching to '{getattr(recipe, 'id', '?')}' -- demand {demand} < switch minimum {minimum}")
+                    self.log.debug(f"not switching to '{getattr(recipe, 'id', '?')}' -- demand {demand} < switch minimum {minimum}")
                     continue
                 candidates.append((recipe, ore))
         else:
@@ -632,14 +646,14 @@ class SmelterController:
         for recipe, ore in candidates:
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
-                self.log.debug(f"[{self.name}] select_needed_ore: claimed '{recipe_id}' (ore={ore})")
+                self.log.debug(f"claimed '{recipe_id}' (ore={ore})")
                 return recipe, ore
             # another smelter already has a fresh claim on this one -- try
             # the next candidate first; joining is the fallback below.
-            self.log.debug(f"[{self.name}] select_needed_ore: '{recipe_id}' already claimed by another smelter, trying next candidate")
+            self.log.debug(f"'{recipe_id}' already claimed by another smelter, trying next candidate")
 
         if current is not None:
-            self.log.debug(f"[{self.name}] select_needed_ore: staying joined on '{current_id}' (no unclaimed recipe worth switching to)")
+            self.log.debug(f"staying joined on '{current_id}' (no unclaimed recipe worth switching to)")
             return current
         # Pile-on join onto a recipe a peer already holds -- only when the
         # demand is worth one more worker: demand >= switch_min_demand() x
@@ -652,20 +666,20 @@ class SmelterController:
             workers_after = workers + (0 if current_id == recipe_id else 1)
             minimum = self.switch_min_demand(recipe, ore) * workers_after
             if demand < minimum:
-                self.log.debug(f"[{self.name}] select_needed_ore: not joining '{recipe_id}' -- demand {demand} < {minimum} (switch minimum x {workers_after} workers)")
+                self.log.debug(f"not joining '{recipe_id}' -- demand {demand} < {minimum} (switch minimum x {workers_after} workers)")
                 continue
             if current_id != recipe_id:
                 self.log.print(f"[{self.name}] Joining '{recipe_id}' alongside another Smelter (demand {demand} is worth {workers_after} workers).")
             return recipe, ore
         if sourceable:
             self._select_miss_reason = "demand_covered_by_peers"
-            self.log.debug(f"[{self.name}] select_needed_ore: every demanded recipe is claimed and too small to join -- idling")
+            self.log.debug(f"every demanded recipe is claimed and too small to join -- idling")
             return None, None
         if reserved_any:
             self._select_miss_reason = "ore_reserved_for_dock"
         elif demanded_any:
             self._select_miss_reason = "no_ore"
-        self.log.debug(f"[{self.name}] select_needed_ore: no demanded+sourceable ore found at all ({self._select_miss_reason}) -- returning None")
+        self.log.debug(f"no demanded+sourceable ore found at all ({self._select_miss_reason}) -- returning None")
         return None, None
 
     def run(self, poll_interval=2.0):
