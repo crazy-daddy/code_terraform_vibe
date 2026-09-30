@@ -48,6 +48,9 @@ if TYPE_CHECKING:
     from field_keeper import FieldKeeperController
 
 LAYOUT_KEY = "plant.layout"
+# {"source": field_layout.geometry_source(), "chunk_count": {fill: n}}: full_chunk_count() walks the
+# whole full layout (~48k interpreter steps), so its result survives script restarts here.
+GEOMETRY_KEY = "plant.geometry"
 # Bump when field_layout changes what a full layout looks like: a stored full
 # layout from an older version is rebuilt once.
 # 5 = hand-cared CROWNCAP_GARDEN in columns 1-4, no garden machines.
@@ -130,9 +133,24 @@ class HarvesterPlantingMixin:
         """
         fill = fill or self.field_fill()
         if fill == "crowncap":
-            return field_layout.full_chunk_count(fill)
+            return self.stored_chunk_count(fill)
         demand = field_layout.terraformer_demand(archive.get(TERRAFORMER_KEY, {}))
         return field_layout.chunks_for_demand(demand, self.load_rules(), fill or self.field_fill())
+
+    def stored_chunk_count(self, fill):
+        """field_layout.full_chunk_count(fill), read from GEOMETRY_KEY while the layout constants are unchanged."""
+        source = field_layout.geometry_source()
+        stored = archive.get(GEOMETRY_KEY, {}) or {}
+        stored = stored if isinstance(stored, dict) else {}
+        counts = stored.get("chunk_count") if stored.get("source") == source else None
+        counts = counts if isinstance(counts, dict) else {}
+        if fill in counts:
+            return int(counts[fill])
+        count = field_layout.full_chunk_count(fill)
+        counts = dict(counts)
+        counts[fill] = count
+        archive.set(GEOMETRY_KEY, {"source": source, "chunk_count": counts})
+        return count
 
     def wanted_layout(self, stored):
         """(mode, fill, chunks) the layout should have now, given the stored one."""

@@ -34,6 +34,25 @@ from biomass_retire import retire_state, sell_retired_machines
 
 # Must match automation_panel.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
+SUMMARY_SEPARATOR = " | "  # must match automation_panel.py
+
+# ALWAYS-ON summary grid: one item per cell, text size 10 monospace (~6 px per character).
+SUMMARY_ROW_H = 13
+SUMMARY_COL_MIN_W = 190
+SUMMARY_CHAR_W = 6
+
+
+def draw_summary_grid(x, y, w, items):
+    """Draws items column-major in as many SUMMARY_COL_MIN_W columns as fit in w, each cut to its
+    column with an ellipsis; returns the number of rows used."""
+    cols = max(1, int(w // SUMMARY_COL_MIN_W))
+    rows = -(-len(items) // cols)
+    col_w = w / cols
+    max_chars = max(4, int((col_w - 8) // SUMMARY_CHAR_W))
+    for i, item in enumerate(items):
+        text = item if len(item) <= max_chars else item[: max_chars - 1] + "…"
+        panel.draw_text(x + (i // rows) * col_w, y + (i % rows) * SUMMARY_ROW_H, text, 10, "text-secondary")
+    return rows
 
 # Loop-scoped state, created once and persisting across iterations (this
 # script is one continuous while-loop process, not re-invoked per tick --
@@ -135,9 +154,9 @@ while True:
     last_automation_summary = archive.get(AUTOMATION_SUMMARY_KEY, "not yet run")
     panel.label(24, auto_y + 34, "ALWAYS-ON", "caption")
     panel.status_dot(29, auto_y + 58, 5, "paused" if mismatch else "running")
-    panel.draw_text(42, auto_y + 64, "halted -- confirm new version above" if mismatch else last_automation_summary, 10, "text-secondary", width * 0.30)
+    summary_rows = draw_summary_grid(42, auto_y + 64, ver_x - 16 - 42, ["halted -- confirm new version above"] if mismatch else str(last_automation_summary).split(SUMMARY_SEPARATOR))
 
-    btn_y = auto_y + 88
+    btn_y = auto_y + 70 + summary_rows * SUMMARY_ROW_H + 10
     btn_w = min(160, width * 0.22)
 
     if not mismatch:

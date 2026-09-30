@@ -90,6 +90,8 @@ OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 # same as the old combined script did -- status_panel.py shows its own fixed
 # "halted" message in that case rather than trusting a stale summary.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
+# Joins the summary's parts; status_panel.py splits on it (parts may contain commas).
+SUMMARY_SEPARATOR = " | "
 
 # ~1s and 10s at 10 ticks/sec (see lib/archive_cleaner.py's documented tick rate).
 SOLAR_TICK_INTERVAL = 10
@@ -183,7 +185,7 @@ while True:
                     gate_states = mixer_gate.step(current_tick)
                     if gate_states:
                         paused = sum(1 for st in gate_states.values() if st.get("state") == "pause")
-                        mixer_gate_summary = f"{len(gate_states)} Mixer(s), {paused} paused"
+                        mixer_gate_summary = f"{len(gate_states)} Mixer(s) ({paused} paused)"
             except Exception as e:
                 print(f"[AUTOMATION] Mixer gate error: {e}")
 
@@ -297,7 +299,11 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet commission error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan['count']} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}, {drill_summary}, {parking_summary}")
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join([
+                f"{grid_count} grid(s) supervised", "rebalance swept", f"{outpost_new_count} new outpost(s)",
+                f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", str(upgrade_summary),
+                str(commission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, parking_summary,
+            ]))
 
     flush_all()
     sleep(1.0)

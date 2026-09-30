@@ -325,4 +325,4 @@ class ScriptParking:
         for entry in parked.values():
             kind = entry.get("kind", "?")
             counts[kind] = counts.get(kind, 0) + 1
-        return "parked " + ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items()))
+        return "parked " + " / ".join(f"{n} {kind}" for kind, n in sorted(counts.items()))

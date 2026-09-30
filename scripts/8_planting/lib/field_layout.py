@@ -668,6 +668,11 @@ _CHUNK_COUNT_CACHE = {}   # {fill: full_chunk_count}
 _FULL_LAYOUT_CACHE = {}   # {(chunks, fill): (cells, reserved, garden)}
 
 
+def geometry_source():
+    """Every constant full_chunk_count() depends on, as one string: a stored count is valid while this matches."""
+    return "|".join([FULL_LAYOUT, CROWNCAP_GARDEN, ",".join(CROWNCAP_AUTOMATORS), str(GARDEN_COLS), str(CROWNCAP_GARDEN_COLS), FULL_LAYOUT_BASE])
+
+
 def full_chunk_count(fill=None):
     """Largest useful `chunks` for full_layout() (chunk 1 = garden automators). Memoised per fill."""
     fill = fill or FIELD_FILL
