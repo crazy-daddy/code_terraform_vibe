@@ -48,8 +48,10 @@ at the nearest eligible station (ties alphabetical by id).
 
 `drone.modules() -> list[MountSlot]`, like the Pioneer.
 
-- [ ] `lib/fleet_upgrade.py` / `lib/drone_upgrade.py`: read drone hardware with `modules()` in
-      place of the current workaround.
+- [x] `lib/drone_upgrade.py` reads slots with `modules()` (`_read_slots()`); the `drone.loadouts`
+      record and the uncouple survey are gone, the key is retired in `ArchiveCleaner`.
+      `couple()`/`uncouple()` update `mountedModules` within the call (decompiled `mD`/`gD`).
+- [ ] Live check: next in-place upgrade or chassis fitting reads the right slots.
 
 ## 5. Panel methods (low priority, for real UI work)
 
@@ -66,9 +68,10 @@ is kept, and the docs point to `get_progress()` before changing recipes.
 [smelter.py:405](scripts/4_controlpanel/lib/smelter.py#L405) switches recipe whenever
 `not is_running()`.
 
-- [ ] Verify in `internals/terraform_decompiled/simworker` what `set_recipe` does with paused
-      progress (rejected `busy`, or progress lost). Check Fabricator the same way.
-- [ ] If progress can be lost: guard recipe switches with `get_progress() > 0`.
+- [x] Verified in the decompiled simworker: Smelter and Fabricator `set_recipe` return `busy`
+      when switching to another recipe with `progress > 0`; `clear_recipe` (`k4`) does the same.
+      Progress is never lost. Documented in production_logistics.md §2a-1c.
+- [x] No guard needed: both controllers treat non-`ok` as "retry next poll".
 
 ## 7. Language changes
 
@@ -104,7 +107,7 @@ brownout), restart with the game, 50 per save. See
 - [x] TODO.md's "busy call wedges the card" item reworded: no longer affects the calculator.
 - [x] In game: old headless Custom Panels deleted, `automation_1`/`automation_2` created with
       markers. Deleted panels keep their `.py` file; `unassigned_slot()` skips them.
-- [ ] Run `once --apply-libs` (18 libs pending, mostly comment renames) so both automations
+- [x] Run `once --apply-libs` (18 libs pending, mostly comment renames) so both automations
       start.
 - [ ] Watch one brownout: grid supervision keeps running.
 - Running-script count is unchanged by the move (an automation is still a running script).

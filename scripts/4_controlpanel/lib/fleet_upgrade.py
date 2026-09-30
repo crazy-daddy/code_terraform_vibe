@@ -32,7 +32,7 @@
 
 from archive import archive
 import fleet_status
-from drone_upgrade import DRONE_LOADOUTS_KEY, fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
+from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
 from drone_energy import HOME_DEPOTS_KEY
 from drone_claims import DRONE_RECALL_KEY, MISSION_KEY
 from drone_depot import DEPOT_STATUS_KEY
@@ -569,7 +569,7 @@ class FleetUpgradeCoordinator:
                 pins[new_id] = pin
                 return pins
             archive.transaction(HOME_DEPOTS_KEY, {}, repin)
-        for key in (DRONE_RECALL_KEY, MISSION_KEY, DRONE_LOADOUTS_KEY):
+        for key in (DRONE_RECALL_KEY, MISSION_KEY):
             if archive.get_entry(key, old_id) is not None:
                 archive.pop_entry(key, old_id)
         fleet_status.forget(old_id)
@@ -600,10 +600,6 @@ class FleetUpgradeCoordinator:
             self.log.debug(f"[fleet_upgrade] Pruned stale entries: depots={stale_depots}, drones={stale_drones}, lineage={stale_lineage}.")
 
         if drones:
-            loadouts = archive.get(DRONE_LOADOUTS_KEY, {})
-            gone = [k for k in (loadouts if isinstance(loadouts, dict) else {}) if k not in drones]
-            for k in gone:
-                archive.pop_entry(DRONE_LOADOUTS_KEY, k)
             orders = archive.get(UPGRADE_ORDERS_KEY, {})
             dead = [k for k in (orders if isinstance(orders, dict) else {})
                     if k != REQUESTER and k not in STANDING_ORDER_REQUESTERS and k not in drones]

@@ -10,12 +10,8 @@
 #     request (charge, dock at home, hold), fits its loadout after a chassis
 #     swap, and upgrades its modules in place when a better tier unlocks.
 #
-# The game has no call listing which module sits in which drone slot (a drone
-# has no modules(), unlike Rover/Pioneer), so each drone keeps its own slot
-# record in DRONE_LOADOUTS_KEY. A new chassis starts from an empty, known
-# layout. An existing drone builds the record once, docked and empty, by
-# uncoupling each slot, seeing which module lands in Inventory, and coupling
-# it straight back (_discover_slots()).
+# Slot contents come from drone.modules() (one MountSlot per chassis slot,
+# slot 0 = thruster). couple()/uncouple() update it within the same call.
 #
 # Kept free of heavy imports: lib/drone_energy.py imports retiring_depot_ids()
 # from here, and lib/production.py is only imported inside functions.
@@ -23,7 +19,6 @@
 from archive import archive
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -38,8 +33,6 @@ if TYPE_CHECKING:
 #                                # a COMMISSION card drone has "job" and from=None (lib/fleet_commission.py)
 #    "warehouse_swap": {...}, "warehouse_status": str}  # lib/warehouse_upgrade.py
 FLEET_UPGRADE_KEY = "fleet.upgrade"
-# {drone_id: {"kind": chassis, "slots": {"0": thruster, "1": module_id or None, ...}}}
-DRONE_LOADOUTS_KEY = "drone.loadouts"
 
 # Worst -> best. Only Cargo Pods and Oil Tanks have tiers; the engine type
 # never changes (electric <-> heli needs an oil-distribution check first,
@@ -49,8 +42,6 @@ OIL_TANK_TIERS = ["oil_tank_small", "oil_tank_medium", "oil_tank_large"]
 BATTERY_TIERS = ["battery_pack"]
 THRUSTER_BY_ENGINE = {"electric": "electric_thruster", "heli": "heli_thruster"}
 ROLE_MODULE_ITEMS = {"miner": "portable_bio_extractor", "scout": "portable_bio_scanner"}
-# Module slots after the thruster slot 0 (docs/database/equipment_mining.md).
-MODULE_SLOTS = {"drone_small": 2, "drone_medium": 3, "drone_large": 5}
 
 # Role loadout per chassis, one category per module slot (1..N). "energy" is
 # battery_pack (electric) or the best Oil Tank (heli); "cargo" the best
@@ -69,21 +60,12 @@ LOADOUTS = {
     },
 }
 
-ALL_MODULE_IDS = tuple(
-    CARGO_POD_TIERS + OIL_TANK_TIERS + BATTERY_TIERS
-    + list(THRUSTER_BY_ENGINE.values()) + list(ROLE_MODULE_ITEMS.values()) + ["shield_plating"]
-)
-
 # Charge a drone tops up to at its drone_service before holding for a swap
 # (the undeployed drone's Battery Packs / Oil Tanks go back to Inventory
 # with whatever they hold, and the new chassis gets them).
 UPGRADE_MIN_SOC = 0.98
 # Swap states in which the drone must stay parked at its Depot.
 HOLD_STATES = ("ready", "announced", "swapping")
-# uncouple()/couple() are "hardware service orders"; poll Inventory this
-# long for the result to show before giving up on identifying a module.
-SERVICE_POLL_S = 0.5
-SERVICE_POLL_TRIES = 10
 
 
 def fleet_upgrade_state():
@@ -184,15 +166,6 @@ def tier_ladder(item_id):
     return None
 
 
-def get_loadout_record(drone_id):
-    record = archive.get_entry(DRONE_LOADOUTS_KEY, drone_id)
-    return record if isinstance(record, dict) and isinstance(record.get("slots"), dict) else None
-
-
-def set_loadout_record(drone_id, kind, slots):
-    archive.set_entry(DRONE_LOADOUTS_KEY, drone_id, {"kind": kind, "slots": dict(slots)})
-
-
 class DroneUpgradeMixin:
     """
     Swap handshake, new-chassis fitting and in-place module upgrades, mixed
@@ -259,6 +232,14 @@ class DroneUpgradeMixin:
             if item_id in unlocked or self._inventory_count(item_id) > 0:
                 return item_id
         return None
+
+    def _read_slots(self):
+        """{slot_index: module_id or None} from drone.modules() (0 = thruster), or None if unreadable."""
+        try:
+            return {int(slot.index): (slot.module_id or None) for slot in self._host.drone.modules()}
+        except Exception as error:
+            swallowed("drone_upgrade.DroneUpgradeMixin._read_slots: drone.modules", error)
+            return None
 
     def _slot_plan(self, role, kind):
         return list((LOADOUTS.get(role) or {}).get(kind) or [])
@@ -393,39 +374,37 @@ class DroneUpgradeMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] New chassis is not docked at a Drone Depot; cannot couple modules.")
             return False
 
-        record = get_loadout_record(self._host.name)
-        slots = dict(record["slots"]) if record and record.get("kind") == kind else {}
+        slots = self._read_slots()
+        if slots is None:
+            self._host.log.level("warn").print(f"[{self._host.name}] New chassis: modules() unreadable; retrying.")
+            return False
         self._host.log.start(f"[{self._host.name}] Fitting new {kind} as {role} ({engine})")
 
         thruster = THRUSTER_BY_ENGINE.get(engine)
-        if not slots.get("0") and thruster:
-            status = self._couple(0, thruster)
-            if status in ("ok", "slot_occupied"):
-                slots["0"] = thruster
+        if not slots.get(0) and thruster and self._couple(0, thruster) == "ok":
+            slots[0] = thruster
 
         unlocked = self._unlocked_outputs()
         wanted = {}
         for index, category in enumerate(self._slot_plan(role, kind), start=1):
-            if slots.get(str(index)):
+            if index not in slots or slots[index]:
                 continue
             ladder = self._category_ladder(category, role)
             item_id = self._best_in_inventory(ladder)
             if item_id and self._couple(index, item_id) == "ok":
-                slots[str(index)] = item_id
+                slots[index] = item_id
                 self._host.log.debug(f"[{self._host.name}] Slot {index} ({category}): coupled '{item_id}'.")
                 continue
-            slots[str(index)] = None
             best = self._best_obtainable(ladder, unlocked)
             if best and best in unlocked:
                 wanted[best] = wanted.get(best, 0) + 1
             self._host.log.debug(f"[{self._host.name}] Slot {index} ({category}): nothing in Inventory; ordering '{best}'." if best in unlocked else f"[{self._host.name}] Slot {index} ({category}): nothing in Inventory and nothing to order.")
 
-        set_loadout_record(self._host.name, kind, slots)
         self._request_modules(wanted)
 
-        coupled = [m for i, m in slots.items() if i != "0" and m]
+        coupled = [m for i, m in slots.items() if i != 0 and m]
         categories = {module_category(m) for m in coupled}
-        viable = bool(slots.get("0")) and "energy" in categories and (
+        viable = bool(slots.get(0)) and "energy" in categories and (
             (role == "miner" and "role" in categories) or (role == "hauler" and "cargo" in categories)
         )
         if viable:
@@ -443,47 +422,6 @@ class DroneUpgradeMixin:
             set_upgrade_order(self._host.name, wanted)
         except Exception as e:
             self._host.log.debug(f"[{self._host.name}] set_upgrade_order failed: {e}")
-
-    def _wait_for_inventory_gain(self, before):
-        """Module ids whose Inventory count rose above before{}, polled briefly."""
-        for _ in range(SERVICE_POLL_TRIES):
-            gained = [m for m in ALL_MODULE_IDS if self._inventory_count(m) > before.get(m, 0)]
-            if gained:
-                return gained
-            flush_all()
-            sleep(SERVICE_POLL_S)
-        return []
-
-    def _discover_slots(self, kind):
-        """
-        One-time slot survey for a drone without a loadout record: uncouple
-        each module slot, see which module lands in Inventory, couple it
-        straight back. Needs the drone docked at a Depot with empty cargo
-        (Cargo Pods must be empty to uncouple). Returns the slots dict, or
-        None if a slot could not be read (nothing recorded then).
-        """
-        slots = {"0": THRUSTER_BY_ENGINE.get(self._host.engine)}
-        self._host.log.start(f"[{self._host.name}] Surveying module slots of {kind} (one-time)")
-        for index in range(1, MODULE_SLOTS.get(kind, 0) + 1):
-            before = {m: self._inventory_count(m) for m in ALL_MODULE_IDS}
-            status = self._uncouple(index)
-            if status == "module_not_mounted":
-                slots[str(index)] = None
-                continue
-            if status != "ok":
-                self._host.log.end(f"[{self._host.name}] Slot survey stopped at slot {index} ({status}).")
-                return None
-            gained = self._wait_for_inventory_gain(before)
-            if len(gained) != 1:
-                self._host.log.level("warn").print(f"[{self._host.name}] Slot {index}: could not identify the uncoupled module (Inventory gained {gained or 'nothing'}).")
-            module = gained[0] if gained else None
-            if module and self._couple(index, module) == "ok":
-                slots[str(index)] = module
-            else:
-                slots[str(index)] = None
-                self._host.log.level("error").print(f"[{self._host.name}] Slot {index}: module '{module}' left in Inventory; the loadout pass refills the slot.")
-        self._host.log.end(f"[{self._host.name}] Slots: " + ", ".join(f"{i}={m}" for i, m in sorted(slots.items())))
-        return slots
 
     def maintain_modules_at_depot(self):
         """
@@ -504,25 +442,19 @@ class DroneUpgradeMixin:
         if not upgrades_active():
             self._request_modules({})
             return
-        kind = self._chassis_kind()
-        if kind not in MODULE_SLOTS:
+        plan = self._slot_plan(role, self._chassis_kind())
+        slots = self._read_slots() if plan else None
+        if not slots:
             return
-        record = get_loadout_record(self._host.name)
-        if record is None or record.get("kind") != kind:
-            slots = self._discover_slots(kind)
-            if slots is None:
-                return
-            set_loadout_record(self._host.name, kind, slots)
-        else:
-            slots = dict(record["slots"])
+        module_indexes = sorted(i for i in slots if i != 0)
 
         unlocked = self._unlocked_outputs()
         wanted = {}
         changed = False
         notes = []
 
-        for index in range(1, MODULE_SLOTS[kind] + 1):
-            current = slots.get(str(index))
+        for index in module_indexes:
+            current = slots[index]
             ladder = tier_ladder(current) if current else None
             if not current or not ladder:
                 continue
@@ -535,27 +467,26 @@ class DroneUpgradeMixin:
             if self._uncouple(index) != "ok":
                 continue
             if self._couple(index, best) == "ok":
-                slots[str(index)] = best
+                slots[index] = best
                 notes.append(("info", f"[{self._host.name}] Upgraded slot {index}: '{current}' -> '{best}'."))
             elif self._couple(index, current) != "ok":
-                slots[str(index)] = None
+                slots[index] = None
                 notes.append(("error", f"[{self._host.name}] Slot {index}: could not couple '{best}' or put '{current}' back; left empty."))
             changed = True
 
-        plan = self._slot_plan(role, kind)
-        have = [module_category(m) for i, m in slots.items() if i != "0" and m]
+        have = [module_category(slots[i]) for i in module_indexes if slots[i]]
         missing = list(plan)
         for category in have:
             if category in missing:
                 missing.remove(category)
-        for index in range(1, MODULE_SLOTS[kind] + 1):
-            if slots.get(str(index)) or not missing:
+        for index in module_indexes:
+            if slots[index] or not missing:
                 continue
             category = missing[0]
             ladder = self._category_ladder(category, role)
             item_id = self._best_in_inventory(ladder)
             if item_id and self._couple(index, item_id) == "ok":
-                slots[str(index)] = item_id
+                slots[index] = item_id
                 missing.pop(0)
                 changed = True
                 notes.append(("info", f"[{self._host.name}] Filled empty slot {index} with '{item_id}' ({category})."))
@@ -571,7 +502,6 @@ class DroneUpgradeMixin:
                 self._host.log.level(level).print(message)
             self._host.log.end(f"{len(notes)} slot change(s)")
         if changed:
-            set_loadout_record(self._host.name, kind, slots)
             self._host.detect_engine()
         self._request_modules(wanted)
         if wanted:

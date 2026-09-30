@@ -45,6 +45,7 @@ RECALL_KEY = "vehicle.recall"
 RETIRED_KEY_PREFIXES = (
     "smelter.diag.",  # lib/smelter.py diagnostics (retired)
     "outposts.ore_stock_targets",  # per-outpost ore targets, replaced by one mining.ore_stock_targets dict
+    "drone.loadouts",  # per-drone module slot record, replaced by drone.modules()
     # Per-machine status keys consolidated into the shared MACHINE_STATUS_KEYS
     # dicts below. Payloads are rewritten every step(), so nothing needs migrating.
     "drone_depot.status.",
