@@ -1665,10 +1665,10 @@ def fab_site_gross_need(fabricator_ids, smelter_outputs, cache):
 
 def site_smelter_demands(outpost, cache=None):
     """
-    {smelter_output: units} a non-home site's own Fabricators still need
+    {smelter_output: units} a site's own Fabricators still need
     (fab_site_gross_need()) minus that output's local stock and units in
     flight to the site. lib/smelter.py merges it (per item max) with
-    get_smelter_demands() for a Smelter away from home: the network-wide
+    get_smelter_demands() for every Smelter, home included: the network-wide
     figure nets against stock anywhere, so it misses a site short of an
     output that sits at another outpost.
     """

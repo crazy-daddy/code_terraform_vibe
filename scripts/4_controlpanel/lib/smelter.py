@@ -72,7 +72,7 @@ class SmelterController:
     other outpost only that outpost's own Warehouses (Inventory is home-only,
     docs/components/smelter.md). Ore stock, fair share and output all stay
     local; demand is the network-wide get_smelter_demands(), raised to the
-    site's own Fabricator need away from home (demands()).
+    site's own Fabricator need, home included (demands()).
     """
     RECIPE_MAP = {
         "iron_ore": "smelt_iron_ingot",
@@ -182,11 +182,10 @@ class SmelterController:
 
     def demands(self, cache):
         """get_smelter_demands(), merged per item (max) with this site's own
-        Fabricators' need (production.site_smelter_demands()) when this
-        Smelter is away from home."""
+        Fabricators' need (production.site_smelter_demands()), home
+        included: network stock at another outpost only covers this site
+        once site_supply hauls it, which counts as in flight here."""
         demands = get_smelter_demands(cache)
-        if self.at_home():
-            return demands
         for item_id, units in site_smelter_demands(self.outpost(), cache).items():
             if units > demands.get(item_id, 0):
                 self.log.debug(f"[{self.name}] demands: {item_id} site need {units} > network {demands.get(item_id, 0)}")
