@@ -46,7 +46,8 @@ would run the new script against the stale cached lib. `--apply-libs` applies
 changed libs over the external-command channel (the game restarts every
 running script that imports them); without it, the in-game "Apply & restart
 all" swaps the cache. Once its libs are applied, a held-back slot is
-restarted, and so is any script left in "error" that this process pushed or
+restarted (held slots persist in devtools/.sync-backups/held_restarts.json, so
+a later run restarts them after an in-game Apply), and so is any script left in "error" that this process pushed or
 that reaches a lib it changed (once per script source, so a real bug does not
 loop). `--no-restart` pushes only.
 
@@ -1301,7 +1302,7 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
         if others:
             warn("        left as-is (check these): %s" % ", ".join(others))
     if blockers:
-        _HELD_RESTARTS.add(path.stem)
+        hold_restart(opts.save_dir, path.stem)
         warn("  run   %-28s not restarted: reaches unapplied lib %s - %s"
              % (path.name, ", ".join(blockers), "applying" if opts.apply_libs else "Apply & restart all in game"))
     elif restart:
@@ -1511,8 +1512,12 @@ _APPLIED_LIBS: dict = {}
 # reaches one of these libs, or was pushed, is ours to restart.
 _TOUCHED_LIBS: set = set()
 _PUSHED_SCRIPTS: set = set()
-# Slots pushed but held back from restarting by an unapplied lib.
+# Slots pushed but held back from restarting by an unapplied lib. Persisted in
+# HELD_FILE per save, so a later run (or watch) restarts them after the libs
+# were applied in game or by apply-libs.
 _HELD_RESTARTS: set = set()
+_HELD_LOADED: set = set()
+HELD_FILE = BACKUP_DIR / "held_restarts.json"
 # stem -> (source, apply generation, run serial replaced) of the last restart
 # this process sent (note_restart()); bumped generation = libs were applied.
 _RESTARTS: dict = {}
@@ -1534,7 +1539,45 @@ def _library_entries(context: dict) -> dict:
     return entries
 
 
+def _held_store() -> dict:
+    try:
+        data = json.loads(HELD_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_held(save_dir: Path) -> None:
+    """Merges this save's persisted held restarts into _HELD_RESTARTS, once."""
+    if save_dir in _HELD_LOADED:
+        return
+    _HELD_LOADED.add(save_dir)
+    _HELD_RESTARTS.update(_held_store().get(save_dir.name) or [])
+
+
+def save_held(save_dir: Path) -> None:
+    store = _held_store()
+    if _HELD_RESTARTS:
+        store[save_dir.name] = sorted(_HELD_RESTARTS)
+    else:
+        store.pop(save_dir.name, None)
+    try:
+        HELD_FILE.parent.mkdir(parents=True, exist_ok=True)
+        HELD_FILE.write_text(json.dumps(store, indent=1, sort_keys=True), encoding="utf-8")
+    except OSError as error:
+        warn("  hold  cannot write %s: %s" % (show(HELD_FILE), error))
+
+
+def hold_restart(save_dir: Path, stem: str) -> None:
+    load_held(save_dir)
+    _HELD_RESTARTS.add(stem)
+    save_held(save_dir)
+
+
 def _report_apply(result: dict, label: str) -> None:
+    if result.get("reason") in ("nothing_pending", "already_applied"):
+        ok("  apply %-28s already applied in game" % label)
+        return
     detail = result.get("libraryApply") or {}
     for miss in detail.get("notApplied") or []:
         if miss.get("changed"):
@@ -1587,6 +1630,8 @@ def apply_pending_libraries(opts: Options) -> int:
         result = send_game_command(opts.save_dir, "apply-all-libraries")
         _report_apply(result, "all libraries")
         applied = {str(n)[:-3] for n in (result.get("libraryApply") or {}).get("applied") or []}
+        if result.get("reason") == "nothing_pending":
+            applied = set(ready)  # the game is ahead of its workspace file
     else:
         applied = set()
         for key in sorted(ready):
@@ -1628,12 +1673,18 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
     Returns how many were restarted."""
     if not opts.restart or opts.dry_run:
         return 0
+    load_held(opts.save_dir)
     restarted = 0
     deadline = time.monotonic() + settle_s
     while True:
         context = read_workspace_context(opts.save_dir)
         if context is None:
             return restarted
+        scripts = context.get("scripts") or {}
+        gone = {s for s in _HELD_RESTARTS if s not in scripts or unassigned_slot(opts.save_dir, s)}
+        if gone:
+            _HELD_RESTARTS.difference_update(gone)
+            save_held(opts.save_dir)
         pending = libs_awaiting_apply(opts)
         for stem, info in sorted((context.get("scripts") or {}).items()):
             if not isinstance(info, dict):
@@ -1657,7 +1708,9 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
                     warn("  run   %-28s in error again after restart (line %s): %s" % (
                         stem + ".py", info.get("errorLine"), info.get("errorMessage") or ""))
                 continue  # same state as our last restart: stale status, or a real bug
-            _HELD_RESTARTS.discard(stem)
+            if held:
+                _HELD_RESTARTS.discard(stem)
+                save_held(opts.save_dir)
             _REPORTED_ERRORS.discard(stem)
             if not held:
                 warn("  run   %-28s was in error (line %s: %s), restarting" % (
@@ -1736,7 +1789,8 @@ def report_unapplied_libs(opts: Options) -> None:
     hits = []
     if pending:
         for path in sorted(opts.save_dir.glob("*.py")):
-            if is_candidate(path, opts.save_dir) and libs_reached(read(path) or "", opts) & pending:
+            if (is_candidate(path, opts.save_dir) and not unassigned_slot(opts.save_dir, path.stem)
+                    and libs_reached(read(path) or "", opts) & pending):
                 hits.append(path.stem)
     report = (sorted(pending), hits)
     if report == _LAST_APPLY_REPORT[0]:
@@ -1972,8 +2026,9 @@ def apply_libs_cmd(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Scrip
     _TOUCHED_LIBS.update(pending)
     n = apply_pending_libraries(opts)
     typer.echo("Applied %d." % n)
-    if n:
-        typer.echo("Restarted %d crashed script(s)." % recover_scripts(opts, settle_s=RECOVER_SETTLE_S))
+    load_held(opts.save_dir)
+    if n or _HELD_RESTARTS:
+        typer.echo("Restarted %d held-back or crashed script(s)." % recover_scripts(opts, settle_s=RECOVER_SETTLE_S if n else 0.0))
 
 
 class Watcher:
