@@ -121,7 +121,8 @@ class VehicleController(
 
     def get_vehicle_index(self):
         """Extracts integer index from vehicle name (e.g. 'rover_1' -> 1, 'pioneer_2' -> 2)."""
-        self.log.trace(f"[{self.name}] get_vehicle_index() called on name={self.name!r}.")
+        self.log.start(f"[{self.name}] get_vehicle_index", level="debug")
+        self.log.trace(f"get_vehicle_index() called on name={self.name!r}.")
         digits = ""
         for ch in str(self.name):
             if ch.isdigit():
@@ -129,12 +130,15 @@ class VehicleController(
         if digits:
             try:
                 index = int(digits)
-                self.log.trace(f"[{self.name}] get_vehicle_index() -> {index} (parsed digits {digits!r}).")
+                self.log.trace(f"get_vehicle_index() -> {index} (parsed digits {digits!r}).")
+                self.log.end()
                 return index
             except Exception:
-                self.log.trace(f"[{self.name}] get_vehicle_index() -> 1 (failed to parse digits {digits!r}).")
+                self.log.trace(f"get_vehicle_index() -> 1 (failed to parse digits {digits!r}).")
+                self.log.end()
                 return 1
-        self.log.trace(f"[{self.name}] get_vehicle_index() -> 1 (no digits found in name).")
+        self.log.trace("get_vehicle_index() -> 1 (no digits found in name).")
+        self.log.end()
         return 1
 
     def get_rover_index(self):
@@ -176,7 +180,8 @@ class VehicleController(
 
     def publish_telemetry(self, state, target_desc=None):
         """Publishes live vehicle status to the shared fleet.status archive dict (lib/fleet_status.py)."""
-        self.log.trace(f"[{self.name}] publish_telemetry(state={state!r}, target_desc={target_desc!r}) called.")
+        self.log.start(f"[{self.name}] publish_telemetry", level="debug")
+        self.log.trace(f"publish_telemetry(state={state!r}, target_desc={target_desc!r}) called.")
         self.state = state
         if state in fleet_status.IDLE_STATES:
             self.intent = None
@@ -195,4 +200,5 @@ class VehicleController(
             "tick": self.get_current_tick()
         }
         wrote = fleet_status.publish(self.name, telemetry)
-        self.log.trace(f"[{self.name}] publish_telemetry() -> fleet.status[{self.name!r}] {'written' if wrote else 'unchanged, throttled'}: {telemetry}.")
+        self.log.trace(f"publish_telemetry() -> fleet.status[{self.name!r}] {'written' if wrote else 'unchanged, throttled'}: {telemetry}.")
+        self.log.end()

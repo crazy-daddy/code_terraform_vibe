@@ -214,6 +214,7 @@ class WarehouseUpgrader:
     # ------------------------------------------------------------ selection
 
     def _start_next(self):
+        self.log.start("[warehouse_upgrade] _start_next", level="debug")
         candidates = []
         for outpost in self._outposts():
             smalls = self._ids_of(outpost, SMALL_TYPE_ID)
@@ -221,25 +222,29 @@ class WarehouseUpgrader:
                 candidates.append((-len(smalls), getattr(outpost, "id", ""), smalls))
         if not candidates:
             cash.release(CASH_CONSUMER)
+            self.log.end()
             return None
         candidates.sort()
         _, outpost_id, smalls = candidates[0]
-        self.log.debug(f"[warehouse_upgrade] Outposts with >= {SWAP_RATIO} Warehouses: {[(c[1], -c[0]) for c in candidates]}; picked '{outpost_id}'.")
+        self.log.debug(f"Outposts with >= {SWAP_RATIO} Warehouses: {[(c[1], -c[0]) for c in candidates]}; picked '{outpost_id}'.")
 
         price = self._price()
         pairs = sum(-c[0] // SWAP_RATIO for c in candidates)
         if self._inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=pairs * price, label=f"{pairs} Large Warehouse(s)"):
-            self.log.debug(f"[warehouse_upgrade] cash manager holds back {price} cr for '{outpost_id}'; waiting.")
-            return f"saving up ({self._credits()}/{price} cr)"
+            self.log.debug(f"cash manager holds back {price} cr for '{outpost_id}'; waiting.")
+            _ret = f"saving up ({self._credits()}/{price} cr)"
+            self.log.end()
+            return _ret
 
         fills = sorted((self._total(w), w) for w in smalls)
         old_ids = [w for _, w in fills[:SWAP_RATIO]]
-        self.log.debug(f"[warehouse_upgrade] Fill at '{outpost_id}': {fills}; retiring the emptiest {old_ids}.")
+        self.log.debug(f"Fill at '{outpost_id}': {fills}; retiring the emptiest {old_ids}.")
         update_fleet_upgrade(lambda s: s.update({SWAP_KEY: {
             "state": "buying", "outpost": outpost_id, "old_ids": old_ids,
             "removed": [], "to_sell": 0, "new_id": None, "attempts": 0,
         }}))
         self.log.print(f"[warehouse_upgrade] '{outpost_id}': replacing {old_ids} with one Large Warehouse.")
+        self.log.end()
         return f"{outpost_id}: buying Large Warehouse"
 
     # ------------------------------------------------------------ swap
@@ -263,29 +268,34 @@ class WarehouseUpgrader:
         return text
 
     def _advance_once(self, swap):
+        self.log.start("[warehouse_upgrade] _advance_once", level="debug")
         state = swap.get("state")
         outpost_id = swap.get("outpost")
         computer = _component("computer")
         if not computer or not hasattr(computer, "deploy"):
+            self.log.end()
             return "no Ship Computer"
-        self.log.debug(f"[warehouse_upgrade] Swap at '{outpost_id}': state '{state}'.")
+        self.log.debug(f"Swap at '{outpost_id}': state '{state}'.")
 
         if state == "buying":
             if self._inventory_count(LARGE_TYPE_ID) <= 0:
                 shop = _component("shop")
                 price = self._price()
                 if self._credits() < price:
+                    self.log.end()
                     return f"{outpost_id}: waiting for {price} cr"
                 res = shop.buy(LARGE_TYPE_ID, 1) if shop else None
                 status = getattr(res, "status", "no_shop")
                 if status != "ok":
-                    self.log.debug(f"[warehouse_upgrade] buy('{LARGE_TYPE_ID}'): {status} - {getattr(res, 'message', '')}")
+                    self.log.debug(f"buy('{LARGE_TYPE_ID}'): {status} - {getattr(res, 'message', '')}")
+                    self.log.end()
                     return f"{outpost_id}: buy {status}, retrying"
                 cash.spent(CASH_CONSUMER, price)
                 self.log.print(f"[warehouse_upgrade] Bought a Large Warehouse ({price} cr).")
             outpost = self._outpost(outpost_id)
             known = self._ids_of(outpost, LARGE_TYPE_ID) if outpost else []
             self._patch(state="deploying", known=known)
+            self.log.end()
             return f"{outpost_id}: deploying"
 
         if state == "deploying":
@@ -298,18 +308,24 @@ class WarehouseUpgrader:
                     if res.status in ("deploy_limit", "duplicate_outpost_machine", "wrong_biome_for_machine", "location_not_found", "not_deployable", "locked"):
                         self._patch(state="blocked", reason=res.status)
                         self.log.level("warn").print(f"[warehouse_upgrade] deploy('{LARGE_TYPE_ID}', '{outpost_id}') refused ({res.status}: {res.message}); swap blocked.")
+                        self.log.end()
                         return f"{outpost_id}: blocked ({res.status})"
                     if res.status == "no_kit":
                         self._patch(state="buying")
+                    self.log.end()
                     return f"{outpost_id}: deploy {res.status}"
                 adopted = res.machine_id
             self._patch(state="draining", new_id=adopted)
             self.log.print(f"[warehouse_upgrade] Deployed '{adopted}' at '{outpost_id}'; draining {swap.get('old_ids')}.")
+            self.log.end()
             return f"{outpost_id}: deployed {adopted}"
 
         if state == "draining":
-            return self._drain_all(swap, computer)
+            _ret = self._drain_all(swap, computer)
+            self.log.end()
+            return _ret
 
+        self.log.end()
         return f"{outpost_id}: unknown state {state!r}"
 
     def _drain_all(self, swap, computer):
@@ -340,6 +356,7 @@ class WarehouseUpgrader:
 
     def _drain_loop(self, old_id, new_id, outpost_id, computer, moved):
         """Drain loop of _drain_and_remove(); moved[0] accumulates the units moved."""
+        self.log.start("[warehouse_upgrade] _drain_loop", level="debug")
         idle_passes = 0
         while True:
             old = _component(old_id)
@@ -348,7 +365,7 @@ class WarehouseUpgrader:
                 try:
                     stacks = old.stacks()
                 except Exception as e:
-                    self.log.debug(f"[warehouse_upgrade] '{old_id}'.stacks() raised {e}; trying undeploy.")
+                    self.log.debug(f"'{old_id}'.stacks() raised {e}; trying undeploy.")
 
             if not stacks:
                 res = computer.undeploy(old_id)
@@ -363,21 +380,25 @@ class WarehouseUpgrader:
                     update_fleet_upgrade(mark)
                     self._sell_kits()
                     self.log.print(f"[warehouse_upgrade] '{old_id}' empty ({moved[0]} unit(s) moved) and undeployed.")
+                    self.log.end()
                     return None
-                self.log.debug(f"[warehouse_upgrade] undeploy('{old_id}'): {res.status} - {res.message}")
+                self.log.debug(f"undeploy('{old_id}'): {res.status} - {res.message}")
                 if res.status in TRANSIENT_UNDEPLOY_STATUSES:
+                    self.log.end()
                     return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
                 if res.status == "cargo_present":
                     idle_passes += 1
                     if idle_passes < DRAIN_MAX_IDLE_PASSES:
-                        self.log.debug(f"[warehouse_upgrade] '{old_id}': something slipped in before undeploy; draining again.")
+                        self.log.debug(f"'{old_id}': something slipped in before undeploy; draining again.")
                         continue
                 attempts = int((self._swap() or {}).get("attempts") or 0) + 1
                 if attempts >= MAX_UNDEPLOY_ATTEMPTS:
                     self._patch(state="blocked", reason=res.status, attempts=attempts)
                     self.log.level("warn").print(f"[warehouse_upgrade] undeploy('{old_id}') refused {attempts}x ({res.status}: {res.message}); swap blocked.")
+                    self.log.end()
                     return f"{outpost_id}: blocked ({res.status})"
                 self._patch(attempts=attempts)
+                self.log.end()
                 return f"{old_id}: undeploy {res.status}, retrying"
 
             moved_pass = 0
@@ -391,12 +412,15 @@ class WarehouseUpgrader:
             if idle_passes >= DRAIN_MAX_IDLE_PASSES:
                 left = self._total(old_id)
                 self.log.level("warn").print(f"[warehouse_upgrade] '{old_id}': {left} unit(s) left and nowhere to move them; retrying later.")
+                self.log.end()
                 return f"{old_id}: stuck with {left} unit(s)"
             flush_all()
             sleep(BUSY_RETRY_S)
+        self.log.end()
 
     def _move_stack(self, old, old_id, new_id, outpost_id, stack):
         """Moves one stack out of old in DRAIN_CHUNK_UNITS calls. Returns units moved."""
+        self.log.start("[warehouse_upgrade] _move_stack", level="debug")
         moved = 0
         busy = 0
         remaining = int(getattr(stack, "count", 0) or 0)
@@ -404,7 +428,8 @@ class WarehouseUpgrader:
         while remaining > 0:
             target = self._target_for(stack.id, props, new_id, old_id, outpost_id)
             if target is None:
-                self.log.debug(f"[warehouse_upgrade] No room anywhere at '{outpost_id}' for {remaining}x {stack.id}.")
+                self.log.debug(f"No room anywhere at '{outpost_id}' for {remaining}x {stack.id}.")
+                self.log.end()
                 return moved
             res = old.transfer_to(target, stack.id, min(remaining, DRAIN_CHUNK_UNITS), properties=props, property_match="exact")
             got = int(getattr(res, "moved", 0) or 0) if res.status in ("ok", "partial") else 0
@@ -412,23 +437,27 @@ class WarehouseUpgrader:
                 moved += got
                 remaining -= got
                 busy = 0
-                self.log.debug(f"[warehouse_upgrade] {got}x {stack.id} '{old_id}' -> '{target}' ({remaining} left in this stack).")
+                self.log.debug(f"{got}x {stack.id} '{old_id}' -> '{target}' ({remaining} left in this stack).")
                 continue
             if res.status in ("busy", "source_changed", "target_changed", "target_under_construction"):
                 busy += 1
                 if busy >= MAX_BUSY_RETRIES:
-                    self.log.debug(f"[warehouse_upgrade] {stack.id}: '{res.status}' {busy}x in a row; skipping this stack for now.")
+                    self.log.debug(f"{stack.id}: '{res.status}' {busy}x in a row; skipping this stack for now.")
+                    self.log.end()
                     return moved
-                self.log.trace(f"[warehouse_upgrade] {stack.id} '{old_id}' -> '{target}': {res.status}, retry {busy}.")
+                self.log.trace(f"{stack.id} '{old_id}' -> '{target}': {res.status}, retry {busy}.")
                 flush_all()
                 sleep(BUSY_RETRY_S)
                 continue
-            self.log.debug(f"[warehouse_upgrade] transfer {stack.id} '{old_id}' -> '{target}': {res.status} - {res.message}")
+            self.log.debug(f"transfer {stack.id} '{old_id}' -> '{target}': {res.status} - {res.message}")
+            self.log.end()
             return moved
+        self.log.end()
         return moved
 
     def _target_for(self, item_id, props, new_id, old_id, outpost_id):
         """The new Large Warehouse if it has room, else another non-retiring store at the outpost."""
+        self.log.start("[warehouse_upgrade] _target_for", level="debug")
         retiring = set((self._swap() or {}).get("old_ids") or []) | {old_id}
         ordered = [new_id]
         outpost = self._outpost(outpost_id)
@@ -440,12 +469,14 @@ class WarehouseUpgrader:
             try:
                 if wh and wh.space_for(item_id, props) > 0:
                     if building_id != new_id:
-                        self.log.debug(f"[warehouse_upgrade] '{new_id}' has no room for {item_id}; falling back to '{building_id}'.")
+                        self.log.debug(f"'{new_id}' has no room for {item_id}; falling back to '{building_id}'.")
+                    self.log.end()
                     return building_id
             except Exception as error:
                 swallowed("warehouse_upgrade.WarehouseUpgrader._target_for: wh.space_for", error)
                 continue
-        self.log.debug(f"[warehouse_upgrade] No store at '{outpost_id}' has room for {item_id} (tried {ordered}).")
+        self.log.debug(f"No store at '{outpost_id}' has room for {item_id} (tried {ordered}).")
+        self.log.end()
         return None
 
     def _sell_kits(self):

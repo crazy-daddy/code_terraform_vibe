@@ -174,23 +174,28 @@ def _locate_built_drill(port, kind, coords):
 
 def connect_to_drill(port, drill_id):
     """True when `port` (vehicle.input) is now connected to drill_id -- only possible inside its service area."""
+    log.start(f"connect_to_drill({drill_id!r})", level="debug")
     try:
         if port.connected_id() == drill_id:
+            log.end()
             return True
     except Exception as exc:
         swallowed("drill_sites.connect_to_drill: port.connected_id", exc)
     try:
         res = port.connect(drill_id)
     except Exception as error:
-        log.debug(f"connect_to_drill({drill_id!r}): raised {error}.")
+        log.debug(f"raised {error}.")
+        log.end()
         return False
     status = getattr(res, "status", None)
-    log.debug(f"connect_to_drill({drill_id!r}): {status} - {getattr(res, 'message', '')}")
+    log.debug(f"{status} - {getattr(res, 'message', '')}")
+    log.end()
     return status == "ok"
 
 
 def take_from_drill(port, item_id, amount):
     """take()s up to `amount` of item_id from the already-connected drill; returns units moved."""
+    log.start("take_from_drill", level="debug")
     moved_total = 0
     for _attempt in range(5):
         remaining = amount - moved_total
@@ -199,7 +204,7 @@ def take_from_drill(port, item_id, amount):
         try:
             res = port.take(item_id, remaining)
         except Exception as error:
-            log.debug(f"take_from_drill({item_id}, {remaining}): raised {error}.")
+            log.debug(f"raised {error}.")
             break
         moved = getattr(res, "moved", 0) or 0
         status = getattr(res, "status", None)
@@ -209,6 +214,7 @@ def take_from_drill(port, item_id, amount):
             sleep(0.5)
             continue
         if moved <= 0 or status not in ("ok", "partial"):
-            log.debug(f"take_from_drill({item_id}, {remaining}): {status}, moved {moved}.")
+            log.debug(f"{status}, moved {moved}.")
             break
+    log.end()
     return moved_total

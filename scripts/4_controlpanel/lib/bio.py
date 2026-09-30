@@ -46,19 +46,24 @@ def local_sibling(outpost, type_id):
     hardcoded home-outpost instance. Returns None if this outpost has none
     (or outpost is None/unavailable).
     """
+    log.start(f"local_sibling({type_id})", level="debug")
     if not outpost or not hasattr(outpost, "buildings"):
+        log.end()
         return None
     try:
         found = outpost.buildings(type_id)
     except Exception:
-        log.trace(f"local_sibling({type_id}): outpost.buildings() raised -- treating as none found.")
+        log.trace("outpost.buildings() raised -- treating as none found.")
+        log.end()
         return None
     if not found:
-        log.trace(f"local_sibling({type_id}): no matching sibling building at this outpost.")
+        log.trace("no matching sibling building at this outpost.")
+        log.end()
         return None
     b_id = getattr(found[0], "id", None)
     result = get_component(b_id) if b_id else None
-    log.trace(f"local_sibling({type_id}): resolved to '{b_id}' -> {'found' if result else 'get_component failed'}.")
+    log.trace(f"resolved to '{b_id}' -> {'found' if result else 'get_component failed'}.")
+    log.end()
     return result
 
 def is_home_outpost(outpost):
@@ -260,7 +265,8 @@ def _local_stock_snapshot(outpost):
     every stock/property lookup read from it instead is the same fix applied one
     layer deeper. See docs/AI_CHEATSHEET.md Sec 1f.
     """
-    log.trace("_local_stock_snapshot: entry, walking local storage.")
+    log.start("_local_stock_snapshot", level="debug")
+    log.trace("entry, walking local storage.")
     totals = {}
     by_properties = {}
     for source_id, component in _local_sources(outpost):
@@ -281,7 +287,8 @@ def _local_stock_snapshot(outpost):
             if properties:
                 key = (item_id, _properties_key(properties))
                 by_properties[key] = by_properties.get(key, 0) + count
-    log.trace(f"_local_stock_snapshot: exit, {len(totals)} distinct item id(s), {len(by_properties)} property-tagged variant(s).")
+    log.trace(f"exit, {len(totals)} distinct item id(s), {len(by_properties)} property-tagged variant(s).")
+    log.end()
     return totals, by_properties
 
 
@@ -355,7 +362,8 @@ def _find_matching_stack(exchange_machine, item_id, outpost):
     picking the RIGHT variant instead of blindly grabbing whatever's staged first.
     Returns (source_id, properties) or None.
     """
-    log.trace(f"_find_matching_stack: entry, item_id={item_id}")
+    log.start("_find_matching_stack", level="debug")
+    log.trace(f"entry, item_id={item_id}")
     for source_id, component in _local_sources(outpost):
         if not component or not hasattr(component, "stacks"):
             continue
@@ -370,12 +378,14 @@ def _find_matching_stack(exchange_machine, item_id, outpost):
             properties = getattr(stack, "properties", None)
             try:
                 if exchange_machine.matches_order(item_id, properties):
-                    log.trace(f"_find_matching_stack: exit, matched '{source_id}' properties={properties}")
+                    log.trace(f"exit, matched '{source_id}' properties={properties}")
+                    log.end()
                     return source_id, properties
             except Exception as error:
                 swallowed("bio._find_matching_stack: exchange_machine.matches_order", error)
                 continue
-    log.trace(f"_find_matching_stack: exit, no locally-staged {item_id} variant satisfies matches_order().")
+    log.trace(f"exit, no locally-staged {item_id} variant satisfies matches_order().")
+    log.end()
     return None
 
 
@@ -467,7 +477,8 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
     overproduction prevention is structural (see _processor_is_idle()), not
     enforced by this selection.
     """
-    log.trace(f"_focus_local_order: entry, {len(orders)} order(s) to filter, my_biome={my_biome} fragment_id={fragment_id}")
+    log.start("_focus_local_order", level="debug")
+    log.trace(f"entry, {len(orders)} order(s) to filter, my_biome={my_biome} fragment_id={fragment_id}")
     candidates = []
     for order in orders:
         if not is_order_incomplete(order):
@@ -479,18 +490,21 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
         if fragment_id is not None and fragment_id not in (order.requires or {}):
             continue
         candidates.append(order)
-    log.trace(f"_focus_local_order: {len(candidates)} local/incomplete/non-frozen candidate(s) survived filtering (of {len(orders)} total).")
+    log.trace(f"{len(candidates)} local/incomplete/non-frozen candidate(s) survived filtering (of {len(orders)} total).")
 
     if not candidates:
-        log.trace("_focus_local_order: exit, no candidates.")
+        log.trace("exit, no candidates.")
+        log.end()
         return None
 
     if fragment_id is not None:
         for order in candidates:
             if _order_fragment_remaining(order, fragment_id, snapshot) > 0:
-                log.trace(f"_focus_local_order: exit, chose {order.id} (still needs {fragment_id}).")
+                log.trace(f"exit, chose {order.id} (still needs {fragment_id}).")
+                log.end()
                 return order
-        log.trace(f"_focus_local_order: every candidate already has {fragment_id} fully covered/matched -- none chosen.")
+        log.trace(f"every candidate already has {fragment_id} fully covered/matched -- none chosen.")
+        log.end()
         return None
 
     for order in candidates:
@@ -498,9 +512,11 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
             _order_fragment_remaining(order, frag_id, snapshot) > 0 and _snapshot_stock(snapshot, frag_id) > 0
             for frag_id in (order.requires or {}).keys()
         ):
-            log.trace(f"_focus_local_order: exit, chose {order.id} (already has local stock of a still-needed fragment).")
+            log.trace(f"exit, chose {order.id} (already has local stock of a still-needed fragment).")
+            log.end()
             return order
-    log.trace(f"_focus_local_order: exit, no candidate has local stock of a needed fragment -- defaulting to first candidate {candidates[0].id}.")
+    log.trace(f"exit, no candidate has local stock of a needed fragment -- defaulting to first candidate {candidates[0].id}.")
+    log.end()
     return candidates[0]
 
 
@@ -529,15 +545,17 @@ def _bio_demand_totals(comms, exchange, my_biome):
     overproducing fragments nothing wants until they saturate
     MAX_LOCAL_BIO_ARTIFACTS and wedge the whole pipeline.
     """
+    log.start("_bio_demand_totals", level="debug")
     if comms:
         try:
             broadcast = comms.latest("bio_orders")
             if isinstance(broadcast, dict):
                 result = dict(broadcast.get("local_demands", {}) or {})
-                log.trace(f"_bio_demand_totals: source=signal_bus, local_demands={result}")
+                log.trace(f"source=signal_bus, local_demands={result}")
+                log.end()
                 return result
         except Exception:
-            log.trace("_bio_demand_totals: comms.latest('bio_orders') raised -- falling back to active_order().")
+            log.trace("comms.latest('bio_orders') raised -- falling back to active_order().")
     demands = {}
     active = None
     if exchange:
@@ -553,7 +571,8 @@ def _bio_demand_totals(comms, exchange, my_biome):
                 remaining = count_needed - deliv - in_tr
                 if remaining > 0:
                     demands[frag_id] = demands.get(frag_id, 0) + remaining
-    log.trace(f"_bio_demand_totals: source=active_order_fallback, active={getattr(active, 'id', None) if exchange else None}, demands={demands}")
+    log.trace(f"source=active_order_fallback, active={getattr(active, 'id', None) if exchange else None}, demands={demands}")
+    log.end()
     return demands
 
 
@@ -650,9 +669,10 @@ class BioExchangeController:
         properties alone let finished orders' leftovers pile up one-per-Warehouse-slot
         until the outpost jammed.
         """
+        self.log.start("[EXCHANGE] _cleanup_orphaned_artifacts", level="debug")
         outpost = self.machine.outpost
         required = self._required_fragment_ids(all_orders)
-        self.log.trace(f"[EXCHANGE] _cleanup_orphaned_artifacts: entry, {len(required)} fragment id(s) still required across {len(all_orders)} orders")
+        self.log.trace(f"entry, {len(required)} fragment id(s) still required across {len(all_orders)} orders")
         cleaned = 0
         for source_id, component in _local_sources(outpost):
             if not component or not hasattr(component, "stacks"):
@@ -684,18 +704,21 @@ class BioExchangeController:
                     cleaned += getattr(flush_res, "moved", count)
                     self.log.debug(f"[EXCHANGE] Flushed {getattr(flush_res, 'moved', count)}x orphaned {item_id} "
                           f"(properties {properties}) from '{source_id}' -- no order needs this fragment.")
-        self.log.trace(f"[EXCHANGE] _cleanup_orphaned_artifacts: exit, flushed {cleaned} orphaned unit(s) total.")
+        self.log.trace(f"exit, flushed {cleaned} orphaned unit(s) total.")
+        self.log.end()
 
     def broadcast_demands(self):
         """Broadcasts all pending order demands across the Signal Bus."""
+        self.log.start("[EXCHANGE] broadcast_demands", level="debug")
         if not self.comms:
+            self.log.end()
             return
 
         all_orders = self.machine.orders()
         my_biome = get_my_biome(self.machine)
         local_demands = {}
         all_demands = {}
-        self.log.trace(f"[EXCHANGE] broadcast_demands: entry, scanning {len(all_orders)} orders, my_biome={my_biome}")
+        self.log.trace(f"entry, scanning {len(all_orders)} orders, my_biome={my_biome}")
 
         for ord_info in all_orders:
             if not is_order_incomplete(ord_info):
@@ -715,11 +738,12 @@ class BioExchangeController:
             "all_demands": all_demands,
             "active_order": getattr(self.machine.active_order(), "id", None),
         }
-        self.log.trace(f"[EXCHANGE] broadcast_demands: exit, local_demands={local_demands} all_demands_count={len(all_demands)}")
+        self.log.trace(f"exit, local_demands={local_demands} all_demands_count={len(all_demands)}")
         try:
             self.comms.broadcast("bio_orders", payload)
         except Exception as error:
             swallowed("bio.BioExchangeController.broadcast_demands: self.comms.broadcast", error)
+        self.log.end()
 
     def sweep_and_deliver(self):
         """
@@ -933,18 +957,21 @@ class BioLabController:
         re-check _processor_is_idle() from scratch. Falls back to a short sleep if
         comms is unavailable or the wait itself errors.
         """
-        self.log.trace(f"[{self.name}] _wait_for_processor: entry, waiting on 'biome_processor_heartbeat'")
+        self.log.start(f"[{self.name}] _wait_for_processor", level="debug")
+        self.log.trace(f"entry, waiting on 'biome_processor_heartbeat'")
         if self.comms:
             try:
                 flush_all()
                 self.comms.wait_broadcast("biome_processor_heartbeat")
-                self.log.trace(f"[{self.name}] _wait_for_processor: exit, heartbeat received")
+                self.log.trace("exit, heartbeat received")
+                self.log.end()
                 return
             except Exception:
-                self.log.trace(f"[{self.name}] _wait_for_processor: wait_broadcast errored -- falling back to sleep(0.5)")
+                self.log.trace("wait_broadcast errored -- falling back to sleep(0.5)")
                 pass
         flush_all()
         sleep(0.5)
+        self.log.end()
 
     def step(self):
         outpost = self.machine.outpost

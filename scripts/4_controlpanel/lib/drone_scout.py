@@ -31,11 +31,13 @@ class DroneScoutMixin:
         resolved is skipped too, not just ones this drone personally
         scanned.
         """
-        self._host.log.trace(f"[{self._host.name}] _scan_candidates() entry.")
+        self._host.log.start(f"[{self._host.name}] _scan_candidates()", level="debug")
+        self._host.log.trace("_scan_candidates() entry.")
         nocturna = get_component("nocturna")
         journal = get_component("journal")
         if not nocturna or not journal:
-            self._host.log.debug(f"[{self._host.name}] _scan_candidates(): missing nocturna or journal component; returning no candidates.")
+            self._host.log.debug("missing nocturna or journal component; returning no candidates.")
+            self._host.log.end()
             return []
 
         try:
@@ -67,24 +69,28 @@ class DroneScoutMixin:
             f"[{self._host.name}] _scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s) "
             f"(skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty)."
         )
-        self._host.log.trace(f"[{self._host.name}] _scan_candidates() exit: {len(candidates)} candidate(s).")
+        self._host.log.trace(f"_scan_candidates() exit: {len(candidates)} candidate(s).")
+        self._host.log.end()
         return candidates
 
     def _scout_poi(self, log, target):
         """Flies to `target` and scans it; returns the outcome text for the enclosing log block."""
+        log.start(f"[{self._host.name}] _scout_poi", level="debug")
         self._host.set_intent(f"scouting poi_{target[0]}_{target[1]}")
         self._host.publish_telemetry("OUTBOUND", f"poi_{target[0]}_{target[1]}")
-        log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
+        log.trace(f"fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
         if not self._host.fly_to(target[0], target[1], precision=1.0):
             log.level("warn").print(f"[{self._host.name}] Could not safely reach POI {target}; will retry.")
+            log.end()
             return "unreachable, will retry"
-        log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}) exit: reached.")
+        log.trace(f"fly_to({target[0]}, {target[1]}) exit: reached.")
 
-        log.trace(f"[{self._host.name}] bio_scanner.scan() entry at {target}.")
+        log.trace(f"bio_scanner.scan() entry at {target}.")
         res = self._host.drone.bio_scanner.scan()
-        log.trace(f"[{self._host.name}] bio_scanner.scan() exit: status={res.status}.")
+        log.trace(f"bio_scanner.scan() exit: status={res.status}.")
         if res.status != "ok":
             log.level("warn").print(f"[{self._host.name}] Scan at {target} notice: {res.status} - {res.message}")
+            log.end()
             return f"scan {res.status}"
         outcome = "biosite found"
         # A rover/pioneer's sonar may have already flagged this
@@ -96,17 +102,18 @@ class DroneScoutMixin:
         # from re-attempting this contact); see
         # unsupported_markers.clear_wrong_scanner_marker().
         if clear_wrong_scanner_marker(target[0], target[1]):
-            log.debug(f"[{self._host.name}] Cleared stale 'Bio Contact' marker at {target}; bio_scanner resolved it.")
+            log.debug(f"Cleared stale 'Bio Contact' marker at {target}; bio_scanner resolved it.")
         scan = res.scan
         if scan is not None and getattr(scan, "is_empty", False):
             self._host.mark_poi_empty(target[0], target[1])
-            log.debug(f"[{self._host.name}] {target} confirmed empty; cached to skip on future cycles.")
+            log.debug(f"{target} confirmed empty; cached to skip on future cycles.")
             outcome = "empty"
         else:
             life_forms = getattr(scan, "life_forms", []) if scan else []
             types_found = ", ".join(sorted(set(getattr(lf, "type", "?") for lf in life_forms))) or "unknown"
             log.print(f"[{self._host.name}] Biosite found at {target}: {types_found}.")
         self._host.publish_telemetry("SCANNED", f"poi_{target[0]}_{target[1]}")
+        log.end()
         return outcome
 
     def run_scout_loop(self, poll_interval=5.0):

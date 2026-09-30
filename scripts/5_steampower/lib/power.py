@@ -265,6 +265,7 @@ class PowerGridManager:
         self.log.end(f"[POWER] Day {summary['day']} closed on '{grid_id_str}' ({'draining' if draining else 'no advisory'})")
 
     def _track_day(self, grid, now, grid_id_str):
+        self.log.start("[POWER] _track_day", level="debug")
         current_day = self.clock.get_day() if self.clock else 1
         key = f"{DAILY_STATE_KEY_PREFIX}{self.grid_anchor}"
         state = self.day_state
@@ -279,12 +280,12 @@ class PowerGridManager:
             if isinstance(state, dict) and state.get("day") == current_day - 1:
                 self._close_day(state, now, grid_id_str)
             elif isinstance(state, dict):
-                self.log.debug(f"[POWER] Discarding stale day-{state.get('day')} snapshot on '{grid_id_str}' (now day {current_day}).")
+                self.log.debug(f"Discarding stale day-{state.get('day')} snapshot on '{grid_id_str}' (now day {current_day}).")
             state = dict(now)
             state["day"] = current_day
             state["gen_wh"] = 0.0
             state["con_wh"] = 0.0
-            self.log.debug(f"[POWER] Day {current_day} start snapshot on '{grid_id_str}': battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t ({now['tanks']} tank(s)).")
+            self.log.debug(f"Day {current_day} start snapshot on '{grid_id_str}': battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t ({now['tanks']} tank(s)).")
 
         self._integrate(state, grid)
         self.day_state = state
@@ -292,6 +293,7 @@ class PowerGridManager:
         if day_changed or self.calls_since_persist >= DAILY_STATE_PERSIST_INTERVAL_CALLS:
             self.calls_since_persist = 0
             archive.set(key, state)
+        self.log.end()
 
     # ------------------------------------------------------------------
     # Emergency guard
@@ -354,10 +356,12 @@ class PowerGridManager:
         self.update_archive_shedded()
 
     def _guard(self, now, grid_machines, grid_id_str):
+        self.log.start("[POWER] _guard", level="debug")
         total_wh, total_cap = reserve_totals(now)
         frac = reserve_fraction(now)
         if frac is None:
-            self.log.debug(f"[POWER] Guard idle on '{grid_id_str}': no battery or steam storage to measure.")
+            self.log.debug(f"Guard idle on '{grid_id_str}': no battery or steam storage to measure.")
+            self.log.end()
             return
         tiers = self.get_shedding_tiers()
 
@@ -403,6 +407,7 @@ class PowerGridManager:
             self.adopted_machines = set()
         if changed:
             self.update_archive_shedded()
+        self.log.end()
 
     # ------------------------------------------------------------------
     def supervise_grid(self, grid, elevation=None):

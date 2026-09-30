@@ -170,12 +170,14 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     """{item_id: (target, have, min)} this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
     nothing). See the module comment."""
+    log.start("plan_site", level="debug")
     site_id = getattr(outpost, "id", None)
     flying = in_flight(site_id, tick)
     wants = consumer_wants(outpost, consumers or {}, sources or [], requests, tick, flying)
     smelter_ids = discover_smelter_ids(outpost)
     fabricator_ids = discover_fabricator_ids(outpost)
     if not smelter_ids and not fabricator_ids:
+        log.end()
         return wants
     at_home = outpost_is_home(outpost)
     ore_outputs = site_ore_outputs(smelter_ids)
@@ -209,7 +211,7 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
         level = local_ingots + remote_ingots
         if (not at_home or remote_ingots > 0) and level >= wants.get(ingot, (0,))[0]:
             wants[ingot] = (level, have.get(ingot, 0), level)
-        log.debug(f"plan_site({site_id}): {ingot} gross={units} local_ingots={local_ingots} local_ore={local_ore} -> shipped first={first}, D={deficit}, free elsewhere={free}, ingots from remote={remote_ingots}, ore short={deficit - (remote_ingots - first) if ore else 0}")
+        log.debug(f"{ingot} gross={units} local_ingots={local_ingots} local_ore={local_ore} -> shipped first={first}, D={deficit}, free elsewhere={free}, ingots from remote={remote_ingots}, ore short={deficit - (remote_ingots - first) if ore else 0}")
 
     if not at_home:
         for ore, output in sorted(ore_outputs.items()):
@@ -217,7 +219,8 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
             floor = local + ore_short.get(ore, 0) if output in gross else 0
             target = max(ore_stock_target(ore), floor)
             wants[ore] = (target, have.get(ore, 0), floor)
-            log.debug(f"plan_site({site_id}): ore {ore} local={local} need level={floor} target={target}")
+            log.debug(f"ore {ore} local={local} need level={floor} target={target}")
+    log.end()
     return wants
 
 

@@ -234,13 +234,16 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
     outpost untouched, even one now farther away than this new outpost -- see
     module docstring. Returns the count of markers newly assigned.
     """
+    log.start(f"reevaluate_unassigned_near_outpost({outpost_id})", level="debug")
     markers = _markers()
     outpost = outpost_by_id(outpost_id)
     if not markers or not outpost:
+        log.end()
         return 0
 
     ox, oy = getattr(outpost, "x", None), getattr(outpost, "y", None)
     if ox is None or oy is None:
+        log.end()
         return 0
     effective_range = range_m if range_m is not None else resource_assignment_range_m()
 
@@ -249,6 +252,7 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
         candidates = markers.list(RESOURCE_MARKER_PREFIX)
     except Exception as error:
         swallowed("outpost_mining.reevaluate_unassigned_near_outpost: markers.list", error)
+        log.end()
         return 0
 
     for marker in candidates:
@@ -263,8 +267,9 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
         )
         if getattr(res, "status", "") == "ok":
             assigned += 1
-            log.debug(f"reevaluate_unassigned_near_outpost({outpost_id}): claimed unassigned marker '{marker.id}' ({marker.label}) within {effective_range:.0f}m")
-    log.debug(f"reevaluate_unassigned_near_outpost({outpost_id}): assigned {assigned} previously-unassigned marker(s) out of {len(candidates)} scanned")
+            log.debug(f"claimed unassigned marker '{marker.id}' ({marker.label}) within {effective_range:.0f}m")
+    log.debug(f"assigned {assigned} previously-unassigned marker(s) out of {len(candidates)} scanned")
+    log.end()
     return assigned
 
 

@@ -127,10 +127,12 @@ class VehicleSurveyMixin:
     def unscanned_pois(self):
         """Returns known map contacts that still need a vehicle sonar scan."""
         log = self._host.log
-        log.trace(f"[{self._host.name}] unscanned_pois() enter")
+        log.start(f"[{self._host.name}] unscanned_pois", level="debug")
+        log.trace("unscanned_pois() enter")
         planet = get_component("nocturna")
         if not planet or not hasattr(planet, "points_of_interest"):
-            log.trace(f"[{self._host.name}] unscanned_pois() exit: no 'nocturna' points_of_interest available.")
+            log.trace(f"unscanned_pois() exit: no 'nocturna' points_of_interest available.")
+            log.end()
             return []
         try:
             unsupported_targets = self._host.get_unsupported_targets()
@@ -147,28 +149,31 @@ class VehicleSurveyMixin:
                 target_entry = unsupported_targets.get(key) or unsupported_targets.get(legacy_key)
                 if target_entry:
                     can_attempt, attempt_reason = self._host.can_attempt_target(key, target_entry)
-                    log.trace(f"[{self._host.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
+                    log.trace(f"{key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
                     if not can_attempt:
                         continue
                 else:
-                    log.trace(f"[{self._host.name}] {key}: no unsupported entry on record.")
+                    log.trace(f"{key}: no unsupported entry on record.")
 
                 # Check if claimed by another active vehicle (Rover, Pioneer, or peer)
                 claim = existing_claims.get(key)
                 if claim and (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
                     claim_age = curr_tick - claim.get("tick", 0)
                     if curr_tick == 0 or claim_age < self._host.CLAIM_STALE_TICKS:
-                        log.trace(f"[{self._host.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
+                        log.trace(f"{key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
                         continue
 
                 points.append(point)
             home = self._host.assigned_slot_coords
             points.sort(key=lambda p: self._host.distance_between(home, (p.x, p.y)))
-            log.trace(f"[{self._host.name}] unscanned_pois() exit: {len(points)} candidate(s), nearest-first from {home}.")
+            log.trace(f"unscanned_pois() exit: {len(points)} candidate(s), nearest-first from {home}.")
+            log.end()
             return points
         except Exception as error:
             swallowed("vehicle_survey.VehicleSurveyMixin.unscanned_pois: self._host.get_unsupported_targets", error)
+            log.end()
             return []
+        log.end()
 
     def unsurveyed_known_sites(self):
         """
@@ -185,8 +190,10 @@ class VehicleSurveyMixin:
         doesn't repeatedly drive back to a site nothing has changed for.
         """
         log = self._host.log
+        log.start(f"[{self._host.name}] unsurveyed_known_sites", level="debug")
         journal = get_component("journal")
         if not journal or not hasattr(journal, "discovered_sites"):
+            log.end()
             return []
         try:
             unsupported_targets = self._host.get_unsupported_targets()
@@ -201,26 +208,29 @@ class VehicleSurveyMixin:
                 target_entry = unsupported_targets.get(key)
                 if target_entry:
                     can_attempt, attempt_reason = self._host.can_attempt_target(key, target_entry)
-                    log.trace(f"[{self._host.name}] {key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
+                    log.trace(f"{key}: unsupported entry found (reason={target_entry.get('reason', target_entry.get('status'))!r}) -> can_attempt={can_attempt} ({attempt_reason})")
                     if not can_attempt:
                         continue
                 else:
-                    log.trace(f"[{self._host.name}] {key}: no unsupported entry on record.")
+                    log.trace(f"{key}: no unsupported entry on record.")
 
                 claim = existing_claims.get(key)
                 if claim and (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
                     claim_age = curr_tick - claim.get("tick", 0)
                     if curr_tick == 0 or claim_age < self._host.CLAIM_STALE_TICKS:
-                        log.trace(f"[{self._host.name}] {key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
+                        log.trace(f"{key}: skipped, actively claimed by {claim.get('vehicle', claim.get('rover'))} ({claim_age} ticks ago).")
                         continue
 
                 sites.append(site)
             home = self._host.assigned_slot_coords
             sites.sort(key=lambda s: self._host.distance_between(home, (s.x, s.y)))
+            log.end()
             return sites
         except Exception as error:
             swallowed("vehicle_survey.VehicleSurveyMixin.unsurveyed_known_sites: self._host.get_unsupported_targets", error)
+            log.end()
             return []
+        log.end()
 
     def survey_spiral_points(self, step=None, start_index=0, max_points=160):
         """Yields indexed outward square-spiral waypoints spaced for the mounted sonar."""

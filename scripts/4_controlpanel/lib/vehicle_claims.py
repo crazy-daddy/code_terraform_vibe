@@ -177,6 +177,7 @@ class VehicleClaimsMixin:
         Atomically claims a destination/site in Data Archive so peer vehicles skip it.
         Returns True if claim successfully acquired, False otherwise.
         """
+        self._host.log.start(f"[{self._host.name}] claim_target('{target_key}')", level="debug")
         claimed = [False]
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
         curr_tick = self._host.get_current_tick()
@@ -214,7 +215,8 @@ class VehicleClaimsMixin:
             notes.append(f"[{self._host.name}] claim_target('{target_key}'): {SURVEY_CLAIMS_KEY} write rejected.")
         for note in notes:
             self._host.log.debug(note)
-        self._host.log.debug(f"[{self._host.name}] claim_target('{target_key}'): {'won' if claimed[0] else 'lost'} the race.")
+        self._host.log.debug(f"{'won' if claimed[0] else 'lost'} the race.")
+        self._host.log.end()
         return claimed[0]
 
     def refresh_claim(self, target_key):
@@ -231,9 +233,11 @@ class VehicleClaimsMixin:
 
     def cleanup_stale_claims(self):
         """Removes expired fleet claims before selecting a new mission."""
+        self._host.log.start(f"[{self._host.name}] cleanup_stale_claims()", level="debug")
         curr_tick = self._host.get_current_tick()
         if curr_tick <= 0:
-            self._host.log.debug(f"[{self._host.name}] cleanup_stale_claims(): skipped, curr_tick={curr_tick} (clock not ready yet).")
+            self._host.log.debug(f"skipped, curr_tick={curr_tick} (clock not ready yet).")
+            self._host.log.end()
             return
 
         expired = [0]
@@ -255,7 +259,8 @@ class VehicleClaimsMixin:
         archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
         archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
         if expired[0]:
-            self._host.log.debug(f"[{self._host.name}] cleanup_stale_claims(): removed {expired[0]} claim(s) older than CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS} at curr_tick={curr_tick}.")
+            self._host.log.debug(f"removed {expired[0]} claim(s) older than CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS} at curr_tick={curr_tick}.")
+        self._host.log.end()
 
     def release_target_claim(self, target_key=None):
         """Releases claim on target_key or releases all claims owned by this vehicle."""

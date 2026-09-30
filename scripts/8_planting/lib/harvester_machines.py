@@ -251,6 +251,7 @@ class HarvesterMachinesMixin:
 
     def _buy_kit(self, kit, price, wanted):
         h = self._host
+        h.log.start("_buy_kit", level="debug")
         try:
             shop = get_component("shop")
             res = shop.buy(kit, 1) if shop else None
@@ -260,10 +261,12 @@ class HarvesterMachinesMixin:
         status = getattr(res, "status", "no_shop")
         if status != "ok":
             h.log.debug(f"[{h.name}] buy('{kit}') -> {status}: {getattr(res, 'message', '')}")
+            h.log.end()
             return False
         cash.spent(CASH_CONSUMER, price)
         h.stock_memo.pop(kit, None)
         h.log.print(f"[{h.name}] Bought a Crop Automator kit ({price} cr, {wanted - 1} more to go).")
+        h.log.end()
         return True
 
     def _deploy_failures(self):
@@ -345,17 +348,20 @@ class HarvesterMachinesMixin:
     def remove_here(self, kind):
         """Stops and undeploys the (emptied) stray field machine in the current cell."""
         h = self._host
+        h.log.start("remove_here", level="debug")
         here = h.get_position()
         machine_id = (deployed_machine_ids() or {}).get(here, (None, None))[1]
         self.step_machine_map = None
         if not machine_id:
             h.log.debug(f"[{h.name}] No field machine at {here}; stray {kind} already gone.")
+            h.log.end()
             return False
         held_out, held_in = self.items_held(machine_id)
         if held_out or held_in:
             h.log.debug(f"[{h.name}] Stray {kind} at {here} holds {held_out} output / {held_in} input again; removal waits.")
             self.ensure_running(machine_id)
             self._deploy_failures()[here] = _now_tick()
+            h.log.end()
             return False
         run = get_component("run_control")
         if run is not None and run.is_running(machine_id):
@@ -367,9 +373,11 @@ class HarvesterMachinesMixin:
         if status == "ok":
             h.log.print(f"[{h.name}] Removed stray {kind} at {here} (not in the layout); kit back to Inventory.")
             h.last_action = f"undeploy {kind}@{here}"
+            h.log.end()
             return True
         h.log.level("warn").print(f"[{h.name}] undeploy {kind} at {here} -> {status}: {getattr(res, 'message', '')}")
         self._deploy_failures()[here] = _now_tick()
+        h.log.end()
         return False
 
     def deploy_here(self, kind):

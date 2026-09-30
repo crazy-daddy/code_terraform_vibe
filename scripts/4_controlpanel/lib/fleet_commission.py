@@ -292,17 +292,21 @@ class FleetCommissionCoordinator:
         set_upgrade_order(COMMISSION_REQUESTER, wanted)
 
     def _advance(self, job, pioneers):
+        self.log.start("[fleet_commission] _advance", level="debug")
         job_id, role, state = job["id"], job.get("role"), job.get("state")
         home_base = job_home_base(job)
         label = f"{job_id} {role}"
-        self.log.debug(f"[fleet_commission] {label}: state '{state}'.")
+        self.log.debug(f"{label}: state '{state}'.")
 
         if state == "queued":
             spec, reason = build_spec(role, self._catalogue())
             if spec is None:
-                return self._block(job, reason)
+                _ret = self._block(job, reason)
+                self.log.end()
+                return _ret
             self._patch(job_id, state="buying", spec=spec)
             self.log.print(f"[fleet_commission] {label} for '{home_base or 'home'}': {spec['modules']}, bays {spec['battery_fill']}/{spec['bin_fill']}.")
+            self.log.end()
             return f"{label}: buying"
 
         spec = job.get("spec") or {}
@@ -311,30 +315,38 @@ class FleetCommissionCoordinator:
             parts[PIONEER_KIT_ID] = parts.get(PIONEER_KIT_ID, 0) + 1
             waiting = self._buy_missing(parts, self._catalogue(), label)
             if waiting:
+                self.log.end()
                 return waiting
             if pioneers is None:
+                self.log.end()
                 return f"{label}: fleet unreadable"
             self._patch(job_id, state="deploying", known=pioneers)
+            self.log.end()
             return f"{label}: deploying"
 
         if state == "deploying":
             if pioneers is None:
+                self.log.end()
                 return f"{label}: fleet unreadable"
             known = set(job.get("known") or [])
             new_id = next((p for p in pioneers if p not in known), None)
             if new_id is None:
                 computer = _component("computer")
                 if not computer or not hasattr(computer, "deploy"):
+                    self.log.end()
                     return f"{label}: no Ship Computer"
                 # Always at home: the parts sit in the home Inventory and
                 # the Pioneer fits them in the home service area.
                 res = computer.deploy(PIONEER_KIT_ID)
                 if res.status != "ok":
                     if res.status in DEPLOY_BLOCKING_STATUSES:
-                        return self._block(job, f"deploy {res.status}")
+                        _ret = self._block(job, f"deploy {res.status}")
+                        self.log.end()
+                        return _ret
                     if res.status == "no_kit":
                         self._patch(job_id, state="buying")
-                    self.log.debug(f"[fleet_commission] {label}: deploy -> {res.status} - {res.message}")
+                    self.log.debug(f"{label}: deploy -> {res.status} - {res.message}")
+                    self.log.end()
                     return f"{label}: deploy {res.status}"
                 new_id = res.machine_id
             lineage = {"role": role, "job": job_id, "spec": spec, "home_base": home_base, "fitted": False, "missing": {}}
@@ -346,6 +358,7 @@ class FleetCommissionCoordinator:
                 s.setdefault("lineage", {})[new_id] = lineage
             update_commission(mutate)
             self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' at home, HOME_BASE '{home_base or 'home'}'; waiting for its script.")
+            self.log.end()
             return f"{label}: deployed {new_id}"
 
         new_id = job.get("new_id")
@@ -353,9 +366,12 @@ class FleetCommissionCoordinator:
             fitted = ((commission_state().get("lineage") or {}).get(new_id) or {}).get("fitted")
             if fitted or fleet_status.get(new_id) is not None:
                 self._patch(job_id, state="fitting")
+                self.log.end()
                 return f"{label}: {new_id} running"
             if self._start_script(new_id) != "ok":
+                self.log.end()
                 return f"{label}: waiting for a script on {new_id} (run scripts_sync)"
+            self.log.end()
             return f"{label}: started {new_id}"
 
         if state == "fitting":
@@ -364,7 +380,8 @@ class FleetCommissionCoordinator:
             if entry.get("fitted"):
                 wrong_home = self._wrong_home(status, home_base)
                 if wrong_home:
-                    self.log.debug(f"[fleet_commission] {label}: '{new_id}' runs with HOME_BASE '{wrong_home}', job wants '{home_base or HOME_OUTPOST_ID}'.")
+                    self.log.debug(f"{label}: '{new_id}' runs with HOME_BASE '{wrong_home}', job wants '{home_base or HOME_OUTPOST_ID}'.")
+                    self.log.end()
                     return f"{label}: {new_id} has HOME_BASE {wrong_home}, set it to {home_base or 'None'}"
 
                 def finish(s):
@@ -372,14 +389,19 @@ class FleetCommissionCoordinator:
                     s.get("lineage", {}).pop(new_id, None)
                 update_commission(finish)
                 self.log.print(f"[fleet_commission] {label}: '{new_id}' fitted and running for '{home_base or 'home'}'.")
+                self.log.end()
                 return f"{label}: {new_id} done"
             missing = entry.get("missing") or {}
             if missing:
                 waiting = self._buy_missing(missing, self._catalogue(), f"{label} refit")
                 if waiting:
+                    self.log.end()
                     return waiting
-            return f"{label}: {new_id} fitting ({status.get('target') or status.get('state', '?')})"
+            _ret = f"{label}: {new_id} fitting ({status.get('target') or status.get('state', '?')})"
+            self.log.end()
+            return _ret
 
+        self.log.end()
         return f"{label}: unknown state {state!r}"
 
     def _wrong_home(self, status, home_base):
@@ -393,59 +415,75 @@ class FleetCommissionCoordinator:
     # ------------------------------------------------------------ drones
 
     def _advance_drone(self, job, drones):
+        self.log.start("[fleet_commission] _advance_drone", level="debug")
         job_id, role, state = job["id"], job.get("role"), job.get("state")
         outpost_id = job.get("outpost")
         label = f"{job_id} drone {role}"
-        self.log.debug(f"[fleet_commission] {label}: state '{state}'.")
+        self.log.debug(f"{label}: state '{state}'.")
 
         if state == "queued":
             spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), self._inventory_count, set(self._catalogue()))
             if spec is None:
-                return self._block(job, reason)
+                _ret = self._block(job, reason)
+                self.log.end()
+                return _ret
             self._patch(job_id, state="crafting", spec=spec)
             self._sync_craft_order(dict(job, spec=spec))
             bought = f", buying {spec['buy']}" if spec.get("buy") else ""
             self.log.print(f"[fleet_commission] {label} at '{outpost_id or 'home'}': {spec['kind']} with {spec['modules'][1:]}{bought}.")
+            self.log.end()
             return f"{label}: crafting"
 
         spec = job.get("spec") or {}
         if state == "crafting":
             waiting = self._buy_missing(drone_buy_parts(spec), self._catalogue(), label, kind="drone")
             if waiting:
+                self.log.end()
                 return waiting
             parts = drone_spec_parts(spec)
             short = {item: n - self._inventory_count(item) for item, n in parts.items() if self._inventory_count(item) < n}
             if short:
-                self.log.debug(f"[fleet_commission] {label}: waiting on the Fabricator for {short}.")
-                return f"{label}: crafting ({', '.join(f'{n}x {i}' for i, n in short.items())})"
+                self.log.debug(f"{label}: waiting on the Fabricator for {short}.")
+                _ret = f"{label}: crafting ({', '.join(f'{n}x {i}' for i, n in short.items())})"
+                self.log.end()
+                return _ret
             if drones is None:
+                self.log.end()
                 return f"{label}: fleet unreadable"
             self._patch(job_id, state="deploying", known=sorted(drones))
             self._sync_craft_order(None)
+            self.log.end()
             return f"{label}: kit ready, deploying"
 
         if state == "deploying":
             if drones is None:
+                self.log.end()
                 return f"{label}: fleet unreadable"
             swapping = [k for k, e in (fleet_upgrade_state().get("drones") or {}).items()
                         if isinstance(e, dict) and e.get("state") in SWAP_DEPLOYING_STATES]
             if swapping:
+                self.log.end()
                 return f"{label}: waiting for the chassis swap of {swapping[0]}"
             known = set(job.get("known") or [])
             new_id = next((d for d, kind in drones.items() if d not in known and kind == spec.get("kind")), None)
             if new_id is None:
                 computer = _component("computer")
                 if not computer or not hasattr(computer, "deploy"):
+                    self.log.end()
                     return f"{label}: no Ship Computer"
                 res = computer.deploy(spec.get("kind"), outpost_id)
                 if res.status != "ok":
                     if res.status in DEPLOY_BLOCKING_STATUSES:
-                        return self._block(job, f"deploy {res.status}")
+                        _ret = self._block(job, f"deploy {res.status}")
+                        self.log.end()
+                        return _ret
                     if res.status == "no_kit":
                         self._patch(job_id, state="crafting")
-                    self.log.debug(f"[fleet_commission] {label}: deploy('{spec.get('kind')}', '{outpost_id}') -> {res.status} - {res.message}")
+                    self.log.debug(f"{label}: deploy('{spec.get('kind')}', '{outpost_id}') -> {res.status} - {res.message}")
                     if res.status == "drone_station_full":
+                        self.log.end()
                         return f"{label}: waiting for a free Depot bay at {outpost_id or 'home'}"
+                    self.log.end()
                     return f"{label}: deploy {res.status}"
                 new_id = res.machine_id
             lineage = {
@@ -455,6 +493,7 @@ class FleetCommissionCoordinator:
             update_fleet_upgrade(lambda s: s.setdefault("lineage", {}).update({new_id: lineage}))
             self._patch(job_id, state="attach", new_id=new_id)
             self.log.print(f"[fleet_commission] {label}: deployed '{new_id}' ({spec.get('kind')}) at '{outpost_id or 'home'}'; waiting for its script.")
+            self.log.end()
             return f"{label}: deployed {new_id}"
 
         new_id = job.get("new_id")
@@ -462,9 +501,12 @@ class FleetCommissionCoordinator:
         if state == "attach":
             if fleet_status.get(new_id) is not None or (isinstance(lineage, dict) and lineage.get("fitted")):
                 self._patch(job_id, state="fitting")
+                self.log.end()
                 return f"{label}: {new_id} running"
             if self._start_script(new_id) != "ok":
+                self.log.end()
                 return f"{label}: waiting for a script on {new_id} (run scripts_sync)"
+            self.log.end()
             return f"{label}: started {new_id}"
 
         if state == "fitting":
@@ -473,10 +515,14 @@ class FleetCommissionCoordinator:
             if not isinstance(lineage, dict) or lineage.get("fitted"):
                 update_commission(lambda s: s.update({"jobs": [j for j in s.get("jobs") or [] if j.get("id") != job_id]}))
                 self.log.print(f"[fleet_commission] {label}: '{new_id}' fitted and flying from '{outpost_id or 'home'}'.")
+                self.log.end()
                 return f"{label}: {new_id} done"
             status = fleet_status.get(new_id) or {}
-            return f"{label}: {new_id} fitting ({status.get('state', '?')})"
+            _ret = f"{label}: {new_id} fitting ({status.get('state', '?')})"
+            self.log.end()
+            return _ret
 
+        self.log.end()
         return f"{label}: unknown state {state!r}"
 
     # ------------------------------------------------------------ pruning

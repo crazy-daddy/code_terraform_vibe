@@ -67,10 +67,12 @@ class DroneMiningMixin:
         RARITY_REQUEST_WEIGHT; 0 everywhere when nothing is requested), then
         partially-drained sites, then by distance.
         """
-        self._host.log.trace(f"[{self._host.name}] _biosite_candidates() entry.")
+        self._host.log.start(f"[{self._host.name}] _biosite_candidates()", level="debug")
+        self._host.log.trace("_biosite_candidates() entry.")
         journal = get_component("journal")
         if not journal or not self._host.home_biome:
-            self._host.log.debug(f"[{self._host.name}] _biosite_candidates(): missing journal or unknown home_biome; returning no candidates.")
+            self._host.log.debug("missing journal or unknown home_biome; returning no candidates.")
+            self._host.log.end()
             return []
 
         try:
@@ -114,7 +116,7 @@ class DroneMiningMixin:
                 # module docstring), so v1 skips this site entirely rather
                 # than risk pulling the wrong species.
                 skipped_mixed_biome += 1
-                self._host.log.trace(f"[{self._host.name}] Biosite ({x}, {y}) skipped: mixed-biome tile ({len(home_forms)}/{len(life_forms)} home-biome samples).")
+                self._host.log.trace(f"Biosite ({x}, {y}) skipped: mixed-biome tile ({len(home_forms)}/{len(life_forms)} home-biome samples).")
                 continue
             if not journal.is_ready(x, y):
                 skipped_cooling += 1
@@ -160,7 +162,7 @@ class DroneMiningMixin:
                 + ", ".join(f"{c['target_key']}(score {c['request_score']})" for c in requested_sites)
             )
         elif requested:
-            self._host.log.debug(f"[{self._host.name}] _biosite_candidates(): requests {requested} but no ready home-biome site holds them; normal order.")
+            self._host.log.debug(f"requests {requested} but no ready home-biome site holds them; normal order.")
         partial_count = sum(1 for c in candidates if c["partial"])
         if partial_count:
             self._host.log.debug(
@@ -172,7 +174,8 @@ class DroneMiningMixin:
             f"(skipped {skipped_no_home_forms} non-home, {skipped_mixed_biome} mixed-biome, {skipped_cooling} cooling-down, "
             f"{skipped_unrequested} unrequested after biomass completion)."
         )
-        self._host.log.trace(f"[{self._host.name}] _biosite_candidates() exit: {len(candidates)} candidate(s).")
+        self._host.log.trace(f"_biosite_candidates() exit: {len(candidates)} candidate(s).")
+        self._host.log.end()
         return candidates
 
     def select_biosite_target(self, candidates):
@@ -184,17 +187,20 @@ class DroneMiningMixin:
         so this tries the next candidate rather than giving up for the
         cycle).
         """
-        self._host.log.trace(f"[{self._host.name}] select_biosite_target() entry: {len(candidates)} candidate(s).")
+        self._host.log.start(f"[{self._host.name}] select_biosite_target", level="debug")
+        self._host.log.trace(f"select_biosite_target() entry: {len(candidates)} candidate(s).")
         for candidate in candidates:
             budget = self._host.calculate_trip_energy(candidate["coords"])
             if not budget["is_achievable"]:
-                self._host.log.trace(f"[{self._host.name}] Biosite {candidate['target_key']}: {budget['total_required_wh']:.1f} {self._host.energy_unit()} required, not achievable on current battery; skipping.")
+                self._host.log.trace(f"Biosite {candidate['target_key']}: {budget['total_required_wh']:.1f} {self._host.energy_unit()} required, not achievable on current battery; skipping.")
                 continue
             if self._host.claim_biosite(candidate["target_key"], {"coords": candidate["coords"], "name": candidate["target_key"]}):
-                self._host.log.trace(f"[{self._host.name}] select_biosite_target() exit: claimed {candidate['target_key']}.")
+                self._host.log.trace(f"select_biosite_target() exit: claimed {candidate['target_key']}.")
+                self._host.log.end()
                 return candidate, budget
-            self._host.log.debug(f"[{self._host.name}] Lost claim race on biosite {candidate['target_key']} to a peer drone; trying next candidate.")
-        self._host.log.trace(f"[{self._host.name}] select_biosite_target() exit: no claimable candidate.")
+            self._host.log.debug(f"Lost claim race on biosite {candidate['target_key']} to a peer drone; trying next candidate.")
+        self._host.log.trace("select_biosite_target() exit: no claimable candidate.")
+        self._host.log.end()
         return None, None
 
     def run_miner_loop(self, poll_interval=5.0):
@@ -348,17 +354,20 @@ class DroneMiningMixin:
         current mission, so the loop's resume branch keeps extracting until
         the site depletes or cargo fills, then unloads as normal.
         """
+        log.start(f"[{self._host.name}] _adopt_interrupted_extraction", level="debug")
         probe = self._host.role_probe_status.get("bio_extractor")
         if probe not in ("busy", "ok"):
+            log.end()
             return
         pos = self._host.position()
         coords = (int(round(pos[0])), int(round(pos[1])))
         key = f"bio_{coords[0]}_{coords[1]}"
         if self.current_target_key == key:
-            log.debug(f"[{self._host.name}] Extract probe '{probe}' at {coords}; resumed mission already covers this site.")
+            log.debug(f"Extract probe '{probe}' at {coords}; resumed mission already covers this site.")
+            log.end()
             return
         if self.current_target_key:
-            log.debug(f"[{self._host.name}] Extract probe '{probe}' at {coords} differs from resumed mission '{self.current_target_key}'; adopting the site the drone is actually on.")
+            log.debug(f"Extract probe '{probe}' at {coords} differs from resumed mission '{self.current_target_key}'; adopting the site the drone is actually on.")
             self._host.release_biosite_claim(self.current_target_key)
         if not self._host.claim_biosite(key, {"coords": coords, "name": key}):
             # Still finish here: the drone can't leave until the running
@@ -368,6 +377,7 @@ class DroneMiningMixin:
         self.current_target = {"coords": coords, "name": key, "sample_type": None}
         self._host.save_mission("mine", self.current_target)
         log.print(f"[{self._host.name}] Restarted mid-extraction at {coords} (probe: {probe}); resuming harvest there.")
+        log.end()
 
     def _extract_until_done(self, coords):
         """
@@ -424,14 +434,17 @@ class DroneMiningMixin:
         (lib/drone_depot.py flush_surplus()). Charges at a drone_service
         only when below LAUNCH_MIN_SOC.
         """
+        log.start(f"[{self._host.name}] _wait_for_depot_space", level="debug")
         _, _, lvl = self._host.get_battery()
         if lvl < self._host.LAUNCH_MIN_SOC:
-            log.debug(f"[{self._host.name}] Depot full backoff: {ticks_left} ticks left, {lvl*100:.0f}% charge; charging at drone_service meanwhile.")
+            log.debug(f"Depot full backoff: {ticks_left} ticks left, {lvl*100:.0f}% charge; charging at drone_service meanwhile.")
             self._host.return_to_service_for_charge(log, "Waiting for Drone Depot space")
             self._host.publish_telemetry("WAITING_DEPOT_SPACE", depot_id)
+            log.end()
             return
-        log.debug(f"[{self._host.name}] Depot full backoff: {ticks_left} ticks left; hovering off the berth.")
+        log.debug(f"Depot full backoff: {ticks_left} ticks left; hovering off the berth.")
         self._host.hover_wait("WAITING_DEPOT_SPACE", depot_id)
+        log.end()
 
     def _deliver_elsewhere(self, log):
         """

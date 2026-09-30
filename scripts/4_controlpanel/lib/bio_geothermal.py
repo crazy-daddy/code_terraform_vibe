@@ -78,8 +78,9 @@ class DnaSequencerController:
         return None
 
     def _load_next_sample(self, orders, snapshot):
+        self.log.start(f"[{self.name}] _load_next_sample", level="debug")
         outpost = self.machine.outpost
-        self.log.trace(f"[{self.name}] _load_next_sample: entry")
+        self.log.trace("entry")
 
         staged_stacks = []
         if hasattr(self.machine.input, "stacks"):
@@ -103,56 +104,62 @@ class DnaSequencerController:
             staged_id, properties = raw_candidate
             order = self._find_local_order(orders, snapshot, staged_id)
             remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
-            self.log.debug(f"[{self.name}] Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
+            self.log.debug(f"Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
             if order and remaining > 0:
                 load_res = self.machine.load(staged_id, properties, "exact")
                 if load_res.status == "ok":
                     self.log.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
                 else:
-                    self.log.debug(f"[{self.name}] load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+                    self.log.debug(f"load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+                self.log.end()
                 return
             try:
                 count = self.machine.input.count()
                 destination = best_unload_target(staged_id, count, outpost=outpost)
                 self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.log.debug(f"[{self.name}] Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
+                self.log.debug(f"Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
             except Exception as error:
                 swallowed("bio_geothermal.DnaSequencerController._load_next_sample: self.machine.input.count", error)
+            self.log.end()
             return
 
         if staged_stacks:
-            self.log.trace(f"[{self.name}] _load_next_sample: exit, {len(staged_stacks)} stack(s) already staged -- nothing to do this cycle.")
+            self.log.trace(f"exit, {len(staged_stacks)} stack(s) already staged -- nothing to do this cycle.")
+            self.log.end()
             return
 
         order = self._find_local_order(orders, snapshot)
         if not order:
-            self.log.trace(f"[{self.name}] _load_next_sample: exit, no local order to focus on.")
+            self.log.trace("exit, no local order to focus on.")
+            self.log.end()
             return
 
         for fragment_id in (order.requires or {}).keys():
             remaining = _order_fragment_remaining(order, fragment_id, snapshot)
             if remaining <= 0:
-                self.log.debug(f"[{self.name}] {order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
+                self.log.debug(f"{order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
                 continue
             found = self._find_raw_stack(fragment_id, outpost)
             if not found:
-                self.log.debug(f"[{self.name}] {order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
+                self.log.debug(f"{order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
                 continue
             source_id, properties, count = found
-            self.log.debug(f"[{self.name}] Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
+            self.log.debug(f"Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
             if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
                 self.machine.input.connect(source_id)
             take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
             if take_res.status != "ok":
-                self.log.debug(f"[{self.name}] take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
+                self.log.debug(f"take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
                 continue
             load_res = self.machine.load(fragment_id, properties, "exact")
             if load_res.status == "ok":
                 self.log.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
             else:
-                self.log.debug(f"[{self.name}] load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+                self.log.debug(f"load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
+            self.log.end()
             return
-        self.log.trace(f"[{self.name}] _load_next_sample: exit, no fragment of {order.id} both needed and locally available as raw stock.")
+        self.log.trace(f"exit, no fragment of {order.id} both needed and locally available as raw stock.")
+        self.log.end()
 
     def step(self):
         self._notify_heartbeat()

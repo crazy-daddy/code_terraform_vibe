@@ -76,6 +76,7 @@ class FabricatorController:
 
     def claim_recipe(self, recipe_id):
         """Claims recipe_id for this Fabricator, or refreshes its own existing claim. See lib/smelter.py's claim_recipe() -- identical shape/reasoning, separate archive key."""
+        self.log.start(f"[{self.name}] claim_recipe({recipe_id})", level="debug")
         current_tick = self.get_current_tick()
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
@@ -98,7 +99,8 @@ class FabricatorController:
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
         except Exception:
-            self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
+            self.log.debug("archive transaction failed, assuming claim granted")
+            self.log.end()
             return True  # can't verify; don't block production over an archive hiccup
         for note in notes:
             self.log.debug(note)
@@ -106,7 +108,8 @@ class FabricatorController:
         claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "fabricator")
         owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("fabricator")
         won = owner == self.name
-        self.log.debug(f"[{self.name}] claim_recipe({recipe_id}): {'won' if won else f'held by other fabricator {owner!r}'}")
+        self.log.debug(f"{'won' if won else f'held by other fabricator {owner!r}'}")
+        self.log.end()
         return won
 
     def release_recipe(self, recipe_id):
@@ -339,6 +342,7 @@ class FabricatorController:
     def choose_recipe(self):
         # One snapshot for the whole pass: targets, stock, pipeline and the
         # sourceability checks below all read it.
+        self.log.start(f"[{self.name}] choose_recipe", level="debug")
         cache = SourceCache()
         site_id = claim_site_id(self.machine)
         outpost = self.outpost()
@@ -352,6 +356,7 @@ class FabricatorController:
             recipes = self.machine.list_recipes()
         except Exception as error:
             swallowed("fabricator.FabricatorController.choose_recipe: self.machine.list_recipes", error)
+            self.log.end()
             return None
 
         fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
@@ -377,7 +382,7 @@ class FabricatorController:
             missing = max(0, target - current - in_pipeline)
             if missing > 0:
                 candidates.append((missing, recipe))
-                self.log.debug(f"[{self.name}] choose_recipe: candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
+                self.log.debug(f"candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
 
         # Five priority tiers, biggest shortfall first within each:
         #   0. An item a manual order transitively needs as an INPUT (e.g.
@@ -432,13 +437,14 @@ class FabricatorController:
             if self.claim_recipe(recipe_id):
                 output_item = getattr(recipe, "output_item", None)
                 tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall")[_priority_tier(recipe)]
-                self.log.debug(f"[{self.name}] choose_recipe: claimed '{recipe_id}' (missing={missing}, {tier_reason})")
+                self.log.debug(f"claimed '{recipe_id}' (missing={missing}, {tier_reason})")
+                self.log.end()
                 return recipe
             # another Fabricator already has a fresh claim on this one -- try
             # the next candidate first, rather than piling on immediately;
             # piling on is the fallback below, only once every candidate has
             # been tried.
-            self.log.debug(f"[{self.name}] choose_recipe: '{recipe_id}' already claimed by another fabricator, trying next candidate")
+            self.log.debug(f"'{recipe_id}' already claimed by another fabricator, trying next candidate")
         if blocked:
             self.log.level("warn").print(f"[{self.name}] Skipping unreachable recipe(s) for now: {', '.join(blocked)}.")
 
@@ -461,11 +467,13 @@ class FabricatorController:
             if current_recipe_id == recipe_id:
                 workers -= 1  # don't count ourselves as a peer
             if crafts_needed <= workers:
-                self.log.debug(f"[{self.name}] choose_recipe: not joining '{recipe_id}' -- {crafts_needed} craft(s) left, {workers} Fabricator(s) already on it")
+                self.log.debug(f"not joining '{recipe_id}' -- {crafts_needed} craft(s) left, {workers} Fabricator(s) already on it")
                 continue
             self.log.print(f"[{self.name}] Joining '{recipe_id}' alongside {workers} other Fabricator(s) ({crafts_needed} crafts left, no unclaimed demanded recipe to work instead).")
+            self.log.end()
             return recipe
-        self.log.debug(f"[{self.name}] choose_recipe: no candidates at all (target-met, unreachable, or empty demand) -- returning None")
+        self.log.debug("no candidates at all (target-met, unreachable, or empty demand) -- returning None")
+        self.log.end()
         return None
 
     def drain_output(self):

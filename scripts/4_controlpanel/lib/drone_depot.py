@@ -151,22 +151,27 @@ class DroneDepotController:
         (exactly one same-outpost Liquifier). Otherwise logs once and
         leaves it for manual wiring via the Control Panel.
         """
+        self.log.start(f"[{self.name}] wire_output_to_liquifier", level="debug")
         if self._wired or biomass_complete():
+            self.log.end()
             return
         if not hasattr(self.station, "output"):
-            self.log.debug(f"[{self.name}] Station has no .output port; skipping wiring check.")
+            self.log.debug("Station has no .output port; skipping wiring check.")
+            self.log.end()
             return
         liquifier = self._find_local_liquifier()
         if liquifier is None:
+            self.log.end()
             return
 
         try:
             connected_to = self.station.output.connected_to() if hasattr(self.station.output, "connected_to") else None
             if connected_to == liquifier.id:
-                self.log.debug(f"[{self.name}] Output already wired to '{liquifier.id}'; marking wired without reconnecting.")
+                self.log.debug(f"Output already wired to '{liquifier.id}'; marking wired without reconnecting.")
                 self._wired = True
+                self.log.end()
                 return
-            self.log.debug(f"[{self.name}] Output not yet wired (currently connected_to={connected_to!r}); connecting to '{liquifier.id}'.")
+            self.log.debug(f"Output not yet wired (currently connected_to={connected_to!r}); connecting to '{liquifier.id}'.")
             res = self.station.output.connect(liquifier.id)
             if getattr(res, "status", "") == "ok":
                 self.log.print(f"[{self.name}] Wired output -> Essence Liquifier '{liquifier.id}'.")
@@ -175,6 +180,7 @@ class DroneDepotController:
                 self.log.level("warn").print(f"[{self.name}] Output wiring to '{liquifier.id}' notice: {res.status} - {res.message}")
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] Could not wire output to Essence Liquifier: {e}")
+        self.log.end()
 
 
     def stage_life_forms(self):
@@ -188,27 +194,30 @@ class DroneDepotController:
         a form's stack is full it stays in the Depot for the Liquifier, or,
         after biomass completion, for the Waste Processor.
         """
+        self.log.start(f"[{self.name}] stage_life_forms", level="debug")
         outpost = getattr(self.station, "outpost", None)
         port = getattr(self.station, "output", None)
         if not outpost or not port or not hasattr(port, "send"):
             self._log_stage_state("no_port", f"cannot stage (outpost={getattr(outpost, 'id', None)!r}, output port usable={bool(port and hasattr(port, 'send'))}).")
+            self.log.end()
             return
         stock = logistics_requests.depot_stock(self.station)
         staged = depot_stage.staged_items(self.name)
         forms = {i: u for i, u in stock.items() if u > 0 and self._is_life_form(i) and i not in staged}
         if not forms:
             self._log_stage_state("empty", "no unstaged life forms in the Depot to stage.")
+            self.log.end()
             return
         cap = lifeform_buffer_cap(outpost)
         self._log_stage_state("active", f"staging life forms to Warehouse (cap {cap} per form): {forms}.")
         for item_id, units in forms.items():
             want = min(units, cap - warehouse_stock(item_id, outpost))
             if want <= 0:
-                self.log.trace(f"[{self.name}] stage: '{item_id}' Warehouse buffer full (>= {cap}); leaving {units} in the Depot.")
+                self.log.trace(f"stage: '{item_id}' Warehouse buffer full (>= {cap}); leaving {units} in the Depot.")
                 continue
             target, room = buffer_target(item_id, outpost)
             if target is None:
-                self.log.debug(f"[{self.name}] stage: no Warehouse slot for '{item_id}' (would leave < {WAREHOUSE_FREE_SLOTS_KEEP} free slot(s)); leaving {units} in the Depot.")
+                self.log.debug(f"stage: no Warehouse slot for '{item_id}' (would leave < {WAREHOUSE_FREE_SLOTS_KEEP} free slot(s)); leaving {units} in the Depot.")
                 continue
             want = min(want, room)
             try:
@@ -223,7 +232,8 @@ class DroneDepotController:
                 self.log.print(f"[{self.name}] Staged {moved}x '{item_id}' -> '{target}' (buffer cap {cap}).")
                 self._wired = False  # output now points at the Warehouse; re-declare the Liquifier link next step
             else:
-                self.log.debug(f"[{self.name}] stage '{item_id}' -> '{target}': {getattr(res, 'status', '?')}")
+                self.log.debug(f"stage '{item_id}' -> '{target}': {getattr(res, 'status', '?')}")
+        self.log.end()
 
     def drain_freight(self):
         """
@@ -277,7 +287,8 @@ class DroneDepotController:
         bounded/compact style -- useful for dashboards and for miner/scout
         drones' own "is my depot full" decisions.
         """
-        self.log.trace(f"[{self.name}] publish_telemetry() entry.")
+        self.log.start(f"[{self.name}] publish_telemetry", level="debug")
+        self.log.trace("publish_telemetry() entry.")
         try:
             docked = list(self.station.get_docked())
         except Exception as error:
@@ -306,7 +317,8 @@ class DroneDepotController:
             "is_full": slot_capacity > 0 and slots_used >= slot_capacity,
         }
         archive.set_entry(DEPOT_STATUS_KEY, self.name, telemetry)
-        self.log.trace(f"[{self.name}] publish_telemetry() exit: bays {bays_occupied}/{bay_count}, slots {slots_used}/{slot_capacity}.")
+        self.log.trace(f"publish_telemetry() exit: bays {bays_occupied}/{bay_count}, slots {slots_used}/{slot_capacity}.")
+        self.log.end()
 
     # ------------------------------------------------------------ hauler staging / surplus
 
@@ -395,18 +407,23 @@ class DroneDepotController:
         stockpile, so everything else is drained first and the flush only
         runs when nothing but surplus is left. Returns units destroyed.
         """
+        self.log.start(f"[{self.name}] flush_surplus", level="debug")
         outpost = getattr(self.station, "outpost", None)
         port = getattr(self.station, "input", None)
         if not outpost or not port or not hasattr(port, "flush"):
+            self.log.end()
             return 0
         stock = logistics_requests.depot_stock(self.station)
         if not stock:
+            self.log.end()
             return 0
         room, slots = self._stockpile_room(stock)
         if room > 0 and slots > 0:
+            self.log.end()
             return 0
         if not for_stage and not self._drone_waiting():
-            self.log.trace(f"[{self.name}] flush: stockpile full but no drone waiting; keeping {stock}.")
+            self.log.trace(f"flush: stockpile full but no drone waiting; keeping {stock}.")
+            self.log.end()
             return 0
         staged = depot_stage.staged_items(self.name)
         requests = logistics_requests.active_requests()
@@ -423,9 +440,10 @@ class DroneDepotController:
             if stash_full and stash >= needed:
                 surplus[item_id] = units
             else:
-                self.log.debug(f"[{self.name}] flush: keep {item_id} (stash {stash}/{cap}, {'no room to stage' if stash_full else 'stageable'}, requests need {needed}).")
+                self.log.debug(f"flush: keep {item_id} (stash {stash}/{cap}, {'no room to stage' if stash_full else 'stageable'}, requests need {needed}).")
         if not surplus:
-            self.log.debug(f"[{self.name}] flush: stockpile full ({stock}) but nothing is surplus.")
+            self.log.debug(f"flush: stockpile full ({stock}) but nothing is surplus.")
+            self.log.end()
             return 0
         port_out = getattr(self.station, "output", None)
         if port_out:
@@ -435,18 +453,22 @@ class DroneDepotController:
         blockers = {i: u for i, u in left.items() if i not in surplus and u > 0}
         if blockers:
             self.log.level("warn").print(f"[{self.name}] Surplus {surplus} can't be flushed: {blockers} still in the stockpile (no local room or staged for a hauler).")
+            self.log.end()
             return 0
         try:
             res = port.flush()
         except Exception as e:
             self.log.level("warn").print(f"[{self.name}] flush() failed: {e}")
+            self.log.end()
             return 0
         status = getattr(res, "status", "ok")
         if status not in ("ok", None):
             self.log.level("warn").print(f"[{self.name}] flush() notice: {status} - {getattr(res, 'message', '')}")
+            self.log.end()
             return 0
         destroyed = sum(left.values())
         self.log.print(f"[{self.name}] Flushed surplus life forms {left} ({destroyed} unit(s)): Warehouse stash full and covers every request.")
+        self.log.end()
         return destroyed
 
     def drain_everything(self):

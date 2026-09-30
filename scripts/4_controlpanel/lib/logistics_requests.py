@@ -258,6 +258,7 @@ def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
     Returns [(source_id, item_id, granted_units)] in leg order; a leg granted
     0 is not reserved.
     """
+    log.start(f"claim_pickups({vehicle_name!r} -> {dest_outpost_id!r})", level="debug")
     tick = curr_tick if curr_tick is not None else _now_tick()
     granted = []
 
@@ -292,12 +293,15 @@ def claim_pickups(vehicle_name, dest_outpost_id, legs, seen, curr_tick=None):
         return pickups
 
     if not archive.transaction(PICKUPS_KEY, {}, updater):
-        log.debug(f"claim_pickups({vehicle_name!r} -> {dest_outpost_id!r}): {PICKUPS_KEY} write rejected; nothing reserved.")
+        log.debug(f"{PICKUPS_KEY} write rejected; nothing reserved.")
+        log.end()
         return [(source_id, item_id, 0) for source_id, item_id, _u in legs]
     trimmed = [(s, i, u, g) for (s, i, u), (_s, _i, g) in zip(legs, granted) if g < u]
     if trimmed:
         log.debug(f"claim_pickups({vehicle_name!r} -> {dest_outpost_id!r}): trimmed by newer reservations: " + ", ".join(f"{s}:{i} {u}->{g}" for s, i, u, g in trimmed))
-    return list(granted)
+    _ret = list(granted)
+    log.end()
+    return _ret
 
 
 def release_pickups(vehicle_name):

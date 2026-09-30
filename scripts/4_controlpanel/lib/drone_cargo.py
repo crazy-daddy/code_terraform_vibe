@@ -70,21 +70,27 @@ class DroneCargoMixin:
         lib/drone_mining.py); cross-outpost ferrying of foreign samples is a
         deferred TODO.
         """
+        self._host.log.start(f"[{self._host.name}] is_home_biome_sample", level="debug")
         if not life_form_item_id or not self._host.home_biome:
-            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: missing item_id ({life_form_item_id!r}) or home_biome ({self._host.home_biome!r}); rejecting.")
+            self._host.log.trace(f"missing item_id ({life_form_item_id!r}) or home_biome ({self._host.home_biome!r}); rejecting.")
+            self._host.log.end()
             return False
         nocturna = get_component("nocturna")
         if not nocturna:
-            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: 'nocturna' component unavailable; rejecting '{life_form_item_id}'.")
+            self._host.log.trace(f"'nocturna' component unavailable; rejecting '{life_form_item_id}'.")
+            self._host.log.end()
             return False
         try:
             native_biome = nocturna.life_form_biome(life_form_item_id)
             accepted = native_biome == self._host.home_biome
-            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: '{life_form_item_id}' native biome '{native_biome}' vs home_biome '{self._host.home_biome}' -> {'accepted' if accepted else 'rejected'}.")
+            self._host.log.trace(f"'{life_form_item_id}' native biome '{native_biome}' vs home_biome '{self._host.home_biome}' -> {'accepted' if accepted else 'rejected'}.")
+            self._host.log.end()
             return accepted
         except Exception:
-            self._host.log.trace(f"[{self._host.name}] is_home_biome_sample: life_form_biome() lookup failed for '{life_form_item_id}'; rejecting.")
+            self._host.log.trace(f"life_form_biome() lookup failed for '{life_form_item_id}'; rejecting.")
+            self._host.log.end()
             return False
+        self._host.log.end()
 
     def unload_cargo_at_depot(self):
         """
@@ -97,7 +103,9 @@ class DroneCargoMixin:
         convention so callers can share the same "wait for space" branch
         shape).
         """
+        self._host.log.start(f"[{self._host.name}] unload_cargo_at_depot", level="debug")
         if not hasattr(self._host.drone, "cargo"):
+            self._host.log.end()
             return 0
         try:
             contents = dict(self._host.drone.cargo.contents())
@@ -105,7 +113,8 @@ class DroneCargoMixin:
             swallowed("drone_cargo.DroneCargoMixin.unload_cargo_at_depot: self._host.drone.cargo.contents", error)
             contents = {}
         if not contents:
-            self._host.log.debug(f"[{self._host.name}] unload_cargo_at_depot: no cargo aboard; nothing to unload.")
+            self._host.log.debug("no cargo aboard; nothing to unload.")
+            self._host.log.end()
             return 0
 
         unloaded = 0
@@ -120,10 +129,11 @@ class DroneCargoMixin:
                 continue
             moved = getattr(res, "moved", 0) or 0
             unloaded += moved
-            self._host.log.debug(f"[{self._host.name}] unload_cargo_at_depot: {item_id} moved {moved}/{count} (status={res.status}).")
+            self._host.log.debug(f"{item_id} moved {moved}/{count} (status={res.status}).")
             if res.status in ("slots_full", "target_full") or moved < count:
                 depot_full = True
                 self._host.log.level("warn").print(f"[{self._host.name}] Drone Depot notice for {item_id}: {res.status} - {res.message}")
 
-        self._host.log.debug(f"[{self._host.name}] unload_cargo_at_depot: total unloaded={unloaded} unit(s) across {len(contents)} item type(s), depot_full={depot_full}.")
+        self._host.log.debug(f"total unloaded={unloaded} unit(s) across {len(contents)} item type(s), depot_full={depot_full}.")
+        self._host.log.end()
         return -1 if depot_full and unloaded == 0 else unloaded

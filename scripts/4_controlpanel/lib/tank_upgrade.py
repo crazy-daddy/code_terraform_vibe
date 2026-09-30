@@ -236,27 +236,32 @@ class TankUpgrader:
         return groups
 
     def _start_next(self):
+        self.log.start("[tank_upgrade] _start_next", level="debug")
         groups = self._groups()
         if not groups:
             cash.release(CASH_CONSUMER)
+            self.log.end()
             return None
         groups.sort(key=lambda g: (-g[0], g[1], g[2]))
         _, outpost_id, liquid, tanks = groups[0]
-        self.log.debug(f"[tank_upgrade] Liquid Tank groups: {[(g[1], g[2], g[0]) for g in groups]}; picked '{outpost_id}' {liquid}.")
+        self.log.debug(f"Liquid Tank groups: {[(g[1], g[2], g[0]) for g in groups]}; picked '{outpost_id}' {liquid}.")
 
         price = self._price()
         swaps = sum(-(-g[0] // SWAP_RATIO) for g in groups)
         if self._inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=swaps * price, label=f"{swaps} Large Liquid Tank(s)"):
-            self.log.debug(f"[tank_upgrade] cash manager holds back {price} cr for '{outpost_id}' {liquid}; waiting.")
-            return f"saving up ({self._credits()}/{price} cr)"
+            self.log.debug(f"cash manager holds back {price} cr for '{outpost_id}' {liquid}; waiting.")
+            _ret = f"saving up ({self._credits()}/{price} cr)"
+            self.log.end()
+            return _ret
 
         old_ids = [tank_id for _, tank_id in tanks[:SWAP_RATIO]]
-        self.log.debug(f"[tank_upgrade] Levels at '{outpost_id}': {tanks}; retiring the emptiest {old_ids}.")
+        self.log.debug(f"Levels at '{outpost_id}': {tanks}; retiring the emptiest {old_ids}.")
         update_fleet_upgrade(lambda s: s.update({SWAP_KEY: {
             "state": "buying", "outpost": outpost_id, "liquid": liquid, "old_ids": old_ids,
             "removed": [], "to_sell": 0, "new_id": None, "attempts": 0,
         }}))
         self.log.print(f"[tank_upgrade] '{outpost_id}': replacing {liquid} tanks {old_ids} with one Large Liquid Tank.")
+        self.log.end()
         return f"{outpost_id}: buying Large Liquid Tank"
 
     # ------------------------------------------------------------ swap
@@ -274,29 +279,34 @@ class TankUpgrader:
         return text
 
     def _advance_once(self, swap):
+        self.log.start("[tank_upgrade] _advance_once", level="debug")
         state = swap.get("state")
         outpost_id = swap.get("outpost")
         computer = _component("computer")
         if not computer or not hasattr(computer, "deploy"):
+            self.log.end()
             return "no Ship Computer"
-        self.log.debug(f"[tank_upgrade] Swap at '{outpost_id}': state '{state}'.")
+        self.log.debug(f"Swap at '{outpost_id}': state '{state}'.")
 
         if state == "buying":
             if self._inventory_count(LARGE_TYPE_ID) <= 0:
                 shop = _component("shop")
                 price = self._price()
                 if self._credits() < price:
+                    self.log.end()
                     return f"{outpost_id}: waiting for {price} cr"
                 res = shop.buy(LARGE_TYPE_ID, 1) if shop else None
                 status = getattr(res, "status", "no_shop")
                 if status != "ok":
-                    self.log.debug(f"[tank_upgrade] buy('{LARGE_TYPE_ID}'): {status} - {getattr(res, 'message', '')}")
+                    self.log.debug(f"buy('{LARGE_TYPE_ID}'): {status} - {getattr(res, 'message', '')}")
+                    self.log.end()
                     return f"{outpost_id}: buy {status}, retrying"
                 cash.spent(CASH_CONSUMER, price)
                 self.log.print(f"[tank_upgrade] Bought a Large Liquid Tank ({price} cr).")
             outpost = self._outpost(outpost_id)
             known = self._ids_of(outpost, LARGE_TYPE_ID) if outpost else []
             self._patch(state="deploying", known=known)
+            self.log.end()
             return f"{outpost_id}: deploying"
 
         if state == "deploying":
@@ -309,18 +319,24 @@ class TankUpgrader:
                     if res.status in ("deploy_limit", "duplicate_outpost_machine", "wrong_biome_for_machine", "location_not_found", "not_deployable", "locked"):
                         self._patch(state="blocked", reason=res.status)
                         self.log.level("warn").print(f"[tank_upgrade] deploy('{LARGE_TYPE_ID}', '{outpost_id}') refused ({res.status}: {res.message}); swap blocked.")
+                        self.log.end()
                         return f"{outpost_id}: blocked ({res.status})"
                     if res.status == "no_kit":
                         self._patch(state="buying")
+                    self.log.end()
                     return f"{outpost_id}: deploy {res.status}"
                 adopted = res.machine_id
             self._patch(state="draining", new_id=adopted)
             self.log.print(f"[tank_upgrade] Deployed '{adopted}' at '{outpost_id}'; draining {swap.get('old_ids')}.")
+            self.log.end()
             return f"{outpost_id}: deployed {adopted}"
 
         if state == "draining":
-            return self._drain(swap, computer)
+            _ret = self._drain(swap, computer)
+            self.log.end()
+            return _ret
 
+        self.log.end()
         return f"{outpost_id}: unknown state {state!r}"
 
     def _drain(self, swap, computer):
@@ -349,10 +365,12 @@ class TankUpgrader:
 
     def _drain_one(self, old_id, new_id, outpost_id, computer):
         """One check on one old tank: keep new.liquid_in pulling from it, or remove it once empty."""
+        self.log.start("[tank_upgrade] _drain_one", level="debug")
         old = _component(old_id)
         new = _component(new_id)
         port = getattr(new, "liquid_in", None) if new is not None else None
         if port is None:
+            self.log.end()
             return f"{outpost_id}: '{new_id}' not found"
         connected = _call(port, "connected_id", "", "_drain_one")
 
@@ -362,17 +380,22 @@ class TankUpgrader:
             if connected != old_id:
                 res = port.connect(old_id)
                 if res.status != "ok":
-                    return self._refused(f"'{new_id}'.liquid_in.connect('{old_id}')", res, outpost_id)
-                self.log.debug(f"[tank_upgrade] '{new_id}'.liquid_in -> '{old_id}' ({level:.0f} t left).")
+                    _ret = self._refused(f"'{new_id}'.liquid_in.connect('{old_id}')", res, outpost_id)
+                    self.log.end()
+                    return _ret
+                self.log.debug(f"'{new_id}'.liquid_in -> '{old_id}' ({level:.0f} t left).")
             link = declared_connection_state(port)
             if link in BROKEN_CONNECTION_STATES:
-                self.log.debug(f"[tank_upgrade] '{new_id}' <- '{old_id}' link state '{link}'.")
-                return self._refused(f"link '{new_id}' <- '{old_id}'", None, outpost_id, reason=f"link_{link}")
+                self.log.debug(f"'{new_id}' <- '{old_id}' link state '{link}'.")
+                _ret = self._refused(f"link '{new_id}' <- '{old_id}'", None, outpost_id, reason=f"link_{link}")
+                self.log.end()
+                return _ret
             if int((self._swap() or {}).get("attempts") or 0):
                 self._patch(attempts=0)
             new_full = _call(new, "is_full", False, "_drain_one")
-            self.log.debug(f"[tank_upgrade] '{old_id}': {level:.1f} t, inflow {inflow:.0f} t/h, link '{link}', '{new_id}' full={new_full}.")
+            self.log.debug(f"'{old_id}': {level:.1f} t, inflow {inflow:.0f} t/h, link '{link}', '{new_id}' full={new_full}.")
             note = " (new tank full)" if new_full else (f" (still fed {inflow:.0f} t/h)" if inflow > 0 else "")
+            self.log.end()
             return f"{old_id}: draining, {level:.0f} t left{note}"
 
         if connected == old_id:
@@ -391,13 +414,18 @@ class TankUpgrader:
             self._write_assignments({old_id: None})
             self._sell_kits()
             self.log.print(f"[tank_upgrade] '{old_id}' empty and undeployed.")
+            self.log.end()
             return f"{old_id}: removed"
-        self.log.debug(f"[tank_upgrade] undeploy('{old_id}'): {res.status} - {res.message}")
+        self.log.debug(f"undeploy('{old_id}'): {res.status} - {res.message}")
         if res.status in TRANSIENT_UNDEPLOY_STATUSES:
+            self.log.end()
             return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
         if res.status == "cargo_present":
+            self.log.end()
             return f"{old_id}: liquid slipped in before undeploy, draining again"
-        return self._refused(f"undeploy('{old_id}')", res, outpost_id)
+        _ret = self._refused(f"undeploy('{old_id}')", res, outpost_id)
+        self.log.end()
+        return _ret
 
     def _refused(self, what, res, outpost_id, reason=None):
         """Counts a refusal; MAX_ATTEMPTS in a row blocks the swap."""

@@ -211,6 +211,7 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
     None instead so callers can skip the stack (leave it staged) rather than
     attempt a connection that can't work.
     """
+    log.start(f"best_unload_target({item_id})", level="debug")
     holders = []
     others = []
     for building in discover_storage_buildings(outpost):
@@ -236,15 +237,17 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
         resolved = outpost if outpost is not None else _home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
         fallback = "inventory" if is_home else None
-        log.debug(f"best_unload_target({item_id}): no Warehouse has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
+        log.debug(f"no Warehouse has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
+        log.end()
         return fallback
 
     pool.sort(key=_fill_fraction)
     winner = pool[0]
     if holders:
-        log.debug(f"best_unload_target({item_id}): {len(holders)} Warehouse(s) already hold this item, picked '{winner['id']}' (fill={_fill_fraction(winner):.2f}) to consolidate onto")
+        log.debug(f"{len(holders)} Warehouse(s) already hold this item, picked '{winner['id']}' (fill={_fill_fraction(winner):.2f}) to consolidate onto")
     else:
-        log.debug(f"best_unload_target({item_id}): no Warehouse already holds this item, picked least-full '{winner['id']}' (fill={_fill_fraction(winner):.2f}) among {len(others)} candidate(s)")
+        log.debug(f"no Warehouse already holds this item, picked least-full '{winner['id']}' (fill={_fill_fraction(winner):.2f}) among {len(others)} candidate(s)")
+    log.end()
     return winner["id"]
 
 
@@ -621,6 +624,7 @@ def consolidate_cross_warehouse_stock(outpost=None):
     best_unload_target()'s consolidation-aware routing. Returns total units
     moved across every building.
     """
+    log.start("consolidate_cross_warehouse_stock", level="debug")
     moved_total = 0
     for building in discover_storage_buildings(outpost):
         component = building["component"]
@@ -636,8 +640,9 @@ def consolidate_cross_warehouse_stock(outpost=None):
             moved_total += moved
             log.print(f"[storage] Compacted {moved} unit(s) into Warehouse '{building['id']}'.")
         else:
-            log.trace(f"consolidate_cross_warehouse_stock: '{building['id']}' compact() moved 0 units ({getattr(res, 'status', '?')})")
-    log.debug(f"consolidate_cross_warehouse_stock: moved {moved_total} unit(s) total across every discovered Warehouse")
+            log.trace(f"'{building['id']}' compact() moved 0 units ({getattr(res, 'status', '?')})")
+    log.debug(f"moved {moved_total} unit(s) total across every discovered Warehouse")
+    log.end()
     return moved_total
 
 
@@ -829,8 +834,10 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
     "exact") so a durability-bearing equipment stack isn't merged with a
     different variant of the same item_id.
     """
+    log.start("reclaim_inventory_only_items_from_warehouses", level="debug")
     inventory = _component("inventory")
     if not inventory or not hasattr(inventory, "transfer_to"):
+        log.end()
         return
 
     dock_demanded = _items_demanded_by_active_dock_orders(outpost)
@@ -853,7 +860,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
             if not _must_stay_in_inventory(item_id):
                 continue
             if item_id in dock_demanded:
-                log.debug(f"reclaim_inventory_only_items_from_warehouses: leaving {count}x {item_id} in Warehouse '{building['id']}' -- an active Supply Dock order still owes it, ships straight from the Warehouse")
+                log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- an active Supply Dock order still owes it, ships straight from the Warehouse")
                 continue
             properties = getattr(slot, "properties", None)
             try:
@@ -866,8 +873,9 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
                 reclaimed_total += moved
                 log.print(f"[storage] Reclaimed {moved}x {item_id} from Warehouse '{building['id']}' back to Inventory (Inventory-only category).")
             elif getattr(res, "status", None) not in ("no_op",):
-                log.debug(f"reclaim_inventory_only_items_from_warehouses: '{building['id']}' transfer_to('inventory', {item_id}) moved 0 units ({getattr(res, 'status', '?')})")
-    log.debug(f"reclaim_inventory_only_items_from_warehouses: reclaimed {reclaimed_total} unit(s) total across every discovered Warehouse")
+                log.debug(f"'{building['id']}' transfer_to('inventory', {item_id}) moved 0 units ({getattr(res, 'status', '?')})")
+    log.debug(f"reclaimed {reclaimed_total} unit(s) total across every discovered Warehouse")
+    log.end()
     return reclaimed_total
 
 

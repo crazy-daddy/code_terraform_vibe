@@ -427,14 +427,17 @@ class DroneEnergyMixin:
         (getattr default avoids an AttributeError during DroneController.__init__,
         before self.home_coords is assigned).
         """
+        self._host.log.start(f"[{self._host.name}] get_nearest_drone_service", level="debug")
         ref_coords = from_coords if from_coords is not None else self._host.position()
         stations = self.get_all_drone_services()
         if not stations:
             fallback = getattr(self, "home_coords", (0.0, 0.0))
-            self._host.log.trace(f"[{self._host.name}] get_nearest_drone_service: no drone_service_station deployed yet; falling back to home_coords {fallback}.")
+            self._host.log.trace(f"no drone_service_station deployed yet; falling back to home_coords {fallback}.")
+            self._host.log.end()
             return fallback, {"id": "", "coords": fallback}
         best = min(stations, key=lambda st: self._host.distance_between(ref_coords, st["coords"]))
-        self._host.log.trace(f"[{self._host.name}] get_nearest_drone_service: {len(stations)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
+        self._host.log.trace(f"{len(stations)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
+        self._host.log.end()
         return best["coords"], best
 
     def get_nearest_drone_depot(self, from_coords=None):
@@ -443,14 +446,17 @@ class DroneEnergyMixin:
         drone's cargo "home", a DISTINCT endpoint from get_nearest_drone_service()
         (see module docstring). Same fallback shape as get_nearest_drone_service().
         """
+        self._host.log.start(f"[{self._host.name}] get_nearest_drone_depot", level="debug")
         ref_coords = from_coords if from_coords is not None else self._host.position()
         depots = self.get_all_drone_depots()
         if not depots:
             fallback = getattr(self, "home_coords", (0.0, 0.0))
-            self._host.log.trace(f"[{self._host.name}] get_nearest_drone_depot: no drone_depot deployed yet; falling back to home_coords {fallback}.")
+            self._host.log.trace(f"no drone_depot deployed yet; falling back to home_coords {fallback}.")
+            self._host.log.end()
             return fallback, {"id": "", "coords": fallback}
         best = min(depots, key=lambda d: self._host.distance_between(ref_coords, d["coords"]))
-        self._host.log.trace(f"[{self._host.name}] get_nearest_drone_depot: {len(depots)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
+        self._host.log.trace(f"{len(depots)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
+        self._host.log.end()
         return best["coords"], best
 
     def resolve_home_depot(self, home_depot=None):
@@ -472,10 +478,12 @@ class DroneEnergyMixin:
              pinned as a pool of that depot's outpost.
         The pin is written back to archive (HOME_DEPOTS_KEY dict).
         """
+        self._host.log.start(f"[{self._host.name}] resolve_home_depot()", level="debug")
         self._host.home_depot_pool = None
         depots = self.get_all_drone_depots()
         if not depots:
-            self._host.log.debug(f"[{self._host.name}] resolve_home_depot(): no Drone Depot deployed; no home depot.")
+            self._host.log.debug("no Drone Depot deployed; no home depot.")
+            self._host.log.end()
             return {}
 
         def match(wanted):
@@ -504,7 +512,7 @@ class DroneEnergyMixin:
                 if chosen:
                     source = "archived pin"
                 else:
-                    self._host.log.debug(f"[{self._host.name}] resolve_home_depot(): archived pin '{pinned}' no longer exists; re-resolving.")
+                    self._host.log.debug(f"archived pin '{pinned}' no longer exists; re-resolving.")
         if chosen is None:
             _, chosen = self.get_nearest_drone_depot()
             pool_id = chosen.get("outpost_id") or None
@@ -513,7 +521,8 @@ class DroneEnergyMixin:
         self._host.home_depot_pool = pool_id
         _pin_home_depot(self._host.name, pool_id or chosen["id"])
         home_desc = f"any Drone Depot in '{pool_id}'" if pool_id else f"Drone Depot '{chosen['id']}' (hardwired)"
-        self._host.log.debug(f"[{self._host.name}] Home pinned to {home_desc} via {source}.")
+        self._host.log.debug(f"Home pinned to {home_desc} via {source}.")
+        self._host.log.end()
         return chosen
 
     def _home_depot_candidates(self):
@@ -533,11 +542,14 @@ class DroneEnergyMixin:
         queues), then free cargo slots, then nearest. Bay/slot counts are read live via get_component(depot_id);
         an unreadable depot sorts as full but stays eligible.
         """
+        self._host.log.start(f"[{self._host.name}] _pick_free_depot()", level="debug")
         current = self._host.current_station()
         for d in candidates:
             if d["id"] == current:
+                self._host.log.end()
                 return d
         if len(candidates) == 1:
+            self._host.log.end()
             return candidates[0]
 
         pos = self._host.position()
@@ -550,7 +562,7 @@ class DroneEnergyMixin:
                     free_bays = depot.bay_count() - depot.bays_occupied()
                     free_slots = depot.slot_capacity() - depot.slots_used()
             except Exception as e:
-                self._host.log.debug(f"[{self._host.name}] _pick_free_depot(): could not read '{d['id']}': {e}")
+                self._host.log.debug(f"could not read '{d['id']}': {e}")
             scored.append(((free_bays <= 0, d["id"] != prefer_id, free_slots <= 0, self._host.distance_between(pos, d["coords"]), d["id"]), d, free_bays, free_slots))
         scored.sort(key=lambda s: s[0])
         self._host.log.debug(
@@ -558,6 +570,7 @@ class DroneEnergyMixin:
             + ", ".join(f"{d['id']}(bays free={fb}, slots free={fs})" for _, d, fb, fs in scored)
             + f" -> '{scored[0][1]['id']}'."
         )
+        self._host.log.end()
         return scored[0][1]
 
     def get_home_depot(self, prefer_id=None):
@@ -744,8 +757,10 @@ class DroneEnergyMixin:
             leg(t) * SAFETY_MARGIN_MULTIPLIER <= available_for_leg
             => t <= available_for_leg / (distance * per_meter(1.0) * SAFETY_MARGIN_MULTIPLIER)
         """
+        self._host.log.start(f"[{self._host.name}] max_safe_throttle_for_leg", level="debug")
         distance = self._host.distance_between(self._host.position(), target_coords)
         if distance <= 0:
+            self._host.log.end()
             return self.MAX_SPEEDMODE_THROTTLE
 
         curr_wh, _, _ = self.get_battery()
@@ -753,22 +768,28 @@ class DroneEnergyMixin:
         reserve_needed = (self._host.distance_between(target_coords, nearest_service) * self.minimum_wh_per_meter() * self.SAFETY_MARGIN_MULTIPLIER) + self.emergency_reserve()
         available_for_leg = curr_wh - reserve_needed
         if available_for_leg <= 0:
-            self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg to {target_coords}: no energy available for leg (current={curr_wh:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()}); throttle=0%.")
+            self._host.log.debug(f"max_safe_throttle_for_leg to {target_coords}: no energy available for leg (current={curr_wh:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()}); throttle=0%.")
+            self._host.log.end()
             return 0.0
 
         denom = distance * self.wh_per_meter_at_throttle(1.0) * self.SAFETY_MARGIN_MULTIPLIER
         if denom <= 0:
+            self._host.log.end()
             return self.MAX_SPEEDMODE_THROTTLE
         throttle = max(0.0, min(self.MAX_SPEEDMODE_THROTTLE, available_for_leg / denom))
-        self._host.log.debug(f"[{self._host.name}] max_safe_throttle_for_leg to {target_coords}: distance={distance:.1f}m, available={available_for_leg:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()} -> max_safe_throttle={throttle*100:.0f}%.")
+        self._host.log.debug(f"max_safe_throttle_for_leg to {target_coords}: distance={distance:.1f}m, available={available_for_leg:.2f} {self.energy_unit()}, reserve_needed={reserve_needed:.2f} {self.energy_unit()} -> max_safe_throttle={throttle*100:.0f}%.")
+        self._host.log.end()
         return throttle
 
     def select_cruise_throttle(self, target_coords):
+        self._host.log.start(f"[{self._host.name}] select_cruise_throttle", level="debug")
         baseline = min(self._host.cruise_throttle, self.MAX_SPEEDMODE_THROTTLE)
         max_safe = self.max_safe_throttle_for_leg(target_coords)
         if max_safe >= baseline:
-            self._host.log.debug(f"[{self._host.name}] select_cruise_throttle: baseline {baseline*100:.0f}% is within safe max ({max_safe*100:.0f}%); using baseline.")
+            self._host.log.debug(f"baseline {baseline*100:.0f}% is within safe max ({max_safe*100:.0f}%); using baseline.")
+            self._host.log.end()
             return baseline
         throttle = max(self.MIN_SPEEDMODE_THROTTLE, min(baseline, max_safe))
-        self._host.log.debug(f"[{self._host.name}] select_cruise_throttle: baseline {baseline*100:.0f}% exceeds safe max ({max_safe*100:.0f}%); capping to {throttle*100:.0f}%.")
+        self._host.log.debug(f"baseline {baseline*100:.0f}% exceeds safe max ({max_safe*100:.0f}%); capping to {throttle*100:.0f}%.")
+        self._host.log.end()
         return throttle

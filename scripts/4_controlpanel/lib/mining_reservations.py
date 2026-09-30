@@ -86,9 +86,11 @@ def get_reserved_yield_totals(curr_tick):
     reservation, module-level so callers without a VehicleController instance
     (e.g. lib/production.py) can read it directly.
     """
+    log.start("get_reserved_yield_totals()", level="debug")
     reservations = archive.get(RESERVED_YIELD_KEY, {})
     totals = {}
     if not isinstance(reservations, dict):
+        log.end()
         return totals
     stale_count = 0
     for key, reservation in reservations.items():
@@ -101,9 +103,10 @@ def get_reserved_yield_totals(curr_tick):
             continue
         if curr_tick - tick >= RESERVATION_STALE_TICKS:
             stale_count += 1
-            log.debug(f"get_reserved_yield_totals(): {key!r} ({reservation.get('vehicle')}, {units}x {item_id}) is stale ({curr_tick - tick} ticks old); excluded from totals.")
+            log.debug(f"{key!r} ({reservation.get('vehicle')}, {units}x {item_id}) is stale ({curr_tick - tick} ticks old); excluded from totals.")
             continue
         totals[item_id] = totals.get(item_id, 0) + units
     if stale_count:
-        log.debug(f"get_reserved_yield_totals(): totals={totals} ({stale_count} stale reservation(s) excluded, tick={curr_tick}).")
+        log.debug(f"totals={totals} ({stale_count} stale reservation(s) excluded, tick={curr_tick}).")
+    log.end()
     return totals

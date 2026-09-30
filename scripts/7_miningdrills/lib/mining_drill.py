@@ -93,6 +93,7 @@ class MiningDrillController:
         return max(capacity - count, 0) / rate
 
     def report_transitions(self, state, fill, eta_h):
+        self.log.start(f"[{self.name}] report_transitions", level="debug")
         if state != self._last_state:
             if state == "full":
                 self.log.level("warn").print(f"[{self.name}] Stockpile full ({fill:.0%}); extraction stopped until a vehicle or drone picks up.")
@@ -103,7 +104,7 @@ class MiningDrillController:
                 )
             elif self._last_state is not None:
                 self.log.print(f"[{self.name}] Drilling again.")
-            self.log.debug(f"[{self.name}] state {self._last_state} -> {state}.")
+            self.log.debug(f"state {self._last_state} -> {state}.")
             self._last_state = state
 
         if fill >= NEAR_FULL_FRACTION and state == "drilling" and not self._warned_near_full:
@@ -111,8 +112,9 @@ class MiningDrillController:
             self.log.level("warn").print(f"[{self.name}] Stockpile {fill:.0%}{eta_text}. Schedule a pickup.")
             self._warned_near_full = True
         elif fill < NEAR_FULL_FRACTION and self._warned_near_full:
-            self.log.debug(f"[{self.name}] fill back under {NEAR_FULL_FRACTION:.0%}; near-full warning re-armed.")
+            self.log.debug(f"fill back under {NEAR_FULL_FRACTION:.0%}; near-full warning re-armed.")
             self._warned_near_full = False
+        self.log.end()
 
     def publish_telemetry(self, entry, curr_tick):
         # The updater must stay pure (docs/components/data_archive.md): a log

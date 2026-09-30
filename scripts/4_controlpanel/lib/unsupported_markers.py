@@ -30,15 +30,17 @@ def resolve_coordinates(key, entry, journal_sites=None):
     payload fields, or the exploration journal.
     """
     # 1. Payload coords field
+    log.start(f"resolve_coordinates('{key}')", level="debug")
     if isinstance(entry, dict) and "coords" in entry:
         c = entry["coords"]
         if isinstance(c, (list, tuple)) and len(c) >= 2:
             try:
                 coords = float(c[0]), float(c[1])
-                log.debug(f"resolve_coordinates('{key}'): resolved from payload 'coords' field -> {coords}")
+                log.debug(f"resolved from payload 'coords' field -> {coords}")
+                log.end()
                 return coords
             except (ValueError, TypeError):
-                log.debug(f"resolve_coordinates('{key}'): payload 'coords' field present but non-numeric ({c!r})")
+                log.debug(f"payload 'coords' field present but non-numeric ({c!r})")
 
     # 2. Key format: poi_X_Y
     if key.startswith("poi_"):
@@ -46,10 +48,11 @@ def resolve_coordinates(key, entry, journal_sites=None):
         if len(parts) >= 3:
             try:
                 coords = float(parts[1]), float(parts[2])
-                log.debug(f"resolve_coordinates('{key}'): resolved from 'poi_X_Y' key format -> {coords}")
+                log.debug(f"resolved from 'poi_X_Y' key format -> {coords}")
+                log.end()
                 return coords
             except (ValueError, TypeError):
-                log.debug(f"resolve_coordinates('{key}'): 'poi_X_Y' key format matched but non-numeric parts {parts!r}")
+                log.debug(f"'poi_X_Y' key format matched but non-numeric parts {parts!r}")
 
     # 3. Legacy key format: X:Y
     if ":" in key and not key.startswith("site"):
@@ -57,10 +60,11 @@ def resolve_coordinates(key, entry, journal_sites=None):
         if len(parts) >= 2:
             try:
                 coords = float(parts[0]), float(parts[1])
-                log.debug(f"resolve_coordinates('{key}'): resolved from legacy 'X:Y' key format -> {coords}")
+                log.debug(f"resolved from legacy 'X:Y' key format -> {coords}")
+                log.end()
                 return coords
             except (ValueError, TypeError):
-                log.debug(f"resolve_coordinates('{key}'): legacy 'X:Y' key format matched but non-numeric parts {parts!r}")
+                log.debug(f"legacy 'X:Y' key format matched but non-numeric parts {parts!r}")
 
     # 4. Site lookup in Journal
     if journal_sites:
@@ -69,9 +73,11 @@ def resolve_coordinates(key, entry, journal_sites=None):
             if str(getattr(s, "id", "")) == clean_site_id:
                 if hasattr(s, "x") and hasattr(s, "y"):
                     coords = float(s.x), float(s.y)
-                    log.debug(f"resolve_coordinates('{key}'): resolved via journal site lookup (site_id='{clean_site_id}') -> {coords}")
+                    log.debug(f"resolved via journal site lookup (site_id='{clean_site_id}') -> {coords}")
+                    log.end()
                     return coords
 
+    log.end()
     return None
 
 

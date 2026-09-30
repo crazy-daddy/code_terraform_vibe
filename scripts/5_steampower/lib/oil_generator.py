@@ -172,12 +172,14 @@ class OilGeneratorController:
         return deficit, deficit / count, count
 
     def choose_throttle(self):
+        self.log.start(f"[{self.name}] choose_throttle", level="debug")
         grid = self.get_grid()
         if not grid:
             if self.burning:
                 self.log.level("warn").print(f"[{self.name}] Grid unreadable -- stopping oil burn (fail safe).")
                 self.burning = False
-            self.log.debug(f"[{self.name}] No grid for this generator; throttle 0.")
+            self.log.debug("No grid for this generator; throttle 0.")
+            self.log.end()
             return 0.0
 
         now = power.measure_grid(grid, power.grid_steam_tank_ids(grid))
@@ -202,7 +204,8 @@ class OilGeneratorController:
                 )
                 _notify(f"[Power] {msg}")
             else:
-                self.log.trace(f"[{self.name}] Idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W -- oil stays in the tank.")
+                self.log.trace(f"Idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W -- oil stays in the tank.")
+                self.log.end()
                 return 0.0
         else:
             fractions = [f for f in (battery, reserve) if f is not None]
@@ -213,6 +216,7 @@ class OilGeneratorController:
                 self.log.print(
                     f"[{self.name}] Last resort OFF -- battery {battery_str}, combined {reserve_str} (stop at {OIL_STOP_RESERVE_FRACTION*100:.0f}%), deficit {deficit:.0f} W."
                 )
+                self.log.end()
                 return 0.0
 
         # Only add recharge wattage when there is a battery to refill.
@@ -220,8 +224,9 @@ class OilGeneratorController:
         target_w = max(0.0, share) * OIL_DEFICIT_HEADROOM + recharge_share
         throttle = min(1.0, max(OIL_MIN_THROTTLE, target_w / OIL_GENERATOR_RATED_W))
         self.log.trace(
-            f"[{self.name}] Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}."
+            f"Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}."
         )
+        self.log.end()
         return throttle
 
     def step(self):

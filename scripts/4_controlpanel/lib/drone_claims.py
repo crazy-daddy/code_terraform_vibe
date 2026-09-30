@@ -202,16 +202,20 @@ class DroneClaimsMixin:
 
     def _fly_recall_leg(self, depot_id, depot_coords):
         """Flies to the recall depot; returns an outcome text for the enclosing block."""
+        self._host.log.start(f"[{self._host.name}] _fly_recall_leg", level="debug")
         reached = bool(depot_id) and self._host.fly_to_station(depot_id, target_coords=depot_coords)
         if reached:
+            self._host.log.end()
             return "docked"
         if self._host.status() == "waiting_bay":
             # At the depot, bay taken: next cycle's get_home_depot() re-picks
             # (a free sibling depot in a pool home), no direct fly_to needed.
-            self._host.log.debug(f"[{self._host.name}] Recall: Drone Depot '{depot_id}' bay taken; retrying next cycle.")
+            self._host.log.debug(f"Recall: Drone Depot '{depot_id}' bay taken; retrying next cycle.")
+            self._host.log.end()
             return "bay taken, retrying next cycle"
-        self._host.log.debug(f"[{self._host.name}] fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
+        self._host.log.debug(f"fly_to_station({depot_id}) unavailable or failed; falling back to direct fly_to({depot_coords}).")
         arrived = self._host.fly_to(depot_coords[0], depot_coords[1], precision=1.5)
+        self._host.log.end()
         return "arrived" if arrived else "not reached"
 
     def claim_biosite(self, target_key, target_info):
@@ -351,6 +355,7 @@ class DroneClaimsMixin:
         SCOUTED_EMPTY_POI_MAX_ENTRIES (fixed-size history per CLAUDE.md rule
         7) by dropping the oldest-scanned entries once the cache overflows.
         """
+        self._host.log.start(f"[{self._host.name}] mark_poi_empty", level="debug")
         curr_tick = self._host.get_current_tick()
         key = f"{int(x)}_{int(y)}"
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
@@ -370,4 +375,5 @@ class DroneClaimsMixin:
         archive.transaction(SCOUTED_EMPTY_POI_KEY, {}, updater)
         for note in notes:
             self._host.log.debug(note)
-        self._host.log.debug(f"[{self._host.name}] mark_poi_empty({int(x)}, {int(y)}): recorded confirmed-empty at tick {curr_tick}.")
+        self._host.log.debug(f"recorded confirmed-empty at tick {curr_tick}.")
+        self._host.log.end()

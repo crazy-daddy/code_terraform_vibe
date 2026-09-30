@@ -96,6 +96,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
         return None
 
     def _update_draining(self, tanks):
+        self.log.start(f"[{self.name}] _update_draining", level="debug")
         if self._draining:
             fill = next((f for t, f in tanks if t.id == self._tank_id), None)
             if fill is None or fill <= WATER_SINK_LOW_FILL:
@@ -103,29 +104,36 @@ class WaterAwareWasteSinkController(WasteSinkController):
                 self.log.print(f"[{self.name}] Water drain off: {f'{self._tank_id} gone or no longer water' if fill is None else f'{self._tank_id} at {fill*100:.0f}%'} (stop at {WATER_SINK_LOW_FILL*100:.0f}%).")
             else:
                 self._tank_fill = fill
+            self.log.end()
             return
         if not tanks:
-            self.log.trace(f"[{self.name}] no Water tank at this outpost; items duty only.")
+            self.log.trace("no Water tank at this outpost; items duty only.")
+            self.log.end()
             return
         tank, fill = max(tanks, key=lambda pair: pair[1])
         self._tank_id = tank.id
         self._tank_fill = fill
         lowest = min(f for _, f in tanks)
         if lowest < WATER_SINK_HIGH_FILL:
-            self.log.trace(f"[{self.name}] emptiest Water tank here at {lowest*100:.0f}% < {WATER_SINK_HIGH_FILL*100:.0f}%; room left, items duty.")
+            self.log.trace(f"emptiest Water tank here at {lowest*100:.0f}% < {WATER_SINK_HIGH_FILL*100:.0f}%; room left, items duty.")
+            self.log.end()
             return
         if not self._water_duty():
-            self.log.debug(f"[{self.name}] Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but a lower-id Waste Processor here drains water; items duty.")
+            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but a lower-id Waste Processor here drains water; items duty.")
+            self.log.end()
             return
         pump_id = self._stalled_water_pump()
         if not pump_id:
-            self.log.debug(f"[{self.name}] Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but no Water Pump is stalled; pumps still have room elsewhere, items duty.")
+            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but no Water Pump is stalled; pumps still have room elsewhere, items duty.")
+            self.log.end()
             return
         self._draining = True
         self.log.print(f"[{self.name}] Water drain on: all {len(tanks)} Water tank(s) here >= {WATER_SINK_HIGH_FILL*100:.0f}% and '{pump_id}' stalled; draining '{tank.id}' ({fill*100:.0f}%) to {WATER_SINK_LOW_FILL*100:.0f}%.")
+        self.log.end()
 
     def arm_liquid(self, tank_id):
         """Liquid mode, liquid_in -> tank_id, enabled; all idempotent."""
+        self.log.start(f"[{self.name}] arm_liquid", level="debug")
         try:
             port = self.processor.liquid_in
             if port.connected_id() != tank_id:
@@ -133,16 +141,18 @@ class WaterAwareWasteSinkController(WasteSinkController):
                 status = getattr(res, "status", "ok")
                 if status != "ok":
                     self.log.level("warn").print(f"[{self.name}] liquid_in connect '{tank_id}': {status} - {getattr(res, 'message', '')}")
+                    self.log.end()
                     return
-                self.log.debug(f"[{self.name}] liquid_in -> '{tank_id}'.")
+                self.log.debug(f"liquid_in -> '{tank_id}'.")
             if self.processor.mode() != "liquid":
                 self.processor.set_mode("liquid")
-                self.log.debug(f"[{self.name}] mode -> liquid.")
+                self.log.debug("mode -> liquid.")
             if not self.processor.is_enabled():
                 self.processor.set_enabled(True)
                 self.log.print(f"[{self.name}] Armed (liquid mode).")
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] liquid arm failed: {e}")
+        self.log.end()
 
     def publish_telemetry(self):
         super().publish_telemetry()
