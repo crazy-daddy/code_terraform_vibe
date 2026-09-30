@@ -161,6 +161,10 @@ All three call sites default `cache=None` (private one-off `SourceCache()`), but
 
 **Building discovery memo** (across passes, not on `SourceCache`): `production._discover_building_ids()` (Smelter/Fabricator/Supply Dock discovery) and `storage.discover_storage_buildings()` reuse their result for `DISCOVERY_TTL_TICKS = 20` ticks (~2 s) per `(type, outpost)`, so a new building is seen at most that late. A Smelter step alone runs about a dozen discoveries; `total_stock()` runs one per call. Cache = one-pass snapshot only — never held across ticks or reused between passes.
 
+### 2a-1c. Recipe switch with a paused unit (Smelter + Fabricator)
+
+`is_running()` reads `False` while an unfinished unit waits (e.g. output full), but `get_progress()` stays > 0. The game then refuses `set_recipe(<other recipe>)` and `clear_recipe()` with `busy`; re-setting the same recipe keeps the progress. Progress is never lost, so the controllers call `set_recipe()` on `not is_running()` and retry next poll on `busy`.
+
 ### 2a-2. Fabricator input-stockpile ejection (`lib/fabricator.py` `eject_excess_inputs()`)
 
 `set_recipe()`/`clear_recipe()` both leave input stockpile untouched — only built-in clear is `InputSlot.flush()`, which **permanently discards** material. `eject_excess_inputs()` runs every `step()`, before recipe selection, recovers stranded/excess staged material via `InputSlot.eject(destination, item_id, count)` (routes to least-full Warehouse with room via `storage.best_unload_target()`, or Inventory — never `flush()`) in two cases (both off currently-set recipe via `production.get_fabricator_active_recipe()`):
