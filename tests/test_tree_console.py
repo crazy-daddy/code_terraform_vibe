@@ -233,6 +233,16 @@ class BlockTests(ConsoleCase):
         log.flush()
         self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   one\n┃   two\n┗━ END job")])
 
+    def test_header_is_stamped_with_the_held_lines_entry_time(self):
+        log = self.make()
+        console = self.world.console
+        log.start("job", level="debug")
+        log.debug("one")
+        console.time_of_day = "12:00:30"
+        log.debug("two")
+        log.flush()
+        self.assertEqual(console.lines, [("debug", "12:00:00 ┏━ job\n12:00:00 ┃   one\n12:00:30 ┃   two")])
+
     def test_nested_block_expands_the_held_line_before_it(self):
         log = self.make()
         log.start("outer", level="debug")

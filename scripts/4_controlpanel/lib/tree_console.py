@@ -315,11 +315,16 @@ class TreeConsole:
         """Write the headers of blocks that have not shown theirs yet, outermost first (only the first
         `count` open blocks if given), each followed by the line it was holding back."""
         blocks = self._blocks if count is None else self._blocks[:count]
+        entry = ""  # headers take the entry time of the held line, so stamps stay in order
+        for block in blocks:
+            if not block[2] and block[6] is not None:
+                entry = block[6][3]
+                break
         for depth, block in enumerate(blocks):
             if block[2]:
                 continue
             block[2] = True
-            _write(self.console, block[1], block[0], block[3], block[4], self.buffered)
+            _write(self.console, block[1], block[0], block[3], block[4], self.buffered, entry)
             held = block[6]
             if held is not None:
                 block[6] = None
