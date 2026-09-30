@@ -253,8 +253,9 @@ def plan_dock_assignments(clock=None):
             outpost = getattr(docks[dock_id], "outpost", None)
             # Scored before the sort: _dock_affinity() may read storage (a remote
             # outpost's first local_stock()), which must not run inside a key callback.
-            affinity = {id(c): _dock_affinity(c["order"], outpost, cache, site_plan) for c in candidates}
-            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -affinity[id(c)]))
+            for c in candidates:
+                c["affinity"] = _dock_affinity(c["order"], outpost, cache, site_plan)
+            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -c["affinity"]))
             best = candidates[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
