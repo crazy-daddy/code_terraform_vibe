@@ -29,6 +29,8 @@ CALLBACK_PROBE = False
 CALLBACK_WORK = 1000  # ~7.7 steps per iteration; a callback over 10,000 steps raises StepLimitError
 CALLBACK_ROUNDS = 5
 POWER_OFF_PROBE = False
+# Machine ids to probe as well (types outpost.buildings() does not list, e.g. solar, pumps, thermal caps, drills)
+POWER_OFF_IDS = ["solar_1", "water_pump_1", "oil_pump_1", "thermal_cap_1", "crop_automator_1", "mining_drill_heavy_1", "harvester_1", "scanner_1"]
 CONSOLE_DEBUG_STATE = "unknown"  # "shown" or "hidden"
 # Interruptive inputs (a case is skipped while its constant is empty):
 BENCH_POWER_MACHINE_ID = ""  # machine id to switch off and on repeatedly; state is restored afterwards
@@ -859,6 +861,11 @@ def run_power_off_probe():
         for b in outpost.buildings():
             if b.type_id not in seen:
                 seen[b.type_id] = power.can_power_off(b.id)
+    for machine_id in POWER_OFF_IDS:
+        try:
+            seen[machine_id + " (id)"] = power.can_power_off(machine_id)
+        except Exception as err:
+            print(f"  {machine_id}: {err}")
     yes = sorted([t for t, ok in seen.items() if ok])
     no = sorted([t for t, ok in seen.items() if not ok])
     print("POWER_OFF probe:\n  can switch off: " + ", ".join(yes) + "\n  cannot: " + ", ".join(no))
