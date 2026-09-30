@@ -15,6 +15,7 @@ from swallow import swallowed
 
 # Buffer-health bands, read as a fraction of steam_in.capacity() (not a fixed
 # tonnage) so they hold regardless of any future buffer-capacity upgrades.
+TURBINE_POLL_SECONDS = 4.0             # buffer, grid and day/night change over minutes
 STEAM_BUFFER_LOW_FRACTION = 0.15       # below this: ease off to avoid a dry stall
 STEAM_BUFFER_HEALTHY_FRACTION = 0.40   # above this: safe to run at full/peak
 THROTTLE_LOW_BUFFER = 0.15             # gentle draw while buffer is thin
@@ -211,7 +212,7 @@ class SteamTurbineController:
         if hasattr(self.turbine, "is_stalled") and self.turbine.is_stalled():
             self.log.level("warn").print(f"[{self.name}] Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")
 
-    def run(self, poll_interval=2.0):
+    def run(self, poll_interval=TURBINE_POLL_SECONDS):
         self.log.print(f"Steam Turbine Controller ({self.name}) online.")
         validate_game_version()
         while True:

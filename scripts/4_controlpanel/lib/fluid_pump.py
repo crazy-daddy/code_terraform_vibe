@@ -26,6 +26,7 @@ from swallow import swallowed
 LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
 
 # Display names per fluid_id, for log lines only.
+PUMP_POLL_SECONDS = 5.0  # throttle is constant 1.0 or 0 (dormant); only routing/stall checks repeat
 PUMP_LABELS = {"water": "Water Pump", "oil": "Oil Pump"}
 
 # Only abandon the currently-targeted tank once it's essentially full (not
@@ -176,7 +177,7 @@ class FluidPumpController:
         if hasattr(self.pump, "is_stalled") and self.pump.is_stalled():
             self.log.level("warn").print(f"[{self.name}] Stalled: valve open with {self.fluid_id} available but nothing downstream is accepting it. Check {self.port_name} connection / Liquid Tank / pipe route.")
 
-    def run(self, poll_interval=1.0):
+    def run(self, poll_interval=PUMP_POLL_SECONDS):
         self.log.print(f"{self.label} Controller ({self.name}) online. Routing {self.fluid_id} to network Liquid Tanks.")
         validate_game_version()
         while True:

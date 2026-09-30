@@ -47,6 +47,7 @@ Headless automation panel AUTOMATION section (§7 — `automation_panel.py` in s
   `power_control.grids()` (two grids merged via new power line). Restores anything still in manager's `shedded_machines` (guarded same as `manage_day_recovery()`), clears per-anchor `power.shedded:<anchor>` mirror.
 - **Battery-less grids skipped**: `if capacity_wh <= 0: return` near top of
   `supervise_grid()` (avoids divide by zero on `battery_pct`). No strategy for battery-less grids yet.
+- **Poll pacing** (all scripts share one interpreter budget, docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` `POLL_SECONDS = 1.0` at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`; `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
   dependency**: Solar Grid brownout supervision only while headless automation panel running — see

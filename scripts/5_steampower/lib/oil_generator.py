@@ -68,6 +68,9 @@ def _notify(text, level="warn", duration=8.0):
         swallowed("oil_generator._notify: notify", error)
 
 
+OIL_POLL_SECONDS = 4.0  # reserve and deficit change over minutes
+
+
 class OilGeneratorController:
     """Burns oil only as last-resort power: low combined reserve AND a deficit without oil."""
 
@@ -188,10 +191,11 @@ class OilGeneratorController:
         deficit, share, count = self.oil_deficit_share(grid)
         reserve_str = f"{reserve*100:.1f}%" if reserve is not None else "n/a (no storage)"
         battery_str = f"{battery*100:.1f}%" if battery is not None else "n/a (no battery)"
-        self.log.trace(
-            f"[{self.name}] Battery {battery_str}, combined reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], "
-            f"deficit without oil {deficit:.0f} W, share {share:.0f} W over {count} oil generator(s), burning={self.burning}."
-        )
+        if self.log.verbose:
+            self.log.trace(
+                f"[{self.name}] Battery {battery_str}, combined reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], "
+                f"deficit without oil {deficit:.0f} W, share {share:.0f} W over {count} oil generator(s), burning={self.burning}."
+            )
 
         if not self.burning:
             fractions = [f for f in (battery, reserve) if f is not None]
@@ -204,7 +208,8 @@ class OilGeneratorController:
                 )
                 _notify(f"[Power] {msg}")
             else:
-                self.log.trace(f"Idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W -- oil stays in the tank.")
+                if self.log.verbose:
+                    self.log.trace(f"Idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W -- oil stays in the tank.")
                 self.log.end()
                 return 0.0
         else:
@@ -223,9 +228,10 @@ class OilGeneratorController:
         recharge_share = OIL_RECHARGE_W / count if battery is not None else 0.0
         target_w = max(0.0, share) * OIL_DEFICIT_HEADROOM + recharge_share
         throttle = min(1.0, max(OIL_MIN_THROTTLE, target_w / OIL_GENERATOR_RATED_W))
-        self.log.trace(
-            f"Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}."
-        )
+        if self.log.verbose:
+            self.log.trace(
+                f"Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}."
+            )
         self.log.end()
         return throttle
 
@@ -242,7 +248,7 @@ class OilGeneratorController:
         else:
             self.starved_warned = False
 
-    def run(self, poll_interval=2.0):
+    def run(self, poll_interval=OIL_POLL_SECONDS):
         self.log.print(f"Oil Generator Controller ({self.name}) online. Last-resort mode: burns only below {OIL_START_RESERVE_FRACTION*100:.0f}% reserve with a deficit.")
         validate_game_version()
         while True:

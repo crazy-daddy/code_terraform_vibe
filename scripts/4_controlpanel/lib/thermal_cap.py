@@ -29,6 +29,8 @@ THROTTLE_TRICKLE = 0.1          # below PRESSURE_BAND_MODERATE: gentle trickle,
 # bleed is far cheaper than an overpressure blowoff (which dumps the entire
 # chamber, not just the surplus).
 PRESSURE_RELIEF_THRESHOLD = 0.95
+POLL_SECONDS = 1.0       # pressure at/above PRESSURE_BAND_MODERATE: chamber can reach the ceiling quickly
+POLL_SECONDS_LOW = 3.0   # pressure below PRESSURE_BAND_MODERATE: far from overpressure
 
 # Only abandon the currently-targeted Gas Tank once it's essentially full
 # (not merely "over 85%") -- this is re-evaluated every single step(), so a
@@ -185,7 +187,8 @@ class ThermalCapController:
         throttle = self.release_throttle_for_pressure(pressure)
         if hasattr(self.cap, "set_throttle"):
             self.cap.set_throttle(throttle)
-        self.log.trace(f"[{self.name}] Pressure {pressure*100:.0f}% -> release throttle {throttle:.1f}.")
+        if self.log.verbose:
+            self.log.trace(f"[{self.name}] Pressure {pressure*100:.0f}% -> release throttle {throttle:.1f}.")
 
         # Relief valve: only engage once the release valve is already wide
         # open (throttle == 1.0) and pressure is still climbing toward the
@@ -199,7 +202,8 @@ class ThermalCapController:
                     self.log.level("warn").print(f"[{self.name}] Downstream can't keep up at {pressure*100:.0f}% pressure; venting {relief*100:.0f}% to atmosphere to avoid an overpressure blowoff.")
             else:
                 self.cap.set_relief(0.0)
-                self.log.trace(f"[{self.name}] Relief valve closed: pressure {pressure*100:.0f}% (need throttle==1.0 and >= {PRESSURE_RELIEF_THRESHOLD*100:.0f}% to engage relief); release throttle is {throttle:.1f}.")
+                if self.log.verbose:
+                    self.log.trace(f"[{self.name}] Relief valve closed: pressure {pressure*100:.0f}% (need throttle==1.0 and >= {PRESSURE_RELIEF_THRESHOLD*100:.0f}% to engage relief); release throttle is {throttle:.1f}.")
 
         if hasattr(self.cap, "is_stalled") and self.cap.is_stalled():
             self.log.level("warn").print(f"[{self.name}] Stalled: release valve open with steam available but nothing downstream is accepting it. Check steam_out connection / Gas Tank / Steam Turbine.")
@@ -210,15 +214,17 @@ class ThermalCapController:
                 notify(f"[{self.name}] Thermal Cap overpressured; banked steam lost.", level="warn", duration_seconds=8.0)
             except Exception as error:
                 swallowed("thermal_cap.ThermalCapController.step: notify", error)
+        return POLL_SECONDS if pressure >= PRESSURE_BAND_MODERATE else POLL_SECONDS_LOW
 
-    def run(self, poll_interval=1.0):
+    def run(self, poll_interval=None):
         self.log.print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")
         validate_game_version()
         while True:
             reset_all()
+            interval = POLL_SECONDS
             try:
-                self.step()
+                interval = self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Thermal Cap exception: {error}")
             flush_all()
-            sleep(poll_interval)
+            sleep(poll_interval if poll_interval is not None else interval)

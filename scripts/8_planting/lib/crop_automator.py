@@ -4,6 +4,9 @@
 # (lib/harvester_machines.py); the kits come from the Shop.
 #
 # Each step (POLL_INTERVAL_S):
+#   0. the deployed-machine map, owned cells and per-cell service checks are
+#      cached for DEPLOYED_CACHE_TICKS (or until the layout size changes);
+#      a step that queued nothing with an empty queue sleeps IDLE_POLL_SECONDS
 #   1. consume finished job results (a full result inbox pauses the machine)
 #   2. seed demand fallback: if `plant.seed_demand` is older than
 #      SEED_DEMAND_FALLBACK_TICKS (Harvester offline), the first deployed
@@ -59,7 +62,9 @@ RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
 SEED_DEMAND_KEY = "plant.seed_demand"  # same key as seed_supply.SEED_DEMAND_KEY
 STATUS_KEY = "plant.automators"
 
-POLL_INTERVAL_S = 10.0
+POLL_INTERVAL_S = 10.0             # while jobs are queued or being consumed
+IDLE_POLL_SECONDS = 30.0           # nothing queued, nothing to do: poll less often
+DEPLOYED_CACHE_TICKS = 600         # deployed-machine map, owned cells and service checks are reused this long (~1 min)
 PUBLISH_INTERVAL_TICKS = 600       # telemetry at most once a minute
 STATUS_STALE_TICKS = 36000         # an automator silent this long (~1 h) is dropped from telemetry
 QUEUE_LIMIT = 45                   # the machine takes 50; leave room for a manual job
@@ -88,6 +93,12 @@ class CropAutomatorController:
         self._failed = {}                  # {sector: tick of last failed job}
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self._last_state = None
+        self._deployed = None              # cached deployed_machines()
+        self._deployed_tick = None
+        self._deployed_sig = None
+        self._automators = None
+        self._mine = None
+        self._ready = {}                   # {(sector, species): services_ready}
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -129,6 +140,28 @@ class CropAutomatorController:
     def services_ready(self, sector, species, rules, deployed):
         served = [field_layout.MACHINE_SERVICE.get(deployed.get(n) or "") for n in field_layout.neighbours(sector)]
         return all(k in served for k in field_layout.care_kinds(rules, species))
+
+    def _cached_ready(self, sector, species, rules, deployed):
+        key = (sector, species)
+        ready = self._ready.get(key)
+        if ready is None:
+            ready = self._ready[key] = self.services_ready(sector, species, rules, deployed)
+        return ready
+
+    def _field_view(self, curr_tick, layout_cells, reserved):
+        """(deployed, automators, mine), reused for DEPLOYED_CACHE_TICKS unless the layout size changed."""
+        sig = (len(layout_cells), len(reserved))
+        if (self._deployed is not None and sig == self._deployed_sig
+                and curr_tick - self._deployed_tick < DEPLOYED_CACHE_TICKS):
+            return self._deployed, self._automators, self._mine
+        deployed = self.deployed_machines()
+        automators = [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"] or [self.sector]
+        mine = self.owned_cells(layout_cells, automators)
+        if deployed:
+            self._deployed, self._deployed_tick, self._deployed_sig = deployed, curr_tick, sig
+            self._automators, self._mine = automators, mine
+            self._ready = {}
+        return deployed, automators, mine
 
     def is_shedded(self):
         shedded = archive.get("power.shedded", [])
@@ -176,21 +209,21 @@ class CropAutomatorController:
     # ----------------------------------------------------------------- jobs
 
     def consume_results(self, curr_tick):
+        """Drains finished job results; returns how many were consumed."""
         self.log.start(f"[{self.name}] consume_results", level="debug")
+        consumed = 0
         for _ in range(MAX_RESULTS_PER_STEP):
             try:
                 if self.machine.result_count() <= 0:
-                    self.log.end()
-                    return
+                    break
                 res = self.machine.next_result()
             except Exception as e:
                 self.log.debug(f"next_result() failed: {e}")
-                self.log.end()
-                return
+                break
             status = getattr(res, "status", "?")
             if status == "empty":
-                self.log.end()
-                return
+                break
+            consumed += 1
             action = getattr(res, "action", None)
             sector = getattr(res, "sector", None)
             if status == "ok":
@@ -203,6 +236,7 @@ class CropAutomatorController:
                 if sector:
                     self._failed[sector] = curr_tick
         self.log.end()
+        return consumed
 
     def queued_jobs_info(self):
         """Returns (queued_sectors: set, committed_seeds: dict[seed_id, int], blocked_job: CropJob | None)."""
@@ -320,65 +354,72 @@ class CropAutomatorController:
     # ----------------------------------------------------------------- step
 
     def step(self):
+        """One poll. Returns True while it has work in flight (results, queued jobs, new jobs)."""
         curr_tick = self.get_current_tick()
         if not self.sector:
             self.sector = self._read_sector()
-        self.consume_results(curr_tick)
+        busy = self.consume_results(curr_tick) > 0
 
         layout = archive.get(LAYOUT_KEY, {})
         layout = layout if isinstance(layout, dict) else {}
         layout_cells = layout.get("cells") or {}
         if layout.get("mode") != "full" or not layout_cells:
             self._note_state("waiting for the full field layout (Harvester)")
-            return
+            return busy
         reserved = layout.get("reserved") or {}
         if reserved.get(self.sector) != "crop_automator":
             self._note_state("not in the field layout: no jobs, input emptied (the Harvester removes it)")
             self.empty_for_removal()
-            return
+            return busy
         if self.is_shedded():
             self._note_state("shed by the Power Guard: no new jobs")
-            return
+            return busy
 
         rules = field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
-        deployed = self.deployed_machines()
-        automators = [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"] or [self.sector]
+        deployed, automators, mine = self._field_view(curr_tick, layout_cells, reserved)
         self.refresh_seed_demand_if_stale(curr_tick, layout, rules, automators)
-        mine = self.owned_cells(layout_cells, automators)
         queued, committed_seeds, blocked_job = self.queued_jobs_info()
         if queued is None:
-            return
-        self.unblock_queue(blocked_job, curr_tick)
+            return True
+        if blocked_job is not None:
+            busy = True
+            self.unblock_queue(blocked_job, curr_tick)
         try:
-            room = QUEUE_LIMIT - self.machine.queue_count()
+            queue_count = self.machine.queue_count()
+            room = QUEUE_LIMIT - queue_count
         except Exception as error:
             swallowed("crop_automator.CropAutomatorController.step: self.machine.queue_count", error)
-            room = 0
-        cells = {}
+            queue_count, room = 1, 0
+        if queue_count or queued:
+            busy = True
         try:
-            for c in self.machine.cells():
-                cells[getattr(c, "id", None)] = c
+            cells = {getattr(c, "id", None): c for c in self.machine.cells()}
         except Exception as e:
             self.log.debug(f"[{self.name}] cells() failed: {e}")
-            return
+            return True
 
         garden = set(layout.get("garden") or [])
+        failed = self._failed
         mature = []
         open_cells = []
         waiting = []
         for sector in mine:
-            if sector in queued or curr_tick - self._failed.get(sector, -JOB_FAIL_COOLDOWN_TICKS) < JOB_FAIL_COOLDOWN_TICKS:
+            if sector in queued:
+                continue
+            failed_at = failed.get(sector)
+            if failed_at is not None and curr_tick - failed_at < JOB_FAIL_COOLDOWN_TICKS:
+                continue
+            species = layout_cells.get(sector)
+            if species is None:
                 continue
             cell = cells.get(sector)
             status = getattr(cell, "status", "unknown")
-            species = layout_cells[sector]
             plant = getattr(cell, "plant", None)
-            growth = getattr(cell, "growth", 0) or 0
-            if (status == "mature" or growth >= 1.0) and plant:
+            if plant and (status == "mature" or (getattr(cell, "growth", 0) or 0) >= 1.0):
                 if not field_layout.kept_crop(sector, plant, layout_cells, garden):
                     mature.append(sector)
-            elif status in ("empty", "unknown"):
-                if self.services_ready(sector, species, rules, deployed):
+            elif status == "empty" or status == "unknown":
+                if self._cached_ready(sector, species, rules, deployed):
                     open_cells.append(sector)
                 else:
                     waiting.append(sector)
@@ -390,6 +431,7 @@ class CropAutomatorController:
                 break
             if self.submit("harvest", sector):
                 room -= 1
+                busy = True
         for sector in open_cells:
             if room <= 0:
                 break
@@ -409,9 +451,11 @@ class CropAutomatorController:
                 continue
             if self.submit("plant", sector, seed_id):
                 room -= 1
+                busy = True
                 committed_seeds[seed_id] = committed_seeds.get(seed_id, 0) + 1
         self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
         self.publish(curr_tick, mine, mature, open_cells, waiting)
+        return busy
 
     def _note_state(self, text):
         if text != self._last_state:
@@ -448,9 +492,10 @@ class CropAutomatorController:
         validate_game_version()
         while True:
             reset_all()
+            busy = True
             try:
-                self.step()
+                busy = self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Crop Automator exception: {e}")
             flush_all()
-            sleep(POLL_INTERVAL_S)
+            sleep(POLL_INTERVAL_S if busy else IDLE_POLL_SECONDS)
