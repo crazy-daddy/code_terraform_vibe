@@ -126,6 +126,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
 | Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
+| Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` (tier 5) — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
 | Script parking (idle machines' breakers off, solar scripts stopped at night; `ParkRequester` machine side, `ScriptParking` in the headless panel) | `script_parking.py` — see dev_workflow.md §1d-2 |
 
 Root executable scripts (`solar_1.py`, `rover_1.py`, `automation_panel.py`, etc.) stay thin entrypoints: import + run controller from `lib/`. No own copies of tier lists, thresholds, budgeting formulas.
