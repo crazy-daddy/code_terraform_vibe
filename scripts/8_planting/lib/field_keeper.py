@@ -334,6 +334,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if self._rules is None or curr_tick - self._rules_tick >= PUBLISH_INTERVAL_TICKS:
             self._rules = self.load_rules()
             self._rules_tick = curr_tick
+            self.mark("rules")
         rules = self._rules
         if not self._layout or curr_tick - self._layout_tick >= LAYOUT_RECHECK_TICKS:
             loaded = self.load_layout(cells, rules)
@@ -341,9 +342,11 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
                 self._layout = loaded   # an unchanged layout keeps its object, so the memos keyed on it stay valid
             self._layout_tick = curr_tick
             self.work_groups = field_layout.work_order(self._layout, self.reserved, self.field_fill()) if self.layout_mode == "full" else []
+            self.mark("reload")
         layout = self._layout
         inactive = self.inactive_species(rules)
         active = self.active_layout(layout, rules, inactive)
+        self.mark("active")
         # The cells the Harvester plants itself (full layout: not automated).
         mine = self.harvester_layout(active, rules)
         self.step_mine = mine
@@ -509,7 +512,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             self.care_here(due)
 
     def run(self):
-        self.log.print(f"Field Keeper ({self.name}) online. Home outpost: {self.home_id}.")
+        self.log.print(f"Field Keeper ({self.name}) online.")
         validate_game_version()
         while True:
             reset_all()

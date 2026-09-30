@@ -196,22 +196,23 @@ class HarvesterHeatMixin:
 
     # ------------------------------------------------------------ routing
 
-    def heat_arrays(self, start, statuses):
+    def heat_search(self, start, statuses):
         """
-        (dist, prev) from `start` to every cell as lists indexed by grid
-        position (_grid()): Dijkstra with Dial buckets (hop cost = move cost
-        of the entered cell + HOP_TIME_WEIGHT, scaled to integers), so one
-        pass over the 192 cells serves both target choice and the route.
-        dist[i] is INFINITE_COST for a cell that can't be reached (and for
-        the extra last slot, which stands for any sector off the grid), prev[i]
-        the previous grid index (-1 at the start). Cached for the same start
-        and the same statuses dict (identity, not contents: comparing 192
-        entries costs steps too), so the step's target choice and the route
-        share one pass.
+        Search state from `start`: Dijkstra with Dial buckets (hop cost = move
+        cost of the entered cell + HOP_TIME_WEIGHT, scaled to integers) over
+        lists indexed by grid position (_grid()). It only expands as far as a
+        caller needs (expand_until()), and the step's target choice and route
+        continue the same search: cached for the same start and the same
+        statuses dict (identity, not contents: comparing 192 entries costs
+        steps too). State: [dist, prev, buckets, next bucket, bucket count];
+        dist[i] is INFINITE_COST while unreached (and always for the extra
+        last slot, which stands for any sector off the grid), prev[i] the
+        previous grid index (-1 at the start). Every cell with dist < the next
+        bucket is final.
         """
         cached = getattr(self, "_heat_map_cache", None)
         if cached is not None and cached[0] == start and cached[1] is statuses:
-            return cached[2], cached[3]
+            return cached[2]
         sectors, index, neighbours = _grid(self._host)
         default_w = int(round((DEFAULT_MOVE_COST + HOP_TIME_WEIGHT) * COST_SCALE))
         status_weight = {}
@@ -223,35 +224,63 @@ class HarvesterHeatMixin:
         dist = [INFINITE_COST] * (len(sectors) + 1)
         prev = [-1] * (len(sectors) + 1)
         first = index.get(start)
+        buckets = []
         if first is not None:
             dist[first] = 0
-            buckets = [[first]]
-            size = 1
-            d = 0
-            while d < size:
-                for x in buckets[d]:
-                    if dist[x] != d:
-                        continue
-                    for n in neighbours[x]:
-                        nd = d + weight[n]
-                        if nd < dist[n]:
-                            dist[n] = nd
-                            prev[n] = x
-                            if nd >= size:
-                                buckets.extend([[] for _ in range(nd + 1 - size)])
-                                size = nd + 1
-                            buckets[nd].append(n)
-                d += 1
-        self._heat_map_cache = (start, statuses, dist, prev)
-        return dist, prev
+            buckets.append([first])
+        state = [dist, prev, buckets, 0, len(buckets), weight]
+        self._heat_map_cache = (start, statuses, state)
+        return state
+
+    def expand_until(self, state, goals, first_only=False):
+        """
+        Continues the search until every grid index in `goals` is final, or
+        (first_only) until the first of them is, finishing that bucket so every
+        goal at the same cost is final too. Unreachable goals run it to the end.
+        """
+        dist, prev, buckets, d, size, weight = state
+        neighbours = _grid(self._host)[2]
+        mark = [False] * len(dist)
+        remaining = 0
+        for g in goals:
+            if dist[g] >= d and not mark[g]:
+                mark[g] = True
+                remaining += 1
+        if remaining == 0 or (first_only and remaining < len(set(goals))):
+            return
+        hit = False
+        while d < size:
+            for x in buckets[d]:
+                if dist[x] != d:
+                    continue
+                if mark[x]:
+                    mark[x] = False
+                    remaining -= 1
+                    hit = True
+                for n in neighbours[x]:
+                    nd = d + weight[n]
+                    if nd < dist[n]:
+                        dist[n] = nd
+                        prev[n] = x
+                        if nd >= size:
+                            buckets.extend([[] for _ in range(nd + 1 - size)])
+                            size = nd + 1
+                        buckets[nd].append(n)
+            d += 1
+            if remaining == 0 or (first_only and hit):
+                break
+        state[3] = d
+        state[4] = size
 
     def route(self, start, target, statuses):
         """(path, cost in heat units): the heat-cheapest route from start to target."""
         if start == target:
             return [], 0.0
-        dist, prev = self.heat_arrays(start, statuses)
+        state = self.heat_search(start, statuses)
         sectors, index, _ = _grid(self._host)
         goal = index.get(target, len(sectors))
+        self.expand_until(state, [goal])
+        dist, prev = state[0], state[1]
         if dist[goal] >= INFINITE_COST:
             return [], 1e9
         first = index[start]
@@ -264,12 +293,19 @@ class HarvesterHeatMixin:
         return path, dist[goal] / float(COST_SCALE)
 
     def cheapest(self, sectors, statuses):
-        """The target with the lowest route cost from the current position (ties: sector id)."""
+        """
+        The target with the lowest route cost from the current position (ties:
+        sector id). The search stops at the first target it settles: every
+        target still open then costs more.
+        """
         here = self._host.get_position()
-        dist, _ = self.heat_arrays(here, statuses)
+        state = self.heat_search(here, statuses)
         grid_sectors, index, _n = _grid(self._host)
         off_grid = len(grid_sectors)
-        return min([(dist[index.get(s, off_grid)], s) for s in sectors])[1]
+        goals = [index.get(s, off_grid) for s in sectors]
+        self.expand_until(state, goals, first_only=True)
+        dist = state[0]
+        return min([(dist[g], s) for g, s in zip(goals, sectors)])[1]
 
     # ----------------------------------------------------------- movement
 
