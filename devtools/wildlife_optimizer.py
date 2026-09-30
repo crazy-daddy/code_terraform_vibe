@@ -3,7 +3,7 @@ Offline optimizer for the wildlife revival and Insight schedule (Phase 9, docs/p
 
 Every input is a game constant that is the same on every world (docs/cheatsheet/wildlife.md §1l),
 so the best order of revivals, Adaptations and Breakthroughs is solved here once instead of
-simulated in game. The in-game planner walks the resulting WILDLIFE_SCHEDULE.
+simulated in game. The in-game planner walks the resulting WILDLIFE_SCHEDULES entry.
 
 Model (scripts/9_wildlife/lib/wildlife_model.py, the same code the game loads):
   - Both Commons (BOOTSTRAP) revive at t=0 without an Adaptation; every other revival buys its
@@ -382,10 +382,10 @@ def main():
         print("\nbeam search (width %d):" % args.beam)
         score, prefix = beam_search(scenario, args.beam, pool)
     sim = report("beam best", scenario, prefix)
-    print("\nWILDLIFE_SCHEDULE = (")
+    print("\nWILDLIFE_SCHEDULES entry:\n    %d: (" % scenario.habitats)
     for _t, item, _ins in sim.log:
-        print("    %r," % (item,))
-    print(")")
+        print("        (%r, %r)," % item)
+    print("    ),")
 
 
 if __name__ == "__main__":

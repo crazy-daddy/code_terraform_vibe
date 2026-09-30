@@ -590,11 +590,13 @@ cannot be started or stopped from another script.
 
 Every input to the revival/Insight order is a world-independent game constant (breeding formula,
 Insight curve, bonus trees), so the order is solved once on the dev machine by
-`devtools/wildlife_optimizer.py` and shipped as `WILDLIFE_SCHEDULE`, instead of simulating the
+`devtools/wildlife_optimizer.py` and shipped as `WILDLIFE_SCHEDULES`, instead of simulating the
 menagerie in game every planning pass. The in-game planner only walks the schedule and skips a step
 whose assumptions fail live (missing recipe, fluid, feed ingredients).
 
-Revival is gated on Insight by operator choice: every non-bootstrap species buys its Adaptation
-before `revive()`, because founding bonuses apply only at establishment and the below-2,500 speed
-boosts lose value when bought late. The optimizer shows that allowing some revivals without the
-Adaptation reaches 600,000 Wildlife about 5 % sooner; the gate was kept pending an operator decision.
+Revival was first gated on Insight: every non-bootstrap species bought its Adaptation before
+`revive()`, because founding bonuses apply only at establishment and the below-2,500 speed boosts
+lose value when bought late. The optimizer showed that letting it skip the Adaptation for some
+species reaches 600,000 Wildlife about 5 % sooner (breadth earns Insight sooner), so the gate was
+dropped: the schedule marks each revival `revive` or `revive_raw`. Schedules are stored per Habitat
+count because the best order changes with it.

@@ -85,15 +85,23 @@ class WildlifeModelTest(unittest.TestCase):
 
 class WildlifeOptimizerTest(unittest.TestCase):
     def test_schedule_steps_are_valid(self):
-        items = set(wo.all_items(wo.Scenario()))
-        for step in wd.WILDLIFE_SCHEDULE:
-            self.assertIn(step, items)
+        for habitats, schedule in wd.WILDLIFE_SCHEDULES.items():
+            items = set(wo.all_items(wo.Scenario(habitats=habitats, allow_unadapted=True)))
+            for step in schedule:
+                self.assertIn(step, items)
 
     def test_schedule_not_worse_than_default(self):
-        scenario = wo.Scenario()
-        default = wo.start_sim(scenario).run(wo.default_order(scenario), wo.default_order(scenario))
-        best = wo.start_sim(scenario).run(list(wd.WILDLIFE_SCHEDULE), wo.default_order(scenario))
-        self.assertLessEqual(best, default)
+        for habitats, schedule in wd.WILDLIFE_SCHEDULES.items():
+            scenario = wo.Scenario(habitats=habitats, allow_unadapted=True)
+            default = wo.start_sim(scenario).run(wo.default_order(scenario), wo.default_order(scenario))
+            best = wo.start_sim(scenario).run(list(schedule), wo.default_order(scenario))
+            self.assertLess(best, default)
+
+    def test_schedule_for_habitat_count(self):
+        self.assertIs(wm.schedule_for(10), wd.WILDLIFE_SCHEDULES[10])
+        self.assertIs(wm.schedule_for(12), wd.WILDLIFE_SCHEDULES[10])
+        self.assertIs(wm.schedule_for(3), wd.WILDLIFE_SCHEDULES[10])
+        self.assertIs(wm.schedule_for(20), wd.WILDLIFE_SCHEDULES[16])
 
     def test_holding_insight_for_an_early_breakthrough_is_slower(self):
         scenario = wo.Scenario()

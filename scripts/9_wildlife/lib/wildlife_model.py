@@ -1,5 +1,5 @@
 import math
-from wildlife_data import SPECIES, RARITY_BREEDING, STAGE_THRESHOLDS, STAGE_CAPACITY, INSIGHT_CURVE, BONUS_TREES, BONUS_CAPS, BREED_BASE, GROWTH_EXPONENT, GROWTH_SATURATION_POP, NATURAL_RATE_CEILING, FOUNDING_POPULATION, HABITAT_MK2_CAPACITY_FACTOR
+from wildlife_data import SPECIES, RARITY_BREEDING, STAGE_THRESHOLDS, STAGE_CAPACITY, INSIGHT_CURVE, BONUS_TREES, BONUS_CAPS, BREED_BASE, GROWTH_EXPONENT, GROWTH_SATURATION_POP, NATURAL_RATE_CEILING, FOUNDING_POPULATION, HABITAT_MK2_CAPACITY_FACTOR, WILDLIFE_SCHEDULES
 
 # Pure wildlife growth model mirroring the simworker (docs/cheatsheet/wildlife.md
 # §1l): stage, capacity, required fluids, bonus resolution, breeding rate and
@@ -192,3 +192,13 @@ def breeding_rate(species, population, effects, other_established=0, efficiency=
 
 def founding_population(effects):
     return FOUNDING_POPULATION + static_bonuses(effects)["founding"]
+
+
+def schedule_for(habitats):
+    """WILDLIFE_SCHEDULES entry for the largest Habitat count not above `habitats` (smallest if none)."""
+    keys = sorted(WILDLIFE_SCHEDULES)
+    chosen = keys[0]
+    for key in keys:
+        if key <= habitats:
+            chosen = key
+    return WILDLIFE_SCHEDULES[chosen]

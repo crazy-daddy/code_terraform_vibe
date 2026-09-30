@@ -100,28 +100,28 @@ Global caps on stacked bonuses (`xG`): breeding speed +150 %, brood yield +35 %,
 
 ### 1l-1. Revival and Insight schedule (`9_wildlife`)
 
-Constants and the model live in `lib/wildlife_data.py` / `lib/wildlife_model.py` (pure, shared with `devtools/wildlife_optimizer.py`). The optimizer beam-searches the order of revivals, Adaptations and Breakthroughs. It assumes full support, feed never short, and fluids ready at fixed lead times after their research. It scores a schedule by hours until Wildlife reaches 600,000 (Habitat Mk II). The result is `WILDLIFE_SCHEDULE`.
+Constants and the model live in `lib/wildlife_data.py` / `lib/wildlife_model.py` (pure, shared with `devtools/wildlife_optimizer.py`). The optimizer beam-searches the order of revivals, Adaptations and Breakthroughs. It assumes full support, feed never short, and fluids ready at fixed lead times after their research. It scores a schedule by hours until Wildlife reaches 600,000 (Habitat Mk II). The results are `WILDLIFE_SCHEDULES`, one per Habitat count (10, 16); `schedule_for(habitats)` picks the entry with the largest key not above the live count.
 
-Policy: `magmatic_annelid` and `salt_tortoise` revive first, without an Adaptation (`WILDLIFE_BOOTSTRAP`). Every other revival buys its Adaptation first. Steps run strictly in order, so a `break` step holds Insight until its source colony has 10,000 individuals.
+Policy: `magmatic_annelid` and `salt_tortoise` revive first, without an Adaptation (`WILDLIFE_BOOTSTRAP`). Each later revival either buys its Adaptation first (`revive`) or skips it (`revive_raw`), whichever the optimizer found faster. Steps run strictly in order, so a `break` step holds Insight until its source colony has 10,000 individuals.
 
-Optimizer defaults: 10 Habitats (Mk I), common fluids 72 h and refined fluids 168 h after Exotic Husbandry (1,000 Wildlife), deep fluids 168 h after Deep Exotics, 2 Feed Makers. Results (2026-09-30):
+Optimizer defaults: common fluids 72 h and refined fluids 168 h after Exotic Husbandry (1,000 Wildlife), deep fluids 168 h after Deep Exotics, 2 Feed Makers. Results (2026-09-30, beam width 8):
 
-| Scenario | Hours to 600k | 1k / 250k / 500k at |
-|---|---|---|
-| Schedule (beam) | 1,763 (73 d) | 380 / 1,406 / 1,680 h |
-| Default order (rarity, founding first) | 1,959 | 414 / 1,534 / 1,836 h |
-| Hold Insight early for the `salt_tortoise` Breakthrough | 2,149 | 399 / 1,566 / 2,006 h |
-| 16 Habitats | 1,670 | 375 / 1,386 / 1,606 h |
-| Revive without Adaptation allowed (`--allow-unadapted`) | 1,675 | 337 / 1,350 / 1,603 h |
-| Fluid leads 24/72 h or 240/480 h | 1,760 | ~same |
-| 1 Feed Maker | 1,762 | ~same |
+| Scenario | Hours to 600k | 1k / 250k / 500k at | Peak feed / Forage per h |
+|---|---|---|---|
+| 16 Habitats, Adaptation optional (`WILDLIFE_SCHEDULES[16]`) | 1,602 (67 d) | 322 / 1,333 / 1,543 h | 160 / 800 |
+| 10 Habitats, Adaptation optional (`WILDLIFE_SCHEDULES[10]`) | 1,675 (70 d) | 337 / 1,350 / 1,603 h | 120 / 600 |
+| 16 Habitats, Adaptation always first | 1,672 | 376 / 1,389 / 1,607 h | 131 / 654 |
+| 10 Habitats, Adaptation always first | 1,763 | 380 / 1,406 / 1,680 h | 103 / 515 |
+| 10 Habitats, default order (rarity, founding first) | 1,959 | 414 / 1,534 / 1,836 h | 80 / 400 |
+| 10 Habitats, Insight held early for the `salt_tortoise` Breakthrough | 2,149 | 399 / 1,566 / 2,006 h | 54 / 270 |
 
 What the runs show:
 - Filling every Habitat early matters most. The order among the early revivals changes the result by under 1 %.
 - Holding Insight early for a Breakthrough costs about 20 %: it blocks revivals for hundreds of hours.
-- Breakthroughs come late on their own. The Commons reach 10,000 first, at about 830 h (`magmatic_annelid`) and 920 h (`salt_tortoise`).
-- Reviving without the Adaptation saves about 5 %, even for crustal_echo's +6 founding, because breadth earns Insight sooner.
+- Breakthroughs come late on their own. The Commons reach 10,000 first, at about 815 h (`magmatic_annelid`) and 920 h (`salt_tortoise`).
+- Reviving some species without their Adaptation saves about 5 %, because breadth earns Insight sooner. The optimizer keeps the Adaptation first where it pays: founding bonuses (hive_sentinel, crustal_echo, spire_drake) and early speed (mantle_strider, hollow_choir).
+- 6 more Habitats save about 4 % to 600k. The added Rares and Legendaries grow slowly and contribute little by then, but every species needs a Habitat for *Nocturna Reborn* and later growth.
 - Fluid timing barely matters to 600k. Commons need gas only from 25,000, and the others stall at 250 while still earning Insight.
-- Peak feed demand is about 100 feed/h, which is 2 Feed Makers but about 500 Forage/h. Forage, not Feed Maker count, is the likely real limit.
+- Forage, not Feed Maker count, is the likely real limit: peak demand is up to 800 Forage/h.
 
 Re-run by hand when an assumption changes: `python devtools/wildlife_optimizer.py --help`.

@@ -175,30 +175,64 @@ BONUS_TREES = {
     },
 }
 
-# Revival and Insight order from devtools/wildlife_optimizer.py (default
-# scenario: 10 Habitats, target 600,000 Wildlife, Adaptation bought before
-# every non-bootstrap revival; results in docs/cheatsheet/wildlife.md §1l-1).
-# The Commons in WILDLIFE_BOOTSTRAP revive first, without an Adaptation.
-# Steps run strictly in order: ("revive", S) buys S's Adaptation then revives,
-# ("adapt", S) buys a bootstrap species' Adaptation, ("break", S) buys S's
-# Breakthrough once S has 10,000 individuals (Insight is held until then).
+# Revival and Insight order from devtools/wildlife_optimizer.py
+# --allow-unadapted (target 600,000 Wildlife; results in
+# docs/cheatsheet/wildlife.md §1l-1), keyed by Habitat count. The planner uses
+# the entry with the largest key not above the live Habitat count. The Commons
+# in WILDLIFE_BOOTSTRAP revive first, without an Adaptation. Steps run strictly
+# in order: ("revive", S) buys S's Adaptation, then revives; ("revive_raw", S)
+# revives without it; ("adapt", S) buys the Adaptation of a revived species;
+# ("break", S) buys S's Breakthrough once S has 10,000 individuals (Insight is
+# held until then).
 WILDLIFE_BOOTSTRAP = ("magmatic_annelid", "salt_tortoise")
-WILDLIFE_SCHEDULE = (
-    ("revive", "glasswing_mantis"),
-    ("revive", "mycelial_husk"),
-    ("revive", "mantle_strider"),
-    ("revive", "hollow_choir"),
-    ("revive", "hive_sentinel"),
-    ("adapt", "magmatic_annelid"),
-    ("revive", "crustal_echo"),
-    ("adapt", "salt_tortoise"),
-    ("revive", "veil_mantle"),
-    ("revive", "bone_walker"),
-    ("break", "magmatic_annelid"),
-    ("break", "salt_tortoise"),
-    ("break", "mantle_strider"),
-    ("break", "glasswing_mantis"),
-    ("break", "mycelial_husk"),
-    ("break", "veil_mantle"),
-    ("break", "hive_sentinel"),
-)
+WILDLIFE_SCHEDULES = {
+    10: (
+        ("revive_raw", "mycelial_husk"),
+        ("revive_raw", "glasswing_mantis"),
+        ("revive_raw", "tidal_cephalopod"),
+        ("revive_raw", "crustal_echo"),
+        ("revive", "hollow_choir"),
+        ("revive", "veil_mantle"),
+        ("revive", "mantle_strider"),
+        ("adapt", "salt_tortoise"),
+        ("adapt", "magmatic_annelid"),
+        ("revive", "hive_sentinel"),
+        ("break", "magmatic_annelid"),
+        ("break", "salt_tortoise"),
+        ("break", "mantle_strider"),
+        ("break", "veil_mantle"),
+        ("break", "mycelial_husk"),
+        ("break", "glasswing_mantis"),
+        ("break", "hollow_choir"),
+        ("break", "hive_sentinel"),
+    ),
+    16: (
+        ("revive_raw", "mycelial_husk"),
+        ("revive_raw", "glasswing_mantis"),
+        ("revive_raw", "vent_drifter"),
+        ("revive_raw", "bone_walker"),
+        ("revive", "hive_sentinel"),
+        ("revive", "hollow_choir"),
+        ("revive_raw", "vault_crab"),
+        ("adapt", "magmatic_annelid"),
+        ("revive", "crustal_echo"),
+        ("adapt", "salt_tortoise"),
+        ("revive", "mantle_strider"),
+        ("revive_raw", "tidal_cephalopod"),
+        ("revive", "veil_mantle"),
+        ("revive", "spire_drake"),
+        ("revive", "ferric_sea_lily"),
+        ("revive", "glacial_wyrm"),
+        ("break", "magmatic_annelid"),
+        ("break", "salt_tortoise"),
+        ("break", "mantle_strider"),
+        ("break", "veil_mantle"),
+        ("break", "mycelial_husk"),
+        ("break", "glasswing_mantis"),
+        ("break", "hollow_choir"),
+        ("break", "hive_sentinel"),
+        ("break", "crustal_echo"),
+        ("break", "bone_walker"),
+        ("break", "vent_drifter"),
+    ),
+}
