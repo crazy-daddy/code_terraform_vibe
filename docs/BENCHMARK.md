@@ -177,7 +177,7 @@ Measured with [`devtools/console_multiline_test.py`](../devtools/console_multili
 
 ## Load dependence
 
-The per-step cost is not fixed: scripts appear to share one interpreter budget. The same Harvester planning step (script freshly started, same field) measured with its own tick counter:
+The per-step cost is not fixed: it depends on how many scripts are running. The same Harvester planning step (script freshly started, same field) measured with its own tick counter:
 
 | Other scripts | Planning step | Phases (ticks) |
 | --- | ---: | --- |
@@ -191,9 +191,22 @@ The per-step cost is not fixed: scripts appear to share one interpreter budget. 
 | All scripts running | 325 | 1,375 | 1,625 | 1,375 |
 | Other scripts stopped | 100 | 406 | 500 | 406 |
 
-Every case scales by the same ~3.3×, matching the Harvester step. Reading: the game runs about **1,000 interpreter steps per tick (10,000 per simulation second) in total**, split among the scripts that are awake at that moment; a sleeping script takes no share. A script alone gets all of it (100 µs per step); in this save (~160 deployed scripts) about three were awake on average, so each script is asleep most of the time and the load comes from how many steps each wake costs times how often each of the 160 wakes. Script types with many instances (field machines, drones, bio machines) multiply every per-wake cost. The 350 µs figure in the tables above was measured under similar load, so treat the "× empty loop" ratios as the portable numbers and the µs figures as load-dependent. What costs the game is the steps each script spends per simulation second, summed over all scripts: a poll that does 3,000 steps every second uses about 30% of the whole budget.
+Every case scales by the same ~3.3×, matching the Harvester step. Further runs in the same save separate script count from script load:
 
-About 3.3× slower with everything running, and the `cells` phase (one API call plus a 192-item comprehension, ~2 ticks at the 350 µs figure above) took 11. So every script's per-tick work, including idle polling, slows every other script: prefer longer idle sleeps and less work per poll over faster polling. The `QUICK` switch below measures the empty-loop cost under each load.
+| Running scripts | Change | empty loop | `len(list)` | `fn()` |
+| --- | --- | ---: | ---: | ---: |
+| 165 | all running, 8 Control Room cards shown | 325 | 1,375 | 1,625 |
+| 165 | cards hidden (another page open) | 325 | 1,375 | 1,625 |
+| 157 | 8 cards stopped | 325 | 1,250 | 1,625 |
+| 146 | 19 solar trackers stopped (each asleep 10 s at a time) | 300 | 1,187 | 1,375 |
+
+Reading: **the per-step cost grows with the number of running scripts, not with how busy they are.** It fits `µs per step ≈ 99 + 1.37 × N` (N = running scripts, sleeping ones included; 100 alone, 299 at 146, 325 at 165), so every running script makes every step of every script about 1.4% slower. Each script gets its own step allowance per tick (docs/guide/language_reference.md, "Caching Results"; docs/components/clock.md), and that allowance shrinks as N grows. Consequences:
+
+- Fewer steps per poll make that script itself react faster; they barely help other scripts.
+- The lever for the whole base is the number of running scripts. A stopped script does not count (measured above); a script that has finished presumably does not either (not measured). `run_control.stop()` resets the machine's setpoints to idle (docs/components/run_control.md), so a machine that needs a held setpoint (solar tilt, turbine throttle) needs a running script.
+- Control Room cards cost the same as any other running script, visible or not.
+
+The Harvester's `cells` phase (one API call plus a 192-item comprehension, ~2 ticks at the 350 µs figure above) took 11 ticks with everything running, in line with the 3.3× factor. The `QUICK` switch below measures the empty-loop cost for a given set of running scripts.
 
 ## Reproducing
 

@@ -33,8 +33,8 @@ SMELTER_LOAD_CHUNK_SIZE = 10
 
 # run() poll cadence: fast while the Smelter has work in flight (running, or
 # input/output buffered, or a recipe/ore was just set/loaded), slow when idle.
-ACTIVE_POLL_SECONDS = 2.0
-IDLE_POLL_SECONDS = 4.0
+ACTIVE_POLL_SECONDS = 1.0
+IDLE_POLL_SECONDS = 2.0
 
 # Seconds of continuous crafting a Smelter's input buffer should cover --
 # passed to production.craft_prefill_units(). Same value as the shared

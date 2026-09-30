@@ -21,8 +21,8 @@ CLAIM_REFRESH_TICKS = 100
 
 # run() sleep between steps: short while the machine is running or moved
 # material this step, long when there is nothing to do.
-ACTIVE_POLL_SECONDS = 2.0
-IDLE_POLL_SECONDS = 4.0
+ACTIVE_POLL_SECONDS = 1.0
+IDLE_POLL_SECONDS = 2.0
 # Shape {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}, per outpost like smelter.recipe_claims.
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
