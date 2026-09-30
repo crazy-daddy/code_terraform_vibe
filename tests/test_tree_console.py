@@ -159,11 +159,12 @@ class BlockTests(ConsoleCase):
         log.start("outer", level="debug")
         log.start("inner", level="debug")
         log.debug("x")
+        log.debug("x2")
         log.end()
         log.debug("y")
         log.end()
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ inner\n┃   ┃   x\n┃   ┗━ END inner\n┃   y\n┗━ END outer")])
+        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ inner\n┃   ┃   x\n┃   ┃   x2\n┃   ┗━ END inner\n┃   y\n┗━ END outer")])
 
     def test_debug_block_end_with_message_writes_a_closing_line(self):
         log = self.make()
@@ -193,6 +194,102 @@ class BlockTests(ConsoleCase):
         log.end()
         log.flush()
         self.assertEqual(self.lines(), [("debug", "┏━ dbg"), ("info", "┃   ┏━ Info block"), ("info", "┃   ┗━ done"), ("debug", "┗━ END dbg")])
+
+    def test_one_line_debug_block_collapses_to_a_single_line(self):
+        log = self.make()
+        log.start("get_demands", level="debug")
+        log.debug("iron gross=6")
+        log.end()
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "get_demands: iron gross=6")])
+
+    def test_collapsed_line_keeps_entry_stamp_and_shows_elapsed_time(self):
+        log = self.make()
+        console = self.world.console
+        log.start("job", level="debug")
+        log.debug("only")
+        console.time_of_day = "12:04:05"
+        log.end()
+        log.flush()
+        self.assertEqual(console.lines, [("debug", "12:00:00 job: only (+4m05s)")])
+
+    def test_short_elapsed_time_is_in_seconds_and_wraps_past_midnight(self):
+        log = self.make()
+        console = self.world.console
+        console.time_of_day = "23:59:50"
+        log.start("job", level="debug")
+        log.debug("only")
+        console.time_of_day = "00:00:05"
+        log.end()
+        log.flush()
+        self.assertEqual(console.lines, [("debug", "23:59:50 job: only (+15s)")])
+
+    def test_second_line_expands_the_held_first_line(self):
+        log = self.make()
+        log.start("job", level="debug")
+        log.debug("one")
+        log.debug("two")
+        log.end()
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   one\n┃   two\n┗━ END job")])
+
+    def test_nested_block_expands_the_held_line_before_it(self):
+        log = self.make()
+        log.start("outer", level="debug")
+        log.debug("before")
+        log.start("inner", level="debug")
+        log.debug("inside")
+        log.end()
+        log.end()
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   before\n┃   inner: inside\n┗━ END outer")])
+
+    def test_collapsed_block_inside_a_block_is_indented(self):
+        log = self.make()
+        log.start("outer", level="debug")
+        log.start("inner", level="debug")
+        log.debug("inside")
+        log.end()
+        log.debug("after")
+        log.end()
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   inner: inside\n┃   after\n┗━ END outer")])
+
+    def test_held_line_is_written_when_another_console_logs(self):
+        log = self.make()
+        other = TreeConsole(console=self.world.console, module="other")
+        log.start("job", level="debug")
+        log.debug("held")
+        other.print("elsewhere")
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   held"), ("info", "elsewhere")])
+
+    def test_flush_and_reset_do_not_lose_a_held_line(self):
+        log = self.make()
+        log.start("job", level="debug")
+        log.debug("held")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   held")])
+        log.reset()
+        log.start("again", level="debug")
+        log.debug("kept")
+        tree_console.reset_all()
+        log.flush()
+        self.assertEqual(self.lines()[-1], ("debug", "┏━ again\n┃   kept"))
+
+    def test_held_info_line_collapses_at_its_own_level(self):
+        log = self.make()
+        log.start("job", level="debug")
+        log.print("Sent 3x iron")
+        log.end()
+        self.assertEqual(self.world.console.lines, [("info", f"{STAMP}job: Sent 3x iron")])
+
+    def test_end_with_message_expands_a_held_line(self):
+        log = self.make()
+        log.start("job", level="debug")
+        log.debug("one")
+        log.end("done")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   one\n┗━ done")])
 
     def test_warn_and_error_lines_are_not_indented(self):
         log = self.make()
