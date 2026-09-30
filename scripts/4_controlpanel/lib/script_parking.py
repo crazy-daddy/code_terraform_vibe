@@ -34,7 +34,9 @@ PARKED_KEY are ever switched back on here.
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
-import power
+# lib/power.py is imported where it is used (_low_reserve_grids()): the tier-5 power.py imports
+# turbine_commit, which imports this module, so a module-level import would be a cycle.
+power = None
 
 log = TreeConsole(module="script_parking")
 
@@ -88,6 +90,15 @@ MAX_WAKE_AFTER_TICKS = 6000
 OIL_WAKE_RESERVE_FRACTION = 0.25
 
 SOLAR_TYPE_ID = "solar_generator"
+
+
+def _power_module():
+    """lib/power.py, imported on first use (see the note at the imports); tests may set `power`."""
+    global power
+    if power is None:
+        import power as grid_power
+        power = grid_power
+    return power
 
 
 def _now_tick():
@@ -385,15 +396,16 @@ class ScriptParking:
         if not wanted:
             return set()
         low = set()
-        if not hasattr(power, "measure_grid"):
+        grid_power = _power_module()
+        if not hasattr(grid_power, "measure_grid"):
             return low
         for grid in grids:
             anchor = getattr(grid, "anchor_id", None)
             if anchor not in wanted:
                 continue
             try:
-                now = power.measure_grid(grid, power.grid_steam_tank_ids(grid))
-                fractions = [f for f in (power.reserve_fraction(now), now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None) if f is not None]
+                now = grid_power.measure_grid(grid, grid_power.grid_steam_tank_ids(grid))
+                fractions = [f for f in (grid_power.reserve_fraction(now), now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None) if f is not None]
             except Exception as error:
                 swallowed("script_parking._low_reserve_grids: power.measure_grid", error)
                 low.add(anchor)  # unreadable reserve: wake, the generator's own script fails safe
