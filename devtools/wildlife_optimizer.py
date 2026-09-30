@@ -38,7 +38,9 @@ import wildlife_data as wd  # noqa: E402
 import wildlife_model as wm  # noqa: E402
 
 BOOTSTRAP = wd.WILDLIFE_BOOTSTRAP
-MILESTONES = (wd.EXOTIC_HUSBANDRY_WILDLIFE, wd.FEED_MAKER_MK2_WILDLIFE, wd.DEEP_EXOTICS_WILDLIFE, wd.HABITAT_MK2_WILDLIFE)
+PILLAR_WILDLIFE = 5000000     # "Wildlife Teeming": the Wildlife pillar complete
+MILESTONES = (wd.EXOTIC_HUSBANDRY_WILDLIFE, wd.FEED_MAKER_MK2_WILDLIFE, wd.DEEP_EXOTICS_WILDLIFE, wd.HABITAT_MK2_WILDLIFE, 2000000, PILLAR_WILDLIFE)
+FULL_POPULATION = 350000       # Mk II capacity at Abundant: a colony here is finished
 MAX_GROWTH_FRACTION = 0.02   # a step grows no colony by more than this share
 MAX_DT_H = 24.0
 MIN_DT_H = 0.25
@@ -48,7 +50,8 @@ RARITY_ORDER = {"common": 0, "uncommon": 1, "rare": 2, "legendary": 3}
 
 class Scenario:
     def __init__(self, habitats=10, target=wd.HABITAT_MK2_WILDLIFE, horizon_h=20000.0, common_lead_h=72.0,
-                 refined_lead_h=168.0, deep_lead_h=168.0, feed_makers=2, allow_unadapted=False):
+                 refined_lead_h=168.0, deep_lead_h=168.0, feed_makers=2, allow_unadapted=False, mk2_lead_h=72.0,
+                 park_finished=True):
         self.habitats = habitats
         self.target = target
         self.horizon_h = horizon_h
@@ -57,6 +60,8 @@ class Scenario:
         self.deep_lead_h = deep_lead_h
         self.feed_makers = feed_makers
         self.allow_unadapted = allow_unadapted
+        self.mk2_lead_h = mk2_lead_h
+        self.park_finished = park_finished
 
 
 def all_items(scenario):
@@ -80,6 +85,9 @@ def default_order(scenario):
     items = [("adapt", s) for s in BOOTSTRAP]
     items += [("revive", s) for s in sorted((s for s in wd.SPECIES if s not in BOOTSTRAP), key=_founding_first)]
     items += [("break", s) for s in wd.SPECIES]
+    if scenario.allow_unadapted:
+        # Idle Insight buys the Adaptation of any species revived without it.
+        items += [("adapt", s) for s in wd.SPECIES if s not in BOOTSTRAP]
     return items
 
 
@@ -92,6 +100,7 @@ class Sim:
         self.colonies = {}      # species -> dict(pop, rearing_until, momentum_since, effects, ver)
         self.habitats_used = 0
         self.fluid_ready = {"common": None, "refined": None, "deep": None}
+        self.mk2_ready = None
         self.milestones = {}
         self.log = []           # (t, item, insight_after)
         self._ver = 0
@@ -125,7 +134,7 @@ class Sim:
             if s in self.colonies:
                 return "never"
             if self.habitats_used >= self.sc.habitats:
-                return "never"
+                return "later" if self.sc.park_finished else "never"
             cost = wd.ADAPTATION_COST if kind == "revive" else 0
             return "now" if self.insight >= cost - 1e-9 else "later"
         node = wd.BONUS_TREES[s]["adaptation" if kind == "adapt" else "breakthrough"][0]
@@ -137,7 +146,7 @@ class Sim:
             return "now" if self.insight >= wd.ADAPTATION_COST - 1e-9 else "later"
         colony = self.colonies.get(s)
         if colony is None:
-            return "never" if self.habitats_used >= self.sc.habitats else "later"
+            return "never" if self.habitats_used >= self.sc.habitats and not self.sc.park_finished else "later"
         if colony["pop"] < wd.BREAKTHROUGH_POPULATION or self.insight < wd.BREAKTHROUGH_COST - 1e-9:
             return "later"
         return "now"
@@ -161,7 +170,7 @@ class Sim:
 
     def _revive(self, species):
         self.habitats_used += 1
-        self.colonies[species] = {"pop": 0.0, "rearing_until": self.t + wd.REARING_HOURS, "momentum_since": None, "effects": None, "static": None, "ver": -1}
+        self.colonies[species] = {"pop": 0.0, "rearing_until": self.t + wd.REARING_HOURS, "momentum_since": None, "effects": None, "static": None, "ver": -1, "parked": False, "finished": None}
 
     # ---------------------------------------------------------------- time
     def _establish_due(self):
@@ -183,6 +192,8 @@ class Sim:
             base = self.milestones[wd.EXOTIC_HUSBANDRY_WILDLIFE]
             self.fluid_ready["common"] = base + self.sc.common_lead_h
             self.fluid_ready["refined"] = base + self.sc.refined_lead_h
+        if self.mk2_ready is None and wd.HABITAT_MK2_WILDLIFE in self.milestones:
+            self.mk2_ready = self.milestones[wd.HABITAT_MK2_WILDLIFE] + self.sc.mk2_lead_h
         if self.fluid_ready["deep"] is None and wd.DEEP_EXOTICS_WILDLIFE in self.milestones:
             self.fluid_ready["deep"] = self.milestones[wd.DEEP_EXOTICS_WILDLIFE] + self.sc.deep_lead_h
         if self.sc.target not in self.milestones and w >= self.sc.target:
@@ -195,10 +206,23 @@ class Sim:
         for s, c in self.colonies.items():
             if c["rearing_until"] is not None:
                 continue
+            if c["parked"]:
+                continue
+            if c["pop"] >= FULL_POPULATION - 1e-6:
+                c["finished"] = self.t
+                if self.sc.park_finished:
+                    c["parked"] = True
+                    self.habitats_used -= 1
+                continue
             effects = self._effects(s, c)
             stage = wm.stage_of(c["pop"])
-            cap = wm.capacity(stage)
+            tier = 2 if self.mk2_ready is not None and self.t >= self.mk2_ready else 1
+            cap = wm.capacity(stage, tier)
             if c["pop"] >= cap:
+                if tier == 1 and stage == 3 and self.sc.park_finished:
+                    # Mk I ceiling (175,000): park until Mk II, then rehouse first (_rehouse_waiting()).
+                    c["parked"] = True
+                    self.habitats_used -= 1
                 continue
             gas, liquid = wm.required_fluids(s, stage, c["static"]["retain_gas"], c["static"]["retain_liquid"])
             if not (self.fluid_available(gas) and self.fluid_available(liquid)):
@@ -209,6 +233,18 @@ class Sim:
             momentum = min(1.0, (self.t - c["momentum_since"]) / wd.MOMENTUM_RAMP_HOURS)
             out[s] = (wm.breeding_rate(s, c["pop"], effects, others, 1.0, momentum), cap)
         return out
+
+    def _rehouse_waiting(self):
+        """After Mk II, colonies parked at the Mk I ceiling take free Habitats before any revival."""
+        if self.mk2_ready is None or self.t < self.mk2_ready:
+            return
+        for c in self.colonies.values():
+            if self.habitats_used >= self.sc.habitats:
+                return
+            if c["parked"] and c["finished"] is None:
+                c["parked"] = False
+                c["momentum_since"] = self.t
+                self.habitats_used += 1
 
     def _feed_scale(self, rates):
         if not self.sc.feed_makers:
@@ -222,6 +258,8 @@ class Sim:
     def _next_event(self):
         times = [c["rearing_until"] for c in self.colonies.values() if c["rearing_until"] is not None]
         times += [v for v in self.fluid_ready.values() if v is not None and v > self.t]
+        if self.mk2_ready is not None and self.mk2_ready > self.t:
+            times.append(self.mk2_ready)
         return min(times) if times else None
 
     def advance(self):
@@ -256,6 +294,7 @@ class Sim:
         rest = [i for i in tail if i not in set(prefix)]
         self._update_gates()
         while self.t < self.sc.horizon_h and self.sc.target not in self.milestones:
+            self._rehouse_waiting()
             progressed = True
             while progressed:
                 progressed = False
@@ -351,7 +390,8 @@ def report(name, scenario, prefix):
     for t, item, ins in sim.log:
         print("   %7.0f h  %-24s insight after %.2f" % (t, fmt_item(item), ins))
     pops = sorted(((c["pop"], s) for s, c in sim.colonies.items()), reverse=True)
-    print("   colonies: " + ", ".join("%s %s" % (s, format(int(p), ",")) for p, s in pops))
+    print("   colonies: " + ", ".join("%s %s%s" % (s, format(int(p), ","), "" if sim.colonies[s]["finished"] is None else " (full @ %.0f h)" % sim.colonies[s]["finished"]) for p, s in pops))
+    print("   Mk II ready @ %s" % ("-" if sim.mk2_ready is None else "%.0f h" % sim.mk2_ready))
     return sim
 
 
@@ -368,11 +408,15 @@ def main():
     ap.add_argument("--common-lead", type=float, default=72.0)
     ap.add_argument("--refined-lead", type=float, default=168.0)
     ap.add_argument("--deep-lead", type=float, default=168.0)
+    ap.add_argument("--mk2-lead", type=float, default=72.0)
+    ap.add_argument("--horizon", type=float, default=20000.0)
+    ap.add_argument("--no-park", action="store_true", help="keep finished (350k) colonies housed")
     ap.add_argument("--feed-makers", type=int, default=2)
     ap.add_argument("--allow-unadapted", action="store_true")
     ap.add_argument("--baselines-only", action="store_true")
     args = ap.parse_args()
-    scenario = Scenario(args.habitats, args.target, 20000.0, args.common_lead, args.refined_lead, args.deep_lead, args.feed_makers, args.allow_unadapted)
+    scenario = Scenario(args.habitats, args.target, args.horizon, args.common_lead, args.refined_lead, args.deep_lead, args.feed_makers,
+                        args.allow_unadapted, args.mk2_lead, not args.no_park)
 
     report("default order (rarity, founding first)", scenario, default_order(scenario))
     report("gut order (hive_sentinel, veil_mantle, salt_tortoise Breakthrough early)", scenario, gut_order(scenario))

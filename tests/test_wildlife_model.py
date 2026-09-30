@@ -83,16 +83,21 @@ class WildlifeModelTest(unittest.TestCase):
         self.assertAlmostEqual(wm.breeding_rate("salt_tortoise", 5000, []), 28.0, delta=0.5)
 
 
+def pillar_scenario(habitats):
+    """Scenario the shipped WILDLIFE_SCHEDULES were solved for."""
+    return wo.Scenario(habitats=habitats, target=wo.PILLAR_WILDLIFE, common_lead_h=120.0, refined_lead_h=240.0, deep_lead_h=240.0, allow_unadapted=True)
+
+
 class WildlifeOptimizerTest(unittest.TestCase):
     def test_schedule_steps_are_valid(self):
         for habitats, schedule in wd.WILDLIFE_SCHEDULES.items():
-            items = set(wo.all_items(wo.Scenario(habitats=habitats, allow_unadapted=True)))
+            items = set(wo.all_items(pillar_scenario(habitats)))
             for step in schedule:
                 self.assertIn(step, items)
 
     def test_schedule_not_worse_than_default(self):
         for habitats, schedule in wd.WILDLIFE_SCHEDULES.items():
-            scenario = wo.Scenario(habitats=habitats, allow_unadapted=True)
+            scenario = pillar_scenario(habitats)
             default = wo.start_sim(scenario).run(wo.default_order(scenario), wo.default_order(scenario))
             best = wo.start_sim(scenario).run(list(schedule), wo.default_order(scenario))
             self.assertLess(best, default)
@@ -100,8 +105,21 @@ class WildlifeOptimizerTest(unittest.TestCase):
     def test_schedule_for_habitat_count(self):
         self.assertIs(wm.schedule_for(10), wd.WILDLIFE_SCHEDULES[10])
         self.assertIs(wm.schedule_for(12), wd.WILDLIFE_SCHEDULES[10])
-        self.assertIs(wm.schedule_for(3), wd.WILDLIFE_SCHEDULES[10])
+        self.assertIs(wm.schedule_for(7), wd.WILDLIFE_SCHEDULES[5])
+        self.assertIs(wm.schedule_for(3), wd.WILDLIFE_SCHEDULES[5])
         self.assertIs(wm.schedule_for(20), wd.WILDLIFE_SCHEDULES[16])
+
+    def test_parking_frees_habitats_only_when_short(self):
+        order = wo.default_order(pillar_scenario(16))
+        for habitats, faster in ((5, True), (16, False)):
+            parked = wo.start_sim(pillar_scenario(habitats)).run(order, order)
+            scenario = pillar_scenario(habitats)
+            scenario.park_finished = False
+            housed = wo.start_sim(scenario).run(order, order)
+            if faster:
+                self.assertLess(parked, housed)
+            else:
+                self.assertAlmostEqual(parked, housed, delta=housed * 0.01)
 
     def test_holding_insight_for_an_early_breakthrough_is_slower(self):
         scenario = wo.Scenario()

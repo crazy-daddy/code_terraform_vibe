@@ -3,7 +3,12 @@
 ## Status (2026-09-30)
 Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/wildlife_optimizer.py`, `tests/test_wildlife_model.py`, `WILDLIFE_SCHEDULE`. The results are in `docs/cheatsheet/wildlife.md` §1l-1.
 
-Decided: the Adaptation is optional per revival (`revive` / `revive_raw` steps), because the optimizer found that about 5 % faster. This replaces the "Revival is Insight-gated" decision below. Schedules are stored per Habitat count in `WILDLIFE_SCHEDULES`; the planner uses `wildlife_model.schedule_for(live_habitat_count)`.
+Decided:
+- The Adaptation is optional per revival (`revive` / `revive_raw` steps).
+- The target is the 5,000,000 Wildlife pillar, so the Refiner and Deep Exotics are needed.
+- Schedules are stored per Habitat count (5/10/16) in `WILDLIFE_SCHEDULES`; the planner uses `wildlife_model.schedule_for(live_habitat_count)`.
+- The schedules assume parking: a colony at the Mk I ceiling frees its Habitat until Mk II, and one at 350k frees it for good. Parking (ship_computer undeploy/redeploy + `rehouse()`) is therefore part of the planner work, no longer deferred.
+- Open: Forage supply (about 1,000 Forage/h at peak with 10+ Habitats) and Feed Maker count (2 Mk II make 200 feed/h).
 
 Next: planner (walks `WILDLIFE_SCHEDULE`), Habitat controller, Feed Maker controller, edits to existing libs. See below.
 
@@ -25,7 +30,7 @@ Decisions from the user:
 - **Revival is Insight-gated.** Every revival runs `set_revival_target` → `unlock_bonus(Adaptation)` → `revive()`, because a late Adaptation loses founding bonuses (hive_sentinel, crustal_echo, spire_drake, veil_mantle's Breakthrough) and the below-2,500 speed boosts. The only exception is the bootstrap: the 2 Commons (`magmatic_annelid`, `salt_tortoise`) revive un-adapted to seed the pool, and their Adaptations are bought as soon as Insight allows.
 - **The revival and Insight order comes from an offline optimizer** run on the dev machine. The in-game planner only follows the resulting fixed schedule and skips blocked steps. The inputs are world-independent game constants, so there is no in-game simulation.
 - **Reagents are auto-bought** through the cash budget.
-- **Parking (undeploy/rehouse) is deferred.** 10 Habitats plus 15 free home slots cover all 16 species.
+- **Parking is part of the schedules** (superseded the earlier deferral; see Status).
 
 ## Architecture
 Habitat and Feed Maker methods are self-only, so each machine runs a thin script. The central decisions (who revives what, what to buy with Insight, feed demand) are made once in the control room automation and published to the archive. The machine scripts execute them. This follows CLAUDE.md rule 5 (compute centrally) and matches `plan_sites` / `publish_all_drills`.

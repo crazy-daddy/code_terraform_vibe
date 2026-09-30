@@ -100,32 +100,33 @@ Global caps on stacked bonuses (`xG`): breeding speed +150 %, brood yield +35 %,
 
 ### 1l-1. Revival and Insight schedule (`9_wildlife`)
 
-Constants and the model live in `lib/wildlife_data.py` / `lib/wildlife_model.py` (pure, shared with `devtools/wildlife_optimizer.py`). The optimizer beam-searches the order of revivals, Adaptations and Breakthroughs. It assumes full support, feed never short, and fluids ready at fixed lead times after their research. It scores a schedule by hours until Wildlife reaches 600,000 (Habitat Mk II). The results are `WILDLIFE_SCHEDULES`, one per Habitat count (10, 16); `schedule_for(habitats)` picks the entry with the largest key not above the live count.
+Constants and the model live in `lib/wildlife_data.py` / `lib/wildlife_model.py` (pure, shared with `devtools/wildlife_optimizer.py`). The goal is the Wildlife pillar, the *Wildlife Teeming* achievement at 5,000,000. The most possible is 16 x 350,000 = 5,600,000, so at most 600,000 can be missing: every species but about one must grow nearly full. That needs the Refiner (sulfur_gas/cryofluid) and Deep Exotics (chlorine/quicksilver for the Legendaries' later stages). Refined fluids are used by Habitats only; no other recipe or order consumes them.
+
+The optimizer beam-searches the order of revivals, Adaptations and Breakthroughs and scores a schedule by hours to 5,000,000. The model assumes:
+- Full support, and feed limited only by Feed Maker output (2 Feed Makers, Mk II at 250k).
+- Fluids ready at fixed lead times: common 120 h and refined 240 h after Exotic Husbandry (1,000 Wildlife); deep 240 h after Deep Exotics (500,000). The lead time covers building caps, taps and pipes.
+- Habitat Mk II 72 h after 600,000.
+- Parking: a colony at the Mk I ceiling (175,000) frees its Habitat until Mk II, then is rehoused before any revival; a colony at 350,000 frees its Habitat for good.
+
+The results are `WILDLIFE_SCHEDULES`, one per Habitat count (5, 10, 16). `schedule_for(habitats)` picks the entry with the largest key not above the live count.
 
 Policy: `magmatic_annelid` and `salt_tortoise` revive first, without an Adaptation (`WILDLIFE_BOOTSTRAP`). Each later revival either buys its Adaptation first (`revive`) or skips it (`revive_raw`), whichever the optimizer found faster. Steps run strictly in order, so a `break` step holds Insight until its source colony has 10,000 individuals.
 
-Optimizer defaults: common fluids 72 h and refined fluids 168 h after Exotic Husbandry (1,000 Wildlife), deep fluids 168 h after Deep Exotics, 2 Feed Makers. Results (2026-09-30, beam width 8):
+Results (2026-09-30, beam width 6):
 
-The shipped schedules assume no Refiner (`--refined-lead 50000`). They favour the species whose Adaptation keeps the base fluid (vent_drifter, bone_walker, tidal_cephalopod), so no colony waits on sulfur_gas/cryofluid. If refining arrives anyway, they lose at most ~3.5 % against a schedule tuned for it.
-
-| Scenario (Adaptation optional unless noted) | Hours to 600k | 1k / 250k / 500k at |
-|---|---|---|
-| 16 Habitats, no Refiner (`WILDLIFE_SCHEDULES[16]`) | 1,723 (72 d) | 331 / 1,348 / 1,632 h |
-| 10 Habitats, no Refiner (`WILDLIFE_SCHEDULES[10]`) | 1,752 (73 d) | 342 / 1,367 / 1,659 h |
-| 10 Habitats, no-Refiner schedule, refined fluids at 168 h / 1,000 h after 1k | 1,734 / 1,741 | |
-| 16 Habitats, refined fluids 168 h after 1k (schedule tuned for it) | 1,602 | 322 / 1,333 / 1,543 h |
-| 10 Habitats, refined fluids 168 h after 1k (schedule tuned for it) | 1,675 | 337 / 1,350 / 1,603 h |
-| 10 Habitats, Adaptation always first | 1,763 | 380 / 1,406 / 1,680 h |
-| 10 Habitats, default order (rarity, founding first) | 1,959 | 414 / 1,534 / 1,836 h |
-| 10 Habitats, Insight held early for the `salt_tortoise` Breakthrough | 2,149 | 399 / 1,566 / 2,006 h |
+| Habitats | Schedule | Default order (rarity, founding first) | 600k / 2M reached | Peak feed / Forage per h |
+|---|---|---|---|---|
+| 5 | 9,925 h (414 d) | 15,055 h | 2,745 / 5,000 h | 84 / 419 |
+| 10 | 5,267 h (219 d) | 7,842 h | 1,829 / 2,714 h | 203 / 1,017 |
+| 16 | 3,517 h (147 d) | 4,025 h | 1,593 / 2,161 h | 236 / 1,180 |
 
 What the runs show:
-- Filling every Habitat early matters most. The order among the early revivals changes the result by under 1 %.
-- Holding Insight early for a Breakthrough costs about 20 %: it blocks revivals for hundreds of hours.
-- Breakthroughs come late on their own. The Commons reach 10,000 first, at about 815 h (`magmatic_annelid`) and 920 h (`salt_tortoise`).
-- Reviving some species without their Adaptation saves about 5 %, because breadth earns Insight sooner. The optimizer keeps the Adaptation first where it pays: founding bonuses (hive_sentinel, crustal_echo, spire_drake) and early speed (mantle_strider, hollow_choir).
-- 6 more Habitats save about 4 % to 600k. The added Rares and Legendaries grow slowly and contribute little by then, but every species needs a Habitat for *Nocturna Reborn* and later growth.
-- Refined fluids are worth ~5 % to 600k. Without them, Rares stall at 2,500 unless their Adaptation keeps the base fluid, which is why the schedules buy it for those species. Commons need gas only from 25,000.
-- Forage, not Feed Maker count, is the likely real limit: peak demand is up to 800 Forage/h.
+- Habitat count is the big lever: 16 Habitats reach 5M in two thirds of the time 10 need.
+- The Legendaries and other slow Rares are revived early, because the slowest colonies set the finish.
+- Holding Insight early for a Breakthrough costs 4-10 % (the gut-order baseline in the optimizer output).
+- Insight stops being scarce after about 1,000 h; by 5M every node is bought and about 26 Insight is left over.
+- Parking at the Mk I ceiling saves 1-2 % with 5-10 Habitats and nothing with 16.
+- Feed demand reaches 200+ feed/h, above what 2 Mk II Feed Makers make (200/h), and means about 1,000-1,200 Forage/h. Forage supply is the likely real limit.
+- For 600k alone (the Mk II gate), skipping the Refiner costs only about 5 %. For 5M the Refiner is required.
 
 Re-run by hand when an assumption changes: `python devtools/wildlife_optimizer.py --help`.

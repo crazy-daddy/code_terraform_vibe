@@ -600,6 +600,8 @@ lose value when bought late. The optimizer showed that letting it skip the Adapt
 species reaches 600,000 Wildlife about 5 % sooner (breadth earns Insight sooner), so the gate was
 dropped: the schedule marks each revival `revive` or `revive_raw`. Schedules are stored per Habitat
 count because the best order changes with it.
-The shipped schedules assume no Refiner: they cost at most ~3.5 % if refining arrives early, and
-they avoid making colony growth depend on Refiner, tar and raw-deposit infrastructure the model
-does not price.
+The schedules were first solved for 600,000 Wildlife (the Habitat Mk II gate) with no Refiner. The
+Wildlife pillar is 5,000,000 of a possible 5,600,000, which needs nearly every species full and
+therefore the Refiner and Deep Exotics, so the target moved to 5,000,000. At that target the
+slowest colonies (Legendaries, Rares) set the finish and are revived early, and colonies park at the
+Mk I ceiling and at 350,000 to free Habitats.
