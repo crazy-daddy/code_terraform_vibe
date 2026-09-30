@@ -137,6 +137,28 @@ def _dock_affinity(order, outpost, cache, site_plan):
     return score
 
 
+def plan_signature():
+    """
+    Cheap fingerprint of what plan_dock_assignments() decides on: every Earth
+    Order's (id, status) plus the discovered dock ids. The automation panel
+    replans when it changes (an order appears, completes or expires; a dock is
+    built or removed) and otherwise only on its backstop interval. Left out on
+    purpose: shipped progress and stock (they change constantly while docks
+    ship and only move ranking) and each dock's current order (a dock switching
+    orders passes through old -> none -> new; a finished order already shows in
+    its status).
+    """
+    orders = []
+    orders_api = get_component("orders")
+    if orders_api:
+        for getter in ("list_orders", "list_weekly_orders"):
+            try:
+                orders.extend((str(getattr(o, "id", "")), str(getattr(o, "status", ""))) for o in getattr(orders_api, getter)())
+            except Exception as error:
+                swallowed(f"supply_dock.plan_signature: orders_api.{getter}", error)
+    return (tuple(sorted(orders)), tuple(sorted(discover_supply_dock_ids())))
+
+
 def plan_dock_assignments(clock=None):
     """
     Central per-cycle decision, run once from automation_panel.py's AUTOMATION section:

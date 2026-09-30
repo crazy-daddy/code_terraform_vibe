@@ -115,7 +115,7 @@ A fab site = outpost with ≥ 1 Fabricator (`fab_site_counts(cache)` → `{site_
 
 ### 2a-0-5. Multi-Dock order planning & weekly-deadline feasibility (`lib/supply_dock.py`)
 
-Central planner `plan_dock_assignments(clock=None)` runs **once** per cycle from headless automation panel's AUTOMATION section (own `DOCK_PLAN_TICK_INTERVAL = 50` ticks, ~5 s, run ahead of the storage pass's feeder-bound sweeps), not each dock re-scanning full Earth Order board every cycle. `set_order()`/`clear_order()`/
+Central planner `plan_dock_assignments(clock=None)` runs **once** per cycle from headless automation panel's AUTOMATION section (checked every `DOCK_PLAN_TICK_INTERVAL = 50` ticks, ~5 s, ahead of the storage pass's feeder-bound sweeps; replans only when `plan_signature()` changed or `DOCK_PLAN_MAX_TICK_INTERVAL = 600` ticks passed, see `docs/cheatsheet/panels.md`), not each dock re-scanning full Earth Order board every cycle. `set_order()`/`clear_order()`/
 `set_enabled()` all `*(self only)*` hardware calls, so planner only decides — writes `{dock_id: order_id or None}` to `"supply_dock.order_plan"` archive key (`ORDER_PLAN_ARCHIVE_KEY`); each dock's `SupplyDockController.step()` reads its entry via `desired_order_id()` and does actual `set_order()` itself.
 
 - **Stability**: dock holding still-`can_fulfill_order()`-true order keeps it regardless of ranking — mid-shipment order not cleared over marginal priority diff.

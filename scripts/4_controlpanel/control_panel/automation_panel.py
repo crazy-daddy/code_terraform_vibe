@@ -97,10 +97,14 @@ SUMMARY_SEPARATOR = " | "
 SOLAR_TICK_INTERVAL = 10
 STORAGE_TICK_INTERVAL = 100
 MIXER_GATE_TICK_INTERVAL = 10
-# Dock planning runs on its own, shorter interval, checked at the top of every loop and again between
+# Dock planning is checked on its own, shorter interval, at the top of every loop and again between
 # the storage pass's sub-steps: those sweeps wait on feeder cycles, and a plan held back until they
-# finish lets docks read an assignment for an order that has already completed.
+# finish lets docks read an assignment for an order that has already completed. A check replans only
+# when supply_dock.plan_signature() changed (an order appeared, completed or expired; docks added or
+# removed) or DOCK_PLAN_MAX_TICK_INTERVAL
+# has passed (ranking by stock and shipped progress): a plan costs ~40 ticks in game.
 DOCK_PLAN_TICK_INTERVAL = 50
+DOCK_PLAN_MAX_TICK_INTERVAL = 600
 # Mining Drill telemetry for every drill (lib/mining_drill.py publish_all_drills()); drills need no
 # script of their own, and a stockpile fills over hours.
 DRILL_TELEMETRY_TICK_INTERVAL = 600
@@ -116,18 +120,28 @@ last_parking_tick = 0
 parking = None              # ScriptParking, created once power_control is available
 parking_summary = ["nothing parked"]  # one automation card item per parked kind
 drill_summary = "no drills"
-dock_plan = {"last_tick": 0, "count": 0}  # count = docks assigned by the last plan, carried between passes
+# count = docks assigned by the last plan; signature = plan_signature() at that plan; plan_tick = its tick
+dock_plan = {"last_tick": 0, "count": 0, "signature": None, "plan_tick": 0}
 
 
 def plan_docks_if_due(clock):
-    """Runs supply_dock.plan_dock_assignments() when DOCK_PLAN_TICK_INTERVAL has passed since the last run."""
+    """
+    Every DOCK_PLAN_TICK_INTERVAL: runs supply_dock.plan_dock_assignments() when
+    supply_dock.plan_signature() differs from the last plan's, or
+    DOCK_PLAN_MAX_TICK_INTERVAL has passed since it.
+    """
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
     if dock_plan["last_tick"] != 0 and now - dock_plan["last_tick"] < DOCK_PLAN_TICK_INTERVAL:
         return
     dock_plan["last_tick"] = now
     try:
+        signature = supply_dock.plan_signature()
+        if signature == dock_plan["signature"] and now - dock_plan["plan_tick"] < DOCK_PLAN_MAX_TICK_INTERVAL:
+            return
         plan = supply_dock.plan_dock_assignments(clock=clock)
         dock_plan["count"] = sum(1 for v in plan.values() if v)
+        dock_plan["signature"] = signature
+        dock_plan["plan_tick"] = now
     except Exception as e:
         print(f"[AUTOMATION] Supply Dock planning error: {e}")
 
