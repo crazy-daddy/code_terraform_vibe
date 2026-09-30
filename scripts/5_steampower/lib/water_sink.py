@@ -3,7 +3,7 @@ from archive import archive
 import fluid_routing
 from swallow import swallowed
 
-# Water overflow on top of the Waste Processor's item duty
+# Water overflow, the Waste Processor's only duty
 # (docs/components/waste_processor.md "liquid" mode, 120 t/h at 100 %).
 #
 # Water Pumps stall once every reachable Water tank is full (lib/fluid_pump.py
@@ -24,11 +24,10 @@ from swallow import swallowed
 # water (latched to water, or empty and assigned to water), so an empty
 # assigned tank counts as room.
 #
-# One processor has one mode at a time. While draining it stays in "liquid";
-# otherwise it runs WasteSinkController's items duty. The staged items or
-# liquid of the paused mode stay in their buffer. With several processors at
-# one outpost only the lowest id drains water, so the others keep destroying
-# items. Only same-outpost tanks are used: a remote tank needs its own Liquid
+# While draining the processor stays in "liquid" mode; otherwise it idles
+# (WasteSinkController.idle(): disabled, staged items returned to storage).
+# With several processors at one outpost only the lowest id drains water; the
+# others stay idle. Only same-outpost tanks are used: a remote tank needs its own Liquid
 # Pipe route to the processor, which this outpost's processor can't check.
 
 WASTE_PROCESSOR_TYPE_ID = "garbage_disposal"
@@ -107,7 +106,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
             self.log.end()
             return
         if not tanks:
-            self.log.trace("no Water tank at this outpost; items duty only.")
+            self.log.trace("no Water tank at this outpost; idle.")
             self.log.end()
             return
         tank, fill = max(tanks, key=lambda pair: pair[1])
@@ -115,16 +114,16 @@ class WaterAwareWasteSinkController(WasteSinkController):
         self._tank_fill = fill
         lowest = min(f for _, f in tanks)
         if lowest < WATER_SINK_HIGH_FILL:
-            self.log.trace(f"emptiest Water tank here at {lowest*100:.0f}% < {WATER_SINK_HIGH_FILL*100:.0f}%; room left, items duty.")
+            self.log.trace(f"emptiest Water tank here at {lowest*100:.0f}% < {WATER_SINK_HIGH_FILL*100:.0f}%; room left, idle.")
             self.log.end()
             return
         if not self._water_duty():
-            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but a lower-id Waste Processor here drains water; items duty.")
+            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but a lower-id Waste Processor here drains water; idle.")
             self.log.end()
             return
         pump_id = self._stalled_water_pump()
         if not pump_id:
-            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but no Water Pump is stalled; pumps still have room elsewhere, items duty.")
+            self.log.debug(f"Water tanks here all >= {WATER_SINK_HIGH_FILL*100:.0f}% but no Water Pump is stalled; pumps still have room elsewhere, idle.")
             self.log.end()
             return
         self._draining = True
@@ -177,6 +176,5 @@ class WaterAwareWasteSinkController(WasteSinkController):
         if self._draining:
             self.arm_liquid(self._tank_id)
         else:
-            self.arm()
-            self.feed()
+            self.idle()
         self.publish_telemetry()

@@ -19,12 +19,12 @@
 # docked drone is present).
 #
 # Once biomass is complete (lib/biomass_retire.py) the Liquifier is gone, so
-# no wiring. Staging is unchanged; what can't be staged waits in the Depot for
-# a local Waste Processor (lib/waste_sink.py, which reuses buffer_target() and
-# lifeform_buffer_cap() below) or a hauler drone. When the stockpile is full
-# and a drone is waiting to unload, flush_surplus() discards life forms whose
-# Warehouse stash can't grow (buffer cap, or no slot) and alone covers every
-# request for them.
+# no wiring. Staging is unchanged: the Warehouse stash of every life form is
+# the creature-feed buffer, and miner drones refill it (lib/drone_mining.py
+# reads lifeform_buffer_cap()). What can't be staged waits in the Depot for a
+# hauler drone. Only as a last resort -- stockpile full and a drone waiting to
+# unload -- flush_surplus() discards life forms whose Warehouse stash can't
+# grow (buffer cap, or no slot) and alone covers every request for them.
 #
 # (5) Hauler pickups (lib/drone_hauler.py): a hauler drone planning to load
 # here writes a stage request (lib/depot_stage.py); fulfil_stage() take()s the
@@ -194,7 +194,7 @@ class DroneDepotController:
         hauler's take() source (lib/vehicle_cargo.py run_pull_loop()), and
         the Depot's small mixed stockpile stays free for drone unloads. Once
         a form's stack is full it stays in the Depot for the Liquifier, or,
-        after biomass completion, for the Waste Processor.
+        after biomass completion, for a hauler or flush_surplus().
         """
         self.log.start(f"[{self.name}] stage_life_forms", level="debug")
         outpost = getattr(self.station, "outpost", None)
@@ -422,9 +422,9 @@ class DroneDepotController:
         material slots) and a drone needs the room (one docked or waiting to
         unload here, or a hauler stage request with for_stage). A form is
         surplus when nobody staged it, its local Warehouse stash can't grow
-        (at lifeform_buffer_cap(), or buffer_target() finds no slot -- the
-        same test lib/waste_sink.py uses), and that stash alone covers
-        retain_amount() plus the network-wide deficit for it. InputSlot.flush() discards the whole
+        (at lifeform_buffer_cap(), or buffer_target() finds no slot), and
+        that stash alone covers retain_amount() plus the network-wide
+        deficit for it. InputSlot.flush() discards the whole
         stockpile, so everything else is drained first and the flush only
         runs when nothing but surplus is left. Returns units destroyed.
         """

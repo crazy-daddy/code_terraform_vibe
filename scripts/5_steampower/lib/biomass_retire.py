@@ -18,10 +18,11 @@ from swallow import swallowed
 #   - BiomassRetirement.step() (control_room_automation.py) switches every Mixer's breaker off
 #     and each Liquifier's once its input bin is empty, and publishes
 #     RETIRE_KEY for status_panel.py.
-#   - Miner drones only visit biosites holding a requested life form
-#     (lib/drone_mining.py). Each outpost keeps one Warehouse slot per form
-#     (creature feeds use life forms later); a Waste Processor destroys the
-#     rest (lib/waste_sink.py).
+#   - Miner drones visit biosites holding a requested life form first, then
+#     ones that refill an outpost's buffer of LIFEFORM_BUFFER_SLOTS Warehouse
+#     slots per form, kept for creature feed (lib/drone_mining.py,
+#     lib/drone_depot.py). Stored stock is never destroyed; a full Drone
+#     Depot flushes surplus only as a last resort (flush_surplus()).
 # Stage 2, manual (status_panel.py button, drawn only once every machine is
 # ready): sell_retired_machines() undeploys each machine and sells what
 # undeploy() returns to Inventory -- the kit plus every applied tier pack --

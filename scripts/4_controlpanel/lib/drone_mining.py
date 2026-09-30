@@ -19,17 +19,22 @@
 # pulling the wrong species into a chamber that can't be processed locally.
 #
 # Once biomass is complete (lib/biomass_retire.py) there is no Liquifier left
-# to feed: a drone only visits biosites holding a life form some outpost
-# requests (the Seed Maker, lib/logistics_requests.py), mixed-biome tiles
-# included, and still drains each one fully so its cooldown starts. Forms
-# nobody requests come along; the Drone Depot and a Waste Processor deal with
-# them (lib/drone_depot.py, lib/waste_sink.py).
+# to feed, and mixed-biome tiles are fair game. Sites holding a life form some
+# outpost requests (the Seed Maker, lib/logistics_requests.py) go first. Next
+# come sites holding a form whose stock at the drone's home outpost is below
+# the Warehouse buffer (lib/drone_depot.py lifeform_buffer_cap()), so every
+# form is on hand for creature feed. Sites holding neither are skipped unless
+# partly drained with a requested form. Each visited site is drained fully so
+# its cooldown starts; forms that come along past their buffer wait in the
+# Drone Depot, which flushes them only as a last resort (flush_surplus()).
 
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 import logistics_requests
 import fleet_intent
 from biomass_retire import biomass_complete
+from drone_depot import lifeform_buffer_cap
+from storage import warehouse_stock
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -65,7 +70,9 @@ class DroneMiningMixin:
         Sorted by request score first (sites holding life forms another
         outpost currently requests via lib/logistics_requests.py, weighted by
         RARITY_REQUEST_WEIGHT; 0 everywhere when nothing is requested), then
-        partially-drained sites, then by distance.
+        partially-drained sites, then (after biomass completion) buffer need
+        (forms below lifeform_buffer_cap() at the home outpost), then by
+        distance.
         """
         self._host.log.start(f"[{self._host.name}] _biosite_candidates()", level="debug")
         self._host.log.trace("_biosite_candidates() entry.")
@@ -92,14 +99,16 @@ class DroneMiningMixin:
         # drained site holding one is finished even with the request met,
         # or it never cools down and regrows.
         wanted_types = set()
+        short_forms = {}
         if retired:
             for items in logistics_requests.active_requests().values():
                 wanted_types.update(items.keys())
+            short_forms = self._buffer_shortfalls(sites)
         candidates = []
         skipped_no_home_forms = 0
         skipped_mixed_biome = 0
         skipped_cooling = 0
-        skipped_unrequested = 0
+        skipped_unneeded = 0
         for site in sites:
             coord = getattr(site, "coord", None)
             life_forms = getattr(site, "life_forms", []) or []
@@ -138,8 +147,11 @@ class DroneMiningMixin:
                 lf_type = getattr(lf, "type", None)
                 if requested.get(lf_type, 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0:
                     request_score += RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1)
-            if retired and request_score == 0 and not (partial and any(getattr(lf, "type", None) in wanted_types for lf in life_forms)):
-                skipped_unrequested += 1
+            buffer_need = 0
+            if retired:
+                buffer_need = sum(1 for lf in life_forms if short_forms.get(getattr(lf, "type", None), 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0)
+            if retired and request_score == 0 and buffer_need == 0 and not (partial and any(getattr(lf, "type", None) in wanted_types for lf in life_forms)):
+                skipped_unneeded += 1
                 continue
             candidates.append({
                 "coords": (x, y),
@@ -148,13 +160,14 @@ class DroneMiningMixin:
                 "remaining_tons": remaining,
                 "partial": partial,
                 "request_score": request_score,
+                "buffer_need": buffer_need,
             })
 
         # Partially-drained sites first (finish them so their cooldown can
         # start), then nearest. select_biosite_target() still skips any
         # candidate the drone can't afford, so a far partial site only wins
         # when it's reachable.
-        candidates.sort(key=lambda c: (-c["request_score"], not c["partial"], self._host.distance_between(pos, c["coords"])))
+        candidates.sort(key=lambda c: (-c["request_score"], not c["partial"], -c["buffer_need"], self._host.distance_between(pos, c["coords"])))
         requested_sites = [c for c in candidates if c["request_score"] > 0]
         if requested_sites:
             self._host.log.debug(
@@ -163,6 +176,11 @@ class DroneMiningMixin:
             )
         elif requested:
             self._host.log.debug(f"requests {requested} but no ready home-biome site holds them; normal order.")
+        buffer_sites = [c for c in candidates if c["request_score"] == 0 and c["buffer_need"] > 0]
+        if buffer_sites:
+            self._host.log.debug(
+                f"[{self._host.name}] _biosite_candidates(): {len(buffer_sites)} site(s) refill the life-form buffer (short {short_forms})."
+            )
         partial_count = sum(1 for c in candidates if c["partial"])
         if partial_count:
             self._host.log.debug(
@@ -172,11 +190,40 @@ class DroneMiningMixin:
         self._host.log.debug(
             f"[{self._host.name}] _biosite_candidates(): {len(sites)} known site(s), {len(candidates)} ready home-biome candidate(s) "
             f"(skipped {skipped_no_home_forms} non-home, {skipped_mixed_biome} mixed-biome, {skipped_cooling} cooling-down, "
-            f"{skipped_unrequested} unrequested after biomass completion)."
+            f"{skipped_unneeded} neither requested nor short of buffer after biomass completion)."
         )
         self._host.log.trace(f"_biosite_candidates() exit: {len(candidates)} candidate(s).")
         self._host.log.end()
         return candidates
+
+    def _buffer_shortfalls(self, sites):
+        """
+        {life_form: units below lifeform_buffer_cap()} at this drone's home
+        outpost, for every form on the known biosites. Stock counts the
+        outpost's Warehouses plus its Drone Depot stockpiles (not yet staged).
+        Only sites holding a home-biome form count; the drone skips the rest.
+        """
+        outpost = getattr(self._host, "home_outpost", None)
+        if outpost is None:
+            return {}
+        cap = lifeform_buffer_cap(outpost)
+        in_depots = {}
+        for depot in logistics_requests.local_depots(outpost):
+            for item_id, units in logistics_requests.depot_stock(depot).items():
+                in_depots[item_id] = in_depots.get(item_id, 0) + units
+        forms = set()
+        for site in sites:
+            types = [getattr(lf, "type", None) for lf in (getattr(site, "life_forms", []) or [])]
+            if any(self._host.is_home_biome_sample(t) for t in types):
+                forms.update(types)
+        forms.discard(None)
+        short = {}
+        for form in forms:
+            missing = cap - warehouse_stock(form, outpost) - in_depots.get(form, 0)
+            if missing > 0:
+                short[form] = missing
+        self._host.log.trace(f"buffer shortfalls at '{getattr(outpost, 'id', '?')}' (cap {cap}): {short}.")
+        return short
 
     def select_biosite_target(self, candidates):
         """
