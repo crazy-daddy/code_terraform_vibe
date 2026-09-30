@@ -99,6 +99,10 @@ Game exposes real Debug Adapter Protocol (DAP) integration against actual runnin
     independently of the importing script, so restarting the importer runs the stale copy. Only the
     in-game Script Editor's **"Apply & restart all"** button invalidates that cache, and it has no
     external hook (not in `debug-adapter.cjs`, `extension.cjs` commands, or the command channel).
+    Importing a library one at a time (VS Code "Import File as Game Library") restarts its importers at
+    once, against whatever the other libraries hold at that moment: an importer can stop with
+    `ImportError: cannot import name ...` when a library it needs is imported later. Import every
+    changed library first, then press **Apply & restart all** once (or import dependencies first).
     **Net effect**: `devtools/scripts_sync.py` restarts pushed scripts over this channel, but **cannot**
     make a running script pick up a changed `lib/` module. What the game runs per Library is visible:
     `context.libraryScripts[*].deployedSource` in `codeterraform-workspace.json` (`libs_awaiting_apply()`).

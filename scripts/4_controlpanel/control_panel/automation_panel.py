@@ -114,7 +114,7 @@ last_mixer_gate_tick = 0
 last_drill_tick = 0
 last_parking_tick = 0
 parking = None              # ScriptParking, created once power_control is available
-parking_summary = "nothing parked"
+parking_summary = ["nothing parked"]  # one automation card item per parked kind
 drill_summary = "no drills"
 dock_plan = {"last_tick": 0, "count": 0}  # count = docks assigned by the last plan, carried between passes
 
@@ -302,7 +302,7 @@ while True:
             archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join([
                 f"{grid_count} grid(s) supervised", "rebalance swept", f"{outpost_new_count} new outpost(s)",
                 f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", str(upgrade_summary),
-                str(commission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, parking_summary,
+                str(commission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
             ]))
 
     flush_all()

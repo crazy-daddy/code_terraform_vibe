@@ -276,8 +276,8 @@ class ScriptParking:
         """
         One pass: wake due or triggered machines, park fresh requests, stop/start
         solar scripts by `elevation`. `grids` = power_control.grids() of this tick;
-        `dock_plan` = supply_dock.order_plan ({dock_id: order_id or None}). Returns a
-        short summary for the automation card.
+        `dock_plan` = supply_dock.order_plan ({dock_id: order_id or None}). Returns the
+        automation card items (one per parked kind).
         """
         now = _now_tick()
         parked = archive.get(PARKED_KEY, {}) or {}
@@ -508,10 +508,11 @@ class ScriptParking:
 
     @staticmethod
     def _summary(parked):
+        """Automation card items: one "parked: N kind" per kind, or ["nothing parked"]."""
         if not parked:
-            return "nothing parked"
+            return ["nothing parked"]
         counts = {}
         for entry in parked.values():
             kind = entry.get("kind", "?")
             counts[kind] = counts.get(kind, 0) + 1
-        return "parked " + " / ".join(f"{n} {kind}" for kind, n in sorted(counts.items()))
+        return [f"parked: {n} {kind}" for kind, n in sorted(counts.items())]
