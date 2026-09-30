@@ -923,6 +923,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
     log.debug(f"rebalance_inventory_to_warehouses: {len(bulky_items)} item(s) qualify for rebalance, worst-first: {[(iid, slots) for iid, slots, _ in bulky_items]}")
     stack_size = inventory_stack_size()
 
+    log.start(f"[storage] Rebalancing Inventory: {len(bulky_items)} item(s) to move to Warehouses")
     for item_id, slot_count, total_units in bulky_items:
         remaining = total_units
         warehouses = discover_storage_buildings(outpost)
@@ -1004,3 +1005,4 @@ def rebalance_inventory_to_warehouses(outpost=None):
         if moved > 0:
             remaining -= moved
             log.print(f"[storage] Moved {moved}x {item_id} from Inventory to Warehouse '{warehouse_id}' after swap.")
+    log.end(f"[storage] Rebalance finished for {len(bulky_items)} item(s)")

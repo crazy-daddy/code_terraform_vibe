@@ -53,7 +53,7 @@ from harvester_planting import HarvesterPlantingMixin
 from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
 from storage import total_stock, discover_storage_buildings
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -325,11 +325,18 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
                 rank = self.build_rank()
                 target = min(build, key=lambda s: (rank.get(s, 1 << 30), s))
                 self.log.debug(f"[{self.name}] Build: {len(deploys)} machine / {len(build) - len(deploys)} plant cell(s) ready; next in order {target} ({build[target]}).")
+                what = f"deploy {deploys[target]}" if target in deploys else f"plant {build[target]}"
+                self.log.start(f"[{self.name}] Build: {what} at {target}")
                 if self.move_to(target):
                     if target in deploys:
-                        self.deploy_here(deploys[target])
-                    elif self.plant_here(build[target]):
-                        self.care_current(rules)
+                        done = self.deploy_here(deploys[target])
+                    else:
+                        done = self.plant_here(build[target])
+                        if done:
+                            self.care_current(rules)
+                    self.log.end("Build step done" if done else "Build step not completed")
+                else:
+                    self.log.end("Build step aborted: target not reached")
                 return
 
         # 2. Care tour first: a lapsed treatment stalls growth, while a mature
@@ -343,8 +350,12 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             self.log.debug(f"[{self.name}] Care tour: {len(batch)} cell(s) below {CARE_BATCH_H} h.")
         if self.care_batch:
             target = self.nearest(list(self.care_batch), cells)
+            self.log.start(f"[{self.name}] Care tour: {target} ({len(self.care_batch)} cell(s) queued)")
             if self.move_to(target):
-                self.care_here(self.care_batch[target])
+                treated = self.care_here(self.care_batch[target])
+                self.log.end("Treated" if treated else "Nothing treated")
+            else:
+                self.log.end("Target not reached")
             self.care_batch.pop(target, None)
             return
 
@@ -356,10 +367,14 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             if targets:
                 target = self.nearest(targets, cells)
                 self.log.debug(f"[{self.name}] {len(targets)} mature crop(s); cheapest {target} (planned in {_now_tick() - curr_tick} ticks).")
+                self.log.start(f"[{self.name}] Harvest {target}")
                 if self.move_to(target):
                     self.harvest_here()
                     self.plant_if_open(mine)
                     self.care_current(rules)
+                    self.log.end("Harvest visit done")
+                else:
+                    self.log.end("Target not reached")
                 return
 
         # 4. Clear plants in the layout's way (old layout after a version bump).
@@ -367,8 +382,12 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if targets:
             target = self.nearest(targets, cells)
             self.log.debug(f"[{self.name}] {len(targets)} plant(s) in the layout's way; cheapest {target}.")
+            self.log.start(f"[{self.name}] Uproot {target}")
             if self.move_to(target) and self.uproot_here():
                 self.plant_if_open(mine)
+                self.log.end("Uprooted")
+            else:
+                self.log.end("Not uprooted")
             return
 
         # 5. Plant.
@@ -377,8 +396,12 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             by_sector = dict(targets)
             target = self.nearest(list(by_sector), cells)
             self.log.debug(f"[{self.name}] {len(targets)} plantable cell(s); cheapest {target} ({by_sector[target]}, planned in {_now_tick() - curr_tick} ticks).")
+            self.log.start(f"[{self.name}] Plant {by_sector[target]} at {target}")
             if self.move_to(target) and self.plant_here(by_sector[target]):
                 self.care_current(rules)
+                self.log.end("Planted")
+            else:
+                self.log.end("Not planted")
             return
 
         # 6. With heat headroom: pave a path cell, else sweep a loose item.
@@ -387,8 +410,12 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if spare_items and self.get_heat() <= ITEM_SWEEP_MAX_HEAT and not self.unpaved(layout, cells):
             target = self.nearest(spare_items, cells)
             self.log.debug(f"[{self.name}] Nothing to tend; collecting loose item off the path at {target}.")
+            self.log.start(f"[{self.name}] Collect loose item at {target}")
             if self.move_to(target):
                 self.collect_at_current()
+                self.log.end("Collected")
+            else:
+                self.log.end("Target not reached")
             return
 
         # 7. Nothing due: wait in place and cool passively.
@@ -417,6 +444,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.log.print(f"Field Keeper ({self.name}) online. Home outpost: {self.home_id}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
                 flush_all()

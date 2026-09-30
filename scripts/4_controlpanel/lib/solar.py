@@ -1,4 +1,4 @@
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
 
 # Shared Library for Solar Generator Automation
@@ -24,7 +24,7 @@ class SolarController:
         elevation = self.clock.get_elevation() if self.clock else 0.0
         tilt = max(0, min(90, 90 - elevation))
         self.machine.set_tilt(tilt)
-        self.log.debug(f"[{self.name}] Sun elevation {elevation:.1f} deg -> tilt set to {tilt:.1f} deg.")
+        self.log.trace(f"[{self.name}] Sun elevation {elevation:.1f} deg -> tilt set to {tilt:.1f} deg.")
         return elevation
 
     def step(self):
@@ -34,6 +34,7 @@ class SolarController:
         self.log.print(f"Solar Tracker ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(poll_interval)

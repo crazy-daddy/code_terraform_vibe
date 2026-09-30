@@ -4,7 +4,7 @@ from archive import archive
 from storage import take_item, warehouse_stock, discover_storage_buildings, best_unload_target
 from biomass_retire import biomass_complete
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
@@ -391,6 +391,8 @@ class EssenceLiquifierController:
             self.log.debug(f"[{self.name}] retired: input empty; waiting for the breaker/undeploy.")
             return
         outpost = getattr(self.liquifier, "outpost", None)
+        self.log.start(f"[{self.name}] Retiring: ejecting {len(stacks)} staged life form stack(s)")
+        ejected = 0
         for item_id, count in stacks:
             target = best_unload_target(item_id, 1, outpost=outpost)
             if target is None:
@@ -406,9 +408,11 @@ class EssenceLiquifierController:
                 continue
             moved = getattr(res, "moved", 0) or 0
             if moved > 0:
+                ejected += 1
                 self.log.print(f"[{self.name}] Biomass complete: ejected {moved}x '{item_id}' -> '{target}'.")
             else:
                 self.log.debug(f"[{self.name}] retired: eject '{item_id}' -> '{target}': {getattr(res, 'status', '?')} {getattr(res, 'message', '')}")
+        self.log.end(f"[{self.name}] Retire pass: ejected {ejected}/{len(stacks)} stack(s)")
 
     def step(self):
         if biomass_complete():
@@ -427,6 +431,7 @@ class EssenceLiquifierController:
         self.log.print(f"Essence Liquifier Controller ({self.name}) online. Biome: {self.biome or 'unknown'}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

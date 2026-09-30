@@ -4,7 +4,7 @@
 
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 import fluid_routing
@@ -261,6 +261,7 @@ class HeatController:
             else:
                 best_p = 5
                 best_eff = -1
+                self.log.start(f"[{self.name}] Calibrating '{current_state}'")
                 self.log.debug(f"[{self.name}] No cached setpoint for '{current_state}'; sweeping 1-10 W to find peak efficiency.")
                 for p in range(1, 11):
                     self.machine.set_power(p)
@@ -278,11 +279,13 @@ class HeatController:
                 self.learned_optimal[current_state] = best_p
                 archive.set("heat.optimal_setpoints", self.learned_optimal)
                 self.log.print(f"[{self.name}] Calibrated '{current_state}': {best_p} W ({best_eff:.0f}% eff, {self.machine.output():.3f} heat/h) [Saved to Data Archive]")
+                self.log.end(f"[{self.name}] Calibration done: {best_p} W")
 
     def run(self, poll_interval=2.0):
         self.log.print(f"Heat Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(poll_interval)
@@ -331,6 +334,7 @@ class PressureController:
         self.log.print(f"Pressure Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(poll_interval)
@@ -355,7 +359,7 @@ class OxygenController:
             co2 = self.atmo.get_co2()
             target_intake = co2 / 10.0
             self.machine.set_intake(target_intake)
-            self.log.debug(f"[{self.name}] CO2={co2:.2f} -> intake set to {target_intake:.2f} (sweet spot = CO2/10).")
+            self.log.trace(f"[{self.name}] CO2={co2:.2f} -> intake set to {target_intake:.2f} (sweet spot = CO2/10).")
 
         current_waste = self.machine.waste()
         if current_waste >= 50:
@@ -363,12 +367,13 @@ class OxygenController:
             penalty = getattr(res, "penalty", 0.0)
             self.log.print(f"[{self.name}] Dumped waste at {current_waste:.1f}. Penalty: {penalty}")
         else:
-            self.log.debug(f"[{self.name}] Waste at {current_waste:.1f}, below 50 dump threshold; no action.")
+            self.log.trace(f"[{self.name}] Waste at {current_waste:.1f}, below 50 dump threshold; no action.")
 
     def run(self, poll_interval=1.0):
         self.log.print(f"Oxygen Generator ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()
             flush_all()
             sleep(poll_interval)

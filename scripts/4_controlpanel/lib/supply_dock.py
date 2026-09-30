@@ -28,7 +28,7 @@ from production import can_fulfill_order, get_construction_material_reservations
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 log = TreeConsole(module="supply_dock")
@@ -236,6 +236,9 @@ def plan_dock_assignments(clock=None):
             plan[dock_id] = None
             log.debug(f"plan_dock_assignments: no fulfillable candidate orders at all, {dock_id} left unassigned")
 
+    previous_plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {})
+    if plan != previous_plan:
+        log.print(f"[supply_dock planner] Dock assignments changed: {plan}")
     archive.set(ORDER_PLAN_ARCHIVE_KEY, plan)
     return plan
 
@@ -290,6 +293,8 @@ class SupplyDockController:
         """
         if not hasattr(self.dock, "slots") or not hasattr(self.dock, "input"):
             return
+        self.log.start(f"[{self.name}] Draining dock cargo")
+        ejected = 0
         try:
             for slot in self.dock.slots():
                 item_id = getattr(slot, "item_id", None)
@@ -302,11 +307,13 @@ class SupplyDockController:
                     continue
                 res = self.dock.input.eject(target, item_id, count)
                 if res.status == "ok":
+                    ejected += 1
                     self.log.print(f"[{self.name}] Ejected {count}x {item_id} from dock back to {'Inventory' if target == 'inventory' else target}.")
                 elif res.status not in ["busy", "no_op"]:
                     self.log.level("warn").print(f"[{self.name}] Eject notice for {item_id}: {res.status} - {res.message}")
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.drain_dock_cargo: self.dock.slots", error)
+        self.log.end(f"[{self.name}] Dock drain done: {ejected} slot(s) ejected")
 
     def pick_best_order(self):
         """
@@ -370,6 +377,21 @@ class SupplyDockController:
         self.log.debug(f"[{self.name}] desired_order_id: no central plan entry, fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
         return best.id if best else None
 
+    def assign_order(self, desired_id, order_name, reward_desc):
+        """Sets desired_id on the dock; False when it did not take (cargo still loaded, or rejected)."""
+        self.log.start(f"[{self.name}] Assigning Earth Order '{order_name}' (ID: {desired_id}, Reward: {reward_desc})...")
+        res = self.dock.set_order(desired_id)
+        assigned = res.status == "ok"
+        if res.status == "cargo_present":
+            # Defensive fallback in case cargo appeared between the total()
+            # check in step() and this call -- drain and let the next cycle retry.
+            self.log.debug(f"[{self.name}] assign_order: cargo appeared since the last check, draining and retrying next cycle")
+            self.drain_dock_cargo()
+        elif not assigned:
+            self.log.level("warn").print(f"[{self.name}] Could not assign order: {res.status} - {res.message}")
+        self.log.end(f"[{self.name}] Order '{order_name}': {'assigned' if assigned else res.status}")
+        return assigned
+
     def step(self):
         self.ensure_connected()
 
@@ -408,15 +430,7 @@ class SupplyDockController:
                 reward_desc += f" + {best.reward_kind} ({getattr(best, 'reward_label', '')})"
 
             order_name = getattr(best, "name", desired_id) if best else desired_id
-            self.log.print(f"[{self.name}] Assigning Earth Order '{order_name}' (ID: {desired_id}, Reward: {reward_desc})...")
-            res = self.dock.set_order(desired_id)
-            if res.status == "cargo_present":
-                # Defensive fallback in case cargo appeared between the total()
-                # check above and this call -- drain and let the next cycle retry.
-                self.drain_dock_cargo()
-                return
-            if res.status != "ok":
-                self.log.level("warn").print(f"[{self.name}] Could not assign order: {res.status} - {res.message}")
+            if not self.assign_order(desired_id, order_name, reward_desc):
                 return
             curr_order = self.dock.current_order()
 
@@ -473,6 +487,7 @@ class SupplyDockController:
         self.log.print(f"Supply Dock Controller ({self.name}) online. Initializing logistics loop...")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

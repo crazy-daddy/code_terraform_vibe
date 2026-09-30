@@ -44,7 +44,7 @@ from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -497,6 +497,13 @@ class DroneHaulerMixin:
         return self._host.fly_to_station(service_id, target_coords=coords)
 
     def _refuel(self, needed, reason):
+        """Refuels at a drone_service inside a log block; see _refuel_at_service()."""
+        self._host.log.start(f"[{self._host.name}] Refuelling: {reason}")
+        ok = self._refuel_at_service(needed, reason)
+        self._host.log.end("refuelled" if ok else "not refuelled")
+        return ok
+
+    def _refuel_at_service(self, needed, reason):
         """
         Flies to the nearest drone_service and waits while its station
         script charges/refuels this drone, until full (REFUEL_FULL_LEVEL) or
@@ -782,6 +789,7 @@ class DroneHaulerMixin:
         """
         self._host.log.print(f"[{self._host.name}] Floating hauler online ({self._host.engine}, cargo capacity {self._host.cargo_capacity()}).")
         while True:
+            reset_all()
             try:
                 if self._host.handle_recall_if_active():
                     flush_all()

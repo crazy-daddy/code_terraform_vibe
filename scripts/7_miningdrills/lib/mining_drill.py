@@ -1,6 +1,6 @@
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from drill_sites import STATUS_KEY
 
@@ -167,6 +167,7 @@ class MiningDrillController:
         self.log.print(f"Mining Drill Telemetry ({self.name}) online.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

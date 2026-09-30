@@ -1,7 +1,7 @@
 import fluid_routing
 import power
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Oil Generator automation: LAST-RESORT power only.
@@ -186,7 +186,7 @@ class OilGeneratorController:
         deficit, share, count = self.oil_deficit_share(grid)
         reserve_str = f"{reserve*100:.1f}%" if reserve is not None else "n/a (no storage)"
         battery_str = f"{battery*100:.1f}%" if battery is not None else "n/a (no battery)"
-        self.log.debug(
+        self.log.trace(
             f"[{self.name}] Battery {battery_str}, combined reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], "
             f"deficit without oil {deficit:.0f} W, share {share:.0f} W over {count} oil generator(s), burning={self.burning}."
         )
@@ -202,7 +202,7 @@ class OilGeneratorController:
                 )
                 _notify(f"[Power] {msg}")
             else:
-                self.log.debug(f"[{self.name}] Idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W -- oil stays in the tank.")
+                self.log.trace(f"[{self.name}] Idle: reserve_low={low} (battery {battery_str}, combined {reserve_str}), deficit={deficit:.0f} W -- oil stays in the tank.")
                 return 0.0
         else:
             fractions = [f for f in (battery, reserve) if f is not None]
@@ -219,7 +219,7 @@ class OilGeneratorController:
         recharge_share = OIL_RECHARGE_W / count if battery is not None else 0.0
         target_w = max(0.0, share) * OIL_DEFICIT_HEADROOM + recharge_share
         throttle = min(1.0, max(OIL_MIN_THROTTLE, target_w / OIL_GENERATOR_RATED_W))
-        self.log.debug(
+        self.log.trace(
             f"[{self.name}] Burning: share {share:.0f} W x{OIL_DEFICIT_HEADROOM} + recharge {recharge_share:.0f} W = {target_w:.0f} W / {OIL_GENERATOR_RATED_W:.0f} W -> throttle {throttle:.2f}."
         )
         return throttle
@@ -241,6 +241,7 @@ class OilGeneratorController:
         self.log.print(f"Oil Generator Controller ({self.name}) online. Last-resort mode: burns only below {OIL_START_RESERVE_FRACTION*100:.0f}% reserve with a deficit.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

@@ -183,6 +183,8 @@ def update_unsupported_markers(clear_previous=True):
             log.print(f"Cleared existing '{MARKER_PREFIX}' markers.")
         return 0
 
+    log.start(f"Syncing {len(unsupported)} unsupported target entries to Planet Map markers...")
+
     # Load journal sites for site coordinate lookups
     journal = _component("journal")
     journal_sites = []
@@ -202,8 +204,6 @@ def update_unsupported_markers(clear_previous=True):
     placed_count = 0
     skipped_count = 0
     breakdown = {}
-
-    log.print(f"Syncing {len(unsupported)} unsupported target entries to Planet Map markers...")
 
     for key, entry in unsupported.items():
         if not isinstance(entry, dict):
@@ -258,8 +258,8 @@ def update_unsupported_markers(clear_previous=True):
         else:
             log.level("warn").print(f"  Failed placing marker for '{key}': {res.status} - {getattr(res, 'message', '')}")
 
-    log.print(f"Successfully placed {placed_count} map markers ({skipped_count} skipped).")
     for r, count in breakdown.items():
         log.print(f"  - {r}: {count} markers")
+    log.end(f"Successfully placed {placed_count} map markers ({skipped_count} skipped).")
 
     return placed_count

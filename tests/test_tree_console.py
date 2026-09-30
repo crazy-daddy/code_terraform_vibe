@@ -48,6 +48,16 @@ class BufferingTests(StubTestCase):
         log.end("Outer done")
         self.assertEqual(self.lines()[-2:], [("debug", "┃   shallow"), ("info", "┗━ Outer done")])
 
+    def test_reset_all_drops_indent_leaked_by_an_open_block(self):
+        log = self.make()
+        other = self.make()
+        log.start("Leaks")
+        other.start("Also leaks")
+        tree_console.reset_all()
+        log.print("after")
+        other.print("after")
+        self.assertEqual(self.lines()[-2:], [("info", "after"), ("info", "after")])
+
     def test_channel_change_splits_the_run(self):
         log = self.make()
         log.debug("x", channel="one")

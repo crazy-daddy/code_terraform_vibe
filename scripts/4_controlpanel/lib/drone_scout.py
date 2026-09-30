@@ -7,7 +7,7 @@
 # resume beyond that cache -- repeat scans are free (docs/types/biosphere.md:
 # "Repeat scans are free").
 
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from unsupported_markers import clear_wrong_scanner_marker
@@ -70,10 +70,50 @@ class DroneScoutMixin:
         self._host.log.trace(f"[{self._host.name}] _scan_candidates() exit: {len(candidates)} candidate(s).")
         return candidates
 
+    def _scout_poi(self, log, target):
+        """Flies to `target` and scans it; returns the outcome text for the enclosing log block."""
+        self._host.set_intent(f"scouting poi_{target[0]}_{target[1]}")
+        self._host.publish_telemetry("OUTBOUND", f"poi_{target[0]}_{target[1]}")
+        log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
+        if not self._host.fly_to(target[0], target[1], precision=1.0):
+            log.level("warn").print(f"[{self._host.name}] Could not safely reach POI {target}; will retry.")
+            return "unreachable, will retry"
+        log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}) exit: reached.")
+
+        log.trace(f"[{self._host.name}] bio_scanner.scan() entry at {target}.")
+        res = self._host.drone.bio_scanner.scan()
+        log.trace(f"[{self._host.name}] bio_scanner.scan() exit: status={res.status}.")
+        if res.status != "ok":
+            log.level("warn").print(f"[{self._host.name}] Scan at {target} notice: {res.status} - {res.message}")
+            return f"scan {res.status}"
+        outcome = "biosite found"
+        # A rover/pioneer's sonar may have already flagged this
+        # coordinate "wrong_scanner" and planted a "Bio Contact"
+        # marker for it -- now that a bio_scanner has actually
+        # resolved it, that marker is stale. The blacklist entry
+        # itself stays (ground vehicles can never carry a
+        # bio_scanner, so it must keep blocking their sonar sweeps
+        # from re-attempting this contact); see
+        # unsupported_markers.clear_wrong_scanner_marker().
+        if clear_wrong_scanner_marker(target[0], target[1]):
+            log.debug(f"[{self._host.name}] Cleared stale 'Bio Contact' marker at {target}; bio_scanner resolved it.")
+        scan = res.scan
+        if scan is not None and getattr(scan, "is_empty", False):
+            self._host.mark_poi_empty(target[0], target[1])
+            log.debug(f"[{self._host.name}] {target} confirmed empty; cached to skip on future cycles.")
+            outcome = "empty"
+        else:
+            life_forms = getattr(scan, "life_forms", []) if scan else []
+            types_found = ", ".join(sorted(set(getattr(lf, "type", "?") for lf in life_forms))) or "unknown"
+            log.print(f"[{self._host.name}] Biosite found at {target}: {types_found}.")
+        self._host.publish_telemetry("SCANNED", f"poi_{target[0]}_{target[1]}")
+        return outcome
+
     def run_scout_loop(self, poll_interval=5.0):
         log = TreeConsole(module="drone_scout")
         log.print(f"Drone Scout Controller ({self._host.name}) online. Home outpost biome: {self._host.home_biome or 'unknown'}.")
         while True:
+            reset_all()
             try:
                 if self._host.is_stranded():
                     log.level("warn").print(f"[{self._host.name}] {self._host.status()}; awaiting drone_service rescue.")
@@ -136,43 +176,8 @@ class DroneScoutMixin:
                     sleep(30.0)
                     continue
 
-                log.print(f"[{self._host.name}] Flying to POI {target} to scan.")
-                self._host.set_intent(f"scouting poi_{target[0]}_{target[1]}")
-                self._host.publish_telemetry("OUTBOUND", f"poi_{target[0]}_{target[1]}")
-                log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}, precision=1.0) entry.")
-                if not self._host.fly_to(target[0], target[1], precision=1.0):
-                    log.level("warn").print(f"[{self._host.name}] Could not safely reach POI {target}; will retry.")
-                    flush_all()
-                    sleep(poll_interval)
-                    continue
-                log.trace(f"[{self._host.name}] fly_to({target[0]}, {target[1]}) exit: reached.")
-
-                log.trace(f"[{self._host.name}] bio_scanner.scan() entry at {target}.")
-                res = self._host.drone.bio_scanner.scan()
-                log.trace(f"[{self._host.name}] bio_scanner.scan() exit: status={res.status}.")
-                if res.status == "ok":
-                    # A rover/pioneer's sonar may have already flagged this
-                    # coordinate "wrong_scanner" and planted a "Bio Contact"
-                    # marker for it -- now that a bio_scanner has actually
-                    # resolved it, that marker is stale. The blacklist entry
-                    # itself stays (ground vehicles can never carry a
-                    # bio_scanner, so it must keep blocking their sonar sweeps
-                    # from re-attempting this contact); see
-                    # unsupported_markers.clear_wrong_scanner_marker().
-                    if clear_wrong_scanner_marker(target[0], target[1]):
-                        log.debug(f"[{self._host.name}] Cleared stale 'Bio Contact' marker at {target}; bio_scanner resolved it.")
-                    scan = res.scan
-                    if scan is not None and getattr(scan, "is_empty", False):
-                        self._host.mark_poi_empty(target[0], target[1])
-                        log.debug(f"[{self._host.name}] {target} confirmed empty; cached to skip on future cycles.")
-                    else:
-                        life_forms = getattr(scan, "life_forms", []) if scan else []
-                        types_found = ", ".join(sorted(set(getattr(lf, "type", "?") for lf in life_forms))) or "unknown"
-                        log.print(f"[{self._host.name}] Biosite found at {target}: {types_found}.")
-                    self._host.publish_telemetry("SCANNED", f"poi_{target[0]}_{target[1]}")
-                else:
-                    log.level("warn").print(f"[{self._host.name}] Scan at {target} notice: {res.status} - {res.message}")
-
+                log.start(f"[{self._host.name}] Scouting POI {target}")
+                log.end(self._scout_poi(log, target))
                 flush_all()
                 sleep(poll_interval)
             except Exception as e:

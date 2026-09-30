@@ -4,7 +4,7 @@
 from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 
@@ -220,4 +220,5 @@ class DnaSequencerController:
         self.log.print(f"DNA Sequencer ({self.name}) online via Shared Library.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()

@@ -13,7 +13,7 @@ from archive import archive
 from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
 from storage import best_unload_target, drain_port_to_storage
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Bounded history length for bio.conditioner_observations, per the Data Archive
@@ -235,6 +235,7 @@ class BioConditionerController:
             sleep(1.0)
             return
 
+        self.log.start(f"[{self.name}] QC stage {stage}: {current}")
         passed = rule(report)
         decision = "accept" if passed else "reject"
         self.log.debug(f"[{self.name}] QC quiz: property='{current}' value={prop_value} rulebook_predicate_passed={passed} -> decision={decision}()")
@@ -246,6 +247,7 @@ class BioConditionerController:
         elif action_res.status == "conditioned":
             self.log.print(f"[{self.name}] Conditioned {fragment_id} successfully.")
         self.log.trace(f"[{self.name}] _run_qc_stage: exit, result={action_res.status}")
+        self.log.end(f"[{self.name}] Stage {stage} {decision}ed -> {action_res.status}")
 
     def step(self):
         self._notify_heartbeat()
@@ -286,4 +288,5 @@ class BioConditionerController:
         self.log.print(f"Bio Conditioner ({self.name}) online via Shared Library -- automated QC via recovered rulebook.")
         validate_game_version()
         while True:
+            reset_all()
             self.step()

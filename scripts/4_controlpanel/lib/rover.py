@@ -11,7 +11,7 @@ import mining_reservations
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 class RoverController(VehicleController):
     """
@@ -198,6 +198,12 @@ class RoverController(VehicleController):
             sleep(10.0)
             return
 
+        self.log.start(f"[{self.name}] Expedition to {target['name']}")
+        outcome = self._run_trip(target, budget)
+        self.log.end(f"[{self.name}] {outcome}")
+
+    def _run_trip(self, target, budget):
+        """Steps 4-7 of an expedition for a reserved target. Returns a short outcome for the enclosing log block."""
         coords = target["coords"]
         if target["type"] == "mine":
             self.log.print(
@@ -218,7 +224,7 @@ class RoverController(VehicleController):
         if not reached:
             self.log.level("warn").print(f"[{self.name}] Could not safely complete outbound trip. Returning home.")
             self.return_to_base()
-            return
+            return "outbound trip failed"
 
         # Step 5: Perform field work (Sonar / Mining)
         if target["type"] == "poi":
@@ -234,7 +240,7 @@ class RoverController(VehicleController):
             self.log.level("warn").print(f"[{self.name}] Return trip incomplete this cycle; will retry.")
             flush_all()
             sleep(5.0)
-            return
+            return "return trip incomplete"
 
         # Release the claim regardless of how this trip ended so the next
         # cycle always re-evaluates fresh demand instead of blindly resuming
@@ -249,16 +255,18 @@ class RoverController(VehicleController):
             self.publish_telemetry("WAITING_INVENTORY_SPACE")
             flush_all()
             sleep(10.0)
-            return
+            return "waiting for inventory space"
         self.recharge_at_station(target_level=1.0)
         self.publish_telemetry("READY_AT_BASE")
         self.log.print(f"[{self.name}] Expedition complete and rover secured at base.")
+        return "expedition complete"
 
     def run(self):
         """Continuous autonomous rover mission loop."""
         self.log.print(f"Rover Controller ({self.name}) online. Assigned base slot: {self.assigned_slot_coords}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 if self.handle_recall_if_active():
                     flush_all()

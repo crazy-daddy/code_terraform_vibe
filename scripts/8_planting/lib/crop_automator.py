@@ -50,7 +50,7 @@ from archive import archive
 import field_layout
 from storage import take_item
 from seed_supply import seed_buffer
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -252,17 +252,26 @@ class CropAutomatorController:
         if blocker in QUIET_BLOCKERS:
             self.log.debug(f"[{self.name}] Head job {job_id} ({action}@{sector}) waits: {blocker}.")
             return
+        self.log.start(f"[{self.name}] Unblocking head job {job_id} ({action}@{sector})")
         self.log.level("warn").print(f"[{self.name}] Head job {job_id} ({action}@{sector}) blocked: {blocker}.")
+        outcome = f"Left blocked ({blocker})"
         if blocker == "no_seed" and item_id:
-            port = getattr(self.machine, "input", None)
-            if port and take_item(port, item_id, 1) > 0:
-                self.log.print(f"[{self.name}] Unblocked job {job_id}: loaded emergency seed '{item_id}'.")
-                return
-            if job_id is not None:
-                res = self.machine.cancel_job(job_id)
-                # Not requeued right away: the cell waits JOB_FAIL_COOLDOWN_TICKS.
-                self._failed[sector] = curr_tick
-                self.log.level("warn").print(f"[{self.name}] Canceled seed-starved plant job {job_id}@{sector} -> {getattr(res, 'status', '?')}.")
+            outcome = self._resolve_no_seed(job_id, sector, item_id, curr_tick) or outcome
+        self.log.end(outcome)
+
+    def _resolve_no_seed(self, job_id, sector, item_id, curr_tick):
+        """Loads one seed for a seed-starved head job, else cancels it. Returns the outcome, or None if neither applied."""
+        port = getattr(self.machine, "input", None)
+        if port and take_item(port, item_id, 1) > 0:
+            self.log.print(f"[{self.name}] Unblocked job {job_id}: loaded emergency seed '{item_id}'.")
+            return "Unblocked with an emergency seed"
+        if job_id is not None:
+            res = self.machine.cancel_job(job_id)
+            # Not requeued right away: the cell waits JOB_FAIL_COOLDOWN_TICKS.
+            self._failed[sector] = curr_tick
+            self.log.level("warn").print(f"[{self.name}] Canceled seed-starved plant job {job_id}@{sector} -> {getattr(res, 'status', '?')}.")
+            return "Canceled the seed-starved job"
+        return None
 
     def submit(self, method, *args):
         res = getattr(self.machine, method)(*args)
@@ -433,6 +442,7 @@ class CropAutomatorController:
         self.log.print(f"Crop Automator ({self.name}) online at {self.sector}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

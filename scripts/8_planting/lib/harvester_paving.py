@@ -79,6 +79,13 @@ class HarvesterPavingMixin:
         if not unpaved:
             return False
         h = self._host
+        h.log.start(f"[{h.name}] Paving ({len(unpaved)} path cell(s) unpaved)")
+        paved = self._pave(layout, cells, rules, spare_items, unpaved)
+        h.log.end("Paved a path cell" if paved else "Nothing paved")
+        return paved
+
+    def _pave(self, layout, cells, rules, spare_items, unpaved):
+        h = self._host
         if h.harvester.get_held():
             h.store_held_if_any()
 

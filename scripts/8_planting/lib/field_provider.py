@@ -23,7 +23,7 @@ import field_layout
 import fluid_routing
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 from storage import take_item
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 
@@ -282,6 +282,7 @@ class FieldProviderController:
         self.log.print(f"Field provider ({self.name}, {self.kind}) online at {self.sector()}.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

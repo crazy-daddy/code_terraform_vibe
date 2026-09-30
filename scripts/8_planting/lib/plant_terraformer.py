@@ -1,6 +1,6 @@
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from storage import take_item
 import fluid_routing
@@ -638,6 +638,7 @@ class PlantTerraformerController:
             self.log.level("error").print(f"[{self.name}] No input slot; is this a Plant Terraformer?")
             return
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as error:

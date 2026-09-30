@@ -34,7 +34,7 @@
 from archive import archive
 from storage import discover_storage_buildings, warehouse_stock, drain_port_to_storage
 import logistics_requests
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 from drone_upgrade import retiring_depot_ids
@@ -345,11 +345,13 @@ class DroneDepotController:
             room, slots = self._stockpile_room(stock)
             if room <= 0 or (item_id not in stock and slots <= 0):
                 self.log.debug(f"[{self.name}] stage for hauler: no room for {item_id} ({room} unit(s), {slots} slot(s) free); draining the stockpile first.")
+                self.log.start(f"[{self.name}] Making stockpile room for {item_id}")
                 self.drain_freight()
                 self.stage_life_forms()
                 self.flush_surplus(for_stage=True)
                 stock = logistics_requests.depot_stock(self.station)
                 room, slots = self._stockpile_room(stock)
+                self.log.end(f"[{self.name}] Stockpile room for {item_id}: {room} unit(s), {slots} slot(s) free")
                 if item_id not in stock and slots <= 0:
                     self.log.debug(f"[{self.name}] stage for hauler: still no free slot for {item_id} (stockpile {stock}); retrying next cycle.")
                     continue
@@ -480,6 +482,7 @@ class DroneDepotController:
         self.log.print(f"Drone Depot Controller ({self.name}) online ({bay_count} bay(s)).")
         validate_game_version()
         while True:
+            reset_all()
             interval = poll_interval
             try:
                 self.step()

@@ -21,7 +21,7 @@ import mining_reservations
 import fleet_intent
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, reset_all
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -385,6 +385,7 @@ class VehicleMiningMixin:
         mined_count = 0
         self.mining_interrupted_battery = False
 
+        self._host.log.start(f"[{self._host.name}] Mining (up to {max_units} units, cargo {self._host.vehicle.cargo.count()}/{cargo_capacity})")
         while mined_count < max_units:
             if self._host.vehicle.cargo.full():
                 self._host.log.print(f"[{self._host.name}] Cargo hold full ({cargo_capacity}/{cargo_capacity}). Finishing mining operation.")
@@ -409,7 +410,7 @@ class VehicleMiningMixin:
                 mined_count += 1
                 if self.current_target_key:
                     self._host.clear_unsupported_target(self.current_target_key)
-                self._host.log.print(f"[{self._host.name}] Mined unit {mined_count}/{max_units}. Cargo: {self._host.vehicle.cargo.count()}/{cargo_capacity}.")
+                self._host.log.trace(f"[{self._host.name}] Mined unit {mined_count}/{max_units}. Cargo: {self._host.vehicle.cargo.count()}/{cargo_capacity}.")
             elif m_res.status == "busy":
                 flush_all()
                 sleep(0.5)
@@ -425,6 +426,7 @@ class VehicleMiningMixin:
                 if self.current_target_reserved:
                     mining_reservations.refresh_yield(self._host.name, self.current_target_key, self._host.get_current_tick())
 
+        self._host.log.end(f"[{self._host.name}] Mined {mined_count}/{max_units} units")
         return mined_count
 
     def mine_until_full_or_exhausted(self, target_coords, max_units=None):
@@ -445,53 +447,58 @@ class VehicleMiningMixin:
                 self._host.log.print(f"[{self._host.name}] Recall requested; not resuming mining after recharge.")
                 self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: recalled, total_mined={total_mined}")
                 return
-            self._host.log.print(f"[{self._host.name}] Mining job at {target_coords} interrupted by low battery. Diverting to recharge and resume.")
-            if self.current_target_key:
-                self._host.refresh_claim(self.current_target_key)
-                if self.current_target_reserved:
-                    mining_reservations.refresh_yield(self._host.name, self.current_target_key, self._host.get_current_tick())
-
-            nearest_cs, _ = self._host.get_nearest_charging_station()
-            reached_cs = self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
-            if not reached_cs:
-                self._host.log.level("warn").print(f"[{self._host.name}] Failed to reach charging station during mining interruption.")
-                self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: could not reach charging station, total_mined={total_mined}")
-                return
-
-            # A battery-interruption recharge stop can land at the home base
-            # station itself (not just some remote field station) -- if so,
-            # and cargo is already carrying ore, unload it *before* recharging,
-            # not after: recharge_at_station() can take several real minutes
-            # (0% -> 100%), and ore sitting in cargo the whole time is ore the
-            # Smelter can't touch -- unloading first gets it into circulation
-            # immediately instead of leaving it stranded for the entire
-            # charge. Free capacity also means the resumed mine_current_site()
-            # call below can fill more before the next interruption, not just
-            # recover exactly what was lost.
-            if self._host.is_at_base() and self._host.vehicle.cargo.count() > 0:
-                self._host.log.print(f"[{self._host.name}] At base with cargo aboard; unloading before recharging.")
-                self._host.unload_cargo()
-
-            self._host.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
-
-            self._host.log.print(f"[{self._host.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
-            if self.current_target:
-                self._host.publish_telemetry("OUTBOUND", self.current_target.get("name", "mining site"))
-            reached_site = self._host.drive_with_recharge(target_coords[0], target_coords[1], precision=1.5)
-            if not reached_site:
-                self._host.log.level("warn").print(f"[{self._host.name}] Could not reach mining site after recharge.")
-                self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: could not reach site after recharge, total_mined={total_mined}")
-                return
-
-            remaining_space = self._host.vehicle.cargo.capacity() - self._host.vehicle.cargo.count()
-            if max_units is not None:
-                remaining_space = min(remaining_space, max(0, max_units - self._host.vehicle.cargo.count()))
-            if remaining_space > 0:
-                total_mined += self.mine_current_site(max_units=remaining_space)
-            else:
-                self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: no remaining space, total_mined={total_mined}")
+            self._host.log.start(f"[{self._host.name}] Mining job at {target_coords} interrupted by low battery; recharge and resume")
+            mined, stop_reason = self._recharge_and_resume_mining(target_coords, max_units)
+            self._host.log.end(f"[{self._host.name}] {'Resumed, mined ' + str(mined) + ' more' if stop_reason is None else 'Not resumed: ' + stop_reason}")
+            total_mined += mined
+            if stop_reason is not None:
+                self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: {stop_reason}, total_mined={total_mined}")
                 return
         self._host.log.trace(f"[{self._host.name}] mine_until_full_or_exhausted() exit: complete, total_mined={total_mined}")
+
+    def _recharge_and_resume_mining(self, target_coords, max_units):
+        """One recharge detour and resumed mining pass; returns (units mined, reason it stopped or None to keep going)."""
+        if self.current_target_key:
+            self._host.refresh_claim(self.current_target_key)
+            if self.current_target_reserved:
+                mining_reservations.refresh_yield(self._host.name, self.current_target_key, self._host.get_current_tick())
+
+        nearest_cs, _ = self._host.get_nearest_charging_station()
+        reached_cs = self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0)
+        if not reached_cs:
+            self._host.log.level("warn").print(f"[{self._host.name}] Failed to reach charging station during mining interruption.")
+            return 0, "could not reach charging station"
+
+        # A battery-interruption recharge stop can land at the home base
+        # station itself (not just some remote field station) -- if so,
+        # and cargo is already carrying ore, unload it *before* recharging,
+        # not after: recharge_at_station() can take several real minutes
+        # (0% -> 100%), and ore sitting in cargo the whole time is ore the
+        # Smelter can't touch -- unloading first gets it into circulation
+        # immediately instead of leaving it stranded for the entire
+        # charge. Free capacity also means the resumed mine_current_site()
+        # call below can fill more before the next interruption, not just
+        # recover exactly what was lost.
+        if self._host.is_at_base() and self._host.vehicle.cargo.count() > 0:
+            self._host.log.print(f"[{self._host.name}] At base with cargo aboard; unloading before recharging.")
+            self._host.unload_cargo()
+
+        self._host.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
+
+        self._host.log.print(f"[{self._host.name}] Recharged to 100%. Returning to resume mining at {target_coords}...")
+        if self.current_target:
+            self._host.publish_telemetry("OUTBOUND", self.current_target.get("name", "mining site"))
+        reached_site = self._host.drive_with_recharge(target_coords[0], target_coords[1], precision=1.5)
+        if not reached_site:
+            self._host.log.level("warn").print(f"[{self._host.name}] Could not reach mining site after recharge.")
+            return 0, "could not reach site after recharge"
+
+        remaining_space = self._host.vehicle.cargo.capacity() - self._host.vehicle.cargo.count()
+        if max_units is not None:
+            remaining_space = min(remaining_space, max(0, max_units - self._host.vehicle.cargo.count()))
+        if remaining_space > 0:
+            return self.mine_current_site(max_units=remaining_space), None
+        return 0, "no remaining space"
 
     def run_stationed_mining_loop(self, outpost_id):
         """
@@ -504,6 +511,7 @@ class VehicleMiningMixin:
         self._host.log.print(f"Pioneer Mining Controller ({self._host.name}) online. Assigned base slot: {self._host.assigned_slot_coords}. Stationed at '{outpost_id}'.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 if self._host.handle_recall_if_active():
                     flush_all()
@@ -593,6 +601,12 @@ class VehicleMiningMixin:
             sleep(30.0)
             return
 
+        self._host.log.start(f"[{self._host.name}] Stockpile run: {target['harvest_item']} for outpost '{outpost_id}'")
+        outcome = self._stationed_stockpile_trip(outpost_id, target, budget)
+        self._host.log.end(f"[{self._host.name}] {outcome}")
+
+    def _stationed_stockpile_trip(self, outpost_id, target, budget):
+        """Outbound drive, mining, return and unload for one stockpile target; returns the outcome text."""
         coords = target["coords"]
         self._host.log.print(
             f"[{self._host.name}] Reserved {target['name']} to stockpile {target['harvest_item']} "
@@ -606,7 +620,7 @@ class VehicleMiningMixin:
         if not reached:
             self._host.log.level("warn").print(f"[{self._host.name}] Could not safely complete outbound trip. Returning to outpost.")
             self._host.return_to_base()
-            return
+            return "Outbound trip incomplete"
 
         # Cap this trip to the stockpile target's remaining headroom, not just
         # cargo capacity -- otherwise a full cargo load routinely overshoots
@@ -623,7 +637,7 @@ class VehicleMiningMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] Return trip incomplete this cycle; will retry.")
             flush_all()
             sleep(5.0)
-            return
+            return "Return trip incomplete"
 
         # Back at the stationed outpost -- release the claim regardless of how
         # this trip ended (cargo full, site depleted, etc.) so the next cycle
@@ -640,7 +654,7 @@ class VehicleMiningMixin:
             self._host.publish_telemetry("WAITING_INVENTORY_SPACE")
             flush_all()
             sleep(10.0)
-            return
+            return "Unload blocked, no inventory space"
         self._host.recharge_at_station(target_level=1.0)
         self._host.publish_telemetry("READY_AT_OUTPOST")
-        self._host.log.print(f"[{self._host.name}] Stockpile run complete; secured at outpost '{outpost_id}'.")
+        return f"Stockpile run complete; secured at outpost '{outpost_id}'"

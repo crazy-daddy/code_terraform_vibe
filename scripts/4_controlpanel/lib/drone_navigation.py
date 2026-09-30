@@ -140,12 +140,18 @@ class DroneNavigationMixin:
         home_service, _ = self._host.get_home_service()
         is_flying_to_service = any(self.distance_between(target_coords, s) <= 3.0 for s in (nearest_service, home_service))
 
-        self._host.log.print(f"[{self._host.name}] Flying to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self._host.cruise_throttle*100:.0f}%).")
+        self._host.log.start(f"[{self._host.name}] Flying to ({target_x:.1f}, {target_y:.1f}) at {throttle*100:.0f}% throttle (cruise_throttle={self._host.cruise_throttle*100:.0f}%)")
+        arrived, outcome = self._fly_leg(target_x, target_y, target_coords, precision, throttle, timeout_ticks, is_flying_to_service)
+        self._host.log.end(f"[{self._host.name}] Flight to ({target_x:.1f}, {target_y:.1f}): {outcome}")
+        return arrived
+
+    def _fly_leg(self, target_x, target_y, target_coords, precision, throttle, timeout_ticks, is_flying_to_service):
+        """Issues go_to() and polls until arrival. Returns (arrived, outcome text)."""
         res = self._host.drone.go_to(target_x, target_y)
         if res.status != "ok":
             self._log_route_rejection(f"go_to({target_x:.1f}, {target_y:.1f})", res)
             self._host.log.trace(f"[{self._host.name}] fly_to() exit: go_to() rejected ({res.status}).")
-            return False
+            return False, f"go_to rejected ({res.status})"
         # go_to() only sets the route -- throttle is a separate axis that
         # resets to 0 on the prior stop/completion/error, so it must be
         # (re)issued here or the drone will sit at the waypoint forever.
@@ -160,7 +166,7 @@ class DroneNavigationMixin:
             if self.is_stranded():
                 self._host.log.level("warn").print(f"[{self._host.name}] Drone {self.status()} mid-flight; awaiting drone_service rescue.")
                 self._host.log.trace(f"[{self._host.name}] fly_to() exit: stranded ({self.status()}) after {ticks} ticks.")
-                return False
+                return False, f"stranded ({self.status()})"
 
             if self._host.current_target_key:
                 self._host.refresh_biosite_claim(self._host.current_target_key)
@@ -173,7 +179,7 @@ class DroneNavigationMixin:
             if self.is_at(target_coords, precision=precision):
                 if self.status() != "traveling":
                     self._host.log.trace(f"[{self._host.name}] fly_to() exit: arrived after {ticks} ticks.")
-                    return True
+                    return True, f"arrived after {ticks} ticks"
                 self._host.log.debug(f"[{self._host.name}] fly_to() within {precision}m of target but route still 'traveling'; waiting for hover.")
                 continue
 
@@ -191,11 +197,11 @@ class DroneNavigationMixin:
                 if curr_wh <= energy_needed:
                     self._host.log.level("warn").print(f"[{self._host.name}] Battery threshold reached ({curr_wh:.1f} {self._host.energy_unit()} left, {energy_needed:.1f} {self._host.energy_unit()} required to reach nearest drone_service). Aborting flight.")
                     self._host.log.trace(f"[{self._host.name}] fly_to() exit: aborted on low battery after {ticks} ticks.")
-                    return False
+                    return False, "aborted on low battery"
 
         self._host.log.level("warn").print(f"[{self._host.name}] Flight to ({target_x:.1f}, {target_y:.1f}) timed out after {timeout_ticks} ticks.")
         self._host.log.trace(f"[{self._host.name}] fly_to() exit: timed out after {ticks} ticks.")
-        return False
+        return False, "timed out"
 
     def fly_to_station(self, name, target_coords=None, timeout_ticks=None):
         """

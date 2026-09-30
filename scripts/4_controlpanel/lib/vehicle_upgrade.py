@@ -163,27 +163,32 @@ class VehicleUpgradeMixin:
         if shop is None:
             return
 
-        slot_index = slot.index
+        self._host.log.start(f"[{self._host.name}] Auto-upgrade slot {slot.index}: '{old_id}' -> '{best}' ({cost}cr)")
+        outcome = self._swap_function_module(shop, slot.index, old_id, best, cost)
+        self._host.log.end(f"[{self._host.name}] {outcome}")
+
+    def _swap_function_module(self, shop, slot_index, old_id, best, cost):
+        """Unmounts old_id, buys and mounts best, sells old_id; returns the outcome text."""
         unmount_res = self._host.vehicle.unmount(slot_index)
         if unmount_res.status != "ok":
             self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: unmount({slot_index}) for '{old_id}' failed: {unmount_res.status} - {unmount_res.message}")
-            return
+            return "Upgrade aborted: unmount failed"
 
         buy_res = shop.buy(best, 1)
         if buy_res.status != "ok":
             self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: buy('{best}') failed ({buy_res.status}); remounting '{old_id}'.")
             self._host.vehicle.mount(slot_index, old_id)
             cash.release(self._cash_id())
-            return
+            return "Upgrade aborted: buy failed, old module remounted"
         cash.spent(self._cash_id(), cost)
 
         mount_res = self._host.vehicle.mount(slot_index, best)
         if mount_res.status != "ok":
             self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: mount('{best}') failed ({mount_res.status}) after buying it -- left in Inventory for manual handling.")
-            return
+            return "Upgrade failed: mount failed"
 
         sell_res = shop.sell(old_id, 1)
-        self._host.log.print(f"[{self._host.name}] Auto-upgraded slot {slot_index}: '{old_id}' -> '{best}' (sold old for {getattr(sell_res, 'credits', 0)}cr).")
+        return f"Auto-upgraded slot {slot_index}: '{old_id}' -> '{best}' (sold old for {getattr(sell_res, 'credits', 0)}cr)"
 
     def _fill_container_bays(self, slot_index, fill_item):
         """Buys and installs fill_item into every currently-empty bay of the container mounted at slot_index."""
@@ -248,38 +253,40 @@ class VehicleUpgradeMixin:
             if needs_full_charge:
                 self._ensure_full_charge_for_sale()
 
-            slot_index = slot.index
-            aborted = False
-            for internal_index, item_id in enumerate(slot.internal_items):
-                if item_id is None:
-                    continue
-                uninstall_res = self._host.vehicle.uninstall(slot_index, internal_index)
-                if uninstall_res.status != "ok":
-                    self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: uninstall(slot {slot_index}, bay {internal_index}) failed: {uninstall_res.status}; aborting this slot's upgrade for now.")
-                    aborted = True
-                    break
-                shop.sell(item_id, 1)
-            if aborted:
-                continue
+            self._host.log.start(f"[{self._host.name}] Auto-upgrade slot {slot.index}: '{old_id}' -> '{best}' ({total_cost}cr)")
+            outcome = self._swap_container(shop, slot, old_id, best, fill_item, total_cost)
+            self._host.log.end(f"[{self._host.name}] {outcome}")
 
-            unmount_res = self._host.vehicle.unmount(slot_index)
-            if unmount_res.status != "ok":
-                self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: unmount({slot_index}) for '{old_id}' failed: {unmount_res.status} - {unmount_res.message}")
+    def _swap_container(self, shop, slot, old_id, best, fill_item, total_cost):
+        """Empties, unmounts and sells old_id, buys and mounts best, refills its bays; returns the outcome text."""
+        slot_index = slot.index
+        for internal_index, item_id in enumerate(slot.internal_items):
+            if item_id is None:
                 continue
-            shop.sell(old_id, 1)
+            uninstall_res = self._host.vehicle.uninstall(slot_index, internal_index)
+            if uninstall_res.status != "ok":
+                self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: uninstall(slot {slot_index}, bay {internal_index}) failed: {uninstall_res.status}; aborting this slot's upgrade for now.")
+                return "Upgrade aborted: uninstall failed"
+            shop.sell(item_id, 1)
 
-            buy_res = shop.buy(best, 1)
-            if buy_res.status != "ok":
-                self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: buy('{best}') failed ({buy_res.status}) after selling '{old_id}' -- slot {slot_index} left empty until next cycle.")
-                continue
-            mount_res = self._host.vehicle.mount(slot_index, best)
-            if mount_res.status != "ok":
-                self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: mount('{best}') failed ({mount_res.status}) after buying it -- left in Inventory for manual handling.")
-                continue
+        unmount_res = self._host.vehicle.unmount(slot_index)
+        if unmount_res.status != "ok":
+            self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: unmount({slot_index}) for '{old_id}' failed: {unmount_res.status} - {unmount_res.message}")
+            return "Upgrade aborted: unmount failed"
+        shop.sell(old_id, 1)
 
-            self._fill_container_bays(slot_index, fill_item)
-            cash.spent(self._cash_id(), total_cost)
-            self._host.log.print(f"[{self._host.name}] Auto-upgraded slot {slot_index}: '{old_id}' -> '{best}', bays filled with '{fill_item}'.")
+        buy_res = shop.buy(best, 1)
+        if buy_res.status != "ok":
+            self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: buy('{best}') failed ({buy_res.status}) after selling '{old_id}' -- slot {slot_index} left empty until next cycle.")
+            return "Upgrade failed: buy failed, slot left empty"
+        mount_res = self._host.vehicle.mount(slot_index, best)
+        if mount_res.status != "ok":
+            self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: mount('{best}') failed ({mount_res.status}) after buying it -- left in Inventory for manual handling.")
+            return "Upgrade failed: mount failed"
+
+        self._fill_container_bays(slot_index, fill_item)
+        cash.spent(self._cash_id(), total_cost)
+        return f"Auto-upgraded slot {slot_index}: '{old_id}' -> '{best}', bays filled with '{fill_item}'"
 
     def _top_up_container_density(self, tiers, portable_tiers, needs_full_charge):
         """
@@ -310,21 +317,27 @@ class VehicleUpgradeMixin:
                 if not cash.can_spend(self._cash_id(), heavy_cost, label=f"{self._host.name}: {heavy_portable}"):
                     self._host.log.debug(f"[{self._host.name}] auto-upgrade: '{heavy_portable}' costs {heavy_cost}cr, cash manager holds it back; retrying later.")
                     break
-                uninstall_res = self._host.vehicle.uninstall(slot.index, internal_index)
-                if uninstall_res.status != "ok":
-                    self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: density uninstall(slot {slot.index}, bay {internal_index}) failed: {uninstall_res.status}.")
-                    continue
-                shop.sell(base_portable, 1)
-                buy_res = shop.buy(heavy_portable, 1)
-                cash.spent(self._cash_id(), heavy_cost if buy_res.status == "ok" else 0)
-                if buy_res.status != "ok":
-                    self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: density buy('{heavy_portable}') failed ({buy_res.status}) after selling '{base_portable}' -- bay {internal_index} left empty.")
-                    continue
-                install_res = self._host.vehicle.install(slot.index, internal_index, heavy_portable)
-                if install_res.status != "ok":
-                    self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: density install('{heavy_portable}', slot {slot.index}, bay {internal_index}) failed: {install_res.status} -- left in Inventory.")
-                else:
-                    self._host.log.print(f"[{self._host.name}] Auto-upgraded slot {slot.index} bay {internal_index}: '{base_portable}' -> '{heavy_portable}'.")
+                self._host.log.start(f"[{self._host.name}] Upgrading slot {slot.index} bay {internal_index}: '{base_portable}' -> '{heavy_portable}' ({heavy_cost}cr)")
+                outcome = self._swap_portable(shop, slot.index, internal_index, base_portable, heavy_portable, heavy_cost)
+                self._host.log.end(f"[{self._host.name}] {outcome}")
+
+    def _swap_portable(self, shop, slot_index, internal_index, base_portable, heavy_portable, heavy_cost):
+        """Replaces one installed base portable with the Heavy variant; returns the outcome text."""
+        uninstall_res = self._host.vehicle.uninstall(slot_index, internal_index)
+        if uninstall_res.status != "ok":
+            self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: density uninstall(slot {slot_index}, bay {internal_index}) failed: {uninstall_res.status}.")
+            return "Bay upgrade aborted: uninstall failed"
+        shop.sell(base_portable, 1)
+        buy_res = shop.buy(heavy_portable, 1)
+        cash.spent(self._cash_id(), heavy_cost if buy_res.status == "ok" else 0)
+        if buy_res.status != "ok":
+            self._host.log.level("error").print(f"[{self._host.name}] auto-upgrade: density buy('{heavy_portable}') failed ({buy_res.status}) after selling '{base_portable}' -- bay {internal_index} left empty.")
+            return "Bay upgrade failed: buy failed, bay left empty"
+        install_res = self._host.vehicle.install(slot_index, internal_index, heavy_portable)
+        if install_res.status != "ok":
+            self._host.log.level("warn").print(f"[{self._host.name}] auto-upgrade: density install('{heavy_portable}', slot {slot_index}, bay {internal_index}) failed: {install_res.status} -- left in Inventory.")
+            return "Bay upgrade failed: install failed"
+        return f"Auto-upgraded slot {slot_index} bay {internal_index}: '{base_portable}' -> '{heavy_portable}'"
 
     def handle_sport_nav_request_if_active(self):
         """
@@ -364,6 +377,7 @@ class VehicleUpgradeMixin:
         if shop is None:
             clear_sport_nav_request(self._host.name)
             return
+        self._host.log.start(f"[{self._host.name}] Installing Sport Nav in slot {free_slot.index} (manual request)")
         buy_res = shop.buy(SPORT_NAV_MODULE_ID, 1)
         if buy_res.status == "ok":
             mount_res = self._host.vehicle.mount(free_slot.index, SPORT_NAV_MODULE_ID)
@@ -373,6 +387,7 @@ class VehicleUpgradeMixin:
                 self._host.log.level("error").print(f"[{self._host.name}] Sport Nav bought but mount failed ({mount_res.status}) -- left in Inventory for manual handling.")
         else:
             self._host.log.level("warn").print(f"[{self._host.name}] Sport Nav purchase failed: {buy_res.status}.")
+        self._host.log.end(f"[{self._host.name}] Sport Nav request handled")
         clear_sport_nav_request(self._host.name)
 
     def handle_upgrade_cycle_if_idle(self):

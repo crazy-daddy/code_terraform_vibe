@@ -668,10 +668,12 @@ class DroneEnergyMixin:
                 return False
         elif self._host.is_at(service_coords, precision=3.0):
             return False
-        log.debug(f"[{self._host.name}] {reason}; returning to drone_service.")
+        log.start(f"[{self._host.name}] {reason}; returning to drone_service '{service_id or service_coords}'")
         self._host.publish_telemetry("RETURNING_TO_SERVICE")
-        if not (service_id and self._host.fly_to_station(service_id, target_coords=service_coords)):
-            self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
+        docked = bool(service_id) and self._host.fly_to_station(service_id, target_coords=service_coords)
+        if not docked:
+            docked = self._host.fly_to(service_coords[0], service_coords[1], precision=3.0)
+        log.end(f"[{self._host.name}] Return to drone_service: {'arrived' if docked else 'not reached'}")
         return True
 
     def hold_for_launch_charge(self, log):

@@ -252,7 +252,7 @@ def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
         return 0
 
     for marker in candidates:
-        if not getattr(marker, "note", ""):
+        if getattr(marker, "note", ""):
             continue
         if _distance(marker.x, marker.y, ox, oy) > effective_range:
             continue

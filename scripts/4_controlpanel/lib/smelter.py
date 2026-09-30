@@ -7,7 +7,7 @@ from archive import archive
 from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
 from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
@@ -338,11 +338,14 @@ class SmelterController:
         # available. Recover its staged input before clearing the stale state.
         if current_recipe and current_recipe not in unlocked_recipes:
             if not self.smelter.is_running():
+                self.log.start(f"[{self.name}] Clearing locked recipe '{current_recipe}'")
                 self.recover_input()
                 clear_res = self.smelter.clear_recipe()
                 if clear_res.status == "ok":
                     self.release_recipe(current_recipe)
-                    self.log.print(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
+                    self.log.end(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
+                else:
+                    self.log.end(f"[{self.name}] Locked recipe '{current_recipe}' not cleared ({clear_res.status}).")
                 # Breaker cycling disabled: power_draw only applies while a
                 # recipe is running (see docs), so idle draw is already 0 W.
                 # self.power_down_if_idle()
@@ -640,9 +643,8 @@ class SmelterController:
             return current
         # Pile-on join onto a recipe a peer already holds -- only when the
         # demand is worth one more worker: demand >= switch_min_demand() x
-        # (workers after joining). Found live: a 1-unit Rare Earth Core
-        # demand pulled all five Smelters onto smelt_rare_earth_core, three of
-        # them ejecting buffers and switching recipe to share a single unit.
+        # (workers after joining), so a 1-unit demand cannot pull every
+        # Smelter onto one recipe (each switch ejects the buffers).
         for recipe, ore in sourceable:
             recipe_id = getattr(recipe, "id", "")
             demand = demands.get(getattr(recipe, "output_item", None), 0)
@@ -670,6 +672,7 @@ class SmelterController:
         self.log.print(f"Smelter Controller ({self.name}) online.")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

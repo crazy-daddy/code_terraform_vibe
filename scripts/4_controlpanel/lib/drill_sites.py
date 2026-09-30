@@ -145,6 +145,13 @@ def record_built_drill(port, kind, coords):
     the sole unresolved drill of that variant when none accepts (unverified).
     Returns the drill id or None.
     """
+    log.start(f"Locating new {kind} at ({coords[0]:.0f}, {coords[1]:.0f})")
+    drill_id = _locate_built_drill(port, kind, coords)
+    log.end(f"Located as '{drill_id}'" if drill_id else "Location failed")
+    return drill_id
+
+
+def _locate_built_drill(port, kind, coords):
     site_id = site_at(coords)
     unresolved = []
     for attempt in range(BUILT_DRILL_DISCOVERY_ATTEMPTS):

@@ -510,6 +510,7 @@ class DroneUpgradeMixin:
         unlocked = self._unlocked_outputs()
         wanted = {}
         changed = False
+        notes = []
 
         for index in range(1, MODULE_SLOTS[kind] + 1):
             current = slots.get(str(index))
@@ -526,10 +527,10 @@ class DroneUpgradeMixin:
                 continue
             if self._couple(index, best) == "ok":
                 slots[str(index)] = best
-                self._host.log.print(f"[{self._host.name}] Upgraded slot {index}: '{current}' -> '{best}'.")
+                notes.append(("info", f"[{self._host.name}] Upgraded slot {index}: '{current}' -> '{best}'."))
             elif self._couple(index, current) != "ok":
                 slots[str(index)] = None
-                self._host.log.level("error").print(f"[{self._host.name}] Slot {index}: could not couple '{best}' or put '{current}' back; left empty.")
+                notes.append(("error", f"[{self._host.name}] Slot {index}: could not couple '{best}' or put '{current}' back; left empty."))
             changed = True
 
         plan = self._slot_plan(role, kind)
@@ -548,13 +549,18 @@ class DroneUpgradeMixin:
                 slots[str(index)] = item_id
                 missing.pop(0)
                 changed = True
-                self._host.log.print(f"[{self._host.name}] Filled empty slot {index} with '{item_id}' ({category}).")
+                notes.append(("info", f"[{self._host.name}] Filled empty slot {index} with '{item_id}' ({category})."))
                 continue
             best = self._best_obtainable(ladder, unlocked)
             if best and best in unlocked:
                 wanted[best] = wanted.get(best, 0) + 1
             missing.pop(0)
 
+        if notes:
+            self._host.log.start(f"[{self._host.name}] Module upkeep at depot")
+            for level, message in notes:
+                self._host.log.level(level).print(message)
+            self._host.log.end(f"{len(notes)} slot change(s)")
         if changed:
             set_loadout_record(self._host.name, kind, slots)
             self._host.detect_engine()

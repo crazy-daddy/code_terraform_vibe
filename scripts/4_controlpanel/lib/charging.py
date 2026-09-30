@@ -3,7 +3,7 @@
 # drone dispatch for stranded or critically low-battery vehicles in the field.
 from vehicle_energy import rescue_wh_per_meter_for
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all
+from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 class ChargingStationController:
@@ -261,7 +261,7 @@ class ChargingStationController:
             target_level = self.rescue_target_level(v_ref)
             return_floor = self.return_floor_wh(v_ref)
             is_below_floor = v_wh <= return_floor
-            self.log.debug(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl*100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level*100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
+            self.log.trace(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl*100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level*100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
                 if self.order_return_to_station(v_ref):
@@ -279,6 +279,7 @@ class ChargingStationController:
                     continue
 
                 reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh, below {return_floor:.1f} Wh return floor)"
+                self.log.start(f"[{self.name}] Rescue {v_name} ({v_id})")
                 self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
 
                 try:
@@ -292,11 +293,14 @@ class ChargingStationController:
                 if res.status == "ok":
                     self.log.print(f"[{self.name}] Rescue drone launched to {v_id}; target charge {target_level*100:.0f}% for safe station return.")
                     self.last_rescued_vehicle = v_id
+                    self.log.end(f"[{self.name}] Rescue dispatched to {v_id}")
                     break
                 elif res.status == "already_dispatched":
+                    self.log.end(f"[{self.name}] Rescue already dispatched for {v_id}")
                     break
                 else:
                     self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
+                    self.log.end(f"[{self.name}] Rescue dispatch rejected for {v_id}")
 
     def step(self):
         """Single supervision cycle for dock charging and field rescue."""
@@ -315,6 +319,7 @@ class ChargingStationController:
         self.log.print(f"Charging Station ({self.name}) online via Shared Library ({bay_count} bay(s), {bay_count * bay_rate} W max pool).")
         validate_game_version()
         while True:
+            reset_all()
             try:
                 self.step()
             except Exception as e:

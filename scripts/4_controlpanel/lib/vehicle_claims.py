@@ -164,11 +164,12 @@ class VehicleClaimsMixin:
             self._host.log.debug(f"[{self._host.name}] Recall active and already at base ({self._host.get_position()}); idling in RECALLED state.")
             self._host.publish_telemetry("RECALLED")
         else:
-            self._host.log.print(f"[{self._host.name}] Recall active; returning to base.")
+            self._host.log.start(f"[{self._host.name}] Recall active; returning to base.")
             self._host.log.debug(f"[{self._host.name}] Recall active while away from base (current position {self._host.get_position()}, base slot {self._host.assigned_slot_coords}); abandoning current_target_key={self.current_target_key!r} and heading home.")
             self._host.publish_telemetry("RECALLED")
             self.release_target_claim()
-            self._host.return_to_base()
+            reached = self._host.return_to_base()
+            self._host.log.end(f"[{self._host.name}] Recall return {'complete' if reached else 'incomplete'}.")
         return True
 
     def claim_target(self, target_key, target_info):

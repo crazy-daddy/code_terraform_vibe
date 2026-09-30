@@ -333,64 +333,67 @@ class WarehouseUpgrader:
     def _drain_and_remove(self, old_id, new_id, outpost_id, computer):
         """Greedy drain + undeploy of one old Warehouse. None once it is gone, else a status line."""
         self.log.start(f"[warehouse_upgrade] Draining '{old_id}' ({self._total(old_id)} units) into '{new_id}'")
+        moved = [0]
+        result = self._drain_loop(old_id, new_id, outpost_id, computer, moved)
+        self.log.end(f"[warehouse_upgrade] '{old_id}': {moved[0]} unit(s) moved this pass")
+        return result
+
+    def _drain_loop(self, old_id, new_id, outpost_id, computer, moved):
+        """Drain loop of _drain_and_remove(); moved[0] accumulates the units moved."""
         idle_passes = 0
-        moved_total = 0
-        try:
-            while True:
-                old = _component(old_id)
-                stacks = []
-                if old is not None:
-                    try:
-                        stacks = old.stacks()
-                    except Exception as e:
-                        self.log.debug(f"[warehouse_upgrade] '{old_id}'.stacks() raised {e}; trying undeploy.")
+        while True:
+            old = _component(old_id)
+            stacks = []
+            if old is not None:
+                try:
+                    stacks = old.stacks()
+                except Exception as e:
+                    self.log.debug(f"[warehouse_upgrade] '{old_id}'.stacks() raised {e}; trying undeploy.")
 
-                if not stacks:
-                    res = computer.undeploy(old_id)
-                    if res.status in ("ok", "not_found"):
-                        def mark(s):
-                            swap = s.setdefault(SWAP_KEY, {})
-                            removed = swap.setdefault("removed", [])
-                            if old_id not in removed:
-                                removed.append(old_id)
-                                if res.status == "ok":
-                                    swap["to_sell"] = int(swap.get("to_sell") or 0) + 1
-                        update_fleet_upgrade(mark)
-                        self._sell_kits()
-                        self.log.print(f"[warehouse_upgrade] '{old_id}' empty ({moved_total} unit(s) moved) and undeployed.")
-                        return None
-                    self.log.debug(f"[warehouse_upgrade] undeploy('{old_id}'): {res.status} - {res.message}")
-                    if res.status in TRANSIENT_UNDEPLOY_STATUSES:
-                        return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
-                    if res.status == "cargo_present":
-                        idle_passes += 1
-                        if idle_passes < DRAIN_MAX_IDLE_PASSES:
-                            self.log.debug(f"[warehouse_upgrade] '{old_id}': something slipped in before undeploy; draining again.")
-                            continue
-                    attempts = int((self._swap() or {}).get("attempts") or 0) + 1
-                    if attempts >= MAX_UNDEPLOY_ATTEMPTS:
-                        self._patch(state="blocked", reason=res.status, attempts=attempts)
-                        self.log.level("warn").print(f"[warehouse_upgrade] undeploy('{old_id}') refused {attempts}x ({res.status}: {res.message}); swap blocked.")
-                        return f"{outpost_id}: blocked ({res.status})"
-                    self._patch(attempts=attempts)
-                    return f"{old_id}: undeploy {res.status}, retrying"
+            if not stacks:
+                res = computer.undeploy(old_id)
+                if res.status in ("ok", "not_found"):
+                    def mark(s):
+                        swap = s.setdefault(SWAP_KEY, {})
+                        removed = swap.setdefault("removed", [])
+                        if old_id not in removed:
+                            removed.append(old_id)
+                            if res.status == "ok":
+                                swap["to_sell"] = int(swap.get("to_sell") or 0) + 1
+                    update_fleet_upgrade(mark)
+                    self._sell_kits()
+                    self.log.print(f"[warehouse_upgrade] '{old_id}' empty ({moved[0]} unit(s) moved) and undeployed.")
+                    return None
+                self.log.debug(f"[warehouse_upgrade] undeploy('{old_id}'): {res.status} - {res.message}")
+                if res.status in TRANSIENT_UNDEPLOY_STATUSES:
+                    return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
+                if res.status == "cargo_present":
+                    idle_passes += 1
+                    if idle_passes < DRAIN_MAX_IDLE_PASSES:
+                        self.log.debug(f"[warehouse_upgrade] '{old_id}': something slipped in before undeploy; draining again.")
+                        continue
+                attempts = int((self._swap() or {}).get("attempts") or 0) + 1
+                if attempts >= MAX_UNDEPLOY_ATTEMPTS:
+                    self._patch(state="blocked", reason=res.status, attempts=attempts)
+                    self.log.level("warn").print(f"[warehouse_upgrade] undeploy('{old_id}') refused {attempts}x ({res.status}: {res.message}); swap blocked.")
+                    return f"{outpost_id}: blocked ({res.status})"
+                self._patch(attempts=attempts)
+                return f"{old_id}: undeploy {res.status}, retrying"
 
-                moved_pass = 0
-                for stack in stacks:
-                    moved_pass += self._move_stack(old, old_id, new_id, outpost_id, stack)
-                moved_total += moved_pass
-                if moved_pass:
-                    idle_passes = 0
-                    continue
-                idle_passes += 1
-                if idle_passes >= DRAIN_MAX_IDLE_PASSES:
-                    left = self._total(old_id)
-                    self.log.level("warn").print(f"[warehouse_upgrade] '{old_id}': {left} unit(s) left and nowhere to move them; retrying later.")
-                    return f"{old_id}: stuck with {left} unit(s)"
-                flush_all()
-                sleep(BUSY_RETRY_S)
-        finally:
-            self.log.end(f"[warehouse_upgrade] '{old_id}': {moved_total} unit(s) moved this pass")
+            moved_pass = 0
+            for stack in stacks:
+                moved_pass += self._move_stack(old, old_id, new_id, outpost_id, stack)
+            moved[0] += moved_pass
+            if moved_pass:
+                idle_passes = 0
+                continue
+            idle_passes += 1
+            if idle_passes >= DRAIN_MAX_IDLE_PASSES:
+                left = self._total(old_id)
+                self.log.level("warn").print(f"[warehouse_upgrade] '{old_id}': {left} unit(s) left and nowhere to move them; retrying later.")
+                return f"{old_id}: stuck with {left} unit(s)"
+            flush_all()
+            sleep(BUSY_RETRY_S)
 
     def _move_stack(self, old, old_id, new_id, outpost_id, stack):
         """Moves one stack out of old in DRAIN_CHUNK_UNITS calls. Returns units moved."""
