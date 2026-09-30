@@ -26,6 +26,10 @@ THROTTLE_MARGINAL_BUFFER = 0.5         # moderate draw while buffer is rebuildin
 # nobody needs -- ease off to save it for the night instead.
 BATTERY_FULL_FRACTION = 0.98
 THROTTLE_DEMAND_MET = 0.3
+# Once eased, stay eased until the battery drops below this: at the eased throttle
+# generation no longer covers consumption, so "demand met" alone would flip the
+# turbine back to 1.0 on the next poll and the battery would refill within seconds.
+BATTERY_EASE_RESUME_FRACTION = 0.90
 
 # is_stalled() alone isn't reliable proof the connected source is physically
 # unreachable -- it's equally true, harmlessly, whenever the feeding vent is
@@ -68,6 +72,7 @@ class SteamTurbineController:
         self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="steam_turbine")
+        self._eased = False  # daytime easing active (BATTERY_EASE_RESUME_FRACTION hysteresis)
         # Source selection, reachability and blacklisting live in the shared consumer-side
         # router (lib/fluid_routing.py FluidInputRouter) -- this controller only supplies which
         # buildings count as a steam source, how they rank, and the stall signal.
@@ -178,6 +183,7 @@ class SteamTurbineController:
         # Buffer is healthy: steam is the only generator at night, so run flat
         # out to carry the grid regardless of current battery/demand state.
         if self.is_night():
+            self._eased = False
             self.log.debug(f"Buffer healthy ({fraction*100:.0f}%) and night -- full throttle 1.0 (only generation source overnight).")
             self.log.end()
             return 1.0
@@ -194,9 +200,15 @@ class SteamTurbineController:
             battery_full = capacity > 0 and stored >= (capacity * BATTERY_FULL_FRACTION)
             demand_met = generated >= consumed
             if battery_full and demand_met:
+                self._eased = True
                 self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, battery full ({stored:.0f}/{capacity:.0f} Wh) and demand met ({generated:.0f} W >= {consumed:.0f} W); easing to {THROTTLE_DEMAND_MET} to save steam for night.")
                 self.log.end()
                 return THROTTLE_DEMAND_MET
+            if self._eased and capacity > 0 and stored >= capacity * BATTERY_EASE_RESUME_FRACTION:
+                self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, eased and battery still {stored / capacity * 100:.0f}% >= {BATTERY_EASE_RESUME_FRACTION * 100:.0f}% (gen={generated:.0f} W, con={consumed:.0f} W); staying at {THROTTLE_DEMAND_MET}.")
+                self.log.end()
+                return THROTTLE_DEMAND_MET
+            self._eased = False
             self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, but battery_full={battery_full} demand_met={demand_met} (stored={stored:.0f}/{capacity:.0f} Wh, gen={generated:.0f} W, con={consumed:.0f} W); full throttle 1.0.")
 
         self.log.end()

@@ -122,8 +122,11 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   2. `< STEAM_BUFFER_HEALTHY_FRACTION=0.40` → `THROTTLE_MARGINAL_BUFFER=0.5` (buffer rebuilding).
   3. Healthy buffer + night (`clock.get_elevation() <= 0`) → `1.0`.
   4. Healthy buffer + day + grid battery `≥ BATTERY_FULL_FRACTION=0.98` of capacity AND
-     `generated >= consumed` → `THROTTLE_DEMAND_MET=0.3`.
-  5. Otherwise → `1.0`.
+     `generated >= consumed` → `THROTTLE_DEMAND_MET=0.3` (eased).
+  5. Eased and battery still `≥ BATTERY_EASE_RESUME_FRACTION=0.90` → stay at `0.3`: at 0.3 generation
+     no longer covers consumption, so step 4 alone flipped every turbine back to 1.0 on the next poll
+     (1.0 ↔ 0.3 every ~40 ticks). Night or a thin buffer clears the eased state.
+  6. Otherwise → `1.0`.
   Reads grid state same as `lib/power.py`'s `PowerGridManager`
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but no
   shedding itself — that's headless automation panel AUTOMATION section's job (§1a-1).

@@ -56,7 +56,9 @@ WAKE_AFTER_TICKS = {
     "smelter": 300,
     "fabricator": 300,
     "supply_dock": 600,
-    "oil_generator": 600,
+    # Woken by a low grid reserve (OIL_WAKE_RESERVE_FRACTION) as soon as it matters, so the
+    # timed re-check is only a backstop.
+    "oil_generator": 6000,
     "thermal_cap": 600,
     "oil_pump": 3000,
     "crop_automator": 600,
