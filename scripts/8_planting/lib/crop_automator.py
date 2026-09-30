@@ -362,7 +362,8 @@ class CropAutomatorController:
         curr_tick = self.get_current_tick()
         if not self.sector:
             self.sector = self._read_sector()
-        busy = self.consume_results(curr_tick) > 0
+        consumed = self.consume_results(curr_tick) > 0
+        busy = consumed
 
         layout = archive.get(LAYOUT_KEY, {})
         layout = layout if isinstance(layout, dict) else {}
@@ -385,9 +386,13 @@ class CropAutomatorController:
         queued, committed_seeds, blocked_job = self.queued_jobs_info()
         if queued is None:
             return True
+        # Head job waiting only for its Forage to be pulled: nothing this script can
+        # do; storage.take_item() wakes a parked automator before pulling.
+        clog_wait = blocked_job is not None and getattr(blocked_job, "blocker", None) == "output_full"
         if blocked_job is not None:
             busy = True
             self.unblock_queue(blocked_job, curr_tick)
+        submitted = False
         try:
             queue_count = self.machine.queue_count()
             room = QUEUE_LIMIT - queue_count
@@ -435,7 +440,7 @@ class CropAutomatorController:
                 break
             if self.submit("harvest", sector):
                 room -= 1
-                busy = True
+                busy = submitted = True
         for sector in open_cells:
             if room <= 0:
                 break
@@ -455,11 +460,11 @@ class CropAutomatorController:
                 continue
             if self.submit("plant", sector, seed_id):
                 room -= 1
-                busy = True
+                busy = submitted = True
                 committed_seeds[seed_id] = committed_seeds.get(seed_id, 0) + 1
         self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
         self.publish(curr_tick, mine, mature, open_cells, waiting)
-        self.parkable = not busy
+        self.parkable = not busy or (clog_wait and not consumed and not submitted)
         return busy
 
     def _note_state(self, text):

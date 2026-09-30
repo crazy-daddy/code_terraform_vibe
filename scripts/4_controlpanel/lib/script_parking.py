@@ -106,28 +106,31 @@ def parked_ids(kind=None):
     return {m for m, e in parked.items() if isinstance(e, dict) and e.get("mode") == "breaker" and (kind is None or e.get("kind") == kind)}
 
 
-def wake_for_visit(machine_id, reason="visit", hold_ticks=STATION_HOLD_TICKS):
+def wake_for_visit(machine_id, reason="visit", hold_ticks=STATION_HOLD_TICKS, hold=True):
     """
     Called by a vehicle or drone heading to (or waiting at) a station, or by a
     station handing a rescue to a parked one: holds the station awake for
     hold_ticks and, when it is breaker-parked, switches it on and drops it
     from PARKED_KEY. Safe to call for any id (a machine that is not parked
-    only gets the hold). Returns True when it switched a parked machine on.
+    only gets the hold). hold=False skips the hold, for kinds outside HELD_KINDS
+    (clearing the pre-park request on wake is enough there). Returns True when it
+    switched a parked machine on.
     """
     if not machine_id:
         return False
     now = _now_tick()
 
-    def hold(holds):
+    def add_hold(holds):
         holds = holds if isinstance(holds, dict) else {}
         holds = {m: t for m, t in holds.items() if isinstance(t, (int, float)) and t > now}
         holds[machine_id] = now + hold_ticks
         return holds
 
-    try:
-        archive.transaction(HOLDS_KEY, {}, hold)
-    except Exception as error:
-        swallowed("script_parking.wake_for_visit: archive.transaction(HOLDS_KEY)", error)
+    if hold:
+        try:
+            archive.transaction(HOLDS_KEY, {}, add_hold)
+        except Exception as error:
+            swallowed("script_parking.wake_for_visit: archive.transaction(HOLDS_KEY)", error)
     if machine_id not in parked_ids():
         return False
     power_control = get_component("power_control")
@@ -149,6 +152,7 @@ def wake_for_visit(machine_id, reason="visit", hold_ticks=STATION_HOLD_TICKS):
         archive.transaction(PARKED_KEY, {}, unpark)
     except Exception as error:
         swallowed("script_parking.wake_for_visit: archive.transaction(PARKED_KEY)", error)
+    ScriptParking._clear_requests({machine_id: now})  # its pre-park request must not park it again
     log.print(f"[PARKING] Woke {machine_id} ({reason}).")
     return True
 

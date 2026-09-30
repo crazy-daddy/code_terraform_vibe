@@ -234,6 +234,14 @@ class StationParkingTests(StubTestCase):
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("charging_station_1", False))
 
+    def test_visit_wake_clears_the_pre_park_request(self):
+        self.request("charging_station_1")
+        self.parking.step(self.grids, 10.0)
+        self.world.clock.now += 1
+        self.assertTrue(script_parking.wake_for_visit("charging_station_1", "test", hold=False))
+        self.assertNotIn("charging_station_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+        self.assertNotIn("charging_station_1", self.world.notebook.data.get(script_parking.HOLDS_KEY, {}))
+
     def test_visit_to_awake_station_only_holds(self):
         self.assertFalse(script_parking.wake_for_visit("charging_station_2", "test"))
         self.assertEqual(self.power.calls, [])

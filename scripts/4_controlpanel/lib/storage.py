@@ -16,6 +16,7 @@
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+from script_parking import wake_for_visit
 
 log = TreeConsole(module="storage")
 
@@ -357,7 +358,7 @@ def crop_automator_forage_total(outpost=None):
     return int(sum(e[1] for e in crop_automator_forage(outpost)))
 
 
-def _holder_candidates(item_id, outpost=None, cache=None):
+def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
     """
     [(source_id, units)] for every storage endpoint holding item_id, in the
     order take_item() should try them:
@@ -375,6 +376,7 @@ def _holder_candidates(item_id, outpost=None, cache=None):
     connect()+take() walk over every Warehouse regardless of contents cost a
     reconnect per miss. Uses a SourceCache's one-shot per-building snapshot
     when one is passed (home outpost only, which is all it covers).
+    `automators` (a set, optional) receives the Crop Automator ids listed.
     """
     resolved = outpost if outpost is not None else _home_outpost()
     is_home = outpost is None or bool(resolved and getattr(resolved, "is_home", False))
@@ -387,6 +389,8 @@ def _holder_candidates(item_id, outpost=None, cache=None):
         for ca_id, count, clogged, garden in crop_automator_forage(resolved):
             holders.append((ca_id, count))
             automator_rank[ca_id] = (0 if clogged else 3, 0 if garden else 1)
+            if automators is not None:
+                automators.add(ca_id)
     if cache is not None and outpost is None and hasattr(cache, "building_stock"):
         holders += list(cache.building_stock(item_id))
     else:
@@ -456,9 +460,14 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     moved_total = 0
     remaining = amount
     log.start(f"take_item({item_id})", level="debug")
-    for source_id, _held in _holder_candidates(item_id, outpost, cache):
+    automators = set()
+    for source_id, _held in _holder_candidates(item_id, outpost, cache, automators):
         if remaining <= 0:
             break
+        if source_id in automators:
+            # A Crop Automator parked on a full output (lib/script_parking.py) is
+            # switched on before we pull, so its waiting harvest runs on.
+            wake_for_visit(source_id, "Forage pulled", hold=False)
         if source_id != current_id:
             try:
                 res = port.connect(source_id)
