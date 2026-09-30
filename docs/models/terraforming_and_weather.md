@@ -6,25 +6,25 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 
 ```python
 class Atmosphere(Component):
-    """Atmosphere: Planetary atmosphere, read gas composition, pressure, temperature, and the planet's heat-units progression metric (`get_heat()`). Oxygen and pressure reads require their sensors to be repaired."""
+    """Atmosphäre: Die Atmosphäre des Planeten. Lies die Gaszusammensetzung, den Druck, die Temperatur und den Fortschrittswert für Wärme-Einheiten (`get_heat()`) aus. Für Sauerstoff- und Druckmessungen müssen die entsprechenden Sensoren repariert sein."""
     name: _str
     def get_co2(self) -> _float:
-        """Current CO2 level in parts per thousand (ppt). Oxygen generation consumes CO2 **1:1**, so this value falls as oxygen rises. CO2 is returned to the atmosphere by burning oil (Oil Generator), incinerating items (Waste Processor), and, at scale, by wildlife respiration (established colonies exhale CO2). A small volcanic outgassing trickle replenishes CO2 when reserves are low."""
+        """Aktueller CO2-Gehalt in Promille (ppt). Bei der Sauerstofferzeugung wird CO2 im Verhältnis **1:1** verbraucht. Daher sinkt dieser Wert, wenn der Sauerstoffgehalt steigt. CO2 gelangt durch das Verbrennen von Öl (Ölgenerator), das Verbrennen von Gegenständen (Abfallentsorger) und in größerem Maßstab durch die Atmung der Tierwelt (etablierte Kolonien atmen CO2 aus) zurück in die Atmosphäre. Wenn die Vorräte knapp werden, füllt ein geringer vulkanischer Gasausstoß CO2 wieder auf."""
         ...
     def get_o2(self) -> _float:
-        """Current oxygen level in parts per thousand (ppt). Requires the oxygen sensor to be repaired."""
+        """Aktueller Sauerstoffgehalt in Promille (ppt). Dafür muss der Sauerstoffsensor repariert sein."""
         ...
     def get_n2(self) -> _float:
-        """Current nitrogen level in parts per thousand (ppt)."""
+        """Aktueller Stickstoffgehalt in Promille (ppt)."""
         ...
     def get_pressure(self) -> _float:
-        """Current atmospheric pressure in kPa. Requires the pressure sensor to be repaired."""
+        """Aktueller Atmosphärendruck in kPa. Dafür muss der Drucksensor repariert sein."""
         ...
     def get_temperature(self) -> _float:
-        """Current surface temperature in °C. This is a **display value**, a non-linear transform of the heat-units metric. For terraforming progress or heat cutoffs, use `get_heat()`, not this."""
+        """Aktuelle Oberflächentemperatur in °C. Dieser **Anzeigewert** wird durch eine nichtlineare Umrechnung der Wärme-Einheiten ermittelt. Verwende für den Terraforming-Fortschritt oder Wärmeschwellen `get_heat()`, nicht diesen Wert."""
         ...
     def get_heat(self) -> _float:
-        """Current accumulated **heat units**, the temperature pillar's progression metric, the exact value temperature research and phase thresholds compare against (the Research page shows the current targets). Gate heat cutoffs on this, the way `get_o2()` / `get_pressure()` work for those pillars. Unlike `get_temperature()` (surface °C, a non-linear display value), a difference in heat units IS terraforming progress. Starts at **0**."""
+        """Aktuell angesammelte **Wärme-Einheiten**: der Fortschrittswert für die Temperatursäule. Genau diesen Wert vergleichen die Schwellen für Temperaturforschung und Phasen (die aktuellen Ziele stehen auf der Forschungsseite). Prüfe Wärmeschwellen anhand dieses Werts, so wie du für die anderen Säulen `get_o2()` bzw. `get_pressure()` verwendest. Anders als bei `get_temperature()` (Oberflächentemperatur in °C, ein nichtlinearer Anzeigewert) bedeutet ein Unterschied bei den Wärme-Einheiten tatsächlich Terraforming-Fortschritt. Beginnt bei **0**."""
         ...
 ```
 
@@ -55,25 +55,25 @@ class Cell:
 
 ```python
 class OxygenSensor(Component):
-    """Oxygen Sensor: An atmospheric oxygen probe that landed broken. It reports a raw voltage until a script works out the calibration and repairs it, after which it reads oxygen directly."""
+    """Sauerstoffsensor: Eine Sauerstoffsonde für die Atmosphäre, die bei der Landung beschädigt wurde. Sie meldet eine Rohspannung, bis ein Skript die Kalibrierung berechnet und sie repariert. Danach misst sie den Sauerstoff direkt."""
     name: _str
     def get_value(self) -> _float:
-        """Before repair, read raw voltage from the uncalibrated probe as a small decimal value. This is not yet a ppt reading; compare it with a known reference to calculate the calibration factor. After repair, read the current atmospheric oxygen level in ppt directly."""
+        """Lies vor der Reparatur die Rohspannung der unkalibrierten Sonde als kleinen Dezimalwert aus. Das ist noch kein Messwert in ppt; vergleiche ihn mit einem bekannten Referenzwert, um den Kalibrierfaktor zu berechnen. Nach der Reparatur liest du den aktuellen Sauerstoffgehalt der Atmosphäre direkt in ppt aus."""
         ...
     def calibrate(self, value: _float) -> ActionResult[Literal["started", "already_repaired", "no_source", "already_testing"]]:
-        """Start the black-box calibration suite with the processed value: `result = self.calibrate(raw_value * factor)`. The suite then checks the whole script against several readings. A fully correct suite repairs the sensor; failed test cases remain visible in the console. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Starte die Blackbox-Kalibrierung mit dem verarbeiteten Wert: `result = self.calibrate(raw_value * factor)`. Anschließend prüft die Testsuite das gesamte Skript anhand mehrerer Messwerte. Besteht es alle Tests, wird der Sensor repariert; fehlgeschlagene Testfälle bleiben in der Konsole sichtbar. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -90,67 +90,67 @@ class PlantRequirement:
 
 ```python
 class PlantTerraformer(Component):
-    """Plant Terraformer: The sole converter from harvested physical Forage to permanent Plants km². Load its input through ordinary timed item transfers; its high-capacity feeder handles 16 items per step at Mk I and 80 at Mk II. Each phase adds Water, Salt, Fertilizer, then Growth Accelerant. Mk I stops at the Fields threshold; Mk II carries the final two phases."""
+    """Pflanzen-Terraformer: Der einzige Umwandler, der geerntetes physisches Pflanzenfutter in dauerhafte Pflanzen-km² verwandelt. Befülle seinen Eingang über normale, zeitgesteuerte Gegenstandsübertragungen; sein Hochleistungszuführer schafft 16 Gegenstände pro Schritt bei Mk I und 80 bei Mk II. Mit jeder Phase kommt ein weiterer Stoff hinzu: Wasser, Salz, Dünger, dann Wachstumsbeschleuniger. Mk I endet an der Schwelle „Felder“; Mk II übernimmt die letzten beiden Phasen."""
     name: _str
     outpost: OutpostRef
     def set_enabled(self, enabled: _bool) -> ActionResult[Literal["ok"]]:
-        """Enable or pause conversion. `True` starts a cycle whenever the onboard item holders and Water can supply at least one proportional Forage unit. A cycle runs for **3 hours** at full outpost efficiency. Stopping this machine's script resets the setpoint to `False`; an in-flight batch remains loaded. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Aktiviere oder pausiere die Umwandlung. `True` startet einen Zyklus, sobald die internen Gegenstandslager und der Wasservorrat die für mindestens eine Einheit Pflanzenfutter benötigten Mengen im richtigen Verhältnis bereitstellen können. Bei voller Effizienz des Außenpostens dauert ein Zyklus **3 Stunden**. Wenn du das Skript dieser Maschine stoppst, wird der Sollwert auf `False` zurückgesetzt; eine bereits geladene Charge bleibt erhalten. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def is_enabled(self) -> _bool:
-        """`True` when the current machine script has commanded conversion on."""
+        """`True`, wenn das aktuelle Skript der Maschine die Umwandlung eingeschaltet hat."""
         ...
     def tier(self) -> _int:
-        """Permanently installed Plant Terraformer tier as an integer (**1-2**). Mk II raises batch throughput and enables the late Plants recipes."""
+        """Dauerhaft installierte Stufe des Pflanzen-Terraformers als Ganzzahl (**1–2**). Mk II erhöht den Durchsatz pro Charge und schaltet die späteren Rezepte für Pflanzen frei."""
         ...
     def status(self) -> Literal["complete", "disabled", "no_power", "needs_mk2", "no_forage", "no_water", "no_salt", "no_fertilizer", "no_accelerant", "running"]:
-        """Exact live state: `\"complete\"`, `\"disabled\"`, `\"no_power\"`, `\"needs_mk2\"`, `\"no_forage\"`, `\"no_water\"`, `\"no_salt\"`, `\"no_fertilizer\"`, `\"no_accelerant\"`, or `\"running\"`."""
+        """Exakter aktueller Zustand: `\"complete\"`, `\"disabled\"`, `\"no_power\"`, `\"needs_mk2\"`, `\"no_forage\"`, `\"no_water\"`, `\"no_salt\"`, `\"no_fertilizer\"`, `\"no_accelerant\"` oder `\"running\"`."""
         ...
     def is_running(self) -> _bool:
-        """`True` while a conversion cycle is running. An unpowered or disabled machine keeps its in-flight batch but reads `False` until it resumes."""
+        """`True`, während ein Umwandlungszyklus läuft. Ohne Strom oder bei deaktivierter Maschine bleibt die angefangene Charge geladen, aber bis zur Wiederaufnahme wird `False` zurückgegeben."""
         ...
     def get_progress(self) -> _float:
-        """Completion of the current conversion cycle, **0-1**. A full cycle requires **3 hours** of work at 100% outpost efficiency; overcrowding slows its progress proportionally. Reads **0** whenever no batch is loaded."""
+        """Fortschritt des aktuellen Umwandlungszyklus von **0–1**. Ein vollständiger Zyklus erfordert bei 100 % Effizienz des Außenpostens **3 Stunden** Arbeit; Überbelegung verlangsamt den Fortschritt proportional. Gibt **0** zurück, wenn keine Charge geladen ist."""
         ...
     def batch_size(self) -> _int:
-        """Whole Forage items in the running cycle, or the batch that can load now. A full batch is **1,200** at Mk I and **6,600** at Mk II. Limited materials or a nearby phase boundary load less."""
+        """Anzahl ganzer Einheiten Pflanzenfutter im laufenden Zyklus oder in der Charge, die jetzt geladen werden kann. Eine volle Charge umfasst bei Mk I **1.200** und bei Mk II **6.600** Einheiten. Bei Materialmangel oder kurz vor einer Phasengrenze wird weniger geladen."""
         ...
     def km2_rate(self) -> _float:
-        """This machine's current permanent Plants output in km²/h. It combines the loaded batch, its nominal **3 hour** work cycle, the pinned phase exchange rate from **20 km² per Forage** early to **1 km² per 3 Forage** late, and this outpost's overcrowding efficiency. Returns **0** while blocked, disabled, or complete."""
+        """Aktuelle Rate, mit der diese Maschine dauerhafte Pflanzenfläche erzeugt, in km²/h. Sie berücksichtigt die geladene Charge, deren nominellen Arbeitszyklus von **3 Stunden**, den für die Phase festgelegten Umrechnungskurs von anfangs **20 km² pro Einheit Pflanzenfutter** bis zuletzt **1 km² pro 3 Einheiten Pflanzenfutter** sowie die durch Überbelegung verringerte Effizienz dieses Außenpostens. Gibt **0** zurück, wenn die Maschine blockiert oder deaktiviert ist oder die Umwandlung abgeschlossen wurde."""
         ...
     def phase(self) -> _int:
-        """Current global Plants phase number, **1-6**."""
+        """Nummer der aktuellen globalen Pflanzenphase, **1–6**."""
         ...
     def recipe_tier(self) -> _int | None:
-        """Derived production tier of the current cumulative Plants conversion recipe. Returns `None` after Continental completion."""
+        """Abgeleitete Produktionsstufe des aktuellen Rezepts für die kumulative Pflanzenumwandlung. Gibt nach Abschluss der Kontinentalphase `None` zurück."""
         ...
     def next_threshold(self) -> _float:
-        """Permanent Plants km² required for the next phase. At completion, returns the **5,000,000 km²** ceiling."""
+        """Für die nächste Phase benötigte dauerhafte Pflanzenfläche in km². Nach Abschluss wird die Obergrenze von **5.000.000 km²** zurückgegeben."""
         ...
     def remaining(self) -> _float:
-        """Permanent Plants km² still needed for the next phase. Returns **0** when Continental is complete."""
+        """Bis zur nächsten Phase noch benötigte dauerhafte Pflanzenfläche in km². Gibt **0** zurück, wenn die Kontinentalphase abgeschlossen ist."""
         ...
     def required_inputs(self) -> _list[_str]:
-        """Current cumulative material ids. Starts with `forage`, then adds `water`, `salt`, the `fertilizer` category, and `growth_accelerant` across the five conversions."""
+        """Aktuell benötigte kumulative Material-IDs. Beginnt mit `forage`; im Verlauf der fünf Umwandlungen kommen `water`, `salt`, die Kategorie `fertilizer` und `growth_accelerant` hinzu."""
         ...
     def batch_requirements(self) -> _dict[_str, _int]:
-        """Exact amounts for the largest next batch allowed by this tier and phase. The dict uses `forage`, `water`, `salt`, `fertilizer_potency`, and `growth_accelerant` as needed. Salt and Growth Accelerant are whole-item counts, rounded up per batch. Fertilizer potency is a whole number. It does not shrink when onboard stock is short."""
+        """Exakte Mengen für die größte nächste Charge, die diese Stufe und Phase zulassen. Das dict enthält bei Bedarf `forage`, `water`, `salt`, `fertilizer_potency` und `growth_accelerant`. Salz und Wachstumsbeschleuniger werden als ganze Gegenstände pro Charge gezählt und aufgerundet. Die Düngerwirkung ist eine Ganzzahl. Bei knappem Vorrat in der Maschine werden diese Mengen nicht verringert."""
         ...
     def fertilizer_potency(self, item_id: _str) -> _int:
-        """Return one Fertilizer item's whole potency: **10** for Mk I, **30** for Mk II, or **50** for Mk III. Any other item id raises `ValueError`."""
+        """Gibt die ganzzahlige Wirkung eines Dünger-Gegenstands zurück: **10** für Mk I, **30** für Mk II oder **50** für Mk III. Jede andere Gegenstands-ID löst `ValueError` aus."""
         ...
     input: InputSlot
     water_in: FluidPort
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -158,10 +158,10 @@ class PlantTerraformer(Component):
 
 ```python
 class PlantsSensor(Component):
-    """Plants Sensor: Reports permanent vegetated km² produced by the Plant Terraformer fleet. Available after the Biosphere research lands. Field growth alone does not change this value."""
+    """Pflanzensensor: Meldet die dauerhaft bewachsene Fläche in km², die von der Flotte der Pflanzen-Terraformer erzeugt wurde. Verfügbar nach Abschluss der Biosphärenforschung. Wachstum auf Feldern allein verändert diesen Wert nicht."""
     name: _str
     def get_value(self) -> _float:
-        """Returns permanent Plants km² as a number. Plant Terraformers are the only writers; repeated crop cycles, diversity, providers, Fertilizer, and Yield Amplifier increase the physical Forage supply they process."""
+        """Gibt die dauerhafte Pflanzenfläche in km² als Zahl zurück. Nur Pflanzen-Terraformer erhöhen diesen Wert. Wiederholte Anbauzyklen, Vielfalt, Versorger, Dünger und Ertragsverstärker erhöhen den tatsächlichen Vorrat an Pflanzenfutter, den sie verarbeiten."""
         ...
 ```
 
@@ -169,25 +169,25 @@ class PlantsSensor(Component):
 
 ```python
 class PressureSensor(Component):
-    """Pressure Sensor: An atmospheric pressure probe that landed broken. Its readings come out scrambled until a script stabilizes the repair signal, after which it reads pressure directly."""
+    """Drucksensor: Eine beschädigt gelandete Sonde für den Atmosphärendruck. Ihre Messwerte sind durcheinander, bis ein Skript das Reparatursignal stabilisiert. Danach misst sie den Druck direkt."""
     name: _str
     def get_value(self) -> _int:
-        """Current unstable repair reading as an integer. If the value is odd, add **1**; if it is even, use it unchanged. After repair, this method returns real atmospheric pressure in kPa."""
+        """Aktueller instabiler Reparaturmesswert als Ganzzahl. Ist der Wert ungerade, addiere **1**; ist er gerade, verwende ihn unverändert. Nach der Reparatur gibt diese Methode den tatsächlichen Atmosphärendruck in kPa zurück."""
         ...
     def stabilize(self, value: _float) -> ActionResult[Literal["started", "already_repaired", "no_source", "already_testing"]]:
-        """Start the black-box stabilization suite with the corrected even reading: `result = self.stabilize(corrected_value)`. The suite then checks the whole script against several readings. A fully correct suite repairs the sensor; failed test cases remain visible in the console. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Starte die Blackbox-Stabilisierung mit dem korrigierten geraden Messwert: `result = self.stabilize(corrected_value)`. Anschließend prüft die Testsuite das gesamte Skript anhand mehrerer Messwerte. Besteht es alle Tests, wird der Sensor repariert. Fehlgeschlagene Testfälle bleiben in der Konsole sichtbar. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -195,7 +195,7 @@ class PressureSensor(Component):
 
 ```python
 class Recipe:
-    """list_recipes() / find_recipe() on Smelter, Fabricator, Feed Maker, Refiner, and Fuel Assembler"""
+    """list_recipes() / find_recipe() bei Schmelzofen, Fabrikator, Futterhersteller, Raffinerie und Brennstofffertiger"""
     tier: _int
     id: _str
     name: _str
@@ -216,41 +216,41 @@ class Recipe:
 
 ```python
 class Refiner(Component):
-    """Refiner: Refines raw exotic feedstock into creature-grade gas or liquid, using tar as a reagent. Only uncommon and rare exotics need refining; commons are used directly. Recipes unlock through Biolab orders."""
+    """Raffinerie: Verarbeitet exotische Rohstoffe mithilfe von Teer zu Gas oder Flüssigkeit für Kreaturen. Nur ungewöhnliche und seltene exotische Stoffe müssen raffiniert werden; gewöhnliche können direkt verwendet werden. Rezepte werden durch Aufträge des Biolabors freigeschaltet."""
     name: _str
     outpost: OutpostRef
     def list_recipes(self) -> _list[Recipe]:
-        """Lists the refining recipes unlocked through Bio Lab orders, one `Recipe` per exotic fluid. Locked recipes do not appear. Each recipe includes `.tier`, names its exact raw feedstock in `.input_fluid`, gives port tons consumed per run in `.fluid_inputs`, lists tar in `.inputs`, and identifies the refined product and output port through `.output_fluid` / `.fluid_outputs`. Use `for recipe in self.list_recipes(): print(recipe.tier, recipe.id, recipe.input_fluid, recipe.output_fluid)` to discover what is available."""
+        """Listet die durch Aufträge des Biolabors freigeschalteten Raffinerierezepte auf, je ein `Recipe` pro exotischem Fluid. Gesperrte Rezepte erscheinen nicht. Jedes Rezept enthält mit `.tier` seine Stufe, nennt in `.input_fluid` den genauen Rohstoff, gibt in `.fluid_inputs` die pro Durchlauf an den Anschlüssen verbrauchte Menge in Tonnen an, führt in `.inputs` den Teer auf und bezeichnet mit `.output_fluid` / `.fluid_outputs` das raffinierte Produkt und seinen Ausgangsanschluss. Mit `for recipe in self.list_recipes(): print(recipe.tier, recipe.id, recipe.input_fluid, recipe.output_fluid)` kannst du herausfinden, was verfügbar ist."""
         ...
     def find_recipe(self, recipe_id: _str) -> Recipe | None:
-        """Find one unlocked refining recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
+        """Sucht ein freigeschaltetes Raffinerierezept anhand seiner ID, ohne `list_recipes()` zu durchlaufen. Gibt dessen `Recipe`-Objekt zurück oder `None`, wenn die ID unbekannt oder gesperrt ist oder zu einer anderen Maschine gehört."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "offline", "recipe_locked", "busy", "output_busy"]]:
-        """Pick which exotic to refine by id or by passing a Recipe from `list_recipes()`, e.g. `self.set_recipe(\"refine_chlorine\")`. Once set, the refiner crafts automatically whenever the raw feedstock + tar are present and the out port has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Wähle anhand der ID oder durch Übergabe eines Rezepts aus `list_recipes()` aus, welchen exotischen Stoff du raffinieren möchtest, zum Beispiel mit `self.set_recipe(\"refine_chlorine\")`. Nach der Auswahl arbeitet die Raffinerie automatisch, sobald Rohstoff und Teer vorhanden sind und am Ausgangsanschluss Platz ist. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
-        """Unset the selected refine recipe and leave the Refiner idle. Tar and raw feedstock inputs are preserved because they are staged supply. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Hebt die Auswahl des Raffinerierezepts auf und lässt die Raffinerie im Leerlauf. Teer und Rohstoffe an den Eingängen bleiben als bereitgestellter Vorrat erhalten. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def purge_input(self) -> ActionResult[Literal["ok", "empty", "busy"]]:
-        """Vents whatever raw feedstock is sitting in `gas_in` and `liquid_in`, releasing the port so it can accept a different fluid. The feedstock ports take the first fluid that reaches them and then only accept that one, so a port wired to the wrong Cap holds a fluid the recipe cannot use. Purge it, rewire, and carry on: `self.purge_input()` then `self.gas_in.connect(\"Raw Sulfur Cap\")`. The vented fluid is destroyed, and tar in the input bin is untouched. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Lässt den Rohstoff aus `gas_in` und `liquid_in` ab und gibt die Anschlüsse damit für ein anderes Fluid frei. Die Rohstoffanschlüsse nehmen das erste Fluid an, das sie erreicht, und danach nur noch dieses. Ist ein Anschluss mit der falschen Förderanlage verbunden, enthält er daher ein Fluid, das das Rezept nicht verwenden kann. Lass es ab und ändere die Verbindung: zuerst `self.purge_input()`, dann `self.gas_in.connect(\"Raw Sulfur Cap\")`. Das abgelassene Fluid wird vernichtet; der Teer im Eingangsbehälter bleibt unberührt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def get_recipe(self) -> Literal["", "refine_sulfur_gas", "refine_cryofluid", "refine_chlorine", "refine_quicksilver"]:
-        """Returns the current recipe id, or `\"\"` when none is set (or the set recipe is no longer unlocked). Use to check state before re-setting: `if self.get_recipe() == \"\": self.set_recipe(\"refine_sulfur_gas\")`."""
+        """Gibt die ID des aktuellen Rezepts zurück oder `\"\"`, wenn keines eingestellt ist oder das eingestellte Rezept nicht mehr freigeschaltet ist. Prüfe damit den Zustand, bevor du erneut ein Rezept einstellst: `if self.get_recipe() == \"\": self.set_recipe(\"refine_sulfur_gas\")`."""
         ...
     def get_recipe_inputs(self) -> _dict[_str, _int]:
-        """A dict mapping each input `item_id` → units consumed per craft, for the Refiner this is the **tar** cost, e.g. `{\"tar\": 5}` for a rare exotic. Empty dict if no recipe is set. Read it to keep the tar bin stocked: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`. (The raw-feedstock fluid amount is metered on the input ports, not listed here.)"""
+        """Ein dict, das jeder Eingabe-`item_id` die pro Herstellung verbrauchte Stückzahl zuordnet. Bei der Raffinerie sind das die **Teer**kosten, zum Beispiel `{\"tar\": 5}` für einen seltenen exotischen Stoff. Ist kein Rezept eingestellt, ist das dict leer. Lies es aus, um den Teervorrat aufzufüllen: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`. (Die Menge des flüssigen oder gasförmigen Rohstoffs wird an den Eingangsanschlüssen gemessen und hier nicht aufgeführt.)"""
         ...
     def is_running(self) -> _bool:
-        """`True` while a refine craft is actively advancing this tick (recipe set + unlocked, raw feedstock + tar present, out port has room). `False` when stalled, idle, or powered off."""
+        """`True`, wenn in diesem Tick ein Raffineriedurchlauf aktiv voranschreitet: Ein freigeschaltetes Rezept ist eingestellt, Rohstoff und Teer sind vorhanden und am Ausgangsanschluss ist Platz. `False`, wenn die Produktion stockt, die Raffinerie im Leerlauf ist oder keinen Strom hat."""
         ...
     def is_stalled(self) -> _bool:
-        """`True` when the refiner is powered and a recipe is set but the craft can't advance, for example because raw feedstock is missing (check `self.gas_in.level()` / `self.liquid_in.level()`), tar has run out (refill the input bin), or the refined-fluid out port is full (downstream backpressure, drain the out tank). `False` when unpowered, running, or no recipe is set. Poll to diagnose a stuck line."""
+        """`True`, wenn die Raffinerie Strom hat und ein Rezept eingestellt ist, der Durchlauf aber nicht voranschreiten kann: etwa weil Rohstoff fehlt (prüfe `self.gas_in.level()` / `self.liquid_in.level()`), der Teer aufgebraucht ist (fülle den Eingangsbehälter auf) oder der Ausgangsanschluss für das raffinierte Fluid voll ist (Rückstau; leere den Ausgangstank). `False`, wenn die Raffinerie keinen Strom hat, läuft oder kein Rezept eingestellt ist. Frage den Wert regelmäßig ab, um eine stockende Leitung zu erkennen."""
         ...
     def get_rate(self) -> _float:
-        """Refined exotic produced this tick in t/h. **0** when stalled or idle. Use to confirm throughput while balancing feedstock against demand."""
+        """In diesem Tick produzierter raffinierter exotischer Stoff in t/h. **0**, wenn die Produktion stockt oder die Raffinerie im Leerlauf ist. Damit kannst du den Durchsatz prüfen, während du Rohstoffzufuhr und Bedarf aufeinander abstimmst."""
         ...
     def get_progress(self) -> _float:
-        """Fraction **0-1** through the current refine craft. Resets to 0 each time a craft completes (a batch of refined fluid lands in the out port) and starts again if the feedstock + tar remain."""
+        """Fortschritt des aktuellen Raffineriedurchlaufs von **0–1**. Nach jedem abgeschlossenen Durchlauf wird er auf 0 zurückgesetzt: Eine Charge raffinierten Fluids gelangt in den Ausgangsanschluss. Sind weiter Rohstoff und Teer vorhanden, beginnt der nächste Durchlauf."""
         ...
     gas_in: FluidPort
     liquid_in: FluidPort
@@ -258,16 +258,16 @@ class Refiner(Component):
     liquid_out: FluidPort
     input: InputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -275,40 +275,40 @@ class Refiner(Component):
 
 ```python
 class SeedMaker(Component):
-    """Seed Maker: An outpost processing building that combines three life-form samples into a viable seed. Most blends fail; the working recipes are unique to this planet and found by trial, and a discovered one can be re-run for more."""
+    """Saatgutmaschine: Ein Verarbeitungsgebäude für Außenposten, das drei Lebensformproben zu einem keimfähigen Samen kombiniert. Die meisten Mischungen scheitern; die funktionierenden Rezepte gibt es nur auf diesem Planeten, du findest sie durch Ausprobieren, und ein entdecktes Rezept lässt sich für weitere Samen erneut ausführen."""
     name: _str
     outpost: OutpostRef
     def combine(self, blend: _list[_str]) -> SeedResult[Literal["seed_found", "sludge", "locked", "busy", "missing_life_forms", "output_full"]]:
-        """Run the exact three different life-form ids loaded in this machine's reaction chamber. Every accepted trial consumes the chamber's **1 t of each**. The one-seed result bay must be empty before any trial can start. Fixed result contract: `SeedResult`; branch on `.status` and read `.message`. Payload fields: `.seed_id` and `.species`."""
+        """Starte einen Versuch mit genau den drei verschiedenen Lebensform-IDs, die in der Reaktionskammer dieser Maschine geladen sind. Jeder angenommene Versuch verbraucht von jeder Lebensform **1 t**. Das Ergebnisfach für einen einzelnen Samen muss leer sein, bevor ein Versuch beginnen kann. Fester Ergebnisvertrag: `SeedResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.seed_id` und `.species`."""
         ...
     def life_forms(self) -> _list[_str]:
-        """List of the **30** accepted life-form item ids. For each `blend` from `combinations(self.life_forms(), 3)`, load its three items with `self.input.take(item_id, 1)`, then call `self.combine(blend)`. Enumeration does not move materials. Send any resulting physical seed from `self.output` before continuing."""
+        """Liste der **30** zulässigen Gegenstands-IDs für Lebensformen. Lade für jede Kombination `blend` aus `combinations(self.life_forms(), 3)` ihre drei Gegenstände mit `self.input.take(item_id, 1)` und rufe dann `self.combine(blend)` auf. Das Auflisten bewegt keine Materialien. Transportiere jeden dabei entstandenen physischen Samen aus `self.output` ab, bevor du fortfährst."""
         ...
     def is_running(self) -> _bool:
-        """`True` while a combine trial is in flight."""
+        """`True`, während ein Kombinationsversuch läuft."""
         ...
     def get_progress(self) -> _float:
-        """Progress of the current combine trial as **0-1**; returns **0** when idle."""
+        """Fortschritt des aktuellen Kombinationsversuchs von **0–1**; gibt im Leerlauf **0** zurück."""
         ...
     def get_output_count(self) -> _int:
-        """Number of physical seeds waiting in the single-result bay: **0** or **1**."""
+        """Anzahl der physischen Samen im Ergebnisfach für einen einzelnen Samen: **0** oder **1**."""
         ...
     def recipes(self) -> _list[SeedRecipe]:
-        """List of `SeedRecipe` for every blend discovered so far, the same discover-once-kept-forever journal the Flora / Seed Recipes tab shows. Each carries `.tier`, the physical `.seed_id`, bare `.species`, `.blend`, `.requirements`, `.requirement`, and `.growth_time`. `.requirements` is the programmable form: every `PlantRequirement` has `.kind` and optional `.species`, so companion and antagonist entries identify the exact related plant. `.requirement` remains a compact string summary. Empty until your first hit; re-run a known `.blend` with `self.combine(...)` to reproduce that seed without re-sweeping."""
+        """Liste von `SeedRecipe` für alle bisher entdeckten Kombinationen – dasselbe dauerhaft gespeicherte Verzeichnis, das der Reiter Flora / Saatgutrezepte zeigt. Jeder Eintrag enthält `.tier`, die ID des physischen Samens in `.seed_id`, die reine Arten-ID in `.species`, außerdem `.blend`, `.requirements`, `.requirement` und `.growth_time`. `.requirements` ist die programmierbare Form: Jede `PlantRequirement` enthält `.kind` und optional `.species`, sodass Einträge für Begleit- und Gegenspielerpflanzen die genaue verwandte Pflanze angeben. `.requirement` bleibt eine kurze Textzusammenfassung. Die Liste ist bis zu deinem ersten Treffer leer. Wiederhole eine bekannte Kombination aus `.blend` mit `self.combine(...)`, um ihren Samen erneut herzustellen, ohne alle Kombinationen nochmals durchzugehen."""
         ...
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -316,7 +316,7 @@ class SeedMaker(Component):
 
 ```python
 class SeedRecipe:
-    """self.recipes() (Seed Maker)"""
+    """self.recipes() (Saatgutmaschine)"""
     tier: _int
     species: Literal["sunpetal", "shadeleaf", "dewmoss", "lonethorn", "packfern", "twinvine", "spitebud", "sunspur", "glowvine", "crowncap", "pondmoss", "saltbloom", "brinethorn", "saltmate", "grandbloom"]
     seed_id: Literal["seed_sunpetal", "seed_shadeleaf", "seed_dewmoss", "seed_lonethorn", "seed_packfern", "seed_twinvine", "seed_spitebud", "seed_sunspur", "seed_glowvine", "seed_crowncap", "seed_pondmoss", "seed_saltbloom", "seed_brinethorn", "seed_saltmate", "seed_grandbloom"]
@@ -331,52 +331,52 @@ class SeedRecipe:
 
 ```python
 class Smelter(Component):
-    """Smelter: Refines raw ore into metal stock, one unit at a time, following a recipe you choose. A script sets the recipe, feeds ore in from a bin, and drains the finished metal out to another."""
+    """Schmelzofen: Verarbeitet Roherz nach einem von dir gewählten Rezept zu Metall, jeweils eine Einheit auf einmal. Ein Skript legt das Rezept fest, führt Erz aus einem Lagerbehälter zu und transportiert das fertige Metall in einen anderen."""
     name: _str
     outpost: OutpostRef
     def list_recipes(self) -> _list[Recipe]:
-        """Every recipe this smelter has been given a blueprint for. Returns Recipe objects with `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours`, and `.power_draw`. Locked recipes (no blueprint yet) do not appear, the list reflects what the player can actually run today. Day-1 starts with `\"smelt_iron_ingot\"` only; more arrive as blueprints unlock."""
+        """Alle Rezepte, für die dieser Schmelzofen einen Bauplan erhalten hat. Gibt Rezeptobjekte mit `.tier`, `.id`, `.name`, `.inputs`, `.output_item`, `.output_count`, `.duration_game_hours` und `.power_draw` zurück. Gesperrte Rezepte ohne Bauplan erscheinen nicht; die Liste enthält nur Rezepte, die du derzeit tatsächlich ausführen kannst. Am ersten Tag ist nur `\"smelt_iron_ingot\"` verfügbar. Weitere Rezepte kommen hinzu, sobald ihre Baupläne freigeschaltet sind."""
         ...
     def find_recipe(self, recipe_id: _str) -> Recipe | None:
-        """Find one unlocked recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
+        """Finde ein freigeschaltetes Rezept anhand seiner ID, ohne `list_recipes()` durchlaufen zu müssen. Gibt das zugehörige `Recipe`-Objekt zurück oder `None`, wenn die ID unbekannt oder gesperrt ist oder zu einer anderen Maschine gehört."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "offline", "recipe_locked", "busy", "material_mismatch"]]:
-        """Select which recipe the smelter should run. Call `self.set_recipe(\"smelt_iron_ingot\")` or pass a Recipe from `list_recipes()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Wähle das Rezept aus, das der Schmelzofen ausführen soll. Rufe `self.set_recipe(\"smelt_iron_ingot\")` auf oder übergib ein Rezept aus `list_recipes()`. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
-        """Unset the current recipe and leave the smelter idle. Empty latched buffers clear back to no material. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Entferne das aktuelle Rezept und lasse den Schmelzofen im Leerlauf. Leere, auf ein Material festgelegte Puffer werden dabei wieder auf „kein Material“ zurückgesetzt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def get_recipe(self) -> Literal["", "smelt_iron_ingot", "smelt_glass", "smelt_titanium_ingot", "smelt_cobalt_ingot", "smelt_rare_earth_core", "smelt_neutronium_bar", "smelt_lead_ingot"]:
-        """Current recipe id as a string, or the empty string if no recipe is set. Use after `set_recipe()` to confirm, or to gate other logic (`if self.get_recipe() == \"\": ...`)."""
+        """Die ID des aktuellen Rezepts als Zeichenfolge oder eine leere Zeichenfolge, wenn kein Rezept festgelegt ist. Nutze dies nach `set_recipe()` zur Bestätigung oder als Bedingung für weitere Logik (`if self.get_recipe() == \"\": ...`)."""
         ...
     def get_recipe_inputs(self) -> _dict[_str, _int]:
-        """Input requirements for the current recipe as a dict `{item_id: count_per_craft}`. Returns an empty dict if no recipe is set."""
+        """Benötigte Eingabematerialien für das aktuelle Rezept als dict `{item_id: count_per_craft}`. Gibt ein leeres dict zurück, wenn kein Rezept festgelegt ist."""
         ...
     def is_running(self) -> _bool:
-        """`True` while the smelter is actively processing a unit. Use before `set_recipe()` to avoid the `\"busy\"` rejection: `if not self.is_running(): self.set_recipe(new_id)`. Stays `True` across ticks until the unit completes."""
+        """Gibt an, ob der Schmelzofen aktiv arbeitet. Kann `False` sein, während die Verarbeitung einer noch nicht fertigen Einheit pausiert, etwa weil der Ausgabespeicher voll ist. Der Fortschritt bleibt während der Pause erhalten. Prüfe vor einem Rezeptwechsel mit `get_progress()`, ob noch Arbeit unerledigt ist."""
         ...
     def get_progress(self) -> _float:
-        """Progress toward the next completed unit (**0-1**). Resets to **0** when a unit completes and a new one starts. Useful for progress bars and scripts that want to detect completions by watching the value drop."""
+        """Fortschritt bis zur nächsten fertigen Einheit (**0-1**). Wird auf **0** zurückgesetzt, wenn eine Einheit fertig wird und die nächste beginnt. Nützlich für Fortschrittsbalken und Skripte, die fertige Einheiten erkennen, indem sie auf einen Abfall des Werts achten."""
         ...
     def get_input_count(self) -> _int:
-        """Units currently in the input buffer, waiting to be smelted. Check before `self.input.take(...)` to avoid overfilling, or to decide whether to pull more."""
+        """Anzahl der Einheiten im Eingabepuffer, die auf das Schmelzen warten. Prüfe den Wert vor `self.input.take(...)`, um den Puffer nicht zu überfüllen oder zu entscheiden, ob du weiteres Material holen solltest."""
         ...
     def get_output_count(self) -> _int:
-        """Units currently in the output buffer, waiting to be drained. Check before `self.output.send(...)`, if high, unload downstream first; if low, let processing catch up."""
+        """Anzahl der Einheiten im Ausgabepuffer, die auf den Abtransport warten. Prüfe den Wert vor `self.output.send(...)`: Ist er hoch, leere zuerst das nachgelagerte Lager; ist er niedrig, gib der Verarbeitung Zeit."""
         ...
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -389,25 +389,25 @@ class Storm:
     x: _float
     y: _float
     def kind(self) -> Literal["dust", "thunder"]:
-        """`\"dust\"` or `\"thunder\"`. Dust events transmit a Raw Uranium aftermath message. Thunder charges eligible Lightning Rods and may produce a Storm Glass message."""
+        """`\"dust\"` oder `\"thunder\"`. Staubstürme senden nach ihrem Ende eine Nachricht über Rohuran. Gewitter laden geeignete Blitzableiter auf und können eine Nachricht über Sturmglas erzeugen."""
         ...
     def radius_m(self) -> _float:
-        """Cell radius in m. A heli drone on a straight route holds once its current position is inside the cell; it does not automatically route around it. Electric drones fly through."""
+        """Radius der Sturmzelle in m. Eine Heli-Drohne auf gerader Route hält an, sobald sie sich innerhalb der Sturmzelle befindet; sie fliegt nicht automatisch darum herum. Elektrodrohnen fliegen hindurch."""
         ...
     def speed(self) -> _float:
-        """Travel speed in m/h."""
+        """Bewegungsgeschwindigkeit in m/h."""
         ...
     def heading(self) -> _list[_float]:
-        """Unit travel direction as `[dx, dy]`."""
+        """Normierter Bewegungsrichtungsvektor als `[dx, dy]`."""
         ...
     def intensity(self) -> _float:
-        """Observed strength **0-1** at report time."""
+        """Zum Zeitpunkt des Berichts beobachtete Stärke von **0-1**."""
         ...
     def expires_in(self) -> _float:
-        """Live hours remaining before this observed cell dissipates."""
+        """In Echtzeit aktualisierte Anzahl der Stunden, bis sich diese beobachtete Sturmzelle auflöst."""
         ...
     def eta_to(self, x: _float, y: _float) -> _float | None:
-        """Hours until the cell's edge reaches the point. **0** when the point is already inside the cell; `None` when the track never gets there before dissipating."""
+        """Stunden, bis der Rand der Sturmzelle den Punkt erreicht. **0**, wenn sich der Punkt bereits innerhalb der Zelle befindet; `None`, wenn die Zugbahn ihn vor der Auflösung der Zelle nicht erreicht."""
         ...
 ```
 
@@ -415,22 +415,22 @@ class Storm:
 
 ```python
 class Thermometer(Component):
-    """Thermometer: Always-working surface temperature probe, no calibration needed. Reads the planet's current surface temperature in **°C** directly."""
+    """Thermometer: Ständig einsatzbereiter Temperaturfühler für die Oberfläche; keine Kalibrierung nötig. Misst direkt die aktuelle Oberflächentemperatur des Planeten in **°C**."""
     name: _str
     def get_value(self) -> _float:
-        """Current surface temperature in **°C** as a number. Safe to call from any script; no repair step needed. This is the display °C, for the heat-units progression metric that research thresholds compare against, read `get_component(\"atmosphere\").get_heat()`."""
+        """Aktuelle Oberflächentemperatur in **°C** als Zahl. Kann aus jedem Skript sicher aufgerufen werden; eine Reparatur ist nicht nötig. Das ist der angezeigte Celsiuswert. Für den Fortschrittswert in Wärmeeinheiten, mit dem Forschungsschwellen verglichen werden, lies `get_component(\"atmosphere\").get_heat()` aus."""
         ...
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -441,16 +441,16 @@ class WeatherEventForecast:
     """WeatherReport.forecast()"""
     id: _str
     def kind(self) -> Literal["dust", "thunder"]:
-        """Broad event family: `\"dust\"` or `\"thunder\"`."""
+        """Allgemeine Ereignisart: `\"dust\"` oder `\"thunder\"`."""
         ...
     def arrival_window(self) -> _list[_float]:
-        """`[earliest, latest]` hours after this report's observation time when the cell should enter coverage."""
+        """Zeitfenster `[earliest, latest]` in Stunden nach dem Beobachtungszeitpunkt dieses Berichts, in dem die Wetterzelle voraussichtlich in den Erfassungsbereich gelangt."""
         ...
     def corridor(self) -> Zone:
-        """Coarse predicted travel corridor as a `Zone`; it is storm information, never the hidden aftermath path."""
+        """Grob vorhergesagter Zugkorridor als `Zone`. Er beschreibt den Sturm, niemals den verborgenen Verlauf seiner Nachwirkungen."""
         ...
     def intensity_range(self) -> _list[_float]:
-        """Observed forecast range `[low, high]`, each **0-1**."""
+        """Beobachteter Vorhersagebereich `[low, high]`; beide Werte liegen im Bereich **0-1**."""
         ...
 ```
 
@@ -463,16 +463,16 @@ class WeatherReport:
     source_id: _str
     observed_at_gh: _float
     def age_gh(self) -> _float:
-        """Live age of this immutable report in world-clock hours."""
+        """Aktuelles Alter dieses unveränderlichen Berichts in Stunden der Spielweltzeit."""
         ...
     def coverage(self) -> Zone:
-        """The station's local coverage as a `Zone` frozen at observation time."""
+        """Lokaler Erfassungsbereich der Station als `Zone`, festgehalten zum Beobachtungszeitpunkt."""
         ...
     def active(self) -> _list[Storm]:
-        """List of active `Storm` snapshots inside local coverage at observation time."""
+        """Liste von Momentaufnahmen aktiver `Storm`-Objekte im lokalen Erfassungsbereich zum Beobachtungszeitpunkt."""
         ...
     def forecast(self) -> _list[WeatherEventForecast]:
-        """Local `WeatherEventForecast` entries expected to enter coverage within **8 world-clock hours**, or **24** after Weather Forecasting research."""
+        """Lokale `WeatherEventForecast`-Einträge für Ereignisse, die den Erfassungsbereich voraussichtlich innerhalb von **8 Stunden der Spielweltzeit** erreichen, nach Erforschung der Wettervorhersage innerhalb von **24 Stunden**."""
         ...
 ```
 
@@ -482,19 +482,19 @@ class WeatherReport:
 class WeatherSignalBoard:
     """weather_station.signal_board"""
     def reveal(self, transmission: SignalTransmission | TransmissionRecord) -> ActionResult[Literal["ok", "no_power", "duplicate", "invalid_type"]]:
-        """Publish one transmission into its declared numbered slot. A different event replaces this station's current board. An already-published slot for the same event is left unchanged. The board checks shape and bounds, not meaning or checksum validity. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Veröffentliche eine Übertragung in dem darin angegebenen nummerierten Slot. Ein anderes Ereignis ersetzt die aktuelle Tafel dieser Station. Ein bereits veröffentlichter Slot desselben Ereignisses bleibt unverändert. Die Tafel prüft Struktur und Wertebereiche, aber weder die Bedeutung noch die Gültigkeit der Prüfsumme. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def reject(self, transmission: SignalTransmission | TransmissionRecord) -> ActionResult[Literal["ok", "no_power", "invalid_type"]]:
-        """Add one to the supplied event's refusal count without opening a slot. A different event replaces this station's current board. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Erhöhe die Anzahl der Zurückweisungen für das angegebene Ereignis um eins, ohne einen Slot zu öffnen. Ein anderes Ereignis ersetzt die aktuelle Tafel dieser Station. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def resolve(self, event_id: _str, info: _dict[_str, object]) -> ActionResult[Literal["ok", "no_power", "invalid_type"]]:
-        """Publish up to **6** labelled rows for an event. A different event replaces this station's current board. The board displays supplied values without validating them. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Veröffentliche bis zu **6** beschriftete Zeilen zu einem Ereignis. Ein anderes Ereignis ersetzt die aktuelle Tafel dieser Station. Die Tafel zeigt die übergebenen Werte an, ohne sie zu validieren. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def clear(self) -> ActionResult[Literal["ok", "no_power"]]:
-        """Clear the board, its rejection count, and any published conclusion. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Leere die Tafel und setze ihre Anzahl an Zurückweisungen sowie jede veröffentlichte Schlussfolgerung zurück. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def status(self) -> WeatherSignalBoardStatus:
-        """This station's current board publication metadata."""
+        """Metadaten zur aktuellen Veröffentlichung auf der Tafel dieser Station."""
         ...
 ```
 
@@ -513,31 +513,31 @@ class WeatherSignalBoardStatus:
 
 ```python
 class WeatherStation(Component):
-    """Weather Station: A programmable local storm station and live receiver. It measures immutable local reports, hears event transmissions on broadcast and biome channels, and may publish to the Signal Board."""
+    """Wetterstation: Programmierbare lokale Sturmstation mit Liveempfang. Sie erstellt unveränderliche lokale Messberichte, empfängt Ereignisübertragungen über Rundfunk- und Biomkanäle und kann Daten auf der Signaltafel veröffentlichen."""
     name: _str
     outpost: OutpostRef
     def observe(self) -> WeatherReport:
-        """Measure one immutable local report. The station refreshes at most once per world-clock hour; faster calls return the same report id. The report includes local coverage, active storm snapshots, and a local forecast reaching 8 world-clock hours ahead, or 24 once Weather Forecasting is researched. It never contains an aftermath coordinate."""
+        """Erstellt einen unveränderlichen lokalen Messbericht. Die Station aktualisiert ihn höchstens einmal pro Stunde der Weltzeit; häufigere Aufrufe geben dieselbe Berichts-ID zurück. Der Bericht enthält die lokale Abdeckung, Momentaufnahmen aktiver Stürme und eine lokale Vorhersage für die nächsten 8 Stunden der Weltzeit – nach Erforschung der Wettervorhersage für 24 Stunden. Er verrät niemals die Koordinaten eines Fundorts, der nach einem Sturm entstanden ist."""
         ...
     def last_report(self) -> WeatherReport | None:
-        """Read the last measured report without taking a new observation. This is useful for startup recovery and stale-data handling; `None` means this station has never completed `observe()`."""
+        """Lies den zuletzt erstellten Messbericht, ohne eine neue Beobachtung vorzunehmen. Das hilft bei der Wiederherstellung nach dem Start und beim Umgang mit veralteten Daten; `None` bedeutet, dass diese Station `observe()` noch nie abgeschlossen hat."""
         ...
     signal_board: WeatherSignalBoard
     signal_receiver: SignalReceiver
     def strikes(self) -> _list[WeatherStrike]:
-        """Return this station's bounded strike history. Each `WeatherStrike` includes its event id, observation time, energy, and whether a Lightning Rod banked it. Exact strike positions and Storm Glass eligibility are not included. Only strikes this station physically observed are returned."""
+        """Gibt die begrenzte Aufzeichnung der von dieser Station beobachteten Blitzeinschläge zurück. Jeder `WeatherStrike` enthält seine Ereignis-ID, den Beobachtungszeitpunkt, die Energie und die Angabe, ob ein Blitzableiter sie gespeichert hat. Genaue Einschlagspositionen und Angaben dazu, ob Sturmglas entstehen kann, sind nicht enthalten. Zurückgegeben werden nur Einschläge, die diese Station selbst beobachtet hat."""
         ...
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -557,9 +557,9 @@ class WeatherStrike:
 
 ```python
 class WildlifeSensor(Component):
-    """Wildlife Sensor: Reports total individual fauna across all established Habitat colonies. Available after Biosphere research lands; reads `0` until the first Wildlife colony establishes."""
+    """Tierweltsensor: Meldet die Gesamtzahl einzelner Tiere in allen etablierten Habitatkolonien. Verfügbar nach Erforschung der Biosphäre; gibt `0` zurück, bis die erste Tierkolonie etabliert ist."""
     name: _str
     def get_value(self) -> _int:
-        """Returns the current Wildlife population count as a number, summed from established Habitat colonies."""
+        """Gibt die aktuelle Anzahl der Tiere als Zahl zurück, summiert über alle etablierten Habitatkolonien."""
         ...
 ```

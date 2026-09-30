@@ -15,7 +15,7 @@ Blueprint unlocks by completing the Bio Order **Reef Fragment Survey**.
 | Power | 30 W |
 | Production tier | T1 |
 
-##### Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed `craft_feed_magmatic_annelid` *(Not yet unlocked)*
+##### Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed `craft_feed_magmatic_annelid` *(Unlocked)*
 
 100× Plant Forage, 1× Lava Algae, and 1× Cave Moss → 20× Magmatic Annelid Feed
 Blueprint unlocks by completing the Bio Order **Basalt Tissue Sample**.
@@ -26,7 +26,7 @@ Blueprint unlocks by completing the Bio Order **Basalt Tissue Sample**.
 | Power | 30 W |
 | Production tier | T1 |
 
-##### Forage + Cave/Frost/Coral Fungus → Mycelial Husk Feed `craft_feed_mycelial_husk` *(Unlocked)*
+##### Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed `craft_feed_mycelial_husk` *(Unlocked)*
 
 100× Plant Forage, 1× Cave Fungus, 1× Frost Fungus, and 1× Coral Fungus → 20× Mycelial Husk Feed
 Blueprint unlocks by completing the Bio Order **Trench Specimen Panel**.
@@ -37,7 +37,7 @@ Blueprint unlocks by completing the Bio Order **Trench Specimen Panel**.
 | Power | 32 W |
 | Production tier | T1 |
 
-##### Forage + Magma Crust + Stone Mat → Mantle Strider Feed `craft_feed_mantle_strider` *(Not yet unlocked)*
+##### Forage + Magma Crust + Stone Mat → Mantle Strider Feed `craft_feed_mantle_strider` *(Unlocked)*
 
 100× Plant Forage, 1× Magma Crust, and 1× Stone Mat → 20× Mantle Strider Feed
 Blueprint unlocks by completing the Bio Order **Obsidian Tissue Lot**.
@@ -48,7 +48,7 @@ Blueprint unlocks by completing the Bio Order **Obsidian Tissue Lot**.
 | Power | 32 W |
 | Production tier | T1 |
 
-##### Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed `craft_feed_glasswing_mantis` *(Not yet unlocked)*
+##### Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed `craft_feed_glasswing_mantis` *(Unlocked)*
 
 100× Plant Forage, 1× Heat Lichen, and 1× Frost Lichen → 20× Glasswing Mantis Feed
 Blueprint unlocks by completing the Bio Order **Thermal Bio Compendium**.
@@ -103,7 +103,7 @@ Blueprint unlocks by completing the Bio Order **Bone Walker Forage Index**.
 | Power | 35 W |
 | Production tier | T1 |
 
-##### Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed `craft_feed_vent_drifter` *(Not yet unlocked)*
+##### Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed `craft_feed_vent_drifter` *(Unlocked)*
 
 100× Plant Forage, 1× Vent Algae, 1× Steam Moss, and 1× Sea Algae → 20× Vent Drifter Feed
 Blueprint unlocks by completing the Bio Order **Caldera-Rim Catalog**.
@@ -169,7 +169,7 @@ Blueprint unlocks by completing the Bio Order **Glacial Wyrm Husbandry Dossier**
 | Power | 42 W |
 | Production tier | T1 |
 
-##### Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed `craft_feed_spire_drake` *(Not yet unlocked)*
+##### Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed `craft_feed_spire_drake` *(Unlocked)*
 
 100× Plant Forage, 1× Sulfur Moss, 1× Cinder Lichen, 1× Cold Spores, and 1× Stone Lichen → 20× Spire Drake Feed
 Blueprint unlocks by completing the Bio Order **Volcanic Fragment Manifest**.

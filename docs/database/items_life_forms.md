@@ -62,7 +62,7 @@ Rare fruiting bodies that push up through the ice only in the deepest cold. The 
 | --- | --- |
 | Biome | Frozen |
 | Rarity | Rare |
-| Used in | Forage + Cave/Frost/Coral Fungus → Mycelial Husk Feed |
+| Used in | Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed |
 
 ##### Sea Algae `sea_algae`
 
@@ -122,7 +122,7 @@ Branching fungal growth that mimics coral along sheltered shores. The coastal bi
 | --- | --- |
 | Biome | Coastal |
 | Rarity | Rare |
-| Used in | Forage + Cave/Frost/Coral Fungus → Mycelial Husk Feed |
+| Used in | Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed |
 
 ##### Vent Algae `vent_algae`
 
@@ -302,6 +302,6 @@ Rare glowing fungus fruiting in the deepest chambers. The deep biome's densest e
 | --- | --- |
 | Biome | Deep |
 | Rarity | Rare |
-| Used in | Forage + Cave/Frost/Coral Fungus → Mycelial Husk Feed |
+| Used in | Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed |
 
 *Database / Items*

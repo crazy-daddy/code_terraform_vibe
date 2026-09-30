@@ -6,84 +6,84 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 
 ```python
 class BioCaster(Component):
-    """Bio Caster: Forges a volcanic fragment by holding the crucible in a target temperature band while the recipe's materials are loaded, then casting. Steam and water use separate 20 t internal process buffers. Connect each input port to a compatible source; local sources transfer directly, while remote sources also need a completed conflict-free pipe route between both locations. A script drives the heat and cooling; casting out of band or with the wrong materials burns the whole charge."""
+    """Biogussanlage: Schmiedet ein vulkanisches Fragment: Lade die Materialien des Rezepts, halte den Schmelztiegel im vorgegebenen Temperaturbereich und führe dann den Guss aus. Für Dampf und Wasser gibt es getrennte interne Prozessspeicher mit je 20 t Kapazität. Verbinde jeden Eingangsanschluss mit einer passenden Quelle. Lokale Quellen übertragen direkt; bei entfernten Quellen brauchst du außerdem eine fertiggestellte, konfliktfreie Rohrleitung zwischen beiden Standorten. Ein Skript steuert Heizung und Kühlung. Ein Guss außerhalb des Temperaturbereichs oder mit falschen Materialien verbraucht die gesamte Füllung."""
     name: _str
     outpost: OutpostRef
     def list_recipes(self) -> _list[BioCasterRecipe]:
-        """List all 16 forge recipes without changing the selected recipe, `self.list_recipes()`. Each `BioCasterRecipe` includes its fragment id, tier, exact material shopping list, and target temperature range. The read works through `get_component(...)`, so another machine can plan supplies without possessing every fragment."""
+        """Liste alle 16 Schmiederezepte auf, ohne das ausgewählte Rezept zu ändern: `self.list_recipes()`. Jedes `BioCasterRecipe` enthält seine Fragment-ID, Produktionsstufe, genaue Materialliste und den Zieltemperaturbereich. Die Abfrage funktioniert über `get_component(...)`. So kann eine andere Maschine den Nachschub planen, ohne alle Fragmente zu besitzen."""
         ...
     def find_recipe(self, fragment_id: _str) -> BioCasterRecipe | None:
-        """Look up one forge recipe by volcanic fragment id without selecting it, `self.find_recipe(fragment_id)`. Returns `None` for an unknown id."""
+        """Schlage ein Schmiederezept anhand der ID eines vulkanischen Fragments nach, ohne es auszuwählen: `self.find_recipe(fragment_id)`. Gibt bei einer unbekannten ID `None` zurück."""
         ...
     def catalog(self) -> _list[_str]:
-        """The 16 forgeable volcanic fragment ids, `self.catalog()`. Pass one to `set_recipe(...)`, or use `list_recipes()` when you also need every recipe's material and temperature requirements. Fixed hardware; read it once."""
+        """Die IDs der 16 schmiedbaren vulkanischen Fragmente: `self.catalog()`. Übergib eine davon an `set_recipe(...)`. Wenn du auch die Material- und Temperaturanforderungen aller Rezepte brauchst, verwende `list_recipes()`. Die Hardware ist fest vorgegeben; lies den Katalog einmal aus."""
         ...
     def recipe_tier(self, fragment_id: _str) -> _int | None:
-        """Derived production tier for one recipe from `catalog()`. Returns `None` for an unknown fragment id."""
+        """Die aus `catalog()` abgeleitete Produktionsstufe eines Rezepts. Gibt bei einer unbekannten Fragment-ID `None` zurück."""
         ...
     def set_recipe(self, fragment_id: _str) -> ActionResult[Literal["ok", "invalid_recipe", "busy", "output_full"]]:
-        """Select which volcanic fragment to forge, `self.set_recipe(\"sd_tail_barb\")`. After this, `required_range()` and `required_materials()` describe that recipe. The selection persists like a Smelter recipe. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Wähle mit `self.set_recipe(\"sd_tail_barb\")` das vulkanische Fragment, das geschmiedet werden soll. Danach beschreiben `required_range()` und `required_materials()` dieses Rezept. Die Auswahl bleibt wie bei einem Rezept des Schmelzofens erhalten. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def recipe(self) -> Literal["ma_chitinous_seta", "st_beak", "ms_abdomen_sclerite", "mh_chitin_node", "gm_abdominal_sheath", "vm_tail_barb", "vc_walking_leg", "oc_ink_sac", "bw_hindlimb", "vd_photophore", "hs_abdomen_segment", "hc_beak", "fs_oral_tegmen", "ce_great_appendage", "gw_jaw_fang", "sd_tail_barb"] | None:
-        """The recipe you've selected, `self.recipe()` returns the volcanic fragment id you're set to forge (also the raw fragment to `load`), or `None` if none is set."""
+        """Das ausgewählte Rezept: `self.recipe()` gibt die ID des vulkanischen Fragments zurück, das geschmiedet werden soll (zugleich das rohe Fragment für `load`), oder `None`, wenn kein Rezept ausgewählt ist."""
         ...
     def required_range(self) -> _list[_float] | None:
-        """The selected recipe's target band `[low, high]` in °C, `self.required_range()`. `cast()` must fire with `temperature()` inside it (inclusive). `None` if no recipe is set."""
+        """Der Zieltemperaturbereich `[low, high]` des ausgewählten Rezepts in °C: `self.required_range()`. Beim Aufruf von `cast()` muss `temperature()` innerhalb dieses Bereichs liegen, einschließlich der Grenzwerte. Gibt `None` zurück, wenn kein Rezept ausgewählt ist."""
         ...
     def required_materials(self) -> _dict[_str, _int]:
-        """Lists the fabricated materials required by the selected recipe as `{item_id: count}`. Load exactly those amounts before casting. Iterate with `.items()`. Returns an empty dict when no recipe is selected."""
+        """Listet die für das ausgewählte Rezept benötigten verarbeiteten Materialien als `{item_id: count}` auf. Lade vor dem Guss genau diese Mengen. Durchlaufe die Einträge mit `.items()`. Gibt ein leeres dict zurück, wenn kein Rezept ausgewählt ist."""
         ...
     def required_fragment(self) -> Literal["ma_chitinous_seta", "st_beak", "ms_abdomen_sclerite", "mh_chitin_node", "gm_abdominal_sheath", "vm_tail_barb", "vc_walking_leg", "oc_ink_sac", "bw_hindlimb", "vd_photophore", "hs_abdomen_segment", "hc_beak", "fs_oral_tegmen", "ce_great_appendage", "gw_jaw_fang", "sd_tail_barb"] | None:
-        """The raw fragment id the recipe consumes, `self.required_fragment()` (identical to `recipe()`). `None` if no recipe is set."""
+        """Die ID des rohen Fragments, das das Rezept verbraucht: `self.required_fragment()` (identisch mit `recipe()`). Gibt `None` zurück, wenn kein Rezept ausgewählt ist."""
         ...
     def temperature(self) -> _float:
-        """Current crucible temperature in °C, `self.temperature()`, ranging **100** (cold baseline) to **1000** (max). Drive it into `required_range()` with the knobs before casting."""
+        """Aktuelle Temperatur des Schmelztiegels in °C: `self.temperature()`. Sie reicht von **100** (kalter Ausgangswert) bis **1000** (Maximum). Bring sie vor dem Guss mit den Reglern in den von `required_range()` vorgegebenen Bereich."""
         ...
     def temp_rate(self) -> _float:
-        """Net temperature change in °C/h right now, `self.temp_rate()`. Positive = heating and negative = cooling. Full heat is +2400 °C/h and full cool is -2400 °C/h; with both knobs at 0, an unlocked crucible above baseline cools naturally at -20 °C/h. Returns 0 at the 100 °C baseline or while a cast is in progress."""
+        """Aktuelle Nettoänderung der Temperatur in °C/h: `self.temp_rate()`. Positive Werte bedeuten Erwärmung, negative Abkühlung. Bei voller Heizleistung beträgt sie +2400 °C/h, bei voller Kühlung -2400 °C/h. Stehen beide Regler auf 0, kühlt ein nicht gesperrter Schmelztiegel oberhalb des Ausgangswerts von selbst mit -20 °C/h ab. Beim Ausgangswert von 100 °C und während eines Gusses wird 0 zurückgegeben."""
         ...
     def heat(self) -> _float:
-        """Current heat-knob setting **0-100 %**, `self.heat()`. At 100 % temperature rises **+2400 °C/h** (burning steam); use a lower setting near the target band."""
+        """Aktuelle Einstellung des Heizreglers **0-100 %**: `self.heat()`. Bei 100 % steigt die Temperatur mit **+2400 °C/h** (dabei wird Dampf verbraucht). Verwende nahe dem Zielbereich eine niedrigere Einstellung."""
         ...
     def cool(self) -> _float:
-        """Current cool-knob setting **0-100 %**, `self.cool()`. At 100 % temperature falls **-2400 °C/h** (burning water); use a lower setting near the target band."""
+        """Aktuelle Einstellung des Kühlreglers **0-100 %**: `self.cool()`. Bei 100 % sinkt die Temperatur mit **-2400 °C/h** (dabei wird Wasser verbraucht). Verwende nahe dem Zielbereich eine niedrigere Einstellung."""
         ...
     def fragment(self) -> Literal["ma_chitinous_seta", "st_beak", "ms_abdomen_sclerite", "mh_chitin_node", "gm_abdominal_sheath", "vm_tail_barb", "vc_walking_leg", "oc_ink_sac", "bw_hindlimb", "vd_photophore", "hs_abdomen_segment", "hc_beak", "fs_oral_tegmen", "ce_great_appendage", "gw_jaw_fang", "sd_tail_barb"] | None:
-        """The raw fragment id loaded in the chamber, `self.fragment()`, or `None` if the chamber is empty."""
+        """Die ID des rohen Fragments in der Kammer: `self.fragment()`. Ist die Kammer leer, wird `None` zurückgegeben."""
         ...
     def materials(self) -> _dict[_str, _int]:
-        """The materials currently loaded in the crucible, `self.materials()` returns `{item_id: count}`. Compare against `required_materials()` before `cast()`. Iterate with `.items()`."""
+        """Die derzeit im Schmelztiegel geladenen Materialien: `self.materials()` gibt `{item_id: count}` zurück. Vergleiche die Werte vor `cast()` mit `required_materials()`. Durchlaufe die Einträge mit `.items()`."""
         ...
     def set_heat(self, pct: _float) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Set the heat knob (steam to temperature up), `self.set_heat(100)` for +2400 °C/h, then use a lower percentage for the final approach. Range **0-100**, clamped. Open-loop: it keeps heating and burning steam until you set it back. With both knobs at 0, the crucible cools naturally at 20 °C/h, so cast after entering the band. Re-idles to 0 when the chamber empties or the script stops. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stelle den Heizregler ein (Dampf erhöht die Temperatur): `self.set_heat(100)` bewirkt +2400 °C/h. Verwende für die letzte Annäherung eine niedrigere Prozentzahl. Bereich: **0-100**; Werte außerhalb werden begrenzt. Die Regelung erfolgt ohne Rückkopplung: Der Schmelztiegel heizt weiter und verbraucht Dampf, bis du den Regler zurückstellst. Stehen beide Regler auf 0, kühlt er von selbst mit 20 °C/h ab. Gieße daher, sobald die Temperatur im Zielbereich liegt. Wenn die Kammer leer wird oder das Skript stoppt, wird der Regler wieder auf 0 gestellt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def set_cool(self, pct: _float) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Set the cool knob (water to temperature down), `self.set_cool(100)` for -2400 °C/h, then use a lower percentage for the final approach. Range **0-100**, clamped. Open-loop: keeps cooling and burning water until you set it back. Both knobs may run at once, but that burns both fluids for little movement. With both knobs at 0, the crucible still cools naturally at 20 °C/h. Re-idles to 0 when the chamber empties or the script stops. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stelle den Kühlregler ein (Wasser senkt die Temperatur): `self.set_cool(100)` bewirkt -2400 °C/h. Verwende für die letzte Annäherung eine niedrigere Prozentzahl. Bereich: **0-100**; Werte außerhalb werden begrenzt. Die Regelung erfolgt ohne Rückkopplung: Der Schmelztiegel kühlt weiter und verbraucht Wasser, bis du den Regler zurückstellst. Beide Regler können gleichzeitig laufen, doch dabei werden beide Flüssigkeiten verbraucht, ohne die Temperatur wesentlich zu ändern. Auch wenn beide Regler auf 0 stehen, kühlt der Schmelztiegel von selbst mit 20 °C/h ab. Wenn die Kammer leer wird oder das Skript stoppt, wird der Regler wieder auf 0 gestellt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull a raw volcanic sample of `fragment_id` from `self.input` into the chamber, usually `self.load(self.recipe())`. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Hole eine rohe vulkanische Probe mit der ID `fragment_id` aus `self.input` in die Kammer, meist mit `self.load(self.recipe())`. Mit den optionalen Parametern `properties` und `property_match` kannst du nach der üblichen Konvention eine bestimmte Identität auswählen: beliebige Übereinstimmung, Teilmenge oder exakte Übereinstimmung. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def eject(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Stage the chamber sample and all loaded materials in `self.output` without changing their properties. A single-material output may require a send/eject cycle for each item type. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Lege die Probe aus der Kammer und alle geladenen Materialien in `self.output` bereit, ohne ihre Eigenschaften zu verändern. Wenn der Ausgang nur einen Materialtyp aufnehmen kann, ist möglicherweise für jeden Gegenstandstyp ein eigener Sende- und Auswurfzyklus nötig. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def cast(self) -> ActionResult[Literal["ok", "out_of_range", "wrong_materials", "wrong_fragment", "empty", "no_recipe", "busy", "output_full"]]:
-        """Forge the loaded fragment, `self.cast()`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Schmiede das geladene Fragment mit `self.cast()`. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     input: InputSlot
     output: OutputSlot
     steam_in: FluidPort
     water_in: FluidPort
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -102,30 +102,30 @@ class BioCasterRecipe:
 
 ```python
 class BioCollector(Component):
-    """Bio Collector: Automates the Collect step of the biology loop, fetching a field specimen into its cargo slot on its own. It does nothing until a script tells it where to collect."""
+    """Biosammler: Automatisiert den Sammelschritt des Biologiekreislaufs und holt selbstständig eine Probe aus dem Gelände in seinen Frachtslot. Er tut nichts, bis ein Skript ihm sagt, wo er sammeln soll."""
     name: _str
     outpost: OutpostRef
     def scan(self) -> _list[FragmentLocation]:
-        """Lists fragment locations in this outpost's biome, nearest first. Each `FragmentLocation` includes `coords`, distance, and whether it has been cataloged. Cataloged locations also reveal their fragment id, name, and rarity; unknown locations leave those details as `None`. To identify an unknown location, collect it with `bio_collector.collect(location.coords)` and analyze it at a Bio Lab. Recipes and creature identity are not revealed here. Analyzed fragments also appear in `journal.cataloged_fragments(...)`."""
+        """Listet die Fundorte von Fragmenten im Biom dieses Außenpostens auf, beginnend mit dem nächstgelegenen. Jeder Eintrag vom Typ `FragmentLocation` enthält `coords`, die Entfernung und die Information, ob der Fundort katalogisiert wurde. Bei katalogisierten Fundorten werden auch Fragment-ID, Name und Seltenheit angezeigt; bei unbekannten Fundorten stehen diese Angaben auf `None`. Um das Fragment an einem unbekannten Fundort zu identifizieren, sammle es mit `bio_collector.collect(location.coords)` und analysiere es in einem Biolabor. Rezepte und die Identität von Kreaturen werden hier nicht angezeigt. Analysierte Fragmente erscheinen auch in `journal.cataloged_fragments(...)`."""
         ...
     def collect(self, coords: _list[_float]) -> ActionResult[Literal["ok", "busy", "cargo_occupied", "invalid_coords", "no_fragment"]]:
-        """Retrieve the fragment at `coords` from `scan()` and place it in the collector's cargo slot. The trip takes **~0.1-0.3 h** in every biome, depending on distance; the script pauses until collection finishes. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Hole das Fragment an `coords` aus `scan()` und lege es in den Frachtslot des Sammlers. Die Fahrt dauert je nach Entfernung in jedem Biom **~0,1-0,3 h**; das Skript pausiert, bis das Sammeln abgeschlossen ist. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def discard(self) -> ActionResult[Literal["ok", "empty", "busy"]]:
-        """Discard the specimen currently held in collector cargo. Use this when the collector picked up a specimen you do not want to send to a Bio Lab. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Entsorge die Probe, die sich gerade im Frachtslot des Sammlers befindet. Verwende dies, wenn der Sammler eine Probe aufgenommen hat, die du nicht an ein Biolabor schicken möchtest. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     cargo: Specimen | None
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -133,55 +133,55 @@ class BioCollector(Component):
 
 ```python
 class BioConditioner(Component):
-    """Bio Conditioner: Inspects a deep-biome fragment against a fixed rulebook, quizzing your script on its properties one at a time. Judge each one correctly to pass the fragment; a single wrong call burns the whole specimen."""
+    """Biokonditionierer: Prüft ein Tiefsee-Fragment nach einem festen Regelwerk und fragt dein Skript nacheinander nach seinen Eigenschaften. Beurteile jede richtig, damit das Fragment die Prüfung besteht. Eine einzige falsche Entscheidung verbrennt die ganze Probe."""
     name: _str
     outpost: OutpostRef
     def report(self) -> _dict[_str, JsonValue]:
-        """The loaded fragment's full condition report, `self.report()` returns `{property: value}` for all 10 properties (`glow`, `brightness`, `smell`, `gunk`, `cracks`, `feel`, `twitch`, `bugs`, `weight`, `sound`). Read the whole thing: the combo rules need siblings (brightness reads glow, weight reads gunk, sound reads cracks). Word properties are strings, numbers are numbers. `{}` if nothing is loaded. Iterate with `.items()` or index `report[\"gunk\"]`."""
+        """Der vollständige Zustandsbericht des geladenen Fragments: `self.report()` gibt für alle 10 Eigenschaften `{property: value}` zurück (`glow`, `brightness`, `smell`, `gunk`, `cracks`, `feel`, `twitch`, `bugs`, `weight`, `sound`). Lies den ganzen Bericht: Für manche Regeln brauchst du weitere Eigenschaften (Helligkeit hängt vom Leuchten ab, Gewicht von Ablagerungen und Klang von Rissen). Textwerte sind Strings, Zahlenwerte sind Zahlen. Wenn nichts geladen ist, wird `{}` zurückgegeben. Durchlaufe den Bericht mit `.items()` oder greife mit `report[\"gunk\"]` auf einen Wert zu."""
         ...
     def properties(self) -> _list[_str]:
-        """Lists the ten property ids in their fixed inspection order, from `\"glow\"` through `\"sound\"`. The order is the same for every Deep fragment, making it suitable for a general inspection loop."""
+        """Listet alle zehn Eigenschafts-IDs in einer festen Katalogreihenfolge auf, von `\"glow\"` bis `\"sound\"`. Die Liste ist bei jedem Tiefsee-Fragment gleich. Jede Prüfung fragt fünf Eigenschaften in zufälliger Reihenfolge ab; nutze `self.current()`, um die Eigenschaft der jeweiligen Stufe zu ermitteln."""
         ...
     def fragment(self) -> Literal["gw_spinal_vertebra", "vc_eye_stalk", "oc_lens_eye", "bw_tail_spike", "vd_tendril", "mh_stigmatic_disc", "hs_compound_eye", "ms_eye_cluster", "hc_tentacle_crown", "ma_luminous_ring", "gm_antennal_whip", "fs_holdfast_rootlet", "sd_talon", "ce_cephalic_photophore", "st_carapace_neural", "vm_ventral_photophore"] | None:
-        """The raw deep fragment id loaded in the chamber, `self.fragment()`, or `None` if empty."""
+        """Die ID des unbehandelten Tiefsee-Fragments in der Kammer, abrufbar mit `self.fragment()`, oder `None`, wenn die Kammer leer ist."""
         ...
     def stage(self) -> _int:
-        """The current QC stage, `self.stage()` returns **1-5** while a run is live, or **0** when none is active (nothing loaded, or the run just resolved). Each stage quizzes one property."""
+        """Die aktuelle Stufe der Qualitätsprüfung: `self.stage()` gibt während eines laufenden Durchgangs **1-5** zurück, sonst **0** (wenn nichts geladen ist oder der Durchgang gerade abgeschlossen wurde). In jeder Stufe wird eine Eigenschaft geprüft."""
         ...
     def current(self) -> Literal["glow", "brightness", "smell", "gunk", "cracks", "feel", "twitch", "bugs", "weight", "sound"] | None:
-        """The property this stage is quizzing, `self.current()` returns one of the 10 ids (look its value up in `report()`, apply its rule, then `accept()`/`reject()`), or `None` if no run is active. You can't predict which 5 of the 10 come up, so encode every rule."""
+        """Die Eigenschaft, die in dieser Stufe geprüft wird: `self.current()` gibt eine der 10 IDs zurück (schlage ihren Wert in `report()` nach, wende ihre Regel an und rufe dann `accept()` oder `reject()` auf). Wenn kein Durchgang läuft, gibt die Funktion `None` zurück. Welche 5 der 10 Eigenschaften drankommen, lässt sich nicht vorhersagen. Programmiere daher jede Regel."""
         ...
     def lights(self) -> _list[_str]:
-        """The 5 stage results so far, `self.lights()` returns a list of `\"green\"` (correct call), `\"red\"` (a miss, run over), and `\"pending\"` (not reached). They light one at a time as you answer."""
+        """Die bisherigen Ergebnisse der 5 Stufen: `self.lights()` gibt eine Liste mit `\"green\"` (richtige Entscheidung), `\"red\"` (Fehler, Durchgang beendet) und `\"pending\"` (noch nicht erreicht) zurück. Mit jeder Antwort leuchtet ein weiteres Licht auf."""
         ...
     def is_running(self) -> _bool:
-        """`True` while a 5-stage run is live (a fragment is loaded with stages left), `self.is_running()`. Drive the gauntlet with `while cond.is_running(): prop = cond.current(); ...`. Goes `False` when the run finishes, burns, or nothing is loaded."""
+        """`True`, solange ein Durchgang mit 5 Stufen läuft (ein Fragment ist geladen und es sind noch Stufen offen), abrufbar mit `self.is_running()`. Durchlaufe die Prüfung mit `while cond.is_running(): prop = cond.current(); ...`. Wird zu `False`, wenn der Durchgang erfolgreich endet, die Probe verbrennt oder nichts geladen ist."""
         ...
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull one raw deep sample from `self.input` into the chamber and start a fresh 5-stage run. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Entnimmt `self.input` eine unbehandelte Tiefsee-Probe, legt sie in die Kammer und startet einen neuen Durchgang mit 5 Stufen. Mit den optionalen Parametern `properties` und `property_match` wählst du anhand der üblichen Modi „any“, „subset“ oder „exact“ eine bestimmte Variante aus. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def eject(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Stage the unchanged chamber sample in `self.output` and end the run. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Legt die unveränderte Probe aus der Kammer in `self.output` bereit und beendet den Durchgang. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def accept(self) -> ActionResult[Literal["ok", "conditioned", "burned", "no_run", "busy", "output_full"]]:
-        """Stamp the current property as passing. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Markiert die aktuelle Eigenschaft als bestanden. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def reject(self) -> ActionResult[Literal["ok", "conditioned", "burned", "no_run", "busy", "output_full"]]:
-        """Stamp the current property as damaged. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Markiert die aktuelle Eigenschaft als beschädigt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -189,43 +189,43 @@ class BioConditioner(Component):
 
 ```python
 class BioExchange(Component):
-    """Bio Exchange: Delivers biology samples to fulfill a Bio Order, the biology counterpart to the Supply Dock. A script assigns an order and delivers its required fragments until the reward pays out."""
+    """Biobörse: Liefert Biologieproben für einen Bioauftrag und erfüllt damit in der Biologie die Funktion des Versorgungsdocks. Ein Skript weist der Biobörse einen Auftrag zu und liefert die benötigten Fragmente, bis die Belohnung ausgezahlt wird."""
     name: _str
     outpost: OutpostRef
     def orders(self) -> _list[BioOrder]:
-        """Lists every `BioOrder`, including orders you cannot fill yet. Each order includes its id, biome, requirements, reward, status, delivered samples, samples already `in_transit`, completion percent, and any required `target_glow`. Progress is shared by every Bio Exchange serving that order. Use `requires - delivered - in_transit` to avoid making samples that are already committed, then pass the chosen `order.id` to `set_order(...)`. From another script, call `get_component(\"bio_exchange_1\").orders()`. `get_component(\"orders\")` is for Earth Orders."""
+        """Listet alle `BioOrder`-Objekte auf, auch Aufträge, die du noch nicht erfüllen kannst. Jeder Auftrag enthält seine ID, sein Biom, seine Anforderungen, Belohnung und seinen Status sowie gelieferte Proben, bereits `in_transit` befindliche Proben, den Fortschritt in Prozent und gegebenenfalls einen erforderlichen `target_glow`. Alle Biobörsen, die denselben Auftrag bedienen, teilen sich den Fortschritt. Berechne mit `requires - delivered - in_transit`, wie viele Proben noch fehlen, damit du keine bereits zugesagten Proben erneut herstellst. Übergib dann die gewählte `order.id` an `set_order(...)`. Aus einem anderen Skript rufst du `get_component(\"bio_exchange_1\").orders()` auf. `get_component(\"orders\")` ist für Aufträge der Erde vorgesehen."""
         ...
     def set_order(self, order_id: _str) -> ActionResult[Literal["ok", "unknown_order", "completed"]]:
-        """Pick the Bio Order this Exchange will fill. `self.set_order(\"bio_order_03\")`. Several Exchanges may activate the **same** Bio Order, they cooperate on one shared delivery count, so big Bio Orders can be served from multiple outposts at once. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Wählt den Bioauftrag aus, den diese Biobörse erfüllen soll. `self.set_order(\"bio_order_03\")`. Mehrere Biobörsen können **denselben** Bioauftrag aktivieren. Sie arbeiten mit einem gemeinsamen Lieferzähler, sodass große Bioaufträge gleichzeitig von mehreren Außenposten aus bedient werden können. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def clear_order(self) -> ActionResult[Literal["ok", "busy", "output_full"]]:
-        """Clear this Exchange's active Bio Order assignment. Already delivered progress stays recorded on the Bio Order, completed Bio Orders stay completed, and no samples are moved. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Hebt die Zuweisung des aktiven Bioauftrags für diese Biobörse auf. Bereits gelieferte Proben bleiben beim Bioauftrag erfasst, abgeschlossene Bioaufträge bleiben abgeschlossen und es werden keine Proben bewegt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def active_order(self) -> BioOrder | None:
-        """A snapshot of the active `BioOrder` object, its `requires`, completed `delivered` progress, live `in_transit` commitments, `percent`, and `target_glow` (coastal infusion target) at the moment you call it, or `None` if no order is set. `in_transit` includes qualifying samples already staged in serving Exchange inputs plus active timed deliveries. Call `active_order()` again to read fresh progress."""
+        """Eine Momentaufnahme des aktiven `BioOrder`-Objekts mit `requires`, dem abgeschlossenen Fortschritt `delivered`, den aktuellen Zusagen `in_transit`, `percent` und `target_glow` (Zielfarbe der Küsteninfusion) zum Zeitpunkt des Aufrufs. Ist kein Auftrag zugewiesen, gibt die Funktion `None` zurück. `in_transit` umfasst passende Proben, die bereits in den Eingängen der beteiligten Biobörsen liegen, sowie laufende Lieferungen. Rufe `active_order()` erneut auf, um den neuesten Fortschritt zu lesen."""
         ...
     def matches_order(self, item_id: _str, properties: ItemProperties | None = ...) -> _bool:
-        """Check whether one exact item matches this Exchange's active Bio Order without moving it. Pass the `id` and `properties` from an `ItemStack`. `True` means that variant satisfies the order's glow, genes, Forged, Conditioned, or plain-sample requirement. Use it with Inventory, Storage Bin, or Warehouse `stacks()` before an exact `self.input.take(...)`. Returns `False` when there is no active order, the order is complete, or the item does not qualify."""
+        """Prüft, ob ein bestimmtes Item zum aktiven Bioauftrag dieser Biobörse passt, ohne es zu bewegen. Übergib `id` und `properties` eines `ItemStack`. `True` bedeutet, dass diese Variante die Anforderungen des Auftrags an Leuchten, Gene, geschmiedete oder konditionierte Proben beziehungsweise einfache Proben erfüllt. Verwende die Funktion mit `stacks()` des Inventars, eines Lagerbehälters oder eines Lagerhauses, bevor du eine genau bestimmte Variante mit `self.input.take(...)` entnimmst. Sie gibt `False` zurück, wenn kein Auftrag aktiv ist, der Auftrag abgeschlossen ist oder das Item nicht passt."""
         ...
     def deliver(self) -> ActionResult[Literal["ok", "complete", "no_input", "output_full", "no_active", "busy"]]:
-        """Send one matching sample from `self.input` toward the active Bio Order. `self.deliver()` moves a single sample per call and takes a short time, so a script calls it in a loop until the order is filled. A sample only counts if it satisfies the order's exact requirement, which for some biomes means a specific glow, gene set, or processed variant and not just the right fragment id; `self.matches_order(item_id, properties)` tests one stack before it is taken. Progress is **shared across every Bio Exchange** serving the same Bio Order, so another Exchange may land the final sample first and a surplus sample is refunded. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Sendet eine passende Probe aus `self.input` zum aktiven Bioauftrag. `self.deliver()` bewegt pro Aufruf genau eine Probe und benötigt etwas Zeit; rufe die Funktion daher in einer Skriptschleife auf, bis der Auftrag erfüllt ist. Eine Probe zählt nur, wenn sie die genaue Anforderung des Auftrags erfüllt. In manchen Biomen reicht die richtige Fragment-ID allein nicht: Es wird eine bestimmte Leuchtfarbe, Genausstattung oder verarbeitete Variante verlangt. Mit `self.matches_order(item_id, properties)` kannst du einen Stapel vor der Entnahme prüfen. Der Fortschritt ist für **alle Biobörsen mit demselben Bioauftrag gemeinsam**. Eine andere Biobörse kann die letzte Probe zuerst liefern; eine überschüssige Probe wird dann zurückgegeben. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def lifetime_credits(self) -> _int:
-        """Total credits this Exchange has earned across every completed Bio Order."""
+        """Alle Credits, die diese Biobörse mit abgeschlossenen Bioaufträgen insgesamt verdient hat."""
         ...
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -233,42 +233,42 @@ class BioExchange(Component):
 
 ```python
 class BioLab(Component):
-    """Bio Lab: Automates the Analyze and Extract steps of the biology loop, studying a specimen and pulling a usable sample from it. It stays idle until a script drives it."""
+    """Biolabor: Automatisiert die Schritte Analysieren und Extrahieren des Biologieablaufs: Das Labor untersucht ein Exemplar und gewinnt daraus eine nutzbare Probe. Es bleibt untätig, bis ein Skript es steuert."""
     name: _str
     outpost: OutpostRef
     def take_from(self, collector: Component | IdRecord) -> ActionResult[Literal["ok", "busy", "input_occupied", "not_found", "source_empty", "source_busy", "wrong_outpost", "invalid_source", "output_full"]]:
-        """Pull the specimen out of a Bio Collector's cargo into this lab's specimen chamber. The source Collector must be at the same outpost as this Lab; pass an explicit collector reference: `self.take_from(get_component(\"bio_collector_1\"))`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Holt das Exemplar aus der Fracht eines Biosammlers in die Probenkammer dieses Labors. Der Quell-Biosammler muss sich am selben Außenposten wie das Labor befinden. Übergib eine ausdrückliche Referenz auf ihn: `self.take_from(get_component(\"bio_collector_1\"))`. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def analyze(self) -> AnalyzeResult[Literal["ok", "busy", "output_full", "input_empty", "invalid_specimen"]]:
-        """Identify the lab's current fragment and reveal its extraction recipe. Analysis takes **~0.1 h** in every biome; the script pauses until it finishes. A successful analysis adds the fragment to `journal.cataloged_fragments(planet_id)`. Creature identity stays hidden until all five fragments are cataloged, then the creature appears in `journal.cataloged_creatures(planet_id)`. Fixed result contract: `AnalyzeResult`; branch on `.status` and read `.message`. Payload fields: `.info`."""
+        """Identifiziert das aktuelle Fragment im Labor und zeigt sein Extraktionsrezept an. Die Analyse dauert in jedem Biom **~0.1 h**; das Skript wartet, bis sie abgeschlossen ist. Nach einer erfolgreichen Analyse wird das Fragment zu `journal.cataloged_fragments(planet_id)` hinzugefügt. Die Identität des Lebewesens bleibt verborgen, bis alle fünf Fragmente katalogisiert sind. Danach erscheint es in `journal.cataloged_creatures(planet_id)`. Fester Ergebnisvertrag: `AnalyzeResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.info`."""
         ...
     def load(self, reagent_id: _str, qty: _int, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "busy", "invalid_reagent", "invalid_qty", "invalid_properties", "invalid_property_match", "insufficient_input", "output_full"]]:
-        """Stage a whole-number reagent quantity for the next `extract()` by consuming it from `self.input`. `self.load(\"alkaline_buffer\", 4)`. Reagents are sold by the `shop`; both UI purchases and `shop.buy(reagent_id)` place them in base Inventory. Optional `properties` and `property_match` select a specific item identity using the standard any, subset, or exact convention. Fractional or negative quantities raise an argument error. Calling `extract()` with a mismatched recipe destroys the loaded reagents. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stellt für das nächste `extract()` eine ganzzahlige Reagenzienmenge bereit und entnimmt sie aus `self.input`. `self.load(\"alkaline_buffer\", 4)`. Reagenzien werden im `shop` verkauft; sowohl Käufe über die Oberfläche als auch `shop.buy(reagent_id)` legen sie ins Basisinventar. Mit den optionalen Parametern `properties` und `property_match` wählst du anhand der üblichen Modi „any“, „subset“ oder „exact“ eine bestimmte Item-Variante aus. Bruchteile und negative Mengen lösen einen Argumentfehler aus. Wenn du `extract()` mit einem unpassenden Rezept aufrufst, werden die geladenen Reagenzien zerstört. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def unload_reagents(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Stage all loaded reagents in `self.output` without touching the specimen. Use this when you staged the wrong recipe. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Legt alle geladenen Reagenzien in `self.output` bereit, ohne das Exemplar anzutasten. Verwende dies, wenn du das falsche Rezept vorbereitet hast. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def extract(self) -> ActionResult[Literal["ok", "output_full", "recipe_mismatch", "busy", "input_empty", "not_analyzed", "invalid_specimen"]]:
-        """Consume `loaded_reagents` and place **1 sample** of the analyzed specimen in `self.output`, preserving its exact properties. Extraction takes **~0.1 + 0.05 × units h** in every biome; the script pauses until it finishes. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Verbraucht `loaded_reagents` und legt **1 Probe** des analysierten Exemplars in `self.output` ab. Ihre genauen Eigenschaften bleiben erhalten. Die Extraktion dauert in jedem Biom **~0.1 + 0.05 × units h**; das Skript wartet, bis sie abgeschlossen ist. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def discard(self) -> ActionResult[Literal["ok", "input_empty", "busy", "output_full"]]:
-        """Drop the current specimen and stage any loaded reagents in `self.output`. Use it after `analyze()` reveals a fragment you do not need. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Verwirft das aktuelle Exemplar und legt alle geladenen Reagenzien in `self.output` bereit. Verwende dies, wenn `analyze()` ein Fragment aufdeckt, das du nicht brauchst. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     specimen: Specimen | None
     loaded_reagents: _dict[_str, _int]
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -276,41 +276,41 @@ class BioLab(Component):
 
 ```python
 class BioLuminizer(Component):
-    """Bio Luminizer: Tints a coastal fragment's glow to a target color using three built-in colored lamps. The lamps bleed into each other, so a script solves the brightness mix that lands on the exact target."""
+    """Bioluminisierer: Färbt das Leuchten eines Küstenfragments mit drei eingebauten Farblampen auf eine Zielfarbe. Jede Lampe trägt zu mehreren Farbkanälen bei. Ein Skript muss daher die Helligkeitswerte berechnen, die genau die Zielfarbe ergeben."""
     name: _str
     outpost: OutpostRef
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull a raw glowing coastal sample of `fragment_id` from `self.input` into the chamber, `self.load(\"gw_caudal_fin\")`. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Read its start color with `self.chamber.glow`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Entnimmt `self.input` eine unbehandelte, leuchtende Küstenprobe mit der ID `fragment_id` und legt sie in die Kammer: `self.load(\"gw_caudal_fin\")`. Mit den optionalen Parametern `properties` und `property_match` wählst du anhand der üblichen Modi „any“, „subset“ oder „exact“ eine bestimmte Variante aus. Lies ihre Ausgangsfarbe mit `self.chamber.glow`. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     chamber: ChamberSample | None
     def lamp_signature(self, channel: _str) -> _list[_int] | None:
-        """The RGB-per-unit `[r,g,b]` a lamp adds per brightness step, its impurity. `self.lamp_signature(\"red\")` is roughly `[6, 1, 1]`: mostly red, but it bleeds a little into green and blue. Read all three (`\"red\"`, `\"green\"`, `\"blue\"`) to build the 3×3 you invert. Fixed hardware, read once and reuse. `None` for an unknown channel."""
+        """Der RGB-Beitrag `[r,g,b]`, den eine Lampe pro Helligkeitsstufe hinzufügt, einschließlich ihrer Farbabweichung. `self.lamp_signature(\"red\")` ist ungefähr `[6, 1, 1]`: überwiegend Rot, aber auch ein wenig Grün und Blau. Lies alle drei Kanäle (`\"red\"`, `\"green\"`, `\"blue\"`), um die invertierbare 3×3-Matrix aufzubauen. Die Hardwarewerte sind fest: Lies sie einmal und verwende sie erneut. Für einen unbekannten Kanal wird `None` zurückgegeben."""
         ...
     def glow(self) -> _list[_int] | None:
-        """The chamber's **current** resulting glow `[r,g,b]` given the lamps set right now, it reflects `set_lamps(...)` immediately, so use it to verify your solve before committing: `if self.glow() == target: self.infuse()`. `None` when the chamber is empty."""
+        """Das **aktuelle** Leuchten der Kammer als `[r,g,b]` bei den momentan eingestellten Lampen. Änderungen durch `set_lamps(...)` werden sofort angezeigt. Prüfe damit deine Berechnung vor der endgültigen Verarbeitung: `if self.glow() == target: self.infuse()`. Bei leerer Kammer wird `None` zurückgegeben."""
         ...
     def set_lamps(self, r: _int, g: _int, b: _int) -> ActionResult[Literal["ok", "busy", "output_full"]]:
-        """Set the three lamp brightnesses, `self.set_lamps(7, 13, 4)`. Each is a **whole number 0-40**; the exact answer is always an integer, so `round()` your computed values. Fractional or out-of-range values raise an argument error (not silently floored). Re-idles to 0 when the script stops. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stellt die Helligkeit der drei Lampen ein: `self.set_lamps(7, 13, 4)`. Jeder Wert muss eine **ganze Zahl von 0-40** sein. Die genaue Lösung ist immer ganzzahlig; runde deine berechneten Werte daher mit `round()`. Bruchteile oder Werte außerhalb des Bereichs lösen einen Argumentfehler aus, statt stillschweigend abgerundet zu werden. Wenn das Skript stoppt, werden die Lampen wieder auf 0 gesetzt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def infuse(self) -> ActionResult[Literal["ok", "output_full", "empty", "busy"]]:
-        """Produce a **Luminous** sample at the current glow in `self.output`, preserving every existing property and adding the tuned glow. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Erzeuge in `self.output` eine **Leuchtende** Probe. Ihre übrigen Eigenschaften bleiben erhalten, und ihr bisheriges Leuchten wird durch das eingestellte Leuchten ersetzt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def discard(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Stage the unchanged chamber sample in `self.output`. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Legt die unveränderte Probe aus der Kammer in `self.output` bereit. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -336,29 +336,29 @@ class BioOrder:
 
 ```python
 class BiomassMixer(Component):
-    """Biomass Mixer: Blends biome essences into biomass. The global Biomass phase sets the minimum diversity, while every additional well-balanced essence can raise output. Mk II raises output 4.5× while essence demand rises only 2.4×, at five times the power draw."""
+    """Biomassemischer: Mischt Biom-Essenzen zu Biomasse. Die globale Biomassephase legt die Mindestvielfalt fest, und jede weitere ausgewogene Essenz kann die Ausbeute steigern. Mk II liefert das 4,5-Fache an Biomasse, während der Essenzbedarf nur auf das 2,4-Fache steigt, bei fünffachem Stromverbrauch."""
     name: _str
     outpost: OutpostRef
     def biomass_rate(self) -> _float:
-        """Biomass tons produced last tick, in **t/h**. Sum across every Biomass Mixer on the planet = total biomass production rate."""
+        """Beim letzten Tick erzeugte Biomasse in **t/h**. Die Summe über alle Biomassemischer auf dem Planeten ergibt die gesamte Biomasse-Produktionsrate."""
         ...
     def active_essences(self) -> _int:
-        """Number of essence input buffers currently carrying supply (**0-5**). The current phase decides the minimum required by `required_essences()`. Extra balanced essence types can increase output."""
+        """Anzahl der Essenz-Eingangspuffer, die gerade Vorrat enthalten (**0-5**). Die aktuelle Phase bestimmt mit `required_essences()`, wie viele mindestens nötig sind. Zusätzliche, ausgewogen zugeführte Essenztypen können die Produktion steigern."""
         ...
     def mixing_essences(self) -> _int:
-        """Number of supplied essence types selected for the strongest balanced mix on the last tick (**0-5**). The Mixer evaluates every diversity level from the phase minimum upward, so a weak extra feed can never reduce output."""
+        """Anzahl der zugeführten Essenztypen, die beim letzten Tick für die stärkste ausgewogene Mischung ausgewählt wurden (**0-5**). Der Mischer prüft jede Vielfaltstufe ab dem Minimum der aktuellen Phase. Eine schwache zusätzliche Zufuhr kann die Produktion deshalb nie verringern."""
         ...
     def tier(self) -> _int:
-        """Installed Mixer tier: **1** for Mk I or **2** for Mk II. Mk II produces **4.5×** biomass while consuming only **2.4×** as much of every selected essence, with **5×** power draw, so it yields **87.5%** more biomass per ton of essence."""
+        """Installierte Stufe des Mischers: **1** für Mk I oder **2** für Mk II. Mk II erzeugt **4,5×** so viel Biomasse, verbraucht dabei von jeder ausgewählten Essenz nur **2,4×** so viel und benötigt **5×** so viel Strom. Damit liefert Mk II pro Tonne Essenz **87,5 %** mehr Biomasse."""
         ...
     def is_stalled(self) -> _bool:
-        """`True` if the mixer is powered and fewer input buffers contain usable essence than the current Biomass phase requires. Buffered essence counts even without new inflow. `False` when unpowered or enough essence types are available. Connect each missing essence input to a compatible source and complete a remote Liquid Pipe route where needed; Biomass phases only advance and never drop."""
+        """`True`, wenn der Mischer mit Strom versorgt wird, aber weniger Eingangspuffer nutzbare Essenz enthalten, als die aktuelle Biomassephase erfordert. Essenz im Puffer zählt auch ohne neuen Zufluss. Bei fehlender Stromversorgung oder ausreichend vielen verfügbaren Essenztypen ist der Wert `False`. Verbinde jeden noch fehlenden Essenzeingang mit einer passenden Quelle und stelle bei Bedarf eine Flüssigkeitsrohrleitung zwischen dem Eingang und einer weiter entfernten Quelle fertig. Die Biomassephase kann nur steigen, nie sinken."""
         ...
     def phase(self) -> _int:
-        """The global Biomass phase (**1-6**), derived from cumulative biomass tons, using the same thresholds as the Sensors phase badge. The phase sets the minimum essence diversity but does not directly multiply output."""
+        """Die globale Biomassephase (**1-6**), abgeleitet aus der insgesamt erzeugten Biomasse in Tonnen. Sie verwendet dieselben Schwellenwerte wie die Phasenanzeige der Sensoren. Die Phase bestimmt die Mindestzahl verschiedener Essenztypen, erhöht die Produktion aber nicht unmittelbar durch einen Multiplikator."""
         ...
     def required_essences(self) -> _int:
-        """How many distinct biome essences must be supplied this phase (**1-5**, equal to the phase, capped at 5). Below this the Mixer stalls. Supplying more can raise output when the larger mix is balanced enough."""
+        """Wie viele verschiedene Biom-Essenzen in dieser Phase zugeführt werden müssen (**1-5**; entspricht der Phase, höchstens jedoch 5). Bei weniger Essenztypen steht der Mischer still. Zusätzliche Essenztypen können die Produktion steigern, wenn die größere Mischung ausgewogen genug ist."""
         ...
     frozen_essence_in: FluidPort
     coastal_essence_in: FluidPort
@@ -366,16 +366,16 @@ class BiomassMixer(Component):
     volcanic_essence_in: FluidPort
     deep_essence_in: FluidPort
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -383,10 +383,10 @@ class BiomassMixer(Component):
 
 ```python
 class BiomassSensor(Component):
-    """Biomass Sensor: Reports cultivated biomass on the planet, in tons. Updates live as Biomass Mixers produce. Available after the Biosphere research lands; no calibration step."""
+    """Biomassesensor: Meldet die kultivierte Biomasse auf dem Planeten in Tonnen. Der Wert wird laufend aktualisiert, während Biomassemischer produzieren. Verfügbar, sobald die Biosphärenforschung abgeschlossen ist; eine Kalibrierung ist nicht nötig."""
     name: _str
     def get_value(self) -> _float:
-        """Returns total biomass tonnage on the planet as a number. `0` before any Biomass Mixer has produced."""
+        """Gibt die gesamte Biomasse auf dem Planeten in Tonnen als Zahl zurück. Der Wert ist `0`, bevor ein Biomassemischer erstmals produziert hat."""
         ...
 ```
 
@@ -432,38 +432,38 @@ class ChamberFragment:
 
 ```python
 class DnaSequencer(Component):
-    """DNA Sequencer: Splices genes into geothermal fragments so they carry what an order needs. You work at the gene level, load a fragment, read the genes it has and the genes it needs, splice the target set in, the machine composes the DNA for you. One splice per fragment."""
+    """DNA-Sequenzierer: Fügt Gene in geothermische Fragmente ein, damit sie die Anforderungen eines Auftrags erfüllen. Du arbeitest mit einzelnen Genen: Lade ein Fragment, lies seine vorhandenen und benötigten Gene ab und setze die gewünschte Genauswahl ein. Die Maschine stellt daraus die DNA zusammen. Jedes Fragment kann nur einmal gespleißt werden."""
     name: _str
     outpost: OutpostRef
     def load(self, fragment_id: _str, properties: ItemProperties | None = ..., property_match: _str | None = ...) -> ActionResult[Literal["ok", "chamber_occupied", "not_in_input", "invalid_fragment", "invalid_properties", "invalid_property_match", "busy", "output_full"]]:
-        """Pull a geothermal sample of `fragment_id` from `self.input` into the chamber, `self.load(\"gw_cardiac_node\")`. Optional `properties` and `property_match` select a specific identity using the standard any, subset, or exact convention. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Hole mit `fragment_id` eine geothermische Probe aus `self.input` in die Kammer, etwa mit `self.load(\"gw_cardiac_node\")`. Mit den optionalen Parametern `properties` und `property_match` wählst du eine bestimmte Variante: Bei any bleiben Eigenschaften unberücksichtigt, bei subset müssen alle angegebenen Eigenschaften übereinstimmen und bei exact muss die gesamte Eigenschaftsmenge exakt übereinstimmen. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     chamber: ChamberFragment | None
     def genes(self) -> _list[_str] | None:
-        """Lists the genes currently carried by the chambered fragment, such as `[\"cold_tolerance\", \"pressure_tolerance\"]`, or returns `None` when empty. `splice()` takes time. On completion, the fragment moves to output and the chamber becomes empty. If output is full, the spliced fragment stays in the chamber until space is available."""
+        """Listet die Gene auf, die das Fragment in der Kammer derzeit trägt, zum Beispiel `[\"cold_tolerance\", \"pressure_tolerance\"]`; bei leerer Kammer wird `None` zurückgegeben. `splice()` braucht Zeit. Danach wandert das Fragment zum Ausgang und die Kammer ist leer. Ist der Ausgang voll, bleibt das gespleißte Fragment in der Kammer, bis Platz frei wird."""
         ...
     def gene_catalog(self) -> _list[_str]:
-        """Every gene id the machine can splice, `self.gene_catalog()` returns the full list (e.g. `[\"heat_resistance\", \"acid_resistance\", \"cold_tolerance\", \"pressure_tolerance\", \"toxin_resistance\", \"radiation_shield\"]`), the valid values to pass to `splice()`."""
+        """Alle Gen-IDs, die die Maschine spleißen kann. `self.gene_catalog()` gibt die vollständige Liste zurück (z. B. `[\"heat_resistance\", \"acid_resistance\", \"cold_tolerance\", \"pressure_tolerance\", \"toxin_resistance\", \"radiation_shield\"]`). Diese Werte kannst du an `splice()` übergeben."""
         ...
     def splice(self, genes: _list[_str]) -> ActionResult[Literal["ok", "destroyed", "empty", "unknown_gene", "busy", "output_full"]]:
-        """Replace the chambered fragment's gene set with exactly `genes`, then place it in `self.output` while preserving every unrelated property. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Ersetze die Genkombination des Fragments in der Kammer durch genau `genes` und lege es dann in `self.output` ab. Alle Eigenschaften, die nichts damit zu tun haben, bleiben erhalten. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def discard(self) -> ActionResult[Literal["ok", "empty", "busy", "output_full"]]:
-        """Stage the chamber fragment in `self.output` without splicing. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Lege das Fragment aus der Kammer ohne Spleißen in `self.output` ab. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -471,61 +471,61 @@ class DnaSequencer(Component):
 
 ```python
 class FeedMaker(Component):
-    """Feed Maker: Crafts the creature feeds that Habitat colonies eat, working like the Fabricator from a recipe you choose. Each creature's recipe unlocks through a Biolab order, so it only makes what you've unlocked. Mk II is upgraded per machine with a Fabricator-made pack unlocked at 250,000 Wildlife: 1.5× crafting and input Auto Feeder speed, with 2× operating power. Crafting can advance while the feeder cools down."""
+    """Futterhersteller: Stellt nach einem von dir gewählten Rezept das Futter für die Kolonien in Habitaten her, ähnlich wie der Fabrikator. Das Rezept für jede Kreatur wird durch einen Biolabor-Auftrag freigeschaltet; die Maschine kann nur bereits freigeschaltetes Futter herstellen. Für die Aufrüstung auf Mk II benötigt jede Maschine ein eigenes, im Fabrikator hergestelltes Upgrade-Paket, das bei 250.000 Tierwelt freigeschaltet wird. Mk II beschleunigt sowohl die Herstellung als auch die automatische Zuführung am Eingang um das 1,5-Fache und verdoppelt den Stromverbrauch im Betrieb. Die Herstellung kann weiterlaufen, während die Zuführung abkühlt."""
     name: _str
     outpost: OutpostRef
     def tier(self) -> _int:
-        """The machine's upgrade tier: 1 for Mk I or 2 for Mk II."""
+        """Aufrüstungsstufe der Maschine: 1 für Mk I oder 2 für Mk II."""
         ...
     def list_recipes(self) -> _list[Recipe]:
-        """Lists the feed recipes unlocked through Bio Lab orders, one `Recipe` per creature whose feed you can craft. Locked recipes do not appear. Each recipe includes its tier, id, name, inputs, output, duration, and power draw. Use `for recipe in self.list_recipes(): print(recipe.tier, recipe.id)` to discover what is available."""
+        """Listet die durch Aufträge im Biolabor freigeschalteten Futterrezepte auf: ein `Recipe` pro Tierart, deren Futter du herstellen kannst. Gesperrte Rezepte erscheinen nicht. Jedes Rezept enthält Stufe, ID, Name, Eingaben, Ausgabe, Dauer und Stromverbrauch. Mit `for recipe in self.list_recipes(): print(recipe.tier, recipe.id)` siehst du, was verfügbar ist."""
         ...
     def find_recipe(self, recipe_id: _str) -> Recipe | None:
-        """Find one unlocked feed recipe by id without looping through `list_recipes()`. Returns its `Recipe` object, or `None` when the id is unknown, locked, or belongs to another machine."""
+        """Findet ein freigeschaltetes Futterrezept anhand seiner ID, ohne `list_recipes()` durchlaufen zu müssen. Gibt das zugehörige `Recipe`-Objekt zurück oder `None`, wenn die ID unbekannt oder das Rezept gesperrt ist oder zu einer anderen Maschine gehört."""
         ...
     def set_recipe(self, recipe_or_id: RecipeRef) -> ActionResult[Literal["ok", "unknown_recipe", "offline", "recipe_locked", "busy", "material_mismatch"]]:
-        """Pick which creature feed to craft by id or by passing a Recipe from `list_recipes()`, e.g. `self.set_recipe(\"craft_feed_salt_tortoise\")`. Once set, ProcessingSystem crafts automatically whenever the stockpile holds the inputs and the output bin has room. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Wähle anhand der ID oder mit einem Rezept aus `list_recipes()` aus, welches Tierfutter hergestellt werden soll, zum Beispiel mit `self.set_recipe(\"craft_feed_salt_tortoise\")`. Sobald ein Rezept ausgewählt ist, stellt ProcessingSystem automatisch Futter her, wenn die Zutaten im Vorrat liegen und im Ausgabebehälter Platz ist. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def clear_recipe(self) -> ActionResult[Literal["ok", "busy", "material_present"]]:
-        """Unset the selected feed recipe and leave the Feed Maker idle. The input stockpile stays loaded. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Hebe die Auswahl des Futterrezepts auf und versetze den Futterhersteller in den Leerlauf. Der Eingangsvorrat bleibt gefüllt. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def get_recipe(self) -> Literal["", "craft_feed_salt_tortoise", "craft_feed_magmatic_annelid", "craft_feed_mycelial_husk", "craft_feed_mantle_strider", "craft_feed_glasswing_mantis", "craft_feed_veil_mantle", "craft_feed_vault_crab", "craft_feed_tidal_cephalopod", "craft_feed_bone_walker", "craft_feed_vent_drifter", "craft_feed_hive_sentinel", "craft_feed_hollow_choir", "craft_feed_ferric_sea_lily", "craft_feed_crustal_echo", "craft_feed_glacial_wyrm", "craft_feed_spire_drake"]:
-        """Returns the current recipe id, or `\"\"` when none is set (or the set recipe is no longer unlocked). Use to check state before re-setting: `if self.get_recipe() == \"\": self.set_recipe(...)`."""
+        """Gibt die aktuelle Rezept-ID zurück oder `\"\"`, wenn kein Rezept ausgewählt ist oder das ausgewählte Rezept nicht mehr freigeschaltet ist. Prüfe den Zustand, bevor du erneut ein Rezept festlegst: `if self.get_recipe() == \"\": self.set_recipe(...)`."""
         ...
     def get_recipe_inputs(self) -> _dict[_str, _int]:
-        """A dict mapping each input `item_id` → units consumed per craft for the current recipe (empty dict if no recipe set). Iterate it to know what to stock: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`."""
+        """Ein dict, das jeder Eingabe-`item_id` die pro Herstellungsvorgang verbrauchte Stückzahl zuordnet (ein leeres dict, wenn kein Rezept ausgewählt ist). Durchlaufe es, um zu bestimmen, was eingelagert werden muss: `for item, qty in self.get_recipe_inputs().items(): self.input.take(item, qty * 5)`."""
         ...
     def get_stockpile(self) -> _dict[_str, _int]:
-        """A dict mapping each `item_id` currently in the input stockpile → its unit count. Read it to see what's loaded before crafting."""
+        """Ein dict, das jeder `item_id` im Eingangsvorrat ihre aktuelle Stückzahl zuordnet. Lies es ab, um vor der Herstellung zu sehen, was bereits bereitliegt."""
         ...
     def get_stockpile_used(self) -> _int:
-        """Total units across every material in the input stockpile. Compare to `get_stockpile_capacity()` to avoid overfilling."""
+        """Gesamtzahl der Einheiten aller Materialien im Eingangsvorrat. Vergleiche sie mit `get_stockpile_capacity()`, um eine Überfüllung zu vermeiden."""
         ...
     def get_stockpile_capacity(self) -> _int:
-        """Combined unit cap across all materials in the input stockpile. The cap is shared, many materials sum against one limit."""
+        """Gemeinsame Obergrenze für die Anzahl der Einheiten aller Materialien im Eingangsvorrat. Alle Materialien teilen sich diese Grenze; ihre Mengen werden zusammengerechnet."""
         ...
     def is_running(self) -> _bool:
-        """`True` while a craft is actively advancing this tick (recipe set, inputs present, output has room). `False` when starved, output-full, idle, or powered off. Poll to detect a stalled line."""
+        """`True`, wenn die Herstellung in diesem Tick voranschreitet (ein Rezept ist ausgewählt, Zutaten sind vorhanden und im Ausgabebehälter ist Platz). `False`, wenn Zutaten fehlen, der Ausgang voll ist, die Maschine im Leerlauf ist oder keinen Strom hat. Frage den Wert regelmäßig ab, um eine stockende Produktionslinie zu erkennen."""
         ...
     def get_progress(self) -> _float:
-        """Fraction **0-1** through the current craft. Resets to 0 each time a craft completes (a batch of feed lands in the output bin) and starts again if inputs remain."""
+        """Fortschritt des aktuellen Herstellungsvorgangs als Anteil von **0-1**. Wird bei jedem Abschluss auf 0 zurückgesetzt (eine Futtercharge landet im Ausgabebehälter) und steigt erneut, wenn weitere Zutaten vorhanden sind."""
         ...
     def get_output_count(self) -> _int:
-        """Completed feed units waiting in the output bin for pickup. Push them onward with `self.output.send(...)` before the bin fills (a full output bin stalls crafting)."""
+        """Anzahl fertiger Futtereinheiten, die im Ausgabebehälter auf Abholung warten. Transportiere sie mit `self.output.send(...)` weiter, bevor der Behälter voll ist (ein voller Ausgabebehälter stoppt die Herstellung)."""
         ...
     input: InputSlot
     output: OutputSlot
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -546,7 +546,7 @@ class FragmentLocation:
 
 ```python
 class LifeFormSample:
-    """PortableBioScanner.scan().scan.life_forms[i] after status == \"ok\""""
+    """PortableBioScanner.scan().scan.life_forms[i] nach status == \"ok\""""
     type: Literal["ice_algae", "snow_moss", "frost_lichen", "cold_spores", "ice_crust", "frost_fungus", "sea_algae", "tide_moss", "shore_lichen", "brine_plankton", "salt_crust", "coral_fungus", "vent_algae", "steam_moss", "heat_lichen", "hot_spores", "heat_crust", "vent_fungus", "sulfur_moss", "cinder_lichen", "ash_spores", "lava_algae", "magma_crust", "black_fungus", "cave_moss", "stone_lichen", "crystal_spores", "deep_algae", "stone_mat", "cave_fungus"]
     tons: _float
     remaining_tons: _float
@@ -558,33 +558,33 @@ class LifeFormSample:
 
 ```python
 class OilGenerator(Component):
-    """Oil Generator: Burns oil into strong buffered bridge power. Oil wells pulse between active and dormant phases, so bank their output in Liquid Tanks for continuous generation. Idle until a script runs it."""
+    """Ölgenerator: Verbrennt Öl zu kräftigem, gepuffertem Überbrückungsstrom. Ölquellen wechseln zwischen aktiven und ruhenden Phasen, also puffere ihre Förderung in Flüssigkeitstanks, um durchgehend Strom zu erzeugen. Bleibt im Leerlauf, bis ein Skript ihn betreibt."""
     name: _str
     outpost: OutpostRef
     def power_output(self) -> _float:
-        """Watts fed to the grid on the last power tick. **0** when throttled to 0 OR oil_in buffer is starved. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick."""
+        """Watt, die beim letzten Stromtick ins Netz eingespeist wurden. **0**, wenn die Drosselung auf 0 steht ODER der Eingangspuffer oil_in nicht genug Öl enthält. Die Leistung des Generators richtet sich nach der verfügbaren Ölmenge: Bei teilweisem Ölmangel liefert er entsprechend weniger Strom. Der Wert wird einmal pro Stromtick aktualisiert; ein neuer Aufruf von `set_throttle(...)` wirkt sich im nächsten Tick aus."""
         ...
     def oil_consumption(self) -> _float:
-        """Actual oil consumed on the last power tick, in t/h. With enough oil supplied, demand scales linearly with throttle from **0 t/h** at 0 to **8 t/h** at 1. Partial or total oil starvation lowers the actual rate."""
+        """Tatsächlicher Ölverbrauch beim letzten Stromtick in t/h. Bei ausreichender Ölversorgung steigt der Bedarf linear mit der Drosselung: von **0 t/h** bei 0 auf **8 t/h** bei 1. Teilweiser oder vollständiger Ölmangel senkt den tatsächlichen Verbrauch."""
         ...
     def throttle(self) -> _float:
-        """Current throttle (**0-1**). **0** by default, generator idles until scripted."""
+        """Aktuelle Drosselung (**0-1**). Standardmäßig **0**; der Generator läuft im Leerlauf, bis ein Skript ihn steuert."""
         ...
     def set_throttle(self, rate: _float) -> ActionResult[Literal["ok"]]:
-        """Set the generator throttle (**0-1**). Power output and oil consumption scale linearly with the throttle. This script-owned setpoint resets to **0** when the script stops, ends, or errors, so keep the control loop running while the Generator should operate. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stelle die Drosselung des Generators ein (**0-1**). Stromerzeugung und Ölverbrauch steigen linear mit der Drosselung. Dieser vom Skript gesteuerte Sollwert wird auf **0** zurückgesetzt, wenn das Skript angehalten wird, endet oder einen Fehler auslöst. Lass die Regelschleife daher laufen, solange der Generator arbeiten soll. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     oil_in: FluidPort
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -592,49 +592,49 @@ class OilGenerator(Component):
 
 ```python
 class OxygenGenerator(Component):
-    """Oxygen Generator: Draws CO2 from the atmosphere and turns it into breathable oxygen, one of the core steps toward a livable planet. It runs only when a script sets its intake."""
+    """Sauerstoffgenerator: Entnimmt der Atmosphäre CO2 und wandelt es in atembaren Sauerstoff um – ein wichtiger Schritt hin zu einem bewohnbaren Planeten. Er läuft nur, wenn ein Skript seine Ansaugrate einstellt."""
     name: _str
     outpost: OutpostRef
     input: InputSlot
     water_in: FluidPort
     def set_intake(self, value: _float) -> ActionResult[Literal["ok"]]:
-        """Set CO2 intake rate for this tick. Call `self.set_intake(atmosphere.get_co2() / 10)` each iteration, the chamber's peak-efficiency sweet spot is exactly **1/10th** of ambient CO2. Values above or below that point reduce efficiency smoothly; there is no precision-sensitive cutoff. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stelle die CO2-Ansaugrate für diesen Tick ein. Rufe in jedem Durchlauf `self.set_intake(atmosphere.get_co2() / 10)` auf: Die Kammer erreicht ihre höchste Effizienz bei genau **1/10** des CO2-Gehalts der Umgebung. Höhere oder niedrigere Werte senken die Effizienz gleichmäßig; es gibt keinen Grenzwert, der eine besonders genaue Einstellung erfordert. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def waste(self) -> _float:
-        """Current carbon waste level (**0-100**). Production runs clean below **60**, drops linearly **60-100**, and stalls (zero output) at **100**. Check this each iteration before calling `dump_waste()`, dumping between **50-60** is penalty-free; dumping elsewhere costs efficiency."""
+        """Aktueller Kohlenstoffabfallwert (**0-100**). Unter **60** läuft die Produktion ohne Einbußen, zwischen **60-100** sinkt sie linear und bei **100** kommt sie zum Stillstand (keine Produktion). Prüfe den Wert vor jedem Aufruf von `dump_waste()`: Das Entsorgen zwischen **50-60** verursacht keine Einbußen, außerhalb dieses Bereichs kostet es Effizienz."""
         ...
     def dump_penalty(self) -> _float:
-        """Current efficiency penalty from the last `dump_waste()` call (**0-1**). `0` means no active waste-clearing penalty; `0.25` means output is reduced by 25%. A bad dump remains visible here until the next `dump_waste()` call."""
+        """Aktueller Effizienzabzug durch den letzten Aufruf von `dump_waste()` (**0-1**). `0` bedeutet, dass kein Abzug durch das Entsorgen aktiv ist; `0.25` bedeutet 25 % weniger Produktion. Ein ungünstiger Entsorgungsvorgang bleibt hier bis zum nächsten Aufruf von `dump_waste()` sichtbar."""
         ...
     def dump_waste(self) -> WasteDumpResult[Literal["ok"]]:
-        """Clear accumulated carbon waste. Call `result = self.dump_waste()` when `waste()` is in the **50-60** sweet spot for a clean dump. The penalty lingers until the next dump. Fixed result contract: `WasteDumpResult`; branch on `.status` and read `.message`. Payload fields: `.penalty`."""
+        """Entsorge angesammelten Kohlenstoffabfall. Rufe `result = self.dump_waste()` auf, wenn `waste()` im günstigen Bereich von **50-60** liegt, um ihn ohne Einbußen zu entsorgen. Ein Effizienzabzug bleibt bis zum nächsten Entsorgungsvorgang bestehen. Fester Ergebnisvertrag: `WasteDumpResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.penalty`."""
         ...
     def efficiency(self) -> _float:
-        """Current conversion efficiency (**0-100%**). Hits **100%** when intake matches **CO2/10**, CO2 is available, waste is at or below **60**, and no dump penalty is active. Waste above **60** reduces efficiency; waste at **100** stalls production. The **50-60** range is the clean window for `dump_waste()`, dumping outside it applies an efficiency penalty you can read with `dump_penalty()`."""
+        """Aktuelle Umwandlungseffizienz (**0-100%**). Sie erreicht **100%**, wenn die Ansaugrate **CO2/10** entspricht, CO2 vorhanden ist, der Abfallwert höchstens **60** beträgt und kein Effizienzabzug durch das Entsorgen aktiv ist. Über **60** senkt der Abfallwert die Effizienz; bei **100** kommt die Produktion zum Stillstand. Der Bereich **50-60** erlaubt das Entsorgen mit `dump_waste()` ohne Einbußen. Außerhalb davon entsteht ein Effizienzabzug, den du mit `dump_penalty()` auslesen kannst."""
         ...
     def output(self) -> _float:
-        """Current O2 production rate in **ppt/h** at the current settings. Reflects `efficiency() × tier multiplier`, capped by available CO2. Reads `0` if the machine is unpowered, no script is running, CO2 is exhausted, or waste has stalled production. Recomputed live on every read, a fresh `set_intake(...)` is reflected immediately. Use this for live dashboards or to detect degradation mid-loop."""
+        """Aktuelle O2-Produktionsrate in **ppt/h** bei den derzeitigen Einstellungen. Sie ergibt sich aus `efficiency()` × Stufenmultiplikator und ist durch das verfügbare CO2 begrenzt. Der Wert ist `0`, wenn die Maschine keinen Strom hat, kein Skript läuft, das CO2 aufgebraucht ist oder der Abfall die Produktion zum Stillstand gebracht hat. Bei jedem Abruf wird er neu berechnet; ein neuer Aufruf von `set_intake(...)` wirkt sich sofort aus. Nutze den Wert für aktuelle Übersichten oder um einen Leistungsabfall während der Regelschleife zu erkennen."""
         ...
     def tier(self) -> _int:
-        """Permanently installed Mk tier as an integer (**1-4**). Upgrade packs raise this value; temporary Mk III fluid starvation does not. Compare with `effective_tier()` when diagnosing a supplied or degraded generator."""
+        """Dauerhaft installierte Mk-Stufe als ganze Zahl (**1-4**). Upgradepakete erhöhen diesen Wert; ein vorübergehender Flüssigkeitsmangel bei Mk III ändert ihn nicht. Vergleiche ihn mit `effective_tier()`, wenn du die Versorgung oder verminderte Leistung des Generators untersuchst."""
         ...
     def is_degraded(self) -> _bool:
-        """`True` when a Mk III pack is starved of its required fluid input and the machine has fallen back to the previous tier multiplier for this tick. Check after applying a Mk III pack and before trusting `output()` to meet your Mk III projections, if `True`, check `self.water_in.level()` and the upstream pipe."""
+        """`True`, wenn einem Mk-III-Paket die benötigte Flüssigkeit fehlt und die Maschine in diesem Tick auf den Multiplikator der vorherigen Stufe zurückgefallen ist. Prüfe den Wert nach der Installation eines Mk-III-Pakets, bevor du dich darauf verlässt, dass `output()` deine Prognose für Mk III erreicht. Bei `True` prüfe `self.water_in.level()` und die vorgelagerte Leitung."""
         ...
     def effective_tier(self) -> _int:
-        """The tier actually in effect this tick: `tier()` normally, previous tier while `is_degraded()` is `True`. Scripts that decide whether to route more water toward this generator should compare `effective_tier()` with `tier()`."""
+        """Die in diesem Tick tatsächlich wirksame Stufe: normalerweise `tier()`, bei `True` für `is_degraded()` die vorherige Stufe. Skripte, die über eine zusätzliche Wasserzufuhr zu diesem Generator entscheiden, sollten `effective_tier()` mit `tier()` vergleichen."""
         ...
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -642,9 +642,9 @@ class OxygenGenerator(Component):
 
 ```python
 class PortableBioExtractor:
-    """self.bio_extractor (drones)"""
+    """self.bio_extractor (Drohnen)"""
     def extract(self) -> BioExtractionResult[Literal["ok", "not_mounted", "scrambled", "busy", "not_at_location", "not_scanned", "cooling", "no_cargo_space"]]:
-        """Yielding harvest at the discovered permanent biosite under a hovering drone. The drone stays occupied until completion, including across a script stop and restart. The module has a 25 t chamber for one life-form type; Cargo Pods add capacity. Partial depletion persists and cooldown starts only when the site is empty. Fixed result contract: `BioExtractionResult`; branch on `.status` and read `.message`. Payload fields: `.extracted`."""
+        """An dem entdeckten dauerhaften Biostandort wird unter einer schwebenden Drohne Material geerntet. Die Drohne bleibt bis zum Abschluss beschäftigt, auch wenn das Skript zwischenzeitlich gestoppt und neu gestartet wird. Das Modul hat eine Kammer für 25 t eines Lebensformtyps; Frachtkapseln erhöhen die Kapazität. Wird der Standort nur teilweise abgeerntet, bleibt sein Bestand reduziert, und die Abklingzeit beginnt erst, wenn er leer ist. Fester Ergebnisvertrag: `BioExtractionResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.extracted`."""
         ...
 ```
 
@@ -652,9 +652,9 @@ class PortableBioExtractor:
 
 ```python
 class PortableBioScanner:
-    """self.bio_scanner (drones)"""
+    """self.bio_scanner (Drohnen)"""
     def scan(self) -> BioScanResult[Literal["ok", "not_mounted", "scrambled", "busy", "not_at_location"]]:
-        """Yielding scan at the hovering drone's current whole-number coordinate. A valid non-site coordinate completes with an empty biological scan. Repeat scans are free. Fixed result contract: `BioScanResult`; branch on `.status` and read `.message`. Payload fields: `.scan`."""
+        """Scan mit Wartezeit an der aktuellen ganzzahligen Koordinate der schwebenden Drohne. An einer gültigen Koordinate ohne Standort endet er mit einem leeren biologischen Scan. Wiederholte Scans sind kostenlos. Fester Ergebnisvertrag: `BioScanResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.scan`."""
         ...
 ```
 
@@ -662,49 +662,49 @@ class PortableBioScanner:
 
 ```python
 class PressureGenerator(Component):
-    """Pressure Generator: Compresses the thin atmosphere to raise surface pressure. It runs best when a script catches each sync window as its gauge sweeps; missed windows cost efficiency."""
+    """Druckgenerator: Verdichtet die dünne Atmosphäre, um den Oberflächendruck zu erhöhen. Am besten arbeitet er, wenn ein Skript bei jedem Durchlauf der Anzeige das Synchronisationsfenster trifft. Verpasste Fenster kosten Effizienz."""
     name: _str
     outpost: OutpostRef
     input: InputSlot
     water_in: FluidPort
     def gauge(self) -> _float:
-        """Current value on the resonance sweep (**0-100**). Rises each tick and wraps at **100**. Compare it to `next_window_low()` and `next_window_high()`; when the gauge is inside that range, both edges included, call `sync()`."""
+        """Aktueller Wert der Resonanzanzeige beim Durchlauf (**0–100**). Er steigt mit jedem Tick und springt nach **100** wieder an den Anfang. Vergleiche ihn mit `next_window_low()` und `next_window_high()`. Liegt er einschließlich der beiden Grenzwerte in diesem Bereich, rufe `sync()` auf."""
         ...
     def next_window_low(self) -> _float:
-        """Lower edge of the current sweep's sync window, included in the window. Use with `next_window_high()` and `gauge()`; call `sync()` when the gauge is inside the range. The value changes when the sweep wraps to the next cycle."""
+        """Untere Grenze des Synchronisationsfensters im aktuellen Durchlauf; sie gehört zum Fenster. Verwende den Wert mit `next_window_high()` und `gauge()` und rufe `sync()` auf, wenn die Anzeige innerhalb des Bereichs liegt. Der Wert ändert sich, wenn die Anzeige am Ende des Durchlaufs wieder an den Anfang springt."""
         ...
     def next_window_high(self) -> _float:
-        """Upper edge of the current sweep's sync window, included in the window. Use with `next_window_low()` and `gauge()`; call `sync()` when the gauge is inside the range. The value changes when the sweep wraps to the next cycle."""
+        """Obere Grenze des Synchronisationsfensters im aktuellen Durchlauf; sie gehört zum Fenster. Verwende den Wert mit `next_window_low()` und `gauge()` und rufe `sync()` auf, wenn die Anzeige innerhalb des Bereichs liegt. Der Wert ändert sich, wenn die Anzeige am Ende des Durchlaufs wieder an den Anfang springt."""
         ...
     def sync(self) -> ActionResult[Literal["ok"]]:
-        """Try to sync this sweep. First call per sweep counts; later calls before the gauge wraps do nothing. Hit (gauge in window) -> **+25%** efficiency. Miss (outside window, or no sync before the sweep ends) -> **-10%**. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Versucht, diesen Durchlauf zu synchronisieren. Nur der erste Aufruf pro Durchlauf zählt; weitere Aufrufe vor dem Rücksprung der Anzeige bewirken nichts. Treffer (Anzeige im Fenster) → **+25 %** Effizienz. Fehlschlag (Anzeige außerhalb des Fensters oder keine Synchronisation vor Ende des Durchlaufs) → **−10 %**. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def efficiency(self) -> _float:
-        """Current compression efficiency (**0-100%**). Climbs with hits, drops with misses, floored at **0**. A well-tuned script holds this at or near **100%** by hitting every cycle's window. Use it to detect a script that's out of sync with the shifting window."""
+        """Aktuelle Verdichtungseffizienz (**0–100 %**). Sie steigt bei Treffern und sinkt bei Fehlschlägen, jedoch nie unter **0**. Ein gut abgestimmtes Skript hält sie bei oder nahe **100 %**, indem es in jedem Durchlauf das Fenster trifft. An diesem Wert erkennst du, ob ein Skript das wechselnde Fenster verfehlt."""
         ...
     def output(self) -> _float:
-        """Current **kPa/h** production rate at the current `efficiency()`. Proportional to `efficiency() × tier multiplier`. The resonance gauge advances slowly, so pressure progress is best judged from `efficiency()` and the per-day projection on the sensor display rather than from a single `output()` read."""
+        """Aktuelle Produktionsrate in **kPa/h** bei der derzeitigen `efficiency()`. Sie ist proportional zu `efficiency()` × Stufenmultiplikator. Da die Resonanzanzeige nur langsam voranschreitet, beurteilst du den Druckfortschritt am besten anhand von `efficiency()` und der Tagesprognose auf der Sensoranzeige statt anhand eines einzelnen Aufrufs von `output()`."""
         ...
     def tier(self) -> _int:
-        """Permanently installed Mk tier as an integer (**1-4**). Upgrade packs raise this value; temporary Mk III fluid starvation does not. Compare with `effective_tier()` when diagnosing a supplied or degraded generator."""
+        """Dauerhaft installierte Mk-Stufe als Ganzzahl (**1–4**). Upgrade-Pakete erhöhen diesen Wert; ein vorübergehender Flüssigkeitsmangel bei Mk III tut das nicht. Vergleiche ihn mit `effective_tier()`, wenn du einen versorgten oder in der Leistung verringerten Generator untersuchst."""
         ...
     def is_degraded(self) -> _bool:
-        """`True` when a Mk III pack is starved of its required fluid input and the machine has fallen back to the previous tier multiplier for this tick. Check after applying a Mk III pack, if `True`, the pack is in fallback; investigate `self.water_in.level()` and the upstream supply."""
+        """`True`, wenn einem Mk-III-Paket der benötigte Flüssigkeitszufluss fehlt und die Maschine für diesen Tick auf den Multiplikator der vorherigen Stufe zurückgefallen ist. Prüfe den Wert nach der Installation eines Mk-III-Pakets. Ist er `True`, arbeitet das Paket mit verringerter Leistung; untersuche `self.water_in.level()` und die vorgelagerte Versorgung."""
         ...
     def effective_tier(self) -> _int:
-        """The tier actually in effect this tick: `tier()` normally, previous tier while `is_degraded()` is `True`. Scripts rebalancing water flow between generators should compare `effective_tier()` with `tier()`."""
+        """Die in diesem Tick tatsächlich wirksame Stufe: normalerweise `tier()`, bei `is_degraded()` gleich `True` die vorherige Stufe. Skripte, die den Wasserfluss zwischen Generatoren neu verteilen, sollten `effective_tier()` mit `tier()` vergleichen."""
         ...
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -712,29 +712,29 @@ class PressureGenerator(Component):
 
 ```python
 class SolarGenerator(Component):
-    """Solar Generator: Turns sunlight into up to **50 W** for the grid when a script tracks the Sun. Poor tilt reduces daytime output, and night produces **0 W**."""
+    """Solargenerator: Wandelt Sonnenlicht in bis zu **50 W** für das Stromnetz um, wenn ein Skript die Sonne verfolgt. Eine ungünstige Neigung verringert die Leistung am Tag; nachts beträgt sie **0 W**."""
     name: _str
     outpost: OutpostRef
     def set_tilt(self, degrees: _float) -> ActionResult[Literal["ok"]]:
-        """Set the panel tilt angle in degrees. Range is **0°** (flat) to **90°** (vertical); values outside are clamped. A well-tuned tracker holds output near its maximum throughout the day; a fixed tilt wastes a large fraction. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
+        """Stelle den Neigungswinkel des Solarpanels in Grad ein. Der Bereich reicht von **0°** (flach) bis **90°** (senkrecht); Werte außerhalb werden auf die jeweilige Grenze gesetzt. Eine gut eingestellte Nachführung hält die Leistung den ganzen Tag nahe am Maximum. Bei fester Neigung geht ein großer Teil der möglichen Leistung verloren. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
         ...
     def tilt(self) -> _float:
-        """Current panel tilt setpoint in degrees (**0-90**). Returns the value the script last wrote via `self.set_tilt(...)`, or the default rest angle for an idle panel. Use to verify your sweep loop or to step a tilt search against the previous value."""
+        """Aktueller Sollwert für die Panelneigung in Grad (**0-90**). Gibt den Wert zurück, den das Skript zuletzt mit `self.set_tilt(...)` gesetzt hat, oder bei einem inaktiven Panel den standardmäßigen Ruhewinkel. Nutze den Wert, um deine Schwenkschleife zu prüfen oder die nächste Neigung anhand des vorherigen Werts zu bestimmen."""
         ...
     def get_output(self) -> _float:
-        """Current power output in watts for this specific generator. Returns **0** if powered off. Computed live from sun elevation vs panel tilt, use it to verify the tracker is holding peak (compare current output against the panel's rated max)."""
+        """Aktuelle Leistung dieses Generators in Watt. Gibt **0** zurück, wenn er ausgeschaltet ist. Der Wert wird laufend aus Sonnenhöhe und Panelneigung berechnet. Vergleiche ihn mit der Nennleistung des Panels, um zu prüfen, ob die Nachführung die maximale Leistung hält."""
         ...
     def peek_command(self) -> ScriptCommand | None:
-        """Read the next queued command without consuming it. Use this when you want to inspect a command before deciding whether to handle it."""
+        """Liest den nächsten Befehl in der Warteschlange, ohne ihn zu entfernen. Nutze dies, wenn du einen Befehl prüfen möchtest, bevor du entscheidest, ob du ihn verarbeitest."""
         ...
     def next_command(self) -> CommandResult[Literal["ok", "empty"]]:
-        """Consume the oldest queued command from this script's mailbox. Fixed result contract: `CommandResult`; branch on `.status` and read `.message`. Payload fields: `.command`."""
+        """Entnimmt den ältesten Befehl aus dem Postfach dieses Skripts. Fester Ergebnisvertrag: `CommandResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.command`."""
         ...
     def command_count(self) -> _int:
-        """Return how many commands are waiting in this script's mailbox."""
+        """Gibt zurück, wie viele Befehle im Postfach dieses Skripts warten."""
         ...
     def clear_commands(self) -> CountResult[Literal["ok", "no_op"]]:
-        """Remove every queued command for this script. Fixed result contract: `CountResult`; branch on `.status` and read `.message`. Payload fields: `.count`."""
+        """Entfernt alle wartenden Befehle für dieses Skript. Fester Ergebnisvertrag: `CountResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.count`."""
         ...
 ```
 
@@ -759,21 +759,21 @@ class Specimen:
 
 ```python
 class generator:
-    """calling a function containing `yield` · generator expressions"""
+    """Aufruf einer Funktion mit `yield` · Generatorausdrücke"""
     def send(self, value: object) -> Any:
-        """Resume the generator and make `value` the result of its paused `yield`. Returns the next yielded value. Sending a non-`None` value before the first yield raises `TypeError`; completion raises `StopIteration`."""
+        """Setzt den Generator fort und macht `value` zum Ergebnis seiner pausierten `yield`-Anweisung. Gibt den nächsten gelieferten Wert zurück. Wird vor dem ersten yield ein anderer Wert als `None` gesendet, wird `TypeError` ausgelöst; beim Abschluss wird `StopIteration` ausgelöst."""
         ...
     def throw(self, exception: BaseException | _type) -> Any:
-        """Raise an exception at the generator's paused `yield`. Returns the next value if the generator catches it and yields again; otherwise the exception propagates."""
+        """Löst an der pausierten `yield`-Anweisung des Generators eine Ausnahme aus. Fängt der Generator sie ab und liefert erneut einen Wert, wird dieser zurückgegeben; andernfalls wird die Ausnahme weitergegeben."""
         ...
     def close(self) -> None:
-        """Stop the generator by raising `GeneratorExit` at its paused yield. `finally` cleanup runs before this returns. A generator that yields while closing raises `RuntimeError`."""
+        """Beendet den Generator, indem an seiner pausierten yield-Anweisung `GeneratorExit` ausgelöst wird. Der Aufräumcode in `finally` läuft, bevor der Aufruf zurückkehrt. Liefert der Generator während des Schließens einen Wert, wird `RuntimeError` ausgelöst."""
         ...
     def __iter__(self) -> generator:
-        """Return this generator. Generators are one-shot iterators."""
+        """Gibt diesen Generator zurück. Generatoren sind Iteratoren, die nur einmal durchlaufen werden können."""
         ...
     def __next__(self) -> Any:
-        """Resume the generator with `None` and return its next yielded value. Completion raises `StopIteration`."""
+        """Setzt den Generator mit `None` fort und gibt den nächsten von ihm gelieferten Wert zurück. Beim Abschluss wird `StopIteration` ausgelöst."""
         ...
     __name__: _str
     __qualname__: _str

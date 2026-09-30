@@ -4,29 +4,29 @@
 
 Stores JSON-safe data that survives script restarts and save/load. Access the Data Archive with `get_component("notebook")` after its research unlocks. Use Libraries to share code and the Signal Bus to share temporary live state.
 
-**Returned by:** `get_component("notebook")`
+**Access via:** `get_component("notebook")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
 ##### `.set(key: str, value: JsonValue) → ActionResult`
 
-Store a JSON-safe value under a named key. Dictionaries inside the value must use string keys. The archive holds up to 512 entries; each value supports 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key.
+Store a JSON-safe value under a named key. Dictionaries inside the value must use string keys. The archive holds up to 2,048 entries; each value supports 8 nested levels, 16,384 total nodes counting values and containers, and 4,096 characters per string or dictionary key.
 
 *Parameters*
 
@@ -85,7 +85,7 @@ Read a stored value by key. If the key is missing, returns the optional default 
 | `key` | `str` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 | `default` | `JsonValue` | Returned when the key is missing |
 
-- **Returns** Stored value, the optional default, or `None`.
+- **Returns** `JsonValue`. Stored value, the optional default, or `None`.
 
 *Raises*
 
@@ -103,7 +103,7 @@ Return `True` when the archive contains the key, otherwise `False`.
 | --- | --- | --- |
 | `key` | `str` | Archive key, 1-96 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
-- **Returns** Boolean: `True` when the archive contains the key.
+- **Returns** `bool`. `True` when the archive contains the key.
 
 *Raises*
 
@@ -143,7 +143,7 @@ Return archive keys as a sorted list. Pass a prefix such as `"rover."` to list o
 | --- | --- | --- |
 | `prefix` | `str` | Optional key prefix using the archive key character set |
 
-- **Returns** Sorted list of archive keys, optionally filtered by prefix.
+- **Returns** `list[str]`. Archive keys, sorted, optionally filtered by prefix.
 
 *Raises*
 

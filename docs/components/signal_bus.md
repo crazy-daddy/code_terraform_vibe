@@ -4,23 +4,23 @@
 
 Coordinates scripts through shared JSON-safe values. Access the Signal Bus with `get_component("comms")` after its research unlocks. Use `send()` and `receive()` for work that should be handled once; use `broadcast()` and `latest()` for the newest shared value.
 
-**Returned by:** `get_component("comms")`
+**Access via:** `get_component("comms")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -162,7 +162,7 @@ Inspect all waiting messages on a channel in receive order without consuming the
 | --- | --- | --- |
 | `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
-- **Returns** List of copied CommsMessage entries in receive order, oldest first. Empty when no messages are waiting, including a missing channel or one with only a broadcast.
+- **Returns** `list[CommsMessage]`. Copied in receive order, oldest first. Empty when no messages are waiting, including a missing channel or one with only a broadcast.
 
 *Raises*
 
@@ -268,7 +268,7 @@ Return the most recent value broadcast on a channel, or `None` if the channel ha
 | --- | --- | --- |
 | `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
-- **Returns** Latest broadcast value on the channel, or `None` if nothing has been broadcast.
+- **Returns** `JsonValue`. Latest broadcast value on the channel, or `None` if nothing has been broadcast.
 
 *Raises*
 
@@ -286,7 +286,7 @@ Inspect the latest broadcast, who published it, and how long ago it was updated.
 | --- | --- | --- |
 | `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
-- **Returns** A BroadcastInfo snapshot with value, sender, and age_seconds, or `None` when the channel has no broadcast. Missing saved sender or timestamp information is `None` in the corresponding field.
+- **Returns** `BroadcastInfo | None`. `None` when the channel has no broadcast. Missing saved sender or timestamp information is `None` in the corresponding field.
 
 *Raises*
 
@@ -304,7 +304,7 @@ Number of queued messages waiting on the channel.
 | --- | --- | --- |
 | `channel` | `str` | Channel id, 1-64 characters using letters, numbers, `_`, `.`, `:`, or `-` |
 
-- **Returns** Number of queued messages on the channel.
+- **Returns** `int`. Messages queued on the channel.
 
 *Raises*
 
@@ -316,7 +316,7 @@ Number of queued messages waiting on the channel.
 
 All channel ids that currently have queued messages or a latest broadcast value.
 
-- **Returns** List of channel ids with queued or broadcast state.
+- **Returns** `list[str]`. Ids of the channels with queued or broadcast state.
 
 ##### `.clear(channel: str) → CountResult`
 

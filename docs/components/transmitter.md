@@ -4,23 +4,23 @@
 
 Sends data to other planets. Use it to report sensor readings to Earth or submit contract answers. Call `connect()` to choose a planet, then `transmit(key, value)` to send data; `disconnect()` clears the connection. A connection lasts only for the current script run, so each transmitting script must connect first. Save `get_component("transmitter")` to a variable and reuse it for both calls.
 
-**Returned by:** `get_component("transmitter")`
+**Access via:** `get_component("transmitter")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -28,7 +28,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 Every available transmission destination as a list of `Planet` objects (each with `.id`, `.name`, etc.). Call once at script start to see what is available; pass a returned `.id` to `connect(id)`.
 
-- **Returns** List of Planet objects
+- **Returns** `list[Planet]`
 
 ##### `.connect(planet: str) → ActionResult`
 
@@ -69,7 +69,7 @@ Close the current script-run channel. This does not affect contracts or any othe
 
 Current connection status. Returns an object with `.connected` (boolean) and `.target` (connected planet id, or `"none"`). Use as a guard before `transmit()`: `if transmitter.get_info().connected: transmitter.transmit(...)`.
 
-- **Returns** Object { connected, target }
+- **Returns** `TransmitterInfo`
 
 ##### `.transmit(key: str, value: JsonValue) → ActionResult`
 

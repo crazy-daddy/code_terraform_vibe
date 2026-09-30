@@ -8,23 +8,23 @@ An atmospheric oxygen probe that landed broken. It reports a raw voltage until a
 | --- | --- |
 | Type | Sensors |
 
-**Returned by:** `get_component("oxygen_sensor")`
+**Access via:** `get_component("oxygen_sensor")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -32,7 +32,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 Before repair, read raw voltage from the uncalibrated probe as a small decimal value. This is not yet a ppt reading; compare it with a known reference to calculate the calibration factor. After repair, read the current atmospheric oxygen level in ppt directly.
 
-- **Returns** Number (raw voltage before repair; atmospheric oxygen in ppt after repair)
+- **Returns** `float`. Raw voltage before repair; atmospheric oxygen in ppt after repair.
 
 ##### `.calibrate(value: float) → ActionResult`
 

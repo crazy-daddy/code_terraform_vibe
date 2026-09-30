@@ -291,7 +291,7 @@ Publish one transmission into its declared numbered slot. A different event repl
 | `"ok"` | success | The operation completed successfully. |
 | `"no_power"` | transient | The component has no available power. |
 | `"duplicate"` | rejection | That entry is already present and nothing was added or changed. |
-| `"invalid_type"` | rejection | The supplied value does not carry the required API type and provenance. |
+| `"invalid_type"` | rejection | A supplied value has the wrong type or structure, or is missing required content. |
 
 ##### `.reject(transmission: SignalTransmission | TransmissionRecord) → ActionResult`
 
@@ -313,7 +313,7 @@ Add one to the supplied event's refusal count without opening a slot. A differen
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 | `"no_power"` | transient | The component has no available power. |
-| `"invalid_type"` | rejection | The supplied value does not carry the required API type and provenance. |
+| `"invalid_type"` | rejection | A supplied value has the wrong type or structure, or is missing required content. |
 
 ##### `.resolve(event_id: str, info: dict[str, object]) → ActionResult`
 
@@ -336,7 +336,7 @@ Publish up to **6** labelled rows for an event. A different event replaces this 
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
 | `"no_power"` | transient | The component has no available power. |
-| `"invalid_type"` | rejection | The supplied value does not carry the required API type and provenance. |
+| `"invalid_type"` | rejection | A supplied value has the wrong type or structure, or is missing required content. |
 
 ##### `.clear() → ActionResult`
 

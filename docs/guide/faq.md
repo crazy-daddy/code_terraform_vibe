@@ -38,7 +38,7 @@ Item flow through machine ports needs **Auto Feeders** research. Until then the 
 ### Building and outposts
 
 **How do I found an outpost?**
-Buying the Outpost Kit is only the material step. You also need **Outpost Construction** and **Constructor Module** research, plus a Pioneer carrying a Nav Module, a Battery Holder with a charged Portable Battery, and a Cargo Rack holding the kit. Place an Outpost blueprint in Plan Mode or with `construction_blueprint.plan_structure("outpost", x, y)`, drive there, brake, and build it. **First Outpost** walks the whole sequence.
+Buying the Outpost Kit is only the material step. You also need **Outpost Construction** and **Constructor Module** research, plus a Pioneer with a Nav Module and a Constructor Module mounted, a Battery Holder with a charged Portable Battery, and a Cargo Rack holding the kit. Place an Outpost blueprint in Plan Mode or with `construction_blueprint.plan_structure("outpost", x, y)`, drive there, brake, and build it. **First Outpost** walks the whole sequence.
 
 **How do I deploy a building at an outpost once it exists?**
 Deploying is not freight, so there is usually nothing to drive out. Buy the shop kit and deploy it from **Inventory** straight into any founded outpost; upgrade packs are consumed into a finished machine the same way. Only constructor-built Planet Map machines, such as Thermal Caps, pumps, and field drills, need a Pioneer to carry the kit and build them in place.

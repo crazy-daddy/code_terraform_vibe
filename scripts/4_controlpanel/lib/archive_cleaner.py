@@ -19,7 +19,7 @@ CLAIM_STALE_TICKS = 36000
 # safe clutter to purge rather than something actively tracking state.
 # 10 simulation minutes at 10 ticks/sec: comfortably longer than any
 # poll_interval in the codebase, short enough not to leave dead entries
-# sitting in the archive's shared 512-entry cap for long after a script
+# sitting in the archive's shared 2,048-entry cap for long after a script
 # stops profiling itself.
 PROFILING_STALE_TICKS = 6000
 

@@ -13,29 +13,29 @@ Base-station energy storage. It fills on its own when generation runs a surplus 
 
 1. Buy from the Shop for 300 cr.
 
-**Returned by:** `get_component(id)`
+**Access via:** `get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ### Methods
 
@@ -43,12 +43,12 @@ The outpost where this building is deployed. The returned `OutpostRef` includes 
 
 Current stored energy in watt-hours (**Wh**). Drops when consumption exceeds generation, rises when generation exceeds consumption, and stays level when they are equal. Approaching **0** is a red flag, the grid is about to brown out.
 
-- **Returns** Number (Wh)
+- **Returns** `float`. In Wh.
 
 ##### `.get_capacity() → float`
 
 Total battery capacity in watt-hours (**Wh**). Queryable rather than hardcoded so future upgrades don't break scripts. Use with `get_level()` for charge percent.
 
-- **Returns** Number (Wh)
+- **Returns** `float`. In Wh.
 
 *Components / Power*

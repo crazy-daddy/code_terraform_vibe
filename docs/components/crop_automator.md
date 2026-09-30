@@ -17,23 +17,23 @@ Queues harvest, plant, and treatment jobs across up to 24 other cells in a cente
 2. Buy from the Shop for 30,000 cr.
 3. Deploy the kit on an empty field cell with a Harvester's `deploy()`.
 
-**Returned by:** `self`
+**Access via:** `self`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.input: InputSlot`
 
@@ -144,7 +144,7 @@ Submit one Fertilizer Mk I/II/III or Growth Accelerant job. Submission is immedi
 
 Grid sector occupied by this automator. Jobs can target up to 24 other cells in its centered 5 by 5 service area.
 
-- **Returns** The automator's own field sector. Jobs can target up to 24 other cells in its centered 5 by 5 service area.
+- **Returns** `str`. The automator's own field sector. Jobs can target up to 24 other cells in its centered 5 by 5 service area.
 
 ##### `.cell(sector: str) → Cell | None`
 
@@ -169,7 +169,7 @@ Read one sector inside this automator's service area as a `Cell` snapshot, cover
 
 Read every sector this automator serves as a list of `Cell` snapshots, for sweeping the whole service area in one pass. Unscanned natural ground reports status `"unknown"`.
 
-- **Returns** List of the `Cell` snapshots this automator serves, one per addressable sector. Empty while the automator is not placed on the field.
+- **Returns** `list[Cell]`. One snapshot per sector this automator can address. Empty while the automator is not placed on the field.
 
 ##### `.status() → str`
 

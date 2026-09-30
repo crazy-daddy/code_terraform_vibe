@@ -59,7 +59,7 @@ Blueprint unlocks by completing the order **Spire, Control Run**.
 | Power | 35 W |
 | Production tier | T0 |
 
-##### Neutronium → Neutronium Bar `smelt_neutronium_bar` *(Not yet unlocked)*
+##### Neutronium → Neutronium Bar `smelt_neutronium_bar` *(Unlocked)*
 
 1× Neutronium → 1× Neutronium Bar
 Blueprint unlocks by completing the order **Spire, Polymer Optics Run**.

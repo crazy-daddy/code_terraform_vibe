@@ -8,23 +8,23 @@ A slow general-purpose surface vehicle that collects loose items, plants and ten
 | --- | --- |
 | Type | Harvesting |
 
-**Returned by:** `self`
+**Access via:** `self`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -112,43 +112,43 @@ Release the currently held item into the Harvester's current sector, the cell be
 
 Item id currently held by the Harvester, or empty string if the held slot is empty. Call `self.get_held()` before `collect()` (if non-empty, the slot is busy) or before `self.store()` (if empty, nothing to store). Essential first line of any collect loop.
 
-- **Returns** String (item id, or empty string if not holding)
+- **Returns** `str`. The held item id, or empty if holding nothing.
 
 ##### `.get_position() → str`
 
 Current sector id as a string (e.g. `"E14"`). Use to plan the next `move()` target, movement is strictly to adjacent cells, so the script needs to know where it is to compute where it can go.
 
-- **Returns** String (sector)
+- **Returns** `str`. The current sector.
 
 ##### `.get_heat() → float`
 
 Exact current heat level (**0-100**), including fractional cooling between whole heat costs. Every `move()` adds heat, and an empty-sector `collect()` attempt also adds heat; passive cooling runs continuously as game time passes, including during movement and collection. Read before moving, if you're close to **100** and your planned route crosses empty cells (+7 heat each), stop and cool. Losing the route to `"overheated"` mid-sweep wastes hours.
 
-- **Returns** Number (0-100)
+- **Returns** `float`. 0-100.
 
 ##### `.get_max_heat() → int`
 
 Maximum heat capacity, always **100**. Reaching this stalls all movement and collection until heat drops below the cap. Exposed as a method so scripts can reason about thresholds without hardcoding the number.
 
-- **Returns** Number (100)
+- **Returns** `int`. Always 100.
 
 ##### `.is_overheated() → bool`
 
 `True` when heat `>= 100`. Shortcut for `self.get_heat() >= self.get_max_heat()`. Use it as an early-exit guard when you intentionally want the Harvester to cool: `if self.is_overheated(): sleep(1)`. The Harvester cools passively whenever game time advances.
 
-- **Returns** Boolean
+- **Returns** `bool`
 
 ##### `.water_level() → float`
 
 Read the water currently in the Harvester's onboard tank, in tons, including fractional amounts. Each watering uses **1 t**. Compare with `water_capacity()` to plan refills from the home outpost's water tanks.
 
-- **Returns** Number: onboard water in tons, including fractional amounts.
+- **Returns** `float`. Onboard water, in tons, including fractional amounts.
 
 ##### `.water_capacity() → float`
 
 Read the Harvester's maximum onboard water supply in tons, currently **5 t**. Compare with `water_level()` to check how full the tank is.
 
-- **Returns** Number: onboard water capacity in tons.
+- **Returns** `float`. Onboard water capacity, in tons.
 
 ##### `.load_seed(seed: str) → ActionResult` *(self only)*
 
@@ -179,7 +179,7 @@ Transfer one species seed from home Inventory, from anywhere on the grid, into t
 
 ##### `.plant(seed: str) → ActionResult` *(self only)*
 
-Sow the physical seed currently in the Harvester's held slot into this empty cell. The argument must identify that held seed. The base sector is depot ground and refuses sowing. Sowing takes **0.5 hours**, and the seed and new crop appear only after the action finishes.
+Sow the physical seed currently in the Harvester's held slot into this empty cell. The argument must identify that held seed. The base sector is depot ground and refuses sowing. Sowing takes **0.5 hours**; the held seed is consumed and the new crop appears only after the action finishes.
 
 *Parameters*
 
@@ -236,7 +236,7 @@ Place a supported field-machine kit in the current empty cell, consuming one kit
 
 List of fixed field-machine kit ids unlocked by your current research. This is a capability list, not a live deployment check: `deploy(...)` still checks Inventory stock, the current cell, movement, heat, and whether the Harvester is busy.
 
-- **Returns** List of fixed field-machine kit ids unlocked by research. It does not check Inventory stock, placement, heat, movement, or busy state. Empty until Grow Lamp research.
+- **Returns** `list[str]`. Fixed field-machine kit ids unlocked by research. It does not check Inventory stock, placement, heat, movement, or busy state. Empty until Grow Lamp research.
 
 ##### `.light() → ActionResult` *(self only)*
 
@@ -390,7 +390,7 @@ Apply one `yield_amplifier`, the capstone **field-wide** Forage-output boost (no
 
 Hours remaining on the field-wide Yield Amplifier effect. Each applied unit adds **24 hours**. Returns **0** when the field is not amplified.
 
-- **Returns** Hours remaining on the field-wide Yield Amplifier effect.
+- **Returns** `float`. Hours remaining on the field-wide Yield Amplifier effect.
 
 ##### `.uproot() → ActionResult` *(self only)*
 
@@ -466,19 +466,19 @@ Read one grid sector as a `Cell` snapshot. Unscanned natural ground has status `
 | --- | --- | --- |
 | `sector` | `str` | Grid sector id (e.g. `"E13"`). |
 
-- **Returns** A `Cell` for the requested sector, or `None` for an invalid or off-grid id. Natural ground is `"unknown"` until scanned; the depot and player-created plants or providers remain visible. Includes plant, growth, conditions, treatment time, fertilizer tier, and forage.
+- **Returns** `Cell | None`. `None` for an invalid or off-grid id. Natural ground is `"unknown"` until scanned; the depot and player-created plants or providers remain visible.
 
 ##### `.cells() → list[Cell]`
 
 Read every harvester-grid sector as a list of `Cell` snapshots. Unscanned natural ground reports status `"unknown"`; scan sectors before planning around occupancy. Use the list for field-wide planting, treatment-route scheduling, uprooting, undeploying, and harvesting policies.
 
-- **Returns** List of every grid `Cell` on the board. Unscanned natural ground has status `"unknown"`; scanned cells expose occupancy. Player-created plants/providers, growth, direct conditions, precise remaining treatment times, active fertilizer tier, and accumulated forage remain visible.
+- **Returns** `list[Cell]`. Every cell on the board. Unscanned natural ground has status `"unknown"`; scanned cells expose occupancy. Player-created plants and providers, growth, direct conditions, precise remaining treatment times, active fertilizer tier, and accumulated forage stay visible.
 
 ##### `.position() → str`
 
 Current sector id as a string. Same position source as `get_position()`, exposed as a property-style read for grid scripts.
 
-- **Returns** String: the sector the harvester currently occupies (e.g. `"E13"`). The Plants verbs all act on this cell; `self.move(...)` to act elsewhere.
+- **Returns** `str`. The sector the harvester currently occupies (e.g. `"E13"`). The Plants verbs all act on this cell; `self.move(...)` to act elsewhere.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

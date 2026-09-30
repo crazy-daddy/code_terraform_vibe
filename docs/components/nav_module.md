@@ -4,23 +4,23 @@
 
 Lets a vehicle drive through `self.nav`. A basic module provides **1.0×** top speed. One Sport Nav on the same rig provides **2×** top speed with **2.6×** movement power draw, about **1.3×** battery use per meter at full throttle. Further Sport Navs add **1.0×** base top speed each and raise draw faster. It fits a `nav` or `universal` slot. Keep the script running until arrival. The vehicle stops and clears its route if the script stops, ends, or errors.
 
-**Returned by:** `self.nav`
+**Access via:** `self.nav`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -73,7 +73,7 @@ Set throttle (**0.0-1.0**, clamped). `self.nav.set_throttle(0.5)` cruises; `1.0`
 
 Current throttle setpoint (**0.0-1.0**). Returns the value the script last wrote via `self.nav.set_throttle(...)`, or **0** after Stop, completion, error, or `brake()`. Distinct from `get_speed()`, `throttle()` is your intent, `get_speed()` is what the vehicle actually moved last tick.
 
-- **Returns** Number (**0.0-1.0**): current throttle setpoint.
+- **Returns** `float`. Current throttle setpoint (**0.0-1.0**).
 
 ##### `.brake() → ActionResult` *(self only)*
 
@@ -94,17 +94,17 @@ Stop the vehicle immediately, throttle and speed set to **0**, and the current t
 
 Current position as a `Position` object with `.x` and `.y` in meters from base. Read each iteration of a drive loop to detect arrival, plan next hop, or log the path. See `Position`.
 
-- **Returns** `Position` object `{x, y}` in meters from base
+- **Returns** `Position`. In meters from base.
 
 ##### `.get_speed() → float`
 
 Speed in meters per hour as recorded on the last drive tick. **0** while idle or braked; up to the Nav's top speed at throttle **1.0**. Use to confirm the vehicle is actually moving (if `0` when you expected drive, there's a power or target issue). A fresh `set_throttle(...)` won't show up here until the next drive tick.
 
-- **Returns** Number (m/h)
+- **Returns** `float`. In m/h.
 
 ##### `.get_distance_to(x: float, y: float) → float`
 
-Euclidean distance in meters from the vehicle's current position to the given point. Use it inside an intentional wait loop to detect proximity, with an arrival tolerance such as `> 2`, never exact zero. Reaching that tolerance does not stop the vehicle; call `brake()` before a stationary at-site action. For an at-building action, route to that building's `BuildingRef.position`. `set_target()` does not block while the vehicle drives, and the drive is canceled if the script stops, completes, or errors. This is pure straight-line distance and does not account for obstacles.
+Euclidean distance in meters from the vehicle's current position to the given point. Use it inside an intentional wait loop to detect proximity. The vehicle has arrived once the distance is 2 or less (never wait for exact zero), so the loop keeps going while it is `> 2`. Arriving does not stop the vehicle; call `brake()` before a stationary at-site action. For an at-building action, route to that building's `BuildingRef.position`. `set_target()` does not block while the vehicle drives, and the drive is canceled if the script stops, completes, or errors. This is pure straight-line distance and does not account for obstacles.
 
 *Parameters*
 
@@ -113,12 +113,12 @@ Euclidean distance in meters from the vehicle's current position to the given po
 | `x` | `float` | Target X coordinate in meters |
 | `y` | `float` | Target Y coordinate in meters |
 
-- **Returns** Number (meters)
+- **Returns** `float`. In meters.
 
 ##### `.speed_multiplier() → float`
 
 Current top-speed multiplier: **1.0** with Basic Nav/no Sport Nav, or **1 + mounted Sport Nav count** on Pioneer. Use it to plan trip times and scout builds. This is speed only; range still depends on battery, throttle, cargo load, and movement draw.
 
-- **Returns** Number: **1.0** basic, or **1 + Sport Nav count** on Pioneer. Speed only; range depends on battery, throttle, cargo load, and movement draw.
+- **Returns** `float`. **1.0** basic, or **1 + Sport Nav count** on Pioneer. Speed only; range depends on battery, throttle, cargo load, and movement draw.
 
 *Components / Vehicles & Modules*

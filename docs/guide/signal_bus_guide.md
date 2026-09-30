@@ -257,6 +257,6 @@ print(cleared.status, cleared.count, cleared.message)
 
 Values must be JSON-safe: `None`, booleans, finite numbers, strings, lists/tuples, and dictionaries with string keys. Functions, components, sets, class instances, and dictionaries with non-string keys produce `"invalid_value"`. A payload supports up to **8** nested levels, **1,024** total values, and **4,096** characters in each string or dictionary key.
 
-Channel ids contain **1-64** letters, numbers, `_`, `.`, `:`, or `-`. Reserved object-field names such as `"__proto__"` are rejected. A queue holds up to **64** messages and a save up to **128** channels. The Computer operator uses these same limits. Always branch on the returned `.status`; `.message` is the authoritative reason text.
+Channel ids contain **1-64** letters, numbers, `_`, `.`, `:`, or `-`. Reserved object-field names such as `"__proto__"` are rejected. A queue holds up to **64** messages and a save up to **512** channels. The Computer operator uses these same limits. Always branch on the returned `.status`; `.message` is the authoritative reason text.
 
 *Guide / Automation Systems*

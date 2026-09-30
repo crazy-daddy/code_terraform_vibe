@@ -8,23 +8,23 @@ Always-working surface temperature probe, no calibration needed. Reads the plane
 | --- | --- |
 | Type | Sensors |
 
-**Returned by:** `get_component("thermometer")`
+**Access via:** `get_component("thermometer")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -32,7 +32,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 Current surface temperature in **°C** as a number. Safe to call from any script; no repair step needed. This is the display °C, for the heat-units progression metric that research thresholds compare against, read `get_component("atmosphere").get_heat()`.
 
-- **Returns** Number (°C)
+- **Returns** `float`. In °C.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

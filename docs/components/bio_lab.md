@@ -15,53 +15,53 @@ Automates the Analyze and Extract steps of the biology loop, studying a specimen
 
 1. Buy from the Shop for 5,000 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `self.specimen: Specimen | None`
 
 The `Specimen` in the lab chamber right now, exposed as `self.specimen`, or `None`. Read `self.specimen.stage` to distinguish `"collected"` from `"analyzed"`. Before analysis its identifying fields are hidden; after analysis its `fragment_id`, `rarity`, and `recipe` are populated.
 
-- **Returns** The `Specimen` currently in the chamber, with `.stage` `"collected"` or `"analyzed"`, or `None` if empty.
+- **Returns** `Specimen | None`. The specimen in the chamber, at `.stage` `"collected"` or `"analyzed"`, or `None` if empty.
 
 ##### `self.loaded_reagents: dict[str, int]`
 
 A dict `{reagent_id: qty}` of reagents staged for the next `extract()`. Iterate `.items()` to inspect.
 
-- **Returns** A dict `{reagent_id: qty}` of reagents staged for the next `extract()`.
+- **Returns** `dict[str, int]`. `{reagent_id: qty}` of reagents staged for the next `extract()`.
 
 ##### `self.input: InputSlot`
 
 The `InputSlot` for scripted reagent routing. It holds one reagent item id at a time and stays latched to that id until `load()` consumes the remaining units or `flush()` discards them. `stacks()` lists property-distinct variants and does not mean the port accepts multiple reagent types. Connect Inventory only at Nocturna Base; at another outpost connect a same-outpost Storage Bin/Warehouse. Call `take(...)` before `load(...)`.
 
-- **Returns** `InputSlot` for scripted reagent routing. Inventory is available only at Nocturna Base; remote Labs use a local Storage Bin or Warehouse. Recover an unneeded staged reagent with `eject(...)`.
+- **Returns** `InputSlot`. For scripted reagent routing. Inventory is available only at Nocturna Base; remote Labs use a local Storage Bin or Warehouse. Recover an unneeded staged reagent with `eject(...)`.
 
 ##### `self.output: OutputSlot`
 
 The `OutputSlot` for extracted property-bearing samples and unloaded reagents. Connect any eligible local item store and drain it with `send(...)`.
 
-- **Returns** `OutputSlot` holding extracted samples and unloaded reagents with exact properties intact.
+- **Returns** `OutputSlot`. Holds extracted samples and unloaded reagents with exact properties intact.
 
 ### Methods
 

@@ -15,37 +15,37 @@ Grid-powered fleet charging: Mk I provides **1 bay / 30 W**, Mk II **2 bays / 12
 1. Requires the **Vehicle Charging Station** research (Oxygen 9).
 2. Buy from the Shop for 1,200 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ### Methods
 
 ##### `.get_docked() → list[str]`
 
-List of vehicle instance ids parked inside the station's local service pad plus its **~2 m** margin, or inside the owning Outpost's common service area. Returns ids, not vehicles; dereference each via `get_component(id)` to read battery state, cargo, or anything else. Empty list means no vehicles docked. Call each iteration; the list can change between ticks as vehicles drive in or out.
+List of vehicle instance ids parked inside the station's local service pad plus its **~2 m** margin, or inside the owning Outpost's common service area. Each parked vehicle is docked at one station only: the one it picked with its own `dock()`, otherwise the eligible station with the shortest distance to its station position or its outpost's center, with equal-distance ties broken alphabetically by station id. Returns ids, not vehicles; dereference each via `get_component(id)` to read battery state, cargo, or anything else. Empty list means no vehicles docked. Call each iteration; the list can change between ticks as vehicles drive in or out.
 
-- **Returns** List of vehicle instance ids docked at this station. Read each vehicle's state via `get_component(id)`.
+- **Returns** `list[str]`. Instance ids of the vehicles docked at this station. Read each vehicle's state via `get_component(id)`.
 
 ##### `.charge(vehicle_id: str, target_level: float = 1.0) → ActionResult` *(self only)*
 
@@ -114,13 +114,13 @@ Clear every queued charge job on this station. Rescue-drone missions are separat
 
 List of vehicle ids currently occupying active charging bays. Mk I returns at most one id, Mk II two, Mk III four. These are the vehicles sharing the station's pooled budget this tick.
 
-- **Returns** List of vehicle ids currently occupying charging bays
+- **Returns** `list[str]`. Ids of the vehicles currently occupying charging bays.
 
 ##### `.get_queue() → list[str]`
 
 List of vehicle ids in charge-queue order. The first `get_bay_count()` entries are the ones that can be active right now, assuming they are still docked and below their target.
 
-- **Returns** List of queued vehicle ids in order; the first `get_bay_count()` entries can be active
+- **Returns** `list[str]`. Queued vehicle ids in order; the first `get_bay_count()` entries can be active.
 
 ##### `.status(vehicle_id: str) → dict[str, JsonValue]`
 
@@ -132,25 +132,25 @@ Detailed status for one vehicle: a dict with `state` (`"charging"`, `"queued"`, 
 | --- | --- | --- |
 | `vehicle_id` | `str` | Display name or id of a vehicle |
 
-- **Returns** A dict with `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`
+- **Returns** `dict[str, JsonValue]`. Keys: `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`.
 
 ##### `.tier() → int`
 
 Permanently installed Charging Station tier as an integer (**1-3**). Mk II raises bay count and bay rate; Mk III raises bay count again.
 
-- **Returns** Integer: permanently installed Charging Station tier (**1-3**).
+- **Returns** `int`. Permanently installed Charging Station tier (**1-3**).
 
 ##### `.get_bay_count() → int`
 
 Number of simultaneous vehicle charging bays. Mk I is **1**, Mk II **2**, Mk III **4**.
 
-- **Returns** Number of simultaneous vehicle charging bays
+- **Returns** `int`. How many vehicles can charge at once.
 
 ##### `.get_bay_rate() → float`
 
 Watts pushed by a single bay (**30 W** Mk I, **60 W** Mk II/III). With bay pooling a lone vehicle draws every idle bay, so its actual rate is up to `get_bay_count() × get_bay_rate()`, read `get_charge_rate(id)` for what a specific vehicle is really getting. The station's total grid draw is `get_bay_count() × get_bay_rate()` whenever any vehicle is charging, plus rescue-drone draw if a rescue is out.
 
-- **Returns** Watts pushed by each active bay
+- **Returns** `float`. Watts pushed by each active bay.
 
 ##### `.get_charge_rate(vehicle_id: str) → float`
 
@@ -162,7 +162,7 @@ Actual watts being pushed into the specified vehicle right now, the station's to
 | --- | --- | --- |
 | `vehicle_id` | `str` | Display name or id of a docked vehicle |
 
-- **Returns** Number (W currently being pushed into that vehicle)
+- **Returns** `float`. Watts currently being pushed into that vehicle.
 
 ##### `.dispatch_rescue(vehicle_name: str, target_level: float = 1.0) → ActionResult` *(self only)*
 
@@ -208,13 +208,13 @@ Recall this station's active field-service drone. If the drone was outbound or t
 
 `True` while a rescue drone is deployed (out, at the target, or returning). A recalled drone still counts as rescuing until it reaches the station, but the target vehicle is released as soon as `cancel_rescue()` succeeds. Use before `dispatch_rescue()` to avoid the `"already_dispatched"` rejection: `if not self.is_rescuing(): self.dispatch_rescue(name)`. Exactly one drone at a time, queue rescues manually if you need more.
 
-- **Returns** Boolean
+- **Returns** `bool`
 
 ##### `.get_rescue_target() → str`
 
 Display name of the vehicle currently being rescued, or empty string if the drone is idle. Use for dashboards ("rescuing Rover 1") or to decide whether to wait vs send a different vehicle to pick up slack.
 
-- **Returns** String (display name of the vehicle being rescued, or empty)
+- **Returns** `str`. Display name of the vehicle being rescued, or empty.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

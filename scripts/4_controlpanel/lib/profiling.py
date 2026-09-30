@@ -13,7 +13,7 @@
 #   profiling.end("thermal_cap_1", start)
 #
 # Samples roll into a fixed-size history per script name in `archive` (the
-# Data Archive has a hard 512-entry cap shared by every script, so this is
+# Data Archive has a hard 2,048-entry cap shared by every script, so this is
 # one key per *name*, not per sample) so profiling.report() can summarize
 # after the fact instead of requiring someone to watch console output live.
 # Each entry is stored as {"history": [...], "last_tick": N} -- the

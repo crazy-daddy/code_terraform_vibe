@@ -15,41 +15,41 @@ Small aerial cargo drone, 1 thruster + 2 modules.
 3. Fabricate a **Drone (Small)** on a **Fabricator**: 1× Rare Earth Core, 1× Titanium Ingot, 1× Control Unit, and 2 t Water.
 4. Deploy it from your Inventory.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.battery: DroneBattery`
 
 Reads power on electric drones. Use `self.battery.level()` for current charge in **Wh**, `capacity()` for total Battery Pack capacity, and `percent()` for the **0-1** charge fraction. These calls raise `ReferenceError` on a heli drone. In mixed fleets, check `DroneRef.engine` from `fleet.drones()` first.
 
-- **Returns** `DroneBattery` on **electric drones** with `level()`, `capacity()`, and `percent()`. Its methods raise `ReferenceError` on a drone without an electric powertrain; inspect `fleet.drones()` and branch on `DroneRef.engine` before calling across a mixed fleet.
+- **Returns** `DroneBattery`. On **electric drones** only. Its methods raise `ReferenceError` on a drone without an electric powertrain; inspect `fleet.drones()` and branch on `DroneRef.engine` before calling across a mixed fleet.
 
 ##### `.oil_tank: DroneOilTank`
 
 Reads fuel on heli drones. Use `self.oil_tank.level()` for current oil in **tons**, plus `capacity()` and `percent()`. These calls raise `ReferenceError` on an electric drone. In mixed fleets, check `DroneRef.engine` from `fleet.drones()` first.
 
-- **Returns** `DroneOilTank` on **heli drones** with `level()`, `capacity()`, and `percent()`. Its methods raise `ReferenceError` on a drone without a heli powertrain; inspect `fleet.drones()` and branch on `DroneRef.engine` before calling across a mixed fleet.
+- **Returns** `DroneOilTank`. On **heli drones** only. Its methods raise `ReferenceError` on a drone without a heli powertrain; inspect `fleet.drones()` and branch on `DroneRef.engine` before calling across a mixed fleet.
 
 ##### `.cargo: DroneCargo`
 
 Manages mounted Cargo Pods and the Bio Extractor's sealed chamber. Each pod holds one item type and unlatches when empty; the extractor chamber holds one life-form type and fills first. Use `self.cargo.count()`, `contents()`, `capacity()`, and `space_for(item_id)` to plan loads. `load()` and `unload()` work while docked at a Drone Depot; `load()` also works at a field Mining Drill or Lead Cask. Exact item properties are preserved. See `DroneCargo`.
 
-- **Returns** `DroneCargo` with mounted Cargo Pods plus the Bio Extractor's typed 25 t chamber. Use `space_for(item_id)` because biological room is item-specific.
+- **Returns** `DroneCargo`. Mounted Cargo Pods plus the Bio Extractor's typed 25 t chamber. Use `space_for(item_id)` because biological room is item-specific.
 
 ##### `.bio_scanner: PortableBioScanner`
 
@@ -133,19 +133,19 @@ Fly to a named field Mining Drill for ore pickup. Hauling needs no field module.
 
 Stable station id where the drone is physically docked. Returns an empty string while flying to coordinates, traveling between stations, or waiting outside a full Drone Depot. Use equality with the destination id as the authoritative station-arrival check, even when `go_to_station()` was called with a display name.
 
-- **Returns** String station id, or empty string if in transit.
+- **Returns** `str`. The station id, or empty if in transit.
 
 ##### `.current_drill() → str`
 
 Stable Mining Drill id where the drone can currently load cargo, or an empty string when no Drill is available. The drone must be within the Drill's loading area with no active route; merely passing over the Drill or holding a zero-throttle route does not count. Compare this value with the destination id as the authoritative Drill-arrival check, even when `go_to_drill()` was called with a display name.
 
-- **Returns** String Mining Drill id available for cargo loading, or empty string otherwise.
+- **Returns** `str`. The Mining Drill id available for cargo loading, or empty otherwise.
 
 ##### `.position() → Position`
 
 World coordinates `(.x, .y)`, lerped each tick by DroneSystem during transit, snapped to station coords on dock.
 
-- **Returns** Position (`.x`, `.y`): current world coordinates.
+- **Returns** `Position`. Current world coordinates.
 
 ##### `.get_distance_to(x: float, y: float) → float`
 
@@ -158,7 +158,7 @@ Straight-line distance in meters from the drone's current position to the given 
 | `x` | `float` | Target X coordinate in meters |
 | `y` | `float` | Target Y coordinate in meters |
 
-- **Returns** Number: straight-line distance in meters from the drone's current position to the given point.
+- **Returns** `float`. Straight-line distance in meters from the drone's current position to the given point.
 
 ##### `.go_to(x: float, y: float) → ActionResult` *(self only)*
 
@@ -209,31 +209,31 @@ Collect one weather aftermath batch at the drone's exact current coordinate. A s
 
 Current extraction exposure, from **0** to `exposure_capacity()`. It changes only when collecting Raw Uranium or receiving Service Station care; simply flying across a hidden aftermath is inert. A working drone docked at a powered Drone Service Station clears **10 per hour**. At capacity the drone is scrambled and requires Service Station rescue.
 
-- **Returns** Number: radiation exposure from **0** to capacity. An unplated uranium collection adds **40**; Shield Plating adds **0**. A powered Drone Service Station clears non-terminal exposure at **10/h**. At capacity the drone scrambles and requires rescue.
+- **Returns** `float`. Radiation exposure from **0** to capacity. An unplated uranium collection adds **40**; Shield Plating adds **0**. A powered Drone Service Station clears non-terminal exposure at **10/h**. At capacity the drone scrambles and requires rescue.
 
 ##### `.exposure_capacity() → float`
 
 The **100** exposure scramble threshold. An unplated drone can collect two 5-unit batches safely; the third batch is retained and then scrambles it.
 
-- **Returns** Number: the scramble threshold.
+- **Returns** `float`. The scramble threshold.
 
 ##### `.is_plated() → bool`
 
 `True` with Shield Plating mounted. Plating reduces Raw Uranium extraction exposure to zero, halves each Cargo Pod's capacity, and raises fuel burn **1.5×** because lead is heavy.
 
-- **Returns** Boolean: Shield Plating mounted (zero Raw Uranium extraction exposure and required for hot-cargo loads from Lead Casks; halves Cargo Pod capacity and raises burn).
+- **Returns** `bool`. `True` when Shield Plating is mounted: zero Raw Uranium extraction exposure and required for hot-cargo loads from Lead Casks; halves Cargo Pod capacity and raises burn.
 
 ##### `.range_remaining() → float`
 
 Estimated flight distance in meters at the current energy and throttle. Electric burn is **5 Wh/h** at full throttle; Heli burn is **5 t/h Oil**. Both scale with throttle squared, so slower routes stretch range.
 
-- **Returns** Number: estimated meters of flight at current charge and current throttle. **0** if throttle is 0 or battery/oil is empty.
+- **Returns** `float`. Estimated meters of flight at current charge and current throttle. **0** if throttle is 0 or battery or oil is empty.
 
 ##### `.throttle() → float`
 
 Current throttle (**0-1**). Full-throttle burn is **5 Wh/h** for electric propulsion or **5 t/h Oil** for Heli; both scale with throttle squared. Reads **0** after Stop, completion, or error.
 
-- **Returns** Number (**0-1**): current throttle setting.
+- **Returns** `float`. Current throttle setting (**0-1**).
 
 ##### `.set_throttle(rate: float) → ActionResult` *(self only)*
 
@@ -254,6 +254,12 @@ Set throttle (**0-1**). At full throttle, electric drones fly **300 m/h** using 
 | Status | Kind | Meaning |
 | --- | --- | --- |
 | `"ok"` | success | The operation completed successfully. |
+
+##### `.modules() → list[MountSlot]`
+
+Inspect what's coupled. Returns a list of `MountSlot`, one per slot on the chassis. Each has `.index` (pass to `couple` / `uncouple`), `.type` (`"thruster"` for slot 0, `"drone_module"` for the rest), `.module_id` (the coupled module, or `None` for an empty slot). Works on any drone, not only `self`. See `MountSlot`.
+
+- **Returns** `list[MountSlot]`. One per slot on the chassis.
 
 ##### `.couple(slot_index: int, module_id: str) → ActionResult` *(self only)*
 
@@ -316,20 +322,20 @@ Request a hardware service order that returns the module in an explicit whole-nu
 
 Current operational activity for progress and blocker handling, not an arrival test. `"idle"` can mean docked, hovering at a field coordinate, or holding a queued route at zero throttle; charging or refueling can begin immediately after docking. `"waiting_bay"` means the drone reached a full Depot but is not docked, `"holding_weather"` is a temporary heli hold, and stalled or scrambled states need intervention. Use `current_station()` or `current_drill()` to confirm arrival at an interaction endpoint.
 
-- **Returns** String: current operational activity. Use `current_station()` for the separate physical-arrival check.
+- **Returns** `str`. Current operational activity. Use `current_station()` for the separate physical-arrival check.
 - **Possible values** `"idle"`, `"traveling"`, `"charging"`, `"refueling"`, `"waiting_service"`, `"waiting_oil"`, `"waiting_bay"`, `"being_rescued"`, `"holding_weather"`, `"scrambled"`, `"stalled_no_battery"`, `"stalled_no_oil"`, `"stalled_no_route"`
 
 ##### `.is_being_rescued() → bool`
 
 `True` while a Drone Service Station's recovery vehicle is outbound to, servicing, or carrying this drone. Use this to pause route scripts while the recovery vehicle has control.
 
-- **Returns** Boolean
+- **Returns** `bool`
 
 ##### `.rescue_status() → str`
 
 Current rescue mission phase for this drone: `"none"`, `"outbound"`, `"charging"`, `"carrying"`, or `"returning"`. `"returning"` means the recovery vehicle is heading home and the drone is no longer under rescue control.
 
-- **Returns** String status: `"none"` / `"outbound"` / `"charging"` / `"carrying"` / `"returning"`.
+- **Returns** `str`
 - **Possible values** `"none"`, `"outbound"`, `"charging"`, `"carrying"`, `"returning"`
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*

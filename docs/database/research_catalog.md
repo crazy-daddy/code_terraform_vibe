@@ -42,6 +42,15 @@ Script-to-script messaging. Adds the Signal Bus tab to the Ship Computer. Script
 | Threshold | Terraform Index 35,000 |
 | Tech id | signal_bus_unlock |
 
+##### Automations `research_automations` *(Unlocked)*
+
+Scripts that run without a machine. Opens Ship Computer > Automations: scripts that belong to no machine and keep running on their own. Use them for base-wide work such as power management, shop purchases, deploying equipment and construction planning.
+
+| Field | Value |
+| --- | --- |
+| Threshold | Terraform Index 50,000 |
+| Tech id | automations_unlock |
+
 ##### Data Archive `research_data_archive` *(Unlocked)*
 
 Persistent learned tables. Adds the Data Archive tab to the Ship Computer. Scripts can store lookup tables, calibration samples, discovered maps, and other learned knowledge that persists across restarts and save/load. Use the Signal Bus for live coordination and the Data Archive for long-lived data.
@@ -150,7 +159,7 @@ Twice the item-transfer throughput. Reduces the duration of every timed discrete
 | Threshold | Terraform Index 400,000 |
 | Tech id | fast_feeders_unlock |
 
-##### Bulk Orders `research_bulk_orders` *(Not yet unlocked)*
+##### Bulk Orders `research_bulk_orders` *(Unlocked)*
 
 Double the weekly board. Earth starts placing bulk weekly contracts. Every Weekly Earth Order asks for **twice** the goods and pays **twice** the credits, raising the board's combined payout ceiling from **20,000 cr** to **40,000 cr**. The change applies from the next refresh, so orders already on the board keep their original size.
 
@@ -159,7 +168,7 @@ Double the weekly board. Earth starts placing bulk weekly contracts. Every Weekl
 | Threshold | Terraform Index 500,000 |
 | Tech id | bulk_orders_unlock |
 
-##### Cargo Expansion `research_cargo_expansion` *(Not yet unlocked)*
+##### Cargo Expansion `research_cargo_expansion` *(Unlocked)*
 
 Buy extra inventory slots. Unlocks the **EXPAND** button on the Inventory page. Each slot costs more than the last, starting at **500 cr** for slot 37 and climbing to ~**146,000 cr** for the final slot, capped at **60** total. Total cost to fully max out: ~**666,000 cr**.
 
@@ -168,7 +177,7 @@ Buy extra inventory slots. Unlocks the **EXPAND** button on the Inventory page. 
 | Threshold | Terraform Index 520,000 |
 | Tech id | cargo_expansion_unlock |
 
-##### Weather Forecasting `research_weather_forecasting` *(Not yet unlocked)*
+##### Weather Forecasting `research_weather_forecasting` *(Unlocked)*
 
 See approaching storms three times further out. Extends new Weather Station reports and Incoming coverage from **8** to **24 world-clock hours**. Forecasts remain local to storms expected to enter powered-station coverage.
 
@@ -177,7 +186,7 @@ See approaching storms three times further out. Extends new Weather Station repo
 | Threshold | Terraform Index 550,000 |
 | Tech id | weather_forecasting_unlock |
 
-##### High-Capacity Depot Handling `research_depot_handling` *(Not yet unlocked)*
+##### High-Capacity Depot Handling `research_depot_handling` *(Unlocked)*
 
 Faster intake and dispatch at Drone Depots. Automatically improves existing and newly deployed Drone Depots: **2× handling at a base Depot**, **4× at Medium**, and **8× at Large**, stacking with Fast Feeders. Speeds intake and dispatch so several remote machines can share a supply route. Each receiving machine still has its own intake cooldown. Drone speed, cargo capacity and Supply Dock dispatch rates stay the same. No upgrade pack is needed.
 
@@ -186,7 +195,7 @@ Faster intake and dispatch at Drone Depots. Automatically improves existing and 
 | Threshold | Terraform Index 580,000 |
 | Tech id | depot_handling_unlock |
 
-##### High-Pressure Fluid Transport `research_high_pressure_fluid_transport` *(Not yet unlocked)*
+##### High-Pressure Fluid Transport `research_high_pressure_fluid_transport` *(Unlocked)*
 
 Triple remote gas and liquid throughput. Retrofits every completed and future Gas Pipe and Liquid Pipe component. Each matched source-side and sink-side attachment link carries up to **6,000 t/h** instead of **2,000 t/h**. Pipe length and interior branches still add no capacity; separate attachment links and independent components retain their own budgets.
 
@@ -195,7 +204,7 @@ Triple remote gas and liquid throughput. Retrofits every completed and future Ga
 | Threshold | Terraform Index 600,000 |
 | Tech id | high_pressure_fluid_transport_unlock |
 
-##### Nuclear Program `research_nuclear_program` *(Not yet unlocked)*
+##### Nuclear Program `research_nuclear_program` *(Unlocked)*
 
 The Reactor. Unlocks the **Reactor** in the Shop: Fuel Rods in, cooling water through, **5,000 W** out, day and night, storm or calm. One rod lasts **72 hours** at heat **1.0**, and fuel use follows commanded heat. Keep the core in the green band; push it too hot and it overheats and shuts down safely.
 
@@ -305,7 +314,7 @@ High-density oil-burning power. Unlocks the Oil Generator in the shop. Burns oil
 | Threshold | Temperature 1,500 |
 | Tech id | oil_generator_unlock |
 
-##### Heli-Drones `research_heli_drones` *(Not yet unlocked)*
+##### Heli-Drones `research_heli_drones` *(Unlocked)*
 
 Long-range oil-fueled aerial transport. Allows Heli Thrusters and Oil Tanks to be mounted on drones. Their Fabricator recipes are earned separately through Vestibule orders. Heli drones fly **900 m/h** and consume **5 t/h Oil** at full throttle; burn rises with throttle squared. Three oil-tank sizes set their range, and Drone Service Stations refuel them from their oil input.
 
@@ -314,7 +323,7 @@ Long-range oil-fueled aerial transport. Allows Heli Thrusters and Oil Tanks to b
 | Threshold | Temperature 6,000 |
 | Tech id | heli_drones_unlock |
 
-##### Lightning Rods `research_lightning_rod` *(Not yet unlocked)*
+##### Lightning Rods `research_lightning_rod` *(Unlocked)*
 
 Catch strikes, bank the surge. Unlocks the **Lightning Rod Kit recipe**. This storm-charged bank stores **4,000 Wh**, catches strikes within **600 m**, and feeds the grid behind batteries. Condition falls **0.05 per day**, reducing capture to zero unless a script repairs it with **1 Storm Glass**.
 
@@ -323,7 +332,7 @@ Catch strikes, bank the surge. Unlocks the **Lightning Rod Kit recipe**. This st
 | Threshold | Temperature 8,000 |
 | Tech id | lightning_rod_unlock |
 
-##### Fuel Assembler `research_fuel_assembler` *(Not yet unlocked)*
+##### Fuel Assembler `research_fuel_assembler` *(Unlocked)*
 
 Raw Uranium + lead → Fuel Rods. Unlocks the Fuel Assembler in the Shop. This nuclear workbench presses Raw Uranium and lead casing into **Fuel Rods** and draws about **1,800 W** while running.
 
@@ -496,18 +505,18 @@ Hardness-4 extraction access. Unlocks the Heavy Drill module in the shop. Extrac
 | Threshold | Oxygen 2,500 |
 | Tech id | drill_heavy_unlock |
 
-##### Shielded Logistics `research_shielded_logistics` *(Not yet unlocked)*
+##### Shielded Logistics `research_shielded_logistics` *(Unlocked)*
 
-Lead Casks + hot-cargo handling. Hot cargo needs a shielded lane: **Lead Casks** are the only stationary home for Raw Uranium and Fuel Rods, and **Shield Plating** lets a drone extract Raw Uranium without gaining exposure. Unlocks both items' availability; the fabrication recipes come through contractor orders.
+Lead Casks + hot-cargo handling. Hot cargo needs a shielded lane: **Lead Casks** provide stationary storage for Raw Uranium and Fuel Rods, and **Shield Plating** lets a drone extract Raw Uranium without gaining exposure. Unlocks both items' availability; the fabrication recipes come through contractor orders.
 
 | Field | Value |
 | --- | --- |
 | Threshold | Oxygen 3,000 |
 | Tech id | shielded_logistics_unlock |
 
-##### Shielded Depot Operations `research_shielded_depot_ops` *(Not yet unlocked)*
+##### Shielded Depot Operations `research_shielded_depot_ops` *(Unlocked)*
 
-Move nuclear cargo through Drone Depots. Lines every Drone Depot with containment so hot cargo can pass through your logistics network. Until this is researched a depot refuses Raw Uranium and Fuel Rods outright, and a plated drone has nowhere to unload them. Applies to every depot you own and every one you build afterwards.
+Plated drones carry hot cargo between outposts. Plated drones can load hot cargo at any Drone Depot, straight from that outpost's Lead Cask, and unload it into the Lead Cask where they land. Depots never store Raw Uranium or Fuel Rods themselves. Until this is researched, drones can't load or unload hot cargo at depots at all.
 
 | Field | Value |
 | --- | --- |
@@ -639,7 +648,7 @@ Water wells visible to sonar. Unlocks survey of subsurface water deposits and th
 
 | Field | Value |
 | --- | --- |
-| Threshold | Pressure 30 |
+| Threshold | Pressure 18 |
 | Tech id | hydrology_survey_unlock |
 
 ##### Deep Sonar `research_sonar_deep` *(Unlocked)*
@@ -669,7 +678,7 @@ Top contract batch access. Unlocks three difficult contracts in the atmosphere-e
 | Threshold | Pressure 130 |
 | Tech id | prime_contractor_unlock |
 
-##### Bulk Logistics II `research_dispatch_mk2` *(Not yet unlocked)*
+##### Bulk Logistics II `research_dispatch_mk2` *(Unlocked)*
 
 Quadruple Supply Dock throughput. Quadruples each Supply Dock's per-pulse emission count from **1** to **4** units, so the effective rate jumps from **25 units/h** to **100 units/h**. Pulse cadence is unchanged; only the packet size scales.
 
@@ -725,7 +734,7 @@ Final contract batch access. Your Biomass recovery has opened Earth's final cont
 | Threshold | Biomass 20,000 |
 | Tech id | smart_contractor_unlock |
 
-##### Large Warehouse `research_high_bay_warehousing` *(Not yet unlocked)*
+##### Large Warehouse `research_high_bay_warehousing` *(Unlocked)*
 
 Fifteen kinds of material in one building. Unlocks the **Large Warehouse** in the shop. It holds **30,000 units** across **15** slots of **2,000**, and each slot sticks to one material. That is enough room for a wide biological and industrial supply chain to keep every material apart, without replacing Drone Depot handoffs or scripted transfers.
 
@@ -734,7 +743,7 @@ Fifteen kinds of material in one building. Unlocks the **Large Warehouse** in th
 | Threshold | Biomass 30,000 |
 | Tech id | high_bay_warehousing_unlock |
 
-##### Biomass Mixer Mk II `research_biomass_mixer_mk2_pack` *(Not yet unlocked)*
+##### Biomass Mixer Mk II `research_biomass_mixer_mk2_pack` *(Unlocked)*
 
 87.5% more biomass per ton of essence. Unlocks the Biomass Mixer Mk II Upgrade Pack in the shop. One pack retrofits one deployed Mk I Mixer for **4.5× output** on only **2.4× essence consumption**, with **5× power draw**. That is **87.5%** more biomass per ton of essence, which matters because Liquifier intake is fixed and rare life forms regrow slowly. There is no Mk III.
 
@@ -743,7 +752,7 @@ Fifteen kinds of material in one building. Unlocks the **Large Warehouse** in th
 | Threshold | Biomass 50,000 |
 | Tech id | biomass_mixer_mk2_pack_unlock |
 
-##### Bulk Logistics III `research_dispatch_mk3` *(Not yet unlocked)*
+##### Bulk Logistics III `research_dispatch_mk3` *(Unlocked)*
 
 16× Supply Dock throughput. Bumps each Supply Dock's per-pulse emission to **16** units, an effective **400 units/h**. Pulse cadence is unchanged; only the packet size scales.
 
@@ -754,7 +763,7 @@ Fifteen kinds of material in one building. Unlocks the **Large Warehouse** in th
 
 ### Plants
 
-##### Sprinkler `research_sprinkler` *(Not yet unlocked)*
+##### Sprinkler `research_sprinkler` *(Unlocked)*
 
 Water provider for the grid. Unlocks the **Sprinkler Kit recipe**. Fabricate the kit at a Fabricator, then deploy it in a Harvester field to water the four orthogonally adjacent cells (directly above, below, left, and right) while supplied. Upgrade packs improve the crops it supports.
 
@@ -763,7 +772,7 @@ Water provider for the grid. Unlocks the **Sprinkler Kit recipe**. Fabricate the
 | Threshold | Plants 100,000 |
 | Tech id | sprinkler_unlock |
 
-##### Dispenser `research_dispenser` *(Not yet unlocked)*
+##### Dispenser `research_dispenser` *(Unlocked)*
 
 Salt provider for the grid. Unlocks the **Dispenser Kit recipe**. Fabricate the kit at a Fabricator, then deploy it in a Harvester field to salt the four orthogonally adjacent cells (directly above, below, left, and right) while supplied. Salt is a Water Pump byproduct.
 
@@ -772,7 +781,7 @@ Salt provider for the grid. Unlocks the **Dispenser Kit recipe**. Fabricate the 
 | Threshold | Plants 300,000 |
 | Tech id | dispenser_unlock |
 
-##### Grow Lamp `research_grow_lamp` *(Not yet unlocked)*
+##### Grow Lamp `research_grow_lamp` *(Unlocked)*
 
 Light provider for the grid. Unlocks the **Grow Lamp Kit recipe**. Fabricate the kit at a Fabricator, then deploy it in a Harvester field to light the four orthogonally adjacent cells (directly above, below, left, and right). Upgrade packs improve the crops it supports.
 
@@ -781,7 +790,7 @@ Light provider for the grid. Unlocks the **Grow Lamp Kit recipe**. Fabricate the
 | Threshold | Plants 500,000 |
 | Tech id | grow_lamp_unlock |
 
-##### Field Automation `research_field_automation` *(Not yet unlocked)*
+##### Field Automation `research_field_automation` *(Unlocked)*
 
 Automate harvest, planting, and treatment. Unlocks the **Crop Automator Kit** in the Shop. One automator can queue harvest, plant, and treatment jobs across up to 24 other cells in a centered 5 by 5 area. It executes one at a time in FIFO order by default (first in, first out, so the oldest job runs first), while its script can reorder unfinished work.
 
@@ -790,7 +799,7 @@ Automate harvest, planting, and treatment. Unlocks the **Crop Automator Kit** in
 | Threshold | Plants 620,000 |
 | Tech id | field_automation_unlock |
 
-##### Large Liquid Tank `research_reservoir_engineering` *(Not yet unlocked)*
+##### Large Liquid Tank `research_reservoir_engineering` *(Unlocked)*
 
 Holds 10× what a Liquid Tank does. Unlocks the **Large Liquid Tank** in the shop. It works just like a Liquid Tank, taking whatever liquid reaches it first and holding only that until it runs dry, but it holds **1,000 t** instead of 100 t. Use it where plant, essence, or wildlife supply has to ride out a long gap.
 
@@ -799,7 +808,7 @@ Holds 10× what a Liquid Tank does. Unlocks the **Large Liquid Tank** in the sho
 | Threshold | Plants 900,000 |
 | Tech id | reservoir_engineering_unlock |
 
-##### Steam Condensation `research_steam_condenser` *(Not yet unlocked)*
+##### Steam Condensation `research_steam_condenser` *(Unlocked)*
 
 Turn vent steam into clean water. Unlocks the **Steam Condenser** in the shop at **1,000,000 km² Plants**. It consumes up to **250 t/h Steam** and produces the same mass of clean Water, drawing **150 W** at full throttle. Use Gas Tanks to bridge dormant vent phases and decide how much steam becomes water instead of turbine power.
 
@@ -808,7 +817,7 @@ Turn vent steam into clean water. Unlocks the **Steam Condenser** in the shop at
 | Threshold | Plants 1,000,000 |
 | Tech id | steam_condenser_unlock |
 
-##### Plant Terraformer Mk II `research_plant_terraformer_mk2` *(Not yet unlocked)*
+##### Plant Terraformer Mk II `research_plant_terraformer_mk2` *(Unlocked)*
 
 Fertilizer and Accelerant injectors. Unlocks the **Plant Terraformer Mk II Upgrade Pack recipe** at the Fabricator. A Mk I has no Fertilizer or Growth Accelerant injector, so it converts only up to the **Fields** threshold and then stops. Mk II adds both injectors, raises throughput from **400** to **2,200 Forage/h**, raises input feeder handling from **16** to **80 items per step**, and raises enabled draw from **180 W** to **900 W**. Each machine needs its own pack.
 
@@ -817,7 +826,7 @@ Fertilizer and Accelerant injectors. Unlocks the **Plant Terraformer Mk II Upgra
 | Threshold | Plants 1,250,000 |
 | Tech id | plant_terraformer_mk2_unlock |
 
-##### Wildlife `research_wildlife` *(Not yet unlocked)*
+##### Wildlife `research_wildlife` *(Unlocked)*
 
 Revive and house the first fauna. Opens the **Wildlife** tier and makes the **Habitat** and **Feed Maker** available in the Shop. A Habitat revives cataloged creatures and houses a breeding colony, while the Feed Maker crafts species feed from harvested **Forage** plus life forms gathered across the biomes. Hold each colony's feed, gas, and liquid bands and it breeds toward its ceiling. Gated on a thriving Plants field because every feed recipe uses Forage; harvested biome life forms provide the remaining ingredients.
 

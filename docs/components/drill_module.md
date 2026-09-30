@@ -4,23 +4,23 @@
 
 Extracts minerals through `self.drill`. Each drill cuts its hardness limit and everything below it: the basic drill reaches hardness **1** (Iron, Silicon) at **1.0×** speed using **10 W**; Industrial reaches **3**, adding Titanium, Cobalt, Lead and Rare Earth, at **0.75×** using **20 W**; Heavy reaches **4**, adding Neutronium, at **0.6×** using **30 W**. There is no hardness-2 drill: Titanium and Cobalt are cut by the Industrial. Without a mounted Drill Module, the vehicle cannot mine.
 
-**Returned by:** `self.drill`
+**Access via:** `self.drill`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -50,7 +50,7 @@ Extract **1** unit of the current site's mineral into vehicle cargo. Mining take
 
 Maximum mineral hardness this drill can extract.
 
-- **Returns** Number: **1** basic, **3** Industrial, **4** Heavy. A stale captured module reference raises `ReferenceError`.
+- **Returns** `int`. **1** basic, **3** Industrial, **4** Heavy. A stale captured module reference raises `ReferenceError`.
 
 *Raises*
 
@@ -62,7 +62,7 @@ Maximum mineral hardness this drill can extract.
 
 Per-unit time multiplier (lower = faster).
 
-- **Returns** Number: **1.0** basic, **0.75** Industrial, **0.6** Heavy. A stale captured module reference raises `ReferenceError`.
+- **Returns** `float`. **1.0** basic, **0.75** Industrial, **0.6** Heavy. A stale captured module reference raises `ReferenceError`.
 
 *Raises*
 

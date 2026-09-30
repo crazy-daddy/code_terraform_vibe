@@ -274,12 +274,12 @@ else:
   print("Dangerously cold")
 ```
 
-The first branch whose condition is true runs, and every branch after it is skipped. That is why the order matters: write the most specific condition first. Reversing the chain above would print `Cold` for every temperature below 20, because `temp > -40` is already true by then.
+The first branch whose condition is true runs, and every branch after it is skipped. That is why the order matters: write the most specific condition first. Putting `temp > -40` first would print `Cold` for every temperature above -40, including temperatures that should print `Warm` or `Above freezing`.
 
-`elif` is not the same as a second `if`. A chain picks exactly one branch; separate `if` statements each get tested, so more than one can run.
+`elif` is not the same as a second `if`. A chain runs at most one branch. With `else`, exactly one branch runs; separate `if` statements each get tested, so more than one can run.
 
 ```
-# One of these runs.
+# At most one of these runs.
 if level > 80:
   self.set_throttle(0)
 elif level < 20:
@@ -413,7 +413,19 @@ match result:
     warn(reason, message)
 ```
 
-Class patterns such as `case Thing(x):` are not part of the interpreter. Use list, tuple, dict, literal, and field-name patterns instead.
+Class patterns check a value's type and read its attributes:
+
+```
+match shape:
+  case Circle(radius=r):
+    print("circle", r)
+  case Point(0, y):
+    print("on the y axis at", y)
+  case int(n) | float(n):
+    print("a number", n)
+```
+
+Keyword sub-patterns name attributes. Positional ones follow the class's `__match_args__`, which `@dataclass` sets to its fields in order. For built-in types such as `int` and `str`, one positional sub-pattern captures the whole value.
 
 *Guide / Programming*
 
@@ -496,6 +508,7 @@ if sector not in visited:
 - `.zfill(width)`, pad with zeros
 - `.center(w)` / `.ljust(w)` / `.rjust(w)`, alignment
 - `.format(args)`, `"Hello {}".format("world")`
+- `%` formatting, `"%d items at %.1f%%" % (count, share)`
 
 *Guide / Programming*
 
@@ -732,6 +745,7 @@ These functions are always available.
 - `chr(code)`, `ord(char)`
 - `hex(n)`, `bin(n)`, `oct(n)`, integer to base-prefixed string
 - `repr(value)`, debug-friendly string representation
+- `format(value, spec)`, format one value the way an f-string field does, such as `format(3.14159, ".2f")`
 
 ### Math
 
@@ -754,11 +768,11 @@ These functions are always available.
 - `range(stop)` / `range(start, stop, step)`
 - `sorted(sequence, key=fn, reverse=False)`, new sorted list. Pass `key=lambda x: x.value` to sort by a computed field; `reverse=True` for descending.
 - `reversed(sequence)`, new reversed list
-- `enumerate(sequence, start=0)`, list of `(index, value)` pairs
-- `zip(sequence1, sequence2, ..., strict=False)`, combine sequences into pairs; `strict=True` raises if lengths differ
+- `enumerate(sequence, start=0)`, list of `(index, value)` pairs; over a generator it stays lazy, as do `zip`, `map`, and `filter`
+- `zip(sequence1, sequence2, ..., strict=False)`, combine corresponding elements into tuples with one element from each sequence; `strict=True` raises if lengths differ
 - `map(fn, sequence)` / `filter(fn, sequence)` / `reduce(fn, sequence, initializer?)`, transform, select, or fold items
 - `pairwise(sequence)`, neighboring `(a, b)` pairs
-- `batched(sequence, size)`, fixed-size tuple batches
+- `batched(sequence, size)`, group elements into tuples of up to the requested size; the last tuple can be shorter
 - `starmap(fn, sequence)`, call `fn` with tuple/list items unpacked as arguments
 - `flatten(sequence)`, flatten one nested level
 - `count_by(sequence, key_fn?)`, count values or computed keys into a dict
@@ -775,9 +789,14 @@ These functions are always available.
 
 ### Modules
 
-- `import random`, random-number helpers
-- `from functools import reduce`, reducer helper as a module import, plus `partial` for pre-bound callables and `lru_cache` / `cache` for memoization
-- `import re`, regular expressions: `search`, `match`, `fullmatch`, `findall`, `sub`, and `split`
+- `import random`, random-number helpers: `choice`, `choices`, `shuffle`, `sample`, `randrange`, `uniform`, `gauss`, and `seed`
+- `import math`, Python's math functions and constants: `gcd`, `lcm`, `factorial`, `comb`, `hypot`, `dist`, `isnan`, `e`, and the rest
+- `import itertools`, lazy iterators: `count`, `cycle`, `repeat`, `islice`, `groupby`, `zip_longest`, `tee`, `takewhile`, `dropwhile`, and the rest of Python's module
+- `import operator`, operators as functions: `add`, `mul`, `itemgetter`, `attrgetter`, `methodcaller`, and the rest
+- `import string`, text constants: `ascii_letters`, `ascii_uppercase`, `digits`, `punctuation`, `whitespace`, plus `capwords`
+- `from collections import Counter, defaultdict, OrderedDict, deque, namedtuple`, counting, dictionaries with a default, ordered dictionaries, double-ended queues and tuples with named fields
+- `from functools import reduce`, reducer helper as a module import, plus `partial` for pre-bound callables, `lru_cache` / `cache` for memoization and `cmp_to_key` to sort with a compare function
+- `import re`, regular expressions: `compile`, `search`, `match`, `fullmatch`, `findall`, `finditer`, `sub`, `subn`, `split`, and `escape`
 - `from dataclasses import dataclass, field`, generated record-class construction and field configuration, plus `asdict`, `astuple`, `fields`, `replace`, `is_dataclass`, and the `MISSING` sentinel
 - `import json`, JSON text: `dumps` and `loads`
 - `import heapq`, priority queues: `heappush`, `heappop`, `heappushpop`, `heapreplace`, `heapify`, `nsmallest`, and `nlargest`
@@ -986,19 +1005,19 @@ Imports have several precise kinds: executable built-in modules, typing-only sup
 
 ### Executable built-in modules
 
-Use `import random`, then `random.randint(1, 10)`, `import re` for regular expressions, `import json` to turn records into text and back, `import heapq` for priority queues, `import traceback` to find out where an exception you caught came from, `from enum import Enum, IntEnum, StrEnum, Flag, auto` for named sets of constants, `from functools import reduce, partial, lru_cache, cache` for reducer-style algorithms, pre-bound callables and memoization, or `from dataclasses import dataclass, field` for generated record classes, with `asdict`, `astuple`, `fields`, `replace`, `is_dataclass` and the `MISSING` sentinel alongside them. You can also call `random()`, `rand()`, `randint(min, max)`, and `reduce(fn, iterable, initializer?)` directly as global helpers. Everything else stays on its own module so the code says where it came from: regex helpers on `re`, and `dataclass` and `field` likewise require their standard module import.
+Use `import random`, then `random.randint(1, 10)`, `import re` for regular expressions, `import json` to turn records into text and back, `import heapq` for priority queues, `import traceback` to find out where an exception you caught came from, `import math` for Python's math functions and constants such as `math.gcd`, `math.hypot` and `math.pi`, `import itertools` for lazy iterators such as `itertools.count`, `itertools.islice` and `itertools.groupby`, `import operator` for operators as functions such as `operator.add` and `operator.itemgetter`, `import string` for text constants such as `string.ascii_uppercase` and `string.digits`, `from collections import Counter, defaultdict, OrderedDict, deque, namedtuple` for counting, dictionaries with a default, ordered dictionaries, double-ended queues and tuples with named fields, `from enum import Enum, IntEnum, StrEnum, Flag, auto` for named sets of constants, `from functools import reduce, partial, lru_cache, cache, cmp_to_key` for reducer-style algorithms, pre-bound callables, memoization and compare-function sorting, or `from dataclasses import dataclass, field` for generated record classes, with `asdict`, `astuple`, `fields`, `replace`, `is_dataclass` and the `MISSING` sentinel alongside them. You can also call `random()`, `rand()`, `randint(min, max)`, `reduce(fn, iterable, initializer?)` and the common math functions such as `sqrt(x)` and `floor(x)` directly as global helpers. Everything else stays on its own module so the code says where it came from: regex helpers on `re`, and `dataclass` and `field` likewise require their standard module import.
 
 ### Typing and editor support
 
-`typing`, `types`, `collections.abc`, and `user_stubs` provide names for annotations and editor analysis. Their type names are erased while a script runs; they are not a place for executable helpers. `typing.TYPE_CHECKING` is always `False` in the game. `collections` is the package used to reach `collections.abc`. Put executable shared code in a Library instead of `user_stubs.py`.
+`typing`, `types`, `collections.abc`, and `user_stubs` provide names for annotations and editor analysis. Their type names are erased while a script runs; they are not a place for executable helpers. `typing.TYPE_CHECKING` is always `False` in the game. `typing.NamedTuple` is the one that runs: `class Point(NamedTuple):` builds a named tuple class, as `collections.namedtuple` does. `collections.abc` sits inside the executable `collections` module and holds only annotation names. Put executable shared code in a Library instead of `user_stubs.py`.
 
 `from __future__ import annotations` is a compiler directive, not a normal binding. Put future directives at the beginning of a module, after an optional module docstring and before ordinary statements. The directive itself creates no `annotations` name.
 
-`__builtins__` is the explicit import view of the shared interpreter and game root, for example `from __builtins__ import len, get_component`. Script-owner locals such as `self` and `panel` are not part of that shared module. Game type names such as `Smelter`, `Battery`, and `Component` are part of it too, as annotation-only names: `from __builtins__ import Smelter` binds `Smelter` wherever a type is named. An annotation needs no import, because annotations never run; a place that does run, such as a `TypedDict` field dictionary or a type alias, does need it. In an external editor those names are already in scope and need no import at all. Every machine is a `Component` at runtime, so branch on `type_id` when you need to tell one kind from another; there is no per-machine class to pass to `isinstance`. The generated `builtins` and `code_terraform` stubs exist only for external-editor type checking and cannot be imported by a running game script.
+`__builtins__` is the explicit import view of the shared interpreter and game root, for example `from __builtins__ import len, get_component`. Script-owner locals such as `self` and `panel` are not part of that shared module. Game type names such as `Smelter`, `Battery`, and `Component` are part of it too: `from __builtins__ import Smelter` binds the `Smelter` class. An annotation needs no import, because annotations never run; a place that does run, such as an `isinstance` test, a `TypedDict` field dictionary or a type alias, does need it. An external editor has those names in scope without the import, but the game still needs it wherever the name runs. `isinstance(machine, Smelter)` is `True` for a smelter, every machine is also a `Component`, and `issubclass(Smelter, Component)` is `True`; `type_id` names a machine's type as a string. The generated `builtins` and `code_terraform` stubs exist only for external-editor type checking and cannot be imported by a running game script.
 
 ### Player Libraries
 
-After **Ship Computer** and **Shared Library** are researched, open **Ship → Computer → Library** in the left sidebar and click `+ New`. A Library script is shared code: write a helper once, then import it from any machine script.
+After **Ship Computer** and **Shared Library** are researched, open **Ship → Computer → Library** in the left sidebar and click **+ New**. A Library script is shared code: write a helper once, then import it from any machine script.
 
 Create a Library script called `sensors`:
 
@@ -1238,7 +1257,9 @@ print(b < a, a)
 
 A dataclass remains an ordinary user-class instance. It does not become a dict and cannot cross JSON-shaped game boundaries such as the Signal Bus or notebook APIs. Use `TypedDict` for mapping-shaped payloads and cached rows; use a dataclass for methods, validation, generated construction, value equality, or ordering.
 
-The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, and `weakref_slot=False` may be passed, but their `True` behavior is not supported. `match_args`, `ClassVar`, `InitVar`, `MISSING`, `KW_ONLY`, `Field`, `FrozenInstanceError`, `is_dataclass`, `asdict`, `astuple`, `replace`, `fields`, `make_dataclass`, and public `__dataclass_fields__` introspection are not supported. Annotation types otherwise stay erased and are not enforced. Canonical `ClassVar` and `InitVar` annotations are recognized only so the decorator can reject those unsupported field forms clearly; all other fields come from executed annotated names.
+Convert a dataclass instance with `dataclasses.asdict()` before sending or storing it as a record. `asdict()` produces a dict and `astuple()` produces a tuple; both recursively convert nested dataclass instances inside lists, tuples, and dictionaries. Those containers are rebuilt; sets receive a shallow copy. Other values stay the same objects rather than being deep-copied. `fields()` accepts a dataclass class or instance and returns its `Field` records in declaration order; `MISSING` marks an absent default or default factory. `is_dataclass()` recognizes dataclass classes and instances. `replace()` creates a new instance with the specified field changes through its constructor, including `__post_init__`.
+
+The compatibility spellings `frozen=False`, `unsafe_hash=False`, `slots=False`, and `weakref_slot=False` may be passed, but their `True` behavior is not supported. `match_args`, `ClassVar`, `InitVar`, `KW_ONLY`, `FrozenInstanceError`, `make_dataclass`, constructing a `Field` directly, and public `__dataclass_fields__` introspection are not supported. Annotation types otherwise stay erased and are not enforced. Canonical `ClassVar` and `InitVar` annotations are recognized only so the decorator can reject those unsupported field forms clearly; all other fields come from executed annotated names.
 
 ### Controlling construction with __new__
 
@@ -1257,7 +1278,7 @@ class Settings:
 print(Settings() is Settings())  # True, always the same object
 ```
 
-`__new__` takes the class as its first parameter (`cls`, not `self`) and must **return** the object. `super().__new__(cls)` makes a fresh one. Return an object of another type and `__init__` is skipped entirely, which is how a constructor can hand back a subclass.
+`__new__` takes the class as its first parameter (`cls`, not `self`) and must **return** the object. `super().__new__(cls)` makes a fresh one. `__init__` is skipped only if the returned value is not an instance of the class being constructed. Returning an instance of that class or a subclass runs the returned object's `__init__`.
 
 > `__new__` must answer immediately: it cannot `sleep()` or take world actions. Allocation only picks the object; put the work in `__init__`, which can still do both.
 

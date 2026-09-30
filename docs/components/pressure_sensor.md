@@ -8,23 +8,23 @@ An atmospheric pressure probe that landed broken. Its readings come out scramble
 | --- | --- |
 | Type | Sensors |
 
-**Returned by:** `get_component("pressure_sensor")`
+**Access via:** `get_component("pressure_sensor")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -32,7 +32,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 Current unstable repair reading as an integer. If the value is odd, add **1**; if it is even, use it unchanged. After repair, this method returns real atmospheric pressure in kPa.
 
-- **Returns** Number (unstable repair reading; kPa after repair)
+- **Returns** `int`. An unstable repair reading; kPa after repair.
 
 ##### `.stabilize(value: float) → ActionResult`
 

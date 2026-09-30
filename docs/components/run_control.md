@@ -4,23 +4,23 @@
 
 Inspect machine scripts, discover and apply saved variants, and control execution remotely. Shared start/stop controller for machine scripts, the remote equivalent of a machine card's Run / Stop buttons. Use it to build a supervisor: one script that watches the base and shuts down another machine when it detects a fault, without parking that machine in a permanent `sleep` loop. This is the **run/stop axis**, separate from `power_control` (the breaker): `stop` ends a script and latches it off, while a power toggle only pauses and auto-resumes.
 
-**Returned by:** `get_component("run_control")`
+**Access via:** `get_component("run_control")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -117,7 +117,7 @@ Returns `True` when the named machine has a script actively scheduled, including
 | --- | --- | --- |
 | `machine_id` | `str` | Machine instance id |
 
-- **Returns** Boolean: `True` when the named machine has a script actively scheduled (running, including mid-`sleep`/mid-action). A paused, stopped, completed, or errored script reads `False`.
+- **Returns** `bool`. `True` when the named machine has a script actively scheduled (running, including mid-`sleep`/mid-action). A paused, stopped, completed, or errored script reads `False`.
 
 ##### `.stop(machine_id: str) → ActionResult`
 

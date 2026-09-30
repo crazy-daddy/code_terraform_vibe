@@ -16,47 +16,47 @@ Splices genes into geothermal fragments so they carry what an order needs. You w
 1. Requires the **Gene Sequencing** research (Pressure 120).
 2. Buy from the Shop for 100,000 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `self.chamber: ChamberFragment | None`
 
 The `ChamberFragment` loaded right now, exposed as `self.chamber`, or `None`. Read `.genes` and `.spliced`; a second splice destroys an already-spliced sample.
 
-- **Returns** The `ChamberFragment` with `.fragment_id`, `.genes`, and `.spliced`, or `None` if empty.
+- **Returns** `ChamberFragment | None`. `None` if the chamber is empty.
 
 ##### `self.input: InputSlot`
 
 The `InputSlot` for geothermal samples. It holds one sample item id at a time and stays latched to that id until `load()` consumes the remaining units or `flush()` discards them. `stacks()` lists property-distinct variants and does not mean the port accepts multiple sample types. Inventory is a source only at Nocturna Base; remote Sequencers use a same-outpost Storage Bin/Warehouse.
 
-- **Returns** `InputSlot` for geothermal samples. Recover a mistaken property variant to an explicit local destination with `eject(...)` before loading it into the chamber.
+- **Returns** `InputSlot`. For geothermal samples. Recover a mistaken property variant to an explicit local destination with `eject(...)` before loading it into the chamber.
 
 ##### `self.output: OutputSlot`
 
 The `OutputSlot` for spliced or ejected samples. Exact sample properties are preserved.
 
-- **Returns** `OutputSlot` for spliced or ejected samples, preserving every property.
+- **Returns** `OutputSlot`. For spliced or ejected samples, preserving every property.
 
 ### Methods
 
@@ -93,13 +93,13 @@ Pull a geothermal sample of `fragment_id` from `self.input` into the chamber, `s
 
 Lists the genes currently carried by the chambered fragment, such as `["cold_tolerance", "pressure_tolerance"]`, or returns `None` when empty. `splice()` takes time. On completion, the fragment moves to output and the chamber becomes empty. If output is full, the spliced fragment stays in the chamber until space is available.
 
-- **Returns** The genes currently carried by the chambered fragment, e.g. `["cold_tolerance", "pressure_tolerance"]`, or `None` if the chamber is empty. `splice()` takes time. Successful delivery empties the chamber; a completed splice waiting for output space retains its new genes in the chamber.
+- **Returns** `list[str] | None`. The genes currently carried by the chambered fragment, e.g. `["cold_tolerance", "pressure_tolerance"]`, or `None` if the chamber is empty. `splice()` takes time. Successful delivery empties the chamber; a completed splice waiting for output space retains its new genes in the chamber.
 
 ##### `self.gene_catalog() → list[str]`
 
 Every gene id the machine can splice, `self.gene_catalog()` returns the full list (e.g. `["heat_resistance", "acid_resistance", "cold_tolerance", "pressure_tolerance", "toxin_resistance", "radiation_shield"]`), the valid values to pass to `splice()`.
 
-- **Returns** The full list of gene ids the machine can splice (e.g. `["heat_resistance", "acid_resistance", "cold_tolerance", ...]`): the valid values for `splice()`.
+- **Returns** `list[str]`. Every gene id the machine can splice (e.g. `["heat_resistance", "acid_resistance", "cold_tolerance", ...]`): the valid values for `splice()`.
 
 ##### `self.splice(genes: list[str]) → ActionResult` *(self only)*
 

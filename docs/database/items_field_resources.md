@@ -68,4 +68,13 @@ The rarest field find: an unclassified compound Earth's labs pay a premium for.
 | --- | --- |
 | Sells for | 5,000 cr |
 
+##### Storm Glass `storm_glass`
+
+Glass fused where lightning struck open ground. A rare trade good Earth pays well for.
+
+| Field | Value |
+| --- | --- |
+| Sells for | 350 cr |
+| Requested by | Spire, Storm Glass Acquisition and Spire, Storm Glass Contract (Crown) |
+
 *Database / Items*

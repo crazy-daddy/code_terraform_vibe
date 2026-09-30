@@ -42,6 +42,16 @@ Burns oil to generate power.
 | Shop price | 2,000 cr |
 | Component docs | Oil Generator |
 
+##### Steam Turbine `steam_turbine`
+
+Produces up to **108 W** from **90 t/h Steam** at full throttle. A script controls its throttle.
+
+| Field | Value |
+| --- | --- |
+| Sells for | 7,500 cr |
+| Shop price | 7,500 cr |
+| Component docs | Steam Turbine |
+
 ##### Reactor `reactor`
 
 Fission plant producing up to **5,000 W** from Fuel Rods and cooling water. One rod lasts **72 hours** at heat **1.0**; fuel use follows commanded heat even before the core reaches efficient temperature.

@@ -4,23 +4,23 @@
 
 Annotates the Planet Map from your scripts. Get it with `get_component("markers")` after Cartography unlocks, then `markers.place("survey.rover_1.empty:120:-40", 120, -40, "No contact", "x")` to drop a marker anywhere in the world, instantly, with no vehicle and no materials. Markers are notes, not blueprints: to actually build somewhere, pass the coordinates to `construction_blueprint.plan_structure(...)`. Store structured data in the Data Archive under the same id.
 
-**Returned by:** `get_component("markers")`
+**Access via:** `get_component("markers")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -67,7 +67,7 @@ Read one marker by id.
 | --- | --- | --- |
 | `id` | `str` | Marker id to look up. |
 
-- **Returns** The `Marker` with that id, or `None` when no marker uses it.
+- **Returns** `Marker | None`. `None` when no marker uses that id.
 
 *Raises*
 
@@ -85,7 +85,7 @@ Read markers as a list sorted by id. Pass a prefix such as `"build."` to read on
 | --- | --- | --- |
 | `prefix` | `str` | Optional id prefix such as `"survey.rover_1."`. |
 
-- **Returns** List of `Marker` values sorted by id, optionally narrowed to one id prefix. Empty prefix returns every marker.
+- **Returns** `list[Marker]`. Sorted by id, optionally narrowed to one id prefix. An empty prefix returns every marker.
 
 *Raises*
 

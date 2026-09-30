@@ -4,9 +4,15 @@ Complete property specifications, descriptions, units, and return types from the
 
 ## Index
 
+- [`Counter`](#counter) (BUILT-IN TYPES)
+- [`defaultdict`](#defaultdict) (BUILT-IN TYPES)
+- [`deque`](#deque) (BUILT-IN TYPES)
 - [`dict`](#dict) (BUILT-IN TYPES)
+- [`float`](#float) (BUILT-IN TYPES)
 - [`generator`](#generator) (BUILT-IN TYPES)
+- [`int`](#int) (BUILT-IN TYPES)
 - [`list`](#list) (BUILT-IN TYPES)
+- [`OrderedDict`](#ordereddict) (BUILT-IN TYPES)
 - [`set`](#set) (BUILT-IN TYPES)
 - [`slice`](#slice) (BUILT-IN TYPES)
 - [`str`](#str) (BUILT-IN TYPES)
@@ -14,8 +20,252 @@ Complete property specifications, descriptions, units, and return types from the
 - [`CacheInfo`](#cacheinfo) (BUILT-IN MODULES)
 - [`Field`](#field) (BUILT-IN MODULES)
 - [`Match`](#match) (BUILT-IN MODULES)
+- [`Pattern`](#pattern) (BUILT-IN MODULES)
 
 ---
+
+## Counter
+
+**Returned by:** `Counter(iterable)` from `collections`
+
+### Methods
+
+##### `.most_common(n: int | None = None, /) → list[tuple[K, int]]`
+
+The counts from highest to lowest as `(item, count)` pairs; with `n`, only the top `n`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `int \| None` | How many of the largest counts (default all) |
+
+- **Returns** `list[tuple[K, int]]`
+
+##### `.elements() → Iterator[K]`
+
+Each item repeated as many times as its count, skipping counts below one.
+
+- **Returns** `Iterator[K]`
+
+##### `.total() → int`
+
+The sum of all counts.
+
+- **Returns** `int`
+
+##### `.update(iterable: object = None, /, **kwargs: int) → None`
+
+Add counts from an iterable of items, a mapping of counts, or keywords.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `object` | Items to count, or a mapping of counts to add |
+| `**kwargs` | `int` | Counts to add by name |
+
+- **Returns** `None`
+
+##### `.subtract(iterable: object = None, /, **kwargs: int) → None`
+
+Take counts away, the opposite of `update`; a count may go to zero or below.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `object` | Items to uncount, or a mapping of counts to take away |
+| `**kwargs` | `int` | Counts to take away by name |
+
+- **Returns** `None`
+
+##### `.copy() → Counter[K]`
+
+A new Counter with the same counts.
+
+- **Returns** `Counter[K]`
+
+*Types / Built-in Types*
+
+## defaultdict
+
+**Returned by:** `defaultdict(factory)` from `collections`
+
+### Properties
+
+##### `.default_factory: Callable | None`
+
+The function called to make a missing key's value, or `None`.
+
+- **Returns** `Callable | None`
+
+### Methods
+
+##### `.copy() → defaultdict[K, V]`
+
+A new defaultdict with the same items and factory.
+
+- **Returns** `defaultdict[K, V]`
+
+*Types / Built-in Types*
+
+## deque
+
+**Returned by:** `deque(iterable)` from `collections`
+
+### Properties
+
+##### `.maxlen: int | None`
+
+The size limit given when the deque was made, or `None`.
+
+- **Returns** `int | None`
+
+### Methods
+
+##### `.append(x: T, /) → None`
+
+Add an item to the right end.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `T` | Item to add |
+
+- **Returns** `None`
+
+##### `.appendleft(x: T, /) → None`
+
+Add an item to the left end.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `T` | Item to add |
+
+- **Returns** `None`
+
+##### `.pop() → T`
+
+Remove and return the rightmost item.
+
+- **Returns** `T`
+
+##### `.popleft() → T`
+
+Remove and return the leftmost item.
+
+- **Returns** `T`
+
+##### `.extend(iterable: Iterable[T], /) → None`
+
+Add every item of an iterable to the right end.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to add |
+
+- **Returns** `None`
+
+##### `.extendleft(iterable: Iterable[T], /) → None`
+
+Add every item of an iterable to the left end, one at a time, so they end up reversed.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to add |
+
+- **Returns** `None`
+
+##### `.rotate(n: int = 1, /) → None`
+
+Move items from the right end to the left `n` times, or the other way when `n` is negative.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `int` | Steps to rotate |
+
+- **Returns** `None`
+
+##### `.clear() → None`
+
+Remove every item.
+
+- **Returns** `None`
+
+##### `.copy() → deque[T]`
+
+A new deque with the same items and `maxlen`.
+
+- **Returns** `deque[T]`
+
+##### `.count(x: object, /) → int`
+
+How many items equal `x`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `object` | Value to count |
+
+- **Returns** `int`
+
+##### `.index(x: object, start: int = 0, stop: int | None = None, /) → int`
+
+Position of the first item equal to `x`, searching from `start` up to `stop`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `object` | Value to find |
+| `start` | `int` | First position to search |
+| `stop` | `int \| None` | Position to stop before |
+
+- **Returns** `int`
+
+##### `.insert(i: int, x: T, /) → None`
+
+Insert `x` before position `i`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `i` | `int` | Position to insert before |
+| `x` | `T` | Item to insert |
+
+- **Returns** `None`
+
+##### `.remove(value: object, /) → None`
+
+Remove the first item equal to `value`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `value` | `object` | Value to remove |
+
+- **Returns** `None`
+
+##### `.reverse() → None`
+
+Reverse the items in place.
+
+- **Returns** `None`
+
+*Types / Built-in Types*
 
 ## dict
 
@@ -119,6 +369,19 @@ Merge entries into this dict, overwriting matching keys. Accepts another dict, a
 
 - **Returns** `None`
 
+##### `.fromkeys(iterable: Iterable[object], value: object = None, /) → dict`
+
+A new dict with every item of `iterable` as a key, each set to `value`: `dict.fromkeys(["iron", "copper"], 0)` → `{"iron": 0, "copper": 0}`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[object]` | Keys for the new dict |
+| `value` | `object` | Value for every key (default `None`) |
+
+- **Returns** `dict`
+
 ##### `.copy() → dict[K, V]`
 
 Return a shallow copy of the dictionary. Top-level keys/values are duplicated to a fresh dict; nested mutable values (lists, dicts) are shared with the original.
@@ -130,6 +393,46 @@ Return a shallow copy of the dictionary. Top-level keys/values are duplicated to
 Remove all entries.
 
 - **Returns** `None`
+
+*Types / Built-in Types*
+
+## float
+
+**Returned by:** decimal literals · `float(value)` · division with `/`
+
+### Properties
+
+##### `.real: float`
+
+The number itself, so any number can be read as `x.real`.
+
+- **Returns** `float`
+
+##### `.imag: float`
+
+Always `0`: a real number has no imaginary part.
+
+- **Returns** `float`
+
+### Methods
+
+##### `.conjugate() → float`
+
+The number itself.
+
+- **Returns** `float`
+
+##### `.as_integer_ratio() → tuple[int, int]`
+
+The exact fraction the number holds, in lowest terms: `(0.75).as_integer_ratio()` → `(3, 4)`.
+
+- **Returns** `tuple[int, int]`
+
+##### `.is_integer() → bool`
+
+`True` when the number has no fractional part: `(2.0).is_integer()` → `True`.
+
+- **Returns** `bool`
 
 *Types / Built-in Types*
 
@@ -197,6 +500,70 @@ Resume the generator with `None` and return its next yielded value. Completion r
 
 *Types / Built-in Types*
 
+## int
+
+**Returned by:** whole-number literals · `int(value)` · `len()` and other counts
+
+### Properties
+
+##### `.real: int`
+
+The number itself, so any number can be read as `x.real`.
+
+- **Returns** `int`
+
+##### `.imag: int`
+
+Always `0`: a real number has no imaginary part.
+
+- **Returns** `int`
+
+##### `.numerator: int`
+
+The number itself, as the top of a fraction over 1.
+
+- **Returns** `int`
+
+##### `.denominator: int`
+
+Always `1`.
+
+- **Returns** `int`
+
+### Methods
+
+##### `.conjugate() → int`
+
+The number itself.
+
+- **Returns** `int`
+
+##### `.bit_length() → int`
+
+How many binary digits the number needs, ignoring its sign: `(10).bit_length()` → `4`.
+
+- **Returns** `int`
+
+##### `.bit_count() → int`
+
+How many 1 bits the number has, ignoring its sign: `(7).bit_count()` → `3`.
+
+- **Returns** `int`
+
+##### `.as_integer_ratio() → tuple[int, int]`
+
+The number as a fraction: `(6).as_integer_ratio()` → `(6, 1)`.
+
+- **Returns** `tuple[int, int]`
+
+##### `.is_integer() → bool`
+
+Always `True` for a whole number.
+
+- **Returns** `bool`
+
+*Types / Built-in Types*
+
 ## list
 
 **Returned by:** list literals `[1, 2, 3]` · `list(iterable)` · methods returning lists
@@ -237,7 +604,7 @@ Remove and return one element. Default removes the last (`pop()`). Pass an integ
 
 ##### `.remove(item: T, /) → None`
 
-Remove the first occurrence of `item` by value. Raises if not found. Use `.index(item)` first if you need to check.
+Remove the first occurrence of `item` by value. Raises if not found. Use `item in lst` first if you need to check.
 
 *Parameters*
 
@@ -328,6 +695,45 @@ Append every item from another finite iterable to the end of this list. Mutates 
 Remove all items. Returns `None`. Equivalent to `lst[:] = []`.
 
 - **Returns** `None`
+
+*Types / Built-in Types*
+
+## OrderedDict
+
+**Returned by:** `OrderedDict(...)` from `collections`
+
+### Methods
+
+##### `.move_to_end(key: K, last: bool = True) → None`
+
+Move an existing key to the end, or to the front with `last=False`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `key` | `K` | Key to move |
+| `last` | `bool` | True for the end, False for the front |
+
+- **Returns** `None`
+
+##### `.popitem(last: bool = True) → tuple[K, V]`
+
+Remove and return the last `(key, value)` pair, or the first with `last=False`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `last` | `bool` | True for the last pair, False for the first |
+
+- **Returns** `tuple[K, V]`
+
+##### `.copy() → OrderedDict[K, V]`
+
+A new OrderedDict with the same items.
+
+- **Returns** `OrderedDict[K, V]`
 
 *Types / Built-in Types*
 
@@ -646,6 +1052,19 @@ Split into substrings. With `sep=None`, every Python whitespace character separa
 
 - **Returns** `list[str]`
 
+##### `.rsplit(sep: str | None = None, maxsplit: int = -1) → list[str]`
+
+Like `split()`, but a `maxsplit` counts from the right, so the unsplit rest is the first item: `"a/b/c".rsplit("/", 1)` → `["a/b", "c"]`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `sep` | `str \| None` | Non-empty string separator or None for whitespace |
+| `maxsplit` | `int` | Maximum splits (default -1) |
+
+- **Returns** `list[str]`
+
 ##### `.splitlines(keepends: bool = False) → list[str]`
 
 Split on Python line boundaries, including `\n`, `\r\n`, `\r`, vertical tab, form feed, Unicode NEL, and Unicode line/paragraph separators. Trailing boundaries do not add an extra empty item. Pass `keepends=True` to retain each boundary.
@@ -871,6 +1290,36 @@ Swap the case of every character (lowercase ↔ uppercase).
 
 - **Returns** `bool`
 
+##### `.isdecimal() → bool`
+
+`True` when the string is not empty and every character is a decimal digit, `0` to `9` in any writing system. Stricter than `isdigit()`, which also accepts `²`.
+
+- **Returns** `bool`
+
+##### `.isnumeric() → bool`
+
+`True` when the string is not empty and every character is numeric: digits, fractions such as `½` and numerals such as `Ⅷ`.
+
+- **Returns** `bool`
+
+##### `.isascii() → bool`
+
+`True` when every character is ASCII, code point below 128. An empty string is `True`.
+
+- **Returns** `bool`
+
+##### `.isidentifier() → bool`
+
+`True` when the string is spelled like a Python name, such as a variable name. Keywords such as `class` count too.
+
+- **Returns** `bool`
+
+##### `.isprintable() → bool`
+
+`True` when every character prints visibly or is a space, and `False` for a line break, a tab or another control character. An empty string is `True`.
+
+- **Returns** `bool`
+
 ##### `.rfind(substring: str, start: int | None = 0, end: int | None = None, /) → int`
 
 Return the highest index where `substring` appears, or `-1` if not found. Mirror of `find()` from the right: useful for parsing the last separator of a string.
@@ -901,7 +1350,7 @@ Like `rfind()`, but raises if the substring isn't present.
 
 ##### `.format(*args: object, **kwargs: object) → str`
 
-Replace placeholders with arguments. Auto-numbered `{}` consumes the next positional arg, explicit `{0}`/`{1}` reference specific positionals, and `{name}` looks up a keyword arg: `"hi {name}".format(name="world")` → `"hi world"`. For format specs / conversions (`{x:>10}`, `{x!r}`), prefer f-strings.
+Replace placeholders with arguments. `{}` takes the next positional argument, `{0}` a numbered one and `{name}` a keyword one, and a field can add a conversion and a format spec exactly like an f-string: `"{:>8.2f}|{name!r}".format(3.14159, name="ore")` → `"    3.14|'ore'"`.
 
 *Parameters*
 
@@ -909,6 +1358,56 @@ Replace placeholders with arguments. Auto-numbered `{}` consumes the next positi
 | --- | --- | --- |
 | `args` | `object` | Values for the numbered `{}` fields |
 | `kwargs` | `object` | Values for the named fields, by keyword (`name="world"`) |
+
+- **Returns** `str`
+
+##### `.format_map(mapping: dict[str, object], /) → str`
+
+Like `.format()` with every `{name}` field read from one dict: `"{name} is done".format_map(job)`. A numbered or `{}` field is a `ValueError`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `mapping` | `dict[str, object]` | Dict the named fields read their values from |
+
+- **Returns** `str`
+
+##### `.expandtabs(tabsize: int = 8) → str`
+
+Replace each tab with spaces up to the next multiple of `tabsize` columns, counted from the last line break: `"a\tb".expandtabs(4)` → `"a   b"`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `tabsize` | `int` | Columns between tab stops (default 8) |
+
+- **Returns** `str`
+
+##### `.maketrans(x: str | dict[str | int, str | int | None], y: str | None = None, z: str | None = None, /) → dict[float, object]`
+
+Build a table for `translate()`. `str.maketrans("abc", "xyz")` maps each character of the first string to the one at the same place in the second, a third string lists characters to delete, and one dict maps characters to their replacements.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `str \| dict[str \| int, str \| int \| None]` | Characters to replace, or a dict of replacements |
+| `y` | `str \| None` | Replacement characters, as many as in `x` |
+| `z` | `str \| None` | Characters to delete |
+
+- **Returns** `dict[float, object]`
+
+##### `.translate(table: dict[int, str | int | None], /) → str`
+
+Replace characters through a table from `str.maketrans()`, or any dict from code points to a string, a code point, or `None` to delete: `"cab".translate(str.maketrans("abc", "xyz"))` → `"zxy"`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `table` | `dict[int, str \| int \| None]` | Table from `str.maketrans()` |
 
 - **Returns** `str`
 
@@ -1104,17 +1603,48 @@ The string that was searched.
 
 - **Returns** `str`
 
+##### `.lastindex: int | None`
+
+Number of the last group that matched, or `None` if no group did.
+
+- **Returns** `int | None`
+
+##### `.lastgroup: str | None`
+
+Name of the last group that matched, or `None` if it has no name or no group matched.
+
+- **Returns** `str | None`
+
+##### `.pos: int`
+
+Where the search started in the string.
+
+- **Returns** `int`
+
+##### `.endpos: int`
+
+Where the search stopped in the string.
+
+- **Returns** `int`
+
+##### `.re: Pattern`
+
+The compiled `Pattern` that produced this match.
+
+- **Returns** `Pattern`
+
 ### Methods
 
-##### `.group(index: int = 0) → str | None`
+##### `.group(group: int | str = 0, /, *groups: int | str) → str | None`
 
-Return the matched text for group `index`. Group `0` is the whole match. Optional groups that did not match return `None`; an out-of-range group raises.
+Return the matched text for a group, by number or by `(?P<name>...)` name. Group `0` is the whole match, and several groups return a tuple: `m.group(1, "unit")`. Optional groups that did not match return `None`; an unknown group raises. `m[1]` is the same as `m.group(1)`.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `int` | Capture group index; default 0 |
+| `group` | `int \| str` | Capture group number or name; default 0 |
+| `groups` | `int \| str` | More groups, which make the result a tuple |
 
 - **Returns** `str | None`
 
@@ -1130,7 +1660,7 @@ Return a tuple of captured groups, excluding group `0`. Groups that did not matc
 
 - **Returns** `tuple[str | None, ...]`
 
-##### `.start(index: int = 0) → int`
+##### `.start(index: int | str = 0) → int`
 
 Start character index for the group. Unmatched optional groups return `-1`.
 
@@ -1138,11 +1668,11 @@ Start character index for the group. Unmatched optional groups return `-1`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `int` | Capture group index; default 0 |
+| `index` | `int \| str` | Capture group index; default 0 |
 
 - **Returns** `int`
 
-##### `.end(index: int = 0) → int`
+##### `.end(index: int | str = 0) → int`
 
 End character index for the group. Unmatched optional groups return `-1`.
 
@@ -1150,11 +1680,11 @@ End character index for the group. Unmatched optional groups return `-1`.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `int` | Capture group index; default 0 |
+| `index` | `int \| str` | Capture group index; default 0 |
 
 - **Returns** `int`
 
-##### `.span(index: int = 0) → tuple[int, ...]`
+##### `.span(index: int | str = 0) → tuple[int, ...]`
 
 Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`.
 
@@ -1162,8 +1692,189 @@ Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `index` | `int` | Capture group index; default 0 |
+| `index` | `int \| str` | Capture group index; default 0 |
 
 - **Returns** `tuple[int, ...]`
+
+##### `.__getitem__(group: int | str, /) → str | None`
+
+`m[1]` or `m["name"]`: the same text as `m.group(1)`, or `None` for a group that took no part in the match.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `group` | `int \| str` | Capture group number or name; default 0 |
+
+- **Returns** `str | None`
+
+##### `.groupdict(default: object = None) → dict[str, str | None]`
+
+Return a dict of every named group's text, by name. Named groups that did not match use `default`, which is `None` if omitted.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `default` | `object` | Value for unmatched optional groups |
+
+- **Returns** `dict[str, str | None]`
+
+##### `.expand(template: str, /) → str`
+
+Fill in a replacement template the way `re.sub()` does, from this match: `m.expand(r"\2-\1")`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `template` | `str` | Template with backreferences |
+
+- **Returns** `str`
+
+*Types / Built-in Modules*
+
+## Pattern
+
+**Returned by:** `re.compile()`
+
+### Properties
+
+##### `.pattern: str`
+
+The pattern text this was compiled from.
+
+- **Returns** `str`
+
+##### `.flags: int`
+
+The flags this was compiled with.
+
+- **Returns** `int`
+
+##### `.groups: int`
+
+How many capture groups the pattern has.
+
+- **Returns** `int`
+
+##### `.groupindex: dict[str, float]`
+
+Dict from each `(?P<name>...)` group name to its number.
+
+- **Returns** `dict[str, float]`
+
+### Methods
+
+##### `.search(string: str, pos: int = 0, endpos: int | None = None) → Match | None`
+
+Like `re.search()` with this pattern, looking only between `pos` and `endpos`: a `Match`, or `None` if nothing there matches.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `string` | `str` | Text to search |
+| `pos` | `int` | Index to start at (default 0) |
+| `endpos` | `int \| None` | Index to stop before (default the end) |
+
+- **Returns** `Match | None`
+
+##### `.match(string: str, pos: int = 0, endpos: int | None = None) → Match | None`
+
+Like `re.match()` with this pattern, anchored at `pos`: a `Match`, or `None` if the text at `pos` does not match.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `string` | `str` | Text to search |
+| `pos` | `int` | Index to start at (default 0) |
+| `endpos` | `int \| None` | Index to stop before (default the end) |
+
+- **Returns** `Match | None`
+
+##### `.fullmatch(string: str, pos: int = 0, endpos: int | None = None) → Match | None`
+
+Like `re.fullmatch()` with this pattern, over the text from `pos` to `endpos`: a `Match`, or `None` if any part is left unmatched.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `string` | `str` | Text to search |
+| `pos` | `int` | Index to start at (default 0) |
+| `endpos` | `int \| None` | Index to stop before (default the end) |
+
+- **Returns** `Match | None`
+
+##### `.findall(string: str, pos: int = 0, endpos: int | None = None) → list`
+
+Like `re.findall()` with this pattern, between `pos` and `endpos`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `string` | `str` | Text to search |
+| `pos` | `int` | Index to start at (default 0) |
+| `endpos` | `int \| None` | Index to stop before (default the end) |
+
+- **Returns** `list`
+
+##### `.finditer(string: str, pos: int = 0, endpos: int | None = None) → Iterator[Match]`
+
+Like `re.finditer()` with this pattern, between `pos` and `endpos`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `string` | `str` | Text to search |
+| `pos` | `int` | Index to start at (default 0) |
+| `endpos` | `int \| None` | Index to stop before (default the end) |
+
+- **Returns** `Iterator[Match]`
+
+##### `.sub(repl: str | Callable, string: str, count: int = 0) → str`
+
+Like `re.sub()` with this pattern.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `repl` | `str \| Callable` | Replacement text, or a function from `Match` to text |
+| `string` | `str` | Text to search |
+| `count` | `int` | Maximum replacements; 0 means all |
+
+- **Returns** `str`
+
+##### `.subn(repl: str | Callable, string: str, count: int = 0) → tuple[str, int]`
+
+Like `re.subn()` with this pattern.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `repl` | `str \| Callable` | Replacement text, or a function from `Match` to text |
+| `string` | `str` | Text to search |
+| `count` | `int` | Maximum replacements; 0 means all |
+
+- **Returns** `tuple[str, int]`
+
+##### `.split(string: str, maxsplit: int = 0) → list`
+
+Like `re.split()` with this pattern.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `string` | `str` | Text to search |
+| `maxsplit` | `int` | Maximum splits; 0 means all |
+
+- **Returns** `list`
 
 *Types / Exploration*

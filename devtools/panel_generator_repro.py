@@ -1,4 +1,4 @@
-# Minimal repro: a suspended generator disconnects a panel script from its card.
+# Minimal repro (fixed in game v0.1.29, kept as a regression check): a suspended generator disconnected a panel script from its card.
 #
 # Paste into an empty Custom Panel, set MODE, run. Use a fresh card per run (or
 # run "none" first) so a leftover frame is not mistaken for a frozen one.

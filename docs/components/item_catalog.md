@@ -4,23 +4,23 @@
 
 Looks up static identity metadata for any known item id. Use `get_component("item_catalog")` when a script needs to classify an item without maintaining its own data archive.
 
-**Returned by:** `get_component("item_catalog")`
+**Access via:** `get_component("item_catalog")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -34,7 +34,7 @@ Return an `ItemInfo` with `.id`, `.name`, `.category`, `.stackable`, `.biome`, `
 | --- | --- | --- |
 | `item_id` | `str` | Item id to identify |
 
-- **Returns** `ItemInfo` with identity metadata, or `None` for an unknown item id.
+- **Returns** `ItemInfo | None`. `None` for an unknown item id.
 
 ```python
 catalog = get_component("item_catalog")

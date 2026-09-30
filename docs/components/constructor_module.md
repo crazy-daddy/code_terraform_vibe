@@ -4,23 +4,23 @@
 
 Pioneer-exclusive module for construction and deconstruction blueprints created in Plan Mode or by scripts: gas/liquid pipes, utility bridges, power lines, outposts, pumps, caps, and mining drills. Fits a `universal` slot. Load the required kits, segments, or bridge items into the Pioneer's cargo for build jobs, drive within interaction range of the blueprint position, then call `execute(blueprint_id)`. Deconstruction reclaims the dismantled kit or segment into the Pioneer's cargo. Internal outpost machines, including drone facilities, deploy directly from Inventory and are not Constructor jobs.
 
-**Returned by:** `self.constructor`
+**Access via:** `self.constructor`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 

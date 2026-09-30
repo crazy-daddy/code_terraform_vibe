@@ -4,23 +4,23 @@
 
 Stores sites found or surveyed by sonar and fragments cataloged by Bio Labs. Access it with `get_component("journal")` to plan trips and Bio Orders without scanning again. Records are separated by planet and survive script restarts, vehicle changes, and save/load.
 
-**Returned by:** `get_component("journal")`
+**Access via:** `get_component("journal")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -34,7 +34,7 @@ Lists every site classified by sonar on `planet_id`. Call `journal.discovered_si
 | --- | --- | --- |
 | `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
 
-- **Returns** List of classified `Site` values for that planet. Each concrete type follows `kind()`. Unsurveyed productive sites leave detailed fields as `None`; inert formations are resolved by scanning. Query again for current survey, cycle, and cap data.
+- **Returns** `list[Site]`. Classified sites for that planet; each concrete type follows `kind()`. Unsurveyed productive sites leave detailed fields as `None`; inert formations are resolved by scanning. Query again for current survey, cycle, and cap data.
 
 ##### `.surveyed_sites(planet_id: str) → list[Site]`
 
@@ -46,7 +46,7 @@ Every fully-resolved site on `planet_id` as `list[Site]`, same shape as `discove
 | --- | --- | --- |
 | `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
 
-- **Returns** List of fully resolved `Site` snapshots, including inert formations resolved by a scan. Uses the same types as `discovered_sites()`, filtered to `surveyed == True`. Query again for current cycle and cap data.
+- **Returns** `list[Site]`. Fully resolved sites, including inert formations resolved by a scan: `discovered_sites()` filtered to `surveyed == True`. Query again for current cycle and cap data.
 
 ##### `.cataloged_fragments(planet_id: str) → list[CatalogedFragment]`
 
@@ -58,7 +58,7 @@ Lists fragments analyzed at a Bio Lab on `planet_id`, newest first. Each `Catalo
 | --- | --- | --- |
 | `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
 
-- **Returns** List of `CatalogedFragment`: every fragment you've analyzed at a Bio Lab on that planet, including its stable `.fragment_id` and player-facing `.name`. Sorted **most-recently-cataloged first**. Returns `[]` for any planet other than the current one.
+- **Returns** `list[CatalogedFragment]`. Every fragment you've analyzed at a Bio Lab on that planet. Sorted **most-recently-cataloged first**. `[]` for any planet other than the current one.
 
 ##### `.cataloged_creatures(planet_id: str) → list[CatalogedCreature]`
 
@@ -70,7 +70,7 @@ Lists creatures whose five fragments have all been analyzed on `planet_id`, most
 | --- | --- | --- |
 | `planet_id` | `str` | Journal planet id; the current planet is usually "nocturna". |
 
-- **Returns** List of `CatalogedCreature`: every creature whose five fragments have been analyzed on that planet, with the ids and exact startup supplies needed by a generic Habitat revival script. Sorted **most-recently-completed first**. Returns `[]` for any planet other than the current one.
+- **Returns** `list[CatalogedCreature]`. Every creature whose five fragments have been analyzed on that planet, with the ids and exact startup supplies a generic Habitat revival script needs. Sorted **most-recently-completed first**. `[]` for any planet other than the current one.
 
 ##### `.coord_info(x: int, y: int) → LifeFormScanResult | None`
 
@@ -83,13 +83,13 @@ Read the saved `LifeFormScanResult` for a discovered permanent biosite coordinat
 | `x` | `int` | Whole-number world x |
 | `y` | `int` | Whole-number world y |
 
-- **Returns** `LifeFormScanResult` for permanent biosite `(x, y)` if it has been scanned. Returns `None` if untouched or not a biosite. Cheap; no yield.
+- **Returns** `LifeFormScanResult | None`. `None` if `(x, y)` is untouched or not a biosite. Cheap; no yield.
 
 ##### `.biomass_coords() → list[LifeFormScanResult]`
 
 Lists every discovered permanent biosite as a `LifeFormScanResult`. This is the restart-safe route source for harvester drones: inspect `.coord`, each sample's `.remaining_tons`, and `is_ready(x, y)` before dispatching.
 
-- **Returns** List of every discovered permanent biosite as `LifeFormScanResult` snapshots. Use each `.coord`, `.life_forms`, and `.remaining_tons` to schedule drone harvest routes.
+- **Returns** `list[LifeFormScanResult]`. Every discovered permanent biosite. Use each `.coord`, `.life_forms`, and `.remaining_tons` to schedule drone harvest routes.
 
 ##### `.has_scanned(x: int, y: int) → bool`
 
@@ -102,7 +102,7 @@ Lists every discovered permanent biosite as a `LifeFormScanResult`. This is the 
 | `x` | `int` | Whole-number world x |
 | `y` | `int` | Whole-number world y |
 
-- **Returns** Boolean: `True` if you've scanned this whole-number coordinate.
+- **Returns** `bool`. `True` if you've scanned this whole-number coordinate.
 
 ##### `.is_empty(x: int, y: int) → bool`
 
@@ -115,7 +115,7 @@ Lists every discovered permanent biosite as a `LifeFormScanResult`. This is the 
 | `x` | `int` | Whole-number world x |
 | `y` | `int` | Whole-number world y |
 
-- **Returns** Boolean: `True` only when you scanned this whole-number coordinate and it was not a biosite.
+- **Returns** `bool`. `True` only when you scanned this whole-number coordinate and it was not a biosite.
 
 ##### `.is_ready(x: int, y: int) → bool`
 
@@ -128,7 +128,7 @@ Lists every discovered permanent biosite as a `LifeFormScanResult`. This is the 
 | `x` | `int` | Biosite world x |
 | `y` | `int` | Biosite world y |
 
-- **Returns** Boolean: `True` if a discovered biosite has stock or its cooldown has elapsed, and no extraction is currently in progress there.
+- **Returns** `bool`. `True` if a discovered biosite has stock or its cooldown has elapsed, and no extraction is currently in progress there.
 
 ##### `.next_ready_at(x: int, y: int) → float | None`
 
@@ -141,6 +141,6 @@ When the extraction cooldown ends, as an absolute hour. A depleted site's timest
 | `x` | `int` | Biosite world x |
 | `y` | `int` | Biosite world y |
 
-- **Returns** Absolute hour when a depleted biosite's extraction cooldown ends. The deadline may already be in the past until extraction replenishes the site. Returns `None` if the site is not recorded, material remains, or it has never been extracted.
+- **Returns** `float | None`. Absolute hour when a depleted biosite's extraction cooldown ends. The deadline may already be in the past until extraction replenishes the site. `None` if the site is not recorded, material remains, or it has never been extracted.
 
 *Components / Exploration*

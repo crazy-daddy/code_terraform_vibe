@@ -308,7 +308,7 @@ Rolled lead shielding plate for casks, fuel rods, and reactor internals.
 
 ##### Raw Uranium `raw_uranium`
 
-Storm-dealt fissile ore. Hot cargo: Lead Casks are its only stationary home. Any drone can risk extraction, but each unplated batch adds 40 exposure; Shield Plating makes that gain zero.
+Storm-dealt fissile ore. Hot cargo: use Lead Casks for ordinary storage; deliver it to Fuel Assemblers or Supply Docks. Any drone can risk extraction, but each unplated batch adds 40 exposure; Shield Plating makes that gain zero.
 
 | Field | Value |
 | --- | --- |
@@ -317,7 +317,7 @@ Storm-dealt fissile ore. Hot cargo: Lead Casks are its only stationary home. Any
 
 ##### Fuel Rod `fuel_rod`
 
-Pressed reactor fuel, enriched uranium in a lead jacket. Hot cargo, cask-to-cask handling only.
+Pressed reactor fuel, enriched uranium in a lead jacket. Hot cargo: use Lead Casks for ordinary storage; deliver it to machines that use fuel rods, such as Reactors, or to Supply Docks.
 
 | Field | Value |
 | --- | --- |

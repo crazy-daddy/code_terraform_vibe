@@ -10,7 +10,7 @@ Built-in runtime functions, modules, and system commands.
 
 Read the current game's build identifier, matching the version at the bottom right of Settings and in feedback reports. Available before boot and from shared Libraries on every platform. Use it to identify an exact build when sharing scripts; build hashes cannot be compared as newer or older versions.
 
-- **Returns** String containing the seven-character commit hash, or `"dev"` in an unstamped development or test environment.
+- **Returns** `str`. The seven-character commit hash, or `"dev"` in an unstamped development or test environment.
 
 ```python
 print(get_game_version())
@@ -85,7 +85,7 @@ Access a player-owned entity by its **immutable id** (e.g. `"solar_3"`, `"outpos
 | --- | --- | --- |
 | `name` | `str` | Entity id (machine or outpost) |
 
-- **Returns** Component object
+- **Returns** `Component | None`
 
 ```python
 clock = get_component("clock")
@@ -103,7 +103,7 @@ Look up any addressable player-owned component (machine or outpost) by its displ
 | --- | --- | --- |
 | `name` | `str` | The entity's display name |
 
-- **Returns** Component (machine or outpost), or None if no component by that name exists
+- **Returns** `Component | None`. A machine or an outpost. `None` when no component has that name.
 
 ```python
 ore_bin = get_component_by_name("Iron Stockpile")
@@ -124,7 +124,7 @@ Look up an infrastructure pipe by id. Returns a live read-only `Pipe` handle, or
 | --- | --- | --- |
 | `pipe_id` | `str` | Pipe id (from `list_pipes()`) |
 
-- **Returns** Live read-only `Pipe` handle or `None`
+- **Returns** `Pipe | None`. A live, read-only handle.
 
 ```python
 pipe = get_pipe("pipe_1")
@@ -136,7 +136,7 @@ if pipe != None:
 
 List every infrastructure pipe currently laid (complete or in-progress) as live read-only `Pipe` handles.
 
-- **Returns** List of live read-only `Pipe` handles
+- **Returns** `list[Pipe]`. Live, read-only handles.
 
 ```python
 for pipe in list_pipes():
@@ -297,6 +297,33 @@ Read an attribute by string name, exactly like `value.name`. Without `default`, 
 
 - **Returns** `object`
 
+##### `setattr(value: object, name: str, new_value: object, /) → None`
+
+Set the attribute called `name` on `value`, exactly as `value.name = new_value` does, when the name is only known while the script runs: `setattr(state, field, 0)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `value` | `object` | Object to change |
+| `name` | `str` | Attribute name |
+| `new_value` | `object` | Value to store |
+
+- **Returns** `None`
+
+##### `delattr(value: object, name: str, /) → None`
+
+Remove the attribute called `name` from `value`, exactly as `del value.name` does.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `value` | `object` | Object to change |
+| `name` | `str` | Attribute name |
+
+- **Returns** `None`
+
 ##### `sorted(sequence: Iterable[T], /, *, key: Callable | None = None, reverse: bool = False) → list[T]`
 
 Return a new list sorted using `<` between mutually comparable keys. With `key=None` (the default), each value is its own key. Numeric and boolean keys compare across that family, strings compare lexicographically, and user objects may define the exact rich-comparison slots needed by `<`; unsupported pairs raise. `key=` is called once per item and must be pure: it cannot suspend or mutate game state. `reverse` is truth-tested, and the finite input is handled eagerly within the interpreter's collection limit.
@@ -325,7 +352,7 @@ Return a reversed list copy of any finite iterable. This consumes the input full
 
 ##### `enumerate(iterable: Iterable[T], /, start: int = 0) → list[tuple[int, T]]`
 
-List of (index, value) pairs. Optional integer `start=N` shifts the index: `enumerate(items, start=1)` for 1-based indexing. Arbitrarily large integer starts remain exact. `start` may be positional or keyword, but not both.
+List of (index, value) pairs. Optional integer `start=N` shifts the index: `enumerate(items, start=1)` for 1-based indexing. Arbitrarily large integer starts remain exact. `start` may be positional or keyword, but not both. Given a generator, it returns a lazy iterator instead of a list, taking each item only when the loop asks for it.
 
 *Parameters*
 
@@ -338,7 +365,7 @@ List of (index, value) pairs. Optional integer `start=N` shifts the index: `enum
 
 ##### `zip(*iterables: Iterable, strict: bool = False) → list[tuple]`
 
-Combine iterables into tuples. With no args, returns empty list. With one arg, returns a list of 1-tuples. Stops at the shortest input unless `strict=True`, which raises if input lengths differ.
+Combine iterables into tuples. With no args, returns empty list. With one arg, returns a list of 1-tuples. Stops at the shortest input unless `strict=True`, which raises if input lengths differ. When an input is a generator, it returns a lazy iterator instead of a list.
 
 *Parameters*
 
@@ -351,7 +378,7 @@ Combine iterables into tuples. With no args, returns empty list. With one arg, r
 
 ##### `isinstance(value: object, type_or_tuple: type | tuple, /) → bool`
 
-Check if a value is of the given type. Accepts a builtin type callable (`object`, `int`, `float`, `str`, `list`, `dict`, `set`, `tuple`, `slice`, `bool`), a string type name, a tuple of types, or a type union like `int | float` (matches any). `int` matches whole numbers and booleans, `float` matches fractional / non-finite numbers, and string `"number"` remains the broad numeric family for scripts that intentionally accept either.
+Check if a value is of the given type. Accepts a builtin type callable (`object`, `int`, `float`, `str`, `list`, `dict`, `set`, `tuple`, `slice`, `bool`), a class of your own, a game class imported from `__builtins__` (after `from __builtins__ import Smelter`, a smelter is an instance of `Smelter` and of `Component`), a string type name, a tuple of types, or a type union like `int | float` (matches any). `int` matches whole numbers and booleans, `float` matches fractional / non-finite numbers, and string `"number"` remains the broad numeric family for scripts that intentionally accept either.
 
 *Parameters*
 
@@ -406,7 +433,7 @@ Return a proxy that searches the receiver's MRO after a chosen class. Inside a m
 
 ##### `issubclass(cls: type, class_or_tuple: type | tuple, /) → bool`
 
-`True` if `cls` is the given class or a subclass of it (or of any class in the tuple), per the MRO. `issubclass(Dog, Animal)` is `True`; every class is a subclass of `object`.
+`True` if `cls` is the given class or a subclass of it (or of any class in the tuple), per the MRO. `issubclass(Dog, Animal)` is `True`; every class is a subclass of `object`. Game classes imported from `__builtins__` work the same way: `issubclass(Smelter, Component)` and `issubclass(MiningSite, Site)` are `True`.
 
 *Parameters*
 
@@ -503,7 +530,7 @@ Convert to integer. With no args returns `0`. Numbers truncate toward zero. Stri
 | Name | Type | Description |
 | --- | --- | --- |
 | `value` | `str \| float` | Number, `True`/`False`, or numeric text to convert |
-| `base` | `int` | Number base for text, from 2 to 36 |
+| `base` | `int` | Number base for text, from 2 to 36, or 0 to detect numeric prefixes |
 
 - **Returns** `int`
 
@@ -645,6 +672,19 @@ Developer-readable string for a value, with quotes around strings and nested-rep
 
 - **Returns** `str`
 
+##### `format(value: object, format_spec: str = '', /) → str`
+
+Format one value by a format spec, the same text an f-string field produces: `format(3.14159, ".2f")` → `"3.14"`, `format(42, ">6")` → `"    42"`. With no spec it is `str(value)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `value` | `object` | Value to format |
+| `format_spec` | `str` | Format spec, such as `".2f"` or `">10"` |
+
+- **Returns** `str`
+
 ### Functional
 
 ##### `total_ordering(cls: type, /) → type`
@@ -727,7 +767,7 @@ Round with ties to even. Without `ndigits` (or with `None`), returns the nearest
 
 ##### `pow(base: float, exp: float, mod: int | None = None) → float`
 
-`base` raised to `exp`. Optional `mod` performs exact modular exponentiation and accepts negative exponents when the base has a modular inverse. `base`, `exp`, and `mod` accept positional or keyword form.
+`base` raised to `exp`, exactly like `base ** exp`, so your own classes that define `__pow__` or `__rpow__` work too. Optional `mod` performs exact modular exponentiation and accepts negative exponents when the base has a modular inverse; a class base receives it as `__pow__(exp, mod)`. `base`, `exp`, and `mod` accept positional or keyword form.
 
 *Parameters*
 
@@ -924,7 +964,7 @@ Tangent of an angle in radians.
 
 ##### `asin(number: float, /) → float`
 
-Arc sine. Input must be in `-1 to 1`.
+Arc sine. Input must be from `-1` to `1`.
 
 *Parameters*
 
@@ -936,7 +976,7 @@ Arc sine. Input must be in `-1 to 1`.
 
 ##### `acos(number: float, /) → float`
 
-Arc cosine. Input must be in `-1 to 1`.
+Arc cosine. Input must be from `-1` to `1`.
 
 *Parameters*
 
@@ -995,21 +1035,21 @@ Convert degrees to radians.
 
 - **Returns** `float`
 
-##### `sum(iterable: Iterable[float] | Iterable[list], /, start: float | list = 0) → float | list`
+##### `sum(iterable: Iterable[float] | Iterable[list] | Iterable[object], /, start: float | list | object = 0) → float | list`
 
-Sum of every numeric item in an iterable. Optional `start` (number or list): `sum(list_of_lists, [])` flattens. `start` may be positional or keyword, but not both.
+Adds up the items of an iterable with `+`, starting from `start` (default `0`). Works for numbers, lists (`sum(list_of_lists, [])` flattens), tuples, and your own classes that define `__add__` or `__radd__`. Strings are refused: use `"".join(items)`. `start` may be positional or keyword, but not both.
 
 - **Returns** `float | list`
 
 ##### `prod(iterable: Iterable[float], /, start: float = 1) → float`
 
-Product of every numeric item in an iterable. Empty iterables return `start`. `start` may be positional or keyword, but not both.
+Multiplies the items of an iterable with `*`, starting from `start` (default `1`). Works for numbers and for your own classes that define `__mul__` or `__rmul__`. Empty iterables return `start`. `start` may be positional or keyword, but not both.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `iterable` | `Iterable[float]` | Numbers to multiply |
+| `iterable` | `Iterable[float]` | Values to multiply |
 | `start` | `float` | Value the product starts from |
 
 - **Returns** `float`
@@ -1060,15 +1100,16 @@ True if any item in the iterable is truthy. Stops at the first truthy item, so g
 
 ### Iteration
 
-##### `iter(iterable: Iterable[T], /) → list | generator`
+##### `iter(iterable: Iterable[T] | Callable, sentinel?: object, /) → list | generator`
 
-Return an iterator. Built-in iterables use a compatibility list-shaped iterator; protocol iterators and generators keep their identity, so `iter(iterator) is iterator`. `for` advances generators and custom iterators one item at a time, so it can break out of an infinite iterator. Consumers that must finish, such as `list(...)`, remain bounded.
+Return an iterator. Built-in iterables use a compatibility list-shaped iterator; protocol iterators and generators keep their identity, so `iter(iterator) is iterator`. `for` advances generators and custom iterators one item at a time, so it can break out of an infinite iterator. Consumers that must finish, such as `list(...)`, remain bounded. With a `sentinel`, `iter(read, None)` calls `read()` for each item and stops at the first result equal to `None`.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `iterable` | `Iterable[T]` | Values to iterate |
+| `iterable` | `Iterable[T] \| Callable` | Values to iterate, or a function to call when `sentinel` is given |
+| `sentinel` | `object` | Value that ends the iteration when the function returns it |
 
 - **Returns** `list | generator`
 
@@ -1135,7 +1176,7 @@ Flatten one level of nested iterables into a list. `flatten([[1,2], (3,4)])` →
 
 - **Returns** `list`
 
-##### `count_by(iterable: Iterable, key_fn?: Callable, /) → dict[object, int]`
+##### `count_by(iterable: Iterable[T], key_fn?: Callable, /) → dict[object, int]`
 
 Count items into a dict. Without `key_fn` (or with `None`), counts each item. With a pure `key_fn`, counts the computed key; callbacks cannot suspend the script or mutate game state: `count_by(items, lambda x: x.kind)`. An empty input never inspects or calls the key function.
 
@@ -1143,7 +1184,7 @@ Count items into a dict. Without `key_fn` (or with `None`), counts each item. Wi
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `iterable` | `Iterable` | Values to count |
+| `iterable` | `Iterable[T]` | Values to count |
 | `key_fn` | `Callable` | Optional function that maps each item to the key to count |
 
 - **Returns** `dict[object, int]`
@@ -1162,13 +1203,13 @@ Flattens any number of iterables into one list, in order. `chain([1,2], [3,4])` 
 
 ##### `accumulate(iterable: Iterable[float], /) → list[float]`
 
-Running prefix sum over any finite iterable. `accumulate([1,2,3,4])` → `[1,3,6,10]`. Numeric items only; booleans participate as integers and arbitrarily large integers remain exact.
+Running totals over any finite iterable: the first item, then each total so far plus the next item with `+`. `accumulate([1,2,3,4])` → `[1,3,6,10]`. Works for anything `+` works on, including strings, lists and your own classes that define `__add__`. Arbitrarily large integers remain exact.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `iterable` | `Iterable[float]` | Numbers to total as you go |
+| `iterable` | `Iterable[float]` | Values to total as you go |
 
 - **Returns** `list[float]`
 
@@ -1213,7 +1254,7 @@ Cartesian product. `product([0,1], [0,1])` → `[(0,0), (0,1), (1,0), (1,1)]`. E
 
 ##### `map(fn: Callable, iter1: Iterable, iter2?: Iterable, ..., /, strict: bool = False) → list`
 
-Apply pure `fn` to corresponding items of each iterable. Callbacks cannot suspend the script or mutate game state. Single-iter form calls `fn(x)`; multi-iter form calls `fn(x, y, ...)` and stops at the shortest input unless `strict=True`, which raises if input lengths differ. If no row is produced, `fn` is never inspected or called.
+Apply pure `fn` to corresponding items of each iterable. Callbacks cannot suspend the script or mutate game state. Single-iter form calls `fn(x)`; multi-iter form calls `fn(x, y, ...)` and stops at the shortest input unless `strict=True`, which raises if input lengths differ. If no row is produced, `fn` is never inspected or called. When an input is a generator, it returns a lazy iterator instead of a list.
 
 *Parameters*
 
@@ -1228,7 +1269,7 @@ Apply pure `fn` to corresponding items of each iterable. Callbacks cannot suspen
 
 ##### `filter(fn: Callable | None, iterable: Iterable[T], /) → list[T]`
 
-Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty input never inspects or calls `fn`.
+Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty input never inspects or calls `fn`. Given a generator, it returns a lazy iterator instead of a list.
 
 *Parameters*
 
@@ -2258,6 +2299,99 @@ Initialize random-number generation. Omit `a` or pass `None` to select another a
 
 - **Returns** `None`
 
+##### `random.randrange(start: int, stop: int | None = None, step: int = 1, /) → int`
+
+Random whole number from `range(start, stop, step)`: `randrange(10)` is 0 to 9, `randrange(5, 20, 5)` is 5, 10 or 15. The stop value is never picked.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `start` | `int` | First possible value, or the stop value when it is the only argument |
+| `stop` | `int \| None` | End of the range, never picked |
+| `step` | `int` | Distance between possible values (default 1) |
+
+- **Returns** `int`
+
+##### `random.choice(seq: list[T] | tuple[T, ...] | str, /) → T`
+
+One random item of a list, tuple or string: `random.choice(["iron", "copper"])`. An empty one is an `IndexError`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `seq` | `list[T] \| tuple[T, ...] \| str` | List, tuple or string to pick from |
+
+- **Returns** `T`
+
+##### `random.choices(population: list[T] | tuple[T, ...] | str, weights: Iterable[float] | None = None, *, cum_weights: Iterable[float] | None = None, k: int = 1) → list[T]`
+
+`k` random items picked with repetition, as a list. `weights` makes some items likelier: `random.choices(["ore", "ice"], weights=[3, 1], k=5)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `population` | `list[T] \| tuple[T, ...] \| str` | List, tuple or string to pick from |
+| `weights` | `Iterable[float] \| None` | How likely each item is, in the same order |
+| `cum_weights` | `Iterable[float] \| None` | Running totals of the weights, instead of `weights` |
+| `k` | `int` | How many items to pick (default 1) |
+
+- **Returns** `list[T]`
+
+##### `random.shuffle(x: list[object], /) → None`
+
+Put a list's items in random order, in place. Returns `None`; the list itself changes.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `list[object]` | List to reorder |
+
+- **Returns** `None`
+
+##### `random.sample(population: list[T] | tuple[T, ...] | str, k: int, *, counts: Iterable[int] | None = None) → list[T]`
+
+`k` different random items, as a list, never picking one place twice: `random.sample(range(100), 3)`. `counts` repeats items: `counts=[3, 2]` puts the first item in the pool three times and the second twice.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `population` | `list[T] \| tuple[T, ...] \| str` | List, tuple or string to pick from |
+| `k` | `int` | How many items to pick, at most the population size or the expanded pool size when `counts` is supplied |
+| `counts` | `Iterable[int] \| None` | How many times each item is in the pool |
+
+- **Returns** `list[T]`
+
+##### `random.uniform(a: float, b: float, /) → float`
+
+Random decimal number between `a` and `b`: `random.uniform(-1, 1)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `float` | One end of the range |
+| `b` | `float` | The other end of the range |
+
+- **Returns** `float`
+
+##### `random.gauss(mu: float = 0.0, sigma: float = 1.0) → float`
+
+Random number from a bell curve around `mu` with spread `sigma`: most results fall within `sigma` of `mu`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `mu` | `float` | Center of the bell curve (default 0) |
+| `sigma` | `float` | Spread of the bell curve (default 1) |
+
+- **Returns** `float`
+
 *Built-in Modules*
 
 ## functools
@@ -2325,7 +2459,7 @@ Decorator that remembers what the function returned for each set of arguments, s
 | Name | Type | Description |
 | --- | --- | --- |
 | `maxsize` | `int \| Callable \| None` | How many results to keep, **128** by default. Past that the least recently used one is dropped. `None` asks for no limit, which this game caps anyway so a script that runs all session cannot grow a cache forever. A function here, `lru_cache(f)`, wraps it with the default size |
-| `typed` | `bool` | Treat arguments of different types as different keys, so `f(1)` and `f(1.5)` never share a result |
+| `typed` | `bool` | Also key results by argument type, so arguments that compare equal but have different types never share a result |
 
 - **Returns** `Callable`
 
@@ -2338,6 +2472,18 @@ Decorator that remembers every result, the same as `lru_cache(maxsize=None)`. Th
 | Name | Type | Description |
 | --- | --- | --- |
 | `user_function` | `Callable` | Function to memoize |
+
+- **Returns** `Callable`
+
+##### `functools.cmp_to_key(mycmp: Callable, /) → Callable`
+
+Turn a compare function into a `key=` function: `sorted(items, key=cmp_to_key(compare))`, where `compare(a, b)` returns a negative number when `a` comes first, zero when they tie and a positive number when `b` comes first.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `mycmp` | `Callable` | Compare function taking two items |
 
 - **Returns** `Callable`
 
@@ -2383,7 +2529,31 @@ Short alias for `re.DOTALL`.
 
 - **Returns** `int`
 
-##### `re.search(pattern: str, string: str, flags: int = 0) → Match | None`
+##### `re.VERBOSE: int`
+
+Whitespace and `#` comments in the pattern are layout, so a long pattern can span lines. Short alias: `re.X`.
+
+- **Returns** `int`
+
+##### `re.ASCII: int`
+
+`\d`, `\w` and `\s` match only ASCII characters instead of all Unicode ones. Short alias: `re.A`.
+
+- **Returns** `int`
+
+##### `re.X: int`
+
+Short alias for `re.VERBOSE`.
+
+- **Returns** `int`
+
+##### `re.A: int`
+
+Short alias for `re.ASCII`.
+
+- **Returns** `int`
+
+##### `re.search(pattern: str | Pattern, string: str, flags: int = 0) → Match | None`
 
 Search anywhere in `string` for `pattern`. Returns a `Match` object, or `None` if there is no match. Patterns use the documented safe regular expression subset.
 
@@ -2391,13 +2561,13 @@ Search anywhere in `string` for `pattern`. Returns a `Match` object, or `None` i
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `pattern` | `str` | Regular expression pattern |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
 | `string` | `str` | String to search |
 | `flags` | `int` | Optional flags such as `re.IGNORECASE` |
 
 - **Returns** `Match | None`
 
-##### `re.match(pattern: str, string: str, flags: int = 0) → Match | None`
+##### `re.match(pattern: str | Pattern, string: str, flags: int = 0) → Match | None`
 
 Match `pattern` at the start of `string`. Returns a `Match` object, or `None` if the start does not match.
 
@@ -2405,13 +2575,13 @@ Match `pattern` at the start of `string`. Returns a `Match` object, or `None` if
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `pattern` | `str` | Regular expression pattern |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
 | `string` | `str` | String to check |
 | `flags` | `int` | Optional flags such as `re.IGNORECASE` |
 
 - **Returns** `Match | None`
 
-##### `re.fullmatch(pattern: str, string: str, flags: int = 0) → Match | None`
+##### `re.fullmatch(pattern: str | Pattern, string: str, flags: int = 0) → Match | None`
 
 Match the whole `string` against `pattern`. Returns a `Match` object, or `None` if any part is left unmatched.
 
@@ -2419,13 +2589,13 @@ Match the whole `string` against `pattern`. Returns a `Match` object, or `None` 
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `pattern` | `str` | Regular expression pattern |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
 | `string` | `str` | String to check |
 | `flags` | `int` | Optional flags such as `re.IGNORECASE` |
 
 - **Returns** `Match | None`
 
-##### `re.findall(pattern: str, string: str, flags: int = 0) → list`
+##### `re.findall(pattern: str | Pattern, string: str, flags: int = 0) → list`
 
 Return all non-overlapping matches. With no capture groups, the result is a list of matched strings. With one capture group, the result is that group. With multiple capture groups, the result is tuples.
 
@@ -2433,29 +2603,29 @@ Return all non-overlapping matches. With no capture groups, the result is a list
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `pattern` | `str` | Regular expression pattern |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
 | `string` | `str` | String to search |
 | `flags` | `int` | Optional flags such as `re.IGNORECASE` |
 
 - **Returns** `list`
 
-##### `re.sub(pattern: str, repl: str, string: str, count: int = 0, flags: int = 0) → str`
+##### `re.sub(pattern: str | Pattern, repl: str | Callable, string: str, count: int = 0, flags: int = 0) → str`
 
-Replace matches of `pattern` in `string` with `repl`. `count=0` replaces all matches; a positive count limits replacements. Replacement text supports numeric backreferences like `\1` and `\g<1>`.
+Replace matches of `pattern` in `string` with `repl`. `count=0` replaces all matches; a positive count limits replacements. Replacement text supports backreferences like `\1`, `\g<1>` and `\g<name>`, and `repl` may instead be a function that gets each `Match` and returns its replacement.
 
 *Parameters*
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `pattern` | `str` | Regular expression pattern |
-| `repl` | `str` | Replacement text |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
+| `repl` | `str \| Callable` | Replacement text, or a function from `Match` to text |
 | `string` | `str` | String to transform |
 | `count` | `int` | Maximum replacements; 0 means all |
 | `flags` | `int` | Optional flags such as `re.IGNORECASE` |
 
 - **Returns** `str`
 
-##### `re.split(pattern: str, string: str, maxsplit: int = 0, flags: int = 0) → list`
+##### `re.split(pattern: str | Pattern, string: str, maxsplit: int = 0, flags: int = 0) → list`
 
 Split `string` wherever `pattern` matches. `maxsplit=0` means no limit. Capturing groups are included in the output, matching Python's `re.split` behavior.
 
@@ -2463,12 +2633,73 @@ Split `string` wherever `pattern` matches. `maxsplit=0` means no limit. Capturin
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `pattern` | `str` | Regular expression pattern |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
 | `string` | `str` | String to split |
 | `maxsplit` | `int` | Maximum splits; 0 means all |
 | `flags` | `int` | Optional flags such as `re.IGNORECASE` |
 
 - **Returns** `list`
+
+##### `re.compile(pattern: str | Pattern, flags: int = 0) → Pattern`
+
+Compile `pattern` once into a `Pattern` whose own `search`, `findall`, `sub` and other methods reuse it: `digits = re.compile(r"\d+")`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
+| `flags` | `int` | Optional flags such as `re.IGNORECASE` |
+
+- **Returns** `Pattern`
+
+##### `re.finditer(pattern: str | Pattern, string: str, flags: int = 0) → Iterator[Match]`
+
+Every non-overlapping match of `pattern` in `string`, one `Match` at a time, for `for m in re.finditer(...)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
+| `string` | `str` | String to search |
+| `flags` | `int` | Optional flags such as `re.IGNORECASE` |
+
+- **Returns** `Iterator[Match]`
+
+##### `re.subn(pattern: str | Pattern, repl: str | Callable, string: str, count: int = 0, flags: int = 0) → tuple[str, int]`
+
+Like `re.sub()`, but returns `(new_string, number_of_replacements)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `pattern` | `str \| Pattern` | Regular expression pattern |
+| `repl` | `str \| Callable` | Replacement text, or a function from `Match` to text |
+| `string` | `str` | String to transform |
+| `count` | `int` | Maximum replacements; 0 means all |
+| `flags` | `int` | Optional flags such as `re.IGNORECASE` |
+
+- **Returns** `tuple[str, int]`
+
+##### `re.escape(pattern: str, /) → str`
+
+Put a backslash before every character that means something in a pattern, so `re.escape("1.5")` matches the text `1.5` exactly.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `pattern` | `str` | Text to match literally |
+
+- **Returns** `str`
+
+##### `re.purge() → None`
+
+Clear the cache of compiled patterns. Patterns are compiled and cached automatically, so this is rarely needed.
+
+- **Returns** `None`
 
 *Built-in Modules*
 
@@ -2482,7 +2713,7 @@ Sentinel telling a field with no default apart from one that defaults to `None`.
 
 - **Returns** `object`
 
-##### `dataclasses.dataclass(cls?: type | None, /, *, init: bool = True, repr: bool = True, eq: bool = True, order: bool = False, kw_only: bool = False, unsafe_hash: bool = False, frozen: bool = False, slots: bool = False, weakref_slot: bool = False) → type`
+##### `dataclasses.dataclass(cls?: type | None, /, *, init: bool = True, repr: bool = True, eq: bool = True, order: bool = False, kw_only: bool = False, match_args: bool = True, unsafe_hash: bool = False, frozen: bool = False, slots: bool = False, weakref_slot: bool = False) → type`
 
 Decorate a class to generate declaration-ordered construction, representation, value equality, and optional ordering. Supports both `@dataclass` and `@dataclass(...)`, inherited fields, `__post_init__`, and explicit-method preservation. Generated behavior is controlled by `init`, `repr`, `eq`, `order`, and `kw_only`. Compatibility flags `unsafe_hash`, `frozen`, `slots`, and `weakref_slot` may be passed only as `False`; their `True` behavior and every unlisted standard-library option are rejected rather than ignored. Dataclass instances remain ordinary user objects and cannot cross JSON-shaped game API boundaries.
 
@@ -2496,6 +2727,7 @@ Decorate a class to generate declaration-ordered construction, representation, v
 | `eq` | `bool` | Generate exact-class __eq__ (default True) |
 | `order` | `bool` | Generate ordering methods (default False) |
 | `kw_only` | `bool` | Make generated constructor fields keyword-only (default False) |
+| `match_args` | `bool` | Set `__match_args__` to the fields `__init__` takes positionally, so `case Point(x, y):` matches them in order (default True) |
 | `unsafe_hash` | `bool` | Compatibility flag; only False is supported |
 | `frozen` | `bool` | Compatibility flag; only False is supported |
 | `slots` | `bool` | Compatibility flag; only False is supported |
@@ -2522,7 +2754,7 @@ Configure one annotated dataclass field. Use `default` for an immutable or hasha
 
 ##### `dataclasses.asdict(obj: object, /) → dict[str, JsonValue]`
 
-Return a record-class instance as a dict, recursing into nested record classes, lists, tuples, dicts and sets. Dict keys are converted too, so a record class used as a key raises `TypeError` here rather than surviving into a result that cannot be sent. This is the bridge out of a class: the result is accepted by `json.dumps()`, `comms.send()` and the Data Archive, which all refuse a class instance. Values that are not containers are placed in the result as they are, not copied, so a shared list stays shared.
+Return a record-class instance as a dict, recursively converting nested record classes, lists, tuples and dicts. Sets are copied as sets with their members unchanged. Dict keys are converted too, so a record class used as a key raises `TypeError` when its converted dict cannot be used as a key. The result can be passed to `json.dumps()`, `comms.send()` or the Data Archive only when its values and keys meet that destination's rules. Lists, tuples and dicts are rebuilt; other leaf values are reused rather than deep-copied.
 
 *Parameters*
 
@@ -2835,11 +3067,11 @@ Returns `(getattr, (cls, name))` for the member. Provided so code written for CP
 
 ## json
 
-Built-in JSON text helpers. Turns records into text and back, using the same value shapes the Signal Bus and Data Archive accept. Works without Shared Library research.
+Built-in JSON text helpers. Turns supported values into text and back. Supported non-string dictionary keys become JSON key text; the Signal Bus and Data Archive instead require string keys and apply their own payload limits. Works without Shared Library research.
 
 ##### `json.dumps(obj: JsonValue, /, *, indent: int | str | None = None, sort_keys: bool = False, ensure_ascii: bool = True, separators: tuple[str, str] | None = None, allow_nan: bool = True, skipkeys: bool = False) → str`
 
-Return `obj` as JSON text. Accepts `None`, booleans, numbers, strings, lists, tuples and dicts whose keys are strings, numbers, booleans or `None`, the same shapes the Signal Bus and Data Archive store. A set, a class instance or a function raises `TypeError`; convert it first, for example with `dataclasses.asdict()`. A container that contains itself raises `ValueError`, and one nested deeper than **256** levels raises `RecursionError`, which is the same depth `loads()` reads back.
+Return `obj` as JSON text. Accepts `None`, booleans, numbers, strings, lists, tuples and dicts whose keys are strings, numbers, booleans or `None`. Those non-string keys are converted to text. The Signal Bus and Data Archive instead require string dictionary keys and apply their own payload limits. A set, a class instance or a function raises `TypeError`; convert it first, for example with `dataclasses.asdict()`. A container that contains itself raises `ValueError`, and one nested deeper than **256** levels raises `RecursionError`, which is the same depth `loads()` reads back.
 
 *Parameters*
 
@@ -2873,7 +3105,7 @@ Read JSON text and return the value: `None`, a boolean, a number, a string, a li
 
 Built-in priority-queue helpers. Keeps an ordinary list arranged so the smallest item is always first. Works without Shared Library research.
 
-##### `heapq.heappush(heap: list, item: object, /) → None`
+##### `heapq.heappush(heap: list[T], item: object, /) → None`
 
 Add `item` to `heap`, keeping the smallest item at `heap[0]`. The heap is an ordinary list, so `len()` and `heap[0]` work as usual, and only the ordering of the rest is the heap's business.
 
@@ -2881,12 +3113,12 @@ Add `item` to `heap`, keeping the smallest item at `heap[0]`. The heap is an ord
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
 | `item` | `object` | Value to add |
 
 - **Returns** `None`
 
-##### `heapq.heappop(heap: list, /) → T`
+##### `heapq.heappop(heap: list[T], /) → T`
 
 Remove and return the smallest item, keeping the heap arranged. Raises `IndexError` on an empty heap, so check `len(heap)` first.
 
@@ -2894,11 +3126,11 @@ Remove and return the smallest item, keeping the heap arranged. Raises `IndexErr
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
 
 - **Returns** `T`
 
-##### `heapq.heappushpop(heap: list, item: object, /) → T`
+##### `heapq.heappushpop(heap: list[T], item: object, /) → T`
 
 Add `item` and return the smallest item, in one pass. Faster than a push followed by a pop, and never grows the heap.
 
@@ -2906,12 +3138,12 @@ Add `item` and return the smallest item, in one pass. Faster than a push followe
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
 | `item` | `object` | Value to add |
 
 - **Returns** `T`
 
-##### `heapq.heapreplace(heap: list, item: object, /) → T`
+##### `heapq.heapreplace(heap: list[T], item: object, /) → T`
 
 Return the smallest item and add `item`, in one pass. The heap keeps its size. Raises `IndexError` on an empty heap.
 
@@ -2919,7 +3151,7 @@ Return the smallest item and add `item`, in one pass. The heap keeps its size. R
 
 | Name | Type | Description |
 | --- | --- | --- |
-| `heap` | `list` | List arranged as a heap by the other heapq functions |
+| `heap` | `list[T]` | List arranged as a heap by the other heapq functions |
 | `item` | `object` | Value to add |
 
 - **Returns** `T`
@@ -2936,7 +3168,7 @@ Rearrange an existing list into a heap, in place. Cheaper than pushing the items
 
 - **Returns** `None`
 
-##### `heapq.nsmallest(n: int, iterable: Iterable, /, key: Callable | None = None) → list[T]`
+##### `heapq.nsmallest(n: int, iterable: Iterable[T], /, key: Callable | None = None) → list[T]`
 
 Return the `n` smallest items as a sorted list. Pass `key=` to compare something derived from each item, exactly as `sorted()` does.
 
@@ -2945,12 +3177,12 @@ Return the `n` smallest items as a sorted list. Pass `key=` to compare something
 | Name | Type | Description |
 | --- | --- | --- |
 | `n` | `int` | How many items to return |
-| `iterable` | `Iterable` | Values to choose from |
+| `iterable` | `Iterable[T]` | Values to choose from |
 | `key` | `Callable \| None` | Optional function called once per item; the returned values are compared instead of the items |
 
 - **Returns** `list[T]`
 
-##### `heapq.nlargest(n: int, iterable: Iterable, /, key: Callable | None = None) → list[T]`
+##### `heapq.nlargest(n: int, iterable: Iterable[T], /, key: Callable | None = None) → list[T]`
 
 Return the `n` largest items as a list, largest first. Pass `key=` to compare something derived from each item, exactly as `sorted()` does.
 
@@ -2959,7 +3191,7 @@ Return the `n` largest items as a list, largest first. Pass `key=` to compare so
 | Name | Type | Description |
 | --- | --- | --- |
 | `n` | `int` | How many items to return |
-| `iterable` | `Iterable` | Values to choose from |
+| `iterable` | `Iterable[T]` | Values to choose from |
 | `key` | `Callable \| None` | Optional function called once per item; the returned values are compared instead of the items |
 
 - **Returns** `list[T]`
@@ -2981,5 +3213,1577 @@ Return the traceback of the exception currently being handled, as a string: the 
 Write the traceback of the exception currently being handled to the console's error output. Same text as `format_exc()`, printed instead of returned. This is the answer to "the message says what broke, but where?" for an exception your own code caught.
 
 - **Returns** `None`
+
+*Built-in Modules*
+
+## math
+
+Python's math functions and constants under `math.`, such as `math.sqrt`, `math.floor`, `math.gcd` and `math.pi`. The common ones also work without the prefix. Works without Shared Library research.
+
+##### `math.pi: float`
+
+Mathematical constant `π ≈ 3.14159`.
+
+- **Returns** `float`
+
+##### `math.tau: float`
+
+Mathematical constant `τ = 2π`.
+
+- **Returns** `float`
+
+##### `math.e: float`
+
+Euler's number, `2.718281828459045`.
+
+- **Returns** `float`
+
+##### `math.inf: float`
+
+Positive infinity, larger than any number.
+
+- **Returns** `float`
+
+##### `math.nan: float`
+
+Not a number: the result of an undefined calculation. Test for it with `math.isnan`, since `nan == nan` is `False`.
+
+- **Returns** `float`
+
+##### `math.acos(number: float, /) → float`
+
+Arc cosine. Input must be from `-1` to `1`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Value from -1 to 1 |
+
+- **Returns** `float`
+
+##### `math.asin(number: float, /) → float`
+
+Arc sine. Input must be from `-1` to `1`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Value from -1 to 1 |
+
+- **Returns** `float`
+
+##### `math.atan(number: float, /) → float`
+
+Arc tangent.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Tangent value |
+
+- **Returns** `float`
+
+##### `math.atan2(y: float, x: float, /) → float`
+
+Arc tangent of `y/x`, correctly choosing the quadrant.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `y` | `float` | Vertical component |
+| `x` | `float` | Horizontal component |
+
+- **Returns** `float`
+
+##### `math.ceil(number: float, /) → int`
+
+Round up to the nearest integer.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Number to round up |
+
+- **Returns** `int`
+
+##### `math.cos(radians: float, /) → float`
+
+Cosine of an angle in radians.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `radians` | `float` | Angle in radians |
+
+- **Returns** `float`
+
+##### `math.degrees(radians: float, /) → float`
+
+Convert radians to degrees.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `radians` | `float` | Angle in radians |
+
+- **Returns** `float`
+
+##### `math.exp(number: float, /) → float`
+
+`e` raised to the power of the argument.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Power of e to compute |
+
+- **Returns** `float`
+
+##### `math.floor(number: float, /) → int`
+
+Round down to the nearest integer.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Number to round down |
+
+- **Returns** `int`
+
+##### `math.isclose(a: float, b: float, rel_tol: float = 0.000000001, abs_tol: float = 0.0) → bool`
+
+Return `True` when two numbers are close enough to treat as equal. `rel_tol` scales with the compared values; `abs_tol` sets a fixed accepted difference in the same unit, useful for values near zero and physical readings such as coordinates. Tolerances must be non-negative. This is the directly available equivalent of Python's `math.isclose()`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `float` | First number |
+| `b` | `float` | Second number |
+| `rel_tol` | `float` | Maximum relative difference |
+| `abs_tol` | `float` | Maximum absolute difference in the values' unit |
+
+- **Returns** `bool`
+
+##### `math.log(number: float, base?: float, /) → float`
+
+Natural log, or log with the given base.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Number greater than zero |
+| `base` | `float` | Logarithm base; the natural logarithm when omitted |
+
+- **Returns** `float`
+
+##### `math.log10(number: float, /) → float`
+
+Base-10 logarithm.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Number greater than zero |
+
+- **Returns** `float`
+
+##### `math.log2(number: float, /) → float`
+
+Base-2 logarithm.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Number greater than zero |
+
+- **Returns** `float`
+
+##### `math.prod(iterable: Iterable[float], /, start: float = 1) → float`
+
+Multiplies the items of an iterable with `*`, starting from `start` (default `1`). Works for numbers and for your own classes that define `__mul__` or `__rmul__`. Empty iterables return `start`. `start` may be positional or keyword, but not both.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[float]` | Values to multiply |
+| `start` | `float` | Value the product starts from |
+
+- **Returns** `float`
+
+##### `math.radians(degrees: float, /) → float`
+
+Convert degrees to radians.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `degrees` | `float` | Angle in degrees |
+
+- **Returns** `float`
+
+##### `math.sin(radians: float, /) → float`
+
+Sine of an angle in radians.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `radians` | `float` | Angle in radians |
+
+- **Returns** `float`
+
+##### `math.sqrt(number: float, /) → float`
+
+Square root. Errors on negative input.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Number zero or greater |
+
+- **Returns** `float`
+
+##### `math.tan(radians: float, /) → float`
+
+Tangent of an angle in radians.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `radians` | `float` | Angle in radians |
+
+- **Returns** `float`
+
+##### `math.trunc(number: float, /) → int`
+
+Drop the fractional part (round toward zero).
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `number` | `float` | Number to cut toward zero |
+
+- **Returns** `int`
+
+##### `math.fabs(x: float, /) → float`
+
+Absolute value as a float: `math.fabs(-2)` → `2.0`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `float`
+
+##### `math.cbrt(x: float, /) → float`
+
+Cube root, negative numbers included: `math.cbrt(-8)` → `-2.0`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `float`
+
+##### `math.exp2(x: float, /) → float`
+
+`2` raised to `x`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Power of two |
+
+- **Returns** `float`
+
+##### `math.expm1(x: float, /) → float`
+
+`e ** x - 1`, accurate even when `x` is tiny.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Exponent |
+
+- **Returns** `float`
+
+##### `math.log1p(x: float, /) → float`
+
+Natural log of `1 + x`, accurate even when `x` is tiny.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number above -1 |
+
+- **Returns** `float`
+
+##### `math.sinh(x: float, /) → float`
+
+Hyperbolic sine.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `float`
+
+##### `math.cosh(x: float, /) → float`
+
+Hyperbolic cosine.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `float`
+
+##### `math.tanh(x: float, /) → float`
+
+Hyperbolic tangent, always between `-1` and `1`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `float`
+
+##### `math.asinh(x: float, /) → float`
+
+Inverse hyperbolic sine.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `float`
+
+##### `math.acosh(x: float, /) → float`
+
+Inverse hyperbolic cosine.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number, at least 1 |
+
+- **Returns** `float`
+
+##### `math.atanh(x: float, /) → float`
+
+Inverse hyperbolic tangent.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number between -1 and 1 |
+
+- **Returns** `float`
+
+##### `math.isfinite(x: float, /) → bool`
+
+`True` unless `x` is infinite or `nan`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `bool`
+
+##### `math.isinf(x: float, /) → bool`
+
+`True` when `x` is positive or negative infinity.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `bool`
+
+##### `math.isnan(x: float, /) → bool`
+
+`True` when `x` is `nan`, which is not even equal to itself.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `bool`
+
+##### `math.copysign(x: float, y: float, /) → float`
+
+`x`'s size with `y`'s sign: `math.copysign(3, -0.5)` → `-3.0`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Size of the result |
+| `y` | `float` | Number whose sign the result takes |
+
+- **Returns** `float`
+
+##### `math.fmod(x: float, y: float, /) → float`
+
+Remainder with the sign of `x`, unlike `%`, which takes the sign of `y`: `math.fmod(-7, 3)` → `-1.0`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Dividend |
+| `y` | `float` | Divisor |
+
+- **Returns** `float`
+
+##### `math.remainder(x: float, y: float, /) → float`
+
+Distance from `x` to the nearest multiple of `y`, which can be negative: `math.remainder(7, 4)` → `-1.0`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Dividend |
+| `y` | `float` | Divisor |
+
+- **Returns** `float`
+
+##### `math.pow(x: float, y: float, /) → float`
+
+`x` raised to `y` as a float. Unlike `**`, a negative base with a fractional exponent is a `ValueError`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Base |
+| `y` | `float` | Exponent |
+
+- **Returns** `float`
+
+##### `math.modf(x: float, /) → tuple[float, float]`
+
+The fractional and whole parts of `x`, both with its sign: `math.modf(-3.25)` → `(-0.25, -3.0)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `x` | `float` | Number |
+
+- **Returns** `tuple[float, float]`
+
+##### `math.hypot(*coordinates: float) → float`
+
+Length of the vector from the origin: `math.hypot(3, 4)` → `5.0`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `coordinates` | `float` | Coordinates |
+
+- **Returns** `float`
+
+##### `math.dist(p: Iterable[float], q: Iterable[float], /) → float`
+
+Straight-line distance between two points: `math.dist((0, 0), (3, 4))` → `5.0`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `p` | `Iterable[float]` | First point |
+| `q` | `Iterable[float]` | Second point, same number of coordinates |
+
+- **Returns** `float`
+
+##### `math.fsum(iterable: Iterable[float], /) → float`
+
+Sum of floats without rounding error building up: `math.fsum([0.1] * 10)` → `1.0`, where `sum` gives `0.9999999999999999`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[float]` | Numbers to add |
+
+- **Returns** `float`
+
+##### `math.gcd(*integers: int) → int`
+
+Greatest common divisor: `math.gcd(12, 18)` → `6`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `integers` | `int` | Whole numbers |
+
+- **Returns** `int`
+
+##### `math.lcm(*integers: int) → int`
+
+Least common multiple: `math.lcm(4, 6)` → `12`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `integers` | `int` | Whole numbers |
+
+- **Returns** `int`
+
+##### `math.isqrt(n: int, /) → int`
+
+Whole-number square root, rounded down: `math.isqrt(10)` → `3`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `int` | Whole number, at least 0 |
+
+- **Returns** `int`
+
+##### `math.factorial(n: int, /) → int`
+
+`n!`, the product of `1` to `n`: `math.factorial(5)` → `120`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `int` | Whole number, at least 0 |
+
+- **Returns** `int`
+
+##### `math.perm(n: int, k: int | None = None, /) → int`
+
+Ways to pick `k` of `n` items in order: `math.perm(5, 2)` → `20`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `int` | How many items |
+| `k` | `int \| None` | How many to arrange (default all) |
+
+- **Returns** `int`
+
+##### `math.comb(n: int, k: int, /) → int`
+
+Ways to choose `k` of `n` items, order ignored: `math.comb(5, 2)` → `10`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `n` | `int` | How many items |
+| `k` | `int` | How many to choose |
+
+- **Returns** `int`
+
+*Built-in Modules*
+
+## itertools
+
+Python's iterator building blocks under `itertools.`, such as `itertools.count`, `itertools.islice` and `itertools.groupby`. Each returns a lazy iterator, so an endless one is fine in a loop with a `break`. Works without Shared Library research.
+
+##### `itertools.count(start: int | float = 0, step: int | float = 1) → Iterator[int | float]`
+
+Count up forever from `start` by `step`: `for i in count(1):` numbers loop passes from 1. It never ends on its own, so stop with `break` or take a few with `islice`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `start` | `int \| float` | First number |
+| `step` | `int \| float` | Added each time |
+
+- **Returns** `Iterator[int | float]`
+
+##### `itertools.cycle(iterable: Iterable[T], /) → Iterator[T]`
+
+Repeat the items of `iterable` forever, in order: `cycle(["north", "east", "south"])` for a patrol route. An empty input gives nothing.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to repeat |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.repeat(object: T, times: int | None = None) → Iterator[T]`
+
+Give the same value `times` times, or forever when `times` is `None`: `repeat(0, 5)` yields five zeros.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `object` | `T` | Value to give |
+| `times` | `int \| None` | How many times, or `None` for forever |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.accumulate(iterable: Iterable[T], func: Callable | None = None, *, initial: T | None = None) → Iterator[T]`
+
+Running totals: `accumulate([1, 2, 3])` yields `1, 3, 6`. Pass `func` to combine with something other than `+`, such as `max` for a running best, and `initial=` to start from a value.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Values to combine |
+| `func` | `Callable \| None` | Pure function combining the total so far with the next value; `+` when omitted |
+| `initial` | `T \| None` | Value to start from, given first |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.batched(iterable: Iterable[T], n: int, *, strict: bool = False) → Iterator[tuple[T, ...]]`
+
+Group items into tuples of `n`: `batched("abcdefg", 3)` yields `("a", "b", "c")`, `("d", "e", "f")`, `("g",)`. With `strict=True`, a short last group raises `ValueError`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to group |
+| `n` | `int` | Items per group, at least 1 |
+| `strict` | `bool` | Raise instead of giving a short last group |
+
+- **Returns** `Iterator[tuple[T, ...]]`
+
+##### `itertools.chain(*iterables: Iterable[T]) → Iterator[T]`
+
+Go through several iterables one after another: `chain(ore_sites, ice_sites)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterables` | `Iterable[T]` | Iterables to go through in order |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.chain.from_iterable(iterable: Iterable[Iterable[T]], /) → Iterator[T]`
+
+Like `chain`, reading the iterables from one iterable: `chain.from_iterable(rows)` flattens rows lazily.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[Iterable[T]]` | Iterable of iterables |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.compress(data: Iterable[T], selectors: Iterable) → Iterator[T]`
+
+Keep the items of `data` whose matching selector is truthy: `compress("abcd", [1, 0, 1, 0])` yields `"a"`, `"c"`. Stops at the shorter input.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `data` | `Iterable[T]` | Items to pick from |
+| `selectors` | `Iterable` | Truth values, one per item |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.dropwhile(predicate: Callable, iterable: Iterable[T], /) → Iterator[T]`
+
+Skip items while pure `predicate(item)` is truthy, then give every remaining item.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `predicate` | `Callable` | Pure test deciding what to skip at the start |
+| `iterable` | `Iterable[T]` | Items to read |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.filterfalse(predicate: Callable | None, iterable: Iterable[T], /) → Iterator[T]`
+
+Keep the items for which pure `predicate(item)` is falsy, the opposite of `filter`. With `None`, keeps the falsy items.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `predicate` | `Callable \| None` | Pure test, or `None` to test the items themselves |
+| `iterable` | `Iterable[T]` | Items to read |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.groupby(iterable: Iterable[T], key: Callable | None = None) → Iterator[tuple[object, Iterator[T]]]`
+
+Group consecutive items that share a key, as `(key, group)` pairs; each group is an iterator over its items. Sort by the same key first to group all equal items together. Reading the next pair ends the previous group.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to group |
+| `key` | `Callable \| None` | Pure function giving each item's key; the item itself when omitted |
+
+- **Returns** `Iterator[tuple[object, Iterator[T]]]`
+
+##### `itertools.islice(iterable: Iterable[T], start: int | None, stop: int | None = None, step: int | None = 1, /) → Iterator[T]`
+
+Take part of an iterator without building a list: `islice(it, 3)` gives the first three items, `islice(it, 2, 10, 2)` every second item from index 2 up to 10. Skipped items are consumed; if `start` is greater than `stop`, it can still consume the first `start` items.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to read |
+| `start` | `int \| None` | With one number, where to stop; otherwise the first index to give |
+| `stop` | `int \| None` | Index to stop before, or `None` for no end |
+| `step` | `int \| None` | Distance between given indexes, at least 1 |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.pairwise(iterable: Iterable[T], /) → Iterator[tuple[T, T]]`
+
+Neighboring pairs, lazily: `pairwise(route)` yields each `(a, b)` leg of a route.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to pair |
+
+- **Returns** `Iterator[tuple[T, T]]`
+
+##### `itertools.starmap(function: Callable, iterable: Iterable, /) → Iterator[object]`
+
+Call `function` with each item unpacked as its arguments: `starmap(pow, [(2, 3), (3, 2)])` yields `8, 9`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `function` | `Callable` | Pure function to call |
+| `iterable` | `Iterable` | Rows of arguments |
+
+- **Returns** `Iterator[object]`
+
+##### `itertools.takewhile(predicate: Callable, iterable: Iterable[T], /) → Iterator[T]`
+
+Give items while pure `predicate(item)` is truthy, and stop at the first one that is not.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `predicate` | `Callable` | Pure test deciding when to stop |
+| `iterable` | `Iterable[T]` | Items to read |
+
+- **Returns** `Iterator[T]`
+
+##### `itertools.tee(iterable: Iterable[T], n: int = 2, /) → tuple[Iterator[T], ...]`
+
+Split one iterator into `n` independent iterators that each give every item. Use the copies, not the original, afterwards.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Iterator to split |
+| `n` | `int` | How many copies |
+
+- **Returns** `tuple[Iterator[T], ...]`
+
+##### `itertools.zip_longest(*iterables: Iterable, fillvalue: object = None) → Iterator[tuple]`
+
+Like `zip`, but runs to the longest input and fills the missing places with `fillvalue`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterables` | `Iterable` | Iterables to combine |
+| `fillvalue` | `object` | Value for an input that has run out |
+
+- **Returns** `Iterator[tuple]`
+
+##### `itertools.product(*iterables: Iterable, repeat: int = 1) → Iterator[tuple]`
+
+Every combination taking one item from each input, as tuples: `product("ab", [1, 2])` yields `("a", 1)`, `("a", 2)`, `("b", 1)`, `("b", 2)`. `repeat=n` uses the inputs `n` times.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterables` | `Iterable` | Inputs to combine |
+| `repeat` | `int` | How many times to use the inputs |
+
+- **Returns** `Iterator[tuple]`
+
+##### `itertools.permutations(iterable: Iterable[T], r: int | None = None) → Iterator[tuple[T, ...]]`
+
+Every ordering of `r` items, as tuples; all items when `r` is omitted. Items are told apart by position, not value.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to order |
+| `r` | `int \| None` | Items per ordering |
+
+- **Returns** `Iterator[tuple[T, ...]]`
+
+##### `itertools.combinations(iterable: Iterable[T], r: int) → Iterator[tuple[T, ...]]`
+
+Every choice of `r` items, in input order and without repeats: `combinations("abc", 2)` yields `("a", "b")`, `("a", "c")`, `("b", "c")`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to choose from |
+| `r` | `int` | Items per choice |
+
+- **Returns** `Iterator[tuple[T, ...]]`
+
+##### `itertools.combinations_with_replacement(iterable: Iterable[T], r: int) → Iterator[tuple[T, ...]]`
+
+Every choice of `r` items where an item may be chosen more than once: `combinations_with_replacement("ab", 2)` yields `("a", "a")`, `("a", "b")`, `("b", "b")`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to choose from |
+| `r` | `int` | Items per choice |
+
+- **Returns** `Iterator[tuple[T, ...]]`
+
+*Built-in Modules*
+
+## operator
+
+Python's operators as functions under `operator.`, such as `operator.add` to pass to `reduce` and `operator.itemgetter` to pass as a `key=`. Works without Shared Library research.
+
+##### `operator.abs(a: object, /) → object`
+
+The built-in `abs(a)`: a number without its sign, or what a class's `__abs__` returns.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Operand |
+
+- **Returns** `object`
+
+##### `operator.lt(a: object, b: object, /) → object`
+
+`a < b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.le(a: object, b: object, /) → object`
+
+`a <= b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.eq(a: object, b: object, /) → object`
+
+`a == b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.ne(a: object, b: object, /) → object`
+
+`a != b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.ge(a: object, b: object, /) → object`
+
+`a >= b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.gt(a: object, b: object, /) → object`
+
+`a > b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.not_(a: object, /) → bool`
+
+`not a` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Value to test |
+
+- **Returns** `bool`
+
+##### `operator.truth(a: object, /) → bool`
+
+`True` when `a` is truthy, the same test `if a:` makes.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Value to test |
+
+- **Returns** `bool`
+
+##### `operator.is_(a: object, b: object, /) → bool`
+
+`a is b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `bool`
+
+##### `operator.is_not(a: object, b: object, /) → bool`
+
+`a is not b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `bool`
+
+##### `operator.is_none(a: object, /) → bool`
+
+`a is None` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Value to test |
+
+- **Returns** `bool`
+
+##### `operator.is_not_none(a: object, /) → bool`
+
+`a is not None` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Value to test |
+
+- **Returns** `bool`
+
+##### `operator.add(a: object, b: object, /) → object`
+
+`a + b` as a function: `reduce(operator.add, [1, 2, 3])` → `6`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.sub(a: object, b: object, /) → object`
+
+`a - b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.mul(a: object, b: object, /) → object`
+
+`a * b` as a function: `reduce(operator.mul, [2, 3, 4])` → `24`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.truediv(a: object, b: object, /) → object`
+
+`a / b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.floordiv(a: object, b: object, /) → object`
+
+`a // b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.mod(a: object, b: object, /) → object`
+
+`a % b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.pow(a: object, b: object, /) → object`
+
+`a ** b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.lshift(a: object, b: object, /) → object`
+
+`a << b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.rshift(a: object, b: object, /) → object`
+
+`a >> b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.and_(a: object, b: object, /) → object`
+
+`a & b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.or_(a: object, b: object, /) → object`
+
+`a | b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.xor(a: object, b: object, /) → object`
+
+`a ^ b` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Left operand |
+| `b` | `object` | Right operand |
+
+- **Returns** `object`
+
+##### `operator.neg(a: object, /) → object`
+
+`-a` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Operand |
+
+- **Returns** `object`
+
+##### `operator.pos(a: object, /) → object`
+
+`+a` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Operand |
+
+- **Returns** `object`
+
+##### `operator.invert(a: object, /) → object`
+
+`~a` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Operand |
+
+- **Returns** `object`
+
+##### `operator.inv(a: object, /) → object`
+
+`~a` as a function, the same as `invert`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Operand |
+
+- **Returns** `object`
+
+##### `operator.index(a: object, /) → int`
+
+`a` as a whole number, the conversion a list index makes: `operator.index(True)` → `1`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Value to convert |
+
+- **Returns** `int`
+
+##### `operator.concat(a: object, b: object, /) → object`
+
+`a + b` for two sequences, such as lists or text.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | First sequence |
+| `b` | `object` | Sequence to add |
+
+- **Returns** `object`
+
+##### `operator.contains(a: object, b: object, /) → bool`
+
+`b in a` as a function. The container comes first.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Container to search |
+| `b` | `object` | Value to look for |
+
+- **Returns** `bool`
+
+##### `operator.countOf(a: Iterable, b: object, /) → int`
+
+How many items of `a` equal `b`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `Iterable` | Items to count in |
+| `b` | `object` | Value to count |
+
+- **Returns** `int`
+
+##### `operator.indexOf(a: Iterable, b: object, /) → int`
+
+Position of the first item of `a` that equals `b`. Raises `ValueError` when none does.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `Iterable` | Items to search |
+| `b` | `object` | Value to find |
+
+- **Returns** `int`
+
+##### `operator.getitem(a: object, b: object, /) → object`
+
+`a[b]` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Container |
+| `b` | `object` | Index or key |
+
+- **Returns** `object`
+
+##### `operator.setitem(a: object, b: object, c: object, /) → None`
+
+`a[b] = c` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Container |
+| `b` | `object` | Index or key |
+| `c` | `object` | Value to store |
+
+- **Returns** `None`
+
+##### `operator.delitem(a: object, b: object, /) → None`
+
+`del a[b]` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `a` | `object` | Container |
+| `b` | `object` | Index or key |
+
+- **Returns** `None`
+
+##### `operator.attrgetter(attr: str, /, *attrs: str) → Callable`
+
+A function that reads the named attribute, for `key=`: `sorted(points, key=attrgetter("x"))`. Several names give a tuple.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `attr` | `str` | Attribute name; a dotted name reads through, such as `"pos.x"` |
+| `*attrs` | `str` | More attribute names |
+
+- **Returns** `Callable`
+
+##### `operator.itemgetter(item: object, /, *items: object) → Callable`
+
+A function that reads the given index or key, for `key=`: `sorted(pairs, key=itemgetter(1))` sorts by each pair's second item. Several keys give a tuple.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `item` | `object` | Index or key |
+| `*items` | `object` | More indexes or keys |
+
+- **Returns** `Callable`
+
+##### `operator.methodcaller(name: str, /, *args: object, **kwargs: object) → Callable`
+
+A function that calls the named method on its argument: `map(methodcaller("strip"), lines)`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `name` | `str` | Method name |
+| `*args` | `object` | Arguments for the method |
+| `**kwargs` | `object` | Keyword arguments for the method |
+
+- **Returns** `Callable`
+
+##### `operator.call(obj: Callable, /, *args: object, **kwargs: object) → object`
+
+`obj(*args, **kwargs)` as a function.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `obj` | `Callable` | Function to call |
+| `*args` | `object` | Arguments |
+| `**kwargs` | `object` | Keyword arguments |
+
+- **Returns** `object`
+
+*Built-in Modules*
+
+## string
+
+Python's text constants under `string.`, such as `string.ascii_uppercase` and `string.digits`, plus `string.capwords`. Works without Shared Library research.
+
+##### `string.ascii_letters: str`
+
+`ascii_lowercase` followed by `ascii_uppercase`.
+
+- **Returns** `str`
+
+##### `string.ascii_lowercase: str`
+
+The letters `abcdefghijklmnopqrstuvwxyz`.
+
+- **Returns** `str`
+
+##### `string.ascii_uppercase: str`
+
+The letters `ABCDEFGHIJKLMNOPQRSTUVWXYZ`.
+
+- **Returns** `str`
+
+##### `string.digits: str`
+
+The text `0123456789`.
+
+- **Returns** `str`
+
+##### `string.hexdigits: str`
+
+The text `0123456789abcdefABCDEF`.
+
+- **Returns** `str`
+
+##### `string.octdigits: str`
+
+The text `01234567`.
+
+- **Returns** `str`
+
+##### `string.punctuation: str`
+
+Every ASCII punctuation character, `!` through `~`.
+
+- **Returns** `str`
+
+##### `string.printable: str`
+
+`digits`, `ascii_letters`, `punctuation` and `whitespace` together.
+
+- **Returns** `str`
+
+##### `string.whitespace: str`
+
+Space, tab, newline, carriage return, vertical tab and form feed.
+
+- **Returns** `str`
+
+##### `string.capwords(s: str, sep: str | None = None) → str`
+
+Capitalize every word: `capwords("hello  world")` → `"Hello World"`. Without `sep`, words split on any whitespace and rejoin with one space; with `sep`, they split and rejoin on it.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `s` | `str` | Text to capitalize |
+| `sep` | `str \| None` | Word separator (default any whitespace) |
+
+- **Returns** `str`
+
+*Built-in Modules*
+
+## collections
+
+Python's container types under `collections.`: `defaultdict`, `Counter`, `OrderedDict`, `deque` and `namedtuple`. `collections.abc` still names the abstract types for annotations. Works without Shared Library research.
+
+##### `collections.Counter(iterable: object = None, /, **kwargs: int) → Counter`
+
+A dict that counts things: `Counter("banana")` counts each letter, and a missing key reads as `0`. `most_common(n)` lists the biggest counts.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `object` | Items to count, or a mapping of counts |
+| `**kwargs` | `int` | Counts by name |
+
+- **Returns** `Counter`
+
+##### `collections.defaultdict(default_factory: Callable | None = None, /, *args: object, **kwargs: object) → defaultdict`
+
+A dict that makes a value for a missing key: with `defaultdict(list)` every new key starts as `[]`, so `groups[key].append(x)` just works.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `default_factory` | `Callable \| None` | Function that makes a missing key's value |
+| `*args` | `object` | A mapping or iterable of pairs to start from |
+| `**kwargs` | `object` | Items by name |
+
+- **Returns** `defaultdict`
+
+##### `collections.OrderedDict(iterable: object = (), /, **kwargs: object) → OrderedDict`
+
+A dict with order-aware extras: `move_to_end(key)` and `popitem(last=False)`, and `==` between two of them also compares their order.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `object` | A mapping or iterable of pairs to start from |
+| `**kwargs` | `object` | Items by name |
+
+- **Returns** `OrderedDict`
+
+##### `collections.deque(iterable: Iterable[T] = (), maxlen: int | None = None) → deque`
+
+A list-like queue with fast adds and removes at both ends: `append`, `appendleft`, `pop`, `popleft`. With `maxlen`, adding past the limit drops from the other end.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `iterable` | `Iterable[T]` | Items to start with |
+| `maxlen` | `int \| None` | Size limit (default none) |
+
+- **Returns** `deque`
+
+##### `collections.namedtuple(typename: str, field_names: str | Iterable[str], *, rename: bool = False, defaults: Iterable | None = None, module: str | None = None) → type`
+
+Make a tuple class with named fields: `Point = namedtuple("Point", "x y")`, then `Point(1, 2).x`. It still indexes and unpacks like a tuple.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `typename` | `str` | Class name |
+| `field_names` | `str \| Iterable[str]` | Field names, as a list or one string such as `"x y"` |
+| `rename` | `bool` | Replace invalid field names with `_0`, `_1` and so on |
+| `defaults` | `Iterable \| None` | Defaults for the last fields |
+| `module` | `str \| None` | Accepted and ignored |
+
+- **Returns** `type`
 
 *Language / Basics*

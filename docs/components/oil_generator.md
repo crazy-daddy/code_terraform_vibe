@@ -15,35 +15,35 @@ Burns oil into strong buffered bridge power. Oil wells pulse between active and 
 1. Requires the **Oil Generator** research (Temperature 1,500).
 2. Buy from the Shop for 2,000 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `.oil_in: FluidPort`
 
-Input flow port for oil. Wire with `self.oil_in.connect("Liquid Tank 1")` (recommended) or directly to an `Oil Pump`. See `FluidPort`.
+Input flow port for oil. Wire with `self.oil_in.connect("Liquid Tank 1")` (recommended) or directly to an Oil Pump. See `FluidPort`.
 
-- **Returns** `FluidPort`: `connect()`, `connected_to()`, `level()`, `capacity()`, `flow_rate()`.
+- **Returns** `FluidPort`
 
 ### Methods
 
@@ -51,19 +51,19 @@ Input flow port for oil. Wire with `self.oil_in.connect("Liquid Tank 1")` (recom
 
 Watts fed to the grid on the last power tick. **0** when throttled to 0 OR oil_in buffer is starved. The generator scales output proportionally to available oil, so a partially-starved generator produces partial power. Updates once per power tick, a fresh `set_throttle(...)` is reflected on the next tick.
 
-- **Returns** Number (watts) currently fed to the grid. **0** when idle (throttle=0) or starved (no oil in buffer).
+- **Returns** `float`. Watts currently fed to the grid. **0** when idle (throttle=0) or starved (no oil in buffer).
 
 ##### `.oil_consumption() → float`
 
 Actual oil consumed on the last power tick, in t/h. With enough oil supplied, demand scales linearly with throttle from **0 t/h** at 0 to **8 t/h** at 1. Partial or total oil starvation lowers the actual rate.
 
-- **Returns** Number: oil consumed in t/h. **0** when idle.
+- **Returns** `float`. Oil consumed, in t/h. **0** when idle.
 
 ##### `.throttle() → float`
 
 Current throttle (**0-1**). **0** by default, generator idles until scripted.
 
-- **Returns** Number (**0-1**).
+- **Returns** `float`. The throttle setting (**0-1**).
 
 ##### `.set_throttle(rate: float) → ActionResult` *(self only)*
 

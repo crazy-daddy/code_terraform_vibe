@@ -151,7 +151,7 @@ Display name of the target declared by this port, or empty string. It does not l
 
 ##### `.connected_id() → str`
 
-Stable id of the target declared by this port, or empty string. `connect()` accepts an id or a display name, so compare against this when you need the identity to match what you passed: `connected_to()` answers with the renameable name. For every effective peer, including declarations owned by the other side, use `connections()`.
+Stable id of the target declared by this port, or empty string. `connect()` accepts an id or display name, but this returns the resolved stable id. Compare it with the target's stable id; `connected_to()` returns its renameable display name. For every effective peer, including declarations owned by the other side, use `connections()`.
 
 - **Returns** `str`
 

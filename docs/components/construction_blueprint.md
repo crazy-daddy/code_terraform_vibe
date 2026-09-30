@@ -4,23 +4,23 @@
 
 Manages planned construction and removal work. Plan Mode and scripts share the same queue. Scripts can place structures, pipes, power lines, and bridges, or mark existing structures for removal. Planning creates the map marker immediately without needing a vehicle at the site. A Pioneer with a Constructor Module must still travel to each job and call `self.constructor.execute(construction.id)` to perform the work.
 
-**Returned by:** `get_component("construction_blueprint")`
+**Access via:** `get_component("construction_blueprint")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -203,18 +203,18 @@ Cancel a queued, active, or paused construction blueprint by id. Unpaid jobs can
 
 Returns blueprints awaiting a worker as `list[Construction]`. Drawn pipe/power paths and marked deconstruction targets are split into independent jobs, usually in placement order. Pass each `c.id` to `self.constructor.execute(c.id)` to build or deconstruct it. Read `c.required_item` and `c.required_count` to load the exact cargo before executing; never infer material from `c.kind`. Filter by `c.kind` to specialize a Pioneer's role, then use `c.medium` to distinguish `"gas"`, `"liquid"`, and `"power"` utility jobs. Point structures have `c.medium == None`; see `Construction.kind` for the full kind list.
 
-- **Returns** List of `Construction` snapshots awaiting a worker. Each has `.id`, `.kind`, `.medium`, `.position`, `.progress`, `.required_item`, `.required_count`. Iterate and pass `c.id` to `self.constructor.execute(c.id)` to build or deconstruct it.
+- **Returns** `list[Construction]`. Snapshots of constructions awaiting a worker. Pass each `c.id` to `self.constructor.execute(c.id)` to build or deconstruct it.
 
 ##### `.active_constructions() → list[Construction]`
 
 Returns blueprints currently being built (a Pioneer is working). Useful for monitor scripts, read `c.progress` to see how far along.
 
-- **Returns** List of `Construction` snapshots currently being built or removed (a Pioneer is working). Re-query for fresh `.progress`.
+- **Returns** `list[Construction]`. Snapshots of constructions being built or removed right now (a Pioneer is working). Re-query for fresh `.progress`.
 
 ##### `.paused_constructions() → list[Construction]`
 
 Returns blueprints started then abandoned (worker died, ran out of fuel, or script stopped). Any Pioneer can resume by navigating to `c.position` and calling `self.constructor.execute(c.id)`.
 
-- **Returns** List of `Construction` snapshots started then abandoned (worker died / left). Resumable by any Pioneer via `self.constructor.execute(c.id)`. Re-query for fresh `.progress`.
+- **Returns** `list[Construction]`. Snapshots of constructions started then abandoned (the worker died or left). Resumable by any Pioneer via `self.constructor.execute(c.id)`. Re-query for fresh `.progress`.
 
 *Components / Infrastructure & Fluids*

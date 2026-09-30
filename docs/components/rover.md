@@ -15,65 +15,65 @@ Your starter expedition vehicle for driving, scanning, and mining. The bare chas
 1. Requires the **Rover Chassis** research (Pressure 0.11).
 2. Buy from the Shop for 2,000 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.battery: Battery`
 
 How much charge the Rover has left. `self.battery.level()` returns a **0-1** fraction, `self.battery.wh()` raw watt-hours, `self.battery.capacity()` the **100 Wh** max. Below **0.1** you're close to getting stranded, `charging_station.dispatch_rescue()` can fetch you, but it's slow. `.holders()` returns an empty list (sealed rig). See `Battery`.
 
-- **Returns** `Battery`: `level()`, `wh()`, `capacity()`, `holders()`
+- **Returns** `Battery`
 
 ##### `.cargo: Cargo`
 
 Everything carried in the Rover's integrated hold. `self.cargo.count()` returns total units across every item and property variant; `self.cargo.capacity()` is **10**; `self.cargo.full()` is `True` at capacity, check it before loading or drilling. `.racks()` is empty because the hold is integrated. `self.cargo.discard(0)` permanently jettisons the whole hold and takes **1 hour** when cargo is present; an empty hold finishes immediately. See `Cargo`.
 
-- **Returns** `Cargo`: `count()`, `capacity()`, `full()`, `racks()`, `discard()`
+- **Returns** `Cargo`
 
 ##### `.nav: NavModule`
 
 Drives the Rover. Set a destination in meters from base with `self.nav.set_target(x, y)`. The call returns immediately and the Rover keeps driving while the script runs. A distance tolerance means the Rover is close enough, not stopped, so call `self.nav.brake()` before mining, scanning, surveying, or transferring cargo. The Rover stops and clears its route if the script stops, ends, or errors. Requires a mounted Nav Module. See `NavModule` for throttle, braking, and speed.
 
-- **Returns** `NavModule` when a Nav Module is mounted, else unavailable
+- **Returns** `NavModule`. When a Nav Module is mounted, else unavailable.
 
 ##### `.sonar: SonarModule`
 
 Finds useful sites near the Rover. Use `self.sonar.scan()` to find nearby sites, then `self.sonar.survey(site)` to reveal details such as mineral hardness, purity, or vent output. Scanning and new surveys take time, so the script pauses while the sonar works. Requires a mounted Sonar Module. See `SonarModule` for its range, capabilities, and battery use.
 
-- **Returns** `SonarModule` when a Sonar Module is mounted, else unavailable
+- **Returns** `SonarModule`. When a Sonar Module is mounted, else unavailable.
 
 ##### `.drill: DrillModule`
 
 Extracts one mineral unit from the surveyed site under the Rover with `self.drill.mine()`. The vehicle must be stationary and have enough cargo space and power. Requires a mounted Drill Module. See `DrillModule` for speed and hardness limits.
 
-- **Returns** `DrillModule` when a Drill Module is mounted, else unavailable
+- **Returns** `DrillModule`. When a Drill Module is mounted, else unavailable.
 
 ##### `.input: VehicleInputSlot`
 
 Loads cargo from Inventory at home, local storage at outposts, field-extractor stockpiles, or a nearby stopped cargo vehicle. Field and vehicle transfers require service range; both vehicles must be stopped. It never destroys cargo; use `self.cargo.discard(0)` to jettison the hold. Requires **Auto Feeders**. See `VehicleInputSlot`.
 
-- **Returns** `VehicleInputSlot`: `connect()`, `disconnect()`, `take()`, `count()`, `capacity()`, `stacks()`, `connected_to()`, `connected_id()`
+- **Returns** `VehicleInputSlot`
 
 ##### `.output: OutputSlot`
 
 Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped cargo vehicle. Inventory freight is physically available only while the Rover is parked at home. Remote outposts use their local stores. Vehicle-to-vehicle handoffs require both vehicles stopped within **~2 m**. Requires **Auto Feeders** research. See `OutputSlot`.
 
-- **Returns** `OutputSlot`: `connect()`, `send()`, `count()`, `capacity()`, `connected_to()`
+- **Returns** `OutputSlot`
 
 ### Methods
 
@@ -81,31 +81,60 @@ Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped carg
 
 Read the Rover's current physical activity. Each call reads fresh state, including through `get_component(...)`. An idle Rover may still have a script running or a job assigned.
 
-- **Returns** String: current vehicle activity, evaluated when called.
+- **Returns** `str`. Current vehicle activity, evaluated when called.
 - **Possible values** `"idle"`, `"moving"`, `"stranded"`, `"scanning"`, `"surveying"`, `"drilling"`, `"discarding"`, `"constructing"`, `"transferring"`, `"charging"`, `"queued"`, `"being_rescued"`
 
 ##### `.is_being_rescued() → bool`
 
 `True` while a Vehicle Charging Station rescue drone is actively recovering this Rover. Use this to pause movement or mining scripts even if the battery has started rising above zero.
 
-- **Returns** Boolean
+- **Returns** `bool`
 
 ##### `.rescue_status() → str`
 
 Current rescue mission phase for this Rover: `"none"`, `"outbound"`, `"charging"`, or `"returning"`. `"returning"` means the rescue drone is going home and the Rover is free again.
 
-- **Returns** String status: `"none"` / `"outbound"` / `"charging"` / `"returning"`.
+- **Returns** `str`
 - **Possible values** `"none"`, `"outbound"`, `"charging"`, `"returning"`
+
+##### `.dock(station: str) → ActionResult` *(self only)*
+
+Pick which Vehicle Charging Station this parked Rover docks at: `self.dock("charging_station_2")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Rover docks at the eligible station with the shortest distance to its station position or its outpost's center; equal-distance ties are broken alphabetically by station id. The choice lasts until the Rover drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Rover once its own script calls `charge()`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `station` | `str` | Id or display name of a Vehicle Charging Station whose service area contains the parked Rover. |
+
+- **Returns** `ActionResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** None
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | The operation completed successfully. |
+| `"station_not_found"` | rejection | The requested station does not exist. |
+| `"under_construction"` | transient | The target is still under construction. |
+| `"not_at_station"` | rejection | The vehicle is not parked inside the requested station's service area. |
+
+##### `.current_station() → str`
+
+Stable id of the Vehicle Charging Station this Rover is docked at, whether it picked it with `dock()` or docked there by default. Empty string while the Rover is moving or parked away from every station.
+
+- **Returns** `str`. The station id, or empty if the Rover is not docked at a station.
 
 ##### `.modules() → list[MountSlot]`
 
 Inspect what's mounted. Returns a list of `MountSlot`, one per chassis slot. Each has `.index` (pass to `mount` / `unmount`), `.type` (which modules fit), `.module_id` (mounted id or `None`), `.internal_items` (empty on the Rover's function slots). Call this before `self.mount(...)` to find an empty slot and verify the slot type accepts the module you want. See `MountSlot`.
 
-- **Returns** List of `MountSlot` objects: one per mount point on the chassis, each with `.index`, `.type`, `.module_id`, `.internal_count`, `.internal_items`.
+- **Returns** `list[MountSlot]`. One per mount point on the chassis.
 
 ##### `.mount(slot_index: int, item_id: str) → ActionResult` *(self only)*
 
-Request a hardware service order from Inventory into whole-number `slot_index`: `self.mount(0, "nav_module")`. Biological field modules are drone-only. The Rover must be inside a founded outpost service area. This dedicated-hardware exception does not make Inventory a freight endpoint there.
+Request a hardware service order from Inventory into whole-number `slot_index`: `self.mount(0, "nav_module")`. Biological field modules are drone-only. The Rover must be parked inside the service area of the home base or an operational founded outpost. This dedicated-hardware service does not make Inventory a freight endpoint at remote outposts.
 
 *Parameters*
 
@@ -134,7 +163,7 @@ Request a hardware service order from Inventory into whole-number `slot_index`: 
 
 ##### `.unmount(slot_index: int) → ActionResult` *(self only)*
 
-Request a hardware service order that returns the module at whole-number `slot_index` to Inventory: `self.unmount(0)`. The Rover must be inside a founded outpost service area, and container modules must be empty.
+Request a hardware service order that returns the module at whole-number `slot_index` to Inventory: `self.unmount(0)`. The Rover must be parked inside the service area of the home base or an operational founded outpost, and container modules must be empty.
 
 *Parameters*
 

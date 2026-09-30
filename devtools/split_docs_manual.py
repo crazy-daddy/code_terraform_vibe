@@ -58,6 +58,7 @@ NEW_SECTION_RULES = [
     ("Guide", "Start Here / Frequently Asked Questions", "guide/faq.md"),
     ("Guide", "Programming / ", "guide/programming_language_reference.md"),
     ("Guide", "Automation Systems / Map Markers", "guide/map_markers_guide.md"),
+    ("Guide", "Automation Systems / Automations", "guide/automations_guide.md"),
     ("Guide", "World & Infrastructure / Weather System", "guide/weather_system.md"),
     ("Guide", "Reference / Components", "guide/components_overview.md"),
     ("Language", "", "guide/language_reference.md"),

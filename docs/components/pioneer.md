@@ -14,71 +14,71 @@ A modular long-range vehicle for driving, scanning, mining, and building in the 
 1. Requires the **Pioneer Chassis** research (Terraform Index 100,000).
 2. Buy from the Shop for 5,000 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.battery: Battery`
 
 Aggregated battery pool across every Portable Battery in every mounted Battery Holder. `self.battery.level()` returns a **0-1** fraction; `self.battery.wh()` raw watt-hours; `self.battery.capacity()` the summed max. For per-holder detail, `self.battery.holders()` returns each Holder with its `.batteries` list. The aggregate view covers most scripts, introspection is for advanced rebalance logic. If zero Portable Batteries are installed, the Pioneer can't move. See `Battery`.
 
-- **Returns** `Battery`: aggregated across every battery in every mounted Battery Holder
+- **Returns** `Battery`. Aggregated across every battery in every mounted Battery Holder.
 
 ##### `.cargo: Cargo`
 
 Combines the Portable Bins in the Pioneer's Cargo Racks. Use `count()`, `capacity()`, and `full()` for totals, or `racks()` to inspect the physical layout. Each bin holds one item type. `take()` and `send()` handle bins independently. `compact()` consolidates matching cargo into fewer bins without changing `send()` order. `discard(rack_index)` permanently empties one rack and takes **1 hour** when cargo is present; an empty rack finishes immediately. See `Cargo`.
 
-- **Returns** `Cargo`: aggregated across every bin in every mounted Cargo Rack
+- **Returns** `Cargo`. Aggregated across every bin in every mounted Cargo Rack.
 
 ##### `.nav: NavModule`
 
 Drives the Pioneer. Set a destination in meters from base with `self.nav.set_target(x, y)`. The call returns immediately and the Pioneer keeps driving while the script runs. A distance tolerance means the Pioneer is close enough, not stopped, so call `self.nav.brake()` before mining, constructing, or transferring cargo. The Pioneer stops and clears its route if the script stops, ends, or errors. Requires a Nav Module in a Universal slot. See `NavModule` for throttle, braking, and position.
 
-- **Returns** `NavModule` when a Nav Module is mounted
+- **Returns** `NavModule`. When a Nav Module is mounted.
 
 ##### `.sonar: SonarModule`
 
 Finds useful sites near the Pioneer. Use `self.sonar.scan()` to find nearby sites, then `self.sonar.survey(site)` to reveal details such as mineral hardness, purity, or vent output. Scanning and new surveys take time and use battery, so the script pauses while the sonar works. Requires a mounted Sonar Module. See `SonarModule` for its range, capabilities, and battery use.
 
-- **Returns** `SonarModule` when a Sonar Module is mounted
+- **Returns** `SonarModule`. When a Sonar Module is mounted.
 
 ##### `.drill: DrillModule`
 
 Extracts one mineral unit from the surveyed site under the Pioneer with `self.drill.mine()`. The vehicle must be stationary and have enough cargo space and power. Requires a mounted Drill Module. See `DrillModule` for speed and hardness limits.
 
-- **Returns** `DrillModule` when a Drill Module is mounted
+- **Returns** `DrillModule`. When a Drill Module is mounted.
 
 ##### `.constructor: ConstructorModule`
 
 Builds or removes Planet Map blueprints from Plan Mode or scripts. Read pending work from `get_component("construction_blueprint")`, drive near `construction.position`, then call `self.constructor.execute(construction.id)`. Building consumes the required kits or segments from cargo; removal returns reclaimed parts to cargo, so leave room. Requires a mounted Constructor Module. See `ConstructorModule`.
 
-- **Returns** `ConstructorModule` when a Constructor Module is mounted: exposes `execute()`.
+- **Returns** `ConstructorModule`. When a Constructor Module is mounted.
 
 ##### `.input: VehicleInputSlot`
 
 Loads cargo from Inventory at home, local storage at outposts, field-extractor stockpiles, or a nearby stopped cargo vehicle. Field and vehicle transfers require service range; both vehicles must be stopped. It never destroys cargo; use `self.cargo.discard(rack_index)` to jettison one rack. Requires **Auto Feeders**. See `VehicleInputSlot`.
 
-- **Returns** `VehicleInputSlot`: `connect()`, `disconnect()`, `take()`, `count()`, `capacity()`, `stacks()`, `connected_to()`, `connected_id()`
+- **Returns** `VehicleInputSlot`
 
 ##### `.output: OutputSlot`
 
 Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped cargo vehicle. Inventory freight is physically available only while the Pioneer is parked at home. Remote outposts use their local stores. Vehicle-to-vehicle handoffs require both vehicles stopped within **~2 m**. Requires **Auto Feeders** research. See `OutputSlot`.
 
-- **Returns** `OutputSlot`: `connect()`, `send()`, `count()`, `capacity()`, `connected_to()`
+- **Returns** `OutputSlot`
 
 ### Methods
 
@@ -86,31 +86,60 @@ Unloads cargo to Inventory, a Storage Bin, a Warehouse, or a nearby stopped carg
 
 Read the Pioneer's current physical activity. Each call reads fresh state, including through `get_component(...)`. An idle Pioneer may still have a script running or a job assigned.
 
-- **Returns** String: current vehicle activity, evaluated when called.
+- **Returns** `str`. Current vehicle activity, evaluated when called.
 - **Possible values** `"idle"`, `"moving"`, `"stranded"`, `"scanning"`, `"surveying"`, `"drilling"`, `"discarding"`, `"constructing"`, `"transferring"`, `"charging"`, `"queued"`, `"being_rescued"`
 
 ##### `.is_being_rescued() → bool`
 
 `True` while a Vehicle Charging Station rescue drone is actively recovering this Pioneer. Use this to pause movement, mining, or construction scripts even if the battery has started rising above zero.
 
-- **Returns** Boolean
+- **Returns** `bool`
 
 ##### `.rescue_status() → str`
 
 Current rescue mission phase for this Pioneer: `"none"`, `"outbound"`, `"charging"`, or `"returning"`. `"returning"` means the rescue drone is going home and the Pioneer is free again.
 
-- **Returns** String status: `"none"` / `"outbound"` / `"charging"` / `"returning"`.
+- **Returns** `str`
 - **Possible values** `"none"`, `"outbound"`, `"charging"`, `"returning"`
+
+##### `.dock(station: str) → ActionResult` *(self only)*
+
+Pick which Vehicle Charging Station this parked Pioneer docks at: `self.dock("charging_station_2")`. Every station inside an outpost covers the whole outpost, so this chooses between them. Without a choice, the Pioneer docks at the eligible station with the shortest distance to its station position or its outpost's center; equal-distance ties are broken alphabetically by station id. The choice lasts until the Pioneer drives away or the station is removed. Moving to another station ends any charging job at the old one, and the new station charges the Pioneer once its own script calls `charge()`.
+
+*Parameters*
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `station` | `str` | Id or display name of a Vehicle Charging Station whose service area contains the parked Pioneer. |
+
+- **Returns** `ActionResult`
+- **Result fields** `.status`, `.message`
+- **Success payload** None
+
+*Outcomes*
+
+| Status | Kind | Meaning |
+| --- | --- | --- |
+| `"ok"` | success | The operation completed successfully. |
+| `"station_not_found"` | rejection | The requested station does not exist. |
+| `"under_construction"` | transient | The target is still under construction. |
+| `"not_at_station"` | rejection | The vehicle is not parked inside the requested station's service area. |
+
+##### `.current_station() → str`
+
+Stable id of the Vehicle Charging Station this Pioneer is docked at, whether it picked it with `dock()` or docked there by default. Empty string while the Pioneer is moving or parked away from every station.
+
+- **Returns** `str`. The station id, or empty if the Pioneer is not docked at a station.
 
 ##### `.modules() → list[MountSlot]`
 
 Inspect every slot on the chassis. Returns a list of `MountSlot`, eight entries for the Pioneer. Each has `.index` (pass to `mount` / `unmount`), `.type` (always `"universal"` on Pioneer), `.module_id` (what's mounted, or `None` for empty), `.internal_count` (non-zero for Battery Holders / Cargo Racks), `.internal_items` (list of installed portable item ids). Call before `self.mount(...)` or `self.install(...)` to find an empty target. See `MountSlot`.
 
-- **Returns** List of `MountSlot` objects: one per mount point on the chassis, each with `.index`, `.type`, `.module_id`, `.internal_count`, `.internal_items`.
+- **Returns** `list[MountSlot]`. One per mount point on the chassis.
 
 ##### `.mount(slot_index: int, item_id: str) → ActionResult` *(self only)*
 
-Request a hardware service order from Inventory into whole-number `slot_index`: `self.mount(0, "nav_module")`. Biological field modules are drone-only. The Pioneer must be inside a founded outpost service area. This dedicated-hardware exception does not make Inventory a freight endpoint there.
+Request a hardware service order from Inventory into whole-number `slot_index`: `self.mount(0, "nav_module")`. Biological field modules are drone-only. The Pioneer must be parked inside the service area of the home base or an operational founded outpost. This dedicated-hardware service does not make Inventory a freight endpoint at remote outposts.
 
 *Parameters*
 
@@ -139,7 +168,7 @@ Request a hardware service order from Inventory into whole-number `slot_index`: 
 
 ##### `.unmount(slot_index: int) → ActionResult` *(self only)*
 
-Request a hardware service order that returns the module at whole-number `slot_index` to Inventory: `self.unmount(0)`. The Pioneer must be inside a founded outpost service area. Empty every internal bay before removing a holder or rack.
+Request a hardware service order that returns the module at whole-number `slot_index` to Inventory: `self.unmount(0)`. The Pioneer must be parked inside the service area of the home base or an operational founded outpost. Empty every internal bay before removing a holder or rack.
 
 *Parameters*
 
@@ -164,7 +193,7 @@ Request a hardware service order that returns the module at whole-number `slot_i
 
 ##### `.install(slot_index: int, internal_index: int, item_id: str) → ActionResult` *(self only)*
 
-Request a service order that installs a Portable Battery or empty Portable Storage Bin from Inventory into a container's whole-number internal slot. `self.install(0, 1, "portable_battery")` uses bay **1** of the Battery Holder at chassis slot **0**. `self.install(4, 0, "portable_bin")` uses bay **0** of the Cargo Rack at chassis slot **4**. The Pioneer must be inside a founded outpost service area.
+Request a service order that installs a Portable Battery or empty Portable Storage Bin from Inventory into a container's whole-number internal slot. `self.install(0, 1, "portable_battery")` uses bay **1** of the Battery Holder at chassis slot **0**. `self.install(4, 0, "portable_bin")` uses bay **0** of the Cargo Rack at chassis slot **4**. The Pioneer must be parked inside the service area of the home base or an operational founded outpost.
 
 *Parameters*
 
@@ -195,7 +224,7 @@ Request a service order that installs a Portable Battery or empty Portable Stora
 
 ##### `.uninstall(slot_index: int, internal_index: int) → ActionResult` *(self only)*
 
-Request a service order that returns the portable item in a container's whole-number internal slot to Inventory: `self.uninstall(0, 1)`. The Pioneer must be inside a founded outpost service area, and Portable Storage Bins must be empty.
+Request a service order that returns the portable item in a container's whole-number internal slot to Inventory: `self.uninstall(0, 1)`. The Pioneer must be parked inside the service area of the home base or an operational founded outpost, and Portable Storage Bins must be empty.
 
 *Parameters*
 

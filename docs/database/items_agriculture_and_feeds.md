@@ -67,7 +67,7 @@ Banked Dewmoss seed line from the `seed_maker`. Needs **Water**, matures after *
 
 ##### Lonethorn Seed `seed_lonethorn`
 
-Banked Lonethorn seed line from the `seed_maker`. Needs every orthogonally adjacent cell empty (directly above, below, left, and right), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
+Banked Lonethorn seed line from the `seed_maker`. Needs no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
 
 ##### Packfern Seed `seed_packfern`
 
@@ -83,7 +83,7 @@ Banked Spitebud seed line from the `seed_maker`. Needs no orthogonally adjacent 
 
 ##### Sunspur Seed `seed_sunspur`
 
-Banked Sunspur seed line from the `seed_maker`. Needs **Light** and every orthogonally adjacent cell empty (directly above, below, left, and right), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
+Banked Sunspur seed line from the `seed_maker`. Needs **Light** and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **24 h** of met conditions, and has a base yield of **25 Forage**.
 
 ##### Glowvine Seed `seed_glowvine`
 
@@ -103,7 +103,7 @@ Banked Saltbloom seed line from the `seed_maker`. Needs **Salt**, matures after 
 
 ##### Brinethorn Seed `seed_brinethorn`
 
-Banked Brinethorn seed line from the `seed_maker`. Needs **Salt** and every orthogonally adjacent cell empty (directly above, below, left, and right), matures after **72 h** of met conditions, and has a base yield of **120 Forage**.
+Banked Brinethorn seed line from the `seed_maker`. Needs **Salt** and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **72 h** of met conditions, and has a base yield of **120 Forage**.
 
 ##### Saltmate Seed `seed_saltmate`
 
@@ -111,7 +111,7 @@ Banked Saltmate seed line from the `seed_maker`. Needs **Salt** and an orthogona
 
 ##### Grandbloom Seed `seed_grandbloom`
 
-Banked Grandbloom seed line from the `seed_maker`. Needs **Light**, **Water**, and every orthogonally adjacent cell empty (directly above, below, left, and right), matures after **72 h** of met conditions, and has a base yield of **150 Forage**.
+Banked Grandbloom seed line from the `seed_maker`. Needs **Light**, **Water**, and no orthogonally adjacent plant (directly above, below, left, or right; machines may stand there), matures after **72 h** of met conditions, and has a base yield of **150 Forage**.
 
 ##### Plant Forage `forage`
 
@@ -119,7 +119,7 @@ Physical crop yield collected when a ready plant is harvested and removed. The c
 
 | Field | Value |
 | --- | --- |
-| Used in | Plastic + Forage + Water → Reinforced Biopolymer, Biopolymer + Forage + Water → Enrichment Compound, Forage + Sea Algae + Snow Moss → Salt Tortoise Feed, Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed, Forage + Cave/Frost/Coral Fungus → Mycelial Husk Feed, Forage + Magma Crust + Stone Mat → Mantle Strider Feed, Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed, Forage + Cold Spores + Hot Spores → Veil Mantle Feed, Forage + Stone Lichen + Salt Crust → Vault Crab Feed, Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed, Forage + Ice Crust + Ash Spores → Bone Walker Feed, Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed, Forage + Hot Spores + Crystal Spores → Hive Sentinel Feed, Forage + Cave Moss + Heat Crust → Hollow Choir Feed, Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed, Forage + Stone Mat + Cinder Lichen → Crustal Echo Feed, Forage + Ice Algae + Frost Lichen + Vent Algae + Black Fungus → Glacial Wyrm Feed, and Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed |
+| Used in | Plastic + Forage + Water → Reinforced Biopolymer, Biopolymer + Forage + Water → Enrichment Compound, Forage + Sea Algae + Snow Moss → Salt Tortoise Feed, Forage + Lava Algae + Cave Moss → Magmatic Annelid Feed, Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed, Forage + Magma Crust + Stone Mat → Mantle Strider Feed, Forage + Heat Lichen + Frost Lichen → Glasswing Mantis Feed, Forage + Cold Spores + Hot Spores → Veil Mantle Feed, Forage + Stone Lichen + Salt Crust → Vault Crab Feed, Forage + Brine Plankton + Deep Algae + Tide Moss → Tidal Cephalopod Feed, Forage + Ice Crust + Ash Spores → Bone Walker Feed, Forage + Vent Algae + Steam Moss + Sea Algae → Vent Drifter Feed, Forage + Hot Spores + Crystal Spores → Hive Sentinel Feed, Forage + Cave Moss + Heat Crust → Hollow Choir Feed, Forage + Shore Lichen + Crystal Spores + Vent Fungus → Ferric Sea-Lily Feed, Forage + Stone Mat + Cinder Lichen → Crustal Echo Feed, Forage + Ice Algae + Frost Lichen + Vent Algae + Black Fungus → Glacial Wyrm Feed, and Forage + Sulfur Moss + Cinder Lichen + Cold Spores + Stone Lichen → Spire Drake Feed |
 
 ##### Salt Tortoise Feed `feed_salt_tortoise`
 
@@ -143,7 +143,7 @@ Feed pressed for the Mycelial Husk, a deep-cavern species. A Habitat colony acce
 
 | Field | Value |
 | --- | --- |
-| Produced by | Forage + Cave/Frost/Coral Fungus → Mycelial Husk Feed |
+| Produced by | Forage + Cave Fungus + Frost Fungus + Coral Fungus → Mycelial Husk Feed |
 
 ##### Mantle Strider Feed `feed_mantle_strider`
 

@@ -378,7 +378,7 @@ Display name of the currently connected source, or empty string.
 
 ##### `.connected_id() → str`
 
-Stable id of the currently connected source, or empty string. `connect()` accepts an id or a display name, so compare against this when you need the identity to match what you passed: `connected_to()` answers with the renameable name.
+Stable id of the currently connected source, or empty string. `connect()` accepts an id or display name, but this returns the resolved stable id. Compare it with the source's stable id; `connected_to()` returns its renameable display name.
 
 - **Returns** `str`
 
@@ -428,7 +428,7 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
 | `"order_fulfilled"` | rejection | The active order already has all required units of this item loaded or shipped. |
@@ -440,9 +440,7 @@ Take up to whole-number `count` units of `item_id` from the connected source. A 
 | `"target_moving"` | transient | The destination vehicle must stop before cargo can be handed off. |
 | `"out_of_range"` | rejection | The vehicles are outside cargo handoff range. |
 
-##### `.eject(destination: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult` *(self only)*
-
-Only the machine's own script can call it; a remote call raises "Cannot call input.eject() ... remotely, hardware methods only work from the machine's own script (self)". Reads such as `count()`/`stacks()` work remotely.
+##### `.eject(destination: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
 Recover up to whole-number `count` units of `item_id` from this buffer without changing its source connection. Use `"inventory"` at Nocturna Base, or a compatible same-outpost store, machine input, or parked ground vehicle. Optional properties use the standard any, subset, or exact selection rules; exact item properties are preserved. Destination capacity may limit the move. Active or reserved work rejects without moving anything; a successful ejection cancels fractional work attached to the staged input. The transfer waits automatically for time proportional to units moved and requires Auto Feeders research.
 
@@ -486,7 +484,7 @@ Recover up to whole-number `count` units of `item_id` from this buffer without c
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
@@ -690,7 +688,7 @@ Display name of the currently connected target, or empty string.
 
 ##### `.connected_id() → str`
 
-Stable id of the currently connected target, or empty string. `connect()` accepts an id or a display name, so compare against this when you need the identity to match what you passed: `connected_to()` answers with the renameable name.
+Stable id of the currently connected target, or empty string. `connect()` accepts an id or display name, but this returns the resolved stable id. Compare it with the target's stable id; `connected_to()` returns its renameable display name.
 
 - **Returns** `str`
 
@@ -738,7 +736,7 @@ Send up to whole-number `count` units of `item_id` to the connected target. A pr
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
 | `"mixed_materials"` | rejection | One transfer can contain only one item id. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
@@ -1154,7 +1152,7 @@ Load up to whole-number `count` units of `item_id` into vehicle cargo from the c
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
 | `"wrong_biome"` | rejection | The destination rejects this biological material because its biome is incompatible. |
 | `"target_unconfigured"` | rejection | The destination lacks the world-state configuration required to accept this material. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"order_item_not_required"` | rejection | The active order does not require this item. |
 | `"order_slots_full"` | rejection | Every Supply Dock material slot is assigned to another required item. |
 | `"order_fulfilled"` | rejection | The active order already has all required units of this item loaded or shipped. |

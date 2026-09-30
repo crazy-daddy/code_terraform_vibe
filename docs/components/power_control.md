@@ -4,23 +4,23 @@
 
 Discover every independent power grid, inspect connected outposts, buildings, and field power structures, read generation, consumption, battery charge, and Lightning reserve, or operate machine breakers from one shared controller. Grid objects are snapshots of the latest completed power allocation. After changing a breaker or rewiring infrastructure, re-query on the next loop iteration for refreshed grid totals and membership.
 
-**Returned by:** `get_component("power_control")`
+**Access via:** `get_component("power_control")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -28,7 +28,7 @@ Human-readable display name. Prefer `.id` for scripts that need to survive renam
 
 Returns every independent power grid on the planet as a fresh list of `PowerGrid` snapshots. Isolated completed outposts and field structures appear as their own grids, so scripts do not need to guess or hardcode grid ids.
 
-- **Returns** Fresh list of every independent `PowerGrid` snapshot on the planet.
+- **Returns** `list[PowerGrid]`. A fresh snapshot of every independent grid on the planet.
 
 ##### `.grid(target_id: str) → PowerGrid | None`
 
@@ -53,7 +53,7 @@ Finds the grid containing `target_id`, which may be an outpost, building, or fie
 
 Returns a planet-wide `PowerSummary` across every independent grid. Conventional battery storage and Lightning reserve remain separate so automation can decide which supply it is relying on.
 
-- **Returns** Planet-wide `PowerSummary` snapshot across every independent grid.
+- **Returns** `PowerSummary`. A planet-wide snapshot across every independent grid.
 
 ##### `.is_powered(machine_id: str) → bool`
 
@@ -65,7 +65,7 @@ Returns `True` when the named machine is currently switched on. Unknown machine 
 | --- | --- | --- |
 | `machine_id` | `str` | Machine instance id |
 
-- **Returns** Boolean: `True` when the named machine is powered on.
+- **Returns** `bool`. `True` when the named machine is powered on.
 
 ##### `.can_power_off(machine_id: str) → bool`
 
@@ -77,7 +77,7 @@ Returns `True` when the named machine exists and has a visible breaker toggle. T
 | --- | --- | --- |
 | `machine_id` | `str` | Machine instance id |
 
-- **Returns** Boolean: `True` when the named machine exposes a breaker/power toggle.
+- **Returns** `bool`. `True` when the named machine exposes a breaker/power toggle.
 
 ##### `.set_powered(machine_id: str, on: bool) → ActionResult`
 

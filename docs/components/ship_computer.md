@@ -4,23 +4,23 @@
 
 Manages the hardware roster: deploy a machine, vehicle, or drone from Inventory into an outpost, remove one back to Inventory, decommission an emptied outpost, and rename anything you own. These are the Inventory page's Deploy button and the Computer's System tab, reached from a script. Every call needs Ship Computer research; the buttons themselves keep working before it.
 
-**Returned by:** `get_component("computer")`
+**Access via:** `get_component("computer")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -51,8 +51,8 @@ Deploy one unit of an inventory item into an outpost, defaulting to home. The ma
 | `"location_not_found"` | rejection | The requested outpost does not exist or is not operational. |
 | `"wrong_biome_for_machine"` | rejection | This machine only operates in another biome. |
 | `"duplicate_outpost_machine"` | rejection | This outpost already has a machine of this type, and only one is allowed. |
-| `"missing_drone_station"` | rejection | The target outpost has no drone station to assemble a drone at. |
-| `"drone_station_full"` | rejection | Every drone station bay at the target outpost is occupied. |
+| `"missing_drone_station"` | rejection | The target outpost has no Drone Depot to assemble a drone at. |
+| `"drone_station_full"` | rejection | Every Drone Depot bay at the target outpost is occupied. |
 
 ##### `.undeploy(machine: str | Component) → ActionResult`
 
@@ -84,7 +84,7 @@ Remove a deployed machine, vehicle, or drone and return its kit, mounted modules
 
 ##### `.decommission(outpost: str | Outpost) → ActionResult`
 
-Remove a founded outpost and return its Outpost Kit to Inventory. The outpost must hold no machines; nothing is cascade-destroyed. Pipes, power lines, and bridges that touched it stay on the map for a Pioneer to reclaim. The home outpost is permanent.
+Remove a founded outpost and return its Outpost Kit to Inventory. The outpost must hold no machines; nothing is cascade-destroyed. Drones and vehicles don't belong to an outpost, so they never block it. Pipes, power lines, and bridges that touched it stay on the map for a Pioneer to reclaim. The home outpost is permanent.
 
 *Parameters*
 

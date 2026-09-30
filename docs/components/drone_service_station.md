@@ -17,35 +17,35 @@ Charges electric drones in the field and recovers heli drones for queued refueli
 3. Fabricate a **Drone Service Station Kit** on a **Fabricator**: 2× Machine Frame, 1× Control Unit, 2× Circuit Panel, 1× Battery Cell, and 1× Liquid Pipe Segment.
 4. Deploy it from your Inventory.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `.oil_in: FluidPort`
 
 Oil `FluidPort` for heli refueling. Call `self.oil_in.connect(...)` with an Oil Pump or oil tank's stable machine id or display name. A remote source also needs a completed conflict-free Liquid Pipe route between both locations.
 
-- **Returns** `FluidPort` for heli refueling supply. Call `connect(...)` with the provider's stable machine id or display name; local providers transfer directly and remote providers use completed liquid-pipe networks.
+- **Returns** `FluidPort`. Heli refueling supply. Call `connect(...)` with the provider's stable machine id or display name; local providers transfer directly and remote providers use completed liquid-pipe networks.
 
 ### Methods
 
@@ -53,7 +53,7 @@ Oil `FluidPort` for heli refueling. Call `self.oil_in.connect(...)` with an Oil 
 
 List of all drone ids (electric and heli) currently parked at this station. Read each drone's state via `get_component(id)`.
 
-- **Returns** List of all drone ids currently docked at this station (electric and heli). Read each drone's state via `get_component(id)`.
+- **Returns** `list[str]`. Ids of every drone docked at this station, electric and heli. Read each drone's state via `get_component(id)`.
 
 ##### `.charge(drone_id: str, target_level: float = 1.0) → ActionResult` *(self only)*
 
@@ -153,13 +153,13 @@ Abort the in-flight rescue. The drone is released at its current position (it ke
 
 `True` while the recovery vehicle is on a rescue mission.
 
-- **Returns** Boolean, `True` while the service vehicle is mid-mission.
+- **Returns** `bool`. `True` while the service vehicle is mid-mission.
 
 ##### `.get_rescue_target() → str`
 
 Mission target's display name while the recovery vehicle is outbound, servicing, carrying, or returning; empty string when idle.
 
-- **Returns** String, the mission target's display name while the service vehicle is outbound, servicing, carrying, or returning; empty string when idle.
+- **Returns** `str`. The mission target's display name while the service vehicle is outbound, servicing, carrying, or returning; empty string when idle.
 
 ##### `.stop(drone_id: str) → ActionResult` *(self only)*
 
@@ -202,13 +202,13 @@ Clear every active or queued charge and refuel job on this station. Docked drone
 
 List of drone ids currently occupying active service bays (charging or refueling). An oil-blocked heli is waiting, not active.
 
-- **Returns** List of drone ids currently occupying active service bays (charging or refueling). Oil-blocked heli jobs are waiting, not active.
+- **Returns** `list[str]`. Ids of the drones occupying active service bays (charging or refueling). Oil-blocked heli jobs are waiting, not active.
 
 ##### `.get_queue() → list[str]`
 
 One FIFO list of drone ids across electric charging and heli refueling. Oil-blocked helis stay in order while ready later jobs may use otherwise-idle bays.
 
-- **Returns** One FIFO list of queued drone ids across electric charging and heli refueling. Oil-blocked helis stay in this order while ready later jobs may use otherwise-idle bays.
+- **Returns** `list[str]`. Queued drone ids, first in first out, across electric charging and heli refueling. Oil-blocked helis stay in this order while ready later jobs may use otherwise-idle bays.
 
 ##### `.status(drone_id: str) → dict[str, JsonValue]`
 
@@ -220,13 +220,13 @@ Detailed status for one drone's service job. Electric drones return a dict with 
 | --- | --- | --- |
 | `drone_id` | `str` | Display name or id of a drone |
 
-- **Returns** A dict for the drone's active/queued service job. Electric: `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`. Heli: `state`, `target_level`, `oil_tons`, `capacity_tons`, `rate_tons_per_hour`, `bay_index`, `queue_index`.
+- **Returns** `dict[str, JsonValue]`. The drone's active or queued service job. Electric: `state`, `target_level`, `battery_wh`, `capacity_wh`, `rate_w`, `bay_index`, `queue_index`. Heli: `state`, `target_level`, `oil_tons`, `capacity_tons`, `rate_tons_per_hour`, `bay_index`, `queue_index`.
 
 ##### `.get_bay_count() → int`
 
 Number of simultaneous service bays.
 
-- **Returns** Number of simultaneous service bays
+- **Returns** `int`. How many drones can be serviced at once.
 
 ##### `.get_charge_rate(drone_id: str) → float`
 
@@ -238,7 +238,7 @@ Returns the Wh/h currently being pushed into the named electric drone (**0** if 
 | --- | --- | --- |
 | `drone_id` | `str` | Display name or id of a docked electric drone |
 
-- **Returns** Number, **Wh/h** currently being pushed into that electric drone (**0** if not being charged).
+- **Returns** `float`. **Wh/h** currently being pushed into that electric drone, **0** if it is not being charged.
 
 ##### `.get_refuel_rate(drone_id: str) → float`
 
@@ -250,7 +250,7 @@ Returns the oil t/h currently being pushed into the named heli drone (**0** if i
 | --- | --- | --- |
 | `drone_id` | `str` | Display name or id of a docked heli drone |
 
-- **Returns** Number, **t/h** currently being pushed into that heli drone (**0** if not being refueled).
+- **Returns** `float`. **t/h** currently being pushed into that heli drone, **0** if it is not being refueled.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

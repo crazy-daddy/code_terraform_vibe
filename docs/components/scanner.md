@@ -8,23 +8,23 @@ Reveals the sectors of the Harvester grid around base so the Harvester knows whe
 | --- | --- |
 | Type | Harvesting |
 
-**Returned by:** `get_component("scanner_1")`
+**Access via:** `get_component("scanner_1")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -59,7 +59,7 @@ Scan one local sector with `self.scan("E14")`. The scan takes a few ticks and pa
 
 Every previously scanned sector as a fresh dict `{sector_id: ScanResult}`. Iterate with `.keys()` / `.values()` / `.items()`, or index by sector id: `self.get_scanned()["E14"]`. A sector only needs to be physically scanned once, and that history persists across script runs. Each `get_scanned()` call reflects the current contents of those sectors, including items collected or dropped since the last call. A dict or `ScanResult` already saved in your script does not update itself, so call `get_scanned()` again before choosing another target. Returns an empty dict if nothing has been scanned yet.
 
-- **Returns** A dict (sector ID → ScanResult)
+- **Returns** `dict[str, ScanResult]`. Keyed by sector id.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

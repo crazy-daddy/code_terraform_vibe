@@ -4,23 +4,23 @@
 
 Finds and surveys world sites through `self.sonar`. A scan checks the area around the vehicle; driving alone does not scan. Use `get_component("nocturna").points_of_interest()` to find unscanned "?" markers, travel near one, then call `scan()` and `survey(site)`. Each sonar reveals its hardness limit and everything below it: Basic **50 m**, hardness **1**; Wide **180 m**, hardness **3** (adds Titanium and Cobalt); Deep **280 m**, hardness **4**. Research unlocks thermal vents, wells, and exotic deposits. Results are saved in the Journal. Local Harvester sectors, biological sites, and radiation fields use different scanners.
 
-**Returned by:** `self.sonar`
+**Access via:** `self.sonar`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -88,7 +88,7 @@ Reveal the details available for a productive `Site`. Pass either its string id 
 
 Current sonar range in meters.
 
-- **Returns** Number (meters): **50** basic, **180** Wide, **280** Deep. A stale captured module reference raises `ReferenceError`.
+- **Returns** `float`. In meters: **50** basic, **180** Wide, **280** Deep. A stale captured module reference raises `ReferenceError`.
 
 *Raises*
 
@@ -100,7 +100,7 @@ Current sonar range in meters.
 
 Maximum mineral hardness this sonar can identify.
 
-- **Returns** Number: **1** basic, **3** Wide, **4** Deep. A stale captured module reference raises `ReferenceError`.
+- **Returns** `int`. **1** basic, **3** Wide, **4** Deep. A stale captured module reference raises `ReferenceError`.
 
 *Raises*
 
@@ -112,7 +112,7 @@ Maximum mineral hardness this sonar can identify.
 
 Survey-depth tier granted by this sonar: `"basic"` / `"wide"` / `"deep"`. Controls how much of a thermal vent or exotic deposit is revealed by `survey()`; `"deep"` is also required for oil-well discovery.
 
-- **Returns** Survey-depth tier granted by this sonar: `"basic"` / `"wide"` / `"deep"`. Controls thermal/exotic detail; `"deep"` is required for oil-well discovery. A stale captured module reference raises `ReferenceError`.
+- **Returns** `str`. The survey depth this sonar grants. It controls thermal and exotic detail; `"deep"` is required for oil-well discovery. A stale captured module reference raises `ReferenceError`.
 - **Possible values** `"basic"`, `"wide"`, `"deep"`
 
 *Raises*

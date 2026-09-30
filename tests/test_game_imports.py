@@ -5,7 +5,7 @@ The game's interpreter has no CPython standard library: only the modules in
 GAME_MODULES resolve (the game's module registry, decompiled simworker; see
 docs/cheatsheet/dev_workflow.md §10). Anything else is one of our own lib/
 modules or raises ModuleNotFoundError in game, while CPython tests pass happily
-(`math`, `operator`, `collections`, `itertools`, ...). Imports under
+(`time`, `copy`, `os`, `sys`, ...). Imports under
 `if TYPE_CHECKING:` never run and are skipped.
 """
 import ast
@@ -18,6 +18,7 @@ SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
 # Executable modules, plus the type-only ones the game erases and the special ones.
 GAME_MODULES = {
     "random", "functools", "re", "dataclasses", "enum", "json", "heapq", "traceback",
+    "math", "itertools", "operator", "string", "collections",
     "typing", "collections.abc", "types", "user_stubs",
     "builtins", "__builtins__", "__future__",
 }

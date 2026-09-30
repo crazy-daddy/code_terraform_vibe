@@ -14,29 +14,29 @@ A passive base container that holds one material at a time. The first deposit se
 1. Requires the **Storage Bins** research (Temperature 5).
 2. Buy from the Shop for 120 cr.
 
-**Returned by:** `get_component(id)`
+**Access via:** `get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ### Methods
 
@@ -50,31 +50,31 @@ Units of `item_id` currently stored. Returns **0** when the bin is empty or latc
 | --- | --- | --- |
 | `item_id` | `str` | Item id to count |
 
-- **Returns** Number: units of that item currently stored.
+- **Returns** `int`. Units of that item currently stored.
 
 ##### `.get_capacity() → int`
 
 Maximum units the bin holds, **500** by default. Queryable rather than hardcoded so a retune doesn't break scripts. Use `fill_percent()` when you need the current fill ratio.
 
-- **Returns** Number (units max)
+- **Returns** `int`. Maximum units.
 
 ##### `.get_material() → str`
 
 Currently latched material id, or the empty string if the bin is empty (and therefore accepts any material on the next deposit). Use to check a bin's material before routing transfers: `if bin.get_material() in ("", "iron_ore"): # safe to deposit iron`.
 
-- **Returns** String (item id, or empty string if bin is empty)
+- **Returns** `str`. The stored item id, or empty if the bin is empty.
 
 ##### `.stacks() → list[ItemStack]`
 
 Lists the item variants stored in this bin as `ItemStack` values. Items with the same id but different properties remain separate. Call it again when you need current contents.
 
-- **Returns** List of property-distinct `ItemStack` snapshots currently stored.
+- **Returns** `list[ItemStack]`. Property-distinct stacks currently stored.
 
 ##### `.is_empty() → bool`
 
 `True` if the bin holds nothing. An empty bin has no material lock, any material can take the slot on the next deposit. Different from `has_space(0)` which is always `True`.
 
-- **Returns** Boolean
+- **Returns** `bool`
 
 ##### `.has_space(amount: int) → bool`
 
@@ -86,19 +86,19 @@ Lists the item variants stored in this bin as `ItemStack` values. Items with the
 | --- | --- | --- |
 | `amount` | `int` | Whole-number units of free capacity required |
 
-- **Returns** Boolean
+- **Returns** `bool`
 
 ##### `.space() → int`
 
 Free units of capacity remaining. Sizes a transfer in one call: `n = bin.space()`, then move up to `n`.
 
-- **Returns** Number (free units remaining)
+- **Returns** `int`. Free units remaining.
 
 ##### `.fill_percent() → float`
 
 Fraction full in the range **0-1**. Common threshold for rebalance scripts: `if bin.fill_percent() < 0.2: # route more here`.
 
-- **Returns** Number (**0-1**)
+- **Returns** `float`. A fraction, **0-1**.
 
 ##### `.transfer_from_inventory(item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
 
@@ -132,7 +132,7 @@ Requires **Auto Feeders** research and a Storage Bin at the home outpost. Move u
 | `"source_empty"` | rejection | The source has no matching units available. |
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"target_changed"` | transient | The destination changed between transfer planning and commit. |
 
@@ -208,7 +208,7 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_under_construction"` | transient | The configured target is still under construction. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |

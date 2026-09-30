@@ -17,41 +17,41 @@ An outpost processing building that combines three life-form samples into a viab
 2. Fabricate a **Seed Maker Kit** on a **Fabricator**: 2× Machine Frame, 1× Control Unit, 2× Circuit Panel, and 3 t Water.
 3. Deploy it from your Inventory.
 
-**Returned by:** `self`
+**Access via:** `self`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `.input: InputSlot`
 
 `InputSlot` for loading the Seed Maker's three-sample reaction chamber. The natural source is a local Drone Depot where biological drones unload; a local Warehouse, Storage Bin, or home Inventory is also valid. The chamber accepts exactly **1 t each of three distinct life forms** and cannot stockpile surplus material.
 
-- **Returns** `InputSlot` for the **3 t** reaction chamber. It accepts one unit each of three distinct life forms and rejects duplicates or a fourth sample. `combine()` reserves the trio while running. When idle, use `eject(...)` to recover a mistaken load or `flush()` to destroy it.
+- **Returns** `InputSlot`. The **3 t** reaction chamber. It accepts one unit each of three distinct life forms and rejects duplicates or a fourth sample. `combine()` reserves the trio while running. When idle, use `eject(...)` to recover a mistaken load or `flush()` to destroy it.
 
 ##### `.output: OutputSlot`
 
 `OutputSlot` containing the one physical seed produced by a successful trial. Send it to home Inventory, then call the Harvester's `load_seed()` anywhere on the local grid, or route it to a Crop Automator. The Seed Maker cannot start another trial until this result bay is empty. Sludge produces no item.
 
-- **Returns** `OutputSlot` for the single physical result seed. Send it to home Inventory, then transfer it into the Harvester with `load_seed()`; another local store is also valid. A successful trial leaves exactly **1** species-specific seed here, and no further trial can start until `send(...)` removes it. A sludge result produces no output item.
+- **Returns** `OutputSlot`. Holds the single physical result seed. Send it to home Inventory, then transfer it into the Harvester with `load_seed()`; another local store is also valid. A successful trial leaves exactly **1** species-specific seed here, and no further trial can start until `send(...)` removes it. A sludge result produces no output item.
 
 ### Methods
 
@@ -90,31 +90,31 @@ Run the exact three different life-form ids loaded in this machine's reaction ch
 
 List of the **30** accepted life-form item ids. For each `blend` from `combinations(self.life_forms(), 3)`, load its three items with `self.input.take(item_id, 1)`, then call `self.combine(blend)`. Enumeration does not move materials. Send any resulting physical seed from `self.output` before continuing.
 
-- **Returns** List of the **30** accepted life-form item ids. For each `blend` from `combinations(self.life_forms(), 3)`, load its three items with `self.input.take(item_id, 1)`, then call `self.combine(blend)`. Enumeration does not move materials. Send any resulting physical seed with `self.output.send(...)` before the next trial.
+- **Returns** `list[str]`. The **30** accepted life-form item ids. For each `blend` from `combinations(self.life_forms(), 3)`, load its three items with `self.input.take(item_id, 1)`, then call `self.combine(blend)`. Enumeration does not move materials. Send any resulting physical seed with `self.output.send(...)` before the next trial.
 
 ##### `.is_running() → bool`
 
 `True` while a combine trial is in flight.
 
-- **Returns** Boolean: `True` while a combine trial is in flight.
+- **Returns** `bool`. `True` while a combine trial is in flight.
 
 ##### `.get_progress() → float`
 
 Progress of the current combine trial as **0-1**; returns **0** when idle.
 
-- **Returns** Number (**0-1**): progress of the current trial; **0** when idle.
+- **Returns** `float`. Progress of the current trial (**0-1**); **0** when idle.
 
 ##### `.get_output_count() → int`
 
 Number of physical seeds waiting in the single-result bay: **0** or **1**.
 
-- **Returns** Number (**0** or **1**): whether a physical seed is waiting in the result bay.
+- **Returns** `int`. **1** when a physical seed is waiting in the result bay, else **0**.
 
 ##### `.recipes() → list[SeedRecipe]`
 
 List of `SeedRecipe` for every blend discovered so far, the same discover-once-kept-forever journal the Flora / Seed Recipes tab shows. Each carries `.tier`, the physical `.seed_id`, bare `.species`, `.blend`, `.requirements`, `.requirement`, and `.growth_time`. `.requirements` is the programmable form: every `PlantRequirement` has `.kind` and optional `.species`, so companion and antagonist entries identify the exact related plant. `.requirement` remains a compact string summary. Empty until your first hit; re-run a known `.blend` with `self.combine(...)` to reproduce that seed without re-sweeping.
 
-- **Returns** List of every discovered `SeedRecipe`, or an empty list before the first discovery. Each recipe includes its species, three-item blend, cultivation requirements, and growth time. Use `self.combine(recipe.blend)` to reproduce its seed.
+- **Returns** `list[SeedRecipe]`. Every discovered recipe; empty before the first discovery. Use `self.combine(recipe.blend)` to reproduce its seed.
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

@@ -4,23 +4,23 @@
 
 Writes structured script output to the same Console used by `print()`. Access it with `get_component("console")`; no research is required. Messages can have a severity, named channel, color, and timestamp.
 
-**Returned by:** `get_component("console")`
+**Access via:** `get_component("console")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -144,7 +144,7 @@ Print a low-priority debug line, hidden from the ALL view unless the player enab
 
 Return the current game time-of-day as a `"HH:MM:SS"` string, for building your own line prefixes when you want full control over formatting.
 
-- **Returns** String: game time-of-day as `"HH:MM:SS"`.
+- **Returns** `str`. Game time of day as `"HH:MM:SS"`.
 
 ##### `.clear(channel: str = "") → ActionResult`
 

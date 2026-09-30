@@ -300,6 +300,7 @@ Move up to whole-number `count` units into this drone's cargo, retaining exact p
 | `"target_moving"` | transient | The destination vehicle must stop before cargo can be handed off. |
 | `"not_at_source"` | rejection | The vehicle is outside the source's service area. |
 | `"source_empty"` | rejection | The source has no matching units available. |
+| `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |
 | `"needs_plating"` | rejection | This hot cargo requires Shield Plating on the drone. |
 | `"cask_missing"` | rejection | No compatible Lead Cask is available at this outpost. |
@@ -365,7 +366,7 @@ Permanently destroy up to whole-number `count` units from this drone's cargo. Th
 | `"ok"` | success | Permanently discarded `.discarded` units. |
 | `"partial"` | partial | Permanently discarded `.discarded` of `.requested` requested units. |
 | `"empty"` | success | The selected cargo area was already empty. |
-| `"no_op"` | success | No units were requested, so nothing was discarded. |
+| `"no_op"` | success | No item was specified or the requested count was zero, so nothing was discarded. |
 | `"invalid_properties"` | rejection | The item property selector has an invalid shape or value. |
 | `"invalid_property_match"` | rejection | The requested property matching mode is invalid. |
 | `"source_changed"` | transient | Cargo changed between transfer planning and commit. |
@@ -514,7 +515,7 @@ Station id when this ref was returned, or empty string.
 
 ##### `.is_docked: bool`
 
-`True` if the drone was parked at a drone station when this ref was returned.
+`True` if the drone was parked at a Drone Depot or Drone Service Station when this ref was returned.
 
 - **Returns** `bool`
 
@@ -738,6 +739,12 @@ Outpost id when this ref was returned, or empty string.
 
 - **Returns** `str`
 
+##### `.current_station: str`
+
+Vehicle Charging Station id the vehicle was docked at when this ref was returned, or empty string.
+
+- **Returns** `str`
+
 ##### `.is_being_rescued: bool`
 
 `True` if a Vehicle Charging Station rescue was active for this vehicle when this ref was returned.
@@ -763,7 +770,7 @@ Position snapshot from when this ref was returned.
 
 ## MountSlot
 
-**Returned by:** self.modules() on rover / pioneer
+**Returned by:** modules() on a rover, pioneer, or drone
 
 ### Properties
 
@@ -888,7 +895,7 @@ Vehicle speed in m/h.
 
 ##### `.get_distance_to(x: float, y: float) → float`
 
-Distance (meters) from the vehicle to the given point. Arrival loops need a tolerance, normally `> 2`, rather than exact zero. When the next action targets a building, route to its `BuildingRef.position`.
+Distance (meters) from the vehicle to the given point. The vehicle has arrived once this is 2 or less; it rarely reaches exactly zero. A wait loop therefore keeps going `while self.nav.get_distance_to(x, y) > 2:`. When the next action targets a building, route to its `BuildingRef.position`.
 
 *Parameters*
 

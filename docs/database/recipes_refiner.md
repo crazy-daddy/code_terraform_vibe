@@ -4,7 +4,7 @@
 
 The Refiner purifies raw exotic fluids into creature-grade form, burning `tar` as the refining reagent: raw fluid in, refined fluid out. Blueprints unlock through Bio Orders.
 
-##### Raw Sulfur Gas + Tar → Sulfur Gas `refine_sulfur_gas` *(Not yet unlocked)*
+##### Raw Sulfur Gas + Tar → Sulfur Gas `refine_sulfur_gas` *(Unlocked)*
 
 2× Tar and 4 t Raw Sulfur Gas → 4 t Sulfur Gas
 Blueprint unlocks by completing the Bio Order **Eruption-Zone Capstone**.
@@ -26,7 +26,7 @@ Blueprint unlocks by completing the Bio Order **Cryofluid Refinement Protocol**.
 | Power | 30 W |
 | Production tier | T2 |
 
-##### Raw Chlorine + Tar → Chlorine `refine_chlorine` *(Not yet unlocked)*
+##### Raw Chlorine + Tar → Chlorine `refine_chlorine` *(Unlocked)*
 
 5× Tar and 4 t Raw Chlorine → 4 t Chlorine
 Blueprint unlocks by completing the Bio Order **Geothermal Grand Compendium**.

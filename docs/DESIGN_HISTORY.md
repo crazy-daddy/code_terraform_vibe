@@ -563,3 +563,13 @@ whenever a script ends or is stopped (measured on a solar panel), so machine scr
 one central script. The remaining levers are fewer running scripts (retire machines that don't earn their
 share, merge Control Room cards, start scripts only while their machine has work) and computing shared
 results once centrally; both are in TODO.md.
+
+## §7a — Suspended Generators Froze Panel Cards (2026-09-29, fixed in game v0.1.29)
+
+A generator left suspended in a Control Room card (`any(<genexpr>)` stopping at its first match,
+or `next(<genexpr>)`) froze the card on its last frame while the script kept looping. Cause: the
+simworker commits a panel frame only at a top-level loop boundary with `loopDepth === 1`, and a
+suspended generator's `for` loop left `loopDepth` raised. We worked around it with list
+comprehensions in panel code (`devtools/panel_generator_repro.py` reproduces it). Game v0.1.29
+saves and restores `loopDepth` in `enterGeneratorFrame`/`exitGeneratorFrame`, and the repro keeps
+updating live, so the panel rule was dropped.

@@ -16,47 +16,47 @@ Tints a coastal fragment's glow to a target color using three built-in colored l
 1. Requires the **Bioluminescent Infusion** research (Temperature 90).
 2. Buy from the Shop for 60,000 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `self.chamber: ChamberSample | None`
 
 The `ChamberSample` loaded right now, exposed as `self.chamber`, or `None`. Read `.glow` for its starting color and `.fragment_id` for its item id.
 
-- **Returns** The `ChamberSample` in the chamber with `.fragment_id` and `.glow`, or `None` if empty.
+- **Returns** `ChamberSample | None`. `None` if the chamber is empty.
 
 ##### `self.input: InputSlot`
 
 The `InputSlot` for raw coastal samples. It holds one sample item id at a time and stays latched to that id until `load()` consumes the remaining units or `flush()` discards them. `stacks()` lists property-distinct variants and does not mean the port accepts multiple sample types. Inventory is a source only at Nocturna Base; remote Luminizers use a same-outpost Storage Bin/Warehouse.
 
-- **Returns** `InputSlot` for raw coastal samples. Recover a mistaken property variant to an explicit local destination with `eject(...)` before loading it into the chamber.
+- **Returns** `InputSlot`. For raw coastal samples. Recover a mistaken property variant to an explicit local destination with `eject(...)` before loading it into the chamber.
 
 ##### `self.output: OutputSlot`
 
 The `OutputSlot` for Luminous or ejected samples. Exact sample properties are preserved.
 
-- **Returns** `OutputSlot` for Luminous or ejected samples, preserving exact properties.
+- **Returns** `OutputSlot`. For Luminous or ejected samples, preserving exact properties.
 
 ### Methods
 
@@ -99,13 +99,13 @@ The RGB-per-unit `[r,g,b]` a lamp adds per brightness step, its impurity. `self.
 | --- | --- | --- |
 | `channel` | `str` | Lamp channel: `"red"`, `"green"`, or `"blue"`. |
 
-- **Returns** The lamp's RGB-per-unit `[r,g,b]` (its impurity) for `channel` `"red"` / `"green"` / `"blue"`, or `None` for an unknown channel. Fixed hardware: read once and reuse.
+- **Returns** `list[int] | None`. The lamp's RGB-per-unit `[r,g,b]` (its impurity) for `channel` `"red"` / `"green"` / `"blue"`, or `None` for an unknown channel. Fixed hardware: read once and reuse.
 
 ##### `self.glow() → list[int] | None`
 
 The chamber's **current** resulting glow `[r,g,b]` given the lamps set right now, it reflects `set_lamps(...)` immediately, so use it to verify your solve before committing: `if self.glow() == target: self.infuse()`. `None` when the chamber is empty.
 
-- **Returns** The chamber's **current** resulting glow `[r,g,b]` given the lamps set right now (reflects `set_lamps` immediately), or `None` if the chamber is empty. Compare against the order's `target_glow` before `infuse()`.
+- **Returns** `list[int] | None`. The chamber's **current** resulting glow `[r,g,b]` given the lamps set right now (reflects `set_lamps` immediately), or `None` if the chamber is empty. Compare against the order's `target_glow` before `infuse()`.
 
 ##### `self.set_lamps(r: int, g: int, b: int) → ActionResult` *(self only)*
 
@@ -133,7 +133,7 @@ Set the three lamp brightnesses, `self.set_lamps(7, 13, 4)`. Each is a **whole n
 
 ##### `self.infuse() → ActionResult` *(self only)*
 
-Produce a **Luminous** sample at the current glow in `self.output`, preserving every existing property and adding the tuned glow.
+Produce a **Luminous** sample in `self.output`, preserving its other properties and replacing its previous glow with the tuned glow.
 
 - **Returns** `ActionResult`
 - **Result fields** `.status`, `.message`

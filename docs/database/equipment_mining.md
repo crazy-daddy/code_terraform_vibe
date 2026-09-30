@@ -163,19 +163,10 @@ Heavy industrial cargo-drone chassis.
 
 ##### Lead Cask `lead_cask`
 
-Shielded storage cask. The only stationary container that holds Raw Uranium and Fuel Rods.
+Shielded storage cask for Raw Uranium and Fuel Rods.
 
 | Field | Value |
 | --- | --- |
 | Produced by | Lead Cask |
-
-##### Storm Glass `storm_glass`
-
-Glass fused where lightning struck open ground. A rare trade good Earth pays well for.
-
-| Field | Value |
-| --- | --- |
-| Sells for | 350 cr |
-| Requested by | Spire, Storm Glass Acquisition and Spire, Storm Glass Contract (Crown) |
 
 *Database / Equipment*

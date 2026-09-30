@@ -16,35 +16,35 @@ A **4,000 Wh** emergency reserve that catches lightning within **600 m** and dis
 2. Fabricate a **Lightning Rod** on a **Fabricator**: 1× Machine Frame, 4× Battery Cell, and 2× Circuit Panel.
 3. Deploy it from your Inventory.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `.input: InputSlot`
 
 The rod's material slot. Feed it Storm Glass with your ordinary logistics, then spend one with `repair()` to restore full condition.
 
-- **Returns** `InputSlot`: `connect()`, `take()`, `eject()`, `flush()`, `count()`, `capacity()`, `connected_to()`. Holds the Storm Glass that `repair()` spends.
+- **Returns** `InputSlot`. Holds the Storm Glass that `repair()` spends.
 
 ### Methods
 
@@ -52,25 +52,25 @@ The rod's material slot. Feed it Storm Glass with your ordinary logistics, then 
 
 Wh currently banked, **0** up to `capacity()`. Rises only when a strike lands within catch range of this rod; falls automatically when its grid is short and the batteries are empty. It never charges from grid surplus.
 
-- **Returns** Number: Wh currently banked, **0** up to `capacity()`. Fills only when a thunderstorm strike lands within catch range of this rod; drains automatically when its grid runs short and the batteries are empty. Never charges from grid surplus.
+- **Returns** `float`. Wh currently banked, from **0** up to `capacity()`. Fills only when a thunderstorm strike lands within catch range of this rod; drains automatically when its grid runs short and the batteries are empty. Never charges from grid surplus.
 
 ##### `.capacity() → float`
 
 Bank capacity in Wh, several times a base battery. Query this instead of hardcoding the number.
 
-- **Returns** Number: bank capacity in Wh.
+- **Returns** `float`. Bank capacity, in Wh.
 
 ##### `.last_strike() → float`
 
 Hour timestamp of the last strike from which this rod accepted energy, or **-1** if none. A strike that adds no energy, for example when the bank is full or integrity is zero, does not update this record. Compare with the clock's current time to see how long it has been since energy was last captured.
 
-- **Returns** Number: hour timestamp of the last strike from which this rod accepted energy, or **-1** if none. A strike that adds no energy, for example when the bank is full or integrity is zero, does not update this record.
+- **Returns** `float`. Hour timestamp of the last strike from which this rod accepted energy, or **-1** if none. A strike that adds no energy, for example when the bank is full or integrity is zero, does not update this record.
 
 ##### `.integrity() → float`
 
 This rod's condition from **0** to **1**, which is also its capture efficiency. Continuous corrosion lowers it by **0.05 per day**; strikes do not cause separate damage. A rod at **0.5** banks half of every strike it catches, and one at **0** banks nothing while still standing and still repairable.
 
-- **Returns** Number (**0-1**): this rod's condition, which is also its capture efficiency. A rod at **0.5** banks half of every strike it catches; at **0** it banks nothing and still stands.
+- **Returns** `float`. This rod's condition (**0-1**), which is also its capture efficiency. A rod at **0.5** banks half of every strike it catches; at **0** it banks nothing and still stands.
 
 ##### `.repair() → ActionResult` *(self only)*
 

@@ -55,10 +55,14 @@ print(cleared.status, cleared.count)
 
 `delete()` returns `ActionResult`. `clear()` returns `CountResult`, whose `.count` is the exact number of entries removed.
 
-### Value rules
+### Key rules
 
-Values must be JSON-safe: `None`, booleans, finite numbers, strings, lists/tuples, and dictionaries with string keys. Each stored value may contain up to **8** nested levels, **16,384** total nodes, and **4,096** characters per string or dictionary key. The root value, every contained value, and every list, tuple, or dictionary container each count as one node; dictionary keys do not. The exact result statuses are `"ok"`, `"invalid_key"`, `"entry_limit"`, `"invalid_value"`, `"not_found"`, and `"busy"`; every applicable command returns a precise `.message`. The **512**-entry limit and transaction contention are programmatically distinct.
+A key is 1 to **96** characters: ASCII letters, digits, `_`, `.`, `:`, or `-`. Spaces, `/`, and every other character are rejected, and so are the reserved names `__proto__`, `prototype`, and `constructor`. For such a key, `set()`, `transaction()`, and `delete()` return `.status == "invalid_key"` with the rule in `.message`, and `get()` and `has()` raise `ValueError`. A prefix for `keys()` or `clear()` uses the same characters and length, and an empty prefix matches every key. It matches the start of the key as text, so `clear("test")` also removes `"testing.keep"`; end the prefix with `.` to clear one group, as in `clear("test.")`. An invalid prefix makes `keys()` raise `ValueError`, and `clear()` returns `.status == "invalid_key"`.
 
 Name keys by subsystem, such as `"rover.fuel_table"` or `"plants.recipe_scores"`. Use Signal Bus for live coordination and Data Archive for knowledge you want to keep.
+
+### Value rules
+
+Values must be JSON-safe: `None`, booleans, finite numbers, strings, lists/tuples, and dictionaries with string keys. Each stored value may contain up to **8** nested levels, **16,384** total nodes, and **4,096** characters per string or dictionary key. The root value, every contained value, and every list, tuple, or dictionary container each count as one node; dictionary keys do not. The exact result statuses are `"ok"`, `"invalid_key"`, `"entry_limit"`, `"invalid_value"`, `"not_found"`, and `"busy"`; every applicable command returns a precise `.message`. The **2,048**-entry limit and transaction contention are programmatically distinct.
 
 *Guide / Automation Systems*

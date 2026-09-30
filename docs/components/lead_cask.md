@@ -2,7 +2,7 @@
 
 > **Category:** Production & Storage | **Component Name:** Lead Cask
 
-The only safe stationary home for hot radioactive cargo. Drones drop Raw Uranium into it, the Fuel Assembler draws from it and returns finished Fuel Rods, and the Reactor pulls its fuel from it.
+Shielded stationary storage for hot radioactive cargo. Drones drop Raw Uranium into it, the Fuel Assembler draws from it and returns finished Fuel Rods, and the Reactor pulls its fuel from it.
 
 | Field | Value |
 | --- | --- |
@@ -16,29 +16,29 @@ The only safe stationary home for hot radioactive cargo. Drones drop Raw Uranium
 3. Fabricate a **Lead Cask** on a **Fabricator**: 3× Lead Plate and 1× Machine Frame.
 4. Deploy it from your Inventory.
 
-**Returned by:** `get_component(id)`
+**Access via:** `get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ### Methods
 
@@ -52,25 +52,25 @@ Units of `item_id` currently casked. Returns **0** when the cask is empty or lat
 | --- | --- | --- |
 | `item_id` | `str` | Hot item id to count |
 
-- **Returns** Number: units of that hot item currently casked.
+- **Returns** `int`. Units of that hot item currently casked.
 
 ##### `.fill_percent() → float`
 
 Fill fraction **0-1**, watch your strategic reserve.
 
-- **Returns** Number (**0-1**).
+- **Returns** `float`. A fraction, **0-1**.
 
 ##### `.capacity() → int`
 
 Maximum hot units (**100**).
 
-- **Returns** Number: maximum capacity (**100**).
+- **Returns** `int`. Maximum capacity (**100**).
 
 ##### `.material() → str`
 
 What the cask is latched to, `"raw_uranium"`, `"fuel_rod"`, or empty. One material per cask, like every stock bin.
 
-- **Returns** String: `"raw_uranium"`, `"fuel_rod"`, or empty when unassigned. Casks accept ONLY hot items; everything else refuses them.
+- **Returns** `str`. Empty when unassigned. Lead Casks accept only hot items. Ordinary storage and inventory refuse them; designated shielded receivers accept them.
 - **Possible values** `""`, `"raw_uranium"`, `"fuel_rod"`
 
 ##### `.transfer_to(target: str, item_id: str, count: int, properties: ItemProperties | None = None, property_match: str | None = None) → TransferResult`
@@ -112,7 +112,7 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_under_construction"` | transient | The configured target is still under construction. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |

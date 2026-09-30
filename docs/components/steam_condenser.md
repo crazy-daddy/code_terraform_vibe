@@ -16,41 +16,41 @@ Converts incoming steam into clean water at a 1:1 mass ratio. Scripted throttle 
 1. Requires the **Steam Condensation** research (Plants 1,000,000).
 2. Buy from the Shop for 50,000 cr.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ##### `.steam_in: FluidPort`
 
 Steam input port. Connect a Thermal Cap or a steam-latched Gas Tank. Its 250 t internal buffer is consumed by condensation after the grid powers the machine.
 
-- **Returns** `FluidPort` accepting steam from a Thermal Cap or Gas Tank.
+- **Returns** `FluidPort`. Accepts steam from a Thermal Cap or Gas Tank.
 
 ##### `.water_out: FluidPort`
 
 Clean-water output port. Connect a Liquid Tank, Large Liquid Tank, Plant Terraformer, Sprinkler, or other water consumer. Its 250 t internal buffer backpressures condensation when full.
 
-- **Returns** `FluidPort` supplying the condensed clean water.
+- **Returns** `FluidPort`. Supplies the condensed clean water.
 
 ### Methods
 
@@ -58,32 +58,32 @@ Clean-water output port. Connect a Liquid Tank, Large Liquid Tank, Plant Terrafo
 
 Clean water produced on the last simulation tick in t/h. Full throttle reaches **250 t/h** when the steam input has supply, the water output has room, and the host outpost is not overcrowded.
 
-- **Returns** Number: clean water produced on the last tick in t/h.
+- **Returns** `float`. Clean water produced on the last tick, in t/h.
 
 ##### `.efficiency() → float`
 
 Fraction of the throttle's requested condensation completed on the last tick (**0.0-1.0**). Low values mean the steam input ran short or the water output filled before the tick completed.
 
-- **Returns** Number (**0-1**): fraction of requested condensation completed.
+- **Returns** `float`. Fraction of requested condensation completed (**0-1**).
 
 ##### `.is_stalled() → bool`
 
 `True` when throttle is above zero and the current fluid state blocks condensation because `steam_in` is empty or `water_out` is full. This is derived immediately from both ports; use `status()` to distinguish the blockers.
 
-- **Returns** Boolean: `True` when steam is empty or the water buffer is full while throttle is open.
+- **Returns** `bool`. `True` when steam is empty or the water buffer is full while throttle is open.
 
 ##### `.status() → str`
 
 Current actionable state: `"idle"`, `"no_power"`, `"no_steam"`, `"output_full"`, or `"running"`. This is derived live from throttle, power, and both fluid buffers. Once throttle is **0**, it reports `"idle"`; inspect port levels to decide when to reopen it.
 
-- **Returns** One of `"idle"`, `"no_power"`, `"no_steam"`, `"output_full"`, or `"running"`.
+- **Returns** `str`
 - **Possible values** `"idle"`, `"no_power"`, `"no_steam"`, `"output_full"`, `"running"`
 
 ##### `.throttle() → float`
 
 Current condensation setpoint (**0.0-1.0**). It scales steam use, water output, and power draw linearly.
 
-- **Returns** Number (**0-1**): current condensation setpoint.
+- **Returns** `float`. Current condensation setpoint (**0-1**).
 
 ##### `.set_throttle(t: float) → ActionResult` *(self only)*
 

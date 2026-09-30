@@ -4,23 +4,23 @@
 
 Buys from and sells to Earth. Use `get_component("shop")` to automate surplus sales or purchases when a threshold is reached. The same catalogue and prices are used by the Shop UI.
 
-**Returned by:** `get_component("shop")`
+**Access via:** `get_component("shop")`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ### Methods
 
@@ -114,6 +114,6 @@ Buy a positive whole-number `quantity` of `item_id`, defaulting to **1**. The co
 
 Every available catalogue entry as a list of `{id, name, cost}` objects. Use to pick a target dynamically or to show a filtered picker in a script. The Earth shop never runs out of catalogue items; entries hidden by tech gates don't appear.
 
-- **Returns** List of {id, name, cost}
+- **Returns** `list[ShopItem]`
 
 *Components / Core Systems*

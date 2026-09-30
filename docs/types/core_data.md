@@ -58,7 +58,7 @@ Programmatic identifier of this component.
 
 ##### `.type_id: str`
 
-Which kind of component this is, as the stable type id ("bio_lab", "rover", "drone_small"). Every component of the same kind shares it, so a library function can branch on what it was handed. The same token machine-type queries accept, so `outpost.buildings(self.type_id)` lists this machine's siblings. Use `.id` for which individual one this is.
+Which kind of component this is, as the stable type id ("bio_lab", "rover", "drone_small"). Every component of the same kind shares it, so a library function can branch on what it was handed. For a building at an outpost, `outpost.buildings(self.type_id)` lists buildings of that type there; the query excludes mobile units and sensors. Use `.id` for which individual one this is.
 
 - **Returns** `str`
 

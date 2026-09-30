@@ -14,29 +14,29 @@ Multi-material bulk depot, 5 material-locked slots, 2,000 each (10,000 total). D
 1. Requires the **Warehouse** research (Oxygen 150).
 2. Buy from the Shop for 3,000 cr.
 
-**Returned by:** `get_component(id)`
+**Access via:** `get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.outpost: OutpostRef`
 
 The outpost where this building is deployed. The returned `OutpostRef` includes its stable id, display name, biome, position, capacity, and `buildings()` query. Read the property again when you need current values.
 
-- **Returns** `OutpostRef` for the outpost where this building is deployed.
+- **Returns** `OutpostRef`. The outpost where this building is deployed.
 
 ### Methods
 
@@ -50,43 +50,43 @@ Units of `item_id` held across every slot. Returns **0** if no slot holds it. In
 | --- | --- | --- |
 | `item_id` | `str` | Item id to count |
 
-- **Returns** Number: units of that item across all slots.
+- **Returns** `int`. Units of that item across all slots.
 
 ##### `.total() → int`
 
 Total units across all slots (every material combined). For one material use `count(item_id)`.
 
-- **Returns** Number: total units across every slot.
+- **Returns** `int`. Total units across every slot.
 
 ##### `.capacity() → int`
 
 Total capacity across all physical slots. A Warehouse returns **10,000** (**5** × **2,000**); a Large Warehouse returns **30,000** (**15** × **2,000**). Query this value instead of hardcoding a tier.
 
-- **Returns** Number: total capacity across all slots.
+- **Returns** `int`. Total capacity across all slots.
 
 ##### `.fill_percent() → float`
 
 Fraction full across the whole warehouse, `total() / capacity()`, in the range **0-1**.
 
-- **Returns** Number (**0-1**).
+- **Returns** `float`. A fraction, **0-1**.
 
 ##### `.is_empty() → bool`
 
 `True` if every slot is empty.
 
-- **Returns** Boolean.
+- **Returns** `bool`
 
 ##### `.materials() → list[str]`
 
 List of item ids currently stored (one entry per material with units in a slot). Iterate it: `for m in wh.materials():`.
 
-- **Returns** List of item ids currently stored.
+- **Returns** `list[str]`. Ids of the items currently stored.
 
 ##### `.stacks() → list[ItemStack]`
 
 Lists the item variants stored across all physical slots as `ItemStack` values. Items with the same id but different properties occupy separate slots. Call it again when you need current contents.
 
-- **Returns** List of property-distinct `ItemStack` snapshots across all physical slots.
+- **Returns** `list[ItemStack]`. Property-distinct stacks across all physical slots.
 
 ##### `.space_for(item_id: str, properties: ItemProperties | None = None) → int`
 
@@ -99,7 +99,7 @@ How many more units of one exact item variant fit **right now**, using room in m
 | `item_id` | `str` | Item id to size remaining room for |
 | `properties` | `ItemProperties \| None` | Full property dict for the variant, or None for propertyless items |
 
-- **Returns** Number: units of that exact item variant that fit right now.
+- **Returns** `int`. Units of that exact item variant that fit right now.
 
 ##### `.has_space(item_id: str, amount: int, properties: ItemProperties | None = None) → bool`
 
@@ -113,13 +113,13 @@ How many more units of one exact item variant fit **right now**, using room in m
 | `amount` | `int` | Whole-number units required |
 | `properties` | `ItemProperties \| None` | Full property dict for the variant, or None for propertyless items |
 
-- **Returns** Boolean.
+- **Returns** `bool`
 
 ##### `.slots() → list[WarehouseSlot]`
 
 Every physical slot as a `WarehouseSlot` record with `.index`, `.item`, `.count`, `.capacity`, and `.properties`. Property-distinct variants use distinct slots.
 
-- **Returns** List of `WarehouseSlot` records with `.index`, `.item`, `.count`, `.capacity`, and exact `.properties` identity.
+- **Returns** `list[WarehouseSlot]`. One record per slot.
 
 ##### `.compact() → TransferResult`
 
@@ -181,7 +181,7 @@ Requires **Auto Feeders** research. Move up to whole-number `count` units of `it
 | `"source_changed"` | transient | The source changed between transfer planning and commit. |
 | `"target_under_construction"` | transient | The configured target is still under construction. |
 | `"target_wrong_material"` | rejection | The destination is latched to or accepts a different material. |
-| `"hot_cargo_requires_cask"` | rejection | This hot cargo must move through a compatible Lead Cask. |
+| `"hot_cargo_requires_cask"` | rejection | A transfer endpoint does not support this hot cargo. |
 | `"cask_accepts_hot_only"` | rejection | Lead Casks accept only supported hot cargo. |
 | `"slots_full"` | rejection | The destination has capacity but no slot for this material identity. |
 | `"target_full"` | rejection | The destination has no capacity for matching units. |

@@ -213,7 +213,7 @@ Blueprint unlocks by completing the order **Vestibule, Pipe Network Run**.
 | Power | 28 W |
 | Production tier | T1 |
 
-##### Heavy Oil Cracking: Oil → Tar `craft_tar` *(Not yet unlocked)*
+##### Heavy Oil Cracking: Oil → Tar `craft_tar` *(Unlocked)*
 
 5 t Oil → 2× Tar
 Blueprint unlocks by completing the order **Vestibule, Polymer Stockpile**.
@@ -367,7 +367,7 @@ Blueprint unlocks by completing the order **Spire, Rare Earth Order**.
 | Power | 45 W |
 | Production tier | T2 |
 
-##### Rare Earth + Control + Lubricant + Rubber → Heli Thruster `craft_heli_thruster` *(Not yet unlocked)*
+##### Rare Earth + Control + Lubricant + Rubber → Heli Thruster `craft_heli_thruster` *(Unlocked)*
 
 2× Rare Earth Core, 1× Control Unit, 2× Lubricant, 1× Rubber, and 2 t Water → 1× Heli Thruster
 Blueprint unlocks by completing the order **Vestibule, Refueling Pad Order**.
@@ -422,7 +422,7 @@ Blueprint unlocks by completing the order **Spire, Pressure Hardware**.
 | Power | 32 W |
 | Production tier | T2 |
 
-##### Titanium + Lubricant + Rubber → Oil Tank (Small) `craft_oil_tank_small` *(Not yet unlocked)*
+##### Titanium + Lubricant + Rubber → Oil Tank (Small) `craft_oil_tank_small` *(Unlocked)*
 
 1× Titanium Ingot, 1× Lubricant, 1× Rubber, and 1 t Water → 1× Oil Tank (Small)
 Blueprint unlocks by completing the order **Vestibule, Heli Thruster Order**.
@@ -433,7 +433,7 @@ Blueprint unlocks by completing the order **Vestibule, Heli Thruster Order**.
 | Power | 35 W |
 | Production tier | T2 |
 
-##### Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium) `craft_oil_tank_medium` *(Not yet unlocked)*
+##### Titanium + Lubricant + Rubber + Lining → Oil Tank (Medium) `craft_oil_tank_medium` *(Unlocked)*
 
 2× Titanium Ingot, 1× Lubricant, 1× Rubber, 1× Tank Lining, and 2 t Water → 1× Oil Tank (Medium)
 Blueprint unlocks by completing the order **Vestibule, Oil Tank Order**.
@@ -444,7 +444,7 @@ Blueprint unlocks by completing the order **Vestibule, Oil Tank Order**.
 | Power | 40 W |
 | Production tier | T2 |
 
-##### Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) `craft_oil_tank_large` *(Not yet unlocked)*
+##### Titanium + Lubricant + Rubber + Lining → Oil Tank (Large) `craft_oil_tank_large` *(Unlocked)*
 
 3× Titanium Ingot, 2× Lubricant, 1× Rubber, 2× Tank Lining, and 3 t Water → 1× Oil Tank (Large)
 Blueprint unlocks by completing the order **Vestibule, Mid Tank Order**.
@@ -455,7 +455,7 @@ Blueprint unlocks by completing the order **Vestibule, Mid Tank Order**.
 | Power | 45 W |
 | Production tier | T2 |
 
-##### Pipes + Valves + Rare Earth + Titanium + Tar → Coolant Loop `craft_coolant_loop` *(Not yet unlocked)*
+##### Pipes + Valves + Rare Earth + Titanium + Tar → Coolant Loop `craft_coolant_loop` *(Unlocked)*
 
 4× Liquid Pipe Segment, 2× Pressure Valve, 1× Rare Earth Core, 2× Titanium Ingot, 2× Tar, and 4 t Water → 1× Coolant Loop
 Blueprint unlocks by completing the order **Spire, Neutronium Order**.
@@ -466,7 +466,7 @@ Blueprint unlocks by completing the order **Spire, Neutronium Order**.
 | Power | 50 W |
 | Production tier | T2 |
 
-##### Neutronium + Cells + Controls + Rare Earth + Tar → Neutron Capacitor `craft_neutron_capacitor` *(Not yet unlocked)*
+##### Neutronium + Cells + Controls + Rare Earth + Tar → Neutron Capacitor `craft_neutron_capacitor` *(Unlocked)*
 
 1× Neutronium Bar, 2× Battery Cell, 2× Control Unit, 1× Rare Earth Core, 1× Tar, 4 t Water, and 4 t Steam → 1× Neutron Capacitor
 Blueprint unlocks by completing the order **Spire, Cobalt Stockpile**.
@@ -499,7 +499,7 @@ Blueprint unlocks with the **Plant Terraformer** research.
 | Power | 80 W |
 | Production tier | T3 |
 
-##### Frame + Panel + Glass → Grow Lamp Kit `craft_grow_lamp_kit` *(Not yet unlocked)*
+##### Frame + Panel + Glass → Grow Lamp Kit `craft_grow_lamp_kit` *(Unlocked)*
 
 1× Machine Frame, 2× Circuit Panel, and 2× Glass → 1× Grow Lamp Kit
 Blueprint unlocks with the **Grow Lamp** research.
@@ -510,7 +510,7 @@ Blueprint unlocks with the **Grow Lamp** research.
 | Power | 35 W |
 | Production tier | T2 |
 
-##### Frame + Pipes + Valve → Sprinkler Kit `craft_sprinkler_kit` *(Not yet unlocked)*
+##### Frame + Pipes + Valve → Sprinkler Kit `craft_sprinkler_kit` *(Unlocked)*
 
 1× Machine Frame, 2× Liquid Pipe Segment, 1× Pressure Valve, and 2 t Water → 1× Sprinkler Kit
 Blueprint unlocks with the **Sprinkler** research.
@@ -521,7 +521,7 @@ Blueprint unlocks with the **Sprinkler** research.
 | Power | 38 W |
 | Production tier | T2 |
 
-##### Frame + Control + Panel → Dispenser Kit `craft_dispenser_kit` *(Not yet unlocked)*
+##### Frame + Control + Panel → Dispenser Kit `craft_dispenser_kit` *(Unlocked)*
 
 1× Machine Frame, 1× Control Unit, and 1× Circuit Panel → 1× Dispenser Kit
 Blueprint unlocks with the **Dispenser** research.
@@ -576,7 +576,7 @@ Blueprint unlocks by completing the Bio Order **Soil Enrichment Assay**.
 | Power | 32 W |
 | Production tier | T2 |
 
-##### Tar + Glass + Panel → Fertilizer Mk II `craft_fertilizer_mk2` *(Not yet unlocked)*
+##### Tar + Glass + Panel → Fertilizer Mk II `craft_fertilizer_mk2` *(Unlocked)*
 
 2× Tar, 2× Glass, 1× Circuit Panel, and 3 t Water → 2× Fertilizer Mk II
 Blueprint unlocks by completing the Bio Order **Hydrothermal Fragment Manifest**.
@@ -598,7 +598,7 @@ Blueprint unlocks by completing the Bio Order **Deep-Trench Capstone**.
 | Power | 52 W |
 | Production tier | T4 |
 
-##### Plastic + Rare Earth → Growth Accelerant `craft_growth_accelerant` *(Not yet unlocked)*
+##### Plastic + Rare Earth → Growth Accelerant `craft_growth_accelerant` *(Unlocked)*
 
 1× Plastic, 1× Rare Earth Core, and 2 t Water → 2× Growth Accelerant
 Blueprint unlocks by completing the Bio Order **Volcanic Grand Compendium**.
@@ -609,7 +609,7 @@ Blueprint unlocks by completing the Bio Order **Volcanic Grand Compendium**.
 | Power | 38 W |
 | Production tier | T2 |
 
-##### Capacitor + Controls + Rare Earth + Coolant → Yield Amplifier `craft_yield_amplifier` *(Not yet unlocked)*
+##### Capacitor + Controls + Rare Earth + Coolant → Yield Amplifier `craft_yield_amplifier` *(Unlocked)*
 
 1× Neutron Capacitor, 2× Control Unit, 2× Rare Earth Core, 1× Coolant Loop, and 4 t Water → 1× Yield Amplifier
 Blueprint unlocks by completing the order **Spire, Neutron Capacitor Order**.
@@ -620,7 +620,7 @@ Blueprint unlocks by completing the order **Spire, Neutron Capacitor Order**.
 | Power | 65 W |
 | Production tier | T4 |
 
-##### Controls + Panels + Rare Earth + Valves → Plant Terraformer Pack Mk II `craft_plant_terraformer_pack_mk2` *(Not yet unlocked)*
+##### Controls + Panels + Rare Earth + Valves → Plant Terraformer Pack Mk II `craft_plant_terraformer_pack_mk2` *(Unlocked)*
 
 4× Control Unit, 6× Circuit Panel, 3× Rare Earth Core, 4× Pressure Valve, and 6 t Water → 1× Plant Terraformer Mk II Upgrade Pack
 Blueprint unlocks with the **Plant Terraformer Mk II** research.
@@ -631,7 +631,7 @@ Blueprint unlocks with the **Plant Terraformer Mk II** research.
 | Power | 90 W |
 | Production tier | T3 |
 
-##### Panel + Glass + Rare Earth → Grow Lamp Pack Mk II `craft_grow_lamp_pack_mk2` *(Not yet unlocked)*
+##### Panel + Glass + Rare Earth → Grow Lamp Pack Mk II `craft_grow_lamp_pack_mk2` *(Unlocked)*
 
 3× Circuit Panel, 4× Glass, and 1× Rare Earth Core → 1× Grow Lamp Mk II Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Optics Stockpile**.
@@ -642,7 +642,7 @@ Blueprint unlocks by completing the order **Spire, Optics Stockpile**.
 | Power | 42 W |
 | Production tier | T2 |
 
-##### Capacitor + Rare Earth + Controls → Grow Lamp Pack Mk III `craft_grow_lamp_pack_mk3` *(Not yet unlocked)*
+##### Capacitor + Rare Earth + Controls → Grow Lamp Pack Mk III `craft_grow_lamp_pack_mk3` *(Unlocked)*
 
 1× Neutron Capacitor, 3× Rare Earth Core, 2× Control Unit, and 3 t Water → 1× Grow Lamp Mk III Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Capacitor Bulk Order**.
@@ -653,7 +653,7 @@ Blueprint unlocks by completing the order **Spire, Capacitor Bulk Order**.
 | Power | 55 W |
 | Production tier | T4 |
 
-##### Plastic + Coolant + Valves → Sprinkler Pack Mk II `craft_sprinkler_pack_mk2` *(Not yet unlocked)*
+##### Plastic + Coolant + Valves → Sprinkler Pack Mk II `craft_sprinkler_pack_mk2` *(Unlocked)*
 
 4× Plastic, 1× Coolant Loop, and 2× Pressure Valve → 1× Sprinkler Mk II Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Polymer Megastock**.
@@ -664,7 +664,7 @@ Blueprint unlocks by completing the order **Spire, Polymer Megastock**.
 | Power | 44 W |
 | Production tier | T3 |
 
-##### Controls + Panels + Coolant → Sprinkler Pack Mk III `craft_sprinkler_pack_mk3` *(Not yet unlocked)*
+##### Controls + Panels + Coolant → Sprinkler Pack Mk III `craft_sprinkler_pack_mk3` *(Unlocked)*
 
 2× Control Unit, 4× Circuit Panel, 2× Coolant Loop, and 4 t Water → 1× Sprinkler Mk III Upgrade Pack
 Blueprint unlocks by completing the order **Spire, Avionics Megastock**.
@@ -752,7 +752,7 @@ Blueprint unlocks by completing the order **Helios, Plate Order**.
 | Power | 36 W |
 | Production tier | T2 |
 
-##### Shield Plating `craft_shield_plating` *(Not yet unlocked)*
+##### Shield Plating `craft_shield_plating` *(Unlocked)*
 
 4× Lead Plate and 1× Machine Frame → 1× Shield Plating
 Blueprint unlocks by completing the order **Vestibule, Shielded Transport Trial**.
@@ -763,7 +763,7 @@ Blueprint unlocks by completing the order **Vestibule, Shielded Transport Trial*
 | Power | 36 W |
 | Production tier | T2 |
 
-##### Lightning Rod `craft_lightning_rod_kit` *(Not yet unlocked)*
+##### Lightning Rod `craft_lightning_rod_kit` *(Unlocked)*
 
 1× Machine Frame, 4× Battery Cell, and 2× Circuit Panel → 1× Lightning Rod
 Blueprint unlocks with the **Lightning Rods** research.

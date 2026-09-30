@@ -188,6 +188,7 @@ Quick reference map to all modular documentation files.
 - [language_reference](guide/language_reference.md)
 - [long_running_scripts](guide/long_running_scripts.md)
 - [map_markers_guide](guide/map_markers_guide.md)
+- [automations_guide](guide/automations_guide.md)
 - [plan_mode](guide/plan_mode.md)
 - [plant_terraformer_guide](guide/plant_terraformer_guide.md)
 - [power_and_terraforming](guide/power_and_terraforming.md)

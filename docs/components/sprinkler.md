@@ -17,29 +17,29 @@ Waters the four orthogonally adjacent field cells (directly above, below, left, 
 2. Fabricate a **Sprinkler Kit** on a **Fabricator**: 1× Machine Frame, 2× Liquid Pipe Segment, 1× Pressure Valve, and 2 t Water.
 3. Deploy the kit on an empty field cell with a Harvester's `deploy()`.
 
-**Returned by:** `self / get_component(id)`
+**Access via:** `self / get_component(id)`
 
 **Every component has a stable `.id`. For a deployed machine, open the ⓘ on its card to find the exact ID, then pass that value to `get_component(id)`. IDs are case-sensitive.**
 
 ### Properties
 
-##### `.id`
+##### `.id: str`
 
 Stable programmatic identifier for this component. Use it with `get_component(id)` and APIs that ask for component, planet, vehicle, station, or order ids.
 
-- **Returns** String
+- **Returns** `str`
 
-##### `.name`
+##### `.name: str`
 
 Human-readable display name. Prefer `.id` for scripts that need to survive renames.
 
-- **Returns** String
+- **Returns** `str`
 
 ##### `.water_in: FluidPort`
 
 Supplies water from a connected source. Call `self.water_in.connect(...)` with the source's stable machine id or display name. A remote source also needs a completed conflict-free Liquid Pipe route between both locations. See `FluidPort` for level, capacity, flow, and connection queries.
 
-- **Returns** `FluidPort` water buffer. Call `connect(...)` with the provider's stable machine id or display name; completed liquid-pipe networks carry water between outposts. Sharing an outpost with a pipe or tank does not connect it automatically.
+- **Returns** `FluidPort`. Water buffer. Call `connect(...)` with the provider's stable machine id or display name; completed liquid-pipe networks carry water between outposts. Sharing an outpost with a pipe or tank does not connect it automatically.
 
 ### Methods
 
@@ -79,32 +79,32 @@ Command watering on or off. Power loss pauses the script but preserves this setp
 
 `True` when the sprinkler is commanded on, powered, and has water in its `water_in` buffer. If disabled, unpowered, or dry, covered cells lose `watered`.
 
-- **Returns** Boolean: `True` when the sprinkler is placed, commanded on, powered, and has water in its `water_in` buffer. `False` when unplaced, disabled, unpowered, or dry; covered cells then lose `watered` and their plants pause.
+- **Returns** `bool`. `True` when the sprinkler is placed, commanded on, powered, and has water in its `water_in` buffer. `False` when unplaced, disabled, unpowered, or dry; covered cells then lose `watered` and their plants pause.
 
 ##### `.status() → str`
 
 Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, `"no_water"`, or `"active"`.
 
-- **Returns** Exact operating state: `"not_placed"`, `"disabled"`, `"no_power"`, `"no_water"`, or `"active"`.
+- **Returns** `str`
 - **Possible values** `"not_placed"`, `"disabled"`, `"no_power"`, `"no_water"`, `"active"`
 
 ##### `.buffer() → float`
 
 Fraction of the onboard water buffer currently filled (**0-1**). It drops while watering and refills from the connected `water_in` source.
 
-- **Returns** Number (**0-1**): fraction of the onboard water buffer currently filled. Drops as the sprinkler waters; refilled by the connected `water_in` flow source. **0** means dry (covered cells lose `watered`).
+- **Returns** `float`. Fraction of the onboard water buffer currently filled (**0-1**). Drops as the sprinkler waters; refilled by the connected `water_in` flow source. **0** means dry (covered cells lose `watered`).
 
 ##### `.tier() → int`
 
 Deployed tier (**1-4**). Mk I/II/III/IV provide **1×/2×/4×/8×** supported plant output, draw **5/25/100/500 W**, and consume **2/4/8/16 t/h Water** while active.
 
-- **Returns** Number (**1-4**), the deployed tier. Higher tiers boost the output of plants they cover and drink more water and power; tier up by fabricating and applying a Sprinkler upgrade pack.
+- **Returns** `int`. The deployed tier (**1-4**). Higher tiers boost the output of plants they cover and drink more water and power; tier up by fabricating and applying a Sprinkler upgrade pack.
 
 ##### `.position() → str`
 
 Grid sector occupied by this sprinkler, such as `"E14"`.
 
-- **Returns** String: the grid sector this sprinkler occupies (e.g. `"E14"`).
+- **Returns** `str`. The grid sector this sprinkler occupies (e.g. `"E14"`).
 
 ##### `.peek_command() · .next_command() · .command_count() · .clear_commands()` *(self only)*
 

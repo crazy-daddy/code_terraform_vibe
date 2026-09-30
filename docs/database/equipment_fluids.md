@@ -22,16 +22,6 @@ Extracts oil from a surveyed oil well.
 | Produced by | Iron + Titanium + Valve + Panel → Oil Pump |
 | Deploys | Oil Pump |
 
-##### Steam Turbine `steam_turbine`
-
-Produces up to **108 W** from **90 t/h Steam** at full throttle. A script controls its throttle.
-
-| Field | Value |
-| --- | --- |
-| Sells for | 7,500 cr |
-| Shop price | 7,500 cr |
-| Component docs | Steam Turbine |
-
 ##### Steam Condenser `steam_condenser`
 
 Condenses steam into clean water at up to 250 t/h.

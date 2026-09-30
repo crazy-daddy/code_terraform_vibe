@@ -6,7 +6,7 @@ In-game and external editor tools, commands, variants, debugging, and controls.
 
 ## Code Editor
 
-Each machine with a script slot has a code editor window. Open it by clicking `MANAGE` on the machine card.
+Each machine with a script slot has a code editor window. Open it by clicking **MANAGE** on the machine card.
 
 ### Tabs
 
@@ -28,7 +28,7 @@ Each machine with a script slot has a code editor window. Open it by clicking `M
 
 - **Duplicate Variant**, save the current code as a new named variant
 - `🔊` **Mute**, mute this script's console output. Text gets a strikethrough when muted. Muted scripts don't print to the console; errors still show. Useful for silencing background scripts you're not actively working on.
-- `⊞` **Dock**, switch to an IDE-style layout. The editor pins to the left, the console docks to the bottom-right, and the dashboard fills the remaining space. The sidebar hides automatically to maximize content area. Drag the dividers between panels to resize. Your dock layout is remembered between sessions. Click `Undock` to return to floating windows.
+- `⊞` **Dock**, switch to an IDE-style layout. The editor pins to the left, the console docks to the bottom-right, and the dashboard fills the remaining space. The sidebar hides automatically to maximize content area. Drag the dividers between panels to resize. Your dock layout is remembered between sessions. Click **Undock** to return to floating windows.
 - `⤓` **Auto-min**, when enabled (green), the editor minimizes automatically when you run the script. Useful for watching the dashboard while your code executes.
 
 ### Navigating from code to DOCS
@@ -42,6 +42,10 @@ The editor can jump straight to matching DOCS entries while you write:
 - **`F2` to rename** a symbol (variable, user function, parameter). Renames every whole-word occurrence in the current script, skipping strings and comments. Reserved names (keywords, `self`, builtins) can't be renamed.
 
 > Hover for signatures. Cmd/Ctrl+click opens the matching DOCS entry without leaving the editor.
+
+### Errors and warnings
+
+The editor checks your code as you type and underlines what would fail or looks wrong. To silence a check you know is fine, end that line with `# type: ignore` or `# noqa`, as in other Python tools. A `# type: ignore` line at the very top of a script, before any code, quiets the whole script. Syntax errors always show, because a script that does not parse cannot run. External editors show the same checks and follow the same comments.
 
 ### Commands tab
 
@@ -61,7 +65,7 @@ Scripts run continuously if they contain a `while True:` loop. Otherwise they ru
 
 A script saved as running starts again from the top when you load the game. Its local variables and current line are not restored. A paused script stays paused but also starts from the top when you resume it after loading; a stopped script stays stopped. Persistent world state and machine work remain where they were, so check current cargo, storage, and machine state before repeating actions. Use the **Data Archive** for script progress that must survive reloads.
 
-The console window shows output from all unmuted scripts. Use `CLEAR` to empty it and `AUTO-SCROLL` to follow new output.
+The console window shows output from all unmuted scripts. Use **CLEAR** to empty it and **AUTO-SCROLL** to follow new output.
 
 *Guide / Editor & Tools*
 
@@ -188,11 +192,11 @@ Compatible family sharing is explicit machine metadata, not a guess based on nam
 
 ### Unassigned scripts
 
-Undeploying or deconstructing a machine stops its script. Authored code stays in **Computer > Scripts > Unassigned**, with its notes, private Main, selected variant, and run history. **Current** shows assigned scripts by default; **All** includes both views.
+Undeploying or deconstructing a machine, or deleting a Control Room card, stops its script. Authored code stays in **Computer > Scripts > Unassigned**, with its notes, private Main, selected variant, and run history. **Current** shows assigned scripts by default; **All** includes both views.
 
-Unassigned scripts cannot run. Use their actions menu to **Copy to machine**, **Copy to Playground**, or **Delete**. You can select several unassigned scripts for deletion. Deletion removes their private data but keeps shared machine variants.
+Unassigned scripts cannot run. Use their actions menu to **Copy to machine** (**Copy to panel** for a card's script), **Copy to Playground**, or **Delete**. You can select several unassigned scripts for deletion. Deletion removes their private data but keeps shared machine variants.
 
-**Copy to machine** uses a compatible machine slot and keeps its existing ID. It stops the target and preserves the previous code in Variants before replacing Main. Compatibility requires a recorded former machine type and slot; older unassigned scripts without that information can still be reviewed and copied to Playground.
+**Copy to machine** uses a compatible machine slot and keeps its existing ID. It stops the target and preserves the previous code in Variants before replacing Main. Compatibility requires a recorded former machine type and slot; older unassigned scripts without that information can still be reviewed and copied to Playground. **Copy to panel** works the same way on any card you choose, since every card's script uses the same `panel` drawing API.
 
 **Copy to Playground** creates a new named document without replacing Scratch or running the code. The original script stays available with all its metadata. Copied code is unchanged, including machine IDs and `self` references.
 
@@ -281,7 +285,7 @@ Debug mode is a read-only-plus-pause tool. Enabling Debug on one script **cannot
 
 ## Control Room
 
-The Control Room is a top-level page for **cards**: script-driven panels that draw live dashboards and can issue commands through shared game APIs. Open the **Control Room** page, click `+ New Card`, and a fresh panel script is bound to a canvas.
+The Control Room is a top-level page for **cards**: script-driven panels that draw live dashboards and can issue commands through shared game APIs. Open the **Control Room** page, click **+ New Card**, and a fresh panel script is bound to a canvas.
 
 A panel script runs every game tick. The pattern is always the same:
 
@@ -318,19 +322,22 @@ The data comes from existing APIs; panels provide a canvas and widgets for displ
 
 A radio group, a combo box and a list each take their choices as one list and store one value, so a five-way choice costs the card one saved key rather than five. `combo` and `text_field` open the game's own menu and a real text editor over the card, which is why they stay readable at any card size and why typing into a field has working selection, clipboard and input method.
 
-**Fifteen primitives** for everything the named widgets don't cover:
+**Seventeen primitives** for everything the named widgets don't cover:
 
 - `draw_text` (with optional `wrap`), `draw_icon`
 - `draw_rect` / `fill_rect`, `draw_circle` / `fill_circle`, `draw_line`
 - `draw_polygon` / `fill_polygon`, `polyline`
+- `texture` / `draw_texture`, for pixel art and backgrounds
 - `clip_rect` / `clear_clip`
 - `clear`, `width`, `height`
 
-**Driving the widgets from code:** `set_switch`, `set_slider`, `set_selected` and `set_text` force a control to a value without waiting for a click; `forget` drops one stored value and `clear_inputs` drops them all. Stored keys are never swept for you, because a card that paints one page at a time would lose the other page's state, so a card is capped at 512 of them.
+**Driving the widgets from code:** `set_switch`, `set_slider`, `set_selected` and `set_text` force a control to a value without waiting for a click, and `get_switch`, `get_slider`, `get_selected` and `get_text` read one without drawing it, for a control on a page the card is not showing; `forget` drops one stored value and `clear_inputs` drops them all. Stored keys are never swept for you, because a card that paints one page at a time would lose the other page's state, so a card is capped at 512 of them.
 
-**Reading the player directly:** `mouse()` gives the cursor position on this card, `clicks()` hands you every click that missed a widget so you can hit-test your own drawing, and `capture_keys()` plus `keys()` give a focused card the keyboard. The cursor is sampled once per tick and the card repaints at the same rate, so anything you draw from `mouse()` follows the pointer about a frame behind: right for showing what is under it, wrong for anything that must track it exactly.
+**Reading the player directly:** `mouse()` gives the cursor position on this card and whether the left button went down or came back up since you last asked, which is what dragging needs, `clicks()` hands you every click that missed a widget so you can hit-test your own drawing, and `capture_keys()` plus `keys()` give a focused card the keyboard. The cursor is sampled once per tick and the card repaints at the same rate, so anything you draw from `mouse()` follows the pointer about a frame behind: right for showing what is under it, wrong for anything that must track it exactly.
 
-Every widget that takes a `color` parameter accepts theme tokens: `"accent"`, `"success"`, `"warning"`, `"error"`, `"text-bright"`, `"text-secondary"`, `"text-muted"`, `"text-value"`. Cards can also paint with **surface tokens**, bg-base, bg-surface, bg-panel, border, border-dim. Wrap a `card(x, y, w, h, title)` for the bordered+titled frame, fill zones with `fill_rect(x, y, w, h, "bg-surface")`, and a manage-style row is `status_dot` (green) + `draw_text` (name) + `button` (play/manage). Theme tokens resolve from the active theme whenever the script redraws the card.
+**Laying things out:** a widget is placed by the point you pass, but not every widget uses it the same way. Boxes, bars, pills and controls start at their top-left corner; `draw_text` and `label` are centered on `y`; `counter` stands on `y` as its baseline; circles, dots and gauges are centered on the point. `last_bounds()` gives you the box the last widget took up, top-left whatever it was placed by, so you can put the next thing after it, and `measure_text()` gives you the size of text before you draw it.
+
+Every widget that takes a `color` parameter accepts theme tokens: `"accent"`, `"success"`, `"warning"`, `"error"`, `"text-bright"`, `"text-secondary"`, `"text-muted"`, `"text-value"`. It also accepts any CSS color: hex (`"#ff8800"`), `"rgb(255, 136, 0)"`, `"hsl(30, 100%, 50%)"`, or a name like `"orange"`. Theme tokens follow the player's theme; CSS colors stay exactly as written. Cards can also paint with **surface tokens**, bg-base, bg-surface, bg-panel, border, border-dim. Wrap a `card(x, y, w, h, title)` for the bordered+titled frame, fill zones with `fill_rect(x, y, w, h, "bg-surface")`, and a manage-style row is `status_dot` (green) + `draw_text` (name) + `button` (play/manage). Theme tokens resolve from the active theme whenever the script redraws the card.
 
 See the **Panel** entry in the API reference (left sidebar) for the full method list with live previews of each widget.
 
@@ -367,7 +374,7 @@ No `sleep()` needed, the interpreter paces the loop automatically. The panel rep
 
 ### Limits
 
-- **50 cards per save**, max. Past that, `+ New Card` is grayed out. Delete one to make room.
+- **50 cards per save**, max. Past that, **+ New Card** is grayed out. Delete one to make room.
 - **Board density**, choose 2-6 columns from the selector above the board. The untouched default uses 2 for ordinary workspaces, 4 for 4K-class workspaces, and 6 for sufficiently wide ultrawides. A manual choice persists.
 - **Four card sizes**, 1×1, 2×1 (wide), 1×2 (tall), and 2×2 (big), selected directly from the card-size menu. The logical canvas scales with the span, so **draw relative to `width()` / `height()`** and your card reflows at any size.
 - **One script per card.** Want separate concerns? Make multiple cards.
@@ -419,7 +426,7 @@ Install the extension once. It is a thin client: the game installs the language 
 
 Game files automatically use the **Code Terraform** language mode. Completion, diagnostics, hover, signature help and Go to Definition use the same analysis as the in-game editor, including each script's own `self` or `panel`. Other Python projects keep their Python tooling.
 
-Save edits to sync them into the game. The VS Code Command Palette includes **Create Library in Game**, **Import File as Game Library**, **Rename Library and Update Imports**, **Run Script in Game** and **Stop Script in Game** under Code Terraform. Unknown files offer an Import action. Save files and resolve in-game source conflicts first. Rename updates game imports and saved variants through the normal game command. Attach and delete scripts in the game. No command runs host Python. Its status item reports context availability; click it to restart the service.
+Save edits to sync them into the game. The VS Code Command Palette includes **Create Library in Game**, **Import File as Game Library**, **Rename Library and Update Imports**, **Apply Library in Game**, **Apply All Libraries in Game**, **Run Script in Game** and **Stop Script in Game** under Code Terraform. Apply deploys saved Library edits and restarts the scripts that import them, the same as Apply in the game; it never runs on save. Unknown files offer an Import action. Save files and resolve in-game source conflicts first. Rename updates game imports and saved variants through the normal game command. Attach and delete scripts in the game. No command runs host Python. Its status item reports context availability; click it to restart the service.
 
 `codeterraform-workspace.json` contains a read-only analysis snapshot. Keep this save open to refresh owners, names and research. Offline analysis uses the most recent snapshot. If the folder was written by a different game build than the server in use, open the save in the game once to refresh both. Do not edit the generated context or the sync manifest.
 
@@ -427,7 +434,7 @@ Save edits to sync them into the game. The VS Code Command Palette includes **Cr
 
 Keep this save open and the game unpaused. In VS Code, open a machine, panel, or contract script, set a breakpoint, and press F5. An idle script starts; a running script attaches without restarting. Breakpoints, conditions, logpoints, call stacks, locals, watches, hover inspection, and Step Over/Into/Out use the game's interpreter. Library breakpoints are reached through a script that imports that Library. Each session controls one script.
 
-Shift+F5 or closing the debug session disconnects and leaves the script running. Use **Stop Script in Game** to stop it. Watches and the Debug Console accept read-only expressions; they cannot execute world actions or assign variables. Save your files first. To run changed main-script code, use **Run Script in Game** before attaching again. Apply edited Libraries in the game and resolve any source conflicts. If you enabled **Pause When Inactive**, turn it off when you want execution to continue while the game is minimized.
+Shift+F5 or closing the debug session disconnects and leaves the script running. Use **Stop Script in Game** to stop it. Watches and the Debug Console accept read-only expressions; they cannot execute world actions or assign variables. Save your files first. To run changed main-script code, use **Run Script in Game** before attaching again. Apply edited Libraries, from the editor or in the game, and resolve any source conflicts. If you enabled **Pause When Inactive**, turn it off when you want execution to continue while the game is minimized.
 
 Other editors with a Debug Adapter Protocol client can launch `node /path/to/debug-adapter.cjs`. That file lives beside the installed `server.cjs`. Use a `launch` request to attach and run an idle script, or `attach` to inspect an existing runtime. Set `workspace` to this save's scripts directory and `script` to the script's file path. The adapter uses standard input/output. It needs Node.js 20 or later outside VS Code.
 
@@ -514,7 +521,14 @@ The game mirrors visible console output into `<save_id>_scripts/logs/` from the 
 
 ### When edits collide
 
-If an external edit collides with a dirty in-game buffer, the game first saves BOTH sources as distinct named recovery variants. It then asks you to choose **Use External** or **Keep In-Game** for the active source. Neither side is silently discarded: the version you do not activate remains available in the Variants tab. If both recovery variants cannot be created, the editor stays locked and no version is chosen. Free a variant slot if needed, then save the external file again to retry. A clean in-game buffer accepts an external change normally.
+If a script's file changes on disk while you are working on that script in the in-game editor, nothing is replaced and nothing is locked. Your version stays in the editor and keeps saving with the game. A bar at the top of that editor says the script also changed elsewhere and names where the game kept the other version: a variant of the script, or a recovery file in the scripts folder.
+
+- **Keep mine** keeps your version and writes it to the file.
+- **Use other version** switches the editor to the version from disk. Your version stays in the copy the game kept of it.
+- **Merge both** combines the two when they changed different parts of the script. Undo restores what you had.
+- **Compare** opens the Variants tab on the other version.
+
+If no copy of the other version could be saved yet, the game leaves the file alone, because it is the only place that version exists: **Save a copy again** retries, and **Overwrite the file** writes your version over it. Saving and quitting keep working the whole time. If you have no work of your own on that script, the editor simply picks up the change.
 
 ### Use cases
 
