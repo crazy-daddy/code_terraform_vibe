@@ -171,6 +171,56 @@ class StrandedOreTests(StubTestCase):
         self.publish()
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
+    def test_home_ore_without_home_smelter_goes_to_smelting_site(self):
+        w = self.world
+        w.inventory.add("iron_ore", 5000)
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_smelter("smelter_2", self.remote)
+        target = site_supply.ore_stock_target("iron_ore")
+        self.publish()
+        self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"home": {"iron_ore": w.clock.now}})
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (target, 0))
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"], (5000, 0))
+        self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
+
+    def test_home_ore_kept_with_home_smelter(self):
+        w = self.world
+        w.inventory.add("iron_ore", 5000)
+        w.add_smelter("smelter_1", w.home)
+        w.add_smelter("smelter_2", self.remote)
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_remote_ore_goes_to_smelting_site_without_home_smelter(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
+        smelt = w.add_outpost("outpost_3")
+        w.add_smelter("smelter_3", smelt)
+        self.publish()
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        target = max(site_supply.ore_stock_target("iron_ore"), 30)
+        self.assertEqual(requests_by(w, "outpost_3", site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"][0], target)
+        self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
+
+    def test_ore_a_dock_order_consumes_there_is_not_stranded(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
+        w.add_supply_dock("supply_dock_2", self.remote).order = w.add_order("o1", {"iron_ore": 20})
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+
+class HomeOreFloorTests(StubTestCase):
+    def test_floor_only_with_home_smelter(self):
+        w = self.world
+        w.add_smelter("smelter_2", w.add_outpost("outpost_2"))
+        self.assertEqual(production.get_raw_material_demands().get("iron_ore", 0), 0)
+        w.add_smelter("smelter_1", w.home)
+        self.assertGreater(production.get_raw_material_demands().get("iron_ore", 0), 0)
+
 
 class RemoteSupplyDockTests(StubTestCase):
     def setUp(self):

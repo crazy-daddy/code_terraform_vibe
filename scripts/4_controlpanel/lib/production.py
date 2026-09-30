@@ -219,6 +219,39 @@ def home_outpost_id():
     return getattr(_home_outpost(), "id", None) or HOME_OUTPOST_ID
 
 
+def smelter_ores(outpost):
+    """{ore: output_item} for every raw ore a Smelter at `outpost` has an
+    unlocked recipe for, {} without a Smelter there. list_recipes() is
+    tech-gated and identical per Smelter, so the first one that answers
+    stands in for all."""
+    for smelter_id in discover_smelter_ids(outpost):
+        smelter = _component(smelter_id)
+        if not smelter or not hasattr(smelter, "list_recipes"):
+            continue
+        try:
+            recipes = list(smelter.list_recipes())
+        except Exception as error:
+            swallowed("production.smelter_ores: smelter.list_recipes", error)
+            continue
+        result = {}
+        for recipe in recipes:
+            output_item = getattr(recipe, "output_item", None)
+            for ore in (getattr(recipe, "inputs", {}) or {}):
+                if ore in RAW_ORE_ITEM_IDS and output_item:
+                    result[ore] = output_item
+        return result
+    return {}
+
+
+def home_smelter_ores():
+    """Raw ores a home Smelter can refine, sorted; [] with no home Smelter
+    (or no outpost_network to find home)."""
+    home = _home_outpost()
+    if home is None:
+        return []
+    return sorted(smelter_ores(home))
+
+
 def _default_smelter():
     """First discovered Smelter component (dynamic stand-in for the old hardcoded 'smelter_1')."""
     ids = discover_smelter_ids()
@@ -1894,13 +1927,15 @@ def get_raw_material_demands(smelter=None):
 
     # Standing home ore buffer: keep at least one Warehouse slot's worth
     # (outpost_mining.ore_stock_target(), seed-once-editable) of every raw
-    # ore on hand at home even with zero active production/order demand --
-    # freely drawn down by Smelter/Supply Dock like any other stock, never a
-    # reserved amount, just a floor that creates replenishment demand once
-    # it's dipped into. Takes the max with (not additive to) whatever
+    # ore a home Smelter has an unlocked recipe for, even with zero active
+    # production/order demand -- freely drawn down by Smelter/Supply Dock
+    # like any other stock, never a reserved amount, just a floor that
+    # creates replenishment demand once it's dipped into. Same per-Smelter-
+    # site buffer a remote smelting site requests (lib/site_supply.py); no
+    # home Smelter, no floor. Takes the max with (not additive to) whatever
     # production demand already computed above, since both ultimately want
     # the same ore delivered home -- adding them would double-count.
-    for item_id in RAW_ORE_ITEM_IDS:
+    for item_id in home_smelter_ores():
         buffer_deficit = max(0, ore_stock_target(item_id) - total_stock(item_id))
         if buffer_deficit > raw_demands.get(item_id, 0):
             log.trace(f"home buffer floor for {item_id} ({buffer_deficit}) exceeds production demand ({raw_demands.get(item_id, 0)}), using buffer floor")
