@@ -49,7 +49,7 @@ import field_layout
 from harvesting import HarvesterController
 from harvester_heat import HarvesterHeatMixin
 from harvester_paving import HarvesterPavingMixin
-from harvester_planting import HarvesterPlantingMixin
+from harvester_planting import HarvesterPlantingMixin, PLANT_STATUSES
 from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
 from storage import total_stock, discover_storage_buildings
@@ -61,7 +61,8 @@ STATUS_KEY = "plant.status"
 
 PUBLISH_INTERVAL_TICKS = 600   # seed demand / salt request / status at most once a minute
 LAYOUT_RECHECK_TICKS = 3000    # re-check layout mode (automation research) and chunks (~5 min)
-IDLE_POLL_SECONDS = 10.0       # nothing due: re-check this often
+IDLE_POLL_SECONDS = 3.0        # nothing due: re-check this often
+LOOP_SLEEP_SECONDS = 0.2       # pause between steps
 ACTION_RETRIES = 3             # busy/moving retries per Harvester action
 INVENTORY_FULL_RETRY_TICKS = 3000  # after "inventory_full", skip harvesting this long (~5 min)
 ITEM_SWEEP_MAX_HEAT = 40.0     # loose items only while heat is at most this (keep headroom for crops)
@@ -103,6 +104,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # Per-step caches (the script has a step budget per tick; see step()).
         self.stock_memo = {}
         self.step_statuses: "dict | None" = None
+        self.step_view: "tuple | None" = None   # (cells, statuses, planted cells) of the current step
         self._rules = None
         self._rules_tick = -PUBLISH_INTERVAL_TICKS
         self._layout = None
@@ -238,18 +240,14 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.publish_salt_request(layout, rules, self.home_id, curr_tick)
         kit_order, automators_wanted = self.publish_kit_order(cells)
 
-        counts = {"growing": 0, "stalled": 0, "mature": 0}
-        productive = set()
-        for c in cells.values():
-            st = getattr(c, "status", "")
-            if st in counts:
-                counts[st] += 1
-                if st != "stalled" and getattr(c, "plant", None):
-                    productive.add(c.plant)
+        statuses = self.cell_statuses(cells)
+        planted = self.planted_cells(cells)
+        planted_states = [statuses[s] for s in planted]
+        productive = set([p for p in [getattr(c, "plant", None) for s, c in planted.items() if statuses[s] != "stalled"] if p])
         entry = {
-            "planted": counts["growing"] + counts["stalled"] + counts["mature"],
-            "mature": counts["mature"],
-            "stalled": counts["stalled"],
+            "planted": len(planted_states),
+            "mature": planted_states.count("mature"),
+            "stalled": planted_states.count("stalled"),
             "species_productive": len(productive),
             "layout": len(layout),
             "active": len(active),
@@ -317,6 +315,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.step_phases = []
         self.stock_memo = {}
         self.step_statuses = None
+        self.step_view = None
         self.step_machine_map = None
         cells = self.read_cells()
         if not cells:
@@ -325,8 +324,10 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             return
         # One statuses dict per step: target choice (nearest) and the route
         # (move_to) then share a single heat map.
-        self.step_statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
-        self.base_sector = self.base_from_cells(cells)
+        statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
+        self.step_statuses = statuses
+        self.step_view = (cells, statuses, {s: cells[s] for s, st in statuses.items() if st in PLANT_STATUSES})
+        self.base_sector = self.base_from_cells(cells, statuses)
         self.mark("cells")
         # Recipes change only when the Seed Maker republishes; the layout only
         # on the switch to full or a new chunk. Neither is re-read every step.
@@ -335,7 +336,9 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             self._rules_tick = curr_tick
         rules = self._rules
         if not self._layout or curr_tick - self._layout_tick >= LAYOUT_RECHECK_TICKS:
-            self._layout = self.load_layout(cells, rules)
+            loaded = self.load_layout(cells, rules)
+            if loaded != self._layout:
+                self._layout = loaded   # an unchanged layout keeps its object, so the memos keyed on it stay valid
             self._layout_tick = curr_tick
             self.work_groups = field_layout.work_order(self._layout, self.reserved, self.field_fill()) if self.layout_mode == "full" else []
         layout = self._layout
@@ -347,7 +350,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # Loose items off the path: paving material, else swept up. Items on
         # the path are its +1-heat roads and stay put.
         roads = set(self.road_cells(layout))
-        spare_items = [s for s, c in cells.items() if getattr(c, "status", "") == "item" and s not in roads]
+        spare_items = [s for s, st in statuses.items() if st == "item" and s not in roads]
         self.mark("layout")
         self.publish(active, layout, cells, rules, spare_items, curr_tick)
         self.mark("publish")
@@ -513,7 +516,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             try:
                 self.step()
                 flush_all()
-                sleep(0.5)
+                sleep(LOOP_SLEEP_SECONDS)
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Field Keeper exception: {e}")
                 flush_all()

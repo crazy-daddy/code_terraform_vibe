@@ -27,6 +27,8 @@ SALT_STOCK_TARGET = 2000  # home salt buffer requested from haulers (one Warehou
 SALT_NEED_UNITS = 30      # need tier of that request: 2 Dispenser refills + 2 Terraformer batches + hand care
 REQUESTER_ID = "field_keeper"
 
+_HAND_STATUSES = ("growing", "stalled")
+_KEPT_STATUSES = ("growing", "stalled", "mature")
 _FLAG = {"light": "lit", "water": "watered", "salt": "salted"}
 _REMAINING = {"light": "manual_light_remaining", "water": "manual_water_remaining", "salt": "manual_salt_remaining"}
 _ACTION = {"light": "light", "water": "water", "salt": "dispense_salt"}
@@ -43,8 +45,22 @@ class HarvesterCareMixin:
         """Salt at home (Inventory + Warehouses); staged into Inventory per dispense_salt()."""
         return self._host.stock_count("salt")
 
+    def care_kind_table(self, rules):
+        """{species: treatment kinds it needs} for the species with any, memoised per rules object."""
+        memo = getattr(self, "_care_kind_memo", None)
+        if memo is None or memo[0] is not rules:
+            table = {}
+            for species in rules:
+                wanted = field_layout.care_kinds(rules, species)
+                if wanted:
+                    table[species] = wanted
+            memo = (rules, table)
+            self._care_kind_memo = memo
+        return memo[1]
+
     def salt_species(self, rules):
-        return [sp for sp in rules if "salt" in field_layout.kinds(rules, sp)]
+        table = self.care_kind_table(rules)
+        return [sp for sp in rules if "salt" in table.get(sp, ())]
 
     def inactive_species(self, rules):
         """Species the field can't sustain right now (no salt on hand)."""
@@ -78,14 +94,13 @@ class HarvesterCareMixin:
         [(kind, manual hours left)] of the treatments the Harvester keeps up on
         this cell: no provider covers it, and salt only while salt is at home.
         """
-        statuses = ("growing", "stalled", "mature") if kept else ("growing", "stalled")
-        if getattr(cell, "status", "") not in statuses:
+        if getattr(cell, "status", "") not in (_KEPT_STATUSES if kept else _HAND_STATUSES):
             return []
         species = getattr(cell, "plant", None)
         if not species:
             return []
         out = []
-        for kind in field_layout.care_kinds(rules, species):
+        for kind in self.care_kind_table(rules).get(species, ()):
             remaining = getattr(cell, _REMAINING[kind], 0) or 0
             if bool(getattr(cell, _FLAG[kind], False)) and remaining <= 0:
                 continue   # covered by a provider
@@ -94,16 +109,34 @@ class HarvesterCareMixin:
             out.append((kind, remaining))
         return out
 
+    def care_snapshot(self, cells, rules, kept=()):
+        """
+        {sector: [(kind, manual hours left)]} for every planted cell with a
+        hand treatment (hand_care()), in cell order. Computed once per cells
+        dict, rules object and kept set: the care tour, the status entry and
+        the idle line all read it.
+        """
+        memo = getattr(self, "_care_snapshot_memo", None)
+        if memo is not None and memo[0] is cells and memo[1] is rules and memo[2] == kept:
+            return memo[3]
+        out = {}
+        for sector, cell in self._host.planted_cells(cells).items():
+            treatments = self.hand_care(cell, rules, sector in kept)
+            if treatments:
+                out[sector] = treatments
+        self._care_snapshot_memo = (cells, rules, kept, out)
+        return out
+
     def next_care_hours(self, cells, rules, kept=()):
         """World hours until the next hand treatment drops below CARE_REFRESH_H; None when none is kept up."""
-        left = [remaining for sector, cell in cells.items() for _, remaining in self.hand_care(cell, rules, sector in kept)]
+        left = [remaining for treatments in self.care_snapshot(cells, rules, kept).values() for _, remaining in treatments]
         return max(0.0, min(left) - CARE_REFRESH_H) if left else None
 
     def care_targets(self, cells, rules, refresh_h=CARE_REFRESH_H, kept=()):
         """{sector: [kinds]} for every plant with a treatment below refresh_h (`kept` sectors: mature ones too)."""
         out = {}
-        for sector, cell in cells.items():
-            due = self.care_due(cell, rules, refresh_h, sector in kept)
+        for sector, treatments in self.care_snapshot(cells, rules, kept).items():
+            due = [kind for kind, remaining in treatments if remaining < refresh_h]
             if due:
                 out[sector] = due
         return out

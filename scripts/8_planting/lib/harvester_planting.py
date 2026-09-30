@@ -98,12 +98,24 @@ class HarvesterPlantingMixin:
 
     # --------------------------------------------------------------- layout
 
-    def base_from_cells(self, cells):
+    def cell_statuses(self, cells):
+        """{sector: Cell.status} of `cells`: the step's shared dict when `cells` is the step's read, else a fresh one."""
+        view = self._host.step_view
+        if view is not None and view[0] is cells:
+            return view[1]
+        return {s: getattr(c, "status", None) for s, c in cells.items()}
+
+    def planted_cells(self, cells):
+        """{sector: Cell} of the growing / stalled / mature cells (the step's shared dict when `cells` is the step's read)."""
+        view = self._host.step_view
+        if view is not None and view[0] is cells:
+            return view[2]
+        return {s: c for s, c in cells.items() if getattr(c, "status", "") in PLANT_STATUSES}
+
+    def base_from_cells(self, cells, statuses=None):
         """The depot pad sector (Cell.status == "base"), else the constructor's guess."""
-        for sector, cell in cells.items():
-            if getattr(cell, "status", "") == "base":
-                return sector
-        return self._host.base_sector
+        statuses = statuses if statuses is not None else self.cell_statuses(cells)
+        return next((s for s, st in statuses.items() if st == "base"), self._host.base_sector)
 
     def field_fill(self):
         """The full layout's fill: the plant.field_fill override, else field_layout.FIELD_FILL."""
@@ -200,7 +212,17 @@ class HarvesterPlantingMixin:
         return layout
 
     def active_layout(self, layout, rules, inactive_species):
-        return {s: sp for s, sp in layout.items() if sp not in inactive_species and sp in rules}
+        """
+        {sector: species} of the layout cells whose species has a rule and is
+        sustainable. Memoised on the layout and rules objects and the inactive
+        species; the returned dict is shared and read-only.
+        """
+        memo = getattr(self, "_active_memo", None)
+        if memo is not None and memo[0] is layout and memo[1] is rules and memo[2] == inactive_species:
+            return memo[3]
+        active = {s: sp for s, sp in layout.items() if sp not in inactive_species and sp in rules}
+        self._active_memo = (layout, rules, list(inactive_species), active)
+        return active
 
     def harvester_layout(self, active, rules):
         """
@@ -208,13 +230,19 @@ class HarvesterPlantingMixin:
         Full: cells no deployed Crop Automator serves, in the garden and in
         the first HARVESTER_FILL_CHUNKS work_order() fill groups whose
         automator isn't deployed yet. Later fill waits: the Harvester can't
-        keep up with a whole field.
+        keep up with a whole field. Memoised on the active dict, the work
+        groups, the garden and the deployed automators; the result is shared
+        and read-only.
         """
         if self.layout_mode != "full":
             return active
+        deployed = self._host.deployed_automators()
+        groups = self._host.work_groups
+        memo = getattr(self, "_mine_memo", None)
+        if memo is not None and memo[0] is active and memo[1] is groups and memo[2] is self.garden and memo[3] == deployed:
+            return memo[4]
         automated = self._host.automated_cells()
-        deployed = set(self._host.deployed_automators())
-        groups = self._host.work_groups or []
+        groups = groups or []
         scope = set(groups[0]) if groups else set(self.garden or [])
         taken = 0
         for group in groups[1:]:
@@ -224,7 +252,10 @@ class HarvesterPlantingMixin:
                 continue
             scope |= set(group)
             taken += 1
-        return {s: sp for s, sp in active.items() if s in scope and s not in automated}
+        scope -= automated
+        mine = {s: sp for s, sp in active.items() if s in scope}
+        self._mine_memo = (active, self._host.work_groups, self.garden, list(deployed), mine)
+        return mine
 
     def seed_layout(self, active, mine):
         """
@@ -235,20 +266,31 @@ class HarvesterPlantingMixin:
         if self.layout_mode != "full":
             return active
         automated = self._host.automated_cells()
-        return {s: sp for s, sp in active.items() if s in mine or s in automated}
+        memo = getattr(self, "_seed_layout_memo", None)
+        if memo is not None and memo[0] is active and memo[1] is mine and memo[2] is automated:
+            return memo[3]
+        seeded = {s: sp for s, sp in active.items() if s in mine or s in automated}
+        self._seed_layout_memo = (active, mine, automated, seeded)
+        return seeded
 
     def build_rank(self):
-        """{sector: position} in work_order() (garden snake, then fill chunks)."""
+        """{sector: position} in work_order() (garden snake, then fill chunks); memoised on the work groups."""
+        groups = self._host.work_groups
+        memo = getattr(self, "_rank_memo", None)
+        if memo is not None and memo[0] is groups:
+            return memo[1]
         rank = {}
-        for group in self._host.work_groups or []:
+        for group in groups or []:
             for s in group:
                 rank.setdefault(s, len(rank))
+        self._rank_memo = (groups, rank)
         return rank
 
     def clear_targets(self, layout, cells):
         """Growing/stalled plants in the layout's way (mature ones get harvested instead)."""
-        planted = {s: getattr(c, "plant", None) for s, c in cells.items()
-                   if getattr(c, "status", "") in ("growing", "stalled") and getattr(c, "plant", None)}
+        statuses = self.cell_statuses(cells)
+        planted = {s: p for s, p in [(s, getattr(c, "plant", None)) for s, c in self.planted_cells(cells).items()
+                                     if statuses[s] in ("growing", "stalled")] if p}
         now_tick = _now_tick()
         failed = self._plant_failures()
         return [s for s in field_layout.misplaced(layout, self.reserved, planted)
@@ -280,26 +322,34 @@ class HarvesterPlantingMixin:
         species. Kept garden cells (kept_garden()) are planted once: an open
         one needs a seed now, but they add no rotation, buffer or prefetch.
         """
-        now = {}
-        rotation = {}
         kept = self.kept_garden()
-        for sector, species in active.items():
-            seed_id = rules[species].get("seed_id", "seed_" + species)
-            cell = cells.get(sector)
-            status = getattr(cell, "status", "unknown")
-            plant = getattr(cell, "plant", None)
-            if sector in kept:
-                if status in OPEN_STATUSES:
-                    now[seed_id] = now.get(seed_id, 0) + 1
-                continue
-            rotation[seed_id] = rotation.get(seed_id, 0) + 1
-            if status in OPEN_STATUSES:
-                now[seed_id] = now.get(seed_id, 0) + 1
-            elif plant == species and (status == "mature" or (getattr(cell, "growth", 0) or 0) >= SEED_PREFETCH_GROWTH):
-                now[seed_id] = now.get(seed_id, 0) + 1
+        seed_ids = {sp: r.get("seed_id", "seed_" + sp) for sp, r in rules.items()}
+        rotation = self.seed_rotation(active, kept, seed_ids)
+        statuses = self.cell_statuses(cells)
+        # Non-kept planted cells whose replacement seed is needed before the harvest.
+        soon = set([s for s, c in self.planted_cells(cells).items()
+                    if s in active and s not in kept and getattr(c, "plant", None) == active[s]
+                    and (statuses[s] == "mature" or (getattr(c, "growth", 0) or 0) >= SEED_PREFETCH_GROWTH)])
+        needed = [seed_ids[sp] for s, sp in active.items() if statuses.get(s, "unknown") in OPEN_STATUSES or s in soon]
+        now = {}
+        for seed_id in needed:
+            now[seed_id] = now.get(seed_id, 0) + 1
         for seed_id, count in rotation.items():
             now[seed_id] = now.get(seed_id, 0) + seed_buffer(count)
-        return now, rotation
+        return now, dict(rotation)
+
+    def seed_rotation(self, active, kept, seed_ids):
+        """{seed_id: non-kept cells} of `active`; memoised on the active dict, the kept set and the seed ids."""
+        memo = getattr(self, "_rotation_memo", None)
+        if memo is not None and memo[0] is active and memo[1] == kept and memo[2] == seed_ids:
+            return memo[3]
+        rotation = {}
+        for sector, species in active.items():
+            if sector not in kept:
+                seed_id = seed_ids[species]
+                rotation[seed_id] = rotation.get(seed_id, 0) + 1
+        self._rotation_memo = (active, kept, seed_ids, rotation)
+        return rotation
 
     def publish_seed_demand(self, now, rotation, curr_tick, layout=None, rules=None):
         """Full layout: also "priority" (field_layout.priority_seeds()), garden seeds the Seed Maker makes first."""
@@ -315,22 +365,24 @@ class HarvesterPlantingMixin:
         automated = self._host.automated_cells() if self.layout_mode == "full" else set()
         kept = self.kept_garden()
         layout = layout or {}
-        return [s for s, c in cells.items()
-                if getattr(c, "status", "") == "mature" and not (s in automated and s in layout)
-                and not field_layout.kept_crop(s, getattr(c, "plant", None), layout, kept)]
+        mature = [s for s, st in self.cell_statuses(cells).items() if st == "mature"]
+        return [s for s in mature
+                if not (s in automated and s in layout)
+                and not (s in kept and field_layout.kept_crop(s, getattr(cells[s], "plant", None), layout, kept))]
 
     def plant_targets(self, active, cells):
         """[(sector, species)] of open layout cells whose seed is at home (Inventory or Warehouse)."""
+        statuses = self.cell_statuses(cells)
+        open_cells = [(s, sp) for s, sp in active.items() if statuses.get(s, "unknown") in OPEN_STATUSES]
         out = []
+        if not open_cells:
+            return out
         now_tick = _now_tick()
         failed = self._plant_failures()
-        for sector, species in active.items():
+        for sector, species in open_cells:
             if now_tick - failed.get(sector, -PLANT_FAIL_COOLDOWN_TICKS) < PLANT_FAIL_COOLDOWN_TICKS:
                 continue
-            status = getattr(cells.get(sector), "status", "unknown")
-            if status not in OPEN_STATUSES:
-                continue
-            if status != "item" and self._host.stock_count("seed_" + species) < 1:
+            if statuses.get(sector, "unknown") != "item" and self._host.stock_count("seed_" + species) < 1:
                 continue
             out.append((sector, species))
         return out

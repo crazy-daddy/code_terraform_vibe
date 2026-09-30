@@ -58,6 +58,9 @@ MAX_REST_ROUNDS = 6
 
 
 _NEIGHBOURS = {}   # {sector: (orthogonal neighbours)}, built once: the script has a step budget per tick
+_GRID = []         # [(sectors, {sector: index}, neighbour index tuples)] once built, see _grid()
+INFINITE_COST = 1 << 30
+_NO_STATUS = "~no-status~"   # statuses.get() default: a sector missing from the statuses dict
 
 
 def _now_tick():
@@ -84,6 +87,21 @@ def field_neighbours(host, sector):
     found = tuple(out)
     _NEIGHBOURS[sector] = found
     return found
+
+
+def _grid(host):
+    """
+    (sectors, {sector: grid index}, neighbours) of the whole field, built
+    once. sectors is row-major (A1..A24, B1, ...); neighbours[i] is the tuple
+    of neighbour indices of sectors[i] in field_neighbours() order.
+    """
+    if not _GRID:
+        sectors = [host.rc_to_sector(r, c) for r in range(host.NUM_ROWS) for c in range(1, host.NUM_COLS + 1)]
+        index = {sector: i for i, sector in enumerate(sectors)}
+        neighbours = [tuple([index[n] for n in field_neighbours(host, sector)]) for sector in sectors]
+        neighbours.append(())
+        _GRID.append((sectors, index, neighbours))
+    return _GRID[0]
 
 
 class HarvesterHeatMixin:
@@ -178,44 +196,52 @@ class HarvesterHeatMixin:
 
     # ------------------------------------------------------------ routing
 
-    def heat_map(self, start, statuses):
+    def heat_arrays(self, start, statuses):
         """
-        (dist, prev) from `start` to every cell: Dijkstra with Dial buckets
-        (hop cost = move cost of the entered cell + HOP_TIME_WEIGHT, scaled to
-        integers), so one pass over the 192 cells serves both target choice
-        and the route. Cached for the same start and the same statuses dict
-        (identity, not contents: comparing 192 entries costs steps too), so
-        the step's target choice and the route share one pass.
+        (dist, prev) from `start` to every cell as lists indexed by grid
+        position (_grid()): Dijkstra with Dial buckets (hop cost = move cost
+        of the entered cell + HOP_TIME_WEIGHT, scaled to integers), so one
+        pass over the 192 cells serves both target choice and the route.
+        dist[i] is INFINITE_COST for a cell that can't be reached (and for
+        the extra last slot, which stands for any sector off the grid), prev[i]
+        the previous grid index (-1 at the start). Cached for the same start
+        and the same statuses dict (identity, not contents: comparing 192
+        entries costs steps too), so the step's target choice and the route
+        share one pass.
         """
         cached = getattr(self, "_heat_map_cache", None)
         if cached is not None and cached[0] == start and cached[1] is statuses:
             return cached[2], cached[3]
-        status_weight = {}
-        weight = {}
-        for sector, status in statuses.items():
-            w = status_weight.get(status)
-            if w is None:
-                w = max(1, int(round((self.move_cost(status) + HOP_TIME_WEIGHT) * COST_SCALE)))
-                status_weight[status] = w
-            weight[sector] = w
+        sectors, index, neighbours = _grid(self._host)
         default_w = int(round((DEFAULT_MOVE_COST + HOP_TIME_WEIGHT) * COST_SCALE))
-        dist = {start: 0}
-        prev = {}
-        buckets = [[start]]
-        d = 0
-        while d < len(buckets):
-            for x in buckets[d]:
-                if dist.get(x) != d:
-                    continue
-                for n in field_neighbours(self._host, x):
-                    nd = d + weight.get(n, default_w)
-                    if nd < dist.get(n, 1 << 30):
-                        dist[n] = nd
-                        prev[n] = x
-                        while len(buckets) <= nd:
-                            buckets.append([])
-                        buckets[nd].append(n)
-            d += 1
+        status_weight = {}
+        for status in set(statuses.values()):
+            status_weight[status] = max(1, int(round((self.move_cost(status) + HOP_TIME_WEIGHT) * COST_SCALE)))
+        status_of = statuses.get
+        weight = [status_weight.get(status_of(sector, _NO_STATUS), default_w) for sector in sectors]
+        weight.append(default_w)
+        dist = [INFINITE_COST] * (len(sectors) + 1)
+        prev = [-1] * (len(sectors) + 1)
+        first = index.get(start)
+        if first is not None:
+            dist[first] = 0
+            buckets = [[first]]
+            size = 1
+            d = 0
+            while d < size:
+                for x in buckets[d]:
+                    if dist[x] != d:
+                        continue
+                    for n in neighbours[x]:
+                        nd = d + weight[n]
+                        if nd < dist[n]:
+                            dist[n] = nd
+                            prev[n] = x
+                            if nd >= size:
+                                buckets.extend([[] for _ in range(nd + 1 - size)])
+                                size = nd + 1
+                            buckets[nd].append(n)
+                d += 1
         self._heat_map_cache = (start, statuses, dist, prev)
         return dist, prev
 
@@ -223,22 +249,27 @@ class HarvesterHeatMixin:
         """(path, cost in heat units): the heat-cheapest route from start to target."""
         if start == target:
             return [], 0.0
-        dist, prev = self.heat_map(start, statuses)
-        if target not in dist:
+        dist, prev = self.heat_arrays(start, statuses)
+        sectors, index, _ = _grid(self._host)
+        goal = index.get(target, len(sectors))
+        if dist[goal] >= INFINITE_COST:
             return [], 1e9
+        first = index[start]
         path = []
-        x = target
-        while x != start:
-            path.append(x)
+        x = goal
+        while x != first:
+            path.append(sectors[x])
             x = prev[x]
         path.reverse()
-        return path, dist[target] / float(COST_SCALE)
+        return path, dist[goal] / float(COST_SCALE)
 
     def cheapest(self, sectors, statuses):
-        """The target with the lowest route cost from the current position."""
+        """The target with the lowest route cost from the current position (ties: sector id)."""
         here = self._host.get_position()
-        dist, _ = self.heat_map(here, statuses)
-        return min(sectors, key=lambda s: (dist.get(s, 1 << 30), s))
+        dist, _ = self.heat_arrays(here, statuses)
+        grid_sectors, index, _n = _grid(self._host)
+        off_grid = len(grid_sectors)
+        return min([(dist[index.get(s, off_grid)], s) for s in sectors])[1]
 
     # ----------------------------------------------------------- movement
 
