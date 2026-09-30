@@ -150,6 +150,17 @@ class ScriptParkingTests(StubTestCase):
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
 
+    def test_machine_filed_wake_time_is_used(self):
+        requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
+        requests["smelter_1"] = {"kind": "smelter", "tick": self.world.clock.now, "wake_after": 40}
+        self.parking.step(self.grids, 10.0)
+        self.world.clock.now += 39
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("smelter_1", False)])
+        self.world.clock.now += 1
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+
     def test_solar_stopped_at_night_and_started_at_sunrise(self):
         self.parking.step(self.grids, -3.0)
         self.assertNotIn("solar_1", self.run.running)

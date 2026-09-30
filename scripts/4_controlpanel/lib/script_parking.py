@@ -46,7 +46,10 @@ WAKE_AFTER_TICKS = {
     "fabricator": 300,
     "supply_dock": 600,
     "oil_generator": 600,
+    "thermal_cap": 600,
 }
+# Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
+MAX_WAKE_AFTER_TICKS = 6000
 
 # Oil Generators on a grid whose lower of battery / combined reserve fraction falls
 # below this are woken at once (their script starts burning at
@@ -79,7 +82,8 @@ class ParkRequester:
         self.idle_steps = 0
         self.requested = False
 
-    def update(self, idle):
+    def update(self, idle, wake_after=None):
+        """`wake_after`: ticks this machine may stay parked (default: WAKE_AFTER_TICKS for its kind)."""
         if not idle:
             self.idle_steps = 0
             if self.requested:
@@ -89,9 +93,9 @@ class ParkRequester:
         self.idle_steps += 1
         if self.idle_steps >= PARK_AFTER_IDLE_STEPS:
             self.requested = True
-            self._write(_now_tick())
+            self._write(_now_tick(), wake_after)
 
-    def _write(self, tick):
+    def _write(self, tick, wake_after=None):
         machine_id, kind = self.machine_id, self.kind
 
         def updater(requests):
@@ -100,6 +104,8 @@ class ParkRequester:
                 requests.pop(machine_id, None)
             else:
                 requests[machine_id] = {"kind": kind, "tick": tick}
+                if wake_after is not None:
+                    requests[machine_id]["wake_after"] = int(wake_after)
             return requests
 
         try:
@@ -166,6 +172,8 @@ class ScriptParking:
                 continue  # reserve already low: stay ready instead of parking and waking again
             if self._set_powered(machine_id, False):
                 parked[machine_id] = {"kind": kind, "mode": "breaker", "since": now}
+                if request.get("wake_after") is not None:
+                    parked[machine_id]["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
                 log.debug(f"parked {machine_id} ({kind})")
                 changed = True
 
@@ -179,7 +187,7 @@ class ScriptParking:
 
     def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan):
         kind = entry.get("kind")
-        if now - entry.get("since", now) >= WAKE_AFTER_TICKS.get(kind, 600):
+        if now - entry.get("since", now) >= entry.get("wake_after", WAKE_AFTER_TICKS.get(kind, 600)):
             return "re-check due"
         if kind == "supply_dock" and (dock_plan or {}).get(machine_id):
             return "order assigned"

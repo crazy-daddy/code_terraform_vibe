@@ -2,6 +2,7 @@ import fluid_routing
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing
@@ -37,6 +38,13 @@ POLL_SECONDS_LOW = 3.0   # pressure below PRESSURE_BAND_MODERATE: far from overp
 # mid-sleep cannot outrun it.
 CAP_WAKE_FRACTION = 0.5
 CAP_MAX_POLL_SECONDS = 30.0
+# Breaker parking (lib/script_parking.py) while the vent is dormant and the chamber is
+# drained to at most CAP_PARK_MAX_PRESSURE. Parked for CAP_PARK_WAKE_FRACTION of the time
+# left until the vent turns active (Deep-surveyed vents, next_phase_in()), else of the
+# time the fastest confirmed rise needs from empty to PRESSURE_BAND_CRITICAL; never
+# without a known rise rate or phase timing.
+CAP_PARK_MAX_PRESSURE = 0.02
+CAP_PARK_WAKE_FRACTION = 0.5
 
 # Only abandon the currently-targeted Gas Tank once it's essentially full
 # (not merely "over 85%") -- this is re-evaluated every single step(), so a
@@ -102,6 +110,7 @@ class ThermalCapController:
         self.last_pressure_tick = None
         self.max_rise_per_tick = 0.0  # fastest confirmed chamber rise (fraction per tick)
         self.last_rise = 0.0
+        self.parker = ParkRequester(self.name, "thermal_cap")
         self.clock = get_component("clock")
         self.log = TreeConsole(module="thermal_cap")
         # See lib/fluid_routing.py's FluidOutputRouter/PerEntryBlacklist for
@@ -226,6 +235,28 @@ class ThermalCapController:
                 swallowed("thermal_cap.ThermalCapController.step: notify", error)
         return self.next_poll_seconds(pressure)
 
+    def park_wake_ticks(self):
+        """Ticks this cap may stay parked, or None while it must keep running (see CAP_PARK_MAX_PRESSURE)."""
+        if self.last_phase != "dormant" or self.last_pressure is None or self.last_pressure > CAP_PARK_MAX_PRESSURE:
+            return None
+        minutes = None
+        if hasattr(self.cap, "next_phase_in"):
+            try:
+                minutes = self.cap.next_phase_in()
+            except Exception as error:
+                swallowed("thermal_cap.ThermalCapController.park_wake_ticks: self.cap.next_phase_in", error)
+        if minutes is not None:
+            seconds_per_hour = 25.0
+            if self.clock and hasattr(self.clock, "real_seconds_per_hour"):
+                try:
+                    seconds_per_hour = float(self.clock.real_seconds_per_hour())
+                except Exception as error:
+                    swallowed("thermal_cap.ThermalCapController.park_wake_ticks: clock.real_seconds_per_hour", error)
+            return int(minutes / 60.0 * seconds_per_hour * 10 * CAP_PARK_WAKE_FRACTION)
+        if self.max_rise_per_tick <= 0:
+            return None
+        return int(PRESSURE_BAND_CRITICAL / self.max_rise_per_tick * CAP_PARK_WAKE_FRACTION)
+
     def next_poll_seconds(self, pressure):
         """Sleep before the next poll (see CAP_WAKE_FRACTION); learns the fastest rise from successive reads."""
         tick = self.get_current_tick()
@@ -253,9 +284,12 @@ class ThermalCapController:
         while True:
             reset_all()
             interval = POLL_SECONDS
+            wake_ticks = None
             try:
                 interval = self.step()
+                wake_ticks = self.park_wake_ticks()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Thermal Cap exception: {error}")
+            self.parker.update(wake_ticks is not None and wake_ticks > 0, wake_ticks)
             flush_all()
             sleep(poll_interval if poll_interval is not None else interval)
