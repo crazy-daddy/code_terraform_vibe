@@ -144,7 +144,7 @@ class BlockTests(ConsoleCase):
         log.end()
         log.debug("after")
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ get_demands\n┃   iron gross=6\n┃   glass gross=2\nafter")])
+        self.assertEqual(self.lines(), [("debug", "┏━ get_demands\n┃   iron gross=6\n┃   glass gross=2\n┗━ END get_demands\nafter")])
 
     def test_idle_debug_block_prints_nothing(self):
         log = self.make()
@@ -163,7 +163,7 @@ class BlockTests(ConsoleCase):
         log.debug("y")
         log.end()
         log.flush()
-        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ inner\n┃   ┃   x\n┃   y")])
+        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ inner\n┃   ┃   x\n┃   ┗━ END inner\n┃   y\n┗━ END outer")])
 
     def test_debug_block_end_with_message_writes_a_closing_line(self):
         log = self.make()
@@ -191,7 +191,8 @@ class BlockTests(ConsoleCase):
         log.start("Info block")
         log.end("done")
         log.end()
-        self.assertEqual(self.lines(), [("debug", "┏━ dbg"), ("info", "┃   ┏━ Info block"), ("info", "┃   ┗━ done")])
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ dbg"), ("info", "┃   ┏━ Info block"), ("info", "┃   ┗━ done"), ("debug", "┗━ END dbg")])
 
     def test_reset_drops_open_debug_blocks(self):
         log = self.make()

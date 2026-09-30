@@ -31,7 +31,7 @@ Three levels, same tree formatting:
 
 Debug blocks: `start(msg, level="debug")` opens a block whose header is written
 only once something is logged inside it (an idle block prints nothing), and
-`end()` without a message closes it silently. Use them for a function's decision
+`end()` writes `┗━ END <name>` when the header was written, nothing otherwise. Use them for a function's decision
 trail so its lines sit indented under one header and drop their own
 `function_name:` prefix.
 
@@ -183,7 +183,7 @@ class TreeConsole:
         self.default_level = default_level
         self.buffered = buffered
         self._indent = 0
-        self._blocks = []  # open blocks, outermost first: [level, header line, shown, channel, color]
+        self._blocks = []  # open blocks, outermost first: [level, header line, shown, channel, color, name]
         self._pending_color = ""
         self._pending_level = ""
 
@@ -227,7 +227,7 @@ class TreeConsole:
         """Open a named block and indent everything logged until the matching `end()`. A block at
         `level` "debug" writes its header only when a line is first logged inside it."""
         block_level = level or self.default_level
-        block = [block_level, self._prefix() + _START + msg, False, channel, self._pending_color]
+        block = [block_level, self._prefix() + _START + msg, False, channel, self._pending_color, msg]
         self._pending_color = ""
         self._pending_level = ""
         self._blocks.append(block)
@@ -236,12 +236,14 @@ class TreeConsole:
             self._show_headers()
 
     def end(self, msg: str = "", channel: str = "") -> None:
-        """Dedent and close the block opened by the matching `start()`. A debug block closes silently
-        unless given a message."""
+        """Dedent and close the block opened by the matching `start()`. A debug block whose header was
+        written closes with `END <name>` unless given a message; one that never wrote it closes silently."""
         self._indent = max(0, self._indent - 1)
-        block = self._blocks.pop() if self._blocks else [self.default_level, "", True, "", ""]
-        if block[0] in _BUFFERED_LEVELS and not msg:
-            return
+        block = self._blocks.pop() if self._blocks else [self.default_level, "", True, "", "", ""]
+        if block[0] in _BUFFERED_LEVELS:
+            if not block[2]:
+                return
+            msg = msg or "END " + block[5]
         self._pending_level = self._pending_level or block[0]
         self._emit(_END + msg, channel or block[3], headers=False)
         if self._indent == 0 and block[0] not in _BUFFERED_LEVELS:
