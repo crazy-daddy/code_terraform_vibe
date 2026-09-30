@@ -299,6 +299,13 @@ class ScriptParking:
                 del parked[machine_id]
                 changed = True
                 continue
+            if self._is_powered(machine_id):
+                # Switched on by the player (or anything else): no longer parked here.
+                log.debug(f"{machine_id} is powered again, dropped from the parked list")
+                woken[machine_id] = entry.get("since", now)
+                del parked[machine_id]
+                changed = True
+                continue
             reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan)
             if reason and self._set_powered(machine_id, True):
                 log.debug(f"woke {machine_id} ({reason})")
@@ -454,6 +461,14 @@ class ScriptParking:
                 if member_id:
                     out[member_id] = (anchor, getattr(member, "type_id", ""))
         return out
+
+    def _is_powered(self, machine_id):
+        """power_control.is_powered(); False on a read failure (the entry stays until its re-check)."""
+        try:
+            return bool(self.power.is_powered(machine_id))
+        except Exception as error:
+            swallowed("script_parking._is_powered: power.is_powered", error)
+            return False
 
     def _can_power_off(self, machine_id):
         try:

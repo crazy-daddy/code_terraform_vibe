@@ -23,6 +23,9 @@ class _PowerControl:
         self.powered[machine_id] = on
         return _Result()
 
+    def is_powered(self, machine_id):
+        return self.powered.get(machine_id, True)
+
 
 class _RunControl:
     def __init__(self, running):
@@ -119,6 +122,14 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.power.calls[-1], ("smelter_1", True))
         self.assertNotIn("smelter_1", self.world.notebook.data[PARKED_KEY])
         self.assertNotIn("smelter_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+
+    def test_machine_switched_on_by_hand_leaves_the_parked_list(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        self.power.powered["smelter_1"] = True  # player flips the breaker back on
+        self.parking.step(self.grids, 10.0)
+        self.assertNotIn("smelter_1", self.world.notebook.data[PARKED_KEY])
+        self.assertEqual(self.power.calls, [("smelter_1", False)])
 
     def test_stale_request_and_shed_machine_are_not_parked(self):
         self.request("smelter_1", "smelter")
