@@ -49,11 +49,13 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 
 
-def _order_readiness(order, reserved):
+def _order_readiness(order, reserved, stock=total_stock):
     """(items_ready, total_needed) for order -- how much of its still-owed
     requirement is already coverable from current Inventory/Warehouse stock,
     net of active Construction Blueprint reservations. Shared by the
-    per-instance and central scoring paths so both rank orders identically."""
+    per-instance and central scoring paths so both rank orders identically.
+    `stock(item_id)`: storage.total_stock(), or a SourceCache's stock()
+    snapshot (same Inventory + home Warehouses, one .stacks() sweep)."""
     items_ready = 0
     total_needed = 0
     requires = getattr(order, "requires", {}) or {}
@@ -61,7 +63,7 @@ def _order_readiness(order, reserved):
     for item_id, req_count in requires.items():
         still_needed = max(0, req_count - shipped.get(item_id, 0))
         total_needed += still_needed
-        in_stock = max(0, total_stock(item_id) - reserved.get(item_id, 0))
+        in_stock = max(0, stock(item_id) - reserved.get(item_id, 0))
         items_ready += min(in_stock, still_needed)
     return items_ready, total_needed
 
@@ -101,19 +103,19 @@ def _weekly_infeasible(order, current_day, dispatch_capacity_per_hour):
     return remaining > max_shippable
 
 
-def _score_campaign_order(order, reserved):
+def _score_campaign_order(order, reserved, stock=total_stock):
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
-    items_ready, total_needed = _order_readiness(order, reserved)
+    items_ready, total_needed = _order_readiness(order, reserved, stock)
     if total_needed > 0:
         prio += int((items_ready / total_needed) * 30)
     return prio
 
 
-def _score_weekly_order(order, reserved):
+def _score_weekly_order(order, reserved, stock=total_stock):
     prio = 5
-    items_ready, total_needed = _order_readiness(order, reserved)
+    items_ready, total_needed = _order_readiness(order, reserved, stock)
     if total_needed > 0:
         prio += int((items_ready / total_needed) * 20)
     return prio
@@ -165,7 +167,12 @@ def plan_dock_assignments(clock=None):
         log.end()
         return {}
 
-    reserved = get_construction_material_reservations()
+    # Shared across every can_fulfill_order() call and readiness score in this
+    # pass (every candidate order, each dock's current order) -- see SourceCache's
+    # docstring in lib/production.py. The pass runs from the headless
+    # control_panel/automation_panel.py, never inside a per-tick UI loop.
+    cache = SourceCache()
+    reserved = get_construction_material_reservations(cache)
     current_day = clock.get_day() if clock and hasattr(clock, "get_day") else None
 
     total_dispatch_capacity = 0.0
@@ -175,19 +182,11 @@ def plan_dock_assignments(clock=None):
         except Exception as error:
             swallowed("supply_dock.plan_dock_assignments: dock.dispatch_rate", error)
 
-    # Shared across every can_fulfill_order() call in this pass (every
-    # candidate order below, plus each dock's current order) to avoid
-    # redundant discovery + list_recipes() calls -- see SourceCache's
-    # docstring in lib/production.py. Even cached, a pass takes ~2 s, so this
-    # must never run inside a per-tick UI loop: it runs from the headless
-    # control_panel/automation_panel.py (live slot automation_panel.py).
-    cache = SourceCache()
-
     candidates = []
     try:
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
-                priority = _score_campaign_order(o, reserved)
+                priority = _score_campaign_order(o, reserved, cache.stock)
                 candidates.append({"order": o, "priority": priority})
                 log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
@@ -200,7 +199,7 @@ def plan_dock_assignments(clock=None):
                 log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
-            priority = _score_weekly_order(o, reserved)
+            priority = _score_weekly_order(o, reserved, cache.stock)
             candidates.append({"order": o, "priority": priority})
             log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:

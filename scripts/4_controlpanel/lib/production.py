@@ -906,7 +906,7 @@ def _walk_blueprint_demand(cache):
     return total_needed
 
 
-def get_construction_material_reservations():
+def get_construction_material_reservations(cache=None):
     """
     Returns {item_id: units} to protect (Inventory + every Warehouse -- see
     storage.total_stock()) for active Construction Blueprints, cascading down
@@ -917,11 +917,13 @@ def get_construction_material_reservations():
 
     Used to stop the Supply Dock from shipping away stock an active build (or
     the production chain feeding it) is waiting on -- see supply_dock.py
-    step()/pick_best_order().
+    step()/pick_best_order(). With a `cache`, reads its stock snapshot and
+    memoized blueprint cascade.
     """
     reservations = {}
-    for item_id, want in _cascade_blueprint_demand().items():
-        stock = total_stock(item_id)
+    stock_of = _stock_fn(cache)
+    for item_id, want in _cascade_blueprint_demand(cache).items():
+        stock = stock_of(item_id)
         reserve = min(stock, want)
         if reserve > 0:
             reservations[item_id] = reserve
