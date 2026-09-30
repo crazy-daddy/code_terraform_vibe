@@ -58,7 +58,7 @@ from version_guard import version_mismatch
 import outpost_mining
 import supply_dock
 from fleet_upgrade import FleetUpgradeCoordinator
-from fleet_commission import FleetCommissionCoordinator
+from fleet_commission import FleetCommissionCoordinator, commission_fast
 from cash import CashManager
 from site_supply import publish_site_requests
 from site_plan import plan_sites
@@ -94,6 +94,10 @@ DOCK_PLAN_MAX_TICK_INTERVAL = 600
 DRILL_TELEMETRY_TICK_INTERVAL = 600
 # Script parking pass (lib/script_parking.py): parks idle machines, wakes them, stops solar at night.
 PARKING_TICK_INTERVAL = 50
+# Fleet commission pass while a head job is in a quick state (fleet_commission.commission_fast()):
+# checked at the top of every loop and between the storage pass's sub-steps, like dock planning.
+# The storage pass steps the coordinator regardless.
+COMMISSION_FAST_TICK_INTERVAL = 30
 
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
@@ -106,6 +110,8 @@ parking_summary = ["nothing parked"]  # one automation card item per parked kind
 drill_summary = "no drills"
 # count = docks assigned by the last plan; signature = plan_signature() at that plan; plan_tick = its tick
 dock_plan = {"last_tick": 0, "count": 0, "signature": None, "plan_tick": 0}
+# tick = last coordinator pass; summary = its result, published with the storage pass's summary
+commission = {"tick": 0, "summary": "commission idle"}
 
 
 def plan_docks_if_due(clock):
@@ -128,6 +134,29 @@ def plan_docks_if_due(clock):
         dock_plan["plan_tick"] = now
     except Exception as e:
         print(f"[AUTOMATION] Supply Dock planning error: {e}")
+
+def step_commission(now):
+    """One FleetCommissionCoordinator pass; keeps its summary for the automation line."""
+    commission["tick"] = now
+    commission["summary"] = "commission idle"
+    try:
+        commission["summary"] = fleet_commissioner.step(now)
+    except Exception as e:
+        print(f"[AUTOMATION] Fleet commission error: {e}")
+
+
+def commission_if_due(clock):
+    """Every COMMISSION_FAST_TICK_INTERVAL while fleet_commission.commission_fast(): one coordinator pass."""
+    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    if now - commission["tick"] < COMMISSION_FAST_TICK_INTERVAL or not commission_fast():
+        return
+    step_commission(now)
+
+
+def between_steps(clock):
+    """Short-interval checks run between the storage pass's slow sub-steps."""
+    plan_docks_if_due(clock)
+    commission_if_due(clock)
 
 mixer_gate = None           # MixerGate, created lazily once power_control is available
 mixer_gate_summary = "no Mixers"
@@ -187,7 +216,7 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Mixer gate error: {e}")
 
-        plan_docks_if_due(clock)
+        between_steps(clock)
 
         if last_drill_tick == 0 or current_tick - last_drill_tick >= DRILL_TELEMETRY_TICK_INTERVAL:
             last_drill_tick = current_tick
@@ -224,14 +253,14 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Rebalance sweep error: {e}")
 
-            plan_docks_if_due(clock)
+            between_steps(clock)
 
             try:
                 reclaim_inventory_only_items_from_warehouses()
             except Exception as e:
                 print(f"[AUTOMATION] Reclaim sweep error: {e}")
 
-            plan_docks_if_due(clock)
+            between_steps(clock)
 
             outpost_new_count = 0
             try:
@@ -262,7 +291,7 @@ while True:
                             consolidate_cross_warehouse_stock(o)
                         except Exception as e:
                             print(f"[AUTOMATION] Cross-warehouse consolidation error at '{o_id}': {e}")
-                        plan_docks_if_due(clock)
+                        between_steps(clock)
             except Exception as e:
                 print(f"[AUTOMATION] Outpost sync error: {e}")
 
@@ -291,16 +320,12 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet upgrade error: {e}")
 
-            commission_summary = "commission idle"
-            try:
-                commission_summary = fleet_commissioner.step(current_tick)
-            except Exception as e:
-                print(f"[AUTOMATION] Fleet commission error: {e}")
+            step_commission(current_tick)
 
             archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join([
                 f"{grid_count} grid(s) supervised", "rebalance swept", f"{outpost_new_count} new outpost(s)",
                 f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", str(upgrade_summary),
-                str(commission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
+                str(commission["summary"]), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
             ]))
 
     flush_all()

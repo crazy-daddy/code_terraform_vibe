@@ -244,6 +244,21 @@ class DroneCommissionTests(CommissionTestCase):
         self.assertEqual(w.inventory.count("portable_bio_extractor"), 0)
         self.assertIn("waiting for credits", pioneer_commission.commission_state()["status"])
 
+    def test_kit_in_inventory_deploys_in_one_pass(self):
+        job_id = fleet_commission.queue_drone("hauler", "outpost_2")
+        for item_id, n in {"drone_medium": 1, "electric_thruster": 1, "battery_pack": 1, "cargo_pod_medium": 2}.items():
+            self.world.inventory.add(item_id, n)
+        self.assertTrue(fleet_commission.commission_fast())
+        self.steps(1)  # queued -> crafting -> deploying -> attach, script started
+        self.assertEqual(self.job(job_id)["state"], "attach", self.debug_log())
+        self.assertEqual(self.computer.calls, [("drone_medium", "outpost_2")])
+        self.assertTrue(fleet_commission.commission_fast())
+
+    def test_crafting_wait_is_not_fast(self):
+        fleet_commission.queue_drone("hauler")
+        self.steps(1)
+        self.assertFalse(fleet_commission.commission_fast())
+
     def test_drone_job_does_not_wait_behind_pioneer(self):
         fleet_commission.queue_pioneer("hauler")
         drone_job = fleet_commission.queue_drone("hauler")

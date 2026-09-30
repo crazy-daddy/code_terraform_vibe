@@ -7,8 +7,10 @@
 # fleet.commission["jobs"] (layout in lib/pioneer_commission.py): each pass
 # works the first non-blocked job of each kind, so a drone waiting on the
 # Fabricator doesn't hold up a Pioneer. Each pass re-reads the dict, advances
-# a job at most one state and writes back, so a restart resumes where it
-# stopped.
+# a job until a state has to wait (MAX_ADVANCES_PER_PASS at most), writing
+# back after each state, so a restart resumes where it stopped. While a head
+# job is in a quick state (FAST_STATES), control_room_automation steps the
+# coordinator every COMMISSION_FAST_TICK_INTERVAL, not only every storage tick.
 #
 # Pioneer (always deployed at the home outpost, where its parts are; the job's
 # home_base becomes its HOME_BASE):
@@ -67,6 +69,12 @@ DEPLOY_BLOCKING_STATUSES = ("deploy_limit", "location_not_found", "not_deployabl
 # fleet_upgrade drone swap states between "about to deploy" and "adopted".
 SWAP_DEPLOYING_STATES = ("announced", "swapping")
 JOB_KINDS = ("pioneer", "drone")
+# Head-job states that end within seconds (no Fabricator, cash or Pioneer drive to wait on), per kind.
+# While a head job sits in one, control_room_automation steps the coordinator on its fast cadence.
+FAST_STATES = {"pioneer": ("queued", "deploying", "attach"), "drone": ("queued", "deploying", "attach", "fitting")}
+# Advances per job per pass: queued -> crafting -> deploying -> attach -> script start fit in one pass
+# when the kit is already in Inventory.
+MAX_ADVANCES_PER_PASS = 5
 
 
 def _component(component_id):
@@ -99,6 +107,16 @@ def _queue(kind, role, fields):
         state.setdefault("jobs", []).append(job)
     update_commission(mutate)
     return created[0] if created else ""
+
+
+def commission_fast():
+    """True while the head job of a kind sits in one of its FAST_STATES."""
+    jobs = [j for j in commission_state().get("jobs") or [] if isinstance(j, dict)]
+    for kind in JOB_KINDS:
+        head = next((j for j in jobs if job_kind(j) == kind and j.get("state") != "blocked"), None)
+        if head is not None and head.get("state") in FAST_STATES[kind]:
+            return True
+    return False
 
 
 def queue_pioneer(role, home_base=None):
@@ -273,18 +291,24 @@ class FleetCommissionCoordinator:
             job = next((j for j in mine if j.get("state") != "blocked"), None)
             blocked = sum(1 for j in mine if j.get("state") == "blocked")
             queued = sum(1 for j in mine if j is not job and j.get("state") != "blocked")
-            if job is None:
-                text = f"{kind}s: nothing to do"
-            elif kind == "pioneer":
-                text = self._advance(job, pioneers)
-            else:
-                text = self._advance_drone(job, drones)
+            text = f"{kind}s: nothing to do" if job is None else self._advance_chain(kind, job, pioneers, drones)
             extras = [f"+{queued} queued"] if queued else []
             extras += [f"{blocked} blocked"] if blocked else []
             parts.append(f"{text} ({', '.join(extras)})" if extras else text)
         text = "; ".join(parts)
         self._set_status(text)
         return f"commission: {text}"
+
+    def _advance_chain(self, kind, job, pioneers, drones):
+        """Advances job until its state stops changing (a wait), is blocked or MAX_ADVANCES_PER_PASS is reached. Each advance is written back first."""
+        text = ""
+        for _ in range(MAX_ADVANCES_PER_PASS):
+            before = job.get("state")
+            text = self._advance(job, pioneers) if kind == "pioneer" else self._advance_drone(job, drones)
+            job = next((j for j in commission_state().get("jobs") or [] if isinstance(j, dict) and j.get("id") == job["id"]), None)
+            if job is None or job.get("state") in (before, "blocked"):
+                break
+        return text
 
     def _sync_craft_order(self, job):
         """The Fabricator order for the crafting drone job's kit, or none (cancelled/advanced)."""
