@@ -20,9 +20,7 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   name*, not per sample, respects Data Archive's hard 512-entry cap.
 - `profiling.report(names=None)` prints avg/max ticks-per-`step()` for every profiled name (or
   subset) — call ad hoc, not from hot loop.
-- **Granularity limit — read before trusting a `0`**: `clock.tick()` advances on fixed 10/sec
-  schedule *independent of script work* (scripts cooperatively scheduled, interleaved within each tick's window). `step()` with no internal loop finishes inside whichever tick it started regardless of real cost, so nonzero delta only by landing on tick boundary by luck — **a `0` does not mean "cheap."**
-  `SLOW_STEP_TICK_THRESHOLD=1` reflects that: on non-looping `step()`, any nonzero delta already interesting. No finer (sub-tick/wall-clock) instrument — below floor, fall back to code-level reasoning (algorithmic complexity, what runs every cycle vs. gated).
+- **Granularity**: a script gets a fixed step allowance per tick (§1d-1), so `step()` spans `steps / allowance` ticks and a tick delta does measure its cost, in whole ticks. A `0` means the step fit into the rest of one tick's allowance (up to ~300 steps with ~165 scripts running), not that it was free. `SLOW_STEP_TICK_THRESHOLD=1`: any nonzero delta is worth a look. For sub-tick costs, count operations (docs/BENCHMARK.md) or time a loop in `devtools/panel_benchmark.py`.
 - **Not currently wired into any script.** `lib/profiling.py` and `lib/archive_cleaner.py`'s
   cleanup of it kept for future script suspected of real bulk per-call work.
 - **Storage shape & cleanup**: each archive entry `{"history": [...], "last_tick": N}`.
@@ -30,6 +28,15 @@ profiling.end(self.name, start)   # logs a warning if delta > SLOW_STEP_TICK_THR
   in `PROFILING_STALE_TICKS=6000` (10 sim minutes, "instrumentation removed"), always purges
   legacy bare-list entries. Runs in
   `ArchiveCleaner.run()`'s normal sweep.
+
+### 1d-1. Script Cost Model (measured, [`docs/BENCHMARK.md`](../BENCHMARK.md) "Load dependence")
+
+- **Per-step cost ≈ `99 + 1.37 × N` µs of simulation time**, N = scripts running (sleeping ones count; stopped ones don't). ~1,000 steps per tick alone, ~300 with 165 running. Each running script makes every step of every script ~1.4% slower; how busy the scripts are does not matter (Control Room cards shown, hidden or stopped measured the same apart from their count).
+- **What this means for code**:
+  - Fewer steps per poll make *that* script react sooner (a planning pass finishes in fewer ticks); they barely help other scripts. Shorter sleeps likewise cost only the script itself.
+  - The lever for the whole base is the **number of running scripts**. Setpoints (`set_tilt`, `set_throttle`, `set_power`, `set_intake`, all *self only*) hold only while the machine's script runs: a script that ends, or `run_control.stop()`, drops them to idle (solar tilt back to 90°, measured). So a machine that needs a held setpoint needs a running script; one whose idle state is acceptable (off, no recipe running, night) can have its script end and be restarted with `run_control.start()` when there is work.
+  - Console writes and `sleep()` cost 0.1 s of the script's own time each (debug lines are buffered, §0a).
+- **Measuring**: `devtools/panel_benchmark.py` with `QUICK = True` (empty loop, `len()`, call, component call; min/median/max) in a Control Room card. Compare runs that differ only in which scripts run. Heavy scripts can report their own phases in ticks, like the Harvester's `planned in … (N ticks: phase n, …)` note (§1k).
 
 ## 🐞 8. Live Debugging via External IDE
 

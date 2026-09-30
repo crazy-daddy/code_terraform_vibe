@@ -51,3 +51,5 @@ First number = columns (width), second = rows (height). `1x1` → `1x2` adds hei
 - Named widget that draws own label (`slider`, likely `switch`/`button` too): fold live value INTO that label string. Don't draw separate, separately-positioned text beside it.
 - `pill()` needs more vertical clearance below than plain text line. Leave ≥ ~24px, not ~16px, before placing anything under one.
 - Anchor right-side elements from right edge (`width - <fixed px>`), not width fraction (`width * 0.86`), for anything with roughly fixed pixel footprint (`switch`, `button`, short `pill`). Fractions of 500px vs 1000px canvas land very differently.
+
+**Cost of a card**: each running card is one running script and slows every script by ~1.4% (dev_workflow.md §1d-1), on screen or not (measured). Merging cards (tabs in one card) cuts that; drawing less only speeds up the card itself.

@@ -28,6 +28,17 @@ Repo moved to a dev root (`C:\Users\Adrian\Code_Terraform`) separate from the li
 
 ---
 
+## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
+
+Every running script slows every other by ~1.4% (165 running → 3.25× slower than one alone).
+
+- [ ] **On-demand script scheduler** in the headless automation panel: machine scripts end themselves when their machine has nothing to do; the panel restarts them with `run_control.start()` (hysteresis against flapping). Candidates where the idle state is acceptable: solar at night (19), oil generators without a power deficit (7), Smelters/Fabricators without demand (18; recipe and loaded material survive), Supply Docks without an order (5), pumps on a dormant well (10). Estimated 25–35 fewer running scripts on average (325 → ~284 µs per step).
+- [ ] **Centralize Smelter/Fabricator demand**: compute `get_smelter_demands()` / site Fabricator targets once every few seconds in the headless panel and publish to `archive`; machines read their slice instead of each walking the whole demand tree every poll (18 instances).
+- [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts ≈ 26%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
+- [ ] **Panels**: heavy cards re-read the fleet and archive every frame; refresh data every 10–20 frames (only helps the card itself).
+
+---
+
 ## 🧭 Phase 1: Early Automation & Industrial Bootstrapping
 - [x] Complete Earth contracts for starting credits:
   - `relay_hack.py` (Completed)

@@ -538,3 +538,27 @@ away while one near the job is busy, and a Pioneer pays for every empty metre on
 pinned to outposts are the accepted cost; drones stay the floating fleet. Existing save slots are re-homed
 by scripts_sync from their old destination, since keeping `HOME_BASE` would have turned the mine-parked ore
 hauler into one pulling toward the mine.
+
+## §12 — Script Cost Scales With Running-Script Count (2026-09-30)
+
+Machines felt "behind" (Harvester, Smelter, Fabricator; Supply Docks joining completed orders). A
+performance pass cut per-poll work: building discovery memoized for 2 s (`production`, `storage`,
+`drone_energy`, `vehicle_energy`), one `SourceCache` per Fabricator step, Harvester geometry/per-step
+caches and a route search that stops at the first reached target, Pressure Generators sleeping until
+their sync window, slower polls for solar/pumps/turbines/thermal caps/oil generators/Crop Automators,
+nearest-station-first arbitration for Drone Service and Charging Stations, and the dock plan published
+on its own 5 s timer (Docks also re-check a planned order is still active).
+
+The measurements behind it (docs/BENCHMARK.md) first looked like one interpreter budget shared by the
+awake scripts, which argued for slower polls everywhere. Further runs disproved that: stopping all 8
+Control Room cards (always awake) changed nothing beyond their count, and stopping 19 solar trackers that
+sleep 10 s at a time helped exactly as much as their count predicts. Per-step cost is `99 + 1.37 × N` µs
+for N running scripts. The Smelter/Fabricator active poll therefore went back to 1 s: a faster poll costs
+only the script itself.
+
+A rewrite with centralized control was considered and rejected: the slowness was pacing and
+recomputation, not structure, and *self only* setpoints (`set_tilt`, `set_throttle`, ...) reset to idle
+whenever a script ends or is stopped (measured on a solar panel), so machine scripts cannot be replaced by
+one central script. The remaining levers are fewer running scripts (retire machines that don't earn their
+~1.4%, merge Control Room cards, start scripts only while their machine has work) and computing shared
+results once centrally; both are in TODO.md.

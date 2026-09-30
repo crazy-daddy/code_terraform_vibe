@@ -15,7 +15,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1 | Terraforming formula table | this file |
 | 1a, 1a-0, 1a-1 | Brownout load-shedding, steam-aware Power Guard, grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1b, 1c, 1c-1, 1c-2, 1c-3 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
-| 1d | Tick-cost profiling | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
+| 1d, 1d-1 | Tick-cost profiling, script cost model (cost scales with running-script count) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1j | Field Mining Drill telemetry | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
