@@ -114,6 +114,10 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.step_mine = {}            # this step's harvester_layout(), for work_on_pass()
         self.step_machine_map = None   # deployed field machines, read once per step
         self.build_phase = None        # full layout: True while a reserved machine is missing
+        self.step_start = 0            # tick the current step began (plan_note())
+        self.step_mark = 0             # tick the last planning phase ended
+        self.step_phases = []          # [(phase, ticks)] of the current step
+        self.idle_since: "int | None" = None   # tick the current idle streak began
         saved = archive.get(STATUS_KEY, {})
         self.init_heat_model((saved.get(self.name) or {}).get("heat") if isinstance(saved, dict) else None)
 
@@ -181,22 +185,32 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         fn = getattr(self.harvester, method, None)
         if fn is None:
             return None
+        self.log.start(f"[{self.name}] {method}", level="debug")
+        where = self.get_position()
         res = None
         for _ in range(ACTION_RETRIES):
             self.ensure_headroom(self.action_cost(method))
             before = self.get_heat()
+            start_tick = _now_tick()
             res = fn(*args)
             status = getattr(res, "status", "")
+            took = self.game_time(_now_tick() - start_tick)
             if status in ("ok", "partial", "dropped"):
-                self.learn_action(method, before, self.get_heat())
+                after = self.get_heat()
+                self.learn_action(method, before, after)
+                self.log.debug(f"at {where} -> {status} after {took}, heat {before:.1f} -> {after:.1f}.")
+                self.log.end()
                 return res
+            self.log.debug(f"at {where} -> {status} after {took}: {getattr(res, 'message', '')}")
             if status == "overheated":
                 self.cool_down()
             elif status in ("busy", "moving"):
                 flush_all()
                 sleep(1.0)
             else:
+                self.log.end()
                 return res
+        self.log.end()
         return res
 
     def read_cells(self):
@@ -259,10 +273,48 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         archive.transaction(STATUS_KEY, {}, updater)
         self.log.debug(f"[{self.name}] demand now={now} rotation={len(rotation)} species; status={entry}")
 
+    # ------------------------------------------------------ step profiling
+
+    def mark(self, phase):
+        """Ends a planning phase of the current step; plan_note() reports its ticks."""
+        now = _now_tick()
+        self.step_phases.append((phase, now - self.step_mark))
+        self.step_mark = now
+
+    def plan_note(self):
+        """
+        "planned in <world time> (<ticks>: <phase> <ticks>, ...)" for the
+        step's decision line. Planning runs on the script's step budget, so a
+        step can take a sizeable part of a world hour before the Harvester
+        moves. Also closes an idle streak.
+        """
+        self.mark("decide")
+        total = sum(n for _, n in self.step_phases)
+        parts = ", ".join(f"{phase} {n}" for phase, n in self.step_phases if n)
+        note = f"planned in {self.game_time(total)} ({total} ticks{': ' + parts if parts else ''})"
+        if self.idle_since is not None:
+            note += f"; idle {self.game_time(self.step_start - self.idle_since)} before"
+            self.idle_since = None
+        return note
+
+    def log_idle(self, cells, rules):
+        """One debug line when an idle streak starts: why nothing is due and when care is next."""
+        if self.idle_since is not None:
+            return
+        why = []
+        hours = self.next_care_hours(cells, rules, self.kept_garden())
+        why.append("no hand care kept up" if hours is None else f"next care in ~{hours:.1f} h")
+        if self.inventory_full_tick is not None:
+            why.append("harvest paused: Inventory full")
+        self.log.debug(f"[{self.name}] Idle: nothing due ({', '.join(why)}); {self.plan_note()}; polling every {IDLE_POLL_SECONDS:.0f} s.")
+        self.idle_since = self.step_start
+
     # ----------------------------------------------------------------- loop
 
     def step(self):
         curr_tick = _now_tick()
+        self.step_start = self.step_mark = curr_tick
+        self.step_phases = []
         self.stock_memo = {}
         self.step_statuses = None
         self.step_machine_map = None
@@ -275,6 +327,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # (move_to) then share a single heat map.
         self.step_statuses = {s: getattr(c, "status", None) for s, c in cells.items()}
         self.base_sector = self.base_from_cells(cells)
+        self.mark("cells")
         # Recipes change only when the Seed Maker republishes; the layout only
         # on the switch to full or a new chunk. Neither is re-read every step.
         if self._rules is None or curr_tick - self._rules_tick >= PUBLISH_INTERVAL_TICKS:
@@ -295,16 +348,19 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # the path are its +1-heat roads and stay put.
         roads = set(self.road_cells(layout))
         spare_items = [s for s, c in cells.items() if getattr(c, "status", "") == "item" and s not in roads]
+        self.mark("layout")
         self.publish(active, layout, cells, rules, spare_items, curr_tick)
+        self.mark("publish")
 
         # Something left in the held slot (e.g. after a restart) goes back to Inventory.
         self.store_held_if_any()
 
         # 0. Full layout: remove a stray field machine (older layout).
         strays = self.stray_machines()
+        self.mark("machines")
         if strays:
             target = self.nearest(list(strays), cells)
-            self.log.debug(f"[{self.name}] {len(strays)} stray field machine(s) {strays}; nearest {target}.")
+            self.log.debug(f"[{self.name}] {len(strays)} stray field machine(s) {strays}; nearest {target}; {self.plan_note()}.")
             if self.move_to(target):
                 self.remove_here(strays[target])
             return
@@ -328,7 +384,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             if build:
                 rank = self.build_rank()
                 target = min(build, key=lambda s: (rank.get(s, 1 << 30), s))
-                self.log.debug(f"[{self.name}] Build: {len(deploys)} machine / {len(build) - len(deploys)} plant cell(s) ready; next in order {target} ({build[target]}).")
+                self.log.debug(f"[{self.name}] Build: {len(deploys)} machine / {len(build) - len(deploys)} plant cell(s) ready; next in order {target} ({build[target]}); {self.plan_note()}.")
                 what = f"deploy {deploys[target]}" if target in deploys else f"plant {build[target]}"
                 self.log.start(f"[{self.name}] Build: {what} at {target}")
                 if self.move_to(target):
@@ -343,6 +399,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
                     self.log.end("Build step aborted: target not reached")
                 return
 
+        self.mark("build")
         # 2. Care tour first: a lapsed treatment stalls growth, while a mature
         #    crop just waits with its Forage banked. Harvest-first starved care
         #    (7 plants stalled for a whole day with crops always mature).
@@ -352,8 +409,10 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if not self.care_batch and self.care_targets(cells, rules, kept=kept):
             self.care_batch = batch
             self.log.debug(f"[{self.name}] Care tour: {len(batch)} cell(s) below {CARE_BATCH_H} h.")
+        self.mark("care")
         if self.care_batch:
             target = self.nearest(list(self.care_batch), cells)
+            self.log.debug(f"[{self.name}] Care tour: next {target} ({'+'.join(self.care_batch[target])}) of {len(self.care_batch)} queued; {self.plan_note()}.")
             self.log.start(f"[{self.name}] Care tour: {target} ({len(self.care_batch)} cell(s) queued)")
             if self.move_to(target):
                 treated = self.care_here(self.care_batch[target])
@@ -370,7 +429,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             targets = self.harvest_targets(cells, layout)
             if targets:
                 target = self.nearest(targets, cells)
-                self.log.debug(f"[{self.name}] {len(targets)} mature crop(s); cheapest {target} (planned in {_now_tick() - curr_tick} ticks).")
+                self.log.debug(f"[{self.name}] {len(targets)} mature crop(s); cheapest {target}; {self.plan_note()}.")
                 self.log.start(f"[{self.name}] Harvest {target}")
                 if self.move_to(target):
                     self.harvest_here()
@@ -385,7 +444,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         targets = self.clear_targets(layout, cells)
         if targets:
             target = self.nearest(targets, cells)
-            self.log.debug(f"[{self.name}] {len(targets)} plant(s) in the layout's way; cheapest {target}.")
+            self.log.debug(f"[{self.name}] {len(targets)} plant(s) in the layout's way; cheapest {target}; {self.plan_note()}.")
             self.log.start(f"[{self.name}] Uproot {target}")
             if self.move_to(target) and self.uproot_here():
                 self.plant_if_open(mine)
@@ -399,7 +458,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         if targets:
             by_sector = dict(targets)
             target = self.nearest(list(by_sector), cells)
-            self.log.debug(f"[{self.name}] {len(targets)} plantable cell(s); cheapest {target} ({by_sector[target]}, planned in {_now_tick() - curr_tick} ticks).")
+            self.log.debug(f"[{self.name}] {len(targets)} plantable cell(s); cheapest {target} ({by_sector[target]}); {self.plan_note()}.")
             self.log.start(f"[{self.name}] Plant {by_sector[target]} at {target}")
             if self.move_to(target) and self.plant_here(by_sector[target]):
                 self.care_current(rules)
@@ -410,10 +469,11 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
 
         # 6. With heat headroom: pave a path cell, else sweep a loose item.
         if self.get_heat() <= ITEM_SWEEP_MAX_HEAT and self.pave_step(layout, cells, rules, spare_items):
+            self.idle_since = None
             return
         if spare_items and self.get_heat() <= ITEM_SWEEP_MAX_HEAT and not self.unpaved(layout, cells):
             target = self.nearest(spare_items, cells)
-            self.log.debug(f"[{self.name}] Nothing to tend; collecting loose item off the path at {target}.")
+            self.log.debug(f"[{self.name}] Nothing to tend; collecting loose item off the path at {target}; {self.plan_note()}.")
             self.log.start(f"[{self.name}] Collect loose item at {target}")
             if self.move_to(target):
                 self.collect_at_current()
@@ -423,6 +483,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             return
 
         # 7. Nothing due: wait in place and cool passively.
+        self.log_idle(cells, rules)
         flush_all()
         sleep(IDLE_POLL_SECONDS)
 

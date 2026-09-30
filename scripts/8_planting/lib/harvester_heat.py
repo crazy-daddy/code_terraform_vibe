@@ -60,6 +60,15 @@ MAX_REST_ROUNDS = 6
 _NEIGHBOURS = {}   # {sector: (orthogonal neighbours)}, built once: the script has a step budget per tick
 
 
+def _now_tick():
+    try:
+        clock = get_component("clock")
+        return clock.tick() if clock else 0
+    except Exception as error:
+        swallowed("harvester_heat._now_tick: get_component", error)
+        return 0
+
+
 def field_neighbours(host, sector):
     """Orthogonal neighbours of `sector` on the 8 x 24 field (memoised)."""
     found = _NEIGHBOURS.get(sector)
@@ -98,6 +107,11 @@ class HarvesterHeatMixin:
         except Exception as error:
             swallowed("harvester_heat.HarvesterHeatMixin.init_heat_model: clock.real_seconds_per_hour", error)
             self.real_seconds_per_hour = 25.0
+
+    def game_time(self, ticks):
+        """World-clock duration of `ticks` simulation ticks (10 per real second), e.g. "30 min" or "1.2 h"."""
+        minutes = ticks / 10.0 / max(0.1, self.real_seconds_per_hour) * 60.0
+        return f"{minutes:.0f} min" if minutes < 60 else f"{minutes / 60.0:.1f} h"
 
     def heat_model(self):
         return {
@@ -238,9 +252,11 @@ class HarvesterHeatMixin:
             res = h.move(sector)
             st = getattr(res, "status", "")
             if st == "ok":
-                observed = self._host.get_heat() - before + self.cool_per_hour * MOVE_HOURS
+                after = self._host.get_heat()
+                observed = after - before + self.cool_per_hour * MOVE_HOURS
                 if 0.0 <= observed <= 20.0:
                     self._learn(status or "unknown", observed)
+                self._host.log.trace(f"Hop -> {sector} ({status}): heat {before:.1f} -> {after:.1f}.")
                 return True
             if st == "already_here":
                 return True
@@ -263,12 +279,20 @@ class HarvesterHeatMixin:
         if statuses is None:
             statuses = {s: getattr(c, "status", None) for s, c in self._host.read_cells().items()}
         path, cost = self.route(here, target_sector, statuses)
+        log = self._host.log
         if not path:
+            log.debug(f"[{self._host.name}] No route {here} -> {target_sector}.")
             return False
-        self._host.log.debug(f"[{self._host.name}] Route {here} -> {target_sector}: {len(path)} hop(s), cost {cost:.1f}, heat {self._host.get_heat():.1f}.")
+        log.start(f"[{self._host.name}] Move {here} -> {target_sector}", level="debug")
+        start_tick, start_heat = _now_tick(), self._host.get_heat()
+        log.debug(f"Route: {len(path)} hop(s) (~{len(path) * MOVE_HOURS:.1f} h), cost {cost:.1f}, heat {start_heat:.1f}.")
         for sector in path:
             if not self.hop(sector, statuses.get(sector)):
+                log.end(f"Stopped at {self._host.get_position()} after {self.game_time(_now_tick() - start_tick)}")
                 return False
             if sector != target_sector:
                 self._host.work_on_pass(sector, statuses.get(sector))
-        return self._host.get_position() == target_sector
+        arrived = self._host.get_position() == target_sector
+        log.end(f"{'Arrived' if arrived else 'Ended at ' + str(self._host.get_position())} after {self.game_time(_now_tick() - start_tick)}, "
+                f"heat {start_heat:.1f} -> {self._host.get_heat():.1f}")
+        return arrived

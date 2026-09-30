@@ -71,22 +71,33 @@ class HarvesterCareMixin:
         one (`kept`, never harvested): it only counts toward diversity while
         its conditions are met.
         """
+        return [kind for kind, remaining in self.hand_care(cell, rules, kept) if remaining < refresh_h]
+
+    def hand_care(self, cell, rules, kept=False):
+        """
+        [(kind, manual hours left)] of the treatments the Harvester keeps up on
+        this cell: no provider covers it, and salt only while salt is at home.
+        """
         statuses = ("growing", "stalled", "mature") if kept else ("growing", "stalled")
         if getattr(cell, "status", "") not in statuses:
             return []
         species = getattr(cell, "plant", None)
         if not species:
             return []
-        due = []
+        out = []
         for kind in field_layout.care_kinds(rules, species):
             remaining = getattr(cell, _REMAINING[kind], 0) or 0
-            covered_by_provider = bool(getattr(cell, _FLAG[kind], False)) and remaining <= 0
-            if covered_by_provider or remaining >= refresh_h:
-                continue
+            if bool(getattr(cell, _FLAG[kind], False)) and remaining <= 0:
+                continue   # covered by a provider
             if kind == "salt" and self.salt_in_inventory() < 1:
                 continue
-            due.append(kind)
-        return due
+            out.append((kind, remaining))
+        return out
+
+    def next_care_hours(self, cells, rules, kept=()):
+        """World hours until the next hand treatment drops below CARE_REFRESH_H; None when none is kept up."""
+        left = [remaining for sector, cell in cells.items() for _, remaining in self.hand_care(cell, rules, sector in kept)]
+        return max(0.0, min(left) - CARE_REFRESH_H) if left else None
 
     def care_targets(self, cells, rules, refresh_h=CARE_REFRESH_H, kept=()):
         """{sector: [kinds]} for every plant with a treatment below refresh_h (`kept` sectors: mature ones too)."""
@@ -123,11 +134,8 @@ class HarvesterCareMixin:
             if kind == "salt":
                 self._host.stage("salt")
             res = self._host.act(_ACTION[kind])
-            status = getattr(res, "status", "?")
-            if status == "ok":
+            if getattr(res, "status", "?") == "ok":
                 done.append(kind)
-            else:
-                self._host.log.debug(f"[{self._host.name}] {_ACTION[kind]} at {here} -> {status}: {getattr(res, 'message', '')}")
         if done:
             self._host.log.print(f"[{self._host.name}] Treated {here}: {', '.join(done)}.")
             self._host.last_action = f"care {'+'.join(done)}@{here}"
