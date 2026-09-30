@@ -184,6 +184,15 @@ The per-step cost is not fixed: scripts appear to share one interpreter budget. 
 | All running | 598 ticks | cells 11, reload 291, publish 75, decide 196 |
 | All stopped | 181 ticks | cells 3, reload 87, publish 24, decide 59 |
 
+`QUICK` runs in the same save (median µs per iteration):
+
+| Load | empty loop | `len(list)` | `fn()` | `clock.elapsed_seconds()` |
+| --- | ---: | ---: | ---: | ---: |
+| All scripts running | 325 | 1,375 | 1,625 | 1,375 |
+| Other scripts stopped | 100 | 406 | 500 | 406 |
+
+Every case scales by the same ~3.3×, matching the Harvester step. Reading: the game runs about **1,000 interpreter steps per tick (10,000 per simulation second) in total**, split among the scripts that are awake at that moment; a sleeping script takes no share. A script alone gets all of it (100 µs per step); in this save about three scripts were awake on average. The 350 µs figure in the tables above was measured under similar load, so treat the "× empty loop" ratios as the portable numbers and the µs figures as load-dependent. What costs the game is the steps each script spends per simulation second, summed over all scripts: a poll that does 3,000 steps every second uses about 30% of the whole budget.
+
 About 3.3× slower with everything running, and the `cells` phase (one API call plus a 192-item comprehension, ~2 ticks at the 350 µs figure above) took 11. So every script's per-tick work, including idle polling, slows every other script: prefer longer idle sleeps and less work per poll over faster polling. The `QUICK` switch below measures the empty-loop cost under each load.
 
 ## Reproducing
