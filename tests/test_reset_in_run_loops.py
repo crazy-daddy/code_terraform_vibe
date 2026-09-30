@@ -7,7 +7,7 @@ import os
 import unittest
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
-TIERS = ("4_controlpanel", "5_steampower", "6_seeds", "7_miningdrills", "8_planting")
+TIERS = ("4_controlpanel", "5_steampower", "6_seeds", "7_miningdrills", "8_planting", "9_wildlife")
 
 
 def is_forever(node):

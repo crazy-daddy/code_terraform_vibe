@@ -285,7 +285,8 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
 
 ---
 
-## 🦎 Phase 9: Wildlife automation (tier `9_wildlife`, plan only)
+## 🦎 Phase 9: Wildlife automation (tier `9_wildlife`, in progress)
+Implementation plan: [docs/plans/phase9_wildlife.md](docs/plans/phase9_wildlife.md). Done so far: `lib/wildlife_data.py`, `lib/wildlife_model.py`, the offline schedule optimizer `devtools/wildlife_optimizer.py`, and `WILDLIFE_SCHEDULE` (§1l-1). Next: planner, Habitat controller, Feed Maker controller.
 Automates Phase 6 end to end as a new `scripts/9_wildlife/` tier (thin entrypoints in `bio/`, shared logic in `lib/`; **tier unlock = the first deployed Feed Maker**: `.criteria` `"buildings": {"feed_maker": 1}` in `devtools/scripts_sync.py`, the same mechanism `7_miningdrills` uses; the project's current-focus phase shifts to Phase 9 at that moment). Nothing here is built yet. Design rules: portable (auto-discover outposts/biomes/buildings), one shared archive dict per concern, demand published through the existing channels (`logistics.requests` for materials, `bio_orders` for fragments), every recovering `except` calls `swallowed()`, `TreeConsole` logging.
 - [ ] **Placement policy: everything grows at home.** One `lib/` module owns it; scripts stay thin. Fluids reach home by pipe (no travel cost; 2,000 t/h per attachment link vs a few t/h per Habitat), feed is made at home, reagents come from Base Inventory (only a home Habitat's `reagents` input can use it). So Habitats sit at home up to the slot budget; nothing is hauled to remote Habitats.
   - [ ] **Slot budget** (numbers in `docs/cheatsheet/wildlife.md` §1l): home soft cap 31 (25 + 5 Outpost Expansion + 1 Weather Program; the +1 is home-only and stays even though `weather_station_2` sits at outpost_1). Every slot-using building counts, tanks and warehouses included. Each one over the cap costs every `throughput` building at home 10 % (Habitat capacity, Feed Maker and Plant Terraformer speed). 2026-09-30: 16 used (Smelters/Fabricators already moved to outposts), so 15 free. Budget = cap − non-wildlife buildings − Feed Makers. The cap is a hard limit: never deploy a Habitat past it (−10 % on every throughput building at home is too costly); park instead.
@@ -320,7 +321,7 @@ Automates Phase 6 end to end as a new `scripts/9_wildlife/` tier (thin entrypoin
 - [ ] **Habitat controller** (`lib/habitat.py`): `set_revival_target()`, stage feed + rarity-scaled reagents, `revive()` and branch on `.status`, then per-stage gas/liquid regulation using the two-sided-band pattern from the Husbandry guide (`next_*` fields to prep upcoming fluids, `purge_reserve()` on overfill). Insight spending via `unlock_bonus()`. Fluid supply and tank routing follow Phase 6 (exotic prospecting) and `FluidInputRouter`.
 - [ ] **Telemetry and Control Panel card**: per-species stage, population, breeding rate, efficiency, current outpost, blocker; archive `wildlife.status`, bounded.
 - [ ] **Docs**: new cheatsheet section for the constants above and the `9_wildlife` module map entry in `docs/AI_CHEATSHEET.md`, updated in the same change as each constant.
-- [ ] **Open questions for later:** which biome outposts exist today; confirm the Feed Maker's building type id for the `.criteria` key (check a save's `state.planet.outposts` buildings).
+- [ ] **Open questions for later:** which biome outposts exist today. (Resolved: typeIds are `feed_maker` and `habitat`, from `state.machines`.)
 
 ---
 

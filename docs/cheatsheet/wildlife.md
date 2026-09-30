@@ -20,7 +20,7 @@ Breeding rate multiplier by rarity: 1.0 / 0.75 / 0.5 / 0.3.
 
 **Consumption per new individual** (before trait reductions): 0.1 feed (one 100-Forage recipe = 20 feed = 200 individuals), 0.0008 t gas, 0.0008 t liquid, only while that input is active. A full Mk II colony: ~35,000 feed, ~280 t of each fluid.
 
-**Breeding rate** (individuals/h) = 0.0144 × F(population) × rarity multiplier × efficiency × (1 + speed bonus) × (1 + momentum bonus × momentum) × (1 + brood bonus). F(p) = p up to 10, 10 × (p/10)^0.85 up to 5,000, then saturates so the rate tops out at 150/h (× (1 + rate-ceiling bonus)). Untreated full-support hours per stage (0 → 4):
+**Breeding rate** (individuals/h) = 0.0144 × F(population) × rarity multiplier × efficiency × (1 + speed bonus) × (1 + momentum bonus × momentum) × (1 + brood bonus). Speed bonuses multiply each other ((1+a)(1+b)…, then capped); brood, momentum and ceiling bonuses add. F(p) = p up to 10, 10 × (p/10)^0.85 up to 5,000, then saturates so the rate tops out at 150/h (× (1 + rate-ceiling bonus)). Untreated full-support hours per stage (0 → 4):
 
 | Rarity | Founded | First Breeding | Self-Sustaining | Thriving | Abundant | Total |
 |---|---|---|---|---|---|---|
@@ -69,7 +69,7 @@ Per species to 350k, t: Common ~1,660 of its gas. Uncommon ~2,710 gas + ~2,090 b
 
 Stage 0 needs feed only for every species, so all 16 can be revived and grown to 249 without fluids. Sulfur gas / cryofluid need the Refiner + tar; chlorine / quicksilver need Deep Exotics (500,000 Wildlife).
 
-**Insight.** One shared pool, earned by each colony's population growth along (population → cumulative Insight, linear between): 4 → 0, 10 → 1, 100 → 1.5, 1,000 → 2.25, 10,000 → 3, 50,000 → 4, 175,000 → 5.5, 350,000 → 7. 16 × 7 = 112 total; all 32 nodes cost 80. Adaptation: 1 Insight, this species only. Breakthrough: 4 Insight + that species at 10,000 population, all species. Buy with `unlock_bonus(node_id)`; results `ok`, `unknown_node`, `already_purchased`, `population_locked`, `insufficient_insight`.
+**Insight.** One shared pool, earned by each colony's population growth along (population → cumulative Insight, linear between): 4 → 0, 10 → 1, 100 → 1.5, 1,000 → 2.25, 10,000 → 3, 50,000 → 4, 175,000 → 5.5, 350,000 → 7. A founding bonus is credited at establishment: a colony founded at 10 (crustal_echo's +6) earns its first Insight the moment rearing ends. 16 × 7 = 112 total; all 32 nodes cost 80. Adaptation: 1 Insight, this species only. Breakthrough: 4 Insight + that species at 10,000 population, all species. Buy with `unlock_bonus(node_id)`; results `ok`, `unknown_node`, `already_purchased`, `population_locked`, `insufficient_insight`.
 
 Global caps on stacked bonuses (`xG`): breeding speed +150 %, brood yield +35 %, momentum +30 %, natural rate ceiling +50 %, band tolerance +50 %, feed demand at least 25 % of base.
 
@@ -97,3 +97,31 @@ Global caps on stacked bonuses (`xG`): breeding speed +150 %, brood yield +35 %,
 | spire_drake | Spire Nursery: +2 founding, +45 % speed below 2,500 | Sky Dominion: +12 % speed |
 
 "Keeps base fluid" Adaptations skip the apex switch: `bone_walker` reaches full size on ammonia + brine (no Refiner), `tidal_cephalopod` never needs cryofluid, `vent_drifter` never needs sulfur_gas, `glacial_wyrm` never needs quicksilver.
+
+### 1l-1. Revival and Insight schedule (`9_wildlife`)
+
+Constants and the model live in `lib/wildlife_data.py` / `lib/wildlife_model.py` (pure, shared with `devtools/wildlife_optimizer.py`). The optimizer beam-searches the order of revivals, Adaptations and Breakthroughs. It assumes full support, feed never short, and fluids ready at fixed lead times after their research. It scores a schedule by hours until Wildlife reaches 600,000 (Habitat Mk II). The result is `WILDLIFE_SCHEDULE`.
+
+Policy: `magmatic_annelid` and `salt_tortoise` revive first, without an Adaptation (`WILDLIFE_BOOTSTRAP`). Every other revival buys its Adaptation first. Steps run strictly in order, so a `break` step holds Insight until its source colony has 10,000 individuals.
+
+Optimizer defaults: 10 Habitats (Mk I), common fluids 72 h and refined fluids 168 h after Exotic Husbandry (1,000 Wildlife), deep fluids 168 h after Deep Exotics, 2 Feed Makers. Results (2026-09-30):
+
+| Scenario | Hours to 600k | 1k / 250k / 500k at |
+|---|---|---|
+| Schedule (beam) | 1,763 (73 d) | 380 / 1,406 / 1,680 h |
+| Default order (rarity, founding first) | 1,959 | 414 / 1,534 / 1,836 h |
+| Hold Insight early for the `salt_tortoise` Breakthrough | 2,149 | 399 / 1,566 / 2,006 h |
+| 16 Habitats | 1,670 | 375 / 1,386 / 1,606 h |
+| Revive without Adaptation allowed (`--allow-unadapted`) | 1,675 | 337 / 1,350 / 1,603 h |
+| Fluid leads 24/72 h or 240/480 h | 1,760 | ~same |
+| 1 Feed Maker | 1,762 | ~same |
+
+What the runs show:
+- Filling every Habitat early matters most. The order among the early revivals changes the result by under 1 %.
+- Holding Insight early for a Breakthrough costs about 20 %: it blocks revivals for hundreds of hours.
+- Breakthroughs come late on their own. The Commons reach 10,000 first, at about 830 h (`magmatic_annelid`) and 920 h (`salt_tortoise`).
+- Reviving without the Adaptation saves about 5 %, even for crustal_echo's +6 founding, because breadth earns Insight sooner.
+- Fluid timing barely matters to 600k. Commons need gas only from 25,000, and the others stall at 250 while still earning Insight.
+- Peak feed demand is about 100 feed/h, which is 2 Feed Makers but about 500 Forage/h. Forage, not Feed Maker count, is the likely real limit.
+
+Re-run by hand when an assumption changes: `python devtools/wildlife_optimizer.py --help`.

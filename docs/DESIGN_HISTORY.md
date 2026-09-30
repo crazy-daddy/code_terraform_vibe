@@ -585,3 +585,16 @@ tab (Computer > Automations) gives such scripts their own slot type: no machine,
 `automation_N` slots the same way as `panel_N`. The move does not change the running-script count.
 `run_control` still only targets machines (`f4()` looks up `state.machines`), so an automation
 cannot be started or stopped from another script.
+
+## §1l-1 — Wildlife Schedule Solved Offline (2026-09-30)
+
+Every input to the revival/Insight order is a world-independent game constant (breeding formula,
+Insight curve, bonus trees), so the order is solved once on the dev machine by
+`devtools/wildlife_optimizer.py` and shipped as `WILDLIFE_SCHEDULE`, instead of simulating the
+menagerie in game every planning pass. The in-game planner only walks the schedule and skips a step
+whose assumptions fail live (missing recipe, fluid, feed ingredients).
+
+Revival is gated on Insight by operator choice: every non-bootstrap species buys its Adaptation
+before `revive()`, because founding bonuses apply only at establishment and the below-2,500 speed
+boosts lose value when bought late. The optimizer shows that allowing some revivals without the
+Adaptation reaches 600,000 Wildlife about 5 % sooner; the gate was kept pending an operator decision.
