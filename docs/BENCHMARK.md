@@ -199,6 +199,7 @@ Every case scales by the same ~3.3×, matching the Harvester step. Further runs 
 | 165 | cards hidden (another page open) | 325 | 1,375 | 1,625 |
 | 157 | 8 cards stopped | 325 | 1,250 | 1,625 |
 | 146 | 19 solar trackers stopped (each asleep 10 s at a time) | 300 | 1,187 | 1,375 |
+| ~112 | script parking + drill scripts ended (`lib/script_parking.py`, dev_workflow.md §1d-2); N inferred from the allowance | 225 | 875 | 1,375 |
 
 Reading: **the per-step cost grows with the number of running scripts, not with how busy they are.** The rule is `allowance = max(1, min(1000, floor(50000 / N)))` steps per script per tick, N = scripts whose status is `running`, `waiting` (in `sleep()`, a Signal Bus wait, or the pause after a console write) or `flushing`; completed, stopped, paused, errored and breakpoint-halted scripts don't count (game scheduler, from the decompiled simworker kept locally and gitignored (`internals/`, `docs/extracted/`): `interpreter.stepsPerTick = 1000`, `interpreter.totalStepsPerTick = 50000`). Up to 50 running scripts every script gets the full 1,000 steps per tick (100 µs per step); above that the fixed 50,000 steps per tick are split evenly, and a sleeping script's share is not handed to anyone else. Predicted vs measured: N = 146 → 342 steps → 292 µs (measured 300), N = 165 → 303 steps → 330 µs (measured 325; `clock.elapsed_seconds()` resolution makes the figures move in 25 µs steps). A script that exhausts its allowance 30 ticks in a row raises a `scriptBudgetPressure` event in the game. Consequences:
 
