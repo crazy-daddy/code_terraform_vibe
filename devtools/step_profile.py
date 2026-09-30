@@ -34,15 +34,37 @@ SKIP_FILES = ("game_stubs.py", "copy.py", "step_profile.py")
 
 
 class Profile:
-    def __init__(self):
+    """Opcode counts: total, inside lib/atomic.py run_atomic() calls, the
+    largest single atomic call, and per function (inclusive)."""
+
+    def __init__(self, direct_only=False):
+        self.direct_only = direct_only
         self.total = 0
+        self.atomic = 0
+        self.atomic_calls = 0
+        self.atomic_peak = 0
+        self._current = None
         self.inclusive = collections.Counter()
 
     def _tracer(self, frame, event, _arg):
         frame.f_trace_opcodes = True
+        if event == "call" and frame.f_code.co_name == "run_atomic" and frame.f_code.co_filename.endswith("atomic.py"):
+            if self._current is None:
+                self._current = [frame, 0]
+                self.atomic_calls += 1
+            return self._tracer
+        if event == "return" and self._current is not None and frame is self._current[0]:
+            self.atomic_peak = max(self.atomic_peak, self._current[1])
+            self._current = None
+            return self._tracer
         if event != "opcode" or frame.f_code.co_filename.endswith(SKIP_FILES[:2]):
             return self._tracer
         self.total += 1
+        if self._current is not None:
+            self.atomic += 1
+            self._current[1] += 1
+            if self.direct_only:
+                return self._tracer
         seen = set()
         f = frame
         while f is not None:
@@ -144,35 +166,39 @@ def _with_host(mixin):
     return obj
 
 
-def target_haul(size):
+def target_haul(size, scenario=None):
     """drone_hauler: every (destination, first source) candidate route plus its scoring."""
     import drone_hauler
     sample_world.build_sample_world(size)
-    dests, sources = sample_world.route_scenario(size)
+    dests, sources = scenario or sample_world.route_scenario(size)
     hauler = _with_host(drone_hauler.DroneHaulerMixin)
     services = [{"coords": (0.0, 0.0)}]
 
     def plan():
-        for dest, route in hauler._candidate_routes(dests, sources, 400, (0.0, 0.0)):
-            points = [(0.0, 0.0)] + [s["coords"] for s, _l in route] + [dest["coords"]]
-            hauler._route_fuel(points, services)
-            hauler._need_units(dest, route)
+        for dest in dests:
             hauler._reachable(dest, sources)
+        for _dest, _candidate in hauler._candidate_routes(dests, sources, 400, (0.0, 0.0), services):
+            pass
     return plan
 
 
-def target_pull(size):
-    """vehicle_cargo: a Pioneer's pull chain from every first source (_plan_pull_route()'s loop)."""
+def target_pull(size, scenario=None):
+    """vehicle_cargo: a Pioneer's pull chains from every first source (_plan_pull_route())."""
     import vehicle_cargo
     sample_world.build_sample_world(size)
-    dests, sources = sample_world.route_scenario(size)
+    dests, sources = scenario or sample_world.route_scenario(size)
     puller = _with_host(vehicle_cargo.VehicleCargoMixin)
     need, buffer = dests[0]["need"], dests[0]["buffer"]
     home = dests[0]["coords"]
 
+    puller._profile_host.home_outpost = types.SimpleNamespace(id=dests[0]["outpost_id"], coords=lambda: home, is_home=True)
+    puller._profile_host.get_position = lambda: (0.0, 0.0)
+    puller._pull_sources = lambda _items, _tick: [dict(s) for s in sources]
+    puller._shop_source = lambda *_a: None
+
     def plan():
-        for first in sources:
-            puller._plan_pull_chain(first, sources, need, buffer, 400, (0.0, 0.0), home)
+        puller._plan_pull_route(need, {}, 400, 0)
+        puller._plan_pull_route(need, buffer, 400, 0)
     return plan
 
 
@@ -192,6 +218,7 @@ def main():
     parser.add_argument("--size", default="medium", choices=sorted(sample_world.SIZES))
     parser.add_argument("--top", type=int, default=10, help="functions listed per target")
     parser.add_argument("--scripts", type=int, default=112, help="running scripts, for the ticks estimate")
+    parser.add_argument("--direct-only", action="store_true", help="list functions by opcodes outside atomic calls")
     parser.add_argument("--list", action="store_true", help="list targets and exit")
     args = parser.parse_args()
     if args.list:
@@ -204,10 +231,15 @@ def main():
     share = steps_per_tick(args.scripts)
     for name in args.targets or TARGETS:
         fn = TARGETS[name](args.size)
-        profile = Profile()
+        profile = Profile(args.direct_only)
         profile.run(fn)
-        steps = profile.total / OPCODES_PER_STEP
-        print(f"\n=== {name} [{args.size}]: {profile.total} opcodes ~ {steps:,.0f} steps ~ {steps / share:,.0f} ticks at {share} steps/tick")
+        direct = (profile.total - profile.atomic) / OPCODES_PER_STEP
+        # each atomic call finishes within the tick it starts in; budget is checked only between calls
+        ticks = direct / share + profile.atomic_calls
+        print(f"\n=== {name} [{args.size}]: {profile.total} opcodes ~ {profile.total / OPCODES_PER_STEP:,.0f} steps ~ {ticks:,.0f} ticks at {share} steps/tick")
+        if profile.atomic_calls:
+            print(f"    atomic: {profile.atomic_calls} call(s), {profile.atomic} opcodes, largest call {profile.atomic_peak} opcodes"
+                  f" (~{profile.atomic_peak / OPCODES_PER_STEP:,.0f} steps of the 10,000 cap); direct ~{direct:,.0f} steps")
         for key, count in profile.inclusive.most_common(args.top):
             print(f"{count:>10}  {key}")
 
