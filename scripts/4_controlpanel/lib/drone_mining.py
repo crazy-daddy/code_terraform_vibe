@@ -41,9 +41,10 @@ if TYPE_CHECKING:
     from drone import DroneController
 
 
-# Extra pull on a biosite per requested (logistics_requests) life form it
-# still holds, by rarity -- rare forms sit on few sites with long cooldowns,
-# so a site holding one is worth a detour first.
+# Extra pull on a biosite per requested (logistics_requests) or
+# below-buffer life form it still holds, by rarity -- rare forms (the fungi:
+# one site per biome, 36 h regrowth) sit on few sites with long cooldowns, so
+# a site holding one is worth a detour first.
 RARITY_REQUEST_WEIGHT = {"common": 1, "uncommon": 2, "rare": 4}
 
 
@@ -71,8 +72,8 @@ class DroneMiningMixin:
         outpost currently requests via lib/logistics_requests.py, weighted by
         RARITY_REQUEST_WEIGHT; 0 everywhere when nothing is requested), then
         partially-drained sites, then (after biomass completion) buffer need
-        (forms below lifeform_buffer_cap() at the home outpost), then by
-        distance.
+        (forms below lifeform_buffer_cap() at the home outpost, weighted by
+        RARITY_REQUEST_WEIGHT), then by distance.
         """
         self._host.log.start(f"[{self._host.name}] _biosite_candidates()", level="debug")
         self._host.log.trace("_biosite_candidates() entry.")
@@ -149,7 +150,7 @@ class DroneMiningMixin:
                     request_score += RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1)
             buffer_need = 0
             if retired:
-                buffer_need = sum(1 for lf in life_forms if short_forms.get(getattr(lf, "type", None), 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0)
+                buffer_need = sum(RARITY_REQUEST_WEIGHT.get(getattr(lf, "rarity", "common"), 1) for lf in life_forms if short_forms.get(getattr(lf, "type", None), 0) > 0 and float(getattr(lf, "remaining_tons", 0.0) or 0.0) > 0)
             if retired and request_score == 0 and buffer_need == 0 and not (partial and any(getattr(lf, "type", None) in wanted_types for lf in life_forms)):
                 skipped_unneeded += 1
                 continue
