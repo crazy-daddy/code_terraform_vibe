@@ -44,6 +44,7 @@ from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
 from swallow import swallowed
 from atomic import run_atomic
+from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
 
@@ -533,6 +534,7 @@ class DroneHaulerMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] {reason}, but no drone_service_station is deployed.")
             return False
         self._host.log.debug(f"[{self._host.name}] {reason}; heading to drone_service '{service_id}'.")
+        wake_for_visit(service_id, f"{self._host.name} refuelling")
         return self._host.fly_to_station(service_id, target_coords=coords)
 
     def _refuel(self, needed, reason):
@@ -560,6 +562,8 @@ class DroneHaulerMixin:
             if frac >= REFUEL_FULL_LEVEL or (level >= needed and status not in ("charging", "refueling", "waiting_service")):
                 self._host.log.debug(f"[{self._host.name}] Refuel done: {level:.1f} {self._host.energy_unit()} ({frac*100:.0f}%), status={status}.")
                 return True
+            if int(waited) % 30 == 0:
+                wake_for_visit(self._host.current_station(), f"{self._host.name} refuelling")
             if status == "waiting_oil" and not warned_oil:
                 self._host.log.level("warn").print(f"[{self._host.name}] Service station has no oil; waiting.")
                 warned_oil = True

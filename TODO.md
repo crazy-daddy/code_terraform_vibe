@@ -34,7 +34,8 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
 
 - [x] **On-demand script scheduler** (`lib/script_parking.py`, dev_workflow.md §1d-2): Smelters, Fabricators, Supply Docks and Oil Generators breaker-parked while idle; solar scripts stopped at night.
 - [x] **Extend script parking** to Oil Pumps (dormant well) and Crop Automators (nothing to do).
-- [ ] **Park Drone Service / Charging Stations** only with a reliable arrival signal (a drone or vehicle heading there to charge); without one a parked station strands it.
+- [x] **Park Drone Service / Charging Stations** (dev_workflow.md §1d-2): vehicles and drones wake the station they head to (`wake_for_visit()`); awake stations hand a vehicle nearest to a parked one over by waking it; the last awake station per type stays up.
+  - [ ] Validate live: an unpowered station still discoverable and dockable, visit wake arrives before docking, hand-off rescue from the woken station.
 - [x] **Callback atomicity helper** (`lib/atomic.py`, dev_workflow.md §1d-1), used by the Harvester route search.
 - [x] **Harvester startup geometry**: `full_chunk_count()` (~48k of the ~55k startup steps) is stored in `plant.geometry` and reused across restarts (chunking it atomically was rejected: spread over thousands of small calls, uncatchable `StepLimitError` risk, saves ~20 s once per restart).
 - [ ] **More atomic work**: the Harvester's `publish` phase (seed demand, status counts: pure part only) and the demand cascade on a prefetched snapshot.

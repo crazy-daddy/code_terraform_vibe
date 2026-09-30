@@ -21,6 +21,7 @@
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester, parked_ids, parked_nearest, wake_for_visit
 from version_guard import validate_game_version
 
 STRANDED_STATUSES = ("stalled_no_battery", "stalled_no_oil", "scrambled")
@@ -60,6 +61,7 @@ class DroneServiceController:
         self.nudge_commands = set()
         self._oil_warned = False
         self.log = TreeConsole(module="drone_service")
+        self.parker = ParkRequester(self.name, "drone_service_station")
 
     def all_station_refs(self):
         return discover_drone_services()
@@ -338,7 +340,10 @@ class DroneServiceController:
             self.log.end()
             return False
 
+        # Parked stations take no responsibility; see ChargingStationController.manage_fleet_rescues().
         refs = self.all_station_refs()
+        parked = parked_ids("drone_service_station")
+        parked.discard(self.name)  # running, so awake whatever the archive says
         self_known = any(r["id"] == self.name for r in refs)
         heli_refs = None
         busy = False
@@ -356,7 +361,8 @@ class DroneServiceController:
                 candidates = heli_refs
             else:
                 candidates = refs
-            is_mine, distance, nearest = self.assess_stations(d_ref, candidates, self_known)
+            awake = [r for r in candidates if r["id"] not in parked] if parked else candidates
+            is_mine, distance, nearest = self.assess_stations(d_ref, awake, self_known)
             if not is_mine:
                 self.nudge_commands.discard(d_ref.id)
                 continue
@@ -366,6 +372,14 @@ class DroneServiceController:
             floor = 0.0 if distance is None else self.return_floor_wh(d_ref, distance)
             target_level = self.rescue_target_level(d_ref, floor)
             is_below_floor = v_wh <= floor
+
+            if parked and (is_stranded or is_below_floor or v_lvl < target_level):
+                handoff = parked_nearest(d_ref, candidates, parked, distance)
+                if handoff:
+                    busy = True
+                    wake_for_visit(handoff, f"{d_ref.name} needs its nearest station")
+                    self.log.print(f"[{self.name}] {d_ref.name} ({v_lvl*100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
+                    continue
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
                 busy = True
@@ -384,10 +398,13 @@ class DroneServiceController:
     def step(self):
         """One supervision cycle; returns True while this station has work (poll fast)."""
         if not self.is_station_powered():
+            self.parker.update(False)
             return False
         docked_busy = self.manage_docked_drones()
         rescue_busy = self.manage_fleet_rescues()
-        return docked_busy or rescue_busy
+        busy = docked_busy or rescue_busy
+        self.parker.update(not busy)
+        return busy
 
     def run(self, poll_interval=ACTIVE_POLL_SECONDS, idle_poll_seconds=IDLE_POLL_SECONDS):
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()

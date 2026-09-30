@@ -5,6 +5,7 @@ from vehicle_energy import rescue_wh_per_meter_for
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from script_parking import ParkRequester, parked_ids, parked_nearest, wake_for_visit
 
 class ChargingStationController:
     """
@@ -33,6 +34,7 @@ class ChargingStationController:
         self.last_rescued_vehicle = None
         self.return_commands = set()
         self.log = TreeConsole(module="charging")
+        self.parker = ParkRequester(self.name, "charging_station")
 
     def all_station_refs(self):
         """
@@ -276,8 +278,14 @@ class ChargingStationController:
             swallowed("charging.ChargingStationController.manage_fleet_rescues: self.fleet.vehicles", error)
             return False
 
+        # Parked stations (lib/script_parking.py) take no responsibility; a vehicle
+        # needing attention whose nearest station is parked gets that station
+        # woken instead, so the nearest station still nudges or rescues it.
         refs = self.all_station_refs()
-        self_known = any(r["id"] == self.name for r in refs)
+        parked = parked_ids("charging_station")
+        parked.discard(self.name)  # running, so awake whatever the archive says
+        awake = [r for r in refs if r["id"] not in parked]
+        self_known = any(r["id"] == self.name for r in awake)
         verbose = self.log.verbose
         busy = False
         for v_ref in vehicles:
@@ -289,7 +297,7 @@ class ChargingStationController:
             # against the same fleet snapshot -- only the nearest one acts,
             # or every station in range would dispatch its own drone to the
             # same vehicle.
-            is_mine, distance, nearest = self.assess_stations(v_ref, refs, self_known)
+            is_mine, distance, nearest = self.assess_stations(v_ref, awake, self_known)
             if not is_mine:
                 continue
 
@@ -311,6 +319,14 @@ class ChargingStationController:
             is_below_floor = v_wh <= return_floor
             if verbose:
                 self.log.trace(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl*100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level*100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
+
+            if parked and (is_stranded or is_below_floor or v_lvl < target_level):
+                handoff = parked_nearest(v_ref, refs, parked, distance)
+                if handoff:
+                    busy = True
+                    wake_for_visit(handoff, f"{v_name} needs its nearest station")
+                    self.log.print(f"[{self.name}] {v_name} ({v_lvl*100:.0f}%) is nearest to parked '{handoff}'; woke it to take over.")
+                    continue
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
                 busy = True
@@ -347,11 +363,14 @@ class ChargingStationController:
     def step(self):
         """Single supervision cycle for dock charging and field rescue; returns True while this station has work (poll fast)."""
         if not self.is_station_powered():
+            self.parker.update(False)
             return False
 
         docked_busy = self.manage_docked_vehicles()
         rescue_busy = self.manage_fleet_rescues()
-        return docked_busy or rescue_busy
+        busy = docked_busy or rescue_busy
+        self.parker.update(not busy)
+        return busy
 
     def run(self, poll_interval=ACTIVE_POLL_SECONDS, idle_poll_seconds=IDLE_POLL_SECONDS):
         """Continuous supervision loop."""

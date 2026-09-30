@@ -16,6 +16,13 @@ Two ways out of the count:
   scripts with `run_control.stop()` once the sun is down and starts them again
   at sunrise. A stopped panel drops its tilt, which does not matter at 0 W.
 
+Charging Stations and Drone Service Stations park the same way, with two
+safeguards: a vehicle or drone heading to one (or waiting at it) wakes it
+itself (`wake_for_visit()`, which also holds it awake for STATION_HOLD_TICKS),
+and the last awake station of each type never parks. Awake stations leave
+parked ones out of their nearest-station responsibility (`parked_ids()`) and
+wake a parked station that is nearest to a stranded vehicle, so it rescues.
+
 Parked machines are tracked in one archive dict (PARKED_KEY) so a panel restart
 keeps waking them. Load shedding (lib/power.py) uses the same breakers with its
 own `power.shedded` list; a shed id is never parked, and only ids in
@@ -33,6 +40,8 @@ log = TreeConsole(module="script_parking")
 PARK_REQUESTS_KEY = "script.park_requests"
 # {machine_id: {"kind": str, "mode": "breaker" | "stopped", "since": n}}: owned by ScriptParking.
 PARKED_KEY = "script.parked"
+# {machine_id: until_tick}: written by wake_for_visit(); a held machine is not parked.
+HOLDS_KEY = "script.park_holds"
 
 # Consecutive idle steps before a machine asks to be parked.
 PARK_AFTER_IDLE_STEPS = 3
@@ -49,7 +58,15 @@ WAKE_AFTER_TICKS = {
     "thermal_cap": 600,
     "oil_pump": 3000,
     "crop_automator": 600,
+    "charging_station": 3000,
+    "drone_service_station": 3000,
 }
+# Station kinds: never park the last awake one of a type (see the module docstring).
+STATION_KINDS = ("charging_station", "drone_service_station")
+# How long a visit wake holds a station awake (ticks). Covers the trip there;
+# once a vehicle is docked the station's own script reports busy. Callers
+# waiting at a station call wake_for_visit() again, which renews it.
+STATION_HOLD_TICKS = 3000
 # Upper bound on a wake time a machine files itself (ParkRequester.update(wake_after=...)).
 MAX_WAKE_AFTER_TICKS = 6000
 
@@ -68,6 +85,88 @@ def _now_tick():
     except Exception as error:
         swallowed("script_parking._now_tick: clock.tick", error)
         return 0
+
+
+def parked_ids(kind=None):
+    """Ids of breaker-parked machines (of `kind`, if given), from PARKED_KEY."""
+    try:
+        parked = archive.get(PARKED_KEY, {}) or {}
+    except Exception as error:
+        swallowed("script_parking.parked_ids: archive.get", error)
+        return set()
+    if not isinstance(parked, dict):
+        return set()
+    return {m for m, e in parked.items() if isinstance(e, dict) and e.get("mode") == "breaker" and (kind is None or e.get("kind") == kind)}
+
+
+def wake_for_visit(machine_id, reason="visit", hold_ticks=STATION_HOLD_TICKS):
+    """
+    Called by a vehicle or drone heading to (or waiting at) a station, or by a
+    station handing a rescue to a parked one: holds the station awake for
+    hold_ticks and, when it is breaker-parked, switches it on and drops it
+    from PARKED_KEY. Safe to call for any id (a machine that is not parked
+    only gets the hold). Returns True when it switched a parked machine on.
+    """
+    if not machine_id:
+        return False
+    now = _now_tick()
+
+    def hold(holds):
+        holds = holds if isinstance(holds, dict) else {}
+        holds = {m: t for m, t in holds.items() if isinstance(t, (int, float)) and t > now}
+        holds[machine_id] = now + hold_ticks
+        return holds
+
+    try:
+        archive.transaction(HOLDS_KEY, {}, hold)
+    except Exception as error:
+        swallowed("script_parking.wake_for_visit: archive.transaction(HOLDS_KEY)", error)
+    if machine_id not in parked_ids():
+        return False
+    power_control = get_component("power_control")
+    try:
+        result = power_control.set_powered(machine_id, True) if power_control else None
+    except Exception as error:
+        swallowed("script_parking.wake_for_visit: power_control.set_powered", error)
+        return False
+    if getattr(result, "status", "") != "ok":
+        log.debug(f"wake_for_visit({machine_id}): set_powered -> {getattr(result, 'status', None)}")
+        return False
+
+    def unpark(parked):
+        parked = parked if isinstance(parked, dict) else {}
+        parked.pop(machine_id, None)
+        return parked
+
+    try:
+        archive.transaction(PARKED_KEY, {}, unpark)
+    except Exception as error:
+        swallowed("script_parking.wake_for_visit: archive.transaction(PARKED_KEY)", error)
+    log.print(f"[PARKING] Woke {machine_id} ({reason}).")
+    return True
+
+
+def parked_nearest(ref, station_refs, parked, awake_distance):
+    """Id of the parked station strictly nearer to `ref` (a fleet VehicleRef/DroneRef) than
+    awake_distance, the nearest one if several; None when the nearest station is awake."""
+    best, best_id = awake_distance, None
+    for station in station_refs:
+        if station["id"] not in parked:
+            continue
+        dist = ((ref.x - station["coords"][0]) ** 2 + (ref.y - station["coords"][1]) ** 2) ** 0.5
+        if best is None or dist < best:
+            best, best_id = dist, station["id"]
+    return best_id
+
+
+def _held(machine_id, now):
+    """True while wake_for_visit() holds machine_id awake."""
+    try:
+        holds = archive.get(HOLDS_KEY, {}) or {}
+    except Exception as error:
+        swallowed("script_parking._held: archive.get", error)
+        return True
+    return isinstance(holds, dict) and holds.get(machine_id, 0) > now
 
 
 class ParkRequester:
@@ -172,6 +271,8 @@ class ScriptParking:
                 continue
             if kind == "oil_generator" and members[machine_id][0] in low_grids:
                 continue  # reserve already low: stay ready instead of parking and waking again
+            if kind in STATION_KINDS and (self._last_awake(kind, machine_id, members, parked, shed) or _held(machine_id, now)):
+                continue
             if self._set_powered(machine_id, False):
                 parked[machine_id] = {"kind": kind, "mode": "breaker", "since": now}
                 if request.get("wake_after") is not None:
@@ -198,6 +299,12 @@ class ScriptParking:
         if kind == "oil_pump" and self._well_active(machine_id):
             return "well active"
         return None
+
+    @staticmethod
+    def _last_awake(kind, machine_id, members, parked, shed):
+        """True when machine_id is the only station of its kind on the grids that is neither parked nor shed."""
+        awake = [m for m, (_anchor, type_id) in members.items() if type_id == kind and m not in parked and m not in shed]
+        return awake == [machine_id] or not awake
 
     @staticmethod
     def _well_active(machine_id):

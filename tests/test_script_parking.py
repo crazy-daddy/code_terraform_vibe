@@ -195,5 +195,58 @@ class ScriptParkingTests(StubTestCase):
         self.assertNotIn("solar_1", self.run.running)
 
 
+class StationParkingTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.power = _PowerControl()
+        self.world.services["power_control"] = self.power
+        for machine_id in ("charging_station_1", "charging_station_2"):
+            self.world.components[machine_id] = _Machine()
+        self.grids = [_Grid([_Member("charging_station_1", "charging_station"), _Member("charging_station_2", "charging_station")])]
+        self.parking = ScriptParking(power=self.power, run_control=_RunControl([]))
+
+    def request(self, machine_id):
+        requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
+        requests[machine_id] = {"kind": "charging_station", "tick": self.world.clock.now}
+
+    def test_last_awake_station_never_parks(self):
+        self.request("charging_station_1")
+        self.request("charging_station_2")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(len([c for c in self.power.calls if c[1] is False]), 1)
+        self.request("charging_station_1")
+        self.request("charging_station_2")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(len([c for c in self.power.calls if c[1] is False]), 1)
+
+    def test_visit_wakes_parked_station_and_holds_it(self):
+        self.request("charging_station_1")
+        self.parking.step(self.grids, 10.0)
+        self.assertIn("charging_station_1", script_parking.parked_ids("charging_station"))
+        self.assertTrue(script_parking.wake_for_visit("charging_station_1", "test"))
+        self.assertEqual(self.power.calls[-1], ("charging_station_1", True))
+        self.assertNotIn("charging_station_1", script_parking.parked_ids())
+        self.request("charging_station_1")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("charging_station_1", True))  # held: not parked again
+        self.world.clock.now += script_parking.STATION_HOLD_TICKS
+        self.request("charging_station_1")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("charging_station_1", False))
+
+    def test_visit_to_awake_station_only_holds(self):
+        self.assertFalse(script_parking.wake_for_visit("charging_station_2", "test"))
+        self.assertEqual(self.power.calls, [])
+        self.assertGreater(self.world.notebook.data[script_parking.HOLDS_KEY]["charging_station_2"], self.world.clock.now)
+
+    def test_parked_nearest_hands_over_only_to_a_nearer_parked_station(self):
+        class Ref:
+            x, y = 0.0, 0.0
+        refs = [{"id": "near", "coords": (10.0, 0.0)}, {"id": "far", "coords": (100.0, 0.0)}]
+        self.assertEqual(script_parking.parked_nearest(Ref(), refs, {"near"}, 100.0), "near")
+        self.assertIsNone(script_parking.parked_nearest(Ref(), refs, {"far"}, 10.0))
+        self.assertIsNone(script_parking.parked_nearest(Ref(), refs, set(), 10.0))
+
+
 if __name__ == "__main__":
     unittest.main()
