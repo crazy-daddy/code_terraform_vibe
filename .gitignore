@@ -20,3 +20,4 @@ codeterraform-workspace.json
 /scripts/_unmatched/
 /devtools/.sync-backups/
 /.pyright-resolved/
+docs/extracted

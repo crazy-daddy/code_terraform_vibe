@@ -1,2 +1,10 @@
-typer>=0.12
-watchdog>=4.0
+annotated-doc==0.0.5
+brotli==1.2.0
+colorama==0.4.6
+markdown-it-py==4.2.0
+mdurl==0.1.2
+Pygments==2.21.0
+rich==15.0.0
+shellingham==1.5.4
+typer==0.27.2
+watchdog==6.0.0
