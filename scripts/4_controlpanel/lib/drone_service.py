@@ -44,6 +44,11 @@ class DroneServiceController:
     # Heli equivalents in tons of Oil (tanks are 30/75/150 t).
     RETURN_EMERGENCY_RESERVE_T = HELI_MIN_EMERGENCY_RESERVE_T / 2.0
     RESCUE_EXTRA_RESERVE_T = HELI_MIN_EMERGENCY_RESERVE_T / 2.0
+    # Poll cadence: ACTIVE while this station has work (bays charging or queued,
+    # a rescue under way, a drone it is responsible for stranded/below floor/
+    # heading home); IDLE otherwise.
+    ACTIVE_POLL_SECONDS = 1.5
+    IDLE_POLL_SECONDS = 5.0
 
     def __init__(self, station, target_charge_level=1.0):
         self.station = station
@@ -115,32 +120,65 @@ class DroneServiceController:
             return (drone_ref.oil_tons or 0.0, drone_ref.oil_capacity or 0.0, drone_ref.oil_level or 0.0)
         return (drone_ref.battery_wh or 0.0, drone_ref.battery_capacity or 0.0, drone_ref.battery_level or 0.0)
 
-    def return_floor_wh(self, drone_ref):
+    def return_floor_wh(self, drone_ref, distance=None):
         """
         Fuel (Wh, or t Oil for heli) a drone needs on board right now to
         safely self-navigate to the nearest drone_service -- mirrors
         ChargingStationController's own return_floor_wh(), but the drone
         model needs no drone object at all (drone_rescue_energy_per_meter()
         is a flat per-engine constant, unlike the ground-vehicle model's
-        per-chassis/module/cargo terms).
+        per-chassis/module/cargo terms). distance: metres to the nearest
+        serving station when the caller already has it (None = look up).
         """
-        stations = self.station_coords(drone_ref)
-        if not stations:
-            return 0.0
-        distance = min(((drone_ref.x - x) ** 2 + (drone_ref.y - y) ** 2) ** 0.5 for x, y in stations)
+        if distance is None:
+            stations = self.station_coords(drone_ref)
+            if not stations:
+                return 0.0
+            distance = min(((drone_ref.x - x) ** 2 + (drone_ref.y - y) ** 2) ** 0.5 for x, y in stations)
         reserve = self.RETURN_EMERGENCY_RESERVE_T if drone_ref.engine == "heli" else self.RETURN_EMERGENCY_RESERVE_WH
         return (distance * drone_rescue_energy_per_meter(drone_ref.engine) * self.RETURN_SAFETY_MARGIN) + reserve
 
-    def rescue_target_level(self, drone_ref):
-        """Charge/refuel target for a rescue: enough to reach the nearest station with a safety reserve."""
+    def rescue_target_level(self, drone_ref, floor=None):
+        """Charge/refuel target for a rescue: enough to reach the nearest station with a safety reserve. floor: precomputed return_floor_wh()."""
         current, capacity, _ = self.fuel_of(drone_ref)
         if not capacity or capacity <= 0:
             return 1.0
         extra = self.RESCUE_EXTRA_RESERVE_T if drone_ref.engine == "heli" else self.RESCUE_EXTRA_RESERVE_WH
-        target = max(current, self.return_floor_wh(drone_ref) + extra)
+        if floor is None:
+            floor = self.return_floor_wh(drone_ref)
+        target = max(current, floor + extra)
         return min(1.0, target / capacity)
 
-    def order_return_to_service(self, drone_ref):
+    def assess_stations(self, drone_ref, candidates, self_known):
+        """
+        One pass over candidate stations: (is_mine, nearest_distance, nearest_coords).
+        is_mine matches is_nearest_station_to(): True when this station's own
+        position is unknown, False when it is not among the candidates (a dry
+        station for a heli), otherwise True unless another candidate is strictly closer.
+        nearest_* are None when there are no candidates.
+        """
+        x = drone_ref.x
+        y = drone_ref.y
+        best = None
+        best_coords = None
+        mine = None
+        for ref in candidates:
+            coords = ref["coords"]
+            dist_sq = (x - coords[0]) ** 2 + (y - coords[1]) ** 2
+            if ref["id"] == self.name:
+                mine = dist_sq
+            if best is None or dist_sq < best:
+                best = dist_sq
+                best_coords = coords
+        if not self_known:
+            is_mine = True
+        elif mine is None:
+            is_mine = False
+        else:
+            is_mine = mine <= best
+        return is_mine, (None if best is None else best ** 0.5), best_coords
+
+    def order_return_to_service(self, drone_ref, target=None):
         """
         Proactively nudges a low-charge field drone toward the nearest
         drone_service before it needs a full rescue -- mirrors
@@ -148,12 +186,13 @@ class DroneServiceController:
         docstring for why the cross-script go_to() call is expected to
         work). Issued once per low-fuel episode (nudge_commands, cleared
         when the drone docks or is rescued): every go_to() costs a minimal
-        burn even for a 0 m leg, and re-issuing it each 1.5 s cycle would
+        burn even for a 0 m leg, and re-issuing it each poll would
         also keep overriding the drone's own route.
         """
         if drone_ref.id in self.nudge_commands:
             return True
-        target = self.nearest_service_coords(drone_ref)
+        if target is None:
+            target = self.nearest_service_coords(drone_ref)
         if not target:
             return False
         try:
@@ -194,7 +233,7 @@ class DroneServiceController:
             self.log.level("warn").print(f"[{self.name}] {verb.capitalize()} queue notice for {d_id}: {res.status} - {res.message}")
 
     def manage_docked_drones(self):
-        """Queues docked drones below target level: charge() for electric, refuel() for heli."""
+        """Queues docked drones below target level: charge() for electric, refuel() for heli. True while bays are active or queued."""
         self.log.start(f"[{self.name}] manage_docked_drones()", level="debug")
         self.log.trace("manage_docked_drones() entry.")
         try:
@@ -202,14 +241,15 @@ class DroneServiceController:
         except Exception as error:
             swallowed("drone_service.DroneServiceController.manage_docked_drones: self.station.get_docked", error)
             self.log.end()
-            return
+            return False
         if not docked_ids:
             self.log.trace("no docked drones this cycle.")
             self.log.end()
-            return
+            return False
 
         active_bays = self.station.get_active()
         queued = self.station.get_queue()
+        busy = bool(active_bays) or bool(queued)
 
         for d_id in docked_ids:
             try:
@@ -231,19 +271,21 @@ class DroneServiceController:
                 if lvl < (self.target_charge_level - 0.02):
                     if d_id not in active_bays and d_id not in queued:
                         self._queue_service(d_id, heli, lvl)
+                        busy = True
                     else:
                         self.log.debug(f"Docked drone {d_id} ({lvl*100:.0f}%) below target but already active/queued; not re-queuing.")
-                else:
+                elif self.log.verbose:
                     self.log.trace(f"Docked drone {d_id} at {lvl*100:.0f}%, at or above target {self.target_charge_level*100:.0f}%; no charge needed.")
             except Exception as error:
                 swallowed("drone_service.DroneServiceController.manage_docked_drones: get_component", error)
         self.log.trace(f"manage_docked_drones() exit: {len(docked_ids)} docked drone(s) evaluated.")
         self.log.end()
+        return busy
 
-    def _dispatch_rescue(self, d_ref, is_stranded, v_wh, target_level):
+    def _dispatch_rescue(self, d_ref, is_stranded, v_wh, target_level, floor):
         """Announces distress and dispatches the recovery vehicle; True when the loop over drones should stop."""
         unit = "t Oil" if d_ref.engine == "heli" else "Wh"
-        reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL FUEL ({v_wh:.1f} {unit}, below {self.return_floor_wh(d_ref):.1f} {unit} return floor)"
+        reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL FUEL ({v_wh:.1f} {unit}, below {floor:.1f} {unit} return floor)"
         self.log.start(f"[{self.name}] Rescue {d_ref.name}")
         self.log.level("warn").print(f"[{self.name}] Emergency! Drone {d_ref.name} ({d_ref.id}) in distress: {reason} at ({d_ref.x:.1f}, {d_ref.y:.1f}).")
         try:
@@ -270,7 +312,9 @@ class DroneServiceController:
         Monitors every owned drone (electric and heli). Redirects a low-charge field
         drone home before it needs rescue; dispatches the recovery vehicle
         for anything stranded/scrambled or already below its own return
-        floor.
+        floor. Only the nearest serving station does the fuel/floor work for a
+        drone. True while a rescue is in progress or a drone this station is
+        responsible for is stranded, below floor or heading home.
         """
         self.log.start(f"[{self.name}] manage_fleet_rescues", level="debug")
         self.log.trace("manage_fleet_rescues() entry.")
@@ -280,64 +324,81 @@ class DroneServiceController:
                 self.last_rescued_drone = target_name
                 self.log.print(f"[{self.name}] Recovery vehicle currently in field assisting: {target_name}.")
             self.log.end()
-            return
+            return True
 
         self.last_rescued_drone = None
         if not self.fleet:
             self.log.end()
-            return
+            return False
 
         try:
             drones = self.fleet.drones()
         except Exception as error:
             swallowed("drone_service.DroneServiceController.manage_fleet_rescues: self.fleet.drones", error)
             self.log.end()
-            return
+            return False
 
+        refs = self.all_station_refs()
+        self_known = any(r["id"] == self.name for r in refs)
+        heli_refs = None
+        busy = False
         for d_ref in drones:
-            if d_ref.engine not in ("electric", "heli"):
+            engine = d_ref.engine
+            if engine not in ("electric", "heli"):
                 continue  # no thruster mounted yet
             if d_ref.is_docked or d_ref.is_being_rescued or d_ref.rescue_status != "none":
                 self.nudge_commands.discard(d_ref.id)
                 continue
 
+            if engine == "heli":
+                if heli_refs is None:
+                    heli_refs, _tier = heli_capable_services(refs)
+                candidates = heli_refs
+            else:
+                candidates = refs
+            is_mine, distance, nearest = self.assess_stations(d_ref, candidates, self_known)
+            if not is_mine:
+                self.nudge_commands.discard(d_ref.id)
+                continue
+
             is_stranded = d_ref.status in STRANDED_STATUSES
             v_wh, _, v_lvl = self.fuel_of(d_ref)
-            target_level = self.rescue_target_level(d_ref)
-            is_below_floor = v_wh <= self.return_floor_wh(d_ref)
+            floor = 0.0 if distance is None else self.return_floor_wh(d_ref, distance)
+            target_level = self.rescue_target_level(d_ref, floor)
+            is_below_floor = v_wh <= floor
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
+                busy = True
                 self.log.debug(f"{d_ref.name}: level {v_lvl*100:.0f}% below rescue target {target_level*100:.0f}%, not yet stranded/below-floor; nudging home.")
-                if self.order_return_to_service(d_ref):
+                if self.order_return_to_service(d_ref, nearest):
                     continue
 
             if is_stranded or is_below_floor:
-                if not self.is_nearest_station_to(d_ref):
-                    self.log.debug(f"{d_ref.name} in distress but a closer drone_service station exists; deferring dispatch to it.")
-                    continue
-
-                if self._dispatch_rescue(d_ref, is_stranded, v_wh, target_level):
+                busy = True
+                if self._dispatch_rescue(d_ref, is_stranded, v_wh, target_level, floor):
                     break
         self.log.trace(f"manage_fleet_rescues() exit: {len(drones)} drone(s) evaluated.")
         self.log.end()
+        return busy
 
     def step(self):
+        """One supervision cycle; returns True while this station has work (poll fast)."""
         if not self.is_station_powered():
-            flush_all()
-            sleep(2.0)
-            return
-        self.manage_docked_drones()
-        self.manage_fleet_rescues()
+            return False
+        docked_busy = self.manage_docked_drones()
+        rescue_busy = self.manage_fleet_rescues()
+        return docked_busy or rescue_busy
 
-    def run(self, poll_interval=1.5):
+    def run(self, poll_interval=ACTIVE_POLL_SECONDS, idle_poll_seconds=IDLE_POLL_SECONDS):
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()
         self.log.print(f"Drone Service Station ({self.name}) online via Shared Library ({bay_count} bay(s)).")
         validate_game_version()
         while True:
             reset_all()
+            busy = False
             try:
-                self.step()
+                busy = self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
             flush_all()
-            sleep(poll_interval)
+            sleep(poll_interval if busy else idle_poll_seconds)
