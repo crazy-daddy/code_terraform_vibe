@@ -41,8 +41,10 @@ Computer's Library tab. It has live side effects (vehicles re-plan, machines res
 Matters once a base has more than one Vehicle Charging Station. Without a choice, the vehicle docks
 at the nearest eligible station (ties alphabetical by id).
 
-- [ ] `lib/vehicle_energy.py`: when an outpost has several stations, spread vehicles across them
-      with `dock()` and read `current_station()` instead of inferring it.
+- [x] `lib/vehicle_energy.py`: `balance_dock()` spreads parked vehicles across an outpost's
+      stations by load per bay with `dock()`; `recharge_at_station()` reads `current_station()`
+      instead of scanning `get_docked()`. vehicles_drones.md §2a.
+- [ ] Live check once an outpost has a second Vehicle Charging Station.
 
 ## 4. Drone `modules()` for fleet hardware upgrades
 

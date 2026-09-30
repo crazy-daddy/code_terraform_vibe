@@ -648,7 +648,7 @@ class VehicleEnergyMixin:
         Discovers every deployed Vehicle Charging Station across all owned outposts
         (outpost_network.outposts() already includes home), filtered by exact
         type_id so any number of stations is found regardless of id numbering.
-        Returns a list of dicts: [{"id": str, "coords": (float, float), "component": obj}]
+        Returns a list of dicts: [{"id": str, "coords": (float, float), "outpost": str, "component": obj}]
         Memoized per script for STATION_DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only.
         """
         now = 0
@@ -695,6 +695,7 @@ class VehicleEnergyMixin:
                     stations.append({
                         "id": b_id,
                         "coords": pos,
+                        "outpost": getattr(op, "id", ""),
                         "component": get_component(b_id) or b
                     })
 
@@ -788,6 +789,53 @@ class VehicleEnergyMixin:
                 swallowed("vehicle_energy.VehicleEnergyMixin.get_home_slot_coords: self._host.home_outpost.coords", error)
         return (0.0, 0.0)
 
+    def current_station(self):
+        """Id of the Vehicle Charging Station this vehicle is docked at ("" while moving or away)."""
+        try:
+            return self._host.vehicle.current_station() or ""
+        except Exception as error:
+            swallowed("vehicle_energy.VehicleEnergyMixin.current_station: vehicle.current_station", error)
+            return ""
+
+    def _station_load(self, component):
+        """Vehicles other than this one queued or charging at a station, per charging bay."""
+        try:
+            waiting = set(component.get_queue()) | set(component.get_active())
+            bays = component.get_bay_count()
+        except Exception as error:
+            swallowed("vehicle_energy.VehicleEnergyMixin._station_load: station queue", error)
+            return float("inf")
+        waiting.discard(self._host.name)
+        return len(waiting) / max(1, bays)
+
+    def balance_dock(self):
+        """
+        Parked in an outpost with several charging stations: docks at the one
+        with the fewest other vehicles per bay (ties: the current station,
+        then id). Every station covers the whole outpost, so no driving is
+        needed. Returns the station dict docked at, or None when not docked
+        or the outpost has a single station.
+        """
+        current = self.current_station()
+        stations = self.get_all_charging_stations()
+        outpost = next((s.get("outpost") for s in stations if s["id"] == current), None)
+        peers = [s for s in stations if outpost and s.get("outpost") == outpost]
+        if len(peers) < 2:
+            return None
+        best = min(peers, key=lambda s: (self._station_load(s["component"]), s["id"] != current, s["id"]))
+        if best["id"] == current:
+            return best
+        try:
+            status = self._host.vehicle.dock(best["id"]).status
+        except Exception as error:
+            swallowed("vehicle_energy.VehicleEnergyMixin.balance_dock: vehicle.dock", error)
+            return None
+        if status != "ok":
+            self._host.log.debug(f"[{self._host.name}] dock('{best['id']}'): {status}, staying at '{current}'.")
+            return None
+        self._host.log.print(f"[{self._host.name}] Docked at '{best['id']}' instead of busier '{current}'.")
+        return best
+
     def recharge_at_station(self, target_level=1.0, station_coords=None, station_id=None):
         """
         Parks at Vehicle Charging Station / base staging slot and charges until target level.
@@ -836,16 +884,7 @@ class VehicleEnergyMixin:
             wake_for_visit(station_id, f"{self._host.name} coming to charge")
         self._host.log.debug(f"[{self._host.name}] recharge_at_station: station '{station_id or 'station'}' at {cs_coords}, controller {'found' if cs else 'missing'}.")
 
-        # Verify whether vehicle is actually inside the station's docked set
-        is_docked = False
-        if cs and hasattr(cs, "get_docked"):
-            try:
-                docked_fn = getattr(cs, "get_docked")
-                is_docked = self._host.name in docked_fn()
-            except Exception as error:
-                swallowed("vehicle_energy.VehicleEnergyMixin.recharge_at_station: docked_fn", error)
-
-        if not is_docked:
+        if not self.current_station():
             # drive_to() already short-circuits instantly when already within
             # precision, so there's no need to special-case "close but not yet
             # registered docked" with a heavier self.return_to_base() detour
@@ -864,6 +903,13 @@ class VehicleEnergyMixin:
 
         flush_all()
         sleep(0.5)
+        # Charge where the game docked us, or at a less busy station in the same outpost.
+        balanced = self.balance_dock()
+        docked_id = balanced["id"] if balanced else self.current_station()
+        if docked_id and docked_id != station_id:
+            station_id = docked_id
+            cs = balanced["component"] if balanced else (get_component(docked_id) or cs)
+            wake_for_visit(station_id, f"{self._host.name} coming to charge")
         self._host.publish_telemetry("CHARGING")
         self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")
 
@@ -885,9 +931,7 @@ class VehicleEnergyMixin:
                 wake_for_visit(station_id, f"{self._host.name} waiting to charge")
             if wait_cycles % 5 == 0 and cs:
                 try:
-                    get_docked_fn = getattr(cs, "get_docked", None)
-                    docked = get_docked_fn() if get_docked_fn else []
-                    if self._host.name not in docked:
+                    if not self.current_station():
                         self._host.log.level("warn").print(f"[{self._host.name}] Not yet registered in station dock area. Re-aligning to charging station ({cs_coords})...")
                         self._host.drive_to(cs_coords[0], cs_coords[1], precision=1.0)
                         if hasattr(self._host.vehicle, "nav"):

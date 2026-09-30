@@ -63,6 +63,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   - **Multi-station arbitration**: every deployed station gates dispatch on
     `is_nearest_station_to(vehicle_ref)`, so only one rescues a given stranded vehicle. Ties default
     to allowing dispatch.
+  - **Station choice when parked** (`balance_dock()`, called by `recharge_at_station()` after it parks): every station inside an outpost covers the whole outpost. With 2+ stations in the outpost of `current_station()`, the vehicle calls `dock()` on the one with the fewest other vehicles queued or active per bay (`get_queue()` ∪ `get_active()` / `get_bay_count()`; ties: current station, then id), then charges and wakes that station. Docked = `current_station()` non-empty.
 - Round-trip budget = outbound drive + sonar/scan budget + mining/drill budget + drive from target
   to *nearest* charging station, all × `SAFETY_MARGIN_MULTIPLIER = 1.05` (5%), plus hard
   `MIN_EMERGENCY_RESERVE_WH = 8.0` floor on top. See `calculate_trip_energy()`.
