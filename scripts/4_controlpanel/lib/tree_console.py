@@ -35,7 +35,7 @@ only once something is logged inside it (an idle block prints nothing), and
 trail so its lines sit indented under one header and drop their own
 `function_name:` prefix.
 
-Timestamps: buffered lines carry their own game time-of-day (`clock`), taken
+Timestamps: buffered lines carry their own game time-of-day (`console.now()`), taken
 when the line is logged, so every line of a multi-line message is stamped, not
 just the first.
 
@@ -128,15 +128,14 @@ def flush_all():
     console.print("\n".join(lines), level=level, channel=channel, color=color)
 
 
-def _stamp():
-    """Game time-of-day prefix ("HH:MM:SS "), or "" without a clock."""
-    clock = get_component("clock")
-    if clock is None or not hasattr(clock, "get_time_of_day"):
+def _stamp(console):
+    """Game time-of-day prefix ("HH:MM:SS "), or "" if the console has no `now()`."""
+    if not hasattr(console, "now"):
         return ""
     try:
-        return f"{clock.get_time_of_day()} "
+        return f"{console.now()} "
     except Exception as error:
-        swallow.swallowed("tree_console._stamp: clock.get_time_of_day", error)
+        swallow.swallowed("tree_console._stamp: console.now", error)
         return ""
 
 
@@ -154,7 +153,7 @@ def _write(console, text, level, channel, color, buffered):
         console.print(text, level=level, channel=channel, color=color, timestamp=True)
         return
     cap = _buffer_cap()
-    text = _stamp() + text
+    text = _stamp(console) + text
     if len(text) > cap:
         text = text[: cap - 1] + "…"
     key = (level, channel, color)

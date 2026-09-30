@@ -115,7 +115,6 @@ class SmelterController:
         so select_needed_ore() can move on to a different demanded ore instead
         of racing another smelter for the same one.
         """
-        self.log.start(f"[{self.name}] claim_recipe({recipe_id})", level="debug")
         current_tick = self.get_current_tick()
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
@@ -135,15 +134,14 @@ class SmelterController:
                 # vehicle_claims.py uses for the same edge case.
                 if current_tick == 0 or age <= SMELTER_RECIPE_CLAIM_STALE_TICKS:
                     return claims  # still held by someone else, fresh -- leave untouched
-                notes.append(f"existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
+                notes.append(f"claim_recipe({recipe_id}): existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
             site[recipe_id] = {"smelter": self.name, "tick": current_tick}
             return claims
 
         try:
             archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
         except Exception:
-            self.log.debug("archive transaction failed, assuming claim granted")
-            self.log.end()
+            self.log.debug(f"claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
             return True  # can't verify; don't block production over an archive hiccup
         for note in notes:
             self.log.debug(note)
@@ -151,8 +149,7 @@ class SmelterController:
         claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "smelter")
         owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("smelter")
         won = owner == self.name
-        self.log.debug("won" if won else f"held by other smelter {owner!r}")
-        self.log.end()
+        self.log.debug(f"claim_recipe({recipe_id}): {'won' if won else f'held by other smelter {owner!r}'}")
         return won
 
     def release_recipe(self, recipe_id):
