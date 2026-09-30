@@ -56,6 +56,10 @@ and a script stopped from the UI or crashed is killed without unwinding
 flushes before it prints. `buffered=False` on a TreeConsole prints its debug
 lines immediately.
 
+Warn and error lines are written without the tree indent: the console prints its own
+level badge in front of the message, so an indent behind it would not line up with
+the block. Their block still shows around them.
+
 Exceptions: an exception escaping a `start()`/`end()` pair leaves its indent open, so run loops call
 `reset_all()` at the top of every tick (`tests/test_reset_in_run_loops.py`).
 
@@ -82,6 +86,7 @@ LOG_LEVELS_KEY = "console.log_levels"
 MAX_BUFFER_CHARS = 20000  # largest single console.print measured to render (docs/BENCHMARK.md)
 FALLBACK_BUFFER_CHARS = 4000
 _BUFFERED_LEVELS = ("debug",)
+_UNINDENTED_LEVELS = ("warn", "error")  # the console puts its own badge in front of the line, so an indent would not line up
 _PROBE_CHARS = 200000  # above the highest Advanced Scripting string limit (100,000)
 
 # One buffer for every TreeConsole in the script. `key` is (level, channel, color) of the pending run.
@@ -279,4 +284,5 @@ class TreeConsole:
         self._pending_level = ""
         if headers:
             self._show_headers()
-        _write(self.console, self._prefix() + msg, level, channel, color, self.buffered)
+        prefix = "" if headers and level in _UNINDENTED_LEVELS else self._prefix()
+        _write(self.console, prefix + msg, level, channel, color, self.buffered)

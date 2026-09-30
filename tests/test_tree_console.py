@@ -194,6 +194,22 @@ class BlockTests(ConsoleCase):
         log.flush()
         self.assertEqual(self.lines(), [("debug", "┏━ dbg"), ("info", "┃   ┏━ Info block"), ("info", "┃   ┗━ done"), ("debug", "┗━ END dbg")])
 
+    def test_warn_and_error_lines_are_not_indented(self):
+        log = self.make()
+        log.start("Block")
+        log.level("warn").print("careful")
+        log.level("error").print("broken")
+        log.print("fine")
+        log.end("done")
+        self.assertEqual(self.lines(), [("info", "┏━ Block"), ("warn", "careful"), ("error", "broken"),
+                                        ("info", "┃   fine"), ("info", "┗━ done")])
+
+    def test_warn_end_line_keeps_its_close_marker(self):
+        log = self.make()
+        log.start("Block")
+        log.level("warn").end("failed")
+        self.assertEqual(self.lines()[-1], ("warn", "┗━ failed"))
+
     def test_reset_drops_open_debug_blocks(self):
         log = self.make()
         log.start("leaks", level="debug")
