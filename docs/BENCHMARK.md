@@ -177,7 +177,7 @@ Measured with [`devtools/console_multiline_test.py`](../devtools/console_multili
 
 ## Load dependence
 
-The per-step cost is not fixed: it depends on how many scripts are running. The same Harvester planning step (script freshly started, same field) measured with its own tick counter:
+The per-step cost is not fixed: above 50 running scripts it depends on how many are running. The same Harvester planning step (script freshly started, same field) measured with its own tick counter:
 
 | Other scripts | Planning step | Phases (ticks) |
 | --- | ---: | --- |
@@ -200,7 +200,7 @@ Every case scales by the same ~3.3×, matching the Harvester step. Further runs 
 | 157 | 8 cards stopped | 325 | 1,250 | 1,625 |
 | 146 | 19 solar trackers stopped (each asleep 10 s at a time) | 300 | 1,187 | 1,375 |
 
-Reading: **the per-step cost grows with the number of running scripts, not with how busy they are.** It fits `µs per step ≈ 99 + 1.37 × N` (N = running scripts, sleeping ones included; 100 alone, 299 at 146, 325 at 165), so every running script makes every step of every script about 1.4% slower. Each script gets its own step allowance per tick (docs/guide/language_reference.md, "Caching Results"; docs/components/clock.md), and that allowance shrinks as N grows. Consequences:
+Reading: **the per-step cost grows with the number of running scripts, not with how busy they are.** The rule is `allowance = max(1, min(1000, floor(50000 / N)))` steps per script per tick, N = scripts whose status is `running`, `waiting` (in `sleep()`, a Signal Bus wait, or the pause after a console write) or `flushing`; completed, stopped, paused, errored and breakpoint-halted scripts don't count (game scheduler, from the decompiled simworker kept locally and gitignored (`internals/`, `docs/extracted/`): `interpreter.stepsPerTick = 1000`, `interpreter.totalStepsPerTick = 50000`). Up to 50 running scripts every script gets the full 1,000 steps per tick (100 µs per step); above that the fixed 50,000 steps per tick are split evenly, and a sleeping script's share is not handed to anyone else. Predicted vs measured: N = 146 → 342 steps → 292 µs (measured 300), N = 165 → 303 steps → 330 µs (measured 325; `clock.elapsed_seconds()` resolution makes the figures move in 25 µs steps). A script that exhausts its allowance 30 ticks in a row raises a `scriptBudgetPressure` event in the game. Consequences:
 
 - Fewer steps per poll make that script itself react faster; they barely help other scripts.
 - The lever for the whole base is the number of running scripts. A stopped script does not count (measured above); a finished one presumably does not either. Setpoints only hold while the script runs: a solar script looping on `set_tilt(59)` holds 59°, and both a manual Stop and a script that simply ends (no loop) drop it back to 90° (docs/components/run_control.md: `stop()` resets setpoints to idle). A machine that needs a held setpoint needs a running script; one whose idle state is fine (off, no recipe running) can have its script stopped or ended and restarted with `run_control.start()` when there is work.

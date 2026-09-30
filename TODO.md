@@ -30,12 +30,12 @@ Repo moved to a dev root (`C:\Users\Adrian\Code_Terraform`) separate from the li
 
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 
-Every running script slows every other by ~1.4% (165 running → 3.25× slower than one alone).
+Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance = `min(1000, 50000 / N)` per script (165 running → 303 steps, 3.3× slower than ≤ 50).
 
-- [ ] **On-demand script scheduler** in the headless automation panel: machine scripts end themselves when their machine has nothing to do; the panel restarts them with `run_control.start()` (hysteresis against flapping). Candidates where the idle state is acceptable: solar at night (19), oil generators without a power deficit (7), Smelters/Fabricators without demand (18; recipe and loaded material survive), Supply Docks without an order (5), pumps on a dormant well (10). Estimated 25–35 fewer running scripts on average (325 → ~284 µs per step).
+- [ ] **On-demand script scheduler** in the headless automation panel: machine scripts end themselves when their machine has nothing to do; the panel restarts them with `run_control.start()` (hysteresis against flapping). Candidates where the idle state is acceptable: solar at night (19), oil generators without a power deficit (7), Smelters/Fabricators without demand (18; recipe and loaded material survive), Supply Docks without an order (5), pumps on a dormant well (10). Estimated 25–35 fewer running scripts on average (165 → ~135 running: 303 → 370 steps per tick, +22%).
 - [ ] **Centralize Smelter/Fabricator demand — only if their reaction time is still a problem**: computing `get_smelter_demands()` / site Fabricator targets once in the headless panel would speed up the 18 machines but move the work onto the panel that also runs grid supervision and dock planning (duplicated work costs only the duplicating scripts, §1d-1). Measure first.
-- [ ] **Consider splitting the headless panel** (grid supervision vs. storage sweeps/planning) if storage passes measurably delay grid supervision; costs one running script (~1.4%).
-- [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts ≈ 26%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
+- [ ] **Consider splitting the headless panel** (grid supervision vs. storage sweeps/planning) if storage passes measurably delay grid supervision; costs one running script (~0.6% of everyone's allowance at N ≈ 165).
+- [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts: 303 → 342 steps per tick, +13%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
 - [ ] **Panels**: heavy cards re-read the fleet and archive every frame; refresh data every 10–20 frames (only helps the card itself).
 
 ---
