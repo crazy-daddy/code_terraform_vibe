@@ -71,7 +71,7 @@ Operations over a 1000-element list:
 | --- | --- |
 | Lookup | `get_component("clock")`, `get_component(<building id>)` |
 | Clock / scheduler | `clock.tick()`, `clock.get_time()`, `sleep(0.1)` |
-| Console | `console.now()`, `print()`, `console.debug()` (labelled with `CONSOLE_DEBUG_STATE`) |
+| Console | `console.now()`, `print()`, `console.debug()` |
 | Archive (`notebook`) | `get` and `has` on a missing key; `set`, `get`, `transaction` on a small dict and on a 100-entry dict; `keys(prefix)`; reading `.status` from an `ActionResult` |
 | Signal Bus (`comms`) | `broadcast`, `latest`, `latest_info`, `send` + `receive`, `queue_size`, `pending`, `channels` |
 | Outposts | `outposts()`, `home()`, `coords()`, `buildings()`, `buildings(type_id)`, reading `.type_id` over the building refs |
@@ -80,7 +80,7 @@ Operations over a 1000-element list:
 | World | `nocturna` `terraform_progress` / `biome_at` / `points_of_interest`, `atmosphere.get_o2()` |
 | Reference data | `research.unlocked()` / `is_unlocked()`, `item_catalog.lookup()`, `shop.get_catalogue()`, `orders.list_orders()`, `journal` `is_empty` / `biomass_coords` |
 
-**Console comparison** (`CONSOLE_ONLY`): runs only the console cases. Run it once with debug output enabled in the console UI and once with it disabled, setting `CONSOLE_DEBUG_STATE` to `"shown"` or `"hidden"` each time, to see whether the 0.1 s cost of `console.debug()` depends on the debug filter (it does not: both runs measured 0.1 s per call). `print()` is documented as equivalent to `console.info()`, and `warn` and `error` only change the level, so only `print()` and `debug()` are benchmarked.
+**Console debug filter**: the 0.1 s cost of `console.debug()` does not depend on the console UI's debug filter (runs with debug output shown and hidden both measured 0.1 s per call). `print()` is documented as equivalent to `console.info()`, and `warn` and `error` only change the level, so only `print()` and `debug()` are benchmarked.
 
 **Interruptive** (`RUN_INTERRUPTIVE`, off by default): each case briefly changes real game state and restores it in a `finally` block.
 
@@ -212,7 +212,5 @@ The Harvester's `cells` phase (one API call plus a 192-item comprehension, ~2 ti
 ## Reproducing
 
 Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.
-
-**Engine probes** (read-only): `CALLBACK_PROBE = True` times `CALLBACK_WORK` iterations of pure arithmetic called directly and inside one `map()` callback, in ticks; `POWER_OFF_PROBE = True` lists which machine types `power_control.can_power_off()` allows.
 
 **Quick load comparison** (`QUICK = True`, label the run with `QUICK_LABEL`): times only the empty loop, `len()`, a 0-arg call and `clock.elapsed_seconds()`, `QUICK_ROUNDS = 5` times each for `QUICK_SECONDS = 1.0`, and prints min / median / max plus one summary line (under a minute). Run it with everything running, with the other scripts stopped, and in an empty game, at the same game speed and Advanced Scripting settings.

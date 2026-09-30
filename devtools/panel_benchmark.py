@@ -7,9 +7,6 @@
 RUN_LOCAL = True
 RUN_API = True
 RUN_INTERRUPTIVE = False
-# Console-only quick run: skips LOCAL and every non-console API case. Run it twice, once with debug output
-# enabled in the console UI and once disabled, and set CONSOLE_DEBUG_STATE to match so the rows are labelled.
-CONSOLE_ONLY = False
 # Quick load comparison: only the empty loop, len(), a 0-arg call and one component call, each timed
 # QUICK_ROUNDS times for QUICK_SECONDS; prints min / median / max per case and one summary line, then stops.
 # Run it in the same save with everything running, with the other scripts stopped, and in an empty game,
@@ -18,20 +15,6 @@ QUICK = False
 QUICK_LABEL = "unlabelled"  # e.g. "all running", "scripts stopped", "empty game"
 QUICK_ROUNDS = 5
 QUICK_SECONDS = 1.0
-# Engine probes (read-only), each runs alone and then stops:
-# CALLBACK_PROBE times the same pure work (CALLBACK_WORK loop iterations) called directly and inside a
-# map() callback. The scheduler runs each callback of map/sorted(key=)/min(key=) as one unit (up to
-# 10,000 steps) and only checks the tick budget between callbacks, so the callback form may finish in
-# fewer ticks.
-# POWER_OFF_PROBE lists, per machine type at every outpost, whether power_control.can_power_off() allows
-# a breaker switch (switching off pauses the machine's script without counting it as running).
-CALLBACK_PROBE = False
-CALLBACK_WORK = 1000  # ~7.7 steps per iteration; a callback over 10,000 steps raises StepLimitError
-CALLBACK_ROUNDS = 5
-POWER_OFF_PROBE = False
-# Machine ids to probe as well (types outpost.buildings() does not list, e.g. solar, pumps, thermal caps, drills)
-POWER_OFF_IDS = ["solar_1", "water_pump_1", "oil_pump_1", "thermal_cap_1", "crop_automator_1", "mining_drill_heavy_1", "harvester_1", "scanner_1"]
-CONSOLE_DEBUG_STATE = "unknown"  # "shown" or "hidden"
 # Interruptive inputs (a case is skipped while its constant is empty):
 BENCH_POWER_MACHINE_ID = ""  # machine id to switch off and on repeatedly; state is restored afterwards
 
@@ -694,7 +677,7 @@ def build_api_cases():
     add_case(c, None, "sleep(0.1)", api_sleep, 5)
     add_case(c, "console", "console.now()", api_console_now, 50)
     add_case(c, None, "print('bench')", api_print_builtin, 20)
-    add_case(c, "console", f"console.debug('bench') [debug output {CONSOLE_DEBUG_STATE}]", api_console_debug, 20)
+    add_case(c, "console", "console.debug('bench')", api_console_debug, 20)
     add_case(c, "notebook", "archive.get missing key", api_archive_get_missing, 50)
     add_case(c, "notebook", "archive.has missing key", api_archive_has_missing, 50)
     add_case(c, "notebook", "archive.set small dict", api_archive_set_small, 20)
@@ -742,8 +725,6 @@ def build_api_cases():
     add_case(c, "orders", "orders.list_orders()", api_orders_list, 10)
     add_case(c, "journal", "journal.is_empty(0, 0)", api_journal_is_empty, 20)
     add_case(c, "journal", "journal.biomass_coords()", api_journal_biomass_coords, 10)
-    if CONSOLE_ONLY:
-        return [case for case in c if "console" in case[0] or case[0].startswith("print")]
     return c
 
 
@@ -826,56 +807,7 @@ def run_quick():
     print(f"QUICK [{QUICK_LABEL}] median us/iter: " + ", ".join(summary))
 
 
-def pure_work(n):
-    x = 0
-    for i in range(n):
-        x = (x + i * 2) % 7
-    return x
-
-
-def ticks_for(fn):
-    """Simulation ticks one call of fn() takes (clock.tick() delta)."""
-    t0 = clock.tick()
-    fn()
-    return clock.tick() - t0
-
-
-def run_callback_probe():
-    """Same pure loop, direct vs as one map() callback; prints ticks per call for each form."""
-    print(f"CALLBACK probe: {CALLBACK_WORK} loop iterations, {CALLBACK_ROUNDS} rounds")
-    direct = sorted([ticks_for(lambda: pure_work(CALLBACK_WORK)) for r in range(CALLBACK_ROUNDS)])
-    mapped = sorted([ticks_for(lambda: list(map(pure_work, [CALLBACK_WORK]))) for r in range(CALLBACK_ROUNDS)])
-    print(f"direct call: {direct} ticks (median {direct[len(direct) // 2]})")
-    print(f"map() callback: {mapped} ticks (median {mapped[len(mapped) // 2]})")
-
-
-def run_power_off_probe():
-    """can_power_off() per machine type across every outpost (first machine of each type)."""
-    power = get_component("power_control")
-    net = get_component("outpost_network")
-    if power is None or net is None:
-        print("POWER_OFF probe: power_control or outpost_network missing")
-        return
-    seen = {}
-    for outpost in net.outposts():
-        for b in outpost.buildings():
-            if b.type_id not in seen:
-                seen[b.type_id] = power.can_power_off(b.id)
-    for machine_id in POWER_OFF_IDS:
-        try:
-            seen[machine_id + " (id)"] = power.can_power_off(machine_id)
-        except Exception as err:
-            print(f"  {machine_id}: {err}")
-    yes = sorted([t for t, ok in seen.items() if ok])
-    no = sorted([t for t, ok in seen.items() if not ok])
-    print("POWER_OFF probe:\n  can switch off: " + ", ".join(yes) + "\n  cannot: " + ", ".join(no))
-
-
-if CALLBACK_PROBE:
-    run_callback_probe()
-elif POWER_OFF_PROBE:
-    run_power_off_probe()
-elif QUICK:
+if QUICK:
     run_quick()
 else:
     print(f"Benchmark start, target >= {MIN_SECONDS}s per case (simulation seconds)")
@@ -883,7 +815,7 @@ else:
     base = dt0 / n0 * 1000000.0
     print(f"baseline empty loop: {base:.2f} us/iter")
 
-    if RUN_LOCAL and not CONSOLE_ONLY:
+    if RUN_LOCAL:
         rows = run_group("LOCAL", CASES)
         report("LOCAL", rows, base)
 
