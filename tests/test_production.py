@@ -1,7 +1,7 @@
 """Stub tests for lib/production.py demand, discovery and peer helpers."""
 import unittest
 
-from harness import StubTestCase, production
+from harness import StubTestCase, production, storage
 
 
 class DiscoveryTests(StubTestCase):
@@ -29,6 +29,41 @@ class DiscoveryTests(StubTestCase):
         s = w.add_smelter("smelter_2", remote)
         self.assertEqual(production.machine_outpost_id(s), "outpost_2")
         self.assertIsNone(production.machine_outpost_id(object()))
+
+
+class DiscoveryMemoTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        production.DISCOVERY_TTL_TICKS = 20
+
+    def test_memo_holds_within_ttl_and_refreshes_after(self):
+        w = self.world
+        w.add_smelter("smelter_1", w.home)
+        self.assertEqual(production.discover_smelter_ids(), ["smelter_1"])
+        w.add_smelter("smelter_2", w.home)
+        self.assertEqual(production.discover_smelter_ids(), ["smelter_1"])
+        w.clock.now += 20
+        self.assertEqual(production.discover_smelter_ids(), ["smelter_1", "smelter_2"])
+
+    def test_memo_is_per_outpost_and_returns_copies(self):
+        w = self.world
+        remote = w.add_outpost("outpost_2")
+        w.add_smelter("smelter_1", w.home)
+        w.add_smelter("smelter_2", remote)
+        production.discover_smelter_ids(remote).append("junk")
+        self.assertEqual(production.discover_smelter_ids(remote), ["smelter_2"])
+        self.assertEqual(production.discover_smelter_ids(w.home), ["smelter_1"])
+
+
+    def test_storage_discovery_memo(self):
+        w = self.world
+        storage.DISCOVERY_TTL_TICKS = 20
+        w.add_warehouse("wh_1", w.home)
+        self.assertEqual([b["id"] for b in storage.discover_storage_buildings()], ["wh_1"])
+        w.add_warehouse("wh_2", w.home)
+        self.assertEqual([b["id"] for b in storage.discover_storage_buildings()], ["wh_1"])
+        w.clock.now += 20
+        self.assertEqual(sorted(b["id"] for b in storage.discover_storage_buildings()), ["wh_1", "wh_2"])
 
 
 class SmelterDemandTests(StubTestCase):

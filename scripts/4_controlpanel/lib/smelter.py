@@ -18,6 +18,9 @@ from swallow import swallowed
 # (missing a real conflict) is cheap, false-positive (blocking a legitimate
 # claim) means an ore nobody's actually processing sits idle.
 SMELTER_RECIPE_CLAIM_STALE_TICKS = 600
+# A claim this smelter won is re-confirmed in the archive only this often;
+# in between, claim_recipe() answers from memory. Well under the stale window.
+CLAIM_REFRESH_TICKS = 100
 # Shape {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}: claims only
 # arbitrate Smelters at the same outpost (production.site_recipe_claims()).
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
@@ -27,6 +30,11 @@ RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 # step()'s fair-share cap (available ore + peers' buffers, split across
 # every Smelter on the recipe) together with recipe-scaled prefill cap.
 SMELTER_LOAD_CHUNK_SIZE = 10
+
+# run() poll cadence: fast while the Smelter has work in flight (running, or
+# input/output buffered, or a recipe/ore was just set/loaded), slow when idle.
+ACTIVE_POLL_SECONDS = 1.0
+IDLE_POLL_SECONDS = 2.0
 
 # Seconds of continuous crafting a Smelter's input buffer should cover --
 # passed to production.craft_prefill_units(). Same value as the shared
@@ -97,6 +105,7 @@ class SmelterController:
         self._warned_no_local_storage = False
         self.log = TreeConsole(module="smelter")
         self._select_miss_reason = "no_demand"
+        self._claim_ticks = {}  # recipe_id -> tick of the last archive-confirmed claim
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -116,6 +125,10 @@ class SmelterController:
         of racing another smelter for the same one.
         """
         current_tick = self.get_current_tick()
+        last_claim = self._claim_ticks.get(recipe_id)
+        if current_tick and last_claim is not None and 0 <= current_tick - last_claim < CLAIM_REFRESH_TICKS:
+            self.log.debug(f"claim_recipe({recipe_id}): held (confirmed {current_tick - last_claim} ticks ago)")
+            return True
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
         site_id = claim_site_id(self.smelter)
@@ -149,12 +162,17 @@ class SmelterController:
         claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "smelter")
         owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("smelter")
         won = owner == self.name
+        if won:
+            self._claim_ticks[recipe_id] = current_tick
+        else:
+            self._claim_ticks.pop(recipe_id, None)
         self.log.debug(f"claim_recipe({recipe_id}): {'won' if won else f'held by other smelter {owner!r}'}")
         return won
 
     def release_recipe(self, recipe_id):
         if not recipe_id:
             return
+        self._claim_ticks.pop(recipe_id, None)
 
         site_id = claim_site_id(self.smelter)
 
@@ -251,17 +269,18 @@ class SmelterController:
         total = 0
         if self.smelter.get_output_count() > 0:
             at_home = self.at_home()
+            sent = []
             for item_id, moved, destination, status, message in drain_port_inventory_first(self.smelter.output, outpost=self.outpost()):
                 if moved > 0:
                     total += moved
-                    if not at_home:
-                        self.log.print(f"[{self.name}] Sent {moved}x {item_id} to a local Warehouse.")
-                    elif destination == "warehouse":
+                    if at_home and destination == "warehouse":
                         self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
                     else:
-                        self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
+                        sent.append(f"{moved}x {item_id}")
                 else:
                     self.log.debug(f"[{self.name}] drain_output: {item_id} not moved ({status} - {message})")
+            if sent:
+                self.log.print(f"[{self.name}] Sent {', '.join(sent)} to {'Inventory' if at_home else 'a local Warehouse'}.")
         return total
 
     def log_outcome(self, reason, **detail):
@@ -296,7 +315,13 @@ class SmelterController:
         reserved = (dock_reserved or {}).get(ore, 0) if self.at_home() else 0
         return max(0, self.local_ore(ore, cache) - reserved)
 
+    def is_busy(self):
+        """True while the Smelter has work in flight: running, or input/output buffered."""
+        return bool(self.smelter.is_running() or self.smelter.get_input_count() > 0 or self.smelter.get_output_count() > 0)
+
     def step(self):
+        """One control pass. Returns True when the Smelter is active (see
+        is_busy(), or ore/recipe was just loaded/set) so run() polls faster."""
         self.ensure_connections()
 
         # One stock snapshot + one demand map for the whole step (see
@@ -315,7 +340,7 @@ class SmelterController:
             # interrupted mid-craft), it just isn't fed more, so draw winds
             # down to 0 W on its own instead of an abrupt breaker cut.
             self.log_outcome("shedded")
-            return
+            return self.is_busy()
 
         demands = self.demands(cache)
         # Raw ore an active Supply Dock order still ships AS ore -- never
@@ -353,7 +378,7 @@ class SmelterController:
                 # recipe is running (see docs), so idle draw is already 0 W.
                 # self.power_down_if_idle()
             self.log_outcome("recipe_switch", recipe=current_recipe)
-            return
+            return self.is_busy()
 
         recipe, ore_to_process = self.select_needed_ore(unlocked_recipes, demands, cache, dock_reserved)
 
@@ -370,11 +395,15 @@ class SmelterController:
             # recipe is running (see docs), so idle draw is already 0 W.
             # self.power_down_if_idle()
             self.log_outcome("output_blocked" if output_blocked else self._select_miss_reason, demand=demands)
-            return
+            return self.is_busy()
 
         recipe_id = getattr(recipe, "id", "")
+        recipe_set = False
         if current_recipe != recipe_id:
-            if not self.smelter.is_running():
+            if self.smelter.is_running():
+                self.log_outcome("recipe_switch", recipe=recipe_id)
+                return True
+            else:
                 recipe_inputs = set((getattr(recipe, "inputs", {}) or {}).keys())
                 buffered_items = {
                     getattr(stack, "id", "")
@@ -384,7 +413,7 @@ class SmelterController:
                     self.recover_input()
                     if self.smelter.get_input_count() > 0:
                         self.log_outcome("recipe_switch", recipe=recipe_id)
-                        return
+                        return True
                 set_res = self.smelter.set_recipe(recipe_id)
                 if set_res.status == "ok":
                     # Hand the old recipe's claim back right away instead of
@@ -394,14 +423,19 @@ class SmelterController:
                     reason = get_raw_material_reason(ore_to_process, self.smelter)
                     output_item = getattr(recipe, "output_item", "?")
                     self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore_to_process} -> {output_item} for {reason}.")
-            self.log_outcome("recipe_switch", recipe=recipe_id)
-            return
+                    current_recipe = recipe_id
+                    recipe_set = True
+                    in_buf = self.smelter.get_input_count()
+                else:
+                    self.log_outcome("recipe_switch", recipe=recipe_id)
+                    return self.is_busy()
 
         # Step 3: Top up the input buffer. take_item() tries only endpoints
         # that actually hold the ore -- Inventory first (never locks), then
         # Warehouses by most stock, recently-"busy" ones last.
         outcome = "buffer_full"
         outcome_detail = {"recipe": recipe_id, "ore": ore_to_process}
+        loaded = False
         if ore_to_process:
             recipe_inputs = getattr(recipe, "inputs", {}) or {}
             output_count = max(1, getattr(recipe, "output_count", 1))
@@ -434,6 +468,14 @@ class SmelterController:
             outcome_detail.update({"demand": demand_qty, "workers": worker_count, "local_workers": local_workers, "available": available, "fair_total": fair_total})
             self.log.debug(f"[{self.name}] ore intake for {ore_to_process}: in_buf={in_buf} demand_qty={demand_qty} workers={worker_count} local_workers={local_workers} peers_buffered={peers_buffered} available={available} caps={caps} -> take_count={take_count}")
 
+            # Refill hysteresis: a running Smelter with at least half its
+            # prefill cap (and a full craft) staged skips the blocking take;
+            # the next top-up then moves a bigger batch.
+            if take_count > 0 and in_buf >= max(units_per_run, prefill_cap // 2) and self.smelter.is_running():
+                take_count = 0
+                outcome = "buffer_ok"
+                self.log.debug(f"[{self.name}] buffer_ok: in_buf={in_buf} >= half of prefill cap {prefill_cap}, running -- skipping top-up")
+
             if take_count > 0:
                 self.ensure_connections()
                 report = {}
@@ -445,6 +487,7 @@ class SmelterController:
                 statuses = [entry[1] for entry in sources]
                 outcome_detail["last_take"] = {"asked": take_count, "moved": moved, "sources": [list(entry) for entry in sources]}
                 if moved > 0:
+                    loaded = True
                     outcome = "took"
                     reason = get_raw_material_reason(ore_to_process, self.smelter)
                     self.log.print(f"[{self.name}] Loaded {moved}x {ore_to_process} (for {reason}).")
@@ -467,7 +510,7 @@ class SmelterController:
         # Step 4: Check idle condition & power management
         in_buf = self.smelter.get_input_count()
         out_buf = self.smelter.get_output_count()
-        is_active = self.smelter.is_running() or in_buf > 0 or out_buf > 0
+        is_active = self.smelter.is_running() or in_buf > 0 or out_buf > 0 or loaded or recipe_set
 
         if not is_active:
             # Check if any demanded ore is pending (Inventory or a Warehouse)
@@ -486,6 +529,7 @@ class SmelterController:
                 if self.smelter.get_recipe() != "":
                     self.smelter.clear_recipe()
                     self.log.print(f"[{self.name}] No ore to smelt. Recipe cleared.")
+        return bool(is_active)
 
                 # Breaker cycling disabled: idle draw is already 0 W per docs
                 # (Recipe.power_draw applies only while running), so switching
@@ -678,14 +722,15 @@ class SmelterController:
         self.log.debug(f"no demanded+sourceable ore found at all ({self._select_miss_reason}) -- returning None")
         return None, None
 
-    def run(self, poll_interval=2.0):
+    def run(self):
         self.log.print(f"Smelter Controller ({self.name}) online.")
         validate_game_version()
         while True:
             reset_all()
+            active = False
             try:
-                self.step()
+                active = self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Smelter exception: {e}")
             flush_all()
-            sleep(poll_interval)
+            sleep(ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS)

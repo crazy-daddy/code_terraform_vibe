@@ -93,11 +93,30 @@ AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 SOLAR_TICK_INTERVAL = 10
 STORAGE_TICK_INTERVAL = 100
 MIXER_GATE_TICK_INTERVAL = 10
+# Dock planning runs on its own, shorter interval, checked at the top of every loop and again between
+# the storage pass's sub-steps: those sweeps wait on feeder cycles, and a plan held back until they
+# finish lets docks read an assignment for an order that has already completed.
+DOCK_PLAN_TICK_INTERVAL = 50
 
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
 last_mixer_gate_tick = 0
+dock_plan = {"last_tick": 0, "count": 0}  # count = docks assigned by the last plan, carried between passes
+
+
+def plan_docks_if_due(clock):
+    """Runs supply_dock.plan_dock_assignments() when DOCK_PLAN_TICK_INTERVAL has passed since the last run."""
+    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    if dock_plan["last_tick"] != 0 and now - dock_plan["last_tick"] < DOCK_PLAN_TICK_INTERVAL:
+        return
+    dock_plan["last_tick"] = now
+    try:
+        plan = supply_dock.plan_dock_assignments(clock=clock)
+        dock_plan["count"] = sum(1 for v in plan.values() if v)
+    except Exception as e:
+        print(f"[AUTOMATION] Supply Dock planning error: {e}")
+
 mixer_gate = None           # MixerGate, created lazily once power_control is available
 mixer_gate_summary = "no Mixers"
 biomass_retirement = None   # BiomassRetirement, created once biomass is complete
@@ -156,6 +175,8 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Mixer gate error: {e}")
 
+        plan_docks_if_due(clock)
+
         if storage_due:
             last_storage_tick = current_tick
             cash_summary = "cash idle"
@@ -169,10 +190,14 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Rebalance sweep error: {e}")
 
+            plan_docks_if_due(clock)
+
             try:
                 reclaim_inventory_only_items_from_warehouses()
             except Exception as e:
                 print(f"[AUTOMATION] Reclaim sweep error: {e}")
+
+            plan_docks_if_due(clock)
 
             outpost_new_count = 0
             try:
@@ -203,15 +228,9 @@ while True:
                             consolidate_cross_warehouse_stock(o)
                         except Exception as e:
                             print(f"[AUTOMATION] Cross-warehouse consolidation error at '{o_id}': {e}")
+                        plan_docks_if_due(clock)
             except Exception as e:
                 print(f"[AUTOMATION] Outpost sync error: {e}")
-
-            dock_plan_count = 0
-            try:
-                plan = supply_dock.plan_dock_assignments(clock=clock)
-                dock_plan_count = sum(1 for v in plan.values() if v)
-            except Exception as e:
-                print(f"[AUTOMATION] Supply Dock planning error: {e}")
 
             try:
                 if biomass_retirement is None and biomass_complete():
@@ -244,7 +263,7 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet commission error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan_count} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}")
+            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan['count']} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}")
 
     flush_all()
     sleep(1.0)

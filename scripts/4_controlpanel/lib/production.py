@@ -116,9 +116,30 @@ def _all_outposts():
     return [home] if home else []
 
 
+# Building discovery is called a dozen times per Smelter/Fabricator step (recipe lists, dock orders,
+# worker counts, pipelines), each an outposts() + buildings(type) sweep. Results are reused for this
+# many ticks (~2 s), so a newly placed building is seen at most that late.
+DISCOVERY_TTL_TICKS = 20
+
+# {(type_id, outpost_id or None): (tick, [ids])}
+_DISCOVERY_MEMO = {}
+
+
 def _discover_building_ids(type_id, outpost=None):
     """Ids of every `type_id` building at `outpost`, or at every outpost when
-    `outpost` is None (home first, then outpost_network order)."""
+    `outpost` is None (home first, then outpost_network order). Memoized for
+    DISCOVERY_TTL_TICKS."""
+    key = (type_id, getattr(outpost, "id", None) if outpost is not None else None)
+    now = _current_tick()
+    memo = _DISCOVERY_MEMO.get(key)
+    if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
+        return list(memo[1])
+    ids = _scan_building_ids(type_id, outpost)
+    _DISCOVERY_MEMO[key] = (now, ids)
+    return list(ids)
+
+
+def _scan_building_ids(type_id, outpost):
     outposts = [outpost] if outpost is not None else _all_outposts()
     ids = []
     for candidate in outposts:
@@ -711,7 +732,7 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=No
     return targets
 
 
-def get_manual_order_blocking_items(fabricator_outputs, orders=None):
+def get_manual_order_blocking_items(fabricator_outputs, orders=None, cache=None):
     """
     Set of Fabricator-output item_ids that an active manual build order
     (get_manual_orders(), or the `orders` dict given instead -- e.g.
@@ -735,17 +756,18 @@ def get_manual_order_blocking_items(fabricator_outputs, orders=None):
     log.start("get_manual_order_blocking_items", level="debug")
     manual_items = get_manual_orders() if orders is None else orders
     frontier = {item_id: qty for item_id, qty in manual_items.items() if item_id in fabricator_outputs}
+    stock = _stock_fn(cache)
     blocking = set()
     depth = 0
     while frontier and depth < 6:  # same generous bound as the sibling cascades
         depth += 1
         next_frontier = {}
         for item_id, want in frontier.items():
-            shortfall = max(0, want - total_stock(item_id))
+            shortfall = max(0, want - stock(item_id))
             if shortfall <= 0:
                 log.trace(f"get_manual_order_blocking_items depth={depth}: {item_id} has no shortfall (want={want}), not cascading further")
                 continue
-            inputs = _recipe_inputs_for(item_id)
+            inputs = _recipe_inputs_for(item_id, cache)
             if not inputs:
                 continue
             for input_id, ratio in inputs.items():
@@ -791,6 +813,15 @@ def _vehicle_cargo_counts(item_ids):
 
 
 def _cascade_blueprint_demand(cache=None):
+    """Memoized on `cache` (one blueprint + fleet cargo walk per pass) -- see _walk_blueprint_demand()."""
+    if cache is None:
+        return _walk_blueprint_demand(None)
+    if cache._blueprint_demand is None:
+        cache._blueprint_demand = _walk_blueprint_demand(cache)
+    return dict(cache._blueprint_demand)
+
+
+def _walk_blueprint_demand(cache):
     """
     Breadth-first demand cascade seeded from pending/paused Construction
     Blueprint required_item/required_count (summed across jobs, deduped by
@@ -1899,6 +1930,7 @@ class SourceCache:
         self._pipeline_by_site = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
+        self._blueprint_demand = None  # _cascade_blueprint_demand() memo
 
     def _build_stock_map(self):
         log.start("SourceCache._build_stock_map", level="debug")

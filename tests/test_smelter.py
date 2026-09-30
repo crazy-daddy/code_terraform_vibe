@@ -47,6 +47,50 @@ class HomeSmelterTests(StubTestCase):
         self.assertTrue(smelter.SmelterController(s).recover_input())
         self.assertEqual(w.inventory.count("iron_ore"), 9)
 
+    def test_recipe_switch_loads_ore_in_same_step(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_warehouse("wh1", w.home, {"iron_ore": 100})
+        s = w.add_smelter("smelter_1", w.home)
+        active = smelter.SmelterController(s).step()
+        self.assertEqual(s.recipe, "smelt_iron_ingot")
+        self.assertGreater(s.input_buffer.get("iron_ore", 0), 0)
+        self.assertTrue(active)
+
+    def test_running_smelter_with_half_full_buffer_skips_take(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_warehouse("wh1", w.home, {"iron_ore": 100})
+        s = w.add_smelter("smelter_1", w.home)
+        c = smelter.SmelterController(s)
+        c.step()
+        s.running = True
+        prefill = smelter.craft_prefill_units(s.list_recipes()[0], "iron_ore", smelter.SMELTER_PREFILL_SECONDS)
+        s.input_buffer["iron_ore"] = prefill // 2 + 1
+        before = dict(s.input_buffer)
+        self.assertTrue(c.step())
+        self.assertEqual(s.input_buffer, before)
+
+    def test_claim_recipe_skips_archive_within_refresh_window(self):
+        s = self.world.add_smelter("smelter_1", self.world.home)
+        c = smelter.SmelterController(s)
+        self.assertTrue(c.claim_recipe("smelt_iron_ingot"))
+        calls = []
+        real = smelter.archive.transaction
+        smelter.archive.transaction = lambda *a, **k: calls.append(a) or real(*a, **k)
+        try:
+            self.assertTrue(c.claim_recipe("smelt_iron_ingot"))
+            self.assertEqual(calls, [])
+            c.release_recipe("smelt_iron_ingot")
+            self.assertEqual(len(calls), 1)
+            self.assertNotIn("smelt_iron_ingot", c._claim_ticks)
+        finally:
+            smelter.archive.transaction = real
+
+    def test_idle_step_reports_inactive(self):
+        s = self.world.add_smelter("smelter_1", self.world.home)
+        self.assertFalse(smelter.SmelterController(s).step())
+
 
 class RemoteSmelterTests(StubTestCase):
     def setUp(self):
