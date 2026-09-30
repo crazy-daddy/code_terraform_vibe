@@ -212,4 +212,6 @@ The Harvester's `cells` phase (one API call plus a 192-item comprehension, ~2 ti
 
 Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.
 
+**Engine probes** (read-only): `CALLBACK_PROBE = True` times `CALLBACK_WORK` iterations of pure arithmetic called directly and inside one `map()` callback, in ticks; `POWER_OFF_PROBE = True` lists which machine types `power_control.can_power_off()` allows.
+
 **Quick load comparison** (`QUICK = True`, label the run with `QUICK_LABEL`): times only the empty loop, `len()`, a 0-arg call and `clock.elapsed_seconds()`, `QUICK_ROUNDS = 5` times each for `QUICK_SECONDS = 1.0`, and prints min / median / max plus one summary line (under a minute). Run it with everything running, with the other scripts stopped, and in an empty game, at the same game speed and Advanced Scripting settings.
