@@ -438,6 +438,10 @@ class HarvesterPlantingMixin:
         if self.layout_mode == "full" and layout and rules:
             priority = self.priority_seeds(layout, rules)
         archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "priority": priority, "tick": curr_tick})
+        if now and now != getattr(self, "_woken_for_demand", None):
+            # A parked Seed Maker (lib/script_parking.py) re-checks the new demand.
+            self._woken_for_demand = dict(now)
+            wake_kind("seed_maker", "seed demand changed")
 
     def priority_seeds(self, layout, rules):
         """field_layout.priority_seeds() of the full layout; memoised on the layout, garden and fill (rules compared by value)."""

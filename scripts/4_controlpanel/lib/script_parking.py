@@ -64,6 +64,9 @@ WAKE_AFTER_TICKS = {
     "drone_service_station": 3000,
     "drone_depot": 3000,
     "field_provider": 6000,
+    # Below logistics_requests.REQUEST_STALE_TICKS (6000): the woken script republishes
+    # its life-form requests before they expire.
+    "seed_maker": 3000,
 }
 # Station kinds: never park the last awake one of a type (see the module docstring).
 STATION_KINDS = ("charging_station", "drone_service_station")

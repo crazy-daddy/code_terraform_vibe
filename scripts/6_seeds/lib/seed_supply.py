@@ -23,7 +23,7 @@ from seed_maker import IDLE_POLL_SECONDS, combo_key, _now_tick
 from storage import total_stock, drain_port_to_storage
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
-from script_parking import wake_kind
+from script_parking import ParkRequester, wake_kind
 
 RECIPES_KEY = "plant.recipes"
 SEED_DEMAND_KEY = "plant.seed_demand"
@@ -49,6 +49,9 @@ class SeedSupplyController(SeedMakerController):
         self.log = TreeConsole(module="seed_supply")
         self._last_recipes_tick = -REQUEST_REFRESH_TICKS
         self._published_recipes = None  # last data written to RECIPES_KEY this run (wake parked field providers on change)
+        # Idle (no seed deficit) -> parked by lib/script_parking.py; the Harvester wakes it
+        # when its seed demand changes, and the re-check refreshes the stock requests.
+        self.parker = ParkRequester(self.name, "seed_maker")
 
     # ------------------------------------------------------------ recipes
 
@@ -306,6 +309,7 @@ class SeedSupplyController(SeedMakerController):
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Seed Supply exception: {e}")
                 delay = IDLE_POLL_SECONDS
+            self.parker.update(delay == SUPPLY_IDLE_POLL_SECONDS)
             if delay:
                 flush_all()
                 sleep(delay)
