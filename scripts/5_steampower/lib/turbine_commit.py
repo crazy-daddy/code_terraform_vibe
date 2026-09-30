@@ -26,6 +26,11 @@ from swallow import swallowed
 
 TURBINE_TYPE_ID = "steam_turbine"
 PARK_MODE = "turbine"
+# {grid anchor id: tick of the last step()}: turbines on a grid with a fresh entry leave
+# surplus to this module and run at full throttle whenever their buffer is healthy
+# (lib/steam_turbine.py reads it under the same key; that module is tier 4, so the name
+# is repeated there instead of imported).
+COMMIT_HEARTBEAT_KEY = "power.turbine_commit"
 TURBINE_FULL_W = 108.0  # docs/components/steam_turbine.md: 108 W from 90 t/h at throttle 1.0
 
 # Spare turbines kept running beyond the computed need, as a fraction of the managed
@@ -144,7 +149,10 @@ class TurbineCommitment:
         if powered:
             try:
                 stalled = bool(turbine.is_stalled())
-                output = float(turbine.power_output() or 0.0)
+                # power_output() reports the previous power tick (0 right after a restart or
+                # a new throttle); the throttle is current, so take the larger of the two.
+                throttle = float(turbine.throttle() or 0.0) if hasattr(turbine, "throttle") else 0.0
+                output = max(float(turbine.power_output() or 0.0), 0.0 if stalled else throttle * TURBINE_FULL_W)
             except Exception as error:
                 swallowed("turbine_commit._info: turbine.is_stalled", error)
         return {"capable": buffer >= TURBINE_CAPABLE_BUFFER_FRACTION and not stalled, "buffer": buffer,
@@ -172,6 +180,7 @@ class TurbineCommitment:
         if not infos:
             return "no managed turbines"
 
+        self._heartbeat(grid_id_str, now)
         turbine_w = sum(i["output"] for i in infos.values() if i["powered"])
         other_w = max(0.0, (getattr(grid, "generated", 0.0) or 0.0) - turbine_w)
         bat_wh = (getattr(grid, "stored", 0.0) or 0.0) + (getattr(grid, "reserve_stored", 0.0) or 0.0)
@@ -233,6 +242,19 @@ class TurbineCommitment:
         if status != "ok":
             log.debug(f"set_powered({turbine_id}, {on}) -> {status}")
         return status == "ok"
+
+    @staticmethod
+    def _heartbeat(grid_id_str, now):
+        """Marks this grid as committed (COMMIT_HEARTBEAT_KEY) so its turbines stop easing on their own."""
+        def updater(beats):
+            beats = beats if isinstance(beats, dict) else {}
+            beats[grid_id_str] = now
+            return beats
+
+        try:
+            archive.transaction(COMMIT_HEARTBEAT_KEY, {}, updater)
+        except Exception as error:
+            swallowed("turbine_commit._heartbeat: archive.transaction", error)
 
     @staticmethod
     def _record(woke, parked_now, now, grid_id_str):

@@ -36,6 +36,16 @@ class _Turbine:
         return self.output
 
 
+class _FreshTurbine(_Turbine):
+    """Just (re)started: throttle set, power_output() still from the previous power tick."""
+
+    def throttle(self):
+        return 1.0
+
+    def power_output(self):
+        return 0.0
+
+
 class _Tank:
     def __init__(self, pct):
         self.pct = pct
@@ -126,6 +136,20 @@ class StepTests(StubTestCase):
         self.assertFalse(power.is_powered("turbine_manual"))
         self.assertNotIn("turbine_manual", self.world.notebook.data.get(PARKED_KEY, {}))
 
+    def test_restarted_turbines_count_by_throttle_not_stale_output(self):
+        ids = [f"turbine_{i}" for i in range(10)]
+        for t in ids:
+            self.world.components[t] = _FreshTurbine(buffer=80, source="tank_full")
+        power = _Power({})
+        # 10 turbines at full make all 1080 W: none of it is "other" generation.
+        turbine_commit.TurbineCommitment(power).step(_Grid(ids, consumed=1000.0, generated=1080.0), "grid_a")
+        self.assertEqual(sum(power.is_powered(t) for t in ids), 10)  # ceil(1000 / 108) = 10, + spare, capped
+
+    def test_step_writes_the_commitment_heartbeat(self):
+        self.add("turbine_a", buffer=80, source="tank_full")
+        turbine_commit.TurbineCommitment(_Power({})).step(_Grid(["turbine_a"], consumed=50.0, generated=108.0), "grid_a")
+        self.assertIn("grid_a", self.world.notebook.data[turbine_commit.COMMIT_HEARTBEAT_KEY])
+
     def test_too_few_able_to_deliver_keeps_every_turbine_up(self):
         ids = ["turbine_a", "turbine_b", "turbine_c"]
         self.add("turbine_a", buffer=80, source="tank_full")
@@ -134,6 +158,27 @@ class StepTests(StubTestCase):
         power = _Power({})
         turbine_commit.TurbineCommitment(power).step(_Grid(ids, consumed=300.0, generated=108.0), "grid_a")
         self.assertTrue(all(power.is_powered(t) for t in ids))
+
+
+class TurbineEasingTests(StubTestCase):
+    def test_committed_grid_runs_full_otherwise_eases(self):
+        import steam_turbine
+
+        class Grid:
+            anchor_id = "grid_a"
+            stored, capacity, generated, consumed = 10900.0, 11000.0, 2000.0, 1400.0
+
+        controller = steam_turbine.SteamTurbineController.__new__(steam_turbine.SteamTurbineController)
+        controller.name, controller.clock, controller._eased = "turbine_1", self.world.clock, False
+        controller.log = steam_turbine.TreeConsole(module="steam_turbine")
+        controller.buffer_fraction = lambda: 1.0
+        controller.is_night = lambda: False
+        controller.get_grid = lambda: Grid()
+        self.assertEqual(controller.choose_throttle(), steam_turbine.THROTTLE_DEMAND_MET)
+        self.world.notebook.data[steam_turbine.COMMIT_HEARTBEAT_KEY] = {"grid_a": self.world.clock.now}
+        self.assertEqual(controller.choose_throttle(), 1.0)
+        self.world.clock.now += steam_turbine.COMMIT_FRESH_TICKS
+        self.assertEqual(controller.choose_throttle(), steam_turbine.THROTTLE_DEMAND_MET)
 
 
 if __name__ == "__main__":

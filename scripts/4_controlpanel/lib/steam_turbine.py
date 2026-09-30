@@ -1,4 +1,5 @@
 import fluid_routing
+from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -30,6 +31,12 @@ THROTTLE_DEMAND_MET = 0.3
 # generation no longer covers consumption, so "demand met" alone would flip the
 # turbine back to 1.0 on the next poll and the battery would refill within seconds.
 BATTERY_EASE_RESUME_FRACTION = 0.90
+# The tier-5 grid manager's turbine commitment (lib/turbine_commit.py) writes
+# {grid anchor id: tick} here each pass. While its entry for this turbine's grid is
+# younger than COMMIT_FRESH_TICKS, the commitment runs only the turbines needed and
+# parks the rest, so this turbine runs at 1.0 with a healthy buffer instead of easing.
+COMMIT_HEARTBEAT_KEY = "power.turbine_commit"
+COMMIT_FRESH_TICKS = 1200
 
 # is_stalled() alone isn't reliable proof the connected source is physically
 # unreachable -- it's equally true, harmlessly, whenever the feeding vent is
@@ -164,6 +171,12 @@ class SteamTurbineController:
                 swallowed("steam_turbine.SteamTurbineController.is_night: self.clock.get_elevation", error)
         return False
 
+    def committed(self, grid):
+        """True while the grid manager's turbine commitment manages this turbine's grid (COMMIT_HEARTBEAT_KEY)."""
+        beats = archive.get(COMMIT_HEARTBEAT_KEY, {}) or {}
+        tick = beats.get(getattr(grid, "anchor_id", None)) if isinstance(beats, dict) else None
+        return isinstance(tick, (int, float)) and 0 <= self.get_current_tick() - tick < COMMIT_FRESH_TICKS
+
     def choose_throttle(self):
         self.log.start(f"[{self.name}] choose_throttle", level="debug")
         fraction = self.buffer_fraction()
@@ -192,6 +205,11 @@ class SteamTurbineController:
         # generation already covers consumption, so banked steam isn't burned
         # for power nobody currently needs -- save it for the coming night.
         grid = self.get_grid()
+        if grid and self.committed(grid):
+            self._eased = False
+            self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, grid '{getattr(grid, 'anchor_id', '?')}' under turbine commitment; full throttle 1.0.")
+            self.log.end()
+            return 1.0
         if grid:
             stored = getattr(grid, "stored", 0.0)
             capacity = getattr(grid, "capacity", 0.0)
