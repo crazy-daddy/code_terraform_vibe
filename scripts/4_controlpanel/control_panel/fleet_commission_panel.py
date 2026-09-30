@@ -50,7 +50,6 @@ def read_outposts():
     except Exception as error:
         swallowed("fleet_commission_panel.read_outposts: network.outposts", error)
         refs = []
-    log.debug(f"read_outposts: network.outposts() gave {len(refs)} refs")
     found, with_depot = [], []
     for ref in refs:
         entry = (getattr(ref, "id", ""), getattr(ref, "name", "") or getattr(ref, "id", ""), bool(getattr(ref, "is_home", False)))
@@ -71,7 +70,10 @@ def read_outposts():
     with_depot.sort(key=order)
     if not found:
         log.debug(f"read_outposts: none found, fallback to {HOME_OUTPOST_ID} only (home picker cannot cycle)")
-    log.debug(f"read_outposts: outposts={found} with_depot={[o[0] for o in with_depot]}")
+    seen = (found, [o[0] for o in with_depot])
+    if _last_outposts.get("seen") != seen:
+        _last_outposts["seen"] = seen
+        log.debug(f"read_outposts: {len(refs)} refs, outposts={found} with_depot={seen[1]}")
     return found or [(HOME_OUTPOST_ID, "home", True)], with_depot
 
 
@@ -119,9 +121,27 @@ def role_row(y, title, labels, id_prefix, allowed, on_click):
             on_click(role)
 
 
+def order_pioneer(role, home_base):
+    job_id = queue_pioneer(role, home_base)
+    log.print(f"[COMMISSION] Ordered {job_id}: Pioneer '{role}' working for '{home_base or HOME_OUTPOST_ID}'.")
+
+
+def order_drone(role, outpost_id):
+    job_id = queue_drone(role, outpost_id)
+    log.print(f"[COMMISSION] Ordered {job_id}: drone '{role}' at '{outpost_id or HOME_OUTPOST_ID}'.")
+
+
+def cancel_order(job):
+    dropped = cancel_job(job.get("id"))
+    outcome = "cancelled" if dropped else "not cancelled (already past cancellable states)"
+    log.print(f"[COMMISSION] {job.get('id')} ({job.get('role')}, {job.get('state')}) {outcome}.")
+
+
 log = TreeConsole(module="fleet_commission_panel")
 # state_key -> (stored, match, choice count) last logged, so the picker logs on change, not every frame.
 _last_pick = {}
+# "seen" -> (outposts, depot outpost ids) last logged by read_outposts().
+_last_outposts = {}
 # Every widget on this card is a momentary button (state lives in fleet.commission), so stored keys hold
 # nothing worth keeping; drop them so the card stays under its 512-key limit.
 panel.clear_inputs()
@@ -148,13 +168,13 @@ while True:
     # Pioneers: deployed at home, working for the picked HOME_BASE.
     y = 44
     home_base = picker("commission_home", picker_x, y + picker_dy, "home:", outposts, "target_home", state) or None
-    role_row(y, "Pioneer", PIONEER_LABELS, "commission", PIONEER_PRESETS, lambda role: queue_pioneer(role, home_base))
+    role_row(y, "Pioneer", PIONEER_LABELS, "commission", PIONEER_PRESETS, lambda role: order_pioneer(role, home_base))
 
     # Drones: crafted into Inventory, then deployed at the picked outpost.
     y += section_h
     drone_outpost = picker("commission_drone_outpost", picker_x, y + picker_dy, "at", depot_outposts, "drone_outpost", state)
     if drone_outpost is not False:
-        role_row(y, "Drone", DRONE_LABELS, "commission_drone", DRONE_ROLES, lambda role: queue_drone(role, drone_outpost))
+        role_row(y, "Drone", DRONE_LABELS, "commission_drone", DRONE_ROLES, lambda role: order_drone(role, drone_outpost))
     else:
         panel.draw_text(24, y + 17, "Drone", 11, "text-secondary")
 
@@ -178,6 +198,6 @@ while True:
         line = f"{job.get('id')} {what}" + (f" - {detail}" if detail else "")
         panel.draw_text(120, row_y + 16, line[: int((width - 220) // 6)], 10, "text-value")
         if job_state in CANCELLABLE_STATES and panel.button(f"commission_cancel_{index}", width - 100, row_y, 76, 22, "cancel"):
-            cancel_job(job.get("id"))
+            cancel_order(job)
     if len(jobs) > max_rows > 0:
         panel.draw_text(width - 200, status_y, f"+{len(jobs) - max_rows} more", 10, "text-muted")
