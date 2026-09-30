@@ -132,6 +132,9 @@ from watchdog.observers.polling import PollingObserver
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SCRIPTS = REPO / "scripts"
 BACKUP_DIR = REPO / "devtools" / ".sync-backups"
+# While this file exists, watch queues changes instead of pushing them, so a
+# multi-file edit lands as one consistent state once the file is removed.
+SYNC_HOLD_FILE = BACKUP_DIR / "hold"
 PARAMS_CACHE = REPO / "devtools" / ".sync-backups" / "script_params.json"
 RESOLVED_PREVIEW_DIR = REPO / ".pyright-resolved"
 UNMATCHED = "_unmatched"            # under scripts/; staged, never a source
@@ -2039,6 +2042,18 @@ class Watcher:
         self.pending: dict = {}
         self.repo_due = None
         self.last_tier_check = time.monotonic()
+        self.on_hold = False
+
+    def held(self) -> bool:
+        """True while SYNC_HOLD_FILE exists; reports hold/release once each."""
+        on_hold = SYNC_HOLD_FILE.exists()
+        if on_hold != self.on_hold:
+            self.on_hold = on_hold
+            if on_hold:
+                warn("  hold  %s present, queueing changes" % show(SYNC_HOLD_FILE))
+            else:
+                ok("  hold  released, pushing queued changes")
+        return on_hold
 
     def note_save(self, raw_path):
         path = Path(str(raw_path))
@@ -2070,6 +2085,8 @@ class Watcher:
             write_resolved_preview(self.opts.scripts_dir, self.opts.active_tier, self.opts.save_dir)
 
     def drain(self):
+        if self.held():
+            return
         now = time.monotonic()
         # Cheap periodic re-check so a tier advance (new tech unlocked
         # mid-session) is picked up even with no repo-side file change.
