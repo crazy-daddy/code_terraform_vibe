@@ -172,10 +172,18 @@ class HarvesterMachinesMixin:
         return self.step_machine_map
 
     def missing_machines(self, cells, reserved=None):
-        """{sector: kind} of reserved cells of a deployable kind with no machine yet."""
+        """
+        {sector: kind} of reserved cells of a deployable kind with no machine
+        yet. Memoised per step on the reserved dict, the deployed machines and
+        the deployable kits (and `cells`, when the machines are unreadable);
+        the returned dict is shared and read-only.
+        """
         kits = self.deployable_kits()
         reserved = self._host.reserved if reserved is None else reserved
         deployed = self.step_machines()
+        memo = getattr(self, "_missing_memo", None)
+        if memo is not None and memo[0] is reserved and memo[1] is deployed and memo[2] is kits and (deployed is not None or memo[3] is cells):
+            return memo[4]
         out = {}
         for sector, kind in (reserved or {}).items():
             kit = MACHINE_KITS.get(kind)
@@ -187,22 +195,35 @@ class HarvesterMachinesMixin:
             elif getattr(cells.get(sector), "status", "unknown") == "provider":
                 continue
             out[sector] = kind
+        self._missing_memo = (reserved, deployed, kits, cells, out)
         return out
 
     def deployed_automators(self):
         """
         Sectors of the Crop Automators on the field that the full layout
-        reserves (one left over from an older layout does no jobs).
+        reserves (one left over from an older layout does no jobs). Memoised
+        on the step's machine map and the reserved dict; the list is shared
+        and read-only.
         """
-        deployed = self.step_machines() or {}
-        reserved = self._host.reserved or {}
-        return [s for s, k in deployed.items() if k == "crop_automator" and reserved.get(s) == "crop_automator"]
+        deployed = self.step_machines()
+        reserved = self._host.reserved
+        memo = getattr(self, "_automators_memo", None)
+        if memo is not None and deployed is not None and memo[0] is deployed and memo[1] is reserved:
+            return memo[2]
+        found = [s for s, k in (deployed or {}).items() if k == "crop_automator" and (reserved or {}).get(s) == "crop_automator"]
+        self._automators_memo = (deployed, reserved, found)
+        return found
 
     def automated_cells(self):
-        """Sectors a deployed Crop Automator serves (its jobs, not the Harvester's)."""
+        """Sectors a deployed Crop Automator serves (its jobs, not the Harvester's); memoised on the automators, the set is shared and read-only."""
+        automators = self.deployed_automators()
+        memo = getattr(self, "_automated_memo", None)
+        if memo is not None and memo[0] == automators:
+            return memo[1]
         out = set()
-        for ca in self.deployed_automators():
+        for ca in automators:
             out |= set(field_layout.automator_area(ca))
+        self._automated_memo = (list(automators), out)
         return out
 
     def kit_order_reserved(self):

@@ -17,6 +17,11 @@ class ChargingStationController:
     RETURN_SAFETY_MARGIN = 1.05
     RETURN_EMERGENCY_RESERVE_WH = 8.0
     RESCUE_EXTRA_RESERVE_WH = 8.0
+    # Poll cadence: ACTIVE while this station has work (bays charging or queued,
+    # a rescue under way, a vehicle it is responsible for stranded/below floor/
+    # heading home); IDLE otherwise.
+    ACTIVE_POLL_SECONDS = 1.5
+    IDLE_POLL_SECONDS = 5.0
 
     def __init__(self, station, target_charge_level=1.0):
         self.station = station
@@ -94,7 +99,30 @@ class ChargingStationController:
                 return False
         return True
 
-    def return_floor_wh(self, vehicle_ref):
+    def assess_stations(self, vehicle_ref, refs, self_known):
+        """
+        One pass over station refs: (is_mine, nearest_distance, nearest_coords).
+        is_mine matches is_nearest_station_to(): True when this station's own
+        position is unknown, otherwise True unless another station is strictly
+        closer. nearest_* are None when there are no stations.
+        """
+        x = vehicle_ref.x
+        y = vehicle_ref.y
+        best = None
+        best_coords = None
+        mine = None
+        for ref in refs:
+            coords = ref["coords"]
+            dist_sq = (x - coords[0]) ** 2 + (y - coords[1]) ** 2
+            if ref["id"] == self.name:
+                mine = dist_sq
+            if best is None or dist_sq < best:
+                best = dist_sq
+                best_coords = coords
+        is_mine = (not self_known) or mine is None or mine <= best
+        return is_mine, (None if best is None else best ** 0.5), best_coords
+
+    def return_floor_wh(self, vehicle_ref, distance=None):
         """
         Wh a vehicle needs on board right now to safely self-navigate to the
         nearest known charging station -- the same floor drive_to()'s own hard
@@ -103,8 +131,18 @@ class ChargingStationController:
         station under its own power and genuinely needs a rescue, regardless
         of what fraction of its (not necessarily known here) capacity that
         represents -- a fixed battery-level percentage doesn't track a
-        per-vehicle, per-distance floor like this does.
+        per-vehicle, per-distance floor like this does. distance: metres to
+        the nearest station when the caller already has it (None = look up).
         """
+        if distance is None:
+            stations = self.charging_station_coords()
+            if not stations:
+                return 0.0
+            distance = min(
+                ((vehicle_ref.x - x) ** 2 + (vehicle_ref.y - y) ** 2) ** 0.5
+                for x, y in stations
+            )
+
         vehicle = None
         try:
             vehicle = get_component(vehicle_ref.id)
@@ -112,22 +150,14 @@ class ChargingStationController:
             swallowed("charging.ChargingStationController.return_floor_wh: get_component", error)
             vehicle = None
 
-        stations = self.charging_station_coords()
-        if not stations:
-            return 0.0
-
-        distance = min(
-            ((vehicle_ref.x - x) ** 2 + (vehicle_ref.y - y) ** 2) ** 0.5
-            for x, y in stations
-        )
         # Rescue is a last-resort case, so rate the leg at the speedmode throttle
         # floor (cheapest possible Wh/m) -- rescue_wh_per_meter_for() already
         # handles the "vehicle unreachable" fallback internally.
         wh_per_meter = rescue_wh_per_meter_for(vehicle)
         return (distance * wh_per_meter * self.RETURN_SAFETY_MARGIN) + self.RETURN_EMERGENCY_RESERVE_WH
 
-    def rescue_target_level(self, vehicle_ref):
-        """Calculates charge needed to reach the nearest station with safety reserve."""
+    def rescue_target_level(self, vehicle_ref, floor=None):
+        """Calculates charge needed to reach the nearest station with safety reserve. floor: precomputed return_floor_wh()."""
         capacity = getattr(vehicle_ref, "battery_capacity", None)
         current_wh = getattr(vehicle_ref, "battery_wh", 0.0)
         if not capacity:
@@ -141,8 +171,9 @@ class ChargingStationController:
         if not capacity or capacity <= 0:
             return 1.0
 
-        return_wh = self.return_floor_wh(vehicle_ref) + self.RESCUE_EXTRA_RESERVE_WH
-        target_wh = max(current_wh, return_wh)
+        if floor is None:
+            floor = self.return_floor_wh(vehicle_ref)
+        target_wh = max(current_wh, floor + self.RESCUE_EXTRA_RESERVE_WH)
         return min(1.0, target_wh / capacity)
 
     def nearest_station_coords(self, vehicle_ref):
@@ -155,9 +186,10 @@ class ChargingStationController:
             key=lambda point: ((vehicle_ref.x - point[0]) ** 2 + (vehicle_ref.y - point[1]) ** 2) ** 0.5,
         )
 
-    def order_return_to_station(self, vehicle_ref):
-        """Redirects a low-charge vehicle home before requesting rescue."""
-        target = self.nearest_station_coords(vehicle_ref)
+    def order_return_to_station(self, vehicle_ref, target=None):
+        """Redirects a low-charge vehicle home before requesting rescue. target: nearest station coords when already known."""
+        if target is None:
+            target = self.nearest_station_coords(vehicle_ref)
         if not target:
             return False
         try:
@@ -185,13 +217,14 @@ class ChargingStationController:
         return True
 
     def manage_docked_vehicles(self):
-        """Inspects all docked vehicles and ensures they are actively charging up to target level."""
+        """Inspects all docked vehicles and ensures they are actively charging up to target level. True while bays are active or queued."""
         docked_ids = self.station.get_docked()
         if not docked_ids:
-            return
+            return False
 
         active_bays = self.station.get_active()
         queued = self.station.get_queue()
+        busy = bool(active_bays) or bool(queued)
 
         for v_id in docked_ids:
             try:
@@ -206,50 +239,65 @@ class ChargingStationController:
                 if lvl < (self.target_charge_level - 0.02):
                     if v_id not in active_bays and v_id not in queued:
                         res = self.station.charge(v_id, self.target_charge_level)
+                        busy = True
                         if res.status in ["ok", "charging", "queued"]:
                             self.log.print(f"[{self.name}] Queued docked vehicle {v_id} ({lvl*100:.0f}%, {wh:.1f} Wh) for charge.")
                         elif res.status != "target_reached":
                             self.log.level("warn").print(f"[{self.name}] Charge queue notice for {v_id}: {res.status} - {res.message}")
             except Exception as e:
                 swallowed("charging.ChargingStationController.manage_docked_vehicles: get_component", e)
+        return busy
 
     def manage_fleet_rescues(self):
         """
         Monitors all vehicles in the field.
         If any rover or pioneer is stranded, stalled, or critically low on battery,
         and not already docked or being rescued, dispatch the rescue drone!
+        Only the nearest station does the battery/floor work for a vehicle.
+        True while a rescue is in progress or a vehicle this station is
+        responsible for is stranded, below floor or heading home.
         """
         if self.station.is_rescuing():
             target_name = self.station.get_rescue_target()
             if target_name and target_name != self.last_rescued_vehicle:
                 self.last_rescued_vehicle = target_name
                 self.log.print(f"[{self.name}] Rescue drone currently in field assisting: {target_name}.")
-            return
+            return True
 
         self.last_rescued_vehicle = None
 
         if not self.fleet:
-            return
+            return False
 
         # Check all owned ground vehicles
         try:
             vehicles = self.fleet.vehicles()
         except Exception as error:
             swallowed("charging.ChargingStationController.manage_fleet_rescues: self.fleet.vehicles", error)
-            return
+            return False
 
+        refs = self.all_station_refs()
+        self_known = any(r["id"] == self.name for r in refs)
+        verbose = self.log.verbose
+        busy = False
         for v_ref in vehicles:
+            # Do not rescue docked vehicles or those already being rescued
+            if v_ref.is_docked or v_ref.is_being_rescued or v_ref.rescue_status != "none":
+                continue
+
+            # Every deployed station runs this same script independently
+            # against the same fleet snapshot -- only the nearest one acts,
+            # or every station in range would dispatch its own drone to the
+            # same vehicle.
+            is_mine, distance, nearest = self.assess_stations(v_ref, refs, self_known)
+            if not is_mine:
+                continue
+
             v_id = v_ref.id
             v_name = v_ref.name
             v_status = v_ref.status
             v_lvl = v_ref.battery_level
             v_wh = v_ref.battery_wh
-            is_docked = v_ref.is_docked
-            is_rescued = v_ref.is_being_rescued or v_ref.rescue_status != "none"
-
-            # Do not rescue docked vehicles or those already being rescued
-            if is_docked or is_rescued:
-                continue
 
             # First redirect a vehicle below its safe return target. Rescue is
             # reserved for a stranded vehicle or one that can no longer reach a
@@ -258,26 +306,19 @@ class ChargingStationController:
             # can sit there forever without ever registering as engine-"stranded";
             # this is the backstop for that limbo state).
             is_stranded = v_status in ["stranded", "stalled_no_battery"]
-            target_level = self.rescue_target_level(v_ref)
-            return_floor = self.return_floor_wh(v_ref)
+            return_floor = 0.0 if distance is None else self.return_floor_wh(v_ref, distance)
+            target_level = self.rescue_target_level(v_ref, return_floor)
             is_below_floor = v_wh <= return_floor
-            self.log.trace(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl*100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level*100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
+            if verbose:
+                self.log.trace(f"[{self.name}] Fleet check {v_id}: status='{v_status}', level={v_lvl*100:.0f}%, wh={v_wh:.1f}, return_floor={return_floor:.1f} Wh, target_level={target_level*100:.0f}%, stranded={is_stranded}, below_floor={is_below_floor}.")
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
-                if self.order_return_to_station(v_ref):
+                busy = True
+                if self.order_return_to_station(v_ref, nearest):
                     continue
 
-            is_critical = is_below_floor
-
-            if is_stranded or is_critical:
-                # Every deployed station runs this same script independently
-                # against the same fleet snapshot -- only the nearest one acts,
-                # or every station in range would dispatch its own drone to the
-                # same vehicle.
-                if not self.is_nearest_station_to(v_ref):
-                    self.log.debug(f"[{self.name}] {v_id} is in distress but a different station is nearer; deferring dispatch to it.")
-                    continue
-
+            if is_stranded or is_below_floor:
+                busy = True
                 reason = "STRANDED" if is_stranded else f"CRITICAL BATTERY ({v_lvl*100:.0f}%, {v_wh:.1f} Wh, below {return_floor:.1f} Wh return floor)"
                 self.log.start(f"[{self.name}] Rescue {v_name} ({v_id})")
                 self.log.level("warn").print(f"[{self.name}] Emergency! Vehicle {v_name} ({v_id}) in distress: {reason} at ({v_ref.x:.1f}, {v_ref.y:.1f}).")
@@ -301,18 +342,18 @@ class ChargingStationController:
                 else:
                     self.log.level("warn").print(f"[{self.name}] Dispatch rejection: {res.status} - {res.message}")
                     self.log.end(f"[{self.name}] Rescue dispatch rejected for {v_id}")
+        return busy
 
     def step(self):
-        """Single supervision cycle for dock charging and field rescue."""
+        """Single supervision cycle for dock charging and field rescue; returns True while this station has work (poll fast)."""
         if not self.is_station_powered():
-            flush_all()
-            sleep(2.0)
-            return
+            return False
 
-        self.manage_docked_vehicles()
-        self.manage_fleet_rescues()
+        docked_busy = self.manage_docked_vehicles()
+        rescue_busy = self.manage_fleet_rescues()
+        return docked_busy or rescue_busy
 
-    def run(self, poll_interval=1.5):
+    def run(self, poll_interval=ACTIVE_POLL_SECONDS, idle_poll_seconds=IDLE_POLL_SECONDS):
         """Continuous supervision loop."""
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()
         bay_rate = getattr(self.station, "get_bay_rate", lambda: 30)()
@@ -320,9 +361,10 @@ class ChargingStationController:
         validate_game_version()
         while True:
             reset_all()
+            busy = False
             try:
-                self.step()
+                busy = self.step()
             except Exception as e:
                 self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
             flush_all()
-            sleep(poll_interval)
+            sleep(poll_interval if busy else idle_poll_seconds)

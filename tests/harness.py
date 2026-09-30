@@ -80,7 +80,11 @@ def _reset_module_state(world):
     swallow._LAST.clear()
     swallow._WARNED.clear()
     storage._recent_busy.clear()
+    storage._DISCOVERY_MEMO.clear()
+    storage.DISCOVERY_TTL_TICKS = 0  # see production.DISCOVERY_TTL_TICKS below
     production._WARNED_UNKNOWN_MANUAL_ITEMS.clear()
+    production._DISCOVERY_MEMO.clear()
+    production.DISCOVERY_TTL_TICKS = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
     for module in list(sys.modules.values()):
         module_file = getattr(module, "__file__", None) or ""
         if not any(module_file.startswith(lib_dir) for lib_dir in _LIB_DIRS):

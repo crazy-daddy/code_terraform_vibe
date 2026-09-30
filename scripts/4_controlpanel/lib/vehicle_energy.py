@@ -56,6 +56,13 @@ from archive import archive
 from swallow import swallowed
 from tree_console import flush_all
 
+# get_all_charging_stations() runs on every drive poll's return-energy check; results are reused for this
+# many ticks (~2 s), so a newly placed station is seen at most that late.
+STATION_DISCOVERY_TTL_TICKS = 20
+
+# {"stations": (tick, [station dicts])}
+_STATION_MEMO = {}
+
 # Building type id as returned by OutpostRef.buildings() / Machine.typeId
 # ("charging_station"), not the component doc name
 # ("vehicle_charging_station"), which never matches and silently made every
@@ -641,7 +648,22 @@ class VehicleEnergyMixin:
         (outpost_network.outposts() already includes home), filtered by exact
         type_id so any number of stations is found regardless of id numbering.
         Returns a list of dicts: [{"id": str, "coords": (float, float), "component": obj}]
+        Memoized per script for STATION_DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only.
         """
+        now = 0
+        try:
+            clock = get_component("clock")
+            now = clock.tick() if clock else 0
+        except Exception as error:
+            swallowed("vehicle_energy.VehicleEnergyMixin.get_all_charging_stations: clock.tick", error)
+        memo = _STATION_MEMO.get("stations")
+        if memo is not None and 0 <= now - memo[0] < STATION_DISCOVERY_TTL_TICKS:
+            return list(memo[1])
+        stations = self._scan_charging_stations()
+        _STATION_MEMO["stations"] = (now, stations)
+        return list(stations)
+
+    def _scan_charging_stations(self):
         stations = []
         found_ids = set()
 

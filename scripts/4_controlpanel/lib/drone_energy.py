@@ -223,7 +223,36 @@ def _extract_coords(pos):
     return None
 
 
+# discover_drone_buildings() runs per drone on every flight poll and per field drone in each Drone Service
+# pass; results are reused for this many ticks (~2 s), so a newly placed building is seen at most that late.
+DISCOVERY_TTL_TICKS = 20
+
+# {type_ids tuple: (tick, [building dicts])}
+_DISCOVERY_MEMO = {}
+
+
+def _discovery_tick():
+    try:
+        clock = get_component("clock")
+        return clock.tick() if clock else 0
+    except Exception as error:
+        swallowed("drone_energy._discovery_tick: clock.tick", error)
+        return 0
+
+
 def discover_drone_buildings(type_id):
+    """Memoized for DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only. See _scan_drone_buildings()."""
+    key = tuple(type_id) if isinstance(type_id, (tuple, list)) else (type_id,)
+    now = _discovery_tick()
+    memo = _DISCOVERY_MEMO.get(key)
+    if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
+        return list(memo[1])
+    refs = _scan_drone_buildings(type_id)
+    _DISCOVERY_MEMO[key] = (now, refs)
+    return list(refs)
+
+
+def _scan_drone_buildings(type_id):
     """
     Standalone: every deployed building of type_id (drone_service_station or
     drone_depot; a tuple of type ids matches any of them) across every owned outpost, as

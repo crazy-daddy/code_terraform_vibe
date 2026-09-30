@@ -10,6 +10,14 @@ RUN_INTERRUPTIVE = False
 # Console-only quick run: skips LOCAL and every non-console API case. Run it twice, once with debug output
 # enabled in the console UI and once disabled, and set CONSOLE_DEBUG_STATE to match so the rows are labelled.
 CONSOLE_ONLY = False
+# Quick load comparison: only the empty loop, len(), a 0-arg call and one component call, each timed
+# QUICK_ROUNDS times for QUICK_SECONDS; prints min / median / max per case and one summary line, then stops.
+# Run it in the same save with everything running, with the other scripts stopped, and in an empty game,
+# at the same game speed and Advanced Scripting settings, and set QUICK_LABEL to tell the runs apart.
+QUICK = False
+QUICK_LABEL = "unlabelled"  # e.g. "all running", "scripts stopped", "empty game"
+QUICK_ROUNDS = 5
+QUICK_SECONDS = 1.0
 CONSOLE_DEBUG_STATE = "unknown"  # "shown" or "hidden"
 # Interruptive inputs (a case is skipped while its constant is empty):
 BENCH_POWER_MACHINE_ID = ""  # machine id to switch off and on repeatedly; state is restored afterwards
@@ -781,33 +789,60 @@ def cleanup_interruptive():
 # Run
 # ---------------------------------------------------------------------------
 
-print(f"Benchmark start, target >= {MIN_SECONDS}s per case (simulation seconds)")
-n0, dt0 = time_case(bench_empty_loop, 500)
-base = dt0 / n0 * 1000000.0
-print(f"baseline empty loop: {base:.2f} us/iter")
+def run_quick():
+    """QUICK mode: per case, QUICK_ROUNDS timed runs of >= QUICK_SECONDS; min / median / max us per iteration."""
+    global MIN_SECONDS
+    MIN_SECONDS = QUICK_SECONDS
+    cases = [
+        ("empty loop", bench_empty_loop, 500),
+        ("len(list)", bench_builtin_len, 200),
+        ("call fn()", bench_call_0, 200),
+        ("clock.elapsed_seconds()", bench_component_call, 200),
+    ]
+    print(f"QUICK [{QUICK_LABEL}]: {QUICK_ROUNDS} rounds x >= {QUICK_SECONDS}s per case")
+    summary = []
+    for name, fn, chunk in cases:
+        samples = []
+        for r in range(QUICK_ROUNDS):
+            n, dt = time_case(fn, chunk)
+            samples.append(dt / n * 1000000.0)
+        samples = sorted(samples)
+        mid = samples[len(samples) // 2]
+        print(f"{name}: min {samples[0]:.0f} / median {mid:.0f} / max {samples[-1]:.0f} us/iter")
+        summary.append(f"{name}={mid:.0f}")
+    print(f"QUICK [{QUICK_LABEL}] median us/iter: " + ", ".join(summary))
 
-if RUN_LOCAL and not CONSOLE_ONLY:
-    rows = run_group("LOCAL", CASES)
-    report("LOCAL", rows, base)
 
-if RUN_API:
-    try:
-        setup_api()
-        rows = run_group("API (non-interruptive)", build_api_cases())
-        report("API", rows, base)
-    finally:
-        cleanup_api()
+if QUICK:
+    run_quick()
+else:
+    print(f"Benchmark start, target >= {MIN_SECONDS}s per case (simulation seconds)")
+    n0, dt0 = time_case(bench_empty_loop, 500)
+    base = dt0 / n0 * 1000000.0
+    print(f"baseline empty loop: {base:.2f} us/iter")
 
-if RUN_INTERRUPTIVE:
-    print("INTERRUPTIVE cases enabled: game state is changed briefly and restored")
-    try:
-        icases = build_interruptive_cases()
-        if icases:
-            rows = run_group("INTERRUPTIVE", icases)
-            report("INTERRUPTIVE", rows, base)
-        else:
-            print("no interruptive case available (set the BENCH_* constants)")
-    finally:
-        cleanup_interruptive()
+    if RUN_LOCAL and not CONSOLE_ONLY:
+        rows = run_group("LOCAL", CASES)
+        report("LOCAL", rows, base)
+
+    if RUN_API:
+        try:
+            setup_api()
+            rows = run_group("API (non-interruptive)", build_api_cases())
+            report("API", rows, base)
+        finally:
+            cleanup_api()
+
+    if RUN_INTERRUPTIVE:
+        print("INTERRUPTIVE cases enabled: game state is changed briefly and restored")
+        try:
+            icases = build_interruptive_cases()
+            if icases:
+                rows = run_group("INTERRUPTIVE", icases)
+                report("INTERRUPTIVE", rows, base)
+            else:
+                print("no interruptive case available (set the BENCH_* constants)")
+        finally:
+            cleanup_interruptive()
 
 print("Benchmark done")

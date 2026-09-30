@@ -175,6 +175,41 @@ Measured with [`devtools/console_multiline_test.py`](../devtools/console_multili
 - **Stopping a script from the UI does not unwind it.** A `try/finally` around a loop never runs its `finally` block when Stop is clicked, so cleanup and log flushing cannot rely on it.
 - **`type(x)` returns a string,** so `type(x).__name__` raises `AttributeError`. Use `type(x)` directly.
 
+## Load dependence
+
+The per-step cost is not fixed: it depends on how many scripts are running. The same Harvester planning step (script freshly started, same field) measured with its own tick counter:
+
+| Other scripts | Planning step | Phases (ticks) |
+| --- | ---: | --- |
+| All running | 598 ticks | cells 11, reload 291, publish 75, decide 196 |
+| All stopped | 181 ticks | cells 3, reload 87, publish 24, decide 59 |
+
+`QUICK` runs in the same save (median µs per iteration):
+
+| Load | empty loop | `len(list)` | `fn()` | `clock.elapsed_seconds()` |
+| --- | ---: | ---: | ---: | ---: |
+| All scripts running | 325 | 1,375 | 1,625 | 1,375 |
+| Other scripts stopped | 100 | 406 | 500 | 406 |
+
+Every case scales by the same ~3.3×, matching the Harvester step. Further runs in the same save separate script count from script load:
+
+| Running scripts | Change | empty loop | `len(list)` | `fn()` |
+| --- | --- | ---: | ---: | ---: |
+| 165 | all running, 8 Control Room cards shown | 325 | 1,375 | 1,625 |
+| 165 | cards hidden (another page open) | 325 | 1,375 | 1,625 |
+| 157 | 8 cards stopped | 325 | 1,250 | 1,625 |
+| 146 | 19 solar trackers stopped (each asleep 10 s at a time) | 300 | 1,187 | 1,375 |
+
+Reading: **the per-step cost grows with the number of running scripts, not with how busy they are.** It fits `µs per step ≈ 99 + 1.37 × N` (N = running scripts, sleeping ones included; 100 alone, 299 at 146, 325 at 165), so every running script makes every step of every script about 1.4% slower. Each script gets its own step allowance per tick (docs/guide/language_reference.md, "Caching Results"; docs/components/clock.md), and that allowance shrinks as N grows. Consequences:
+
+- Fewer steps per poll make that script itself react faster; they barely help other scripts.
+- The lever for the whole base is the number of running scripts. A stopped script does not count (measured above); a finished one presumably does not either. Setpoints only hold while the script runs: a solar script looping on `set_tilt(59)` holds 59°, and both a manual Stop and a script that simply ends (no loop) drop it back to 90° (docs/components/run_control.md: `stop()` resets setpoints to idle). A machine that needs a held setpoint needs a running script; one whose idle state is fine (off, no recipe running) can have its script stopped or ended and restarted with `run_control.start()` when there is work.
+- Control Room cards cost the same as any other running script, visible or not.
+
+The Harvester's `cells` phase (one API call plus a 192-item comprehension, ~2 ticks at the 350 µs figure above) took 11 ticks with everything running, in line with the 3.3× factor. The `QUICK` switch below measures the empty-loop cost for a given set of running scripts.
+
 ## Reproducing
 
 Copy `devtools/panel_benchmark.py` into a `control_panel` script slot and run it. It prints the per-case cost, then the ratios relative to the empty loop, for each enabled group (`RUN_LOCAL`, `RUN_API`, `RUN_INTERRUPTIVE` at the top of the script), and takes several minutes. Lower `MIN_SECONDS` to shorten it.
+
+**Quick load comparison** (`QUICK = True`, label the run with `QUICK_LABEL`): times only the empty loop, `len()`, a 0-arg call and `clock.elapsed_seconds()`, `QUICK_ROUNDS = 5` times each for `QUICK_SECONDS = 1.0`, and prints min / median / max plus one summary line (under a minute). Run it with everything running, with the other scripts stopped, and in an empty game, at the same game speed and Advanced Scripting settings.

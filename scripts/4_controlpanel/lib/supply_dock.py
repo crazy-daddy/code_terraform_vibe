@@ -260,6 +260,7 @@ class SupplyDockController:
         self.inventory = get_component("inventory")
         self.connected = False
         self._warned_no_local_storage = False
+        self._last_report = ""
         self.log = TreeConsole(module="supply_dock")
 
     def outpost(self):
@@ -380,13 +381,28 @@ class SupplyDockController:
         self.log.start(f"[{self.name}] desired_order_id", level="debug")
         plan = archive.get(ORDER_PLAN_ARCHIVE_KEY, {}) or {}
         if self.name in plan:
-            self.log.debug(f"using central plan assignment -> {plan[self.name]!r}")
-            self.log.end()
-            return plan[self.name]
+            planned_id = plan[self.name]
+            if planned_id is None or self.order_is_active(planned_id):
+                self.log.debug(f"using central plan assignment -> {planned_id!r}")
+                self.log.end()
+                return planned_id
+            self.log.debug(f"central plan assignment {planned_id!r} is no longer active (plan older than the order's completion)")
         best = self.pick_best_order()
-        self.log.debug(f"no central plan entry, fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
+        self.log.debug(f"fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
         self.log.end()
         return best.id if best else None
+
+    def order_is_active(self, order_id):
+        """Whether order_id is still an active Earth Order. The central plan is recomputed every few
+        seconds (automation_panel DOCK_PLAN_TICK_INTERVAL), so an entry can name an order that completed since."""
+        if not self.orders_api:
+            return True
+        try:
+            order = self.orders_api.get_order(order_id)
+        except Exception as error:
+            swallowed("supply_dock.SupplyDockController.order_is_active: orders_api.get_order", error)
+            return True
+        return order is not None and getattr(order, "status", "") == "active"
 
     def assign_order(self, desired_id, order_name, reward_desc):
         """Sets desired_id on the dock; False when it did not take (cargo still loaded, or rejected)."""
@@ -398,6 +414,8 @@ class SupplyDockController:
             # check in step() and this call -- drain and let the next cycle retry.
             self.log.debug(f"[{self.name}] assign_order: cargo appeared since the last check, draining and retrying next cycle")
             self.drain_dock_cargo()
+        elif res.status in ("completed", "unknown_order"):
+            self.log.debug(f"[{self.name}] assign_order: order already {res.status}, waiting for the next plan")
         elif not assigned:
             self.log.level("warn").print(f"[{self.name}] Could not assign order: {res.status} - {res.message}")
         self.log.end(f"[{self.name}] Order '{order_name}': {'assigned' if assigned else res.status}")
@@ -432,7 +450,7 @@ class SupplyDockController:
 
             desired_id = self.desired_order_id()
             if not desired_id:
-                self.log.print(f"[{self.name}] No active Earth Orders available. Standing by.")
+                self.report("standby", f"[{self.name}] No active Earth Orders available. Standing by.")
                 return
 
             best = self.orders_api.get_order(desired_id) if self.orders_api else None
@@ -490,9 +508,17 @@ class SupplyDockController:
         # Step 4: Status report
         active_disp = self.dock.current_dispatch()
         if active_disp:
-            prog = self.dock.dispatch_progress()
             rate = self.dock.dispatch_rate()
-            self.log.print(f"[{self.name}] Shipping {active_disp}... Progress: {prog*100:.0f}% (Rate: {rate:.0f} u/h).")
+            self.report(f"ship:{active_disp}", f"[{self.name}] Shipping {active_disp} (Rate: {rate:.0f} u/h).")
+
+    def report(self, key, message):
+        """Info line only when the dock's state (key) changes: each console write costs 0.1 s of
+        simulation time (docs/BENCHMARK.md), so a steady state is not re-printed every poll."""
+        if key == self._last_report:
+            self.log.trace(message)
+            return
+        self._last_report = key
+        self.log.print(message)
 
     def run(self, poll_interval=3.0):
         self.log.print(f"Supply Dock Controller ({self.name}) online. Initializing logistics loop...")

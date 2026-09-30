@@ -36,6 +36,7 @@ First number = columns (width), second = rows (height). `1x1` → `1x2` adds hei
 
 **Headless automation panel's work, shown on `status_panel.py`'s AUTOMATION card**: §1a-1's centralized Power Grid supervision + Smelter rebalance sweep, plus:
 - **Outpost-founding → resource marker auto-reassignment**: each throttled storage tick, diff `outpost_network.outposts()`' current id set vs stored `outposts.known_ids` (archive list). Each **new** id auto-calls `outpost_mining.reevaluate_unassigned_near_outpost(new_id)` (§2d). `sync_resource_markers.py` stays for manual backfill/batch catch-up.
+- **Dock planning timer**: `DOCK_PLAN_TICK_INTERVAL = 50` ticks (~5s) gates `plan_dock_assignments()` via `plan_docks_if_due()`, checked each loop and again between the storage pass's sub-steps (after rebalance, after reclaim, after each outpost's consolidation), so a plan never waits behind the whole pass's feeder-bound transfers.
 - **Two independent throttle timers**: `SOLAR_TICK_INTERVAL = 10` ticks (~1s) gates grid supervision (cheap, no Auto Feeder transfers). `STORAGE_TICK_INTERVAL = 100` ticks (~10s) separately gates `rebalance_inventory_to_warehouses()` + outpost-diff/`consolidate_cross_warehouse_stock()` sweep. Both `.transfer_to()` and `.compact()` lock their Warehouse as material endpoint for whole transfer, so faster shared cadence risks contention (`"busy"` rejection on Smelter/Fabricator `take_item()` call). Grid supervision has no such cost. Both intervals gate via `clock.tick()` (not wall-clock), correct under time acceleration.
 - **`panel.button("run_archive_cleaner", ...)`** on `status_panel.py`: `ArchiveCleaner(dry_run=False,
   verbose=True).run()` (§4). Live-commit, human-triggered only, runs directly in that UI script (rare one-off, not per-cycle work).
@@ -50,3 +51,5 @@ First number = columns (width), second = rows (height). `1x1` → `1x2` adds hei
 - Named widget that draws own label (`slider`, likely `switch`/`button` too): fold live value INTO that label string. Don't draw separate, separately-positioned text beside it.
 - `pill()` needs more vertical clearance below than plain text line. Leave ≥ ~24px, not ~16px, before placing anything under one.
 - Anchor right-side elements from right edge (`width - <fixed px>`), not width fraction (`width * 0.86`), for anything with roughly fixed pixel footprint (`switch`, `button`, short `pill`). Fractions of 500px vs 1000px canvas land very differently.
+
+**Cost of a card**: each running card is one running script and slows every script by ~1.4% (dev_workflow.md §1d-1), on screen or not (measured). Merging cards (tabs in one card) cuts that; drawing less only speeds up the card itself.

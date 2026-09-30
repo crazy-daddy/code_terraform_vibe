@@ -107,17 +107,36 @@ def local_port_target(outpost=None):
     return buildings[0]["id"] if buildings else None
 
 
+# discover_storage_buildings() runs under every total_stock()/take_item() call; results are reused for
+# this many ticks (~2 s), so a newly placed Warehouse is seen at most that late.
+DISCOVERY_TTL_TICKS = 20
+
+# {(outpost_id, type_ids): (tick, [{"id", "component"}, ...])}
+_DISCOVERY_MEMO = {}
+
+
 def discover_storage_buildings(outpost=None, type_ids=STORAGE_TYPE_IDS):
     """
     [{"id": str, "component": obj}, ...] for every Warehouse/Large Warehouse
     at `outpost` (default: home outpost). Mirrors the existing
     get_all_charging_stations() discovery idiom in lib/vehicle_energy.py.
+    Memoized for DISCOVERY_TTL_TICKS; entries are shared, treat them as read-only.
     """
     if outpost is None:
         outpost = _home_outpost()
     if not outpost or not hasattr(outpost, "buildings"):
         return []
+    key = (getattr(outpost, "id", None), tuple(type_ids))
+    now = _now_tick()
+    memo = _DISCOVERY_MEMO.get(key)
+    if memo is not None and 0 <= now - memo[0] < DISCOVERY_TTL_TICKS:
+        return list(memo[1])
+    found = _scan_storage_buildings(outpost, type_ids)
+    _DISCOVERY_MEMO[key] = (now, found)
+    return list(found)
 
+
+def _scan_storage_buildings(outpost, type_ids):
     found = []
     seen_ids = set()
     for type_id in type_ids:

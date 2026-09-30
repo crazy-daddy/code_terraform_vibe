@@ -207,8 +207,23 @@ def garden_cols(fill=None):
 
 # ------------------------------------------------------------------ sectors
 
+_RC_CACHE = {}          # {sector string: (row, col)}; pure function of the string
+_NEIGHBOUR_CACHE = {}   # {sector: (orthogonal neighbour sectors)}
+_AREA_CACHE = {}        # {sector: (automator_area sectors)}
+_CACHE_LIMIT = 1024     # a cache past this many entries stops growing (junk sector strings)
+
+
 def sector_to_rc(sector):
-    """'E14' -> (4, 14); (None, None) for anything off the grid."""
+    """'E14' -> (4, 14); (None, None) for anything off the grid. Memoised per string."""
+    found = _RC_CACHE.get(sector)
+    if found is None:
+        found = _parse_sector(sector)
+        if len(_RC_CACHE) < _CACHE_LIMIT:
+            _RC_CACHE[sector] = found
+    return found
+
+
+def _parse_sector(sector):
     if not sector or len(sector) < 2:
         return None, None
     row = sector[0].upper()
@@ -230,15 +245,20 @@ def rc_to_sector(r, c):
 
 
 def neighbours(sector):
-    r, c = sector_to_rc(sector)
-    if r is None or c is None:
-        return []
-    out = []
-    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-        s = rc_to_sector(r + dr, c + dc)
-        if s:
-            out.append(s)
-    return out
+    """Orthogonal neighbours of `sector` on the grid, as a tuple (memoised; do not expect a list)."""
+    found = _NEIGHBOUR_CACHE.get(sector)
+    if found is None:
+        r, c = sector_to_rc(sector)
+        out = []
+        if r is not None and c is not None:
+            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                s = rc_to_sector(r + dr, c + dc)
+                if s:
+                    out.append(s)
+        found = tuple(out)
+        if len(_NEIGHBOUR_CACHE) < _CACHE_LIMIT:
+            _NEIGHBOUR_CACHE[sector] = found
+    return found
 
 
 def all_sectors():
@@ -421,17 +441,21 @@ def provider_violations(cells, reserved):
 
 
 def automator_area(sector):
-    """Sectors a Crop Automator at `sector` serves (its centred 5 x 5, itself excluded)."""
-    r, c = sector_to_rc(sector)
-    if r is None or c is None:
-        return []
-    out = []
-    for dr in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
-        for dc in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
-            s = rc_to_sector(r + dr, c + dc)
-            if s and s != sector:
-                out.append(s)
-    return out
+    """Sectors a Crop Automator at `sector` serves (its centred 5 x 5, itself excluded), as a memoised tuple."""
+    found = _AREA_CACHE.get(sector)
+    if found is None:
+        r, c = sector_to_rc(sector)
+        out = []
+        if r is not None and c is not None:
+            for dr in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
+                for dc in range(-AUTOMATOR_RADIUS, AUTOMATOR_RADIUS + 1):
+                    s = rc_to_sector(r + dr, c + dc)
+                    if s and s != sector:
+                        out.append(s)
+        found = tuple(out)
+        if len(_AREA_CACHE) < _CACHE_LIMIT:
+            _AREA_CACHE[sector] = found
+    return found
 
 
 def priority_seeds(cells, garden, fill, rules):
@@ -514,7 +538,20 @@ def _prune_clusters(cells, species):
     return cells
 
 
+_FULL_PARTS_CACHE = {}    # {fill: _full_parts result}; the result is shared, callers must not mutate it
+
+
 def _full_parts(fill=None):
+    """Memoised per fill; the returned dicts and set are shared and read-only. See _compute_full_parts()."""
+    fill = fill or FIELD_FILL
+    found = _FULL_PARTS_CACHE.get(fill)
+    if found is None:
+        found = _compute_full_parts(fill)
+        _FULL_PARTS_CACHE[fill] = found
+    return found
+
+
+def _compute_full_parts(fill=None):
     """
     (plants {sector: species}, machines {sector: kind}, garden set) of the
     whole field for `fill` (FIELD_FILL by default). "grandbloom" is
@@ -569,7 +606,19 @@ def snake(sectors):
     return sorted(sectors, key=key)
 
 
+_WORK_ORDER_MEMO = [None, None]   # [inputs key, groups] of the last work_order() call
+
+
 def work_order(cells, reserved, fill=None):
+    """Memoised on the sectors of cells / reserved and the garden width; the returned groups are shared and read-only."""
+    key = (tuple(sorted(cells)), tuple(sorted(reserved.items())), garden_cols(fill))
+    if _WORK_ORDER_MEMO[0] != key:
+        _WORK_ORDER_MEMO[1] = _compute_work_order(cells, reserved, fill)
+        _WORK_ORDER_MEMO[0] = key
+    return _WORK_ORDER_MEMO[1]
+
+
+def _compute_work_order(cells, reserved, fill=None):
     """
     The full layout's build order as groups of sectors (plants and machine
     cells together): group 0 is the garden (columns 1..garden_cols(fill))
@@ -615,14 +664,35 @@ def _garden_automators(order, garden):
     return len(order)
 
 
+_CHUNK_COUNT_CACHE = {}   # {fill: full_chunk_count}
+_FULL_LAYOUT_CACHE = {}   # {(chunks, fill): (cells, reserved, garden)}
+
+
 def full_chunk_count(fill=None):
-    """Largest useful `chunks` for full_layout() (chunk 1 = garden automators)."""
-    plants, machines, garden = _full_parts(fill)
-    order = _automators_in_order(machines)
-    return len(order) - _garden_automators(order, garden) + 1
+    """Largest useful `chunks` for full_layout() (chunk 1 = garden automators). Memoised per fill."""
+    fill = fill or FIELD_FILL
+    found = _CHUNK_COUNT_CACHE.get(fill)
+    if found is None:
+        plants, machines, garden = _full_parts(fill)
+        order = _automators_in_order(machines)
+        found = len(order) - _garden_automators(order, garden) + 1
+        _CHUNK_COUNT_CACHE[fill] = found
+    return found
 
 
 def full_layout(chunks, fill=None):
+    """Memoised per (chunks, fill); returns fresh copies of the result each call. See _compute_full_layout()."""
+    fill = fill or FIELD_FILL
+    key = (chunks, fill)
+    found = _FULL_LAYOUT_CACHE.get(key)
+    if found is None:
+        found = _compute_full_layout(chunks, fill)
+        _FULL_LAYOUT_CACHE[key] = found
+    cells, reserved, garden = found
+    return dict(cells), dict(reserved), list(garden)
+
+
+def _compute_full_layout(chunks, fill=None):
     """
     The first `chunks` chunks of FULL_LAYOUT: (cells {sector: species},
     reserved {sector: machine kind}, garden [sectors]). Chunk 1 = the

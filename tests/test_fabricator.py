@@ -32,8 +32,33 @@ class HomeFabricatorTests(StubTestCase):
         w = self.world
         f = w.add_fabricator("fabricator_1", w.home)
         f.input_buffer["glass"] = 4  # no recipe set: all of it is excess
-        fabricator.FabricatorController(f).eject_excess_inputs()
+        fabricator.FabricatorController(f).eject_excess_inputs(None, 0)
         self.assertEqual(w.inventory.count("glass"), 4)
+
+
+class ClaimRefreshTests(StubTestCase):
+    def test_fresh_own_claim_skips_archive_transaction(self):
+        w = self.world
+        f = w.add_fabricator("fabricator_1", w.home)
+        controller = fabricator.FabricatorController(f)
+        ticks = [1000]
+        controller.get_current_tick = lambda: ticks[0]
+        calls = []
+        real = fabricator.archive.transaction
+        fabricator.archive.transaction = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
+        try:
+            self.assertTrue(controller.claim_recipe("craft_gas_pipe_segment"))
+            self.assertEqual(len(calls), 1)
+            ticks[0] += fabricator.CLAIM_REFRESH_TICKS - 1
+            self.assertTrue(controller.claim_recipe("craft_gas_pipe_segment"))
+            self.assertEqual(len(calls), 1)
+            ticks[0] += 1
+            self.assertTrue(controller.claim_recipe("craft_gas_pipe_segment"))
+            self.assertEqual(len(calls), 2)
+            controller.release_recipe("craft_gas_pipe_segment")
+            self.assertNotIn("craft_gas_pipe_segment", controller._claim_ticks)
+        finally:
+            fabricator.archive.transaction = real
 
 
 class RemoteFabricatorTests(StubTestCase):
@@ -74,7 +99,7 @@ class RemoteFabricatorTests(StubTestCase):
         wh = w.add_warehouse("wh_remote", self.remote)
         f = w.add_fabricator("fabricator_2", self.remote)
         f.input_buffer["glass"] = 4
-        fabricator.FabricatorController(f).eject_excess_inputs()
+        fabricator.FabricatorController(f).eject_excess_inputs(None, 0)
         self.assertEqual(wh.count("glass"), 4)
         self.assertEqual(w.inventory.count("glass"), 0)
 
@@ -83,7 +108,7 @@ class RemoteFabricatorTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote, {"iron_ore": 10}, capacity=10)
         f = w.add_fabricator("fabricator_2", self.remote)
         f.input_buffer["glass"] = 4
-        fabricator.FabricatorController(f).eject_excess_inputs()
+        fabricator.FabricatorController(f).eject_excess_inputs(None, 0)
         self.assertEqual(f.input_buffer.get("glass"), 4)
 
 

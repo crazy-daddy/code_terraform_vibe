@@ -14,6 +14,15 @@ import fluid_routing
 # claim on the recipe id it's about to set lets a Fabricator move on to its
 # next-best sourceable candidate if another Fabricator already holds it.
 FABRICATOR_RECIPE_CLAIM_STALE_TICKS = 600
+# A claim this Fabricator won is only re-written to the archive after this many
+# ticks (well under FABRICATOR_RECIPE_CLAIM_STALE_TICKS); in between claim_recipe()
+# answers from memory without an archive transaction.
+CLAIM_REFRESH_TICKS = 100
+
+# run() sleep between steps: short while the machine is running or moved
+# material this step, long when there is nothing to do.
+ACTIVE_POLL_SECONDS = 1.0
+IDLE_POLL_SECONDS = 2.0
 # Shape {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}, per outpost like smelter.recipe_claims.
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
@@ -65,6 +74,8 @@ class FabricatorController:
         # need more than one fluid at once (e.g. oil refining needs oil_in + water_in), and each
         # port's source is independent of the others.
         self._fluid_routers = {}
+        # recipe_id -> tick of the last claim this Fabricator won and wrote to the archive.
+        self._claim_ticks = {}
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -78,6 +89,11 @@ class FabricatorController:
         """Claims recipe_id for this Fabricator, or refreshes its own existing claim. See lib/smelter.py's claim_recipe() -- identical shape/reasoning, separate archive key."""
         self.log.start(f"[{self.name}] claim_recipe({recipe_id})", level="debug")
         current_tick = self.get_current_tick()
+        last_claim = self._claim_ticks.get(recipe_id)
+        if current_tick > 0 and last_claim is not None and 0 <= current_tick - last_claim < CLAIM_REFRESH_TICKS:
+            self.log.debug(f"own claim refreshed {current_tick - last_claim} tick(s) ago, skipping archive write")
+            self.log.end()
+            return True
         notes = []  # logged after the transaction: a log call inside the updater gets it rejected
 
         site_id = claim_site_id(self.machine)
@@ -108,6 +124,10 @@ class FabricatorController:
         claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "fabricator")
         owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("fabricator")
         won = owner == self.name
+        if won:
+            self._claim_ticks[recipe_id] = current_tick
+        else:
+            self._claim_ticks.pop(recipe_id, None)
         self.log.debug(f"{'won' if won else f'held by other fabricator {owner!r}'}")
         self.log.end()
         return won
@@ -115,6 +135,7 @@ class FabricatorController:
     def release_recipe(self, recipe_id):
         if not recipe_id:
             return
+        self._claim_ticks.pop(recipe_id, None)
 
         site_id = claim_site_id(self.machine)
 
@@ -320,17 +341,17 @@ class FabricatorController:
                 return f"no known source for fluid '{fluid_key}'"
         return None
 
-    def target_reason(self, item_id):
+    def target_reason(self, item_id, cache=None):
         """Describes the active demand driving a target quantity for item_id."""
         try:
             fabricator_outputs = {getattr(r, "output_item", None) for r in self.machine.list_recipes()} - {None}
-            if item_id in get_manual_order_blocking_items(fabricator_outputs):
+            if item_id in get_manual_order_blocking_items(fabricator_outputs, cache=cache):
                 return "blocking a manual order's own input"
         except Exception as error:
             swallowed("fabricator.FabricatorController.target_reason: self.machine.list_recipes", error)
         if item_id in get_manual_orders():
             return "manual build order"
-        if item_id in blueprint_demand_items():
+        if item_id in blueprint_demand_items(cache):
             return "construction blueprint demand"
         if item_id in get_upgrade_orders():
             return "fleet upgrade order"
@@ -339,11 +360,11 @@ class FabricatorController:
             return f"Supply Dock Order {getattr(order, 'name', getattr(order, 'id', 'active'))}"
         return "building stock target"
 
-    def choose_recipe(self):
-        # One snapshot for the whole pass: targets, stock, pipeline and the
-        # sourceability checks below all read it.
+    def choose_recipe(self, cache=None):
+        # One snapshot for the whole pass (step() shares its own): targets, stock,
+        # pipeline and the sourceability checks below all read it.
         self.log.start(f"[{self.name}] choose_recipe", level="debug")
-        cache = SourceCache()
+        cache = SourceCache() if cache is None else cache
         site_id = claim_site_id(self.machine)
         outpost = self.outpost()
         # This site's share of every root target and its own intermediates
@@ -360,10 +381,10 @@ class FabricatorController:
             return None
 
         fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
-        blocking_items = get_manual_order_blocking_items(fabricator_outputs)
+        blocking_items = get_manual_order_blocking_items(fabricator_outputs, cache=cache)
         # Computed once per pass, not per candidate (each is a stock walk).
-        blueprint_items = blueprint_demand_items()
-        upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items) if upgrade_items else set()
+        blueprint_items = blueprint_demand_items(cache)
+        upgrade_blocking = get_manual_order_blocking_items(fabricator_outputs, upgrade_items, cache=cache) if upgrade_items else set()
         # Output buffers + in-progress crafts of every Fabricator at this
         # site, not just this one's -- see production.get_fabricator_pipeline().
         pipeline = get_fabricator_pipeline(cache, site_id)
@@ -477,13 +498,16 @@ class FabricatorController:
         return None
 
     def drain_output(self):
+        """Returns True when anything left the output buffer."""
         if not hasattr(self.machine, "output"):
-            return
+            return False
         # Inventory first, a Warehouse only when Inventory is full or this
         # Fabricator is off-home -- see storage.drain_port_inventory_first().
         at_home = self.at_home()
+        drained = False
         for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=self.outpost()):
             if moved > 0:
+                drained = True
                 if not at_home:
                     self.log.print(f"[{self.name}] Sent {moved}x {item_id} to a local Warehouse.")
                 elif destination == "warehouse":
@@ -493,9 +517,11 @@ class FabricatorController:
                 consume_manual_order(item_id, moved)
             elif status not in ["busy", "no_op"]:
                 self.log.level("warn").print(f"[{self.name}] Output notice: {status} - {message}")
+        return drained
 
     def drain_byproduct(self):
-        """
+        """Returns True when anything was moved out of the buffer.
+
         Empties the byproduct buffer (tar from lubricant/plastic/rubber --
         docs/components/fabricator.md) into Inventory or a local Warehouse.
         The recipe stalls once this 20-unit buffer can't take the next
@@ -505,14 +531,14 @@ class FabricatorController:
         """
         port = getattr(self.machine, "byproduct", None)
         if not port or not hasattr(port, "stacks"):
-            return
+            return False
         try:
             staged = sum(getattr(s, "count", 0) or 0 for s in port.stacks())
         except Exception as error:
             swallowed("fabricator.FabricatorController.drain_byproduct: port.stacks", error)
-            return
+            return False
         if staged <= 0:
-            return
+            return False
         moved = drain_port_to_storage(port, outpost=self.outpost(), allow_partial=True)
         if moved > 0:
             self.log.print(f"[{self.name}] Drained {moved}x byproduct to storage.")
@@ -521,23 +547,20 @@ class FabricatorController:
         self.log.debug(f"[{self.name}] drain_byproduct: staged={staged} moved={moved} left={left} capacity={capacity}")
         if capacity and left >= capacity:
             self.log.level("warn").print(f"[{self.name}] Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
+        return moved > 0
 
-    def load_inputs(self, recipe):
+    def load_inputs(self, recipe, crafts_remaining, remaining_capacity, cache=None):
+        """Tops the stockpile up for `recipe` (crafts_remaining and the free
+        stockpile room come from step()); returns the units loaded."""
         # Fill the stockpile with enough for several crafts at once (not just
         # one) so the Auto Feeder isn't paid every craft, but cap it at what's
         # still actually needed: once running, the machine burns through the
         # whole staged batch on its own before the script gets another look,
         # so over-loading here directly overshoots the target/order.
-        capacity = self.machine.get_stockpile_capacity()
-        used = self.machine.get_stockpile_used()
-        remaining_capacity = max(0, capacity - used)
-        if remaining_capacity <= 0:
-            return
+        if remaining_capacity <= 0 or crafts_remaining <= 0:
+            return 0
 
-        _, crafts_remaining = get_fabricator_active_recipe(self.machine)
-        if crafts_remaining <= 0:
-            return
-
+        loaded = []
         stockpile = self.machine.get_stockpile() or {}
         for item_id, required in (getattr(recipe, "inputs", {}) or {}).items():
             if remaining_capacity <= 0:
@@ -557,17 +580,23 @@ class FabricatorController:
             # ever asks for its own short, recipe-scaled prefill window, so
             # it stops requesting more once topped up and leaves frequent
             # openings for a peer Fabricator to get its own share too.
-            amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, craft_prefill_units(recipe, item_id) - staged))
-            self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={craft_prefill_units(recipe, item_id)} -> amount={amount}")
+            prefill_cap = craft_prefill_units(recipe, item_id)
+            amount = min(missing, remaining_capacity, FABRICATOR_LOAD_CHUNK_SIZE, max(0, prefill_cap - staged))
+            self.log.debug(f"[{self.name}] load_inputs({recipe.id}): {item_id} staged={staged} missing={missing} remaining_capacity={remaining_capacity} prefill_cap={prefill_cap} -> amount={amount}")
             # take_item() checks Inventory first (home only), then rotates
             # through any local Warehouse holding this item -- see lib/storage.py.
-            moved = take_item(self.machine.input, item_id, amount, outpost=None if self.at_home() else self.outpost())
+            # The step-wide cache's stock snapshot only picks the holders to try; the
+            # transfer itself reports what actually moved.
+            moved = take_item(self.machine.input, item_id, amount, outpost=None if self.at_home() else self.outpost(), cache=cache)
             if moved <= 0:
                 continue
-            self.log.print(f"[{self.name}] Loaded {moved}x {item_id} for {recipe.id}.")
+            loaded.append(f"{moved}x {item_id}")
             remaining_capacity -= moved
+        if loaded:
+            self.log.print(f"[{self.name}] Loaded {', '.join(loaded)} for {recipe.id}.")
+        return len(loaded)
 
-    def eject_excess_inputs(self):
+    def eject_excess_inputs(self, recipe, crafts_remaining):
         """
         Recovers input-stockpile material this Fabricator no longer needs
         back into circulation (Inventory or a Warehouse) via
@@ -590,14 +619,17 @@ class FabricatorController:
         eject() itself safely no-ops on any portion still reserved for an
         in-progress craft (transactional, per docs/types/storage_and_inventory.md),
         so calling this every step is harmless even mid-craft.
+        `recipe`/`crafts_remaining` are the active recipe and its remaining
+        crafts (get_fabricator_active_recipe()). Returns True when anything
+        was ejected.
         """
         if not hasattr(self.machine, "input") or not hasattr(self.machine.input, "eject"):
-            return
+            return False
         stockpile = self.machine.get_stockpile() or {}
         if not stockpile:
-            return
+            return False
 
-        recipe, crafts_remaining = get_fabricator_active_recipe(self.machine)
+        ejected = False
         needed = dict(getattr(recipe, "inputs", {}) or {}) if recipe else {}
 
         for item_id, staged in stockpile.items():
@@ -618,13 +650,21 @@ class FabricatorController:
                 continue
             moved = getattr(result, "moved", 0) or 0
             if moved > 0:
+                ejected = True
                 self.log.print(f"[{self.name}] Ejected {moved}x {item_id} from the stockpile back to '{destination}' (no longer needed for the active batch).")
+        return ejected
 
     def step(self):
+        """One poll. Returns True when the machine is active (it moved material,
+        changed its recipe, or is running), so run() can poll faster."""
         self.ensure_connection()
-        self.drain_output()
-        self.drain_byproduct()
-        self.eject_excess_inputs()
+        worked = self.drain_output()
+        worked = self.drain_byproduct() or worked
+        # One snapshot for the rest of the step, taken after the drains changed stock:
+        # active-recipe shortfall, recipe choice and the input takes all read it.
+        cache = SourceCache()
+        active_recipe, active_remaining = get_fabricator_active_recipe(self.machine, cache)
+        worked = self.eject_excess_inputs(active_recipe, active_remaining) or worked
 
         if self.is_shedded():
             # Power Guard has flagged this Fabricator for shedding (soft-shed
@@ -634,9 +674,8 @@ class FabricatorController:
             # more, so draw winds down to 0 W on its own instead of an
             # abrupt breaker cut.
             self.log.debug(f"[{self.name}] step: shedded by Power Guard, not starting or topping up production")
-            return
+            return worked or self.machine.is_running()
 
-        active_recipe, active_remaining = get_fabricator_active_recipe(self.machine)
         # A fluid-only recipe (e.g. craft_tar) never goes idle while its
         # fluid flows, so the idle-only switch below would never fire: once
         # its target is met, cut the feed and switch even while running.
@@ -647,7 +686,7 @@ class FabricatorController:
         else:
             self.ensure_fluid_connections(active_recipe)
         prior_recipe_id = self.machine.get_recipe()
-        recipe = self.choose_recipe()
+        recipe = self.choose_recipe(cache)
         if recipe is None:
             # clear_recipe() preserves the stockpile (it's staged material,
             # not tied to the recipe), so a partial load must not block this.
@@ -656,37 +695,43 @@ class FabricatorController:
                 if result.status == "ok":
                     self.log.print(f"[{self.name}] Clearing recipe: every buildable stock target/order item is met or unreachable.")
                     self.release_recipe(prior_recipe_id)
+                    worked = True
                 else:
                     self.log.debug(f"[{self.name}] clear_recipe(): {result.status} - retrying next poll")
-            return
+            return worked or self.machine.is_running()
 
         recipe_id = getattr(recipe, "id", "")
         if prior_recipe_id != recipe_id:
             if winding_down or not self.machine.is_running():
                 result = self.machine.set_recipe(recipe_id)
                 if result.status == "ok":
+                    worked = True
                     if prior_recipe_id:
                         self.release_recipe(prior_recipe_id)
                     output_item = getattr(recipe, "output_item", "?")
-                    reason = self.target_reason(output_item)
+                    reason = self.target_reason(output_item, cache)
                     self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to build {output_item} for {reason}.")
                 else:
                     self.log.debug(f"[{self.name}] set_recipe({recipe_id}): {result.status} - retrying next poll")
-            else:
-                self.log.debug(f"[{self.name}] step: '{recipe_id}' preferred over running '{prior_recipe_id}', switching once the current craft finishes")
-            return
+                return worked
+            self.log.debug(f"[{self.name}] step: '{recipe_id}' preferred over running '{prior_recipe_id}', switching once the current craft finishes")
+            return True  # running, or the branch above would have switched
 
-        if self.machine.get_stockpile_used() < self.machine.get_stockpile_capacity():
-            self.load_inputs(recipe)
+        capacity = self.machine.get_stockpile_capacity()
+        used = self.machine.get_stockpile_used()
+        if used < capacity:
+            worked = self.load_inputs(recipe, active_remaining, capacity - used, cache) > 0 or worked
+        return worked or self.machine.is_running()
 
-    def run(self, poll_interval=2.0):
+    def run(self, poll_interval=IDLE_POLL_SECONDS, active_poll_interval=ACTIVE_POLL_SECONDS):
         self.log.print(f"Fabricator Controller ({self.name}) online. Building stock targets enabled.")
         validate_game_version()
         while True:
             reset_all()
+            active = False
             try:
-                self.step()
+                active = self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Fabricator exception: {error}")
             flush_all()
-            sleep(poll_interval)
+            sleep(active_poll_interval if active else poll_interval)

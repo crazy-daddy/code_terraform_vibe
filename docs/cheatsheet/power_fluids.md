@@ -47,6 +47,7 @@ Headless automation panel AUTOMATION section (§7 — `automation_panel.py` in s
   `power_control.grids()` (two grids merged via new power line). Restores anything still in manager's `shedded_machines` (guarded same as `manage_day_recovery()`), clears per-anchor `power.shedded:<anchor>` mirror.
 - **Battery-less grids skipped**: `if capacity_wh <= 0: return` near top of
   `supervise_grid()` (avoids divide by zero on `battery_pct`). No strategy for battery-less grids yet.
+- **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` `POLL_SECONDS = 1.0` at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`; `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
   dependency**: Solar Grid brownout supervision only while headless automation panel running — see
@@ -174,6 +175,8 @@ every cycle — delivery self-limits to what connected tank accepts.
 ### 1c-3. Mk III Terraforming Fluid Feed (`lib/terraforming.py` `Mk3FluidFeed`)
 
 `HeatController`/`PressureController`/`OxygenController` each run one `Mk3FluidFeed` per `step()`. Mk III Heat Generator takes `steam_in`, Mk III Pressure/Oxygen Generator take `water_in`. A starved Mk III runs as Mk II (`is_degraded()`), it never stops.
+
+**Pressure Generator pacing** (`PressureController.next_poll_seconds()`): the gauge rises a fixed amount per tick, measured from two reads (`gauge_per_tick`). The script sleeps `PRESSURE_WAKE_FRACTION = 0.7` of the predicted time to its next target (the window's low edge while this sweep is unsynced; the wrap at 100 once synced or once the window has passed), clamped to `PRESSURE_MIN_POLL_S = 0.1` … `PRESSURE_MAX_POLL_S = 5.0`, and polls every `PRESSURE_MIN_POLL_S` near or inside the window and while the speed is unknown.
 
 - Routes only while `tier() == 3` (Mk IV burns Fuel Rods; below Mk III the port does nothing). At most every `FLUID_CHECK_INTERVAL_TICKS = 20` ticks.
 - **steam_in**: `FluidInputRouter`, steam Gas Tanks then Thermal Caps, own outpost first (Steam Turbine candidates, §1b). **water_in**: `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, own outpost first. Router constants = Plant Terraformer's water router (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `flow_rate() == 0` with room left.
