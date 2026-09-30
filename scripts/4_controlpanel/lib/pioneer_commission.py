@@ -2,7 +2,7 @@
 #
 # The operator queues a new Pioneer on the COMMISSION card
 # (control_panel/fleet_commission_panel.py); lib/fleet_commission.py, run by the
-# headless automation_panel.py, buys the chassis and every part of the role's
+# headless control_room_automation.py, buys the chassis and every part of the role's
 # preset, deploys the chassis at the home outpost (where the parts are) and
 # waits for a script on it. A freshly deployed
 # chassis is bare, and mount()/install() are self-only (docs/components/pioneer.md),

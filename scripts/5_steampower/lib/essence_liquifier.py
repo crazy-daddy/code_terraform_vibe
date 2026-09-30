@@ -30,7 +30,7 @@ from swallow import swallowed
 #      coordination here.
 # Once biomass_complete() (lib/biomass_retire.py) the Liquifier retires:
 # no feeding, its input bin is ejected to local storage so undeploy() can
-# take it, and automation_panel.py switches its breaker off once the bin is empty.
+# take it, and control_room_automation.py switches its breaker off once the bin is empty.
 
 # typeIds, not the "Drone Depot" display name; one per Depot size -- see lib/drone_energy.py
 DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")

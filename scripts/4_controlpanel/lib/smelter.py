@@ -1,7 +1,7 @@
 # Shared Library for Smelter Automation
 # Manages automated ore intake, recipe execution, and finished metal extraction.
-# The Inventory->Warehouse rebalance sweep is owned centrally by the headless
-# automation panel, not by individual Smelter instances -- see
+# The Inventory->Warehouse rebalance sweep is owned centrally by
+# control_room_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
 from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
@@ -74,8 +74,8 @@ class SmelterController:
     craft loop against the same shared get_smelter_demands() numbers, but
     claims the recipe it's about to work (claim_recipe()) so two smelters don't
     both start the same recipe while a second simultaneously-demanded ore sits
-    untouched. The "inventory manager" sweep runs centrally by the headless
-    automation panel (see module docstring), so no per-smelter election is needed.
+    untouched. The "inventory manager" sweep runs centrally in
+    control_room_automation.py (see module docstring), so no per-smelter election is needed.
 
     Outpost-aware: at home the ports use Inventory + home Warehouses; at any
     other outpost only that outpost's own Warehouses (Inventory is home-only,

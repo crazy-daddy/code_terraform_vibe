@@ -1,6 +1,6 @@
 # Fleet commissioning coordinator: launches new Pioneers and drones queued on
 # the COMMISSION card (control_panel/fleet_commission_panel.py). Run by the
-# headless automation_panel.py every storage tick. Operator-triggered only:
+# headless control_room_automation.py every storage tick. Operator-triggered only:
 # nothing is queued here on its own.
 #
 # Pioneer and drone jobs are separate queues in one list,
@@ -249,7 +249,7 @@ class FleetCommissionCoordinator:
     # ------------------------------------------------------------ main step
 
     def step(self, current_tick):
-        """One coordinator pass. Returns a short summary for automation_panel's automation line."""
+        """One coordinator pass. Returns a short summary for control_room_automation's automation line."""
         state = commission_state()
         pioneers = self._pioneers()
         drones = self._drones()

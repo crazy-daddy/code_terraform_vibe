@@ -26,7 +26,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §
 
 ### 1a-0. Simplified Power Guard (`5_steampower/lib/power.py`, overrides §1a from tier 5 up)
 
-Same import surface (`PowerGridManager.supervise_grid(grid, elevation)` / `release_all()`, `DAY_CYCLE_DURATION_SECONDS`), so the headless automation panel drives it unchanged. No day/night logic — `elevation` ignored. Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbines can still cover load.
+Same import surface (`PowerGridManager.supervise_grid(grid, elevation)` / `release_all()`, `DAY_CYCLE_DURATION_SECONDS`), so control_room_automation.py drives it unchanged. No day/night logic — `elevation` ignored. Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbines can still cover load.
 
 - **Reserve = battery pool + steam pool.** Battery = `grid.stored + reserve_stored` (Lightning Rods included). Steam = every Gas Tank in `grid.members` (outpost walk fallback, throttled to every `TANK_FALLBACK_SCAN_INTERVAL_CALLS = 60` calls) latched to `"steam"`, or unlatched but reserved for steam in `fluid_routing.tank_assignments`. Steam→Wh at `STEAM_WH_PER_TON = 108/90 = 1.2` (turbine rate).
 - **Daily balance.** Start-of-day snapshot at each `clock.get_day()` rollover; generated/consumed Wh integrated over `elapsed_game_hours()`. Closing day appended to `power.daily_hist:<anchor>` (last `DAILY_HISTORY_LENGTH = 7`). One `notify()` per day if battery or steam pool lost more than `DAILY_LOSS_WARN_FRACTION = 0.20` of its capacity. Only a directly preceding day is closed (longer gap = discarded, no warning). Running state in `power.daily:<anchor>`, persisted on rollover + every `DAILY_STATE_PERSIST_INTERVAL_CALLS = 30` calls.
@@ -35,9 +35,9 @@ Same import surface (`PowerGridManager.supervise_grid(grid, elevation)` / `relea
 - `ArchiveCleaner.clean_power_grid_state()` also purges orphaned `power.daily:` / `power.daily_hist:` keys.
 - Reserve maths are module functions (`grid_steam_tank_ids()`, `steam_pool()`, `measure_grid()`, `reserve_totals()`, `reserve_fraction()`) so `oil_generator.py` (§1c-1) reads the exact same number as the guard.
 
-### 1a-1. Centralized Grid Ownership (headless automation panel, no Master/Follower election)
+### 1a-1. Centralized Grid Ownership (control_room_automation.py, no Master/Follower election)
 
-Headless automation panel AUTOMATION section (§7 — `automation_panel.py` in source tree) = single always-running process, owns grid supervision directly, one `PowerGridManager` per grid, no election.
+`control_room_automation.py` (the Control Room Automation, §7) = single always-running process, owns grid supervision directly, one `PowerGridManager` per grid, no election.
 
 - **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param.
   `grid` (initial snapshot) required, binds `self.grid_anchor` at construction — identity fixed for manager lifetime; only per-call snapshot (stored/capacity/consumed) must be fresh each call.
@@ -50,12 +50,12 @@ Headless automation panel AUTOMATION section (§7 — `automation_panel.py` in s
 - **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` sleeps `CAP_WAKE_FRACTION = 0.5` of the time the fastest pressure rise seen so far (learned from successive reads) needs to reach `PRESSURE_BAND_CRITICAL`, clamped to `POLL_SECONDS = 1.0` … `CAP_MAX_POLL_SECONDS = 30.0`; before any rise is seen, 1 s at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`. Breaker-parked while the vent is dormant and the chamber drained (dev_workflow.md §1d-2); `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
-  dependency**: Solar Grid brownout supervision only while headless automation panel running — see
+  dependency**: Solar Grid brownout supervision only while control_room_automation.py running — see
   `legacy/README.md` for pre-Control-Room fallback (save without `research_custom_panels`
   has no panel scripts, so centralization doesn't help).
 - **`lib/smelter.py`'s `SmelterController`** has no election either — "inventory
   manager" sweep (`storage.rebalance_inventory_to_warehouses()`) runs once, directly, from
-  headless automation panel AUTOMATION section, same hard dependency as Solar Grid supervision.
+  control_room_automation.py AUTOMATION section, same hard dependency as Solar Grid supervision.
 
 ### 1b. Steam Power Loop: Thermal Cap → (Gas Tank) → Steam Turbine
 
@@ -135,7 +135,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   6. Otherwise → `1.0`.
   Reads grid state same as `lib/power.py`'s `PowerGridManager`
   (`power_control.grid(self.name)` → `.stored`/`.capacity`/`.generated`/`.consumed`), but no
-  shedding itself — that's headless automation panel AUTOMATION section's job (§1a-1).
+  shedding itself — that's control_room_automation.py AUTOMATION section's job (§1a-1).
 
 ### 1c. Fluid Pump (water/oil): Liquid Tank Routing (`lib/fluid_pump.py` `FluidPumpController`)
 

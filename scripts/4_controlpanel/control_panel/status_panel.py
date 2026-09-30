@@ -1,23 +1,20 @@
 # ct-panel: status_panel
 # Control Room status + automation card: clock, power, storage, actionable
-# warnings (STATUS), plus a live view of automation_panel.py's automation results
+# warnings (STATUS), plus a live view of control_room_automation.py's automation results
 # (AUTOMATION) -- see docs/AI_CHEATSHEET.md §7.
 #
-# automation_panel.py is the actual "always-on" worker (grid supervision, rebalance
-# sweep, outpost sync, Supply Dock planning) -- it runs headless, with no
-# panel.* calls of its own. Split out this way because a multi-second
-# synchronous call (supply_dock.plan_dock_assignments()) inside a per-tick
-# UI-rendering loop leaves the Custom Panel canvas blank permanently, while
-# the script keeps running underneath and no error is raised. automation_panel.py publishes its result summary to
-# `archive` (AUTOMATION_SUMMARY_KEY below) for this card to read and display
-# instead -- same Archive-as-decoupling-channel pattern CLAUDE.md calls for
-# when a result can't be produced by the component that has to display it.
+# control_room_automation.py (an Automation, draws nothing) is the always-on
+# worker (grid supervision, rebalance sweep, outpost sync, Supply Dock
+# planning). It publishes its result summary to `archive`
+# (AUTOMATION_SUMMARY_KEY below) for this card to read and display -- the
+# Archive-as-decoupling-channel pattern CLAUDE.md calls for. A multi-second
+# call (supply_dock.plan_dock_assignments()) inside a per-tick rendering loop
+# blanks the card, so none of that work runs here.
 #
 # Everything drawn here (STATUS's clock/power/storage/alerts, the version
 # gate, and the manual buttons) is either a cheap single-call component read
-# or a rare user-triggered one-off -- none of it is the chronic per-cycle
-# cost that forced automation_panel.py to go headless, so it stays inline in this UI
-# script rather than being routed through archive too.
+# or a rare user-triggered one-off, so it stays inline in this UI script
+# rather than being routed through archive too.
 #
 # SLOT NUMBER: the game picks Custom Panel ids itself (ids only increment,
 # cards can't be drag-reordered), so this file's live panel_N slot differs
@@ -32,9 +29,9 @@ from version_guard import version_mismatch, good_version, confirm_new_version
 from swallow import swallowed
 from biomass_retire import retire_state, sell_retired_machines
 
-# Must match automation_panel.py's own AUTOMATION_SUMMARY_KEY.
+# Must match control_room_automation.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
-SUMMARY_SEPARATOR = " | "  # must match automation_panel.py
+SUMMARY_SEPARATOR = " | "  # must match control_room_automation.py
 
 # ALWAYS-ON summary grid: one item per cell, text size 10 monospace (~6 px per character).
 SUMMARY_ROW_H = 13
@@ -127,7 +124,7 @@ while True:
             panel.draw_text(col4 + 18, y + 5, alert, 10, "text-secondary", width * 0.18)
 
     # ------------------------------------------------------------------
-    # AUTOMATION -- a live view of automation_panel.py's headless worker (see module
+    # AUTOMATION -- a live view of control_room_automation.py's headless worker (see module
     # docstring). This card does not itself run any of that automation; the
     # buttons below are the one exception (rare, user-triggered one-offs).
     # ------------------------------------------------------------------
@@ -135,7 +132,7 @@ while True:
     panel.card(8, auto_y, width - 16, height - auto_y - 8, "AUTOMATION")
 
     # ------------------------------------------------------------------
-    # VERSION SAFETY GATE -- see lib/version_guard.py. automation_panel.py's own
+    # VERSION SAFETY GATE -- see lib/version_guard.py. control_room_automation.py's own
     # automation loop checks version_mismatch() independently and halts its
     # own mutating work; this card just surfaces the same gate and the
     # confirm button so the operator can always reach it. The version pill sits
@@ -184,7 +181,7 @@ while True:
             panel.label(btn2_x, btn_y + 34, summary, "muted")
 
         # Biomass chain sale (lib/biomass_retire.py): drawn only once biomass is
-        # complete and every Liquifier/Mixer is drained (automation_panel.py publishes
+        # complete and every Liquifier/Mixer is drained (control_room_automation.py publishes
         # readiness). Undeploys and sells them -- operator-triggered only.
         retire = retire_state()
         if retire.get("complete"):

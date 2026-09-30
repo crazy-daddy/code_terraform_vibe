@@ -1,5 +1,5 @@
 # Warehouse -> Large Warehouse upgrade (Phase 7, next to lib/fleet_upgrade.py),
-# run from its own headless Custom Panel (control_panel/warehouse_upgrade_panel.py).
+# run from its own Automation (automation/warehouse_upgrade_automation.py).
 #
 # Same gate as the fleet upgrade (drone_upgrade.upgrades_active(): drones_panel.py
 # switch on AND mining-drill phase reached), plus the Large Warehouse research
@@ -31,9 +31,9 @@
 #                fleet.upgrade["warehouse_swap"] in the Data Archive Notebook
 #                to retry (a bought kit stays in Inventory and is reused).
 #
-# Why not automation_panel.py: a Warehouse feeder moves ~2.5 ticks/unit
+# Why not control_room_automation.py: a Warehouse feeder moves ~2.5 ticks/unit
 # (docs/AI_CHEATSHEET.md §2c), so draining two full Warehouses blocks for tens
-# of game minutes. automation_panel.py's grid supervision can't wait that long, and
+# of game minutes. control_room_automation.py's grid supervision can't wait that long, and
 # Warehouses have no script slot of their own.
 
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
@@ -254,7 +254,7 @@ class WarehouseUpgrader:
         Runs states back to back until one has to wait. Buy -> deploy -> drain
         must not pause in between: a freshly deployed, empty Large Warehouse is
         the least-full store at the outpost, so every other unloader and
-        automation_panel.py's Inventory rebalance pick it the moment it exists. Only a
+        control_room_automation.py's Inventory rebalance pick it the moment it exists. Only a
         running drain (its feeder locked by our transfers) keeps them off it.
         """
         text = ""

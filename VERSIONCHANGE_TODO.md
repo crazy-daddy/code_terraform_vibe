@@ -91,12 +91,20 @@ Scripts that belong to no machine: no `self`, no `panel`, no power supply (never
 brownout), restart with the game, 50 per save. See
 [docs/guide/automations_guide.md](docs/guide/automations_guide.md).
 
-- [ ] Create one empty automation in game; note its file name in the save's scripts folder.
-- [ ] Check whether `run_control` can start/stop an automation.
-- [ ] `scripts_sync.py`: deploy to automation slots.
-- [ ] Move headless `automation_panel.py` and `warehouse_upgrade_panel.py` to automations
-      (they make no `panel.*` calls); delete their cards; update `docs/cheatsheet/panels.md` §7
-      and the lib module map in `AI_CHEATSHEET.md`.
-- [ ] Re-check TODO.md's "busy call wedges the card" item: it no longer applies to work that runs
-      as an automation.
+- [x] Slot file: `automation_N.py` at the save root (id `automation_N`), listed in the workspace's
+      `context.automations` and in `codeterraform-scripts.json` like any script.
+- [x] `run_control` is machine-only (`f4()` looks up `state.machines`): `start`/`stop` return
+      `not_found`, so automations must be always-on. The external `run` command works (generic
+      script lookup).
+- [x] `scripts_sync.py`: `automation` added to `ROLE_MATCHED` (`# ct-automation: <role>` marker,
+      sources `scripts/4_controlpanel/automation/<role>_automation.py`).
+- [x] Moved `automation_panel.py` -> `control_room_automation.py` and `warehouse_upgrade_panel.py`
+      -> `warehouse_upgrade_automation.py`; panels.md §7, dev_workflow §9, AI_CHEATSHEET map,
+      comments, DESIGN_HISTORY §7b updated.
+- [x] TODO.md's "busy call wedges the card" item reworded: no longer affects the calculator.
+- [x] In game: old headless Custom Panels deleted, `automation_1`/`automation_2` created with
+      markers. Deleted panels keep their `.py` file; `unassigned_slot()` skips them.
+- [ ] Run `once --apply-libs` (18 libs pending, mostly comment renames) so both automations
+      start.
+- [ ] Watch one brownout: grid supervision keeps running.
 - Running-script count is unchanged by the move (an automation is still a running script).

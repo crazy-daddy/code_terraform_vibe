@@ -18,7 +18,7 @@
 # that's a Pioneer-only upgrade-request mechanism (lib/vehicle_upgrade.py)
 # with no drone counterpart.
 #
-# Fleet upgrade switch + status line (lib/fleet_upgrade.py, run by automation_panel.py):
+# Fleet upgrade switch + status line (lib/fleet_upgrade.py, run by control_room_automation.py):
 # the switch only writes fleet.upgrade["enabled"]; the coordinator reads it
 # each cycle. A drone mid-swap shows an "upgrading" pill on its row.
 #

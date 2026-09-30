@@ -2,7 +2,7 @@
 # Control Room COMMISSION card: launch new Pioneers and drones. One button per
 # role queues a job. Pure intent publish, same pattern as the other fleet
 # cards: this card only writes fleet.commission, the headless
-# automation_panel.py runs lib/fleet_commission.py.
+# control_room_automation.py runs lib/fleet_commission.py.
 #
 # Pioneer row (roles from lib/pioneer_commission.py PIONEER_PRESETS): the
 # chassis and parts are bought and the Pioneer is always deployed at the home

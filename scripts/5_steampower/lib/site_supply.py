@@ -2,7 +2,7 @@
 # Fabricators publishes what its machines need hauled in, as pull-logistics
 # requests (lib/logistics_requests.py, requester SITE_SUPPLY_REQUESTER). Pull
 # haulers homed at that outpost (lib/vehicle_cargo.py run_pull_loop()) serve
-# them. Run once per storage tick by the headless automation_panel.py.
+# them. Run once per storage tick by the headless control_room_automation.py.
 #
 # Outpost roles come from the buildings deployed there, never a setting:
 #   - Fab site (>= 1 Fabricator): ingot deficit D per Smelter output =

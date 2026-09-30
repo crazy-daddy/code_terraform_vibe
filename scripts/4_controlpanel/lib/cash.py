@@ -1,7 +1,7 @@
 # Cash manager: one budget owner for every credit consumer (docs/AI_CHEATSHEET.md §2l).
 #
 # Two halves, one archive dict (cash.budget, CLAUDE.md rule 7):
-#   - CashManager.step(), run by the headless automation_panel.py every storage
+#   - CashManager.step(), run by the headless control_room_automation.py every storage
 #     tick: samples the credit balance, measures gross income and operating
 #     (reagent) burn from the balance history + spend log, sets the dynamic
 #     floor, reads the Earth Order pipeline, and publishes the ask queue with
@@ -27,7 +27,7 @@
 # can_spend() every pass while they want something, which refreshes their
 # ask; an ask not refreshed for ASK_STALE_TICKS is dropped.
 #
-# Without a fresh manager pass (automation_panel.py not running, or tier < 4),
+# Without a fresh manager pass (control_room_automation.py not running, or tier < 4),
 # the floor for capital consumers is LEGACY_RESERVE, the flat reserve every
 # upgrader used before, so nothing overspends while the manager is down.
 
@@ -355,7 +355,7 @@ def queue(state, have, income):
 
 
 class CashManager:
-    """Headless budget pass for automation_panel.py. Stateless between passes (state lives in cash.budget)."""
+    """Headless budget pass for control_room_automation.py. Stateless between passes (state lives in cash.budget)."""
 
     def step(self, now=None):
         now = _tick() if now is None else now

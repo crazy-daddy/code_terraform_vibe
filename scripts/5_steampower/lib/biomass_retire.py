@@ -14,8 +14,8 @@ from swallow import swallowed
 # Stage 1, automatic (every consumer checks biomass_complete()):
 #   - Essence Liquifiers stop feeding and eject their input bin to local
 #     storage (lib/essence_liquifier.py retire_step()).
-#   - Biomass Mixer scripts stop routing; automation_panel.py stops the Mixer gate.
-#   - BiomassRetirement.step() (automation_panel.py) switches every Mixer's breaker off
+#   - Biomass Mixer scripts stop routing; control_room_automation.py stops the Mixer gate.
+#   - BiomassRetirement.step() (control_room_automation.py) switches every Mixer's breaker off
 #     and each Liquifier's once its input bin is empty, and publishes
 #     RETIRE_KEY for status_panel.py.
 #   - Miner drones only visit biosites holding a requested life form
@@ -90,7 +90,7 @@ def _input_count(liquifier):
 
 
 class BiomassRetirement:
-    """Stage 1 bookkeeping for automation_panel.py: breakers off, readiness per machine, RETIRE_KEY status."""
+    """Stage 1 bookkeeping for control_room_automation.py: breakers off, readiness per machine, RETIRE_KEY status."""
 
     def __init__(self, power=None):
         self.power = power or get_component("power_control")

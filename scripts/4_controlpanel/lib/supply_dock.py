@@ -8,13 +8,13 @@
 # one worth doing, wasteful otherwise) or scanning the full Earth Order board
 # redundantly every cycle (the same N-times-redundant-per-cycle pattern bio.py's
 # Collector/Luminizer hit). `plan_dock_assignments()` is the central "decider" --
-# called once per cycle from automation_panel.py's AUTOMATION section (this script's own
+# called once per cycle from control_room_automation.py's AUTOMATION section (this script's own
 # `set_order()`/`clear_order()`/`set_enabled()` are all `*(self only)*` hardware
 # calls per docs/components/supply_dock.md, so the plan itself has to be computed
 # somewhere else and handed to each dock via Archive; each dock's own
 # `SupplyDockController` then reads its assignment and performs the self-only
 # calls on itself). `desired_order_id()` falls back to this dock's own
-# `pick_best_order()` if no plan is available yet (automation_panel not running this
+# `pick_best_order()` if no plan is available yet (control_room_automation not running this
 # cycle, or not running at all) so a dock never sits idle waiting on a planner
 # that may not be online.
 #
@@ -140,7 +140,7 @@ def _dock_affinity(order, outpost, cache, site_plan):
 def plan_signature():
     """
     Cheap fingerprint of what plan_dock_assignments() decides on: every Earth
-    Order's (id, status) plus the discovered dock ids. The automation panel
+    Order's (id, status) plus the discovered dock ids. control_room_automation.py
     replans when it changes (an order appears, completes or expires; a dock is
     built or removed) and otherwise only on its backstop interval. Left out on
     purpose: shipped progress and stock (they change constantly while docks
@@ -161,7 +161,7 @@ def plan_signature():
 
 def plan_dock_assignments(clock=None):
     """
-    Central per-cycle decision, run once from automation_panel.py's AUTOMATION section:
+    Central per-cycle decision, run once from control_room_automation.py's AUTOMATION section:
     which Earth Order (if any) each discovered Supply Dock should be working.
     Docks already holding a still-fulfillable order keep it (stability -- an
     order mid-shipment shouldn't get cleared over a marginal priority
@@ -192,7 +192,7 @@ def plan_dock_assignments(clock=None):
     # Shared across every can_fulfill_order() call and readiness score in this
     # pass (every candidate order, each dock's current order) -- see SourceCache's
     # docstring in lib/production.py. The pass runs from the headless
-    # control_panel/automation_panel.py, never inside a per-tick UI loop.
+    # automation/control_room_automation.py, never inside a per-tick UI loop.
     cache = SourceCache()
     reserved = get_construction_material_reservations(cache)
     current_day = clock.get_day() if clock and hasattr(clock, "get_day") else None
@@ -350,7 +350,7 @@ class SupplyDockController:
     def pick_best_order(self):
         """
         Fallback order selection used only when no central plan is available
-        (see desired_order_id()) -- automation_panel.py's plan_dock_assignments() is
+        (see desired_order_id()) -- control_room_automation.py's plan_dock_assignments() is
         the normal path and additionally spreads docks across candidates and
         skips weekly orders that can't finish before they expire. This
         per-instance fallback keeps a lone dock functional standalone:
@@ -421,7 +421,7 @@ class SupplyDockController:
 
     def order_is_active(self, order_id):
         """Whether order_id is still an active Earth Order. The central plan is recomputed every few
-        seconds (automation_panel DOCK_PLAN_TICK_INTERVAL), so an entry can name an order that completed since."""
+        seconds (control_room_automation DOCK_PLAN_TICK_INTERVAL), so an entry can name an order that completed since."""
         if not self.orders_api:
             return True
         try:

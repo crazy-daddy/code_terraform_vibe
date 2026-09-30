@@ -45,7 +45,7 @@ docs/AI_CHEATSHEET.md        # single source of truth for formulas, constants, m
 
 Tier 5 (`5_steampower`) is the first tier gated on built buildings rather than research: it
 carries the steam-aware power guard (`lib/power.py`, overriding tier 4's), the Essence Liquifier /
-Biomass Mixer controllers and the Mixer duty-cycle gate, plus the `automation_panel.py` card that drives the
+Biomass Mixer controllers and the Mixer duty-cycle gate, plus the `control_room_automation.py` card that drives the
 gate. See `docs/AI_CHEATSHEET.md` §1a-0 and §9.
 
 ### Why tiers?

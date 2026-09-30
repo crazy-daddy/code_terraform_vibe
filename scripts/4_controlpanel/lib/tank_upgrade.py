@@ -1,5 +1,5 @@
 # Liquid Tank -> Large Liquid Tank upgrade (Phase 7, next to lib/warehouse_upgrade.py),
-# run from the same headless Custom Panel (control_panel/warehouse_upgrade_panel.py).
+# run from the same Automation (automation/warehouse_upgrade_automation.py).
 #
 # Same gate as the warehouse upgrade (drone_upgrade.upgrades_active()), plus the
 # Large Liquid Tank research and the cash manager's go-ahead (lib/cash.py

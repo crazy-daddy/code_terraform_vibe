@@ -573,3 +573,15 @@ suspended generator's `for` loop left `loopDepth` raised. We worked around it wi
 comprehensions in panel code (`devtools/panel_generator_repro.py` reproduces it). Game v0.1.29
 saves and restores `loopDepth` in `enterGeneratorFrame`/`exitGeneratorFrame`, and the repro keeps
 updating live, so the panel rule was dropped.
+
+## §7b — Headless Workers Moved to Automations (2026-09-30, game v0.1.29)
+
+Before v0.1.29 a Custom Panel was the only slot for an always-on script tied to no building, so the
+Control Room calculator (`automation_panel.py`) and the Warehouse upgrade worker
+(`warehouse_upgrade_panel.py`) ran as panels that drew nothing (see §7). The v0.1.29 Automations
+tab (Computer > Automations) gives such scripts their own slot type: no machine, no power supply
+(a brownout never pauses grid supervision), no card. Both moved there as
+`control_room_automation.py` and `warehouse_upgrade_automation.py`; `scripts_sync.py` role-matches
+`automation_N` slots the same way as `panel_N`. The move does not change the running-script count.
+`run_control` still only targets machines (`f4()` looks up `state.machines`), so an automation
+cannot be started or stopped from another script.

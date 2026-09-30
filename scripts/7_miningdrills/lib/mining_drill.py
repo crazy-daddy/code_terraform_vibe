@@ -34,7 +34,7 @@ STATUS_STALE_TICKS = 36000
 POLL_INTERVAL_S = 60.0
 
 # A drill extracts with no script running, and every reading here works from
-# any script, so the headless automation panel publishes every drill through
+# any script, so control_room_automation.py publishes every drill through
 # publish_all_drills() and each drill's own script publishes once and ends:
 # a running script shrinks every script's step budget (docs/cheatsheet/dev_workflow.md §1d-1).
 
@@ -171,14 +171,14 @@ class MiningDrillController:
         }, curr_tick)
 
     def run(self):
-        """Publishes once and ends; publish_all_drills() in the headless automation panel keeps it current."""
+        """Publishes once and ends; publish_all_drills() in control_room_automation.py keeps it current."""
         validate_game_version()
         reset_all()
         try:
             self.step()
         except Exception as error:
             self.log.level("error").print(f"[{self.name}] Mining Drill exception: {error}")
-        self.log.print(f"[{self.name}] Telemetry published; the automation panel keeps it current. Script ends (the drill keeps mining).")
+        self.log.print(f"[{self.name}] Telemetry published; control_room_automation.py keeps it current. Script ends (the drill keeps mining).")
         flush_all()
 
 

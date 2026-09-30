@@ -1,29 +1,14 @@
-# ct-panel: automation_panel
-# Control Room automation CALCULATOR -- headless, draws nothing. See
-# status_panel.py for the actual STATUS/AUTOMATION card UI, which reads this
-# script's results back out of `archive`.
+# ct-automation: control_room_automation
+# Control Room automation CALCULATOR -- an Automation (Computer > Automations):
+# belongs to no machine, has no power supply, so a brownout never pauses the
+# grid supervision below. Draws nothing; status_panel.py's STATUS/AUTOMATION
+# card reads this script's results back out of `archive`. A single pass can
+# take seconds (supply_dock.plan_dock_assignments() over several orders), which
+# is why none of this runs inside a card that renders every tick.
 #
-# Split out because this game has no true background/daemon script type -- a
-# Custom Panel is the only slot that can host an "always-on, not tied to one
-# building" process, which is why Supply Dock planning (below) ended up here
-# instead of on any one dock. But mixing that with UI rendering turned out to
-# be fragile: a single iteration running long (e.g.
-# supply_dock.plan_dock_assignments() churning through several orders, ~2-10s
-# even after lib/production.py's SourceCache fix cut its cost down) wedges
-# that Custom Panel's rendering permanently -- confirmed via temporary debug
-# prints that the script kept looping and completing fine underneath
-# (~100ms/iteration) the entire time the card stayed visually blank. There's
-# no known threshold under which an occasional multi-second stall is safe for
-# a script that also renders every tick, so the fix is structural: keep this
-# process entirely headless (no panel.* calls at all) and publish its results
-# to `archive` for status_panel.py to display instead of drawing them directly --
-# same Archive-as-decoupling-channel pattern CLAUDE.md calls for when a
-# result can't be produced by the component that has to display it.
-#
-# SLOT NUMBER: the game picks Custom Panel ids itself (ids only increment,
-# cards can't be drag-reordered), so this file's live panel_N slot differs
-# per save. devtools/scripts_sync.py pairs the slot with this file by the
-# ct-panel marker on line 1 -- see docs/cheatsheet/panels.md §7.
+# SLOT NUMBER: the game numbers automation_N slots itself, so the live slot
+# differs per save. devtools/scripts_sync.py pairs the slot with this file by
+# the ct-automation marker on line 1 -- see docs/cheatsheet/panels.md §7.
 #
 # Responsibilities (see docs/AI_CHEATSHEET.md):
 #   - Power Grid supervision (brownout load-shedding, day/night calibration)
@@ -37,7 +22,7 @@
 #     MIXER_GATE_TICK_INTERVAL (a paused Mixer can't wake itself, so an
 #     always-on script must). Idles until a Mixer exists. The module lives in
 #     the 5_steampower lib, but scripts_sync deploys new-only lib modules at
-#     every tier from 2_libunlock on, so this one panel serves every tier.
+#     every tier from 2_libunlock on, so this one script serves every tier.
 #     Once biomass is complete (lib/biomass_retire.py) the gate stops and
 #     BiomassRetirement switches the Liquifier/Mixer chain off instead.
 #   - Supply Dock order-assignment planning across every discovered dock
@@ -58,12 +43,11 @@
 #     fab sites that build its tree, then lib/site_supply.py publishes the
 #     ingots/ore/finished goods each outpost needs hauled in and evicts ore
 #     stranded at an outpost that lost its Smelters.
-# lib/solar.py's SolarController and lib/smelter.py's SmelterController no
-# longer do any of this themselves -- it's a hard dependency on this script
-# running (see legacy/README.md for pre-Control-Room saves). The manual
+# lib/solar.py's SolarController and lib/smelter.py's SmelterController do
+# none of this themselves -- it's a hard dependency on this script running
+# (see legacy/README.md for pre-Control-Room saves). The manual
 # "Clean Archive"/"Sync Unsupported"/"Confirm New Version" buttons live on
-# status_panel.py instead -- they're rare, user-triggered one-offs, not the
-# chronic per-cycle cost that forced this script headless.
+# status_panel.py -- rare, user-triggered one-offs, not per-cycle work.
 
 from archive import archive
 from power import PowerGridManager
@@ -86,8 +70,8 @@ OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
 
 # Published each time the storage-tick automation runs; status_panel.py reads this
 # to display the "ALWAYS-ON" line instead of computing it itself. Left
-# untouched (not overwritten) while version_mismatch() halts automation below,
-# same as the old combined script did -- status_panel.py shows its own fixed
+# untouched (not overwritten) while version_mismatch() halts automation below;
+# status_panel.py shows its own fixed
 # "halted" message in that case rather than trusting a stale summary.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
 # Joins the summary's parts; status_panel.py splits on it (parts may contain commas).

@@ -51,20 +51,24 @@ that reaches a lib it changed (once per script source, so a real bug does not
 loop). `--no-restart` pushes only.
 
 Matching ignores a trailing `_<number>` (`bio_lab_1.py` matches `bio_lab.py`),
-except for machine types listed in ROLE_MATCHED (currently just `panel`),
-where each numbered instance is a genuinely distinct, hand-authored script
-(status card, vehicle fleet card, headless automation worker, ...) and the
-slot number is whatever the game happened to assign in that save. Source
-files for these are named by role (`vehicles_panel.py`, `drones_panel.py`)
-and start with a `# ct-panel: <role>` marker line. A save slot `panel_N.py`
-is paired with its source by, in order:
-  1. the `# ct-panel: <role>` marker in the slot's current code - every slot
+except for slot types listed in ROLE_MATCHED (`panel` for Custom Panels,
+`automation` for Computer > Automations), where each numbered instance is a
+genuinely distinct, hand-authored script (status card, vehicle fleet card,
+headless worker, ...) and the slot number is whatever the game happened to
+assign in that save. Source files for these are named by role
+(`vehicles_panel.py`, `control_room_automation.py`) and start with a
+`# ct-<type>: <role>` marker line. A save slot `panel_N.py` /
+`automation_N.py` is paired with its source by, in order:
+  1. the `# ct-<type>: <role>` marker in the slot's current code - every slot
      filled from source carries it;
   2. the slot's first comment line equal to a role source's first comment
      line (after the marker) - bridges slots filled before markers existed;
   3. an empty slot takes the one role no other slot of that type holds yet.
      With several unpaired roles it is skipped with a warning; type the
-     `# ct-panel: <role>` line into it in game to choose.
+     `# ct-<type>: <role>` line into it in game to choose.
+A slot whose panel/automation was deleted in game keeps its `.py` file but is
+missing from the workspace's `customPanels`/`automations`; it is skipped and
+holds no role (unassigned_slot()).
 
 No duplicate files across tiers: for a given category/base_name, the resolver
 walks tiers from the active one down to `0_cold_boot` and uses the first file
@@ -147,7 +151,7 @@ RESTART_RETRY_DELAYS_S = (0.5, 1.0, 2.0)
 # stem ending in `_<type>`) and carry a `# ct-<type>: <role>` header marker.
 # A save slot is paired with its source by role, never by number - see
 # role_for_slot().
-ROLE_MATCHED = {"panel"}
+ROLE_MATCHED = {"panel", "automation"}
 ROLE_SCAN_LINES = 15                # how far into a file the role marker may sit
 
 # The game owns these; never write to them.
@@ -592,14 +596,34 @@ def role_sources(index: dict, slot_type: str) -> dict:
     return {k: p for k, p in index.items() if k.endswith(suffix)}
 
 
+# Workspace context key listing the live hosts of each role-matched slot type.
+# Deleting a Custom Panel or Automation in game keeps its code (Computer >
+# Scripts > Unassigned) and its .py file, but drops it from this dict.
+ROLE_HOSTS = {"panel": "customPanels", "automation": "automations"}
+
+
+def unassigned_slot(save_dir: Optional[Path], stem: str) -> bool:
+    """True when a role-matched slot's panel/automation was deleted in game.
+    False when the workspace can't be read (no evidence either way)."""
+    key = ROLE_HOSTS.get(base_name(stem))
+    context = read_workspace_context(save_dir) if key and save_dir else None
+    if context is None:
+        return False
+    hosts = context.get(key) or {}
+    return stem not in {h.get("scriptId") for h in hosts.values() if isinstance(h, dict)}
+
+
 def role_for_slot(stem: str, text: str, index: dict, save_dir: Optional[Path] = None):
     """(role, how) for a role-matched save slot, or (None, why-not).
 
     Resolution order is documented in the module docstring. A marker naming no
     source is reported rather than falling through to the next rule: it is a
     typo to fix, not a guess to make. The empty-slot rule needs save_dir to see
-    which roles the other slots of this type already hold.
+    which roles the other slots of this type already hold. A slot whose
+    panel/automation was deleted in game is never paired, and holds no role.
     """
+    if unassigned_slot(save_dir, stem):
+        return None, "deleted in game (Scripts > Unassigned), skipped"
     slot_type = base_name(stem)
     roles = role_sources(index, slot_type)
     known = ", ".join(sorted(roles)) or "none"
@@ -624,7 +648,8 @@ def role_for_slot(stem: str, text: str, index: dict, save_dir: Optional[Path] = 
         return None, "empty"
     taken = set()
     for other in save_dir.glob("%s_*.py" % slot_type):
-        if other.stem != stem and base_name(other.stem) == slot_type and is_candidate(other, save_dir):
+        if (other.stem != stem and base_name(other.stem) == slot_type and is_candidate(other, save_dir)
+                and not unassigned_slot(save_dir, other.stem)):
             role, _ = role_for_slot(other.stem, read(other) or "", index)
             if role:
                 taken.add(role)
