@@ -78,6 +78,7 @@ from fleet_commission import FleetCommissionCoordinator
 from cash import CashManager
 from site_supply import publish_site_requests
 from site_plan import plan_sites
+from mining_drill import publish_all_drills
 from tree_console import flush_all
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
@@ -97,11 +98,16 @@ MIXER_GATE_TICK_INTERVAL = 10
 # the storage pass's sub-steps: those sweeps wait on feeder cycles, and a plan held back until they
 # finish lets docks read an assignment for an order that has already completed.
 DOCK_PLAN_TICK_INTERVAL = 50
+# Mining Drill telemetry for every drill (lib/mining_drill.py publish_all_drills()); drills need no
+# script of their own, and a stockpile fills over hours.
+DRILL_TELEMETRY_TICK_INTERVAL = 600
 
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
 last_mixer_gate_tick = 0
+last_drill_tick = 0
+drill_summary = "no drills"
 dock_plan = {"last_tick": 0, "count": 0}  # count = docks assigned by the last plan, carried between passes
 
 
@@ -176,6 +182,14 @@ while True:
                 print(f"[AUTOMATION] Mixer gate error: {e}")
 
         plan_docks_if_due(clock)
+
+        if last_drill_tick == 0 or current_tick - last_drill_tick >= DRILL_TELEMETRY_TICK_INTERVAL:
+            last_drill_tick = current_tick
+            try:
+                drill_count = publish_all_drills()
+                drill_summary = f"{drill_count} drill(s) reported" if drill_count else "no drills"
+            except Exception as e:
+                print(f"[AUTOMATION] Drill telemetry error: {e}")
 
         if storage_due:
             last_storage_tick = current_tick
@@ -263,7 +277,7 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Fleet commission error: {e}")
 
-            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan['count']} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}")
+            archive.set(AUTOMATION_SUMMARY_KEY, f"{grid_count} grid(s) supervised, rebalance swept, {outpost_new_count} new outpost(s), {dock_plan['count']} dock(s) assigned, {site_count} supply site(s), {upgrade_summary}, {commission_summary}, {cash_summary}, {mixer_gate_summary}, {drill_summary}")
 
     flush_all()
     sleep(1.0)

@@ -6,6 +6,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Vehicle/drone energy, roles a
 
 A drill needs no control. It extracts on its own; the only script surface is `drill_rate()` and a read-only `PickupOutputSlot` stockpile (docs/components/mining_drill.md). One controller (`MiningDrillController`) serves all three variants (`mining_drill`, `mining_drill_industrial`, `mining_drill_heavy` thin scripts).
 
+- **Who publishes**: the headless automation panel, every `DRILL_TELEMETRY_TICK_INTERVAL = 600` ticks, for every drill (`publish_all_drills()`: power-grid members of a drill type plus existing `drill.status` entries; one `MiningDrillController` per drill kept across passes so warnings fire once per change). A drill's own script publishes once and ends — the drill mines without a script, and a running script costs every script budget (dev_workflow.md §1d-1).
 - **Poll**: `POLL_INTERVAL_S = 60.0` (Mk I: 2,000 units at 25 t/h = ~80 h to fill; Heavy: 5,000 at 200 t/h = ~25 h). Capacity always read live.
 - **State**: `drilling` (rate > 0), `full` (rate 0, count ≥ capacity), `stalled` (rate 0 with room left: unpowered, no deposit, or deposit too hard; API can't tell these apart). Warn once per transition into `full`/`stalled`; info on recovery.
 - **Near full**: fill ≥ `NEAR_FULL_FRACTION = 0.8` while drilling → one warning with time-to-full, re-armed once fill drops back under it.

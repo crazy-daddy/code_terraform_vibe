@@ -2,7 +2,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from drill_sites import STATUS_KEY
+from drill_sites import STATUS_KEY, DRILL_TYPE_IDS, advertised_drills
 
 # Field Mining Drill telemetry (standard / Industrial / Heavy share one API,
 # docs/components/mining_drill.md). A drill needs no control: it extracts on
@@ -32,6 +32,11 @@ STATUS_STALE_TICKS = 36000
 # Stockpile fills in hours (Mk I: 2,000 units at 25 t/h = ~80 h; Heavy:
 # 5,000 at 200 t/h = ~25 h), so a minute between polls loses nothing.
 POLL_INTERVAL_S = 60.0
+
+# A drill extracts with no script running, and every reading here works from
+# any script, so the headless automation panel publishes every drill through
+# publish_all_drills() and each drill's own script publishes once and ends:
+# a running script shrinks every script's step budget (docs/cheatsheet/dev_workflow.md §1d-1).
 
 # Fill fraction at which the drill is flagged "near_full" and warned about
 # once, leaving a hauler time to get there before extraction stops.
@@ -165,14 +170,59 @@ class MiningDrillController:
             "tick": curr_tick,
         }, curr_tick)
 
-    def run(self, poll_interval=POLL_INTERVAL_S):
-        self.log.print(f"Mining Drill Telemetry ({self.name}) online.")
+    def run(self):
+        """Publishes once and ends; publish_all_drills() in the headless automation panel keeps it current."""
         validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Mining Drill exception: {error}")
-            flush_all()
-            sleep(poll_interval)
+        reset_all()
+        try:
+            self.step()
+        except Exception as error:
+            self.log.level("error").print(f"[{self.name}] Mining Drill exception: {error}")
+        self.log.print(f"[{self.name}] Telemetry published; the automation panel keeps it current. Script ends (the drill keeps mining).")
+        flush_all()
+
+
+# {drill_id: MiningDrillController}, kept across publish_all_drills() calls so
+# state-transition and near-full warnings fire once per change, not every pass.
+_CONTROLLERS = {}
+
+
+def drill_types():
+    """{drill_id: type_id} of deployed drills: power grid members plus drill.status publishers."""
+    found = {}
+    power = get_component("power_control")
+    try:
+        grids = power.grids() if power else []
+    except Exception as error:
+        swallowed("mining_drill.drill_types: power.grids", error)
+        grids = []
+    for grid in grids:
+        for member in getattr(grid, "members", []) or []:
+            member_type = getattr(member, "type_id", "")
+            if member_type in DRILL_TYPE_IDS:
+                found[member.id] = member_type
+    for drill_id, entry in advertised_drills().items():
+        found.setdefault(drill_id, entry.get("type") or "mining_drill")
+    return found
+
+
+def publish_all_drills():
+    """Publishes every deployed drill's telemetry (MiningDrillController.step()); returns how many were read."""
+    published = 0
+    types = drill_types()
+    for drill_id, drill_type in types.items():
+        controller = _CONTROLLERS.get(drill_id)
+        if controller is None:
+            drill = get_component(drill_id)
+            if drill is None:
+                continue
+            controller = MiningDrillController(drill, drill_type=drill_type)
+            _CONTROLLERS[drill_id] = controller
+        try:
+            controller.step()
+            published += 1
+        except Exception as error:
+            swallowed("mining_drill.publish_all_drills: controller.step", error)
+    for drill_id in [d for d in _CONTROLLERS if d not in types]:
+        del _CONTROLLERS[drill_id]
+    return published
