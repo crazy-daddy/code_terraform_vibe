@@ -42,8 +42,13 @@ the external-command channel (`"action": "run"`) if it was running or was
 just filled from empty. A slot whose imports reach a lib/ module the game
 hasn't applied yet (deployed file != the Library's `deployedSource` in
 codeterraform-workspace.json) is still pushed but not restarted: a restart
-would run the new script against the stale cached lib, and only the in-game
-"Apply & restart all" swaps that cache. `--no-restart` pushes only.
+would run the new script against the stale cached lib. `--apply-libs` applies
+changed libs over the external-command channel (the game restarts every
+running script that imports them); without it, the in-game "Apply & restart
+all" swaps the cache. Once its libs are applied, a held-back slot is
+restarted, and so is any script left in "error" that this process pushed or
+that reaches a lib it changed (once per script source, so a real bug does not
+loop). `--no-restart` pushes only.
 
 Matching ignores a trailing `_<number>` (`bio_lab_1.py` matches `bio_lab.py`),
 except for machine types listed in ROLE_MATCHED (currently just `panel`),
@@ -173,6 +178,7 @@ class Options:
     renumber: bool = True
     force_tier: Optional[str] = None
     restart: bool = True
+    apply_libs: bool = False
     active_tier: str = field(default="", init=False)
     lib_index: dict = field(default_factory=dict, init=False)
     lib_closure: dict = field(default_factory=dict, init=False)
@@ -1092,6 +1098,7 @@ def restart_in_game(save_dir: Path, stem: str, body: str) -> bool:
     runs this tool), not the assistant starting a live session on its own.
     Retries briefly while the game hasn't registered a just-created slot."""
     reason = None
+    note_restart(save_dir, stem, body)
     for attempt, delay in enumerate((0.0,) + RESTART_RETRY_DELAYS_S):
         if delay:
             time.sleep(delay)
@@ -1121,7 +1128,10 @@ def libs_awaiting_apply(opts: Options) -> set:
             running[name[:-3]] = info.get("deployedSource")
     pending = set()
     for key, source in opts.lib_index.items():
-        if key not in running or running[key] != read(source):
+        body = read(source)
+        if _APPLIED_LIBS.get(key) == body:
+            continue  # applied by this process; the workspace file lags behind
+        if key not in running or running[key] != body:
             pending.add(key)
     return pending
 
@@ -1260,13 +1270,15 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
     if not write_atomic(path, body):
         return False
     ok("  %-5s %-28s <- %s%s" % (verb, path.name, show(source), suffix))
+    _PUSHED_SCRIPTS.add(path.stem)
     if note:
         others = other_numbered_ids(body, base_name(path.stem))
         if others:
             warn("        left as-is (check these): %s" % ", ".join(others))
     if blockers:
-        warn("  run   %-28s not restarted: reaches unapplied lib %s - Apply & restart all in game"
-             % (path.name, ", ".join(blockers)))
+        _HELD_RESTARTS.add(path.stem)
+        warn("  run   %-28s not restarted: reaches unapplied lib %s - %s"
+             % (path.name, ", ".join(blockers), "applying" if opts.apply_libs else "Apply & restart all in game"))
     elif restart:
         restart_in_game(opts.save_dir, path.stem, body)
     return True
@@ -1281,7 +1293,8 @@ def sync_lib(lib_index: dict, opts: Options) -> set:
 
     Returns the set of lib_index keys actually (re)written -- including under
     --dry-run, as a preview of what would change. A rewritten module still
-    needs the in-game "Apply & restart all" before any script runs it (see
+    needs applying before any script runs it (apply_pending_libraries() with
+    --apply-libs, else the in-game "Apply & restart all"; see
     report_unapplied_libs()).
     """
     dest_dir = opts.save_dir / "lib"
@@ -1305,6 +1318,7 @@ def sync_lib(lib_index: dict, opts: Options) -> set:
         if write_atomic(dest, body):
             ok("  lib   %-28s <- %s" % (dest.name, show(source)))
             changed.add(key)
+            _TOUCHED_LIBS.add(key)
     return changed
 
 
@@ -1445,6 +1459,191 @@ def register_new_libraries(lib_index: dict, opts: Options) -> int:
     return done
 
 
+# ------------------------------------------------------- library apply hook
+# Game v0.1.29 added "apply-library" / "apply-all-libraries" to the same
+# command channel (handler in the game's main-*.js, reverse-read):
+#   apply-library        {scriptId: library id, source}. `source` must equal
+#                        the game's saved source for that Library (the file
+#                        the game picked up), else "source_changed".
+#   apply-all-libraries  applies every Library whose saved source differs
+#                        from its deployed one.
+# Both restart every script that imports an applied Library. Result:
+# {ok, reason?, libraryApply: {applied: ["x.py"], affected, restartFailed,
+# notApplied: [{library, line, error} | {library, changed}]}}; reasons include
+# research_required, not_found, source_changed, already_applied,
+# target_changed, compile_error, nothing_pending, not_applied.
+APPLY_PICKUP_TIMEOUT_S = 15.0
+APPLY_PICKUP_POLL_S = 0.5
+# After an apply, how long recover_scripts() keeps looking for importers that
+# crash on restart (the game rewrites the workspace file on its own cadence).
+RECOVER_SETTLE_S = 10.0
+RECOVER_POLL_S = 1.0
+
+# lib key -> source this process applied, so libs_awaiting_apply() does not
+# report it again before the game rewrites the workspace file.
+_APPLIED_LIBS: dict = {}
+# Libs this process wrote, and script slots it pushed: an "error" script that
+# reaches one of these libs, or was pushed, is ours to restart.
+_TOUCHED_LIBS: set = set()
+_PUSHED_SCRIPTS: set = set()
+# Slots pushed but held back from restarting by an unapplied lib.
+_HELD_RESTARTS: set = set()
+# stem -> (source, apply generation, run serial replaced) of the last restart
+# this process sent (note_restart()); bumped generation = libs were applied.
+_RESTARTS: dict = {}
+_APPLY_GENERATION = [0]
+# Scripts already reported as erroring again, so a watch loop warns once.
+_REPORTED_ERRORS: set = set()
+
+
+def _same_source(a, b) -> bool:
+    return a is not None and b is not None and a.replace("\r", "") == b.replace("\r", "")
+
+
+def _library_entries(context: dict) -> dict:
+    """Stem -> libraryScripts entry (id, source, deployedSource, ...)."""
+    entries = {}
+    for info in (context.get("libraryScripts") or {}).values():
+        name = str(info.get("name") or "")
+        entries[name[:-3] if name.endswith(".py") else name] = info
+    return entries
+
+
+def _report_apply(result: dict, label: str) -> None:
+    detail = result.get("libraryApply") or {}
+    for miss in detail.get("notApplied") or []:
+        if miss.get("changed"):
+            warn("  apply %-28s changed in game meanwhile, not applied" % miss.get("library"))
+        else:
+            warn("  apply %-28s compile error line %s: %s" % (miss.get("library"), miss.get("line"), miss.get("error", "")))
+    if result.get("ok"):
+        ok("  apply %-28s applied %s; %d script(s) restarted%s" % (
+            label, ", ".join(detail.get("applied") or []), detail.get("affected", 0),
+            ", %d failed to restart" % detail["restartFailed"] if detail.get("restartFailed") else ""))
+    elif not detail.get("notApplied"):
+        warn("  apply %-28s not applied (%s)" % (label, result.get("reason")))
+
+
+def apply_pending_libraries(opts: Options) -> int:
+    """Applies every deployed lib module whose code differs from the one the
+    game runs, over the command channel. Waits up to APPLY_PICKUP_TIMEOUT_S
+    for the game to pick up the files on disk, then applies only modules
+    whose saved source in game equals our file (a module edited in game
+    stays unapplied, with a warning). One apply-all-libraries when those are
+    all the game has pending, else one apply-library each. Returns how many
+    were applied. The game restarts every running script importing them."""
+    pending = libs_awaiting_apply(opts)
+    if not pending:
+        return 0
+    bodies = {k: read(opts.save_dir / "lib" / ("%s.py" % k)) for k in pending}
+    deadline = time.monotonic() + APPLY_PICKUP_TIMEOUT_S
+    while True:
+        context = read_workspace_context(opts.save_dir)
+        if context is None:
+            return 0
+        entries = _library_entries(context)
+        ready = {k for k in pending if k in entries and _same_source(entries[k].get("source"), bodies[k])}
+        waiting = {k for k in pending if k in entries} - ready
+        if not waiting or opts.dry_run or time.monotonic() > deadline:
+            break
+        time.sleep(APPLY_PICKUP_POLL_S)
+    for key in sorted(pending - entries.keys()):
+        warn("  apply %-28s not a game Library yet, register it first" % (key + ".py"))
+    for key in sorted(waiting):
+        warn("  apply %-28s game holds other source (in-game edit, or file not picked up yet); not applied" % (key + ".py"))
+    if not ready:
+        return 0
+    if opts.dry_run:
+        ok("  would apply %s" % ", ".join(sorted(k + ".py" for k in ready)))
+        return 0
+    others = {k for k, info in entries.items()
+              if k not in ready and not _same_source(info.get("source"), info.get("deployedSource"))}
+    if len(ready) > 1 and not others:
+        result = send_game_command(opts.save_dir, "apply-all-libraries")
+        _report_apply(result, "all libraries")
+        applied = {str(n)[:-3] for n in (result.get("libraryApply") or {}).get("applied") or []}
+    else:
+        applied = set()
+        for key in sorted(ready):
+            info = entries[key]
+            result = send_game_command(opts.save_dir, "apply-library", scriptId=info.get("id"), source=info.get("source"))
+            _report_apply(result, key + ".py")
+            if result.get("ok") or result.get("reason") == "already_applied":
+                applied.add(key)
+            elif result.get("reason") in ("no_session", "unconfirmed", "busy"):
+                break  # game unreachable: do not wait 20 s per remaining module
+    for key in applied & ready:
+        _APPLIED_LIBS[key] = bodies[key]
+    if applied & ready:
+        _APPLY_GENERATION[0] += 1
+    return len(applied & ready)
+
+
+def _run_serial(info: dict) -> tuple:
+    """Changes whenever the game starts a new run of the script."""
+    return (info.get("runHistorySerial"), info.get("runtimeRunSerial"))
+
+
+def note_restart(save_dir: Path, stem: str, body: str) -> None:
+    """Records a restart this process sent: which source, under which applied
+    lib state, and the run serial it replaced, so recover_scripts() can tell
+    a stale "error" in the lagging workspace file from a fresh one."""
+    info = ((read_workspace_context(save_dir) or {}).get("scripts") or {}).get(stem)
+    _RESTARTS[stem] = (body, _APPLY_GENERATION[0], _run_serial(info) if isinstance(info, dict) else None)
+
+
+def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
+    """Restarts the scripts a lib or script push left stopped, once every lib
+    they reach is applied: held-back slots (sync_file()), and any script in
+    "error" that this process pushed or that reaches a lib it wrote (e.g. an
+    import that failed against a half-applied lib set). A script is restarted
+    again only after its source or the applied libs changed; a repeat error
+    under the same state is reported once, not retried. With settle_s, keeps
+    looking that long for importers the game's own apply restart made crash.
+    Returns how many were restarted."""
+    if not opts.restart or opts.dry_run:
+        return 0
+    restarted = 0
+    deadline = time.monotonic() + settle_s
+    while True:
+        context = read_workspace_context(opts.save_dir)
+        if context is None:
+            return restarted
+        pending = libs_awaiting_apply(opts)
+        for stem, info in sorted((context.get("scripts") or {}).items()):
+            if not isinstance(info, dict):
+                continue
+            held = stem in _HELD_RESTARTS
+            if not held and info.get("status") != "error":
+                continue
+            path = opts.save_dir / ("%s.py" % stem)
+            body = read(path) if path.exists() else None
+            if body is None:
+                continue
+            reached = libs_reached(body, opts)
+            if not held and stem not in _PUSHED_SCRIPTS and not reached & _TOUCHED_LIBS:
+                continue  # an error we did not cause: leave it to the operator
+            if reached & pending:
+                continue  # still reaches an unapplied lib; a later pass retries
+            last = _RESTARTS.get(stem)
+            if not held and last and last[0] == body and last[1] == _APPLY_GENERATION[0]:
+                if last[2] != _run_serial(info) and stem not in _REPORTED_ERRORS:
+                    _REPORTED_ERRORS.add(stem)
+                    warn("  run   %-28s in error again after restart (line %s): %s" % (
+                        stem + ".py", info.get("errorLine"), info.get("errorMessage") or ""))
+                continue  # same state as our last restart: stale status, or a real bug
+            _HELD_RESTARTS.discard(stem)
+            _REPORTED_ERRORS.discard(stem)
+            if not held:
+                warn("  run   %-28s was in error (line %s: %s), restarting" % (
+                    stem + ".py", info.get("errorLine"), info.get("errorMessage") or ""))
+            if restart_in_game(opts.save_dir, stem, body):
+                restarted += 1
+        if time.monotonic() >= deadline:
+            return restarted
+        time.sleep(RECOVER_POLL_S)
+
+
 def parse_module_imports(text: str) -> set:
     """Top-level module names this text `import`s or `from`-imports, e.g.
     `from vehicle_mining import VehicleMiningMixin` -> {"vehicle_mining"}.
@@ -1502,10 +1701,10 @@ _LAST_APPLY_REPORT: list = [None]
 
 def report_unapplied_libs(opts: Options) -> None:
     """Names every save script that reaches a lib/ module the game hasn't
-    applied yet. No external command applies a changed Library: the game
-    caches an imported module independently of the importing script, and
-    only the in-game Script Editor's "Apply & restart all" swaps that cache
-    (restarting the importer over the command channel runs the stale copy)."""
+    applied yet. The game caches an imported module independently of the
+    importing script, so restarting the importer over the command channel
+    runs the stale copy; only an apply swaps that cache (in game: "Apply &
+    restart all"; from here: --apply-libs or the apply-libs command)."""
     if opts.dry_run:
         return
     pending = libs_awaiting_apply(opts)
@@ -1535,6 +1734,10 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
         if sync_file(path, script_index, opts, quiet_skips=not opts.verbose):
             written += 1
     tidy_unmatched(script_index, opts)
+    if opts.apply_libs and apply_pending_libraries(opts):
+        recover_scripts(opts, settle_s=RECOVER_SETTLE_S)
+    else:
+        recover_scripts(opts)
     report_unapplied_libs(opts)
     return written
 
@@ -1603,15 +1806,17 @@ ForceTierOpt = typer.Option(None, "--force-tier",
                                   "Known tiers (under %s): %s" % (DEFAULT_SCRIPTS, _known_tiers_blurb()))
 NoRestartOpt = typer.Option(False, "--no-restart",
                             help="Push matched slots but don't restart them in game.")
+ApplyLibsOpt = typer.Option(False, "--apply-libs",
+                            help="Apply changed lib/ modules in game (restarts every running script importing them).")
 
 
 def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber,
-              force_tier=None, no_restart=False) -> Options:
+              force_tier=None, no_restart=False, apply_libs=False) -> Options:
     save = resolve_save(save_dir)
     if not scripts_dir.is_dir():
         err("Not a directory: %s" % scripts_dir)
         raise typer.Exit(2)
-    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, force_tier, not no_restart)
+    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, force_tier, not no_restart, apply_libs)
     opts.active_tier = resolve_active_tier(scripts_dir, save, force_tier)
     return opts
 
@@ -1690,9 +1895,9 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
 def once(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
          strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
          no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
-         no_restart: bool = NoRestartOpt):
+         no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt):
     """Push every matched save script, restart it in game, and sync lib/."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart)
+    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs)
     typer.echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
     script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier)
     report_conflicts(conflicts)
@@ -1724,6 +1929,26 @@ def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Script
         raise typer.Exit(1)
     typer.echo("Deployed lib modules not registered in game: %s" % (", ".join(sorted(k for k in lib_index if k not in registered)) or "none"))
     typer.echo("Registered %d." % register_new_libraries(lib_index, opts))
+
+
+@app.command(name="apply-libs")
+def apply_libs_cmd(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
+                   dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt):
+    """Apply every deployed lib/ module the game runs an older copy of (nothing else),
+    then restart importers that crashed on it."""
+    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier, apply_libs=True)
+    _, opts.lib_index, _ = build_index(opts.scripts_dir, opts.active_tier)
+    opts.lib_closure = lib_dependency_closure(opts.lib_index)
+    if read_workspace_context(opts.save_dir) is None:
+        err("Cannot read %s - open this save in the game first." % WORKSPACE_JSON)
+        raise typer.Exit(1)
+    pending = libs_awaiting_apply(opts)
+    typer.echo("Deployed lib modules not applied in game: %s" % (", ".join(sorted(pending)) or "none"))
+    _TOUCHED_LIBS.update(pending)
+    n = apply_pending_libraries(opts)
+    typer.echo("Applied %d." % n)
+    if n:
+        typer.echo("Restarted %d crashed script(s)." % recover_scripts(opts, settle_s=RECOVER_SETTLE_S))
 
 
 class Watcher:
@@ -1778,7 +2003,9 @@ class Watcher:
                 report_conflicts(self.conflicts)
                 self.sweep()
             # The game rewrites the workspace file on its own cadence, so an
-            # in-game "Apply & restart all" only shows up here.
+            # in-game "Apply & restart all", and a script that errored after
+            # one, only show up here.
+            recover_scripts(self.opts)
             report_unapplied_libs(self.opts)
             # Same cadence covers materialize_missing_slots() too: a newly
             # built (or newly re-equipped) machine's script slot shows up in
@@ -1830,10 +2057,10 @@ class Events(FileSystemEventHandler):
 def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
           strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
           no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
-          no_restart: bool = NoRestartOpt,
+          no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
           poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events.")):
     """Watch the save directory and scripts/, pushing and re-tiering as things change."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart)
+    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs)
     watcher = Watcher(opts)
 
     typer.echo("Save     %s" % opts.save_dir)
@@ -1841,6 +2068,7 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     typer.echo("Staging  %s for game files with no match" % show(opts.unmatched_dir))
     typer.echo("Push     every matched slot follows scripts/ (in-game edits are overwritten, backups in %s)" % show(BACKUP_DIR))
     typer.echo("Restart  %s" % ("off (--no-restart)" if no_restart else "running and newly filled slots, unless an unapplied lib/ is reached"))
+    typer.echo("Apply    %s" % ("changed lib/ modules in game (--apply-libs)" if apply_libs else "off, use the in-game Apply & restart all (or --apply-libs)"))
     if dry_run:
         warn("Dry run: nothing will be written.")
     watcher.sweep()
