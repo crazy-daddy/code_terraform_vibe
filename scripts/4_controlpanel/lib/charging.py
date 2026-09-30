@@ -32,7 +32,6 @@ class ChargingStationController:
         self.power = get_component("power_control")
 
         self.last_rescued_vehicle = None
-        self.return_commands = set()
         self.log = TreeConsole(module="charging")
         self.parker = ParkRequester(self.name, "charging_station")
 
@@ -178,37 +177,6 @@ class ChargingStationController:
         target_wh = max(current_wh, floor + self.RESCUE_EXTRA_RESERVE_WH)
         return min(1.0, target_wh / capacity)
 
-    def nearest_station_coords(self, vehicle_ref):
-        """Returns the closest known charging station to a fleet snapshot."""
-        stations = self.charging_station_coords()
-        if not stations:
-            return None
-        return min(
-            stations,
-            key=lambda point: ((vehicle_ref.x - point[0]) ** 2 + (vehicle_ref.y - point[1]) ** 2) ** 0.5,
-        )
-
-    def order_return_to_station(self, vehicle_ref, target=None):
-        """Redirects a low-charge vehicle home before requesting rescue. target: nearest station coords when already known."""
-        if target is None:
-            target = self.nearest_station_coords(vehicle_ref)
-        if not target:
-            return False
-        try:
-            vehicle = get_component(vehicle_ref.id)
-            if not hasattr(vehicle, "nav"):
-                return False
-            set_res = vehicle.nav.set_target(target[0], target[1])
-            throttle_res = vehicle.nav.set_throttle(0.35) if set_res.status == "ok" else set_res
-            if set_res.status == "ok" and throttle_res.status == "ok":
-                if vehicle_ref.id not in self.return_commands:
-                    self.log.print(f"[{self.name}] {vehicle_ref.name} low on charge; returning to nearest charging station at {target} before rescue.")
-                    self.return_commands.add(vehicle_ref.id)
-                return True
-        except Exception as error:
-            swallowed("charging.ChargingStationController.order_return_to_station: get_component", error)
-        return False
-
     def is_station_powered(self):
         """Verifies whether this charging station currently has grid power."""
         if self.power and hasattr(self.power, "is_powered"):
@@ -280,7 +248,7 @@ class ChargingStationController:
 
         # Parked stations (lib/script_parking.py) take no responsibility; a vehicle
         # needing attention whose nearest station is parked gets that station
-        # woken instead, so the nearest station still nudges or rescues it.
+        # woken instead, so the nearest station still watches and rescues it.
         refs = self.all_station_refs()
         parked = parked_ids("charging_station")
         parked.discard(self.name)  # running, so awake whatever the archive says
@@ -297,7 +265,7 @@ class ChargingStationController:
             # against the same fleet snapshot -- only the nearest one acts,
             # or every station in range would dispatch its own drone to the
             # same vehicle.
-            is_mine, distance, nearest = self.assess_stations(v_ref, awake, self_known)
+            is_mine, distance, _nearest = self.assess_stations(v_ref, awake, self_known)
             if not is_mine:
                 continue
 
@@ -307,9 +275,9 @@ class ChargingStationController:
             v_lvl = v_ref.battery_level
             v_wh = v_ref.battery_wh
 
-            # First redirect a vehicle below its safe return target. Rescue is
-            # reserved for a stranded vehicle or one that can no longer reach a
-            # station under its own power (see return_floor_wh() -- a vehicle's
+            # A vehicle below its safe return target is only watched (its own
+            # script budgets the way back). Rescue is reserved for a stranded
+            # vehicle or one that can no longer reach a station under its own power (see return_floor_wh() -- a vehicle's
             # own drive_to() never willingly drains below this same floor, so it
             # can sit there forever without ever registering as engine-"stranded";
             # this is the backstop for that limbo state).
@@ -329,9 +297,10 @@ class ChargingStationController:
                     continue
 
             if v_lvl < target_level and not is_stranded and not is_below_floor:
+                # Low but able to reach a station: the vehicle's own script budgets
+                # its way back (lib/vehicle_energy.py); this station only watches.
                 busy = True
-                if self.order_return_to_station(v_ref, nearest):
-                    continue
+                continue
 
             if is_stranded or is_below_floor:
                 busy = True
