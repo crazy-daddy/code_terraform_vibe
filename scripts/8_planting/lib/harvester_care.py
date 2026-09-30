@@ -11,6 +11,8 @@
 # the reverse hauler fetches it from Water Pumps (lib/pump_salt.py).
 
 import logistics_requests
+import harvester_pure
+from atomic import run_atomic
 from storage import total_stock
 import field_layout
 from swallow import swallowed
@@ -113,19 +115,11 @@ class HarvesterCareMixin:
         """
         {sector: [(kind, manual hours left)]} for every planted cell with a
         hand treatment (hand_care()), in cell order. Computed once per cells
-        dict, rules object and kept set: the care tour, the status entry and
-        the idle line all read it.
+        dict, rules object and kept set (HarvesterPlantingMixin.row_scan(), an
+        atomic pure scan): the care tour, the status entry and the idle line
+        all read it.
         """
-        memo = getattr(self, "_care_snapshot_memo", None)
-        if memo is not None and memo[0] is cells and memo[1] is rules and memo[2] == kept:
-            return memo[3]
-        out = {}
-        for sector, cell in self._host.planted_cells(cells).items():
-            treatments = self.hand_care(cell, rules, sector in kept)
-            if treatments:
-                out[sector] = treatments
-        self._care_snapshot_memo = (cells, rules, kept, out)
-        return out
+        return self._host.row_scan(cells, rules, kept)["care"]
 
     def next_care_hours(self, cells, rules, kept=()):
         """World hours until the next hand treatment drops below CARE_REFRESH_H; None when none is kept up."""
@@ -134,11 +128,11 @@ class HarvesterCareMixin:
 
     def care_targets(self, cells, rules, refresh_h=CARE_REFRESH_H, kept=()):
         """{sector: [kinds]} for every plant with a treatment below refresh_h (`kept` sectors: mature ones too)."""
+        items = list(self.care_snapshot(cells, rules, kept).items())
+        size = harvester_pure.CARE_CHUNK
         out = {}
-        for sector, treatments in self.care_snapshot(cells, rules, kept).items():
-            due = [kind for kind, remaining in treatments if remaining < refresh_h]
-            if due:
-                out[sector] = due
+        for i in range(0, len(items), size):
+            out.update(run_atomic(harvester_pure.due_targets, items[i:i + size], refresh_h))
         return out
 
     def ensure_water(self):

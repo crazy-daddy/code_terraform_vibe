@@ -234,25 +234,24 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             return
         self._last_publish_tick = curr_tick
         now, rotation = self.seed_demand(self.seed_layout(active, self.step_mine), cells, rules)
-        for seed_id, n in self.paving_seed_demand(layout, cells, rules, len(spare_items)).items():
+        unpaved = self.unpaved(layout, cells)
+        for seed_id, n in self.paving_seed_demand(layout, cells, rules, len(spare_items), unpaved).items():
             now[seed_id] = now.get(seed_id, 0) + n
         self.publish_seed_demand(now, rotation, curr_tick, layout, rules)
         self.publish_salt_request(layout, rules, self.home_id, curr_tick)
         kit_order, automators_wanted = self.publish_kit_order(cells)
 
-        statuses = self.cell_statuses(cells)
-        planted = self.planted_cells(cells)
-        planted_states = [statuses[s] for s in planted]
-        productive = set([p for p in [getattr(c, "plant", None) for s, c in planted.items() if statuses[s] != "stalled"] if p])
+        kept = self.kept_garden()
+        scan = self.row_scan(cells, rules, kept)
         entry = {
-            "planted": len(planted_states),
-            "mature": planted_states.count("mature"),
-            "stalled": planted_states.count("stalled"),
-            "species_productive": len(productive),
+            "planted": scan["planted"],
+            "mature": scan["mature"],
+            "stalled": scan["stalled"],
+            "species_productive": scan["productive"],
             "layout": len(layout),
             "active": len(active),
-            "care_due": len(self.care_targets(cells, rules, kept=self.kept_garden())),
-            "unpaved": len(self.unpaved(layout, cells)),
+            "care_due": len(self.care_targets(cells, rules, kept=kept)),
+            "unpaved": len(unpaved),
             "mode": self.layout_mode,
             "machines_missing": len(self.missing_machines(cells)),
             "kit_order": kit_order,
@@ -332,7 +331,9 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         # Recipes change only when the Seed Maker republishes; the layout only
         # on the switch to full or a new chunk. Neither is re-read every step.
         if self._rules is None or curr_tick - self._rules_tick >= PUBLISH_INTERVAL_TICKS:
-            self._rules = self.load_rules()
+            fresh = self.load_rules()
+            if fresh != self._rules:   # an unchanged recipe set keeps its object, so the memos keyed on it stay valid
+                self._rules = fresh
             self._rules_tick = curr_tick
             self.mark("rules")
         rules = self._rules

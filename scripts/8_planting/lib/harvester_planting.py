@@ -39,7 +39,9 @@
 #                       read by lib/seed_supply.py (garden seeds first)
 
 from archive import archive
+from atomic import run_atomic
 import field_layout
+import harvester_pure
 from seed_supply import RECIPES_KEY, SEED_DEMAND_KEY, seed_buffer
 from swallow import swallowed
 from typing import TYPE_CHECKING
@@ -114,6 +116,51 @@ class HarvesterPlantingMixin:
         if view is not None and view[0] is cells:
             return view[2]
         return {s: c for s, c in cells.items() if getattr(c, "status", "") in PLANT_STATUSES}
+
+    def planted_rows(self, cells):
+        """
+        [(sector, (status, plant, growth, light_h, water_h, salt_h, lit, watered, salted))] of the planted cells
+        (harvester_pure.ROW_ATTRS): the one place the per-cell attributes of the publish/care scans are read,
+        so the scans themselves are pure. Memoised on the planted dict.
+        """
+        planted = self.planted_cells(cells)
+        memo = getattr(self, "_rows_memo", None)
+        if memo is not None and memo[0] is planted:
+            return memo[1]
+        # Game Cell objects: read outside any atomic callback, one explicit tuple per cell (no `operator` module in
+        # the game's interpreter). Order and defaults follow harvester_pure.ROW_ATTRS.
+        rows = [(sector, (getattr(c, "status", ""), getattr(c, "plant", None), getattr(c, "growth", 0),
+                          getattr(c, "manual_light_remaining", 0), getattr(c, "manual_water_remaining", 0),
+                          getattr(c, "manual_salt_remaining", 0), getattr(c, "lit", False),
+                          getattr(c, "watered", False), getattr(c, "salted", False)))
+                for sector, c in planted.items()]
+        self._rows_memo = (planted, rows)
+        return rows
+
+    def row_scan(self, cells, rules, kept):
+        """
+        {"planted", "mature", "stalled", "productive" (species count), "care" ({sector: [(kind, hours)]}, see
+        HarvesterCareMixin.hand_care())} over the planted cells, in atomic chunks of harvester_pure.ROW_CHUNK rows.
+        Memoised on the cells dict, the rules object and the kept set; the result is shared and read-only.
+        """
+        memo = getattr(self, "_row_scan_memo", None)
+        if memo is not None and memo[0] is cells and memo[1] is rules and memo[2] == kept:
+            return memo[3]
+        rows = self.planted_rows(cells)
+        table = self._host.care_kind_table(rules)
+        salt_ok = any("salt" in kinds for kinds in table.values()) and self._host.salt_in_inventory() >= 1
+        slots = harvester_pure.care_slots(table, salt_ok)
+        size = harvester_pure.ROW_CHUNK
+        parts = [run_atomic(harvester_pure.scan_rows, rows[i:i + size], slots, kept) for i in range(0, len(rows), size)]
+        care = {}
+        productive = set()
+        for part_care, _mature, _stalled, part_productive in parts:
+            care.update(part_care)
+            productive |= part_productive
+        scan = {"planted": len(rows), "mature": sum([p[1] for p in parts]), "stalled": sum([p[2] for p in parts]),
+                "productive": len(productive), "care": care}
+        self._row_scan_memo = (cells, rules, kept, scan)
+        return scan
 
     def base_from_cells(self, cells, statuses=None):
         """The depot pad sector (Cell.status == "base"), else the constructor's guess."""
@@ -287,7 +334,11 @@ class HarvesterPlantingMixin:
         memo = getattr(self, "_seed_layout_memo", None)
         if memo is not None and memo[0] is active and memo[1] is mine and memo[2] is automated:
             return memo[3]
-        seeded = {s: sp for s, sp in active.items() if s in mine or s in automated}
+        items = list(active.items())
+        size = harvester_pure.ITEM_CHUNK
+        seeded = {}
+        for i in range(0, len(items), size):
+            seeded.update(run_atomic(harvester_pure.seeded_items, items[i:i + size], mine, automated))
         self._seed_layout_memo = (active, mine, automated, seeded)
         return seeded
 
@@ -341,31 +392,41 @@ class HarvesterPlantingMixin:
         one needs a seed now, but they add no rotation, buffer or prefetch.
         """
         kept = self.kept_garden()
-        seed_ids = {sp: r.get("seed_id", "seed_" + sp) for sp, r in rules.items()}
+        seed_ids = self.seed_id_map(rules)
         rotation = self.seed_rotation(active, kept, seed_ids)
         statuses = self.cell_statuses(cells)
+        rows = self.planted_rows(cells)
+        size = harvester_pure.SOON_CHUNK
         # Non-kept planted cells whose replacement seed is needed before the harvest.
-        soon = set([s for s, c in self.planted_cells(cells).items()
-                    if s in active and s not in kept and getattr(c, "plant", None) == active[s]
-                    and (statuses[s] == "mature" or (getattr(c, "growth", 0) or 0) >= SEED_PREFETCH_GROWTH)])
-        needed = [seed_ids[sp] for s, sp in active.items() if statuses.get(s, "unknown") in OPEN_STATUSES or s in soon]
-        now = {}
-        for seed_id in needed:
-            now[seed_id] = now.get(seed_id, 0) + 1
+        soon = set()
+        for i in range(0, len(rows), size):
+            soon.update(run_atomic(harvester_pure.soon_sectors, rows[i:i + size], active, kept, SEED_PREFETCH_GROWTH))
+        items = list(active.items())
+        size = harvester_pure.ITEM_CHUNK
+        now = harvester_pure.merge_counts([run_atomic(harvester_pure.needed_seeds, items[i:i + size], statuses, OPEN_STATUSES, soon, seed_ids)
+                                           for i in range(0, len(items), size)])
         for seed_id, count in rotation.items():
             now[seed_id] = now.get(seed_id, 0) + seed_buffer(count)
         return now, dict(rotation)
+
+    def seed_id_map(self, rules):
+        """{species: seed item id}; memoised on the rules object."""
+        memo = getattr(self, "_seed_ids_memo", None)
+        if memo is not None and memo[0] is rules:
+            return memo[1]
+        seed_ids = {sp: r.get("seed_id", "seed_" + sp) for sp, r in rules.items()}
+        self._seed_ids_memo = (rules, seed_ids)
+        return seed_ids
 
     def seed_rotation(self, active, kept, seed_ids):
         """{seed_id: non-kept cells} of `active`; memoised on the active dict, the kept set and the seed ids."""
         memo = getattr(self, "_rotation_memo", None)
         if memo is not None and memo[0] is active and memo[1] == kept and memo[2] == seed_ids:
             return memo[3]
-        rotation = {}
-        for sector, species in active.items():
-            if sector not in kept:
-                seed_id = seed_ids[species]
-                rotation[seed_id] = rotation.get(seed_id, 0) + 1
+        items = list(active.items())
+        size = harvester_pure.ITEM_CHUNK
+        rotation = harvester_pure.merge_counts([run_atomic(harvester_pure.rotation_counts, items[i:i + size], kept, seed_ids)
+                                                for i in range(0, len(items), size)])
         self._rotation_memo = (active, kept, seed_ids, rotation)
         return rotation
 
@@ -373,8 +434,18 @@ class HarvesterPlantingMixin:
         """Full layout: also "priority" (field_layout.priority_seeds()), garden seeds the Seed Maker makes first."""
         priority = []
         if self.layout_mode == "full" and layout and rules:
-            priority = field_layout.priority_seeds(layout, self.garden, self.field_fill(), rules)
+            priority = self.priority_seeds(layout, rules)
         archive.set(SEED_DEMAND_KEY, {"now": now, "rotation": rotation, "priority": priority, "tick": curr_tick})
+
+    def priority_seeds(self, layout, rules):
+        """field_layout.priority_seeds() of the full layout; memoised on the layout, garden and fill (rules compared by value)."""
+        fill = self.field_fill()
+        memo = getattr(self, "_priority_memo", None)
+        if memo is not None and memo[0] is layout and memo[1] is self.garden and memo[2] == fill and memo[3] == rules:
+            return list(memo[4])
+        priority = field_layout.priority_seeds(layout, self.garden, fill, rules)
+        self._priority_memo = (layout, self.garden, fill, rules, list(priority))
+        return priority
 
     # ---------------------------------------------------------------- tasks
 
