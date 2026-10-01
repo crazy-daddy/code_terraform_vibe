@@ -19,13 +19,11 @@
 # Demand and coordination are shared with the Pioneer pull hauler
 # (lib/vehicle_cargo.py run_pull_loop()), so the two never both serve the
 # same deficit:
-#   - demand per outpost: logistics_requests.outpost_deficits_tiered() (net
-#     of in-flight logistics.pickups), plus get_raw_material_demands() at
-#     home (net of mining.reserved_yield) as need tier. Need is served first
+#   - demand per outpost, home included: logistics_requests.outpost_deficits_tiered()
+#     (net of in-flight logistics.pickups). Need is served first
 #     (logistics_requests.haul_rank()); buffer deficits are capped at the fair
 #     share of what the sources hold (fair_buffer_caps());
-#   - planned units reserved per source (logistics.pickups "source") and, for
-#     home-bound ore, debited from mining.reserved_yield.
+#   - planned units reserved per source (logistics.pickups "source").
 # The Depot controller (lib/drone_depot.py drain_freight()) drains unloaded
 # freight into local storage while the drone unloads in rounds.
 #
@@ -39,12 +37,10 @@
 # destinations instead of retrying the same one forever.
 
 import logistics_requests
-import mining_reservations
 import depot_stage
 import drill_sites
 import fleet_intent
 from archive import archive
-from production import get_raw_material_demands
 from drone_claims import MISSION_KEY
 from swallow import swallowed
 from atomic import run_atomic
@@ -111,10 +107,8 @@ class DroneHaulerMixin:
         """
         Outposts with a Drone Depot and something missing, as dicts
         {"outpost", "outpost_id", "coords", "depots", "need", "buffer",
-        "deficits"} (deficits = need + buffer). Home adds raw-ore demand to
-        the need tier (larger of request vs ore demand per item, never the
-        sum -- both measure a target against the same stock). Destinations on
-        stall cooldown are left out.
+        "deficits"} (deficits = need + buffer). Destinations on stall
+        cooldown are left out.
         """
         self._host.log.start(f"[{self._host.name}] _haul_destinations", level="debug")
         outposts = self._outposts_by_id()
@@ -132,18 +126,13 @@ class DroneHaulerMixin:
                 self._host.log.debug(f"haul: '{outpost_id}' on stall cooldown; not a destination this cycle.")
                 continue
             need, buffer = logistics_requests.outpost_deficits_tiered(outpost, curr_tick, live=True)
-            if getattr(outpost, "is_home", False):
-                for item_id, units in get_raw_material_demands().items():
-                    if units > need.get(item_id, 0) + buffer.get(item_id, 0):
-                        need[item_id] = units
-                        buffer.pop(item_id, None)
             need = {i: u for i, u in need.items() if u > 0}
             buffer = {i: u for i, u in buffer.items() if u > 0}
             if need or buffer:
                 urgent = {i for i, e in requests.get(outpost_id, {}).items() if e.get("urgent") and i in need}
                 dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots,
                               "need": need, "buffer": buffer, "deficits": self._sum_tiers(need, buffer), "urgent": urgent})
-        self._warn_if_home_has_no_depot(outposts, depots_by_outpost)
+        self._warn_if_home_has_no_depot(outposts, depots_by_outpost, curr_tick)
         self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}=need {d['need']} buffer {d['buffer']}" for d in dests) or "none"))
         self._host.log.end()
         return dests
@@ -155,23 +144,24 @@ class DroneHaulerMixin:
             total[item_id] = total.get(item_id, 0) + units
         return total
 
-    def _warn_if_home_has_no_depot(self, outposts, depots_by_outpost):
+    def _warn_if_home_has_no_depot(self, outposts, depots_by_outpost, curr_tick):
         """
-        Home is only a haul destination if it owns a Drone Depot. A depot next
-        to base but inside another outpost doesn't count, so raw-ore demand at
-        home (e.g. the standing ore buffer) silently never becomes a job.
-        Warns once per run, then keeps the reason in the debug trail.
+        An outpost is only a haul destination if it owns a Drone Depot. A
+        depot next to base but inside another outpost doesn't count, so home's
+        requests silently never become a job. Warns once per run, then keeps
+        the reason in the debug trail.
         """
         home = next((o for o in outposts.values() if getattr(o, "is_home", False)), None)
         if home is None or home.id in depots_by_outpost:
             return
-        raw = {i: u for i, u in get_raw_material_demands().items() if u > 0}
-        if not raw:
+        need, buffer = logistics_requests.outpost_deficits_tiered(home, curr_tick, live=False)
+        wanted = self._sum_tiers(need, buffer)
+        if not wanted:
             return
         if not getattr(self, "_home_no_depot_warned", False):
-            self._host.log.level("warn").print(f"[{self._host.name}] '{home.id}' needs raw ore {raw} but has no Drone Depot; floating haulers can't deliver there. Depots found at: {sorted(k for k in depots_by_outpost if k) or 'none'}.")
+            self._host.log.level("warn").print(f"[{self._host.name}] '{home.id}' requests {wanted} but has no Drone Depot; floating haulers can't deliver there. Depots found at: {sorted(k for k in depots_by_outpost if k) or 'none'}.")
             self._home_no_depot_warned = True
-        self._host.log.debug(f"[{self._host.name}] haul: '{home.id}' skipped as destination (no Drone Depot) despite raw-ore demand {raw}.")
+        self._host.log.debug(f"[{self._host.name}] haul: '{home.id}' skipped as destination (no Drone Depot) despite requests {wanted}.")
 
     def _drill_sources(self, items, curr_tick):
         """Advertised drills holding any of `items` with a known position, net of other haulers' reservations."""
@@ -451,22 +441,8 @@ class DroneHaulerMixin:
 
     # ------------------------------------------------------------ reservations / mission
 
-    def _yield_key(self, item_id):
-        return f"haul:{self._host.name}:{item_id}"
-
-    def _reserve_yield(self, dest_outpost, totals, curr_tick):
-        """Debits home-bound ore from raw-ore demand (mining.reserved_yield), like the pull hauler."""
-        if not getattr(dest_outpost, "is_home", False):
-            return
-        for item_id, units in totals.items():
-            if units > 0:
-                mining_reservations.reserve_yield(self._host.name, self._yield_key(item_id), item_id, units, curr_tick)
-            else:
-                mining_reservations.release_yield(self._host.name, self._yield_key(item_id))
-
     def _release_all(self):
         logistics_requests.release_pickups(self._host.name)
-        mining_reservations.release_yield(self._host.name)
         depot_stage.clear_stage(self._host.name)
 
     # ------------------------------------------------------------ stall cooldowns
@@ -820,7 +796,6 @@ class DroneHaulerMixin:
         self._release_all()
         for item_id, units in contents.items():
             logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, units, curr_tick, aboard=True)
-        self._reserve_yield(self._outposts_by_id().get(dest_id), contents, curr_tick)
         self._save_haul_mission(dest_id)
         self._host.set_intent(fleet_intent.describe("hauling", contents, dest=dest_id, root=fleet_intent.haul_root(contents, dest_id, curr_tick)))
         services = self._host.get_all_drone_services()
@@ -963,7 +938,6 @@ class DroneHaulerMixin:
             legs.append(source["id"] + " (" + ", ".join(f"{n}x {i}" for i, n in loads) + ")")
             for item_id, amount in loads:
                 planned[item_id] = planned.get(item_id, 0) + amount
-        self._reserve_yield(dest["outpost"], planned, curr_tick)
         self._save_haul_mission(dest_id)
         source_ids = [source["id"] for source, _loads in route]
         source_label = source_ids[0] + (f" +{len(source_ids) - 1}" if len(source_ids) > 1 else "")
@@ -983,7 +957,6 @@ class DroneHaulerMixin:
                 break
             for item_id, n in moved.items():
                 loaded[item_id] = loaded.get(item_id, 0) + n
-        self._reserve_yield(dest["outpost"], loaded, curr_tick)
         total = sum(loaded.values())
         self._host.log.end(f"[{self._host.name}] Pickups done: {total} unit(s) aboard.")
 

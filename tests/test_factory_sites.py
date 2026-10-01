@@ -330,13 +330,16 @@ class StrandedGoodsTests(StubTestCase):
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 
 
-class HomeOreFloorTests(StubTestCase):
-    def test_floor_only_with_home_smelter(self):
+class HomeOreRequestTests(StubTestCase):
+    def test_home_requests_ore_only_with_home_smelter(self):
         w = self.world
         w.add_smelter("smelter_2", w.add_outpost("outpost_2"))
-        self.assertEqual(production.get_raw_material_demands().get("iron_ore", 0), 0)
+        site_supply.publish_site_requests(w.clock.now)
+        self.assertNotIn("iron_ore", requests_by(w, w.home.id, site_supply.SITE_SUPPLY_REQUESTER))
         w.add_smelter("smelter_1", w.home)
-        self.assertGreater(production.get_raw_material_demands().get("iron_ore", 0), 0)
+        w.clock.now += site_supply.REPUBLISH_TICKS
+        site_supply.publish_site_requests(w.clock.now)
+        self.assertGreater(requests_by(w, w.home.id, site_supply.SITE_SUPPLY_REQUESTER)["iron_ore"][0], 0)
 
 
 class RemoteSupplyDockTests(StubTestCase):

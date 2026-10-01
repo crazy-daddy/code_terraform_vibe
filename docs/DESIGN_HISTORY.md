@@ -648,3 +648,23 @@ Station3 `strikes()` history.
 - If revisited: replay past storms from the save seed (`storm_<n>` via `ZC`/`uw`) in a devtool to
   score rod layouts before building, then add drain mode to the turbine target and Oil Generator
   start rule (power guard already counts rod reserve via `measure_grid()`).
+
+## §2i-1 — Home Planned Like Any Outpost (2026-10-01)
+
+**Decision**: home gets its ore, ingot, stockpile and consumer requests from `lib/site_supply.py`
+exactly like every other outpost. Its only difference is the Inventory, which counts as home stock.
+`production.get_raw_material_demands()` (network-wide ore demand plus a "home ore floor") and
+`home_smelter_ores()` are gone; the Rover mines against its home's ore requests
+(`vehicle_mining.home_ore_demand()`), haulers read only `logistics_requests` deficits, and the
+dead home-demand `PioneerController.run_mining_loop()` was removed (Pioneer miners already ran the
+stationed loop for `HOME_BASE`).
+
+**Why**
+- The function predated factory outposts. With the Smelters moved to outposts it kept pulling ore
+  home that nothing consumed, and every drone and Pioneer hauler re-ran the full demand walk each
+  planning cycle (about 1 h 45 m of game time per pass at ~150 running scripts).
+- Two demand sources for the same stock (requests and the floor, max-folded per item) and a second
+  in-flight bookkeeping (`mining.reserved_yield` from haulers) duplicated what `logistics.pickups`
+  already does. `mining.reserved_yield` stays only for Rover mining trips.
+- `site_supply` runs from tier 4 (`control_room_automation.py`), the same tier the lib-driven
+  Rovers, Pioneers and haulers start at, so no earlier tier depended on the old path.

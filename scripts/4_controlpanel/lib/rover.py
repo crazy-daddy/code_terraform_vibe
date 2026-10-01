@@ -3,7 +3,6 @@
 # autonomous planetary exploration, sonar site discovery, precision mining,
 # and continuous expedition cycles.
 
-from production import get_raw_material_demands
 from vehicle import VehicleController
 from vehicle_energy import ROVER_WH_PER_METER_PER_THROTTLE
 from version_guard import validate_game_version
@@ -124,7 +123,7 @@ class RoverController(VehicleController):
             return target, budget
 
         self.last_target_diagnostics = {
-            "raw_demands": get_raw_material_demands(),
+            "raw_demands": self.home_ore_demand(),
             "claim_count": len(self.get_claims()),
             **diagnostics,
         }

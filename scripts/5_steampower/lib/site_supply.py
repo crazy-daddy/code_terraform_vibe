@@ -20,7 +20,7 @@
 #     Its ship plan (production.get_site_ship_plan(): intermediates spare
 #     elsewhere that it hauls in instead of building) is requested too,
 #     level = local + in flight + to ship, kept while units are in flight.
-#   - Smelting site (>= 1 Smelter, not home): one ore request per ore it has
+#   - Smelting site (>= 1 Smelter): one ore request per ore it has
 #     an unlocked Smelter recipe for. Buffer tier up to
 #     outpost_mining.ore_stock_target(ore); need tier = local + in-flight ore
 #     + the D - S ore shortfall above, 0 when no local Fabricator needs it.
@@ -30,10 +30,8 @@
 #     free at another outpost or in flight. SITE_STOCK_CRAFTED items are also
 #     ordered from the Fabricators as a backlog order (idle time only,
 #     requester SITE_STOCK_REQUESTER), sized to the summed targets.
-#   - Home publishes ingot requests only, and only while free remote ingots
-#     cover part of its D: its ore comes from the standing home ore floor
-#     (production.get_raw_material_demands()), so with every machine at home
-#     nothing is published.
+#   - Home is planned like any other outpost; its only difference is the
+#     Inventory, which outpost_stock() counts as home stock.
 #   - Consumer site: finished root targets (production.fabricator_root_targets()
 #     consumers: a Supply Dock order at the dock's outpost, a blueprint's
 #     required_item at the Constructor's home, everything else at home) are
@@ -254,7 +252,6 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
         stock_wants(outpost, stock, outposts, requests, tick, flying, wants)
         log.end()
         return wants
-    at_home = outpost_is_home(outpost)
     ore_outputs = smelter_ores(outpost)
     ore_for = {output: ore for ore, output in ore_outputs.items()}
     smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()} - {None}
@@ -284,17 +281,16 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
         if ore:
             ore_short[ore] = ore_short.get(ore, 0) + deficit - (remote_ingots - first)
         level = local_ingots + remote_ingots
-        if (not at_home or remote_ingots > 0) and level >= wants.get(ingot, (0,))[0]:
+        if level > 0 and level >= wants.get(ingot, (0,))[0]:
             wants[ingot] = (level, have.get(ingot, 0), level)
         log.debug(f"{ingot} gross={units} local_ingots={local_ingots} local_ore={local_ore} -> shipped first={first}, D={deficit}, free elsewhere={free}, ingots from remote={remote_ingots}, ore short={deficit - (remote_ingots - first) if ore else 0}")
 
-    if not at_home:
-        for ore, output in sorted(ore_outputs.items()):
-            local = have.get(ore, 0) + flying.get(ore, 0)
-            floor = local + ore_short.get(ore, 0) if output in gross else 0
-            target = max(ore_stock_target(ore), floor)
-            wants[ore] = (target, have.get(ore, 0), floor)
-            log.debug(f"ore {ore} local={local} need level={floor} target={target}")
+    for ore, output in sorted(ore_outputs.items()):
+        local = have.get(ore, 0) + flying.get(ore, 0)
+        floor = local + ore_short.get(ore, 0) if output in gross else 0
+        target = max(ore_stock_target(ore), floor)
+        wants[ore] = (target, have.get(ore, 0), floor)
+        log.debug(f"ore {ore} local={local} need level={floor} target={target}")
     stock_wants(outpost, stock, outposts, requests, tick, flying, wants)
     log.end()
     return wants

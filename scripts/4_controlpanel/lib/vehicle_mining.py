@@ -12,12 +12,13 @@
 # ROVER_PREFERRED_MAX_HARDNESS below), not a hard exclusivity rule, so a
 # capable vehicle still picks up whatever's available rather than idling.
 
-from production import get_raw_material_demands, get_raw_material_reason
+from production import get_raw_material_reason
 from version_guard import validate_game_version
 from storage import total_stock
 from archive import archive
 import outpost_mining
 import mining_reservations
+import logistics_requests
 import fleet_intent
 from swallow import swallowed
 from typing import TYPE_CHECKING
@@ -65,8 +66,8 @@ class VehicleMiningMixin:
         hold, not one already partly full of an unrelated material). Callers
         use this to decide whether resuming a claimed target should first
         detour through an unload instead of mining straight into mismatched
-        cargo -- see run_expedition_cycle() (rover.py) / run_mining_loop()
-        (pioneer.py).
+        cargo -- see run_expedition_cycle() (rover.py) /
+        _stationed_mining_cycle().
         """
         if not hasattr(self._host.vehicle, "cargo") or self._host.vehicle.cargo.count() == 0:
             return True
@@ -85,10 +86,30 @@ class VehicleMiningMixin:
                 return False
         return True
 
+    def home_ore_demand(self):
+        """
+        {ore: units} this vehicle's home_base still requests
+        (logistics_requests.outpost_deficits_tiered(): need + buffer, net of
+        stock and in-flight pickups), minus the yield in-flight mining trips
+        already promised (mining.reserved_yield). Home is planned like any
+        outpost: a smelting site's ore requests come from lib/site_supply.py.
+        """
+        tick = self._host.get_current_tick()
+        need, buffer = logistics_requests.outpost_deficits_tiered(self._host.home_outpost, tick, live=True)
+        demand = {}
+        for tier in (need, buffer):
+            for item_id, units in tier.items():
+                if item_id in outpost_mining.RAW_ORE_ITEM_IDS and units > 0:
+                    demand[item_id] = demand.get(item_id, 0) + units
+        for item_id, units in mining_reservations.get_reserved_yield_totals(tick).items():
+            if item_id in demand:
+                demand[item_id] = max(0, demand[item_id] - units)
+        return {i: u for i, u in demand.items() if u > 0}
+
     def build_mineral_site_candidates(self, deprioritize_hardness_at_or_below=None):
         """
-        Candidate mineral-extraction sites matching active raw-material demand
-        and this vehicle's actual mounted drill capability. When
+        Candidate mineral-extraction sites matching home_ore_demand() and this
+        vehicle's actual mounted drill capability. When
         deprioritize_hardness_at_or_below is set, sites at/below that hardness
         get priority=3 instead of priority=2, so select_best_mining_target()
         tries them last -- a soft preference, not exclusion.
@@ -99,9 +120,9 @@ class VehicleMiningMixin:
             self._host.log.end()
             return []
 
-        raw_demands = get_raw_material_demands()
+        raw_demands = self.home_ore_demand()
         if not raw_demands:
-            self._host.log.debug("no active raw-material demand; skipping candidate search.")
+            self._host.log.debug("no ore requested at home; skipping candidate search.")
             self._host.log.end()
             return []
 
@@ -256,7 +277,7 @@ class VehicleMiningMixin:
         (max_mineable_units()) and registers it via
         mining_reservations.reserve_yield() so a peer's home-demand search
         this cycle or later sees the deficit already promised and doesn't
-        also chase it (see lib/production.py's get_raw_material_demands()).
+        also chase it (see home_ore_demand()).
         The stockpile path skips this -- it's already self-bounded by each
         outpost's own stock target, re-read live every cycle. Either way, the
         estimate is stashed on the candidate as "estimated_units" so callers
@@ -513,7 +534,7 @@ class VehicleMiningMixin:
         """
         Continuous loop wrapper around _stationed_mining_cycle() -- one full
         cycle per iteration, recall-checked and exception-guarded, same shape
-        as run_mining_loop()/run_pull_loop(). This is what a thin entrypoint
+        as run_pull_loop(). This is what a thin entrypoint
         script should call directly (a single line: no while/recall logic
         belongs there -- see CLAUDE.md's thin-entrypoint rule).
         """
@@ -565,7 +586,7 @@ class VehicleMiningMixin:
             if upgrade_cycle is not None:
                 upgrade_cycle()
 
-        # Same reload-resume safety net as run_expedition_cycle()/run_mining_loop():
+        # Same reload-resume safety net as run_expedition_cycle():
         # a target restored via load_mission() after a script reload is
         # expected mid-mission WIP, not stale leftover cargo.
         has_resumable_target = bool(self.current_target_key and self.current_target and self.current_target.get("coords"))

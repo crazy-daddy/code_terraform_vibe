@@ -1,12 +1,11 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
 from storage import total_stock, discover_storage_buildings, outpost_is_home
-from outpost_mining import ore_stock_target, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
+from outpost_mining import RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
 from logistics_requests import active_requests, in_flight, outpost_free_tiers, aboard_units
 from tree_console import TreeConsole
 from swallow import swallowed
-import mining_reservations
 import fleet_status
 import lead_cask
 
@@ -262,15 +261,6 @@ def smelter_ores(outpost):
                     result[ore] = output_item
         return result
     return {}
-
-
-def home_smelter_ores():
-    """Raw ores a home Smelter can refine, sorted; [] with no home Smelter
-    (or no outpost_network to find home)."""
-    home = _home_outpost()
-    if home is None:
-        return []
-    return sorted(smelter_ores(home))
 
 
 def _default_smelter():
@@ -831,12 +821,12 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=No
     recipe needing it -- stalls forever on an input nothing ever produces.
     Same shortfall-only propagation and depth bound as
     _cascade_blueprint_demand(); intermediate raw/refined materials (e.g.
-    iron_ingot) are deliberately left to get_raw_material_demands()'s own
-    expansion off the resulting target, not duplicated here.
+    iron_ingot) are left to the Smelter demand (get_smelter_demands()) and
+    the site supply ore requests (lib/site_supply.py), not duplicated here.
 
     Returns {item_id: target_quantity} for every reached item still short of
     stock, restricted to fabricator_outputs (Smelter-built intermediates
-    aren't Fabricator targets -- get_raw_material_demands() handles those).
+    aren't Fabricator targets -- get_smelter_demands() handles those).
     `stock` overrides the stock read (item_id -> units), e.g. one site's
     local stock for get_site_fabricator_targets().
     `supply(item_id, shortfall) -> units` (optional) says how much of a
@@ -1825,8 +1815,7 @@ def get_smelter_demands(cache=None):
          already staged in every Fabricator's stockpile.
 
     Pass the step's SourceCache -- this walks the full target set, so it is
-    not cheap uncached. Mining (get_raw_material_demands()) is deliberately
-    NOT switched over yet -- see TODO.md.
+    not cheap uncached.
     """
     cache = SourceCache() if cache is None else cache
     smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()}
@@ -1974,112 +1963,6 @@ def smelter_recipe_peers(recipe_id, outpost_id=None):
         except Exception as error:
             swallowed("production.smelter_recipe_peers: candidate.get_recipe", error)
     return max(1, count), buffered
-
-
-def get_raw_material_demands(smelter=None):
-    """
-    Converts refined-material demand into raw ore demand for mining and
-    hauling home. {} when home has neither a Smelter nor a Supply Dock: ore
-    delivered there has no consumer, and factory outposts request their own
-    ore (lib/site_supply.py). That check also skips the full demand walk
-    every hauler and miner would otherwise run per planning cycle.
-    """
-    home = _home_outpost()
-    if home is not None and not discover_smelter_ids(home) and not discover_supply_dock_ids(home):
-        log.trace("get_raw_material_demands: no home Smelter or Supply Dock -> {}")
-        return {}
-    log.start("get_raw_material_demands", level="debug")
-    demands = get_material_demands()
-    refined_demands = dict(demands)
-    raw_demands = {}
-
-    # Raw items requested directly by an order are mined as-is.
-    for item_id, quantity in demands.items():
-        if item_id.endswith("_ore") or item_id in ["silicon", "rare_earth"]:
-            current = total_stock(item_id)
-            deficit = max(0, quantity - current)
-            _add_demand(raw_demands, item_id, deficit)
-            if deficit > 0:
-                log.trace(f"{item_id} mined directly, stock={current} demand={quantity} -> deficit={deficit}")
-
-    # Expand Fabricator output demand into refined-material demand before
-    # asking the Smelter to expand refined materials into raw ore.
-    fabricator = _default_fabricator()
-    if fabricator and hasattr(fabricator, "list_recipes"):
-        try:
-            for recipe in fabricator.list_recipes():
-                output_item = getattr(recipe, "output_item", None)
-                output_need = demands.get(output_item, 0)
-                if output_need <= 0:
-                    continue
-                output_count = max(1, getattr(recipe, "output_count", 1))
-                for input_id, units_per_run in (getattr(recipe, "inputs", {}) or {}).items():
-                    current = total_stock(input_id)
-                    needed = (output_need * units_per_run + output_count - 1) // output_count
-                    deficit = max(0, needed - current)
-                    _add_demand(refined_demands, input_id, deficit)
-                    if deficit > 0:
-                        log.trace(f"fabricator output {output_item} (need={output_need}) expands into refined {input_id} -> deficit={deficit}")
-        except Exception as error:
-            swallowed("production.get_raw_material_demands: fabricator.list_recipes", error)
-
-    # Only unlocked smelter recipes can create demand. Locked silicon recipes
-    # therefore cannot cause either refining or rover mining.
-    if smelter is None:
-        smelter = _default_smelter()
-    if smelter and hasattr(smelter, "list_recipes"):
-        try:
-            for recipe in smelter.list_recipes():
-                output_item = getattr(recipe, "output_item", None)
-                output_need = refined_demands.get(output_item, 0)
-                if output_need <= 0:
-                    continue
-                for raw_item, units_per_run in (getattr(recipe, "inputs", {}) or {}).items():
-                    current = total_stock(raw_item)
-                    deficit = max(0, output_need * units_per_run - current)
-                    _add_demand(raw_demands, raw_item, deficit)
-                    if deficit > 0:
-                        log.trace(f"smelter recipe {getattr(recipe, 'id', '?')} for {output_item} (need={output_need}) expands into raw {raw_item} -> deficit={deficit}")
-        except Exception as error:
-            swallowed("production.get_raw_material_demands: smelter.list_recipes", error)
-
-    # Standing home ore buffer: keep at least one Warehouse slot's worth
-    # (outpost_mining.ore_stock_target(), seed-once-editable) of every raw
-    # ore a home Smelter has an unlocked recipe for, even with zero active
-    # production/order demand -- freely drawn down by Smelter/Supply Dock
-    # like any other stock, never a reserved amount, just a floor that
-    # creates replenishment demand once it's dipped into. Same per-Smelter-
-    # site buffer a remote smelting site requests (lib/site_supply.py); no
-    # home Smelter, no floor. Takes the max with (not additive to) whatever
-    # production demand already computed above, since both ultimately want
-    # the same ore delivered home -- adding them would double-count.
-    for item_id in home_smelter_ores():
-        buffer_deficit = max(0, ore_stock_target(item_id) - total_stock(item_id))
-        if buffer_deficit > raw_demands.get(item_id, 0):
-            log.trace(f"home buffer floor for {item_id} ({buffer_deficit}) exceeds production demand ({raw_demands.get(item_id, 0)}), using buffer floor")
-            raw_demands[item_id] = buffer_deficit
-
-    # Debit ore already promised by an in-flight home-demand mining trip
-    # (lib/vehicle_mining.py's select_best_mining_target(reserve_demand=True)) or
-    # pull-haul delivery (lib/vehicle_cargo.py's run_pull_loop(), drone haulers) so a peer's
-    # candidate search this cycle or later doesn't also chase a deficit
-    # that's already being fetched. With several Pioneers mining the same POI,
-    # get_claims() alone cannot prevent concurrent dispatch -- the same race
-    # also applies across multiple haulers converging on the
-    # same home buffer deficit. Only the home-demand path reads this:
-    # outpost-stationed stockpile mining doesn't go through
-    # get_raw_material_demands() at all, and is already self-bounded by its
-    # own live stock-target check.
-    reserved = mining_reservations.get_reserved_yield_totals(_current_tick())
-    for item_id, units in reserved.items():
-        if item_id in raw_demands:
-            before = raw_demands[item_id]
-            raw_demands[item_id] = max(0, raw_demands[item_id] - units)
-            log.trace(f"{item_id} debited by {units} already-reserved yield ({before} -> {raw_demands[item_id]})")
-
-    log.trace(f"final raw_demands={raw_demands}")
-    log.end()
-    return raw_demands
 
 
 class SourceCache:

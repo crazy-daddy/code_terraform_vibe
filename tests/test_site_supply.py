@@ -77,14 +77,17 @@ class SiteSupplyTests(StubTestCase):
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)
 
-    def test_nothing_published_with_every_machine_at_home(self):
+    def test_home_smelting_site_requests_ore_like_any_site(self):
         w = self.world
         w.add_smelter("smelter_1", w.home)
         f = w.add_fabricator("fabricator_1", w.home)
         f.recipe = "craft_gas_pipe_segment"
         w.inventory.add("iron_ore", 50)
         self.publish()
-        self.assertEqual(w.notebook.get(logistics_requests.REQUESTS_KEY, {}), {})
+        # 20 ingots needed, 50 ore at home: no ingot request, ore buffered to its stock target.
+        requests = site_requests(w, w.home.id)
+        self.assertNotIn("iron_ingot", requests)
+        self.assertEqual(requests["iron_ore"], (outpost_mining.ore_stock_target("iron_ore"), 50))
 
     def test_fab_only_site_requests_all_of_d_as_ingots(self):
         w = self.world
@@ -165,8 +168,10 @@ class SiteSupplyTests(StubTestCase):
         w.add_smelter("smelter_2", self.remote)
         w.add_warehouse("wh_remote", self.remote, {"iron_ingot": 12})
         self.publish()
-        # Home D = 20, all 12 free remote ingots requested; the rest is home ore demand.
-        self.assertEqual(site_requests(w, "home"), {"iron_ingot": (12, 12)})
+        # Home D = 20, all 12 free remote ingots requested; the other 8 as home ore need.
+        requests = site_requests(w, w.home.id)
+        self.assertEqual(requests["iron_ingot"], (12, 12))
+        self.assertEqual(requests["iron_ore"], (outpost_mining.ore_stock_target("iron_ore"), 8))
 
     def test_withdrawn_when_machines_leave(self):
         w = self.world

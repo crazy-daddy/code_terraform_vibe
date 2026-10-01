@@ -317,10 +317,8 @@ def ore_stock_target(item_id):
     Stock target (units) for raw ore item_id, the same at every outpost --
     seed-once-then-editable under ORE_STOCK_TARGETS_KEY, default one
     Warehouse slot's worth (WAREHOUSE_SLOT_CAPACITY). Read as a stationed
-    miner's stockpile target at its mining outpost, as production.py's
-    standing home ore floor (get_raw_material_demands(), freely drawn down
-    by Smelter/Supply Dock, just a floor that creates mining/haul demand),
-    and as a smelting site's ore buffer tier.
+    miner's stockpile target at its mining outpost and as every smelting
+    site's ore buffer tier, home included (lib/site_supply.py).
     """
     archive = _archive()
     targets = archive.get(ORE_STOCK_TARGETS_KEY, {}) or {}

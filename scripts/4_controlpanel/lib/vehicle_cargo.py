@@ -9,10 +9,8 @@
 # step() loop already polls for new ore on its normal cycle whenever it IS
 # running.
 
-from production import get_raw_material_demands
 from version_guard import validate_game_version
 from storage import best_unload_target, take_item, inventory_stack_size
-import mining_reservations
 import logistics_requests
 import drill_sites
 import pump_salt
@@ -179,22 +177,10 @@ class VehicleCargoMixin:
         ({item_id: need units}, {item_id: buffer units}) this vehicle's home
         outpost still misses: its live pull-request deficits
         (logistics_requests.outpost_deficits_tiered(), already net of
-        in-flight pickups), plus -- when home is the production outpost --
-        the raw-ore demand normal haulers and miners chase
-        (get_raw_material_demands(), net of mining.reserved_yield) as need
-        tier. The larger of request vs ore demand per item, never the sum:
-        both measure a target against the same stock.
+        in-flight pickups). Home is no exception: its ore comes from its
+        site supply requests (lib/site_supply.py) like any outpost's.
         """
-        home = self._host.home_outpost
-        need, buffer = logistics_requests.outpost_deficits_tiered(home, curr_tick, live=True)
-        if getattr(home, "is_home", False):
-            raw = get_raw_material_demands()
-            self._host.log.debug(f"[{self._host.name}] pull: requests need={need} buffer={buffer}, raw-ore demand={raw}.")
-            for item_id, units in raw.items():
-                if units > need.get(item_id, 0) + buffer.get(item_id, 0):
-                    need[item_id] = units
-                    buffer.pop(item_id, None)
-        return need, buffer
+        return logistics_requests.outpost_deficits_tiered(self._host.home_outpost, curr_tick, live=True)
 
     def _pull_sources(self, items, curr_tick):
         """
@@ -482,26 +468,6 @@ class VehicleCargoMixin:
             notes.append((source["id"], direct, via_home, ok))
         return ok
 
-    def _pull_yield_key(self, item_id):
-        return f"pull:{self._host.name}:{item_id}"
-
-    def _reserve_pull_yield(self, totals, curr_tick):
-        """
-        Debits {item_id: units} headed home from get_raw_material_demands()
-        (mining.reserved_yield, same debit drone haulers and home-demand
-        miners write), so another hauler or miner doesn't also chase ore
-        this trip already covers -- and vice versa, since this vehicle's own
-        _pull_deficits_tiered() reads the same debited demand. Only for a home-based
-        pull hauler; elsewhere raw-ore demand isn't read at all.
-        """
-        if not getattr(self._host.home_outpost, "is_home", False):
-            return
-        for item_id, units in totals.items():
-            if units > 0:
-                mining_reservations.reserve_yield(self._host.name, self._pull_yield_key(item_id), item_id, units, curr_tick)
-            else:
-                mining_reservations.release_yield(self._host.name, self._pull_yield_key(item_id))
-
     def _pull_from_source(self, source, loads, home_id, curr_tick):
         """
         Drives to one planned source and loads its items; returns
@@ -569,8 +535,7 @@ class VehicleCargoMixin:
     def run_pull_loop(self, poll_interval=10.0):
         """
         Reverse hauler: parked at self.home_base, fetches what this outpost
-        is missing (_pull_deficits_tiered(): pull requests, plus raw-ore demand when
-        parked at home) from any other outpost's free stock or any field
+        is missing (_pull_deficits_tiered(): its pull requests) from any other outpost's free stock or any field
         Mining Drill's stockpile, and brings it home (every hauler-role
         Pioneer). Buyable requests at a non-home HOME_BASE (remote Bio Lab
         reagents) can also be bought at the Shop on a stop at the home
@@ -581,10 +546,10 @@ class VehicleCargoMixin:
 
         Plays nice with other haulers on both ends: planned amounts are
         reserved per source (logistics.pickups "source", so nobody else
-        plans the same units there) and, for home-bound ore, debited from
-        home raw-ore demand (mining.reserved_yield, shared with drone
-        haulers and home-demand miners), so a drone already bringing 800
-        ore makes this one see 800 less demand, and vice versa.
+        plans the same units there), and in-flight units count against the
+        destination's deficits (logistics_requests.in_flight()), so a drone
+        already bringing 800 ore makes this one see 800 less demand, and
+        vice versa.
         """
         home = self._host.home_outpost
         home_id = getattr(home, "id", None)
@@ -603,9 +568,6 @@ class VehicleCargoMixin:
 
                 if self._host.vehicle.cargo.count() > 0:
                     self._host.log.debug(f"[{self._host.name}] pull: cargo aboard; delivering home first.")
-                    # After a restart the in-flight yield debit may be gone;
-                    # re-assert it from what's physically aboard.
-                    self._reserve_pull_yield(self._cargo_totals(), self._host.get_current_tick())
                     self._finish_pull_delivery(poll_interval)
                     continue
 
@@ -658,7 +620,6 @@ class VehicleCargoMixin:
                     legs.append(source["id"] + " (" + ", ".join(str(a) + "x " + i for i, a in loads) + ")")
                     for item_id, amount in loads:
                         planned_totals[item_id] = planned_totals.get(item_id, 0) + amount
-                self._reserve_pull_yield(planned_totals, curr_tick)
                 source_ids = [src["id"] for src, _loads in route]
                 source_label = source_ids[0] + (f" +{len(source_ids) - 1}" if len(source_ids) > 1 else "")
                 self._host.set_intent(fleet_intent.describe("hauling", planned_totals, source_label, home_id, fleet_intent.haul_root(planned_totals, home_id, curr_tick)))
@@ -675,14 +636,12 @@ class VehicleCargoMixin:
                         break
                     for item_id, moved in moved_by_item.items():
                         loaded_totals[item_id] = loaded_totals.get(item_id, 0) + moved
-                self._reserve_pull_yield(loaded_totals, curr_tick)
                 self._host.log.end(f"[{self._host.name}] Pickups done; {self._host.vehicle.cargo.count()} unit(s) aboard.")
 
                 if self._host.vehicle.cargo.count() > 0:
                     self._finish_pull_delivery(poll_interval)
                 else:
                     logistics_requests.release_pickups(self._host.name)
-                    mining_reservations.release_yield(self._host.name)
                     if not self._host.is_at_base():
                         self._host.return_to_base()
             except Exception as error:
@@ -717,8 +676,6 @@ class VehicleCargoMixin:
             sleep(poll_interval)
             return "Delivery blocked: no inventory space"
         logistics_requests.release_pickups(self._host.name)
-        # A pull hauler holds no other yield reservations (roles are exclusive per script).
-        mining_reservations.release_yield(self._host.name)
         self._host.recharge_at_station(target_level=1.0)
         self._host.publish_telemetry("READY_AT_OUTPOST")
         return "Delivered and recharged"
