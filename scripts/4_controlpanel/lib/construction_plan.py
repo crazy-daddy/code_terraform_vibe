@@ -12,6 +12,8 @@ TRIP_CHUNK = 12              # rows per station_trip_wh() call (worst row ~250 o
 PROGRESS_CHUNK = 256         # jobs per find_progress() call (worst job ~12 operations)
 ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one atomic call here
 NO_COORDS_DIST = 1e18        # sort key for a job without readable coordinates (last)
+PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_share() while its fleet.status heartbeat is younger than this
+PEER_INACTIVE_STATES = ("RECALLED", "DECOMMISSION_READY", "UPGRADE_HOLD", "AWAITING_MODULES")
 
 
 def claim_key(job_id):
@@ -149,3 +151,26 @@ def batch_count(rows, item_id, max_limit=None):
 def ids_needing(rows, item_id):
     """Ids of rows needing item_id."""
     return [row["id"] for row in rows if row["item"] == item_id]
+
+
+def peer_builders(status, me, home, tick, active_ticks):
+    """
+    Names of other Constructor vehicles in status ({name: fleet.status
+    telemetry}) with the same home whose telemetry is younger than
+    active_ticks and not in PEER_INACTIVE_STATES (tick 0 = unknown clock,
+    counts as fresh).
+    """
+    return sorted([
+        name for name, entry in status.items()
+        if name != me and isinstance(entry, dict)
+        and entry.get("role") == "constructor" and entry.get("home") == home
+        and entry.get("state") not in PEER_INACTIVE_STATES
+        and (tick == 0 or tick - (entry.get("tick", 0) or 0) < active_ticks)
+    ])
+
+
+def fair_share(batch, stock, builders):
+    """batch capped at stock split evenly (rounded up) across builders; batch unchanged for a lone builder."""
+    if builders <= 1:
+        return batch
+    return min(batch, -(-max(0, stock) // builders))

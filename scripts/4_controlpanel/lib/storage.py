@@ -455,6 +455,11 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
     return [entry for _key, entry in ranked]
 
 
+def takeable_stock(item_id, outpost=None):
+    """Units of item_id that take_item() could pull at `outpost`: the sum over the same holders it tries."""
+    return sum([units for _source_id, units in _holder_candidates(item_id, outpost)])
+
+
 def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     """
     Pulls up to `amount` units of item_id into `port` (a machine/vehicle

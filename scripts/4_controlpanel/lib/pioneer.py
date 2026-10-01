@@ -10,7 +10,8 @@ from vehicle_claims import SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY
 from vehicle_mining import ROVER_PREFERRED_MAX_HARDNESS
 from vehicle_upgrade import VehicleUpgradeMixin
 from pioneer_commission import PioneerFittingMixin
-from storage import take_item
+from storage import take_item, takeable_stock
+import fleet_status
 from version_guard import validate_game_version
 import mining_reservations
 import drill_sites
@@ -249,6 +250,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         because the job is still incomplete and needs another recharge round later.
         """
         self.log.start(f"[{self.name}] Build '{blueprint_id}' ({kind or 'blueprint'}) at {coords}")
+        # Doubles as the heartbeat peers read in construction_plan.peer_builders().
+        self.publish_telemetry("BUILDING", blueprint_id)
         self.last_build_progress = 0.0
         ok = self._execute_construction(blueprint_id, coords, kind)
         outcome = ("finished" if self.last_build_progress >= 1.0 else "paused for later") if ok else "failed"
@@ -397,6 +400,27 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         elif self.cargo_count(required_item) < required_count:
             self.log.level("warn").print(f"[{self.name}] Could not load {required_item}: none in storage at '{self.home_base}'.")
         return self.cargo_count(required_item) >= required_count
+
+    def fair_share_batch(self, item_id, batch):
+        """
+        batch capped so active same-home Constructor peers
+        (construction_plan.peer_builders()) keep their share of item_id's stock
+        at home; unchanged for a lone builder, so a solo chain still loads
+        everything its cargo holds.
+        """
+        self.publish_telemetry("RESTOCKING", item_id)
+        peers = construction_plan.peer_builders(
+            fleet_status.get_all(), self.name, self.home_base,
+            self.get_current_tick(), construction_plan.PEER_BUILDER_ACTIVE_TICKS,
+        )
+        if not peers:
+            self.log.debug(f"[{self.name}] fair_share_batch({item_id}): no active peer builders; batch {batch}.")
+            return batch
+        # Material already aboard counts toward this builder's share.
+        stock = takeable_stock(item_id, outpost=self.home_outpost) + self.cargo_count(item_id)
+        share = construction_plan.fair_share(batch, stock, len(peers) + 1)
+        self.log.debug(f"[{self.name}] fair_share_batch({item_id}): peers {peers}, home stock {stock}; batch {batch} -> {share}.")
+        return share
 
     def run_construction_loop(self):
         """Continuously polls pending and paused construction blueprints and executes available builds."""
@@ -691,6 +715,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                             free_space = 50
 
                     batch_needed = construction_plan.batch_count(target_jobs, required_item, max_limit=free_space)
+                    batch_needed = self.fair_share_batch(required_item, batch_needed)
                     batch_needed = max(required_count, batch_needed)
 
                     # Check if we already have the materials loaded

@@ -143,6 +143,17 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   Worst slice per function asserted below `ATOMIC_STEP_BUDGET = 4000` operations in
   `tests/test_construction_plan.py`. Only the scan is atomic: claims, archive writes, trip
   budgeting (logs) and driving stay outside.
+- **Construction restock batch (`run_construction_loop()` step 5)**: loads toward the summed need
+  of open jobs using the target job's material (`batch_count()`), capped by free cargo. With
+  active same-home Constructor peers (`peer_builders()`: `fleet.status` entries with
+  `role == "constructor"`, same `home`, heartbeat younger than `PEER_BUILDER_ACTIVE_TICKS = 6000`
+  ticks (10 sim min), state not in `PEER_INACTIVE_STATES` (RECALLED, DECOMMISSION_READY,
+  UPGRADE_HOLD, AWAITING_MODULES)), `fair_share_batch()` caps it further at
+  ceil((home takeable stock + units aboard) / builders) (`fair_share()`,
+  `storage.takeable_stock()`). A lone builder is uncapped, so a long remote chain with field
+  recharges still runs on one load. Heartbeat: `publish_telemetry("BUILDING")` at every
+  `execute_construction()`, `"RESTOCKING"` at every restock. A failed restock defers every open
+  job needing that material for the pass (`ids_needing()`), not just the target job.
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
   `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expire after
   `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral mining sites not exclusive**

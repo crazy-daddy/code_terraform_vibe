@@ -101,6 +101,27 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(cp.ids_needing(rows, "pipe"), ["a", "c"])
         self.assertEqual(cp.ids_needing(rows, "bridge"), [])
 
+    def test_peer_builders(self):
+        status = {
+            "me": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 1000},
+            "peer": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 900},
+            "other_home": {"role": "constructor", "home": "outpost_2", "state": "BUILDING", "tick": 1000},
+            "miner": {"role": "miner", "home": "outpost_1", "state": "MINING", "tick": 1000},
+            "stale": {"role": "constructor", "home": "outpost_1", "state": "BUILDING", "tick": 100},
+            "recalled": {"role": "constructor", "home": "outpost_1", "state": "RECALLED", "tick": 1000},
+            "junk": None,
+        }
+        self.assertEqual(cp.peer_builders(status, "me", "outpost_1", 1000, 500), ["peer"])
+        self.assertEqual(cp.peer_builders(status, "me", "outpost_1", 0, 500), ["peer", "stale"])
+        self.assertEqual(cp.peer_builders({}, "me", "outpost_1", 1000, 500), [])
+
+    def test_fair_share(self):
+        self.assertEqual(cp.fair_share(200, 200, 1), 200)
+        self.assertEqual(cp.fair_share(200, 200, 2), 100)
+        self.assertEqual(cp.fair_share(200, 201, 2), 101)
+        self.assertEqual(cp.fair_share(40, 200, 2), 40)
+        self.assertEqual(cp.fair_share(200, 0, 2), 0)
+
 
 class BudgetTests(unittest.TestCase):
     """Each atomic call stays under ATOMIC_STEP_BUDGET at its worst input (the hard cap is 10,000 steps)."""
