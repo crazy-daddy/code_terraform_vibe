@@ -599,17 +599,22 @@ def get_manual_orders():
     }
 
 
-def consume_manual_order(item_id, quantity):
+def consume_manual_order(item_id, quantity, outpost=None):
     """Counts down an active manual build order (see get_manual_orders()) by quantity actually
-    delivered to Inventory, dropping the entry entirely once it reaches zero. No-ops if item_id has
-    no active manual order or quantity <= 0."""
+    drained from a machine's output, dropping the entry entirely once it reaches zero. No-ops if
+    item_id has no active manual order or quantity <= 0. Units drained off home (`outpost` given
+    and not home) are recorded in MANUAL_TRANSIT_KEY, which keeps them wanted at home until they
+    arrive there (manual_transit_wants())."""
     if not item_id or quantity <= 0:
         return
     # Plain read first: archive.transaction() always writes the key back, even when the updater
     # returns it unchanged, which locks out manual Notebook edits of fabricator.manual_orders.
     # Only transact when item_id actually has an active order to count down.
-    if item_id not in get_manual_orders():
+    wanted = get_manual_orders().get(item_id, 0)
+    if wanted <= 0:
         return
+    if outpost is not None and not outpost_is_home(outpost):
+        _record_manual_transit(item_id, min(wanted, quantity))
 
     def updater(stored):
         stored = dict(stored or {})
@@ -629,6 +634,95 @@ def consume_manual_order(item_id, quantity):
         archive.transaction(MANUAL_ORDERS_KEY, {}, updater)
     except Exception as error:
         swallowed("production.consume_manual_order: archive.transaction", error)
+
+
+# Manual-order units built off home and not yet at home: {item_id: {"units": n,
+# "base": home stock when recorded}}. Home wants base + units of the item
+# (fabricator_root_targets() consumers), so site_supply hauls them home. An
+# entry ends once home stock reaches base + units, or once none of the item is
+# left off home (remote Warehouses + cargo aboard haulers): nothing more can
+# arrive.
+MANUAL_TRANSIT_KEY = "fabricator.manual_transit"
+
+
+def _record_manual_transit(item_id, units):
+    try:
+        base = SourceCache().stock(item_id)
+    except Exception as error:
+        swallowed("production._record_manual_transit: SourceCache.stock", error)
+        base = 0
+
+    def updater(stored):
+        stored = dict(stored) if isinstance(stored, dict) else {}
+        # Earlier units still on their way: keep the first base so they stay
+        # counted on top of it.
+        earlier = _parse_transit(stored).get(item_id)
+        if earlier:
+            stored[item_id] = {"units": earlier[0] + units, "base": earlier[1]}
+        else:
+            stored[item_id] = {"units": units, "base": base}
+        return stored
+
+    try:
+        archive.transaction(MANUAL_TRANSIT_KEY, {}, updater)
+    except Exception as error:
+        swallowed("production._record_manual_transit: archive.transaction", error)
+    log.debug(f"manual order: {units}x {item_id} built off home, wanted at home until home stock reaches {base} + units")
+
+
+def _manual_transit_entries():
+    return _parse_transit(archive.get(MANUAL_TRANSIT_KEY, {}))
+
+
+def _parse_transit(stored):
+    """{item_id: (units, base)} from a stored MANUAL_TRANSIT_KEY value."""
+    if not isinstance(stored, dict):
+        return {}
+    entries = {}
+    for item_id, entry in stored.items():
+        if not isinstance(entry, dict):
+            continue
+        units = entry.get("units")
+        base = entry.get("base", 0)
+        if isinstance(units, (int, float)) and units > 0 and isinstance(base, (int, float)):
+            entries[item_id] = (int(units), max(0, int(base)))
+    return entries
+
+
+def _settle_transit(entries, cache):
+    """{item_id: (units, base)} with arrived units removed (see MANUAL_TRANSIT_KEY)."""
+    settled = {}
+    for item_id, (units, base) in entries.items():
+        home = cache.stock(item_id)
+        if home < base + units and cache.network_stock(item_id) > home:
+            settled[item_id] = (units, base)
+    return settled
+
+
+def manual_transit_wants(cache=None):
+    """{item_id: units wanted at home} for manual-order units still off home."""
+    entries = _manual_transit_entries()
+    if not entries:
+        return {}
+    cache = SourceCache() if cache is None else cache
+    return {item_id: base + units for item_id, (units, base) in _settle_transit(entries, cache).items()}
+
+
+def reconcile_manual_transit(cache=None):
+    """Writes MANUAL_TRANSIT_KEY back without arrived units. Writes only on change."""
+    stored = archive.get(MANUAL_TRANSIT_KEY, {})
+    if not stored:
+        return
+    cache = SourceCache() if cache is None else cache
+    entries = _manual_transit_entries()
+    settled = _settle_transit(entries, cache)
+    updated = {item_id: {"units": units, "base": base} for item_id, (units, base) in settled.items()}
+    if updated == stored:
+        return
+    for item_id in entries:
+        if item_id not in settled:
+            log.print(f"[production] Manual order {item_id}: no units left to haul home.")
+    archive.set(MANUAL_TRANSIT_KEY, updated)
 
 
 # Fleet hardware upgrade orders (lib/fleet_upgrade.py, lib/drone_upgrade.py):
@@ -1234,6 +1328,10 @@ def fabricator_root_targets(cache=None):
     # Constructor Pioneer loads it (construction_site_id()); the intermediates
     # beneath it are Fabricator inputs, consumed at whichever fab site builds
     # the item, so they are no consumer root.
+    # Manual-order units built off home stay wanted at home until they arrive
+    # (MANUAL_TRANSIT_KEY); no build target, they already exist.
+    for item_id, qty in manual_transit_wants(cache).items():
+        home_wants[item_id] = max(home_wants.get(item_id, 0), qty)
     for item_id, qty in home_wants.items():
         site = consumers.setdefault(item_id, {})
         site[home_id] = max(site.get(home_id, 0), qty)

@@ -94,6 +94,40 @@ class RemoteFabricatorTests(StubTestCase):
         self.assertEqual(wh.count("gas_pipe_segment"), 3)
         self.assertEqual(w.inventory.count("gas_pipe_segment"), 0)
 
+    def test_manual_order_built_off_home_stays_wanted_at_home(self):
+        w = self.world
+        wh = w.add_warehouse("wh_remote", self.remote)
+        f = w.add_fabricator("fabricator_2", self.remote)
+        w.inventory.add("lead_cask", 1)
+        w.notebook.set(production.MANUAL_ORDERS_KEY, {"lead_cask": 2})
+        f.output_buffer["lead_cask"] = 2
+        fabricator.FabricatorController(f).drain_output()
+        self.assertEqual(production.get_manual_orders(), {})
+        self.assertEqual(w.notebook.get(production.MANUAL_TRANSIT_KEY), {"lead_cask": {"units": 2, "base": 1}})
+        _roots, consumers, _outputs = production.fabricator_root_targets(production.SourceCache())
+        self.assertEqual(consumers["lead_cask"]["home"], 3)
+
+        # One unit hauled home: one still wanted.
+        wh.remove("lead_cask", 1)
+        w.inventory.add("lead_cask", 1)
+        production.reconcile_manual_transit()
+        self.assertEqual(w.notebook.get(production.MANUAL_TRANSIT_KEY), {"lead_cask": {"units": 2, "base": 1}})
+
+        wh.remove("lead_cask", 1)
+        w.inventory.add("lead_cask", 1)
+        production.reconcile_manual_transit()
+        self.assertEqual(w.notebook.get(production.MANUAL_TRANSIT_KEY), {})
+        self.assertEqual(production.manual_transit_wants(), {})
+
+    def test_manual_order_built_at_home_records_no_transit(self):
+        w = self.world
+        f = w.add_fabricator("fabricator_1", w.home)
+        w.notebook.set(production.MANUAL_ORDERS_KEY, {"lead_cask": 2})
+        f.output_buffer["lead_cask"] = 2
+        fabricator.FabricatorController(f).drain_output()
+        self.assertEqual(production.get_manual_orders(), {})
+        self.assertFalse(w.notebook.get(production.MANUAL_TRANSIT_KEY, {}))
+
     def test_eject_excess_to_local_warehouse(self):
         w = self.world
         wh = w.add_warehouse("wh_remote", self.remote)

@@ -537,7 +537,7 @@ class FabricatorController:
                     self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
                 else:
                     self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
-                consume_manual_order(item_id, moved)
+                consume_manual_order(item_id, moved, self.outpost())
             elif status not in ["busy", "no_op"]:
                 self.log.level("warn").print(f"[{self.name}] Output notice: {status} - {message}")
         return drained

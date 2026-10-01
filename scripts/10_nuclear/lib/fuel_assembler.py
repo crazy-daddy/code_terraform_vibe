@@ -363,7 +363,7 @@ class FuelAssemblerController:
                 if moved > 0:
                     moved_any = True
                     self.log.print(f"[{self.name}] Sent {moved}x {item_id} to {destination}.")
-                    consume_manual_order(item_id, moved)
+                    consume_manual_order(item_id, moved, self.outpost)
                 elif status not in ("busy", "no_op"):
                     self.log.level("warn").print(f"[{self.name}] Output notice: {status} - {message}")
         return moved_any
