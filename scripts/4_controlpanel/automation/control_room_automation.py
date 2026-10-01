@@ -69,6 +69,7 @@ from cash import CashManager
 from site_supply import publish_site_requests
 from pump_salt import publish_home_salt_request
 from site_plan import plan_sites
+from production import reconcile_manual_transit
 from mining_drill import publish_all_drills
 import wildlife_planner
 from fluid_routing import active_pipe_conflicts
@@ -188,8 +189,63 @@ def plan_wildlife_if_due(clock):
         report_error("Wildlife planner", e)
 
 
+def supervise_grids_if_due(clock, power):
+    """Every SOLAR_TICK_INTERVAL: PowerGridManager.supervise_grid() on every grid (Power Guard, turbine commitment)."""
+    global last_solar_tick
+    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    if last_solar_tick != 0 and now - last_solar_tick < SOLAR_TICK_INTERVAL:
+        return
+    last_solar_tick = now
+    try:
+        elevation = clock.get_elevation() if clock else 0.0
+        live_grids = power.grids() if power and hasattr(power, "grids") else []
+        current_anchors = set()
+        for grid in live_grids:
+            anchor = getattr(grid, "anchor_id", None)
+            current_anchors.add(anchor)
+            manager = grid_managers.get(anchor)
+            if manager is None:
+                manager = PowerGridManager(grid, clock=clock, power=power)
+                grid_managers[anchor] = manager
+            manager.supervise_grid(grid, elevation)
+
+        # Grids that stopped being reported (merged into another via a new
+        # power line) -- release anything they still had shed rather than
+        # stranding it forever (see PowerGridManager.release_all()).
+        for stale_anchor in list(grid_managers.keys()):
+            if stale_anchor not in current_anchors:
+                grid_managers[stale_anchor].release_all()
+                del grid_managers[stale_anchor]
+    except Exception as e:
+        report_error("Grid supervision", e)
+
+
+def park_if_due(clock, power):
+    """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (parks idle machines, wakes due or triggered ones)."""
+    global last_parking_tick, parking
+    now = clock.tick() if clock and hasattr(clock, "tick") else 0
+    if last_parking_tick != 0 and now - last_parking_tick < PARKING_TICK_INTERVAL:
+        return
+    last_parking_tick = now
+    try:
+        if parking is None and power:
+            parking = ScriptParking(power=power, clock=clock)
+        if parking is not None:
+            parking.step(
+                power.grids() if power and hasattr(power, "grids") else [],
+                clock.get_elevation() if clock and hasattr(clock, "get_elevation") else None,
+                archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {},
+            )
+    except Exception as e:
+        report_error("Script parking", e)
+
+
 def between_steps(clock):
-    """Short-interval checks run between the storage pass's slow sub-steps."""
+    """Short-interval checks run between the storage pass's slow sub-steps. Grid supervision and
+    parking wakes go first: the power reserve can drain within one full loop pass."""
+    power = get_component("power_control")
+    supervise_grids_if_due(clock, power)
+    park_if_due(clock, power)
     plan_docks_if_due(clock)
     commission_if_due(clock)
     plan_wildlife_if_due(clock)
@@ -208,34 +264,10 @@ while True:
 
     if not version_mismatch():
         current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
-        solar_due = (last_solar_tick == 0) or (current_tick - last_solar_tick >= SOLAR_TICK_INTERVAL)
         storage_due = (last_storage_tick == 0) or (current_tick - last_storage_tick >= STORAGE_TICK_INTERVAL)
         mixer_gate_due = (last_mixer_gate_tick == 0) or (current_tick - last_mixer_gate_tick >= MIXER_GATE_TICK_INTERVAL)
 
-        if solar_due:
-            last_solar_tick = current_tick
-            try:
-                elevation = clock.get_elevation() if clock else 0.0
-                live_grids = power.grids() if power and hasattr(power, "grids") else []
-                current_anchors = set()
-                for grid in live_grids:
-                    anchor = getattr(grid, "anchor_id", None)
-                    current_anchors.add(anchor)
-                    manager = grid_managers.get(anchor)
-                    if manager is None:
-                        manager = PowerGridManager(grid, clock=clock, power=power)
-                        grid_managers[anchor] = manager
-                    manager.supervise_grid(grid, elevation)
-
-                # Grids that stopped being reported (merged into another via a new
-                # power line) -- release anything they still had shed rather than
-                # stranding it forever (see PowerGridManager.release_all()).
-                for stale_anchor in list(grid_managers.keys()):
-                    if stale_anchor not in current_anchors:
-                        grid_managers[stale_anchor].release_all()
-                        del grid_managers[stale_anchor]
-            except Exception as e:
-                report_error("Grid supervision", e)
+        supervise_grids_if_due(clock, power)
 
         if mixer_gate_due:
             last_mixer_gate_tick = current_tick
@@ -256,19 +288,7 @@ while True:
             except Exception as e:
                 report_error("Drill telemetry", e)
 
-        if last_parking_tick == 0 or current_tick - last_parking_tick >= PARKING_TICK_INTERVAL:
-            last_parking_tick = current_tick
-            try:
-                if parking is None and power:
-                    parking = ScriptParking(power=power, clock=clock)
-                if parking is not None:
-                    parking.step(
-                        power.grids() if power and hasattr(power, "grids") else [],
-                        clock.get_elevation() if clock and hasattr(clock, "get_elevation") else None,
-                        archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {},
-                    )
-            except Exception as e:
-                report_error("Script parking", e)
+        park_if_due(clock, power)
 
         if storage_due:
             last_storage_tick = current_tick
@@ -331,6 +351,7 @@ while True:
                 report_error("Biomass retirement", e)
 
             try:
+                reconcile_manual_transit()
                 plan_sites()
             except Exception as e:
                 report_error("Fab site plan", e)
