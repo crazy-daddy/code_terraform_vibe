@@ -164,6 +164,11 @@ def _scan_building_ids(type_id, outpost):
     return ids
 
 
+def discover_building_ids(type_id, outpost=None):
+    """Ids of every `type_id` building at `outpost`, or network-wide when omitted (memoized discovery)."""
+    return _discover_building_ids(type_id, outpost)
+
+
 def discover_smelter_ids(outpost=None):
     """
     All Smelter building ids at `outpost`, or network-wide when omitted --
@@ -629,9 +634,15 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # field-machine kits (8_planting/lib/harvester_machines.py). "bio_caster" = the
 # Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
 # "fleet_commission" = a drone kit the COMMISSION card queued (lib/drone_commission.py).
-# "plant_terraformer" = the Plant Terraformers' next two batches of Fertilizer /
+# "plant_terraformer" = the Plant Terraformers' next NEED_CYCLES batches of Fertilizer /
 # Growth Accelerant (8_planting/lib/plant_terraformer.py).
 STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer")
+# Standing requesters whose order is a recurring consumable buffer, not a
+# one-off part a job waits on: their items are never hauled urgently
+# (lib/site_supply.py settled_items()), so a hauler waits for a full load.
+# The Fuel Assemblers' Lead Plates stay urgent (reactor fuel); their outposts
+# keep a stockpile instead (site_supply.SITE_STOCK_TARGETS).
+RECURRING_ORDER_REQUESTERS = ("plant_terraformer",)
 
 # Backlog orders: same {requester_id: {item_id: quantity}} shape as
 # UPGRADE_ORDERS_KEY, but filler work. The quantity is folded into the
@@ -642,9 +653,9 @@ STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "
 BACKLOG_ORDERS_KEY = "fabricator.backlog_orders"
 
 
-def get_upgrade_orders():
-    """{item_id: quantity} summed across every requester's entry in UPGRADE_ORDERS_KEY."""
-    return _summed_orders(UPGRADE_ORDERS_KEY)
+def get_upgrade_orders(skip=()):
+    """{item_id: quantity} summed across every requester's entry in UPGRADE_ORDERS_KEY, except the requesters in `skip`."""
+    return _summed_orders(UPGRADE_ORDERS_KEY, skip)
 
 
 def get_backlog_orders():
@@ -652,13 +663,13 @@ def get_backlog_orders():
     return _summed_orders(BACKLOG_ORDERS_KEY)
 
 
-def _summed_orders(key):
+def _summed_orders(key, skip=()):
     stored = archive.get(key, {})
     if not isinstance(stored, dict):
         return {}
     totals = {}
-    for items in stored.values():
-        if not isinstance(items, dict):
+    for requester, items in stored.items():
+        if requester in skip or not isinstance(items, dict):
             continue
         for item_id, qty in items.items():
             if isinstance(qty, (int, float)) and qty > 0:
@@ -1944,7 +1955,17 @@ def smelter_recipe_peers(recipe_id, outpost_id=None):
 
 
 def get_raw_material_demands(smelter=None):
-    """Converts refined-material demand into raw ore demand for mining."""
+    """
+    Converts refined-material demand into raw ore demand for mining and
+    hauling home. {} when home has neither a Smelter nor a Supply Dock: ore
+    delivered there has no consumer, and factory outposts request their own
+    ore (lib/site_supply.py). That check also skips the full demand walk
+    every hauler and miner would otherwise run per planning cycle.
+    """
+    home = _home_outpost()
+    if home is not None and not discover_smelter_ids(home) and not discover_supply_dock_ids(home):
+        log.trace("get_raw_material_demands: no home Smelter or Supply Dock -> {}")
+        return {}
     log.start("get_raw_material_demands", level="debug")
     demands = get_material_demands()
     refined_demands = dict(demands)

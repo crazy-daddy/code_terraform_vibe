@@ -24,6 +24,12 @@
 #     an unlocked Smelter recipe for. Buffer tier up to
 #     outpost_mining.ore_stock_target(ore); need tier = local + in-flight ore
 #     + the D - S ore shortfall above, 0 when no local Fabricator needs it.
+#   - Stockpiles (any outpost, home included): an outpost with a building
+#     type in SITE_STOCK_TARGETS requests those items as buffer tier, need
+#     tier = whatever else it planned for them (ship plan), while some are
+#     free at another outpost or in flight. SITE_STOCK_CRAFTED items are also
+#     ordered from the Fabricators as a backlog order (idle time only,
+#     requester SITE_STOCK_REQUESTER), sized to the summed targets.
 #   - Home publishes ingot requests only, and only while free remote ingots
 #     cover part of its D: its ore comes from the standing home ore floor
 #     (production.get_raw_material_demands()), so with every machine at home
@@ -38,7 +44,10 @@
 #     (production.get_upgrade_orders(): a commissioned drone's kit, a chassis
 #     swap) no Fabricator will add more of (settled_items()) is flagged
 #     urgent: haulers skip their minimum load for it, since waiting brings no
-#     fuller load and a job waits on it.
+#     fuller load and a job waits on it. Recurring consumable orders
+#     (production.RECURRING_ORDER_REQUESTERS: Terraformer Fertilizer /
+#     Growth Accelerant) are never urgent; Fuel Assembler Lead Plates stay
+#     urgent.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
 # leftover ore becomes free stock that pull haulers take wherever it is
@@ -62,7 +71,7 @@
 
 from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
-from production import discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, SourceCache
+from production import set_backlog_order, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
@@ -96,6 +105,15 @@ CONSTRUCTION_ITEM_IDS = (
 # Refiner's reagent (docs/database/recipes_refiner.md), and where the Refiner
 # will stand is open, so tar stays where it is until a Refiner requests it.
 EVICT_HOLD_ITEM_IDS = ("tar",)
+# Standing stockpiles, buffer tier: {building type: {item: target}} at every
+# outpost with that building. Tar piles up at home and Fabricator recipes draw
+# it in small amounts; Lead Plates keep a Fuel Assembler (reactor fuel) from
+# waiting on a craft and a haul.
+SITE_STOCK_TARGETS = {"fabricator": {"tar": 2000}, "fuel_assembler": {"lead_plate": 200}}
+# Stockpile items the Fabricators also craft for (backlog order: idle time
+# only). Tar is not: it comes from the plastic byproduct and home stock.
+SITE_STOCK_CRAFTED = ("lead_plate",)
+SITE_STOCK_REQUESTER = "site_stock"
 
 
 def _component(component_id):
@@ -179,6 +197,48 @@ def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
         log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
 
 
+def site_stock_targets(outpost):
+    """{item_id: target} SITE_STOCK_TARGETS asks of this outpost (max over its building types)."""
+    targets = {}
+    for type_id, items in sorted(SITE_STOCK_TARGETS.items()):
+        if not discover_building_ids(type_id, outpost):
+            continue
+        for item_id, target in items.items():
+            targets[item_id] = max(targets.get(item_id, 0), target)
+    return targets
+
+
+def stock_wants(outpost, targets, outposts, requests, tick, flying, wants):
+    """Raises wants to `targets` (site_stock_targets()) as buffer tier,
+    keeping any need level already planned (ship plan). Only items free at
+    another outpost or already in flight here: nothing to pull, no request."""
+    if not targets:
+        return
+    site_id = getattr(outpost, "id", None)
+    item_ids = sorted(targets)
+    spare = free_elsewhere(item_ids, site_id, outposts, requests, tick)
+    have = outpost_stock(item_ids, outpost)
+    for item_id in item_ids:
+        target = targets[item_id]
+        if spare.get(item_id, 0) <= 0 and flying.get(item_id, 0) <= 0 and item_id not in wants:
+            continue
+        floor = wants[item_id][2] if item_id in wants else 0
+        wants[item_id] = (max(target, floor), have.get(item_id, 0), floor)
+        log.debug(f"stock_wants({getattr(outpost, 'id', None)}): {item_id} local={have.get(item_id, 0)} need level={floor} target={max(target, floor)}")
+
+
+def order_site_stock(outposts, fabricator_outputs):
+    """Backlog order (SITE_STOCK_REQUESTER) for the SITE_STOCK_CRAFTED items a
+    Fabricator can build: the summed stockpile targets of every outpost."""
+    totals = {}
+    for outpost in outposts:
+        for item_id, target in site_stock_targets(outpost).items():
+            if item_id in SITE_STOCK_CRAFTED and item_id in fabricator_outputs:
+                totals[item_id] = totals.get(item_id, 0) + target
+    set_backlog_order(SITE_STOCK_REQUESTER, totals)
+    log.debug(f"order_site_stock: backlog {totals or 'none'}")
+
+
 def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None, anywhere=(), urgent=()):
     """{item_id: (target, have, min)} this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
@@ -187,9 +247,11 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     site_id = getattr(outpost, "id", None)
     flying = in_flight(site_id, tick)
     wants = consumer_wants(outpost, consumers or {}, sources or [], requests, tick, flying, outposts, anywhere, urgent)
+    stock = site_stock_targets(outpost)
     smelter_ids = discover_smelter_ids(outpost)
     fabricator_ids = discover_fabricator_ids(outpost)
     if not smelter_ids and not fabricator_ids:
+        stock_wants(outpost, stock, outposts, requests, tick, flying, wants)
         log.end()
         return wants
     at_home = outpost_is_home(outpost)
@@ -233,6 +295,7 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
             target = max(ore_stock_target(ore), floor)
             wants[ore] = (target, have.get(ore, 0), floor)
             log.debug(f"ore {ore} local={local} need level={floor} target={target}")
+    stock_wants(outpost, stock, outposts, requests, tick, flying, wants)
     log.end()
     return wants
 
@@ -508,12 +571,13 @@ def publish_site_requests(curr_tick):
     _roots, consumers, _outputs = fabricator_root_targets(cache)
     sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o)]
     anywhere = set(blueprint_required_items(cache))
-    urgent = settled_items(anywhere | set(get_upgrade_orders()), _roots, cache)
+    urgent = settled_items(anywhere | set(get_upgrade_orders(skip=RECURRING_ORDER_REQUESTERS)), _roots, cache)
     planned = {}
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)
         if site_id is not None:
             planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources, anywhere, urgent)
+    order_site_stock(outposts, _outputs)
     # Stranded check against this pass's plan: a site that just lost its
     # Smelters frees its ore for eviction right away.
     _home_wants, evicted = evict_stranded(outposts, planned_requests(requests, planned, curr_tick), curr_tick, consumers, smelting_sites(outposts), evictable_goods(cache))

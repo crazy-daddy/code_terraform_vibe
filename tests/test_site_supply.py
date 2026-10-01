@@ -3,6 +3,16 @@ and 5_steampower lib/site_supply.py site requests (E4)."""
 import unittest
 
 from harness import StubTestCase, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
+from game_stubs import Recipe, FABRICATOR_RECIPES
+
+
+class _Building:
+    """A plain building with only a type and an outpost (e.g. a Fuel Assembler)."""
+
+    def __init__(self, building_id, type_id, outpost):
+        self.id = building_id
+        self.type_id = type_id
+        self.outpost = outpost
 
 
 def site_requests(world, outpost_id):
@@ -85,6 +95,33 @@ class SiteSupplyTests(StubTestCase):
         self.publish()
         # D = 20 - 4 local; no local Smelter, so all 16 as ingots on top of the 4 held.
         self.assertEqual(site_requests(w, "outpost_2"), {"iron_ingot": (20, 20)})
+
+    def test_remote_fab_site_stocks_tar_free_at_home(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"tar": 5000}, capacity=100000)
+        w.add_fabricator("fabricator_2", self.remote)
+        self.publish()
+        self.assertEqual(site_requests(w, "outpost_2").get("tar"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 0))
+
+    def test_home_fab_site_stocks_tar_like_any_site(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"tar": 5000}, capacity=100000)
+        w.add_fabricator("fabricator_1", w.home)
+        self.publish()
+        self.assertEqual(site_requests(w, w.home.id).get("tar"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 0))
+
+    def test_fuel_assembler_site_stocks_and_orders_lead_plates(self):
+        w = self.world
+        w.components["fuel_assembler_1"] = _Building("fuel_assembler_1", "fuel_assembler", self.remote)
+        w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + [Recipe("craft_lead_plate", {"lead_ingot": 2}, "lead_plate")])
+        target = site_supply.SITE_STOCK_TARGETS["fuel_assembler"]["lead_plate"]
+        self.publish()
+        self.assertNotIn("lead_plate", site_requests(w, "outpost_2"))  # none built anywhere yet
+        self.assertEqual(production.get_backlog_orders(), {"lead_plate": target})
+        w.add_warehouse("wh_home", w.home, {"lead_plate": 50}, capacity=100000)
+        w.clock.now += site_supply.REPUBLISH_TICKS
+        self.publish()
+        self.assertEqual(site_requests(w, "outpost_2").get("lead_plate"), (target, 0))
 
     def test_smelt_and_fab_site_splits_ingots_and_ore(self):
         w = self.world

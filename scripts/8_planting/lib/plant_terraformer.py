@@ -122,8 +122,10 @@ FERTILIZER_ITEM_IDS = ("fertilizer_mk3", "fertilizer_mk2", "fertilizer")
 # Capacitor chain costs about 5x Mk II (§1k). The first unlocked one wins.
 FERTILIZER_CRAFT_PREFERENCE = ("fertilizer_mk2", "fertilizer")
 
-# Fabricator need order: batches per running Mk II Terraformer (this + next).
-NEED_CYCLES = 2
+# Fabricator need order: batches per running Mk II Terraformer. Six keep
+# 10-20 items per input on hand for a fleet of 2-3, enough for a hauler to
+# move a full load instead of single items.
+NEED_CYCLES = 6
 
 # Fabricator backlog order: hours of the fleet's use, one batch per machine
 # every CYCLE_HOURS.
@@ -139,9 +141,9 @@ CRAFTED_SUPPORT_FIRST_PHASE = {"fertilizer": 4, "growth_accelerant": 5}
 
 # Salt / Growth Accelerant / Fertilizer staged at the outpost, in batches'
 # worth (Mk I full batch: 3 Salt; Mk II: 14 Salt, 27 potency, 1
-# Accelerant; Fertilizer/Accelerant capped by the holder), so one batch is on
-# hand while a hauler brings the next.
-SUPPORT_REQUEST_BATCHES = 2
+# Accelerant; Fertilizer/Accelerant capped by the holder), so several
+# batches are on hand while a hauler brings more in one load.
+SUPPORT_REQUEST_BATCHES = 6
 
 # Requests are republished at least this often (well inside
 # logistics_requests.REQUEST_STALE_TICKS = 6000) and at once when a target

@@ -35,7 +35,7 @@ class OrderSizeTests(unittest.TestCase):
 
     def test_mk2_fleet_of_three(self):
         need, backlog = plant_terraformer.order_sizes(27 / 30.0, 6600, 3, 5750000)
-        self.assertEqual((need, backlog), (6, 22))
+        self.assertEqual((need, backlog), (17, 22))
 
     def test_capped_by_remaining_ladder(self):
         # 6,600 Forage left: one batch, 0.9 Mk II items.
@@ -51,21 +51,21 @@ class ControllerOrderTests(StubTestCase):
     def test_orders_mk2_when_unlocked(self):
         c = self.controller(FERTILIZER_RECIPES)
         need, backlog = c.fabricator_orders(MK2_REQS, MK2_REQUIRED, 4, 1250000, 3)
-        self.assertEqual(need, {"fertilizer_mk2": 6})
+        self.assertEqual(need, {"fertilizer_mk2": 17})
         self.assertEqual(backlog, {"fertilizer_mk2": 22})
-        self.assertEqual(c.demand_targets(MK2_REQS, MK2_REQUIRED)["fertilizer_mk2"], 2)
+        self.assertEqual(c.demand_targets(MK2_REQS, MK2_REQUIRED)["fertilizer_mk2"], 6)
 
     def test_falls_back_to_mk1(self):
         c = self.controller(FERTILIZER_RECIPES[:1])
         need, backlog = c.fabricator_orders(MK2_REQS, MK2_REQUIRED, 4, 1250000, 3)
-        self.assertEqual(need, {"fertilizer": 17})
+        self.assertEqual(need, {"fertilizer": 49})
         self.assertEqual(backlog, {"fertilizer": 65})
 
     def test_accelerant_only_in_last_phase(self):
         c = self.controller(FERTILIZER_RECIPES)
         reqs = dict(MK2_REQS, growth_accelerant=1)
         need, _ = c.fabricator_orders(reqs, MK2_REQUIRED + ["growth_accelerant"], 5, 4500000, 3)
-        self.assertEqual(need, {"fertilizer_mk2": 6, "growth_accelerant": 6})
+        self.assertEqual(need, {"fertilizer_mk2": 17, "growth_accelerant": 18})
 
     def test_publish_and_withdraw(self):
         c = self.controller(FERTILIZER_RECIPES)
