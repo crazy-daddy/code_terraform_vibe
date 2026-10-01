@@ -1,0 +1,422 @@
+"""Fuel Assembler (10_nuclear/lib/fuel_assembler.py), Lead Cask roles (lib/lead_cask.py),
+the Mk IV rod feed (lib/terraforming.py) and the hot-cargo hooks in production/supply_dock."""
+import unittest
+
+import harness
+import fuel_assembler as fa
+import lead_cask
+import production
+import supply_dock
+import terraforming
+
+
+class _Result:
+    def __init__(self, status="ok", moved=0):
+        self.status = status
+        self.message = ""
+        self.moved = moved
+
+
+class _Recipe:
+    def __init__(self, recipe_id):
+        spec = fa.FALLBACK_RECIPES[recipe_id]
+        self.id = recipe_id
+        self.output_item = spec["output"]
+        self.inputs = dict(spec["inputs"])
+
+
+class _Stack:
+    def __init__(self, item_id, count):
+        self.id = item_id
+        self.count = count
+
+
+class _Cask:
+    """Lead Cask: one hot item, unlatches when empty."""
+    type_id = "lead_cask"
+
+    def __init__(self, world, cask_id, outpost, material="", count=0):
+        self.world = world
+        self.id = cask_id
+        self.outpost = outpost
+        self._material = material
+        self.units = count
+        world.components[cask_id] = self
+
+    def material(self):
+        return self._material if self.units > 0 else ""
+
+    def count(self, item_id):
+        return self.units if item_id == self.material() else 0
+
+    def capacity(self):
+        return 100
+
+    def put(self, item_id, n):
+        if self.material() not in ("", item_id):
+            return 0
+        self._material = item_id
+        moved = min(n, 100 - self.units)
+        self.units += moved
+        return moved
+
+    def transfer_to(self, target, item_id, count):
+        other = self.world.components.get(target)
+        moved = other.put(item_id, min(count, self.count(item_id)))
+        self.units -= moved
+        return _Result("ok" if moved else "target_full", moved)
+
+
+class _Input:
+    """InputSlot that pulls from a connected _Cask into `buffer`."""
+
+    def __init__(self, world, buffer, count_fn=None):
+        self.world = world
+        self.buffer = buffer
+        self.source = ""
+
+    def connected_id(self):
+        return self.source
+
+    def connect(self, source_id):
+        self.source = source_id
+        return _Result()
+
+    def take(self, item_id, count):
+        cask = self.world.components.get(self.source)
+        moved = min(count, cask.count(item_id)) if isinstance(cask, _Cask) else 0
+        if moved:
+            cask.units -= moved
+            self.buffer[item_id] = self.buffer.get(item_id, 0) + moved
+        return _Result("ok" if moved else "source_empty", moved)
+
+    def count(self):
+        return sum(self.buffer.values())
+
+
+class _Output:
+    def __init__(self, maker):
+        self.maker = maker
+        self.target = ""
+
+    def stacks(self):
+        return [_Stack(i, n) for i, n in self.maker.out.items() if n > 0]
+
+    def connected_id(self):
+        return self.target
+
+    def connect(self, target_id):
+        self.target = target_id
+        return _Result()
+
+    def send(self, item_id, count):
+        cask = self.maker.world.components.get(self.target)
+        if not isinstance(cask, _Cask):
+            return _Result("unsupported_target")
+        moved = cask.put(item_id, count)
+        self.maker.out[item_id] -= moved
+        return _Result("ok" if moved else "target_wrong_material", moved)
+
+
+class _Consumer:
+    """Reactor or a terraformer with a Fuel Rod magazine."""
+
+    def __init__(self, world, machine_id, type_id, outpost, tier=4, staged=0):
+        self.world = world
+        self.id = machine_id
+        self.type_id = type_id
+        self.outpost = outpost
+        self._tier = tier
+        self.input = _Input(world, {"fuel_rod": staged} if staged else {})
+        world.components[machine_id] = self
+
+    def tier(self):
+        return self._tier
+
+
+class _Assembler:
+    def __init__(self, world, outpost, recipe="", running=False, stock_pile=None):
+        self.world = world
+        self.id = "fuel_assembler_1"
+        self.type_id = "fuel_assembler"
+        self.outpost = outpost
+        self.stock_pile = dict(stock_pile or {})
+        self.input = _Input(world, self.stock_pile)
+        self.output = _Output(self)
+        self.recipe = recipe
+        self.running = running
+        self.out = {}
+        self.calls = []
+        world.components[self.id] = self
+
+    def list_recipes(self):
+        return [_Recipe(fa.ROD_RECIPE), _Recipe(fa.BATTERY_RECIPE)]
+
+    def get_recipe(self): return self.recipe
+    def is_running(self): return self.running
+    def get_progress(self): return 0.5 if self.running else 0.0
+    def get_stockpile(self): return {k: v for k, v in self.stock_pile.items() if v > 0}
+
+    def set_recipe(self, rid):
+        self.calls.append(("set_recipe", rid))
+        self.recipe = rid
+        return _Result()
+
+    def clear_recipe(self):
+        self.calls.append(("clear_recipe",))
+        self.recipe = ""
+        return _Result()
+
+
+class _Power:
+    """lib/power.py stand-in: measure_grid() returns the reserve the test set."""
+
+    def __init__(self):
+        self.fraction = 1.0
+
+    def measure_grid(self, grid, tank_ids):
+        return {"bat_wh": self.fraction * 1000.0, "bat_cap": 1000.0, "steam_t": 0.0, "steam_cap": 0.0, "tanks": 0}
+
+    def grid_steam_tank_ids(self, grid):
+        return []
+
+    def reserve_fraction(self, now):
+        return now["bat_wh"] / now["bat_cap"]
+
+
+class _PowerService:
+    def grid(self, machine_id):
+        return object()
+
+
+class _Base(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.world.services["power_control"] = _PowerService()
+        self.plates = {"lead_plate": 50}
+        self.fake_power = _Power()
+        self._orig = (fa.take_item, fa.takeable_stock, fa.drain_port_inventory_first, fa.power)
+
+        def fake_take(port, item_id, amount, outpost=None, cache=None, report=None):
+            moved = min(amount, self.plates.get(item_id, 0))
+            self.plates[item_id] = self.plates.get(item_id, 0) - moved
+            port.buffer[item_id] = port.buffer.get(item_id, 0) + moved
+            return moved
+
+        fa.take_item = fake_take
+        fa.takeable_stock = lambda item_id, outpost=None: self.plates.get(item_id, 0)
+        fa.drain_port_inventory_first = lambda port, outpost=None: []
+        fa.power = self.fake_power
+
+    def tearDown(self):
+        fa.take_item, fa.takeable_stock, fa.drain_port_inventory_first, fa.power = self._orig
+        super().tearDown()
+
+    def casks(self, uranium=40, rods=None):
+        """lead_cask_1 with uranium; lead_cask_2 empty, or holding `rods` rods."""
+        u = _Cask(self.world, "lead_cask_1", self.world.home, "raw_uranium", uranium)
+        r = _Cask(self.world, "lead_cask_2", self.world.home, "fuel_rod" if rods else "", rods or 0)
+        return u, r
+
+    def plate_order(self):
+        return (self.world.notebook.data.get("fabricator.upgrade_orders") or {}).get(fa.PLATE_ORDER_REQUESTER)
+
+    def roles(self):
+        return self.world.notebook.data.get(lead_cask.ROLES_KEY) or {}
+
+
+class FuelAssemblerTests(_Base):
+    def test_crafts_rods_for_local_reactor(self):
+        _Consumer(self.world, "reactor_1", "reactor", self.world.home)
+        self.casks()
+        maker = _Assembler(self.world, self.world.home)
+        delay = fa.FuelAssemblerController(maker).step()
+        self.assertEqual(delay, fa.ACTIVE_POLL_S)
+        self.assertEqual(maker.recipe, fa.ROD_RECIPE)
+        # target 1 reserve + 2 per reactor = 3 rods short; stages STAGED_CRAFTS crafts
+        self.assertEqual(maker.stock_pile, {"raw_uranium": 8, "lead_plate": 4})
+        self.assertEqual(self.plate_order(), {"lead_plate": 4})
+        self.assertEqual(self.roles(), {"lead_cask_2": "fuel_rod"})
+
+    def test_mk4_generators_count_in_rod_target(self):
+        _Consumer(self.world, "heater_1", "temp_heater", self.world.home, tier=4, staged=1)
+        _Consumer(self.world, "heater_2", "temp_heater", self.world.home, tier=3)
+        self.casks(rods=1)
+        maker = _Assembler(self.world, self.world.home)
+        ctrl = fa.FuelAssemblerController(maker)
+        # 1 reserve + 1 for the Mk IV heater; 1 in the cask + 1 in its magazine
+        self.assertEqual(ctrl.shortfalls(lead_cask.casks_at(self.world.home), ctrl.recipes(0)), [])
+
+    def test_rod_stock_met_clears_recipe_and_order(self):
+        self.casks(rods=1)
+        self.world.notebook.data["fabricator.upgrade_orders"] = {fa.PLATE_ORDER_REQUESTER: {"lead_plate": 4}}
+        maker = _Assembler(self.world, self.world.home, recipe=fa.ROD_RECIPE)
+        delay = fa.FuelAssemblerController(maker).step()
+        self.assertEqual(delay, fa.IDLE_POLL_S)
+        self.assertIn(("clear_recipe",), maker.calls)
+        self.assertIsNone(self.plate_order())
+
+    def test_rods_before_batteries(self):
+        self.world.notebook.data["fabricator.manual_orders"] = {"nuclear_battery": 5}
+        self.casks()
+        maker = _Assembler(self.world, self.world.home)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.recipe, fa.ROD_RECIPE)
+
+    def test_batteries_once_rods_met(self):
+        self.world.notebook.data["fabricator.manual_orders"] = {"nuclear_battery": 2}
+        self.casks(rods=1)
+        maker = _Assembler(self.world, self.world.home)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.recipe, fa.BATTERY_RECIPE)
+        self.assertEqual(maker.stock_pile, {"raw_uranium": 8, "lead_plate": 6})
+
+    def test_single_cask_blocks_rods_not_batteries(self):
+        self.world.notebook.data["fabricator.manual_orders"] = {"nuclear_battery": 1}
+        _Cask(self.world, "lead_cask_1", self.world.home, "raw_uranium", 40)
+        maker = _Assembler(self.world, self.world.home)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.recipe, fa.BATTERY_RECIPE)
+        self.assertIn("rods need their own cask", self.debug_log())
+
+    def test_no_uranium_blocks(self):
+        _Cask(self.world, "lead_cask_2", self.world.home)
+        _Cask(self.world, "lead_cask_3", self.world.home)
+        maker = _Assembler(self.world, self.world.home)
+        delay = fa.FuelAssemblerController(maker).step()
+        self.assertEqual(delay, fa.IDLE_POLL_S)
+        self.assertEqual(maker.recipe, "")
+        # Plates are still requested so they are ready when uranium arrives.
+        self.assertEqual(self.plate_order(), {"lead_plate": 2})
+
+    def test_low_reserve_stages_nothing(self):
+        self.casks()
+        self.fake_power.fraction = fa.START_RESERVE_FRACTION - 0.1
+        maker = _Assembler(self.world, self.world.home)
+        delay = fa.FuelAssemblerController(maker).step()
+        self.assertEqual(delay, fa.ACTIVE_POLL_S)
+        self.assertEqual(maker.stock_pile, {})
+
+    def test_shed_starts_nothing(self):
+        self.world.notebook.data["power.shedded"] = ["fuel_assembler_1"]
+        self.casks()
+        maker = _Assembler(self.world, self.world.home)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.recipe, "")
+        self.assertEqual(maker.stock_pile, {})
+
+    def test_running_craft_not_switched(self):
+        self.world.notebook.data["fabricator.manual_orders"] = {"nuclear_battery": 2}
+        self.casks(rods=5)
+        maker = _Assembler(self.world, self.world.home, recipe=fa.ROD_RECIPE, running=True)
+        delay = fa.FuelAssemblerController(maker).step()
+        self.assertEqual(delay, fa.ACTIVE_POLL_S)
+        self.assertEqual(maker.recipe, fa.ROD_RECIPE)
+
+    def test_rods_go_to_rod_cask_only(self):
+        uranium, rod_cask = self.casks()
+        maker = _Assembler(self.world, self.world.home)
+        maker.out = {"fuel_rod": 2}
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(rod_cask.count("fuel_rod"), 2)
+        self.assertEqual(uranium.count("fuel_rod"), 0)
+
+    def test_misfiled_uranium_moved_out_of_rod_cask(self):
+        uranium, rod_cask = self.casks(uranium=30)
+        self.world.notebook.data[lead_cask.ROLES_KEY] = {"lead_cask_2": "fuel_rod"}
+        rod_cask.put("raw_uranium", 20)  # a Depot unload landed in the rod cask
+        maker = _Assembler(self.world, self.world.home)
+        maker.out = {"fuel_rod": 1}
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(uranium.count("raw_uranium"), 50)
+        self.assertEqual(rod_cask.count("fuel_rod"), 1)
+        self.assertEqual(maker.recipe, "")  # the delivered rod meets the reserve
+
+
+class RemotePlateOrderTests(_Base):
+    def test_no_plate_order_off_home(self):
+        remote = self.world.add_outpost("outpost_2")
+        _Cask(self.world, "lead_cask_1", remote, "raw_uranium", 40)
+        _Cask(self.world, "lead_cask_2", remote)
+        maker = _Assembler(self.world, remote)
+        fa.FuelAssemblerController(maker).step()
+        self.assertEqual(maker.recipe, fa.ROD_RECIPE)
+        self.assertIsNone(self.plate_order())
+
+
+class LeadCaskTests(_Base):
+    def test_rod_cask_needs_two_casks(self):
+        _Cask(self.world, "lead_cask_1", self.world.home, "raw_uranium", 10)
+        cask_id, note = lead_cask.ensure_rod_cask(self.world.home)
+        self.assertIsNone(cask_id)
+        self.assertIn("own cask", note)
+
+    def test_rod_cask_prefers_rods_then_empty_then_least_uranium(self):
+        _Cask(self.world, "lead_cask_1", self.world.home, "raw_uranium", 60)
+        _Cask(self.world, "lead_cask_2", self.world.home, "raw_uranium", 10)
+        self.assertEqual(lead_cask.ensure_rod_cask(self.world.home)[0], "lead_cask_2")
+        self.world.notebook.data[lead_cask.ROLES_KEY] = {}
+        _Cask(self.world, "lead_cask_3", self.world.home)
+        self.assertEqual(lead_cask.ensure_rod_cask(self.world.home)[0], "lead_cask_3")
+
+    def test_room_skips_rod_cask(self):
+        self.casks(uranium=40)
+        self.world.notebook.data[lead_cask.ROLES_KEY] = {"lead_cask_2": "fuel_rod"}
+        self.assertEqual(lead_cask.room_for("raw_uranium", self.world.home), 60)
+        self.assertEqual(lead_cask.room_for("fuel_rod", self.world.home), 100)
+
+    def test_take_drains_misfiled_cask_first(self):
+        uranium, rod_cask = self.casks(uranium=40)
+        self.world.notebook.data[lead_cask.ROLES_KEY] = {"lead_cask_2": "fuel_rod"}
+        rod_cask.put("raw_uranium", 3)
+        port = _Input(self.world, {})
+        self.assertEqual(lead_cask.take_from_casks(port, "raw_uranium", 4, self.world.home), 4)
+        self.assertEqual(rod_cask.units, 0)
+        self.assertEqual(uranium.units, 39)
+
+    def test_roles_pruned_for_gone_casks(self):
+        self.casks()
+        self.world.notebook.data[lead_cask.ROLES_KEY] = {"lead_cask_9": "fuel_rod"}
+        lead_cask.ensure_rod_cask(self.world.home)
+        self.assertEqual(self.roles(), {"lead_cask_2": "fuel_rod"})
+
+
+class Mk4RodFeedTests(_Base):
+    def test_loads_one_rod_into_mk4_magazine(self):
+        self.casks(rods=3)
+        heater = _Consumer(self.world, "heater_1", "temp_heater", self.world.home, tier=4)
+        feed = terraforming.Mk4RodFeed(heater, "heater_1", terraforming.TreeConsole(module="terraforming"))
+        feed.step()
+        self.assertEqual(heater.input.count(), terraforming.MK4_MAGAZINE_TARGET)
+
+    def test_below_mk4_takes_nothing(self):
+        _u, rod_cask = self.casks(rods=3)
+        heater = _Consumer(self.world, "heater_1", "temp_heater", self.world.home, tier=3)
+        terraforming.Mk4RodFeed(heater, "heater_1", terraforming.TreeConsole(module="terraforming")).step()
+        self.assertEqual(rod_cask.units, 3)
+
+
+class HotCargoSourcingTests(_Base):
+    def test_fuel_rod_sourceable_via_assembler(self):
+        self.assertFalse(production.can_source_item("fuel_rod"))
+        _Assembler(self.world, self.world.home)
+        _Cask(self.world, "lead_cask_1", self.world.home, "raw_uranium", 4)
+        self.world.inventory.add("lead_plate", 10)
+        self.assertTrue(production.can_source_item("fuel_rod"))
+
+    def test_uranium_sourceable_from_live_aftermath(self):
+        self.assertFalse(production.can_source_item("raw_uranium"))
+        self.world.notebook.data[production.AFTERMATHS_KEY] = {"storm_1": {"kind": "uranium"}}
+        self.assertTrue(production.can_source_item("raw_uranium"))
+
+    def test_hot_order_needs_cask_at_dock_outpost(self):
+        order = type("O", (), {"requires": {"raw_uranium": 12}})()
+        plain = type("O", (), {"requires": {"iron_ingot": 5}})()
+        self.assertFalse(supply_dock._servable_at(order, self.world.home, {}))
+        self.assertTrue(supply_dock._servable_at(plain, self.world.home, {}))
+        _Cask(self.world, "lead_cask_1", self.world.home)
+        self.assertTrue(supply_dock._servable_at(order, self.world.home, {}))
+
+
+if __name__ == "__main__":
+    unittest.main()

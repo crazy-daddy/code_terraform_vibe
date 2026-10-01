@@ -351,6 +351,13 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
 - [ ] **Station coverage**: dust (uranium) messages need a powered station in all 5 biomes; only 1 station is deployed (`outpost_5`). Buy and deploy one per missing biome (60,000 cr each).
 - [x] **Aftermath collection** (`lib/drone_weather.py`, §2j-1): plated `aftermath` drone role (uranium + glass, uranium into the home outpost's Lead Cask), haulers take Storm Glass between jobs. Not yet live-verified: commission/plate one drone, watch the next thunderstorm aftermath.
 - [ ] **Fuel Assembler + Reactor** controllers (docs/components/fuel_assembler.md, reactor.md, lead_cask.md).
+  - [x] Fuel Assembler controller (`lib/fuel_assembler.py`, tier `10_nuclear`, §1n): rods to local Reactor stock, then Nuclear Batteries; uranium from Lead Casks, plates via a standing upgrade order; reserve-gated bursts, hard-shed tier 1, parks idle.
+  - [ ] Validate live (Fuel Assembler): input `connect()` to a Lead Cask then `take("raw_uranium")`, `output.send()` of rods into an empty cask, `clear_recipe()` with a staged stockpile, Reactor `input.count()`, how often a Depot drops uranium into the rod cask (repair churn), real craft power draw against the reserve gate.
+  - [x] Lead Cask roles (`lib/lead_cask.py`, `lead_cask.roles`): one Fuel Rod cask per assembler outpost, misfiled uranium repaired, drones' uranium room excludes it.
+  - [x] Supply Dock hot cargo: Raw Uranium / Fuel Rods sourceable (casks, live aftermaths, assembler recipes), loaded from local casks, hot orders only to docks at an outpost with a cask (`vestibule_28`/`_29`, `helios_30`).
+  - [x] Mk IV terraformer rod magazine (`terraforming.Mk4RodFeed`) and Mk IV generators in the rod target.
+  - [ ] Validate live: `lead_cask.transfer_to()` cask to cask for uranium, Supply Dock `input.connect(cask)` + `take("fuel_rod")`, Mk IV `input.count()`/`take()` from a cask.
+  - [ ] Reactor controller (heat control with measured gain, cooling water, rod feed from the cask).
 - [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations

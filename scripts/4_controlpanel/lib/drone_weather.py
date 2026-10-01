@@ -15,7 +15,8 @@
 # adds 40 exposure and the drone scrambles at 100. A plated drone unloads it
 # at its home Depot, which puts hot cargo into a Lead Cask at that outpost
 # (research_shielded_depot_ops required; "cask_missing" otherwise), so a
-# uranium site is only taken while the home outpost has cask room. Storm
+# uranium site is only taken while the home outpost has cask room (casks
+# reserved for Fuel Rods in lead_cask.roles don't count). Storm
 # Glass (thunderstorms, 2-4 units) is ordinary cargo.
 #
 # One drone per site at a time: an exclusive claim in biosite.claims under
@@ -28,6 +29,7 @@ from archive import archive
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 import fleet_intent
+import lead_cask
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -37,7 +39,6 @@ if TYPE_CHECKING:
 AFTERMATHS_KEY = "weather.aftermaths"
 ITEM_BY_KIND = {"uranium": "raw_uranium", "storm_glass": "storm_glass"}
 AFTERMATH_KEY_PREFIX = "aftermath_"
-LEAD_CASK_TYPE_ID = "lead_cask"
 HOT_CARGO_RESEARCH = "research_shielded_depot_ops"
 
 # Wait this long past ready_gh before the first collect(), so the aftermath
@@ -122,26 +123,10 @@ def hot_cargo_unlocked():
 
 
 def cask_room(outpost, item_id="raw_uranium"):
-    """Free Lead Cask units for item_id at outpost (casks latched to item_id or empty)."""
+    """Free Lead Cask units for item_id at outpost (lead_cask.room_for(): casks reserved for Fuel Rods left out)."""
     if outpost is None:
         return 0
-    room = 0
-    try:
-        refs = outpost.buildings(LEAD_CASK_TYPE_ID)
-    except Exception as error:
-        swallowed("drone_weather.cask_room: outpost.buildings", error)
-        return 0
-    for ref in refs:
-        cask = get_component(ref.id)
-        if cask is None:
-            continue
-        try:
-            if cask.material() not in ("", item_id):
-                continue
-            room += max(0, int(cask.capacity()) - int(cask.count(item_id)))
-        except Exception as error:
-            swallowed("drone_weather.cask_room: lead_cask read", error)
-    return room
+    return lead_cask.room_for(item_id, outpost)
 
 
 class DroneWeatherMixin:

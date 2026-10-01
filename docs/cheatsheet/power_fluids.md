@@ -7,7 +7,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §
 - Tiers configurable via `archive` key `power.shedding_tiers` (or per-grid override
   `power.shedding_tiers:<grid_anchor>`), fallback `DEFAULT_SHEDDING_TIERS` in `lib/power.py`:
   - **Tier 1 — passive background terraforming** (`heater_*`, `pressure_*`, `o2gen_*`,
-    `bio_collector_*`, `bio_lab_*`, `bio_exchange_*`, `bio_luminizer_*`): shed **first**.
+    `bio_collector_*`, `bio_lab_*`, `bio_exchange_*`, `bio_luminizer_*`; tier-5 copy also
+    `fuel_assembler_*`, hard-shed, §1n): shed **first**.
   - **Tier 2 — critical active production** (`smelter_*`, `fabricator_*`, `feed_maker_*`): shed only under
     severe deficit.
   - **Tier 3 — Habitats** (`habitat_*`, tier-5 copy only, §1a-0): shed last. An unpowered Habitat
@@ -209,3 +210,4 @@ every cycle — delivery self-limits to what connected tank accepts.
 - **Steam guard (heater only)**: grid steam pool (`power.measure_grid()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.50` → `steam_in.disconnect()`, heater runs as Mk II; reconnects at `>= STEAM_POOL_START_FRACTION = 0.70`. Keeps the turbines' dormancy buffer. No measurable steam tank, or tier-4 `power.py` (no `measure_grid()`) → guard open. Water has no guard.
 - `is_degraded()` transitions logged at info level (warn when starved).
 - No archive state.
+- **Mk IV rod magazine** (`Mk4RodFeed`, same three controllers): while `tier() >= 4`, every `MK4_CHECK_INTERVAL_TICKS = 600` ticks, tops `input` up to `MK4_MAGAZINE_TARGET = 1` Fuel Rod from the Lead Casks at the generator's own outpost (`lead_cask.take_from_casks()`; hot cargo never crosses outposts). A Mk IV burns 1 rod per 240 game h (simworker `0.1 / 24` per h) and stops without one. No rods: one warn until a load succeeds. The Fuel Assembler counts each Mk IV in its rod target (§1n).

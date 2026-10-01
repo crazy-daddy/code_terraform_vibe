@@ -38,8 +38,10 @@ DAY_CYCLE_DURATION_SECONDS = 600
 # Tiers 1-2 and the soft-shed rule match 4_controlpanel's lib/power.py -- see
 # there for why Charging Stations are never shed and why Smelters/Fabricators
 # are only flagged (they idle at 0 W anyway). Feed Makers are crafters too
-# (power only while a craft runs), so they are flagged the same way. Tier 3
-# holds the Habitats: an unpowered Habitat only pauses (no breeding, no
+# (power only while a craft runs), so they are flagged the same way. Fuel
+# Assemblers (tier 1, this copy only) are hard-shed instead: a craft draws
+# 1.2-1.8 kW just to build stock, and its progress survives the breaker cut.
+# Tier 3 holds the Habitats: an unpowered Habitat only pauses (no breeding, no
 # rearing progress, no failure; simworker skips unpowered Habitats), so they
 # shed last, below their own lower threshold. 4_controlpanel's copy keeps two
 # tiers: Habitats come long after this tier replaces it. Archive override keys
@@ -53,6 +55,7 @@ DEFAULT_SHEDDING_TIERS = [
         "bio_lab_*",
         "bio_exchange_*",
         "bio_luminizer_*",
+        "fuel_assembler_*",
     ],
     [
         "smelter_*",

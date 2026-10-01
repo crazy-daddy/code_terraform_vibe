@@ -8,6 +8,7 @@ from tree_console import TreeConsole
 from swallow import swallowed
 import mining_reservations
 import fleet_status
+import lead_cask
 
 log = TreeConsole(module="production")
 
@@ -294,6 +295,26 @@ def _default_fabricator():
     if ids:
         return _component(ids[0])
     return _component("fabricator_1")  # last-resort fallback if discovery finds nothing
+
+
+FUEL_ASSEMBLER_TYPE_ID = "fuel_assembler"
+# Fuel Assembler outputs (10_nuclear/lib/fuel_assembler.py builds them, not a Fabricator).
+FUEL_ASSEMBLER_OUTPUTS = ("fuel_rod", "nuclear_battery")
+# weather.aftermaths (lib/weather_signals.py); a live uranium site makes Raw Uranium sourceable.
+AFTERMATHS_KEY = "weather.aftermaths"
+
+
+def _default_fuel_assembler():
+    ids = _discover_building_ids(FUEL_ASSEMBLER_TYPE_ID)
+    return _component(ids[0]) if ids else None
+
+
+def _uranium_aftermath_pending():
+    """True while weather.aftermaths holds a uranium site not yet exhausted."""
+    sites = archive.get(AFTERMATHS_KEY, {})
+    if not isinstance(sites, dict):
+        return False
+    return any(isinstance(s, dict) and s.get("kind") == "uranium" and not s.get("exhausted") for s in sites.values())
 
 
 SUPPLY_DOCK_TYPE_ID = "supply_dock"
@@ -635,8 +656,9 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
 # "fleet_commission" = a drone kit the COMMISSION card queued (lib/drone_commission.py).
 # "plant_terraformer" = the Plant Terraformers' next NEED_CYCLES batches of Fertilizer /
-# Growth Accelerant (8_planting/lib/plant_terraformer.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer")
+# Growth Accelerant (8_planting/lib/plant_terraformer.py). "fuel_assembler" = the
+# Fuel Assemblers' Lead Plates for their next crafts (10_nuclear/lib/fuel_assembler.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler")
 # Standing requesters whose order is a recurring consumable buffer, not a
 # one-off part a job waits on: their items are never hauled urgently
 # (lib/site_supply.py settled_items()), so a hauler waits for a full load.
@@ -1165,7 +1187,7 @@ def fabricator_root_targets(cache=None):
         targets[item_id] = max(targets.get(item_id, 0), quantity)
         home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
-        if fabricator_outputs and item_id not in fabricator_outputs and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
+        if fabricator_outputs and item_id not in fabricator_outputs and item_id not in FUEL_ASSEMBLER_OUTPUTS and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:
             _WARNED_UNKNOWN_MANUAL_ITEMS.add(item_id)
             log.level("warn").print(f"[production] Warning: fabricator.manual_orders has '{item_id}' ({quantity}x), which "
                   f"doesn't match any known Fabricator recipe output. Check for a typo/renamed item_id.")
@@ -2105,6 +2127,8 @@ class SourceCache:
         self._blueprint_demand = None  # _cascade_blueprint_demand() memo
         self._blueprint_seeds = None  # blueprint_required_items() memo
         self._recipe_index = None  # _recipe_index() for this pass
+        self._fuel_assembler_recipes = None
+        self._cask_stock = {}  # {item_id: units in every Lead Cask}
 
     def _build_stock_map(self):
         log.start("SourceCache._build_stock_map", level="debug")
@@ -2218,6 +2242,23 @@ class SourceCache:
                 self._fabricator_recipes = []
         return self._fabricator_recipes
 
+    def fuel_assembler_recipes(self):
+        """The first Fuel Assembler's unlocked recipes ([] without one). Only can_source_item() reads
+        them: the recipe index and the Fabricator cascades stay Fabricator/Smelter-only."""
+        if self._fuel_assembler_recipes is None:
+            component = _default_fuel_assembler()
+            try:
+                self._fuel_assembler_recipes = list(component.list_recipes()) if component and hasattr(component, "list_recipes") else []
+            except Exception as error:
+                swallowed("production.SourceCache.fuel_assembler_recipes: component.list_recipes", error)
+                self._fuel_assembler_recipes = []
+        return self._fuel_assembler_recipes
+
+    def cask_stock(self, item_id):
+        if item_id not in self._cask_stock:
+            self._cask_stock[item_id] = lead_cask.network_cask_stock(item_id)
+        return self._cask_stock[item_id]
+
     def surveyed_sites(self):
         if self._surveyed_sites is None:
             journal = _component("journal")
@@ -2253,8 +2294,8 @@ def can_source_item(item_id, cache=None):
         log.trace(f"cache hit -> {cache._item_results[item_id]}")
         log.end()
         return cache._item_results[item_id]
-    if cache.stock(item_id) > 0:
-        log.trace(f"already in stock ({cache.stock(item_id)}) -> sourceable")
+    if cache.stock(item_id) > 0 or (item_id in lead_cask.HOT_ITEMS and cache.cask_stock(item_id) > 0):
+        log.trace(f"already in stock ({cache.stock(item_id)}, casks {cache.cask_stock(item_id) if item_id in lead_cask.HOT_ITEMS else 0}) -> sourceable")
         cache._item_results[item_id] = True
         log.end()
         return True
@@ -2268,8 +2309,11 @@ def can_source_item(item_id, cache=None):
         result = _has_surveyed_mineral(item_id, cache)
         if result:
             log.trace("surveyed mineral site found -> sourceable")
+        if not result and item_id == lead_cask.URANIUM_ITEM and _uranium_aftermath_pending():
+            result = True
+            log.trace("live uranium aftermath site -> sourceable")
         if not result:
-            for recipes in (cache.smelter_recipes(), cache.fabricator_recipes()):
+            for recipes in (cache.smelter_recipes(), cache.fabricator_recipes(), cache.fuel_assembler_recipes()):
                 for recipe in recipes:
                     if getattr(recipe, "output_item", None) != item_id:
                         continue

@@ -8,6 +8,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 import fluid_routing
+import lead_cask
 import power
 
 # Mk III fluid feed (docs/components/heat_generator.md, pressure_generator.md,
@@ -43,6 +44,14 @@ FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 FLUID_NEUTRAL_GRACE_STEPS = 5
 
 MK3_TIER = 3
+
+# Mk IV rod magazine (Mk4RodFeed): a Mk IV generator burns one Fuel Rod per
+# 240 game h from its `input` magazine (4 slots) and stops without one. The
+# feed keeps MK4_MAGAZINE_TARGET rods staged, taken from this outpost's Lead
+# Casks (lib/lead_cask.py), checked every MK4_CHECK_INTERVAL_TICKS.
+MK4_TIER = 4
+MK4_MAGAZINE_TARGET = 1
+MK4_CHECK_INTERVAL_TICKS = 600
 
 
 def _current_tick(clock):
@@ -234,6 +243,43 @@ class Mk3FluidFeed:
         self._report_degraded()
 
 
+class Mk4RodFeed:
+    """Keeps a Mk IV generator's Fuel Rod magazine stocked from the outpost's Lead Casks."""
+
+    def __init__(self, machine, name, log):
+        self.machine = machine
+        self.name = name
+        self.log = log
+        self.clock = get_component("clock")
+        self.last_check = None
+        self.warned = False
+
+    def step(self):
+        now = _current_tick(self.clock)
+        if self.last_check is not None and 0 <= now - self.last_check < MK4_CHECK_INTERVAL_TICKS:
+            return
+        self.last_check = now
+        try:
+            if int(self.machine.tier()) < MK4_TIER:
+                return
+            port = self.machine.input
+            staged = int(port.count())
+        except Exception as error:
+            swallowed("terraforming.Mk4RodFeed.step: machine.tier", error)
+            return
+        missing = MK4_MAGAZINE_TARGET - staged
+        if missing <= 0:
+            return
+        outpost = getattr(self.machine, "outpost", None)
+        moved = lead_cask.take_from_casks(port, lead_cask.ROD_ITEM, missing, outpost)
+        if moved > 0:
+            self.warned = False
+            self.log.print(f"[{self.name}] Loaded {moved} Fuel Rod(s) into the Mk IV magazine ({staged + moved} staged).")
+        elif not self.warned:
+            self.warned = True
+            self.log.level("warn").print(f"[{self.name}] Mk IV magazine has {staged} Fuel Rod(s) and no Lead Cask at '{getattr(outpost, 'id', '?')}' holds any.")
+
+
 class HeatController:
     """
     Manages optimal power setpoint calibration for Heat Generators.
@@ -249,9 +295,11 @@ class HeatController:
         self.last_state = None
         self.log = TreeConsole(module="terraforming")
         self.feed = Mk3FluidFeed(machine, "steam_in", self.name, self.log, steam_guard=True)
+        self.rods = Mk4RodFeed(machine, self.name, self.log)
 
     def step(self):
         self.feed.step()
+        self.rods.step()
         current_day = self.clock.get_day() if self.clock else None
         current_state = self.machine.thermal_state()
 
@@ -321,6 +369,7 @@ class PressureController:
         self.gauge_per_tick = 0.0  # measured sweep speed (gauge units per tick), 0 until two reads a tick apart
         self.log = TreeConsole(module="terraforming")
         self.feed = Mk3FluidFeed(machine, "water_in", self.name, self.log)
+        self.rods = Mk4RodFeed(machine, self.name, self.log)
 
     def _tick(self):
         try:
@@ -332,6 +381,7 @@ class PressureController:
     def step(self):
         """One poll. Returns the seconds to sleep before the next one (see next_poll_seconds())."""
         self.feed.step()
+        self.rods.step()
         gauge = self.machine.gauge()
         low = self.machine.next_window_low()
         high = self.machine.next_window_high()
@@ -409,9 +459,11 @@ class OxygenController:
         self.name = getattr(machine, "id", "o2gen")
         self.log = TreeConsole(module="terraforming")
         self.feed = Mk3FluidFeed(machine, "water_in", self.name, self.log)
+        self.rods = Mk4RodFeed(machine, self.name, self.log)
 
     def step(self):
         self.feed.step()
+        self.rods.step()
         if self.atmo:
             co2 = self.atmo.get_co2()
             target_intake = co2 / 10.0

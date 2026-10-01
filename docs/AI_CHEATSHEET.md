@@ -14,12 +14,12 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 0, 0a, 0b | `lib/` module map, runtime limits, `TreeConsole` logging, `swallowed()` | this file |
 | 1 | Terraforming formula table | this file |
 | 1a, 1a-0, 1a-1 | Brownout load-shedding, steam-aware Power Guard, grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
-| 1b, 1c, 1c-1, 1c-2, 1c-3 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
+| 1b, 1c, 1c-1, 1c-2, 1c-3 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1d, 1d-1 | Tick-cost profiling, script cost model (cost scales with running-script count) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1l | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule (§1l-1); Wildlife automation: planner, Habitat, Feed Maker (§1l-2) | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
-| 1j, 1m | Field Mining Drill telemetry, Weather Station signal decoding | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 1j, 1m, 1n | Field Mining Drill telemetry, Weather Station signal decoding, Fuel Assembler + Lead Cask roles | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2a-0 … 2a-3 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache` | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2b, 2b-1 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
@@ -110,6 +110,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Water Pump byproduct salt as pull-hauler source; home salt request (field + Terraformers to 5m km²) | `pump_salt.py` — see §2i and §1k Salt budget (tier 4 lib, imported by `vehicle_cargo.py` and the Control Room Automation) |
 | Field Mining Drill telemetry (fill, time-to-full, stall warnings, pickup advert) | `mining_drill.py` — see §1j (tier `7_miningdrills`) |
 | Weather Station signal decoding (storm aftermath coordinates for Raw Uranium / Storm Glass) | `weather_signals.py` — see §1m (tier `7_miningdrills`) |
+| Fuel Assembler (Fuel Rods for local Reactors / Mk IV generators, then Nuclear Batteries; reserve-gated bursts) | `fuel_assembler.py` — see §1n (tier `10_nuclear`) |
+| Lead Cask roles (`lead_cask.roles`), hot-cargo stock/room/take, misfiled-uranium repair | `lead_cask.py` — see §1n (tier 4 lib; used by `drone_weather`, `supply_dock`, `terraforming`, `production`) |
 | Field Mining Drills as pull-hauler sources (recorded positions, connect/take) | `drill_sites.py` — see §2i (lives in tier 4 lib, since the hauler imports it at every tier) |
 | Fabrication | `fabricator.py` |
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |

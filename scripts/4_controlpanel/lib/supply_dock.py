@@ -26,6 +26,7 @@
 # that outpost, so its whole tree builds there (lib/site_plan.py).
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
 from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home
+import lead_cask
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
@@ -121,6 +122,17 @@ def _score_weekly_order(order, reserved, stock=total_stock):
     return prio
 
 
+def _servable_at(order, outpost, has_cask):
+    """False for an order with hot items (Raw Uranium, Fuel Rods) at a dock whose outpost has no
+    Lead Cask: hot cargo reaches a dock only from a cask at its own outpost. has_cask: {outpost_id: bool} memo."""
+    if not any(item_id in lead_cask.HOT_ITEMS for item_id in (getattr(order, "requires", {}) or {})):
+        return True
+    key = getattr(outpost, "id", None)
+    if key not in has_cask:
+        has_cask[key] = bool(lead_cask.casks_at(outpost))
+    return has_cask[key]
+
+
 def _dock_affinity(order, outpost, cache, site_plan):
     """How well a dock at `outpost` suits order: units of its still-owed items
     already stocked there, plus one per item whose tree the site plan builds
@@ -131,7 +143,10 @@ def _dock_affinity(order, outpost, cache, site_plan):
     score = 0
     for item_id, req_count in requires.items():
         still_needed = max(0, req_count - shipped.get(item_id, 0))
-        score += min(still_needed, cache.local_stock(item_id, outpost))
+        if item_id in lead_cask.HOT_ITEMS:
+            score += min(still_needed, lead_cask.cask_stock(item_id, outpost))
+        else:
+            score += min(still_needed, cache.local_stock(item_id, outpost))
         if site_id in (site_plan.get(item_id) or []):
             score += 1
     return score
@@ -249,17 +264,23 @@ def plan_dock_assignments(clock=None):
     if candidates:
         site_plan = archive.get(SITE_PLAN_KEY, {})
         site_plan = site_plan if isinstance(site_plan, dict) else {}
+        has_cask = {}
         for dock_id in idle_dock_ids:
             outpost = getattr(docks[dock_id], "outpost", None)
+            eligible = [c for c in candidates if _servable_at(c["order"], outpost, has_cask)]
+            if not eligible:
+                plan[dock_id] = None
+                log.debug(f"{dock_id}: every candidate needs hot cargo and its outpost has no Lead Cask, left unassigned")
+                continue
             # Scored before the sort: _dock_affinity() may read storage (a remote
             # outpost's first local_stock()), which must not run inside a key callback.
-            for c in candidates:
+            for c in eligible:
                 c["affinity"] = _dock_affinity(c["order"], outpost, cache, site_plan)
-            candidates.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -c["affinity"]))
-            best = candidates[0]["order"]
+            eligible.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -c["affinity"]))
+            best = eligible[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
-            log.debug(f"assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, priority={candidates[0]['priority']})")
+            log.debug(f"assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, priority={eligible[0]['priority']})")
     else:
         for dock_id in idle_dock_ids:
             plan[dock_id] = None
@@ -334,9 +355,12 @@ class SupplyDockController:
                 count = getattr(slot, "count", 0)
                 if not item_id or count <= 0:
                     continue
-                target = "inventory" if self.at_home() else best_unload_target(item_id, 1, outpost=self.outpost())
+                if item_id in lead_cask.HOT_ITEMS:
+                    target = lead_cask.unload_target(item_id, self.outpost())
+                else:
+                    target = "inventory" if self.at_home() else best_unload_target(item_id, 1, outpost=self.outpost())
                 if target is None:
-                    self.log.level("warn").print(f"[{self.name}] No local Warehouse room for {count}x {item_id} -- left in the dock.")
+                    self.log.level("warn").print(f"[{self.name}] No local {'Lead Cask' if item_id in lead_cask.HOT_ITEMS else 'Warehouse'} room for {count}x {item_id} -- left in the dock.")
                     continue
                 res = self.dock.input.eject(target, item_id, count)
                 if res.status == "ok":
@@ -391,6 +415,8 @@ class SupplyDockController:
         except Exception as error:
             swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
 
+        has_cask = {}
+        candidates = [c for c in candidates if _servable_at(c["order"], self.outpost(), has_cask)]
         if not candidates:
             self.log.debug("no fulfillable candidate orders found")
             self.log.end()
@@ -518,12 +544,20 @@ class SupplyDockController:
                 if needed <= 0:
                     continue
 
-                avail = total_stock(item_id) if cache is None else cache.local_stock(item_id, outpost)
+                # Hot cargo (Raw Uranium, Fuel Rods) only comes out of this outpost's Lead Casks.
+                hot = item_id in lead_cask.HOT_ITEMS
+                if hot:
+                    avail = lead_cask.cask_stock(item_id, self.outpost())
+                else:
+                    avail = total_stock(item_id) if cache is None else cache.local_stock(item_id, outpost)
                 available_after_reservation = max(0, avail - reserved.get(item_id, 0))
                 to_take = min(available_after_reservation, needed, SUPPLY_DOCK_LOAD_CHUNK_SIZE)
                 self.log.debug(f"[{self.name}] {item_id}: needed={needed} avail={avail} reserved={reserved.get(item_id, 0)} available_after_reservation={available_after_reservation} -> to_take={to_take}")
                 if to_take > 0:
-                    moved = take_item(self.dock.input, item_id, to_take, outpost=outpost)
+                    if hot:
+                        moved = lead_cask.take_from_casks(self.dock.input, item_id, to_take, self.outpost())
+                    else:
+                        moved = take_item(self.dock.input, item_id, to_take, outpost=outpost)
                     if moved > 0:
                         self.log.print(f"[{self.name}] Loaded {moved}x {item_id} toward '{curr_order.name}' (Dock holds: {self.dock.count(item_id)}/{req_total}).")
                 elif avail > 0 and item_id in reserved:

@@ -28,6 +28,10 @@ class ShedThresholdTests(unittest.TestCase):
         self.assertIn("feed_maker_*", power5.SOFT_SHED_PATTERNS)
         self.assertIn("feed_maker_*", power5.DEFAULT_SHEDDING_TIERS[1])
 
+    def test_fuel_assemblers_shed_first_and_hard(self):
+        self.assertIn("fuel_assembler_*", power5.DEFAULT_SHEDDING_TIERS[0])
+        self.assertNotIn("fuel_assembler_*", power5.SOFT_SHED_PATTERNS)
+
     def test_override_with_more_tiers_uses_last_threshold(self):
         self.assertEqual(power5.tiers_to_shed(0.01, 5), 5)
         self.assertEqual(power5.tiers_to_shed(0.03, 5), 2)
