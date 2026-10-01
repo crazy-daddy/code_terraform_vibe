@@ -402,6 +402,23 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
 TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir", "gas_tank")
 
 
+def fluid_reserve_fraction(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir")):
+    """
+    Network-wide fill of every tank eligible for fluid_id (tank_is_eligible_target()):
+    summed level() / summed capacity(), None when there is no such tank or none is readable.
+    """
+    level = capacity = 0.0
+    for tank, _outpost_id in discover_network_buildings(type_ids, resolve=True, fluid_id=fluid_id):
+        try:
+            cap = float(tank.capacity())
+            if cap > 0:
+                level += float(tank.level())
+                capacity += cap
+        except Exception as error:
+            swallowed("fluid_routing.fluid_reserve_fraction: tank.capacity", error)
+    return level / capacity if capacity > 0 else None
+
+
 def assign_tanks_from_current_fluid(overwrite=False):
     """
     One-shot bootstrap for fluid_routing.tank_assignments: walks every Liquid/Gas Tank

@@ -174,9 +174,11 @@ every cycle — delivery self-limits to what connected tank accepts.
   time. `is_stalled()` same semantics as Thermal Cap's, so same
   blacklist-and-reselect reaction applies unchanged.
 
-### 1c-1. Oil Generator: Last-Resort Power (`5_steampower/lib/oil_generator.py` `OilGeneratorController`)
+### 1c-1. Oil Generator: Last-Resort Power and Surplus Base Load (`5_steampower/lib/oil_generator.py` `OilGeneratorController`)
 
-+700 W at throttle 1 for 8 t/h oil; burning emits CO2 and oil feeds Fabricator recipes, so it only runs as last resort. No oil floor.
++700 W at throttle 1 for 8 t/h oil; burning emits CO2 and oil feeds Fabricator recipes, so it runs as last resort, or as base load while the oil tanks are full.
+
+- **Surplus base load** (checked first): network-wide oil tank fill (`fluid_routing.fluid_reserve_fraction("oil")`: summed `level()` / `capacity()` of oil-eligible Liquid/Large Liquid Tanks, re-read every `OIL_RESERVE_REFRESH_TICKS = 100`) `≥ OIL_SURPLUS_START_FRACTION = 0.90` turns it on, below `OIL_SURPLUS_STOP_FRACTION = 0.70` (or no oil tank) off. While on, the generators carry the grid's whole consumption: `throttle = clamp((consumed + OIL_RECHARGE_W if battery < OIL_SURPLUS_TOPUP_BELOW = 0.98) / count / 700 W, 0.1, 1.0)`, so turbine commitment (§1a) parks the turbines it no longer needs. Last-resort rules below apply only while off.
 
 - **Start**: `min(battery fraction, combined reserve)` (§1a-0 `reserve_fraction()`, battery + steam) `< OIL_START_RESERVE_FRACTION = 0.15` AND deficit without oil `> 0`. Battery fraction matters because the deficit is measured after turbine output: banked steam can't cover it (turbines are rate-limited), only the battery buffers it. One `notify()` at start. No storage at all → burns only while deficit.
 - **Throttle**: `deficit = consumed − (generated − Σ oil_generator member.generated)`, split evenly over all Oil Generators in `grid.members`; `throttle = clamp((max(0, share) × OIL_DEFICIT_HEADROOM (1.1) + OIL_RECHARGE_W (300) / count) / OIL_GENERATOR_RATED_W (700), OIL_MIN_THROTTLE (0.1), 1.0)`; recharge term only when the grid has a battery.

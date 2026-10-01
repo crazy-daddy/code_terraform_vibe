@@ -34,6 +34,7 @@ PARKED_KEY are ever switched back on here.
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+import fluid_routing
 # lib/power.py is imported where it is used (_low_reserve_grids()): the tier-5 power.py imports
 # turbine_commit, which imports this module, so a module-level import would be a cycle.
 power = None
@@ -95,6 +96,10 @@ MAX_WAKE_AFTER_TICKS = 6000
 # below this are woken at once (their script starts burning at
 # oil_generator.OIL_START_RESERVE_FRACTION = 0.15, so this leaves time to react).
 OIL_WAKE_RESERVE_FRACTION = 0.25
+# Oil Generators are woken (and not parked) while the network-wide oil tank fill is at or
+# above this: their script runs them as base load from oil_generator.OIL_SURPLUS_START_FRACTION
+# (same value; this tier-4 module cannot import the tier-5 one).
+OIL_SURPLUS_WAKE_FRACTION = 0.90
 
 SOLAR_TYPE_ID = "solar_generator"
 
@@ -311,6 +316,7 @@ class ScriptParking:
 
         log.start("script parking", level="debug")
         low_grids = self._low_reserve_grids(grids, parked, requests, members)
+        oil_surplus = self._oil_surplus(parked, requests)
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
@@ -326,7 +332,7 @@ class ScriptParking:
                 del parked[machine_id]
                 changed = True
                 continue
-            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan)
+            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan, oil_surplus)
             if reason and self._set_powered(machine_id, True):
                 log.debug(f"woke {machine_id} ({reason})")
                 woken[machine_id] = entry.get("since", now)
@@ -345,8 +351,8 @@ class ScriptParking:
                 continue
             if kind == "supply_dock" and (dock_plan or {}).get(machine_id):
                 continue
-            if kind == "oil_generator" and members[machine_id][0] in low_grids:
-                continue  # reserve already low: stay ready instead of parking and waking again
+            if kind == "oil_generator" and (oil_surplus or members[machine_id][0] in low_grids):
+                continue  # reserve already low or oil in surplus: stay ready instead of parking and waking again
             if kind in STATION_KINDS and self._last_awake(kind, machine_id, members, parked, shed):
                 continue
             if kind in HELD_KINDS and _held(machine_id, now):
@@ -366,7 +372,7 @@ class ScriptParking:
 
     # ------------------------------------------------------------------ wake
 
-    def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan):
+    def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan, oil_surplus=False):
         kind = entry.get("kind")
         if now - entry.get("since", now) >= entry.get("wake_after", WAKE_AFTER_TICKS.get(kind, 600)):
             return "re-check due"
@@ -374,6 +380,8 @@ class ScriptParking:
             return "order assigned"
         if kind == "oil_generator" and members.get(machine_id, (None,))[0] in low_grids:
             return "grid reserve low"
+        if kind == "oil_generator" and oil_surplus:
+            return "oil surplus"
         if kind == "oil_pump" and self._well_active(machine_id):
             return "well active"
         if kind == "exotic_cap" and self._deposit_active(machine_id):
@@ -410,6 +418,15 @@ class ScriptParking:
         except Exception as error:
             swallowed("script_parking._deposit_active: cap.deposit", error)
             return True
+
+    @staticmethod
+    def _oil_surplus(parked, requests):
+        """True while an Oil Generator is parked or asks to be, and the network-wide oil tank fill is >= OIL_SURPLUS_WAKE_FRACTION."""
+        entries = list(parked.values()) + [r for r in requests.values() if isinstance(r, dict)]
+        if not any(isinstance(e, dict) and e.get("kind") == "oil_generator" for e in entries):
+            return False
+        fill = fluid_routing.fluid_reserve_fraction("oil")
+        return fill is not None and fill >= OIL_SURPLUS_WAKE_FRACTION
 
     def _low_reserve_grids(self, grids, parked, requests, members):
         """Anchor ids of grids with a parked or park-requesting Oil Generator whose reserve is below OIL_WAKE_RESERVE_FRACTION."""

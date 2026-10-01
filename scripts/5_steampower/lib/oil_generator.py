@@ -5,7 +5,8 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester
 
-# Oil Generator automation: LAST-RESORT power only.
+# Oil Generator automation: last-resort power, and base load while oil is in
+# surplus.
 #
 # An Oil Generator gives +700 W at throttle 1 for 8 t/h of oil
 # (docs/components/oil_generator.md). Oil is valuable (Fabricator recipes use
@@ -27,6 +28,14 @@ from script_parking import ParkRequester
 # Generator on the grid so they don't stack. It stops once both fractions
 # have recovered to OIL_STOP_RESERVE_FRACTION (hysteresis, so it doesn't
 # flap on the start line).
+#
+# Surplus base load: while the oil tanks network-wide are full
+# (fluid_routing.fluid_reserve_fraction("oil") >= OIL_SURPLUS_START_FRACTION,
+# until it drops below OIL_SURPLUS_STOP_FRACTION), the wells would otherwise
+# stall against full tanks. The generators then carry the grid's whole
+# consumption (plus OIL_RECHARGE_W while the battery is below
+# OIL_SURPLUS_TOPUP_BELOW), shared evenly, so turbine commitment
+# (lib/turbine_commit.py) parks the Steam Turbines it no longer needs.
 #
 # No archive state: the game resets the throttle to 0 when the script stops,
 # and after a restart the idle->burning check re-triggers within one step if
@@ -52,6 +61,14 @@ OIL_MIN_THROTTLE = 0.1
 # headroom alone refills an 11 kWh bank at ~50 W (days of oil burn).
 OIL_RECHARGE_W = 300.0
 
+# Surplus base load hysteresis on the network-wide oil tank fill, and the
+# battery fill below which it also recharges. The fill is re-read every
+# OIL_RESERVE_REFRESH_TICKS (it moves by a few t/h).
+OIL_SURPLUS_START_FRACTION = 0.90
+OIL_SURPLUS_STOP_FRACTION = 0.70
+OIL_SURPLUS_TOPUP_BELOW = 0.98
+OIL_RESERVE_REFRESH_TICKS = 100
+
 # Oil source routing (FluidInputRouter) -- same meaning as
 # lib/steam_turbine.py's constants of the same names.
 STALL_STREAK_BLACKLIST_THRESHOLD = 5
@@ -73,7 +90,7 @@ OIL_POLL_SECONDS = 4.0  # reserve and deficit change over minutes
 
 
 class OilGeneratorController:
-    """Burns oil only as last-resort power: low combined reserve AND a deficit without oil."""
+    """Burns oil as last-resort power (low combined reserve AND a deficit without oil) or as base load while oil is in surplus."""
 
     def __init__(self, generator):
         self.generator = generator
@@ -83,6 +100,9 @@ class OilGeneratorController:
         self.power = get_component("power_control")
         self.log = TreeConsole(module="oil_generator")
         self.burning = False
+        self.surplus = False
+        self.oil_fill = None
+        self.oil_fill_tick = None
         self.starved_warned = False
         self._router = fluid_routing.FluidInputRouter(
             discover=self._discover_candidates,
@@ -176,6 +196,40 @@ class OilGeneratorController:
         count = max(1, len(oil_members))
         return deficit, deficit / count, count
 
+    def oil_reserve(self):
+        """Network-wide oil tank fill (fluid_routing.fluid_reserve_fraction()), re-read every OIL_RESERVE_REFRESH_TICKS."""
+        now = self.get_current_tick()
+        if self.oil_fill_tick is None or not 0 <= now - self.oil_fill_tick < OIL_RESERVE_REFRESH_TICKS:
+            self.oil_fill = fluid_routing.fluid_reserve_fraction("oil")
+            self.oil_fill_tick = now
+        return self.oil_fill
+
+    def update_surplus(self, oil):
+        """Surplus hysteresis: on at OIL_SURPLUS_START_FRACTION, off below OIL_SURPLUS_STOP_FRACTION or with no oil tank."""
+        if oil is None:
+            on = False
+        elif self.surplus:
+            on = oil >= OIL_SURPLUS_STOP_FRACTION
+        else:
+            on = oil >= OIL_SURPLUS_START_FRACTION
+        if on != self.surplus:
+            self.surplus = on
+            oil_str = f"{oil*100:.0f}%" if oil is not None else "n/a"
+            if on:
+                self.log.print(f"[{self.name}] Oil surplus base load ON -- oil tanks {oil_str} (>= {OIL_SURPLUS_START_FRACTION*100:.0f}%).")
+            else:
+                self.log.print(f"[{self.name}] Oil surplus base load OFF -- oil tanks {oil_str} (stop below {OIL_SURPLUS_STOP_FRACTION*100:.0f}%).")
+        return on
+
+    def surplus_throttle(self, grid, battery, count):
+        """Throttle that has the Oil Generators carry the grid's whole consumption (+ recharge below OIL_SURPLUS_TOPUP_BELOW)."""
+        recharge = OIL_RECHARGE_W if battery is not None and battery < OIL_SURPLUS_TOPUP_BELOW else 0.0
+        target_w = (max(0.0, getattr(grid, "consumed", 0.0) or 0.0) + recharge) / count
+        throttle = min(1.0, max(OIL_MIN_THROTTLE, target_w / OIL_GENERATOR_RATED_W))
+        if self.log.verbose:
+            self.log.trace(f"Surplus base load: consumption + recharge {recharge:.0f} W over {count} generator(s) = {target_w:.0f} W each -> throttle {throttle:.2f}.")
+        return throttle
+
     def choose_throttle(self):
         self.log.start(f"[{self.name}] choose_throttle", level="debug")
         grid = self.get_grid()
@@ -198,6 +252,11 @@ class OilGeneratorController:
                 f"[{self.name}] Battery {battery_str}, combined reserve {reserve_str} [battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t], "
                 f"deficit without oil {deficit:.0f} W, share {share:.0f} W over {count} oil generator(s), burning={self.burning}."
             )
+
+        if self.update_surplus(self.oil_reserve()):
+            throttle = self.surplus_throttle(grid, battery, count)
+            self.log.end()
+            return throttle
 
         if not self.burning:
             fractions = [f for f in (battery, reserve) if f is not None]
@@ -243,7 +302,7 @@ class OilGeneratorController:
         if hasattr(self.generator, "set_throttle"):
             self.generator.set_throttle(throttle)
 
-        if self.burning and self.is_starved():
+        if (self.burning or self.surplus) and self.is_starved():
             if not self.starved_warned:
                 self.log.level("warn").print(f"[{self.name}] Burning but no oil arrives -- check the oil tank level, the oil_in connection and the Liquid Pipe route.")
                 self.starved_warned = True
@@ -251,14 +310,14 @@ class OilGeneratorController:
             self.starved_warned = False
 
     def run(self, poll_interval=OIL_POLL_SECONDS):
-        self.log.print(f"Oil Generator Controller ({self.name}) online. Last-resort mode: burns only below {OIL_START_RESERVE_FRACTION*100:.0f}% reserve with a deficit.")
+        self.log.print(f"Oil Generator Controller ({self.name}) online. Burns below {OIL_START_RESERVE_FRACTION*100:.0f}% reserve with a deficit, or as base load while oil tanks are >= {OIL_SURPLUS_START_FRACTION*100:.0f}% full.")
         validate_game_version()
         while True:
             reset_all()
             idle = False
             try:
                 self.step()
-                idle = not self.burning
+                idle = not (self.burning or self.surplus)
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Oil Generator exception: {error}")
             self.parker.update(idle)
