@@ -191,6 +191,32 @@ class ScriptParkingTests(StubTestCase):
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_pump_1", True))
 
+    def test_exotic_cap_wakes_when_its_deposit_turns_active(self):
+        class _Deposit:
+            phase = "dormant"
+
+            def current_phase(self):
+                return self.phase
+
+        class _Cap:
+            def __init__(self):
+                self.site = _Deposit()
+
+            def deposit(self):
+                return self.site
+
+        cap = _Cap()
+        self.world.components["exotic_gas_cap_1"] = cap
+        self.grids[0].members.append(_Member("exotic_gas_cap_1", "exotic_gas_cap"))
+        self.request("exotic_gas_cap_1", "exotic_cap")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("exotic_gas_cap_1", False)])
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(len(self.power.calls), 1)
+        cap.site.phase = "active"
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("exotic_gas_cap_1", True))
+
     def test_solar_stopped_at_night_and_started_at_sunrise(self):
         self.parking.step(self.grids, -3.0)
         self.assertNotIn("solar_1", self.run.running)

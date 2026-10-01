@@ -63,6 +63,9 @@ WAKE_AFTER_TICKS = {
     "oil_generator": 6000,
     "thermal_cap": 600,
     "oil_pump": 3000,
+    # Exotic Gas Cap / Spring Tap (lib/exotic_cap.py): woken as soon as its deposit turns
+    # active, so the timed re-check is only a backstop.
+    "exotic_cap": 6000,
     "crop_automator": 600,
     "charging_station": 3000,
     "drone_service_station": 3000,
@@ -373,6 +376,8 @@ class ScriptParking:
             return "grid reserve low"
         if kind == "oil_pump" and self._well_active(machine_id):
             return "well active"
+        if kind == "exotic_cap" and self._deposit_active(machine_id):
+            return "deposit active"
         return None
 
     @staticmethod
@@ -391,6 +396,19 @@ class ScriptParking:
             return bool(pump.well_active())
         except Exception as error:
             swallowed("script_parking._well_active: pump.well_active", error)
+            return True
+
+    @staticmethod
+    def _deposit_active(machine_id):
+        """Exotic cap/tap deposit().current_phase() == "active" (readable from any script); True on a read failure so it wakes."""
+        cap = get_component(machine_id)
+        if cap is None or not hasattr(cap, "deposit"):
+            return False
+        try:
+            deposit = cap.deposit()
+            return deposit is not None and deposit.current_phase() == "active"
+        except Exception as error:
+            swallowed("script_parking._deposit_active: cap.deposit", error)
             return True
 
     def _low_reserve_grids(self, grids, parked, requests, members):

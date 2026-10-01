@@ -113,6 +113,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
 | Water Pump / Oil Pump (route well output to network Liquid Tanks) | `fluid_pump.py` `FluidPumpController(pump, fluid_id)` — see §1c, simpler cousin of `thermal_cap.py` (no overpressure/relief); `water_pump.py` = compat shim for old save slots |
+| Exotic Gas Cap / Exotic Spring Tap (route deposit fluid to network tanks, park while dormant) | `exotic_cap.py` `ExoticCapController(cap)` (tier 9): `FluidPumpController` subclass, Gas Tanks for a Cap, Liquid Tanks / Large Liquid Tanks for a Tap, `fluid_id` = `deposit().fluid()`; dormant = deposit not `"active"` and port `flow_rate() == 0` |
 | Oil Generator (last-resort power) | `oil_generator.py` — see §1c-1 (tier 5+) |
 | Steam Condenser (steam → water, steam-reserve and water-fill guards) | `steam_condenser.py` — see §1c-2 (tier 5+) |
 | Essence Liquifier (Depot → sample feed, essence → Liquid Tank) | `essence_liquifier.py` — see §1h (tier 5+) |
