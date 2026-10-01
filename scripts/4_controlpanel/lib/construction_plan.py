@@ -14,6 +14,8 @@ ATOMIC_STEP_BUDGET = 4000    # worst-case interpreter operations allowed for one
 NO_COORDS_DIST = 1e18        # sort key for a job without readable coordinates (last)
 PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_share() while its fleet.status heartbeat is younger than this
 PEER_INACTIVE_STATES = ("RECALLED", "DECOMMISSION_READY", "UPGRADE_HOLD", "AWAITING_MODULES")
+PRIORITY_KEY = "construction.priority"  # archive {blueprint_id: int}; no entry = DEFAULT_PRIORITY, lower runs first
+DEFAULT_PRIORITY = 0
 
 
 def claim_key(job_id):
@@ -43,15 +45,23 @@ def coords_of(pos):
     return None
 
 
-def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed):
+def clean_priorities(raw):
+    """{blueprint_id: int} from the raw PRIORITY_KEY archive value; non-int (or bool) values and a non-dict value are dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(v, int) and not isinstance(v, bool)}
+
+
+def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, priorities):
     """
     [(ids, open_rows, matching)] for one slice of blueprint jobs:
     - ids: every job's id (for the finished-claim sweep),
-    - open_rows: a row dict (job, id, coords, kind, item, count, progress)
-      per job with an id, not in `failed` and free of a fresh peer claim,
-    - matching: (dist from pos, id, row) for the open rows that are a
+    - open_rows: a row dict (job, id, coords, kind, item, count, progress,
+      prio) per job with an id, not in `failed` and free of a fresh peer
+      claim; prio from priorities {id: int}, DEFAULT_PRIORITY if absent,
+    - matching: (prio, dist from pos, id, row) for the open rows that are a
       deconstruction or whose materials are aboard per cargo {item: units};
-      sorting it (plain tuple sort) gives nearest first.
+      sorting it (plain tuple sort) gives lowest prio, then nearest first.
     """
     ids = []
     open_rows = []
@@ -65,6 +75,7 @@ def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed):
         coords = coords_of(getattr(job, "position", None))
         item = getattr(job, "required_item", None)
         count = getattr(job, "required_count", 0) or 0
+        prio = priorities.get(job_id, DEFAULT_PRIORITY)
         row = {
             "job": job,
             "id": job_id,
@@ -73,6 +84,7 @@ def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed):
             "item": item,
             "count": count,
             "progress": getattr(job, "progress", 0.0) or 0.0,
+            "prio": prio,
         }
         open_rows.append(row)
         if not item or count <= 0 or cargo.get(item, 0) >= count:
@@ -82,21 +94,38 @@ def scan_slice(jobs, pos, cargo, claims, me, tick, stale_ticks, failed):
                 dist = (dx * dx + dy * dy) ** 0.5
             else:
                 dist = NO_COORDS_DIST
-            matching.append((dist, job_id, row))
+            matching.append((prio, dist, job_id, row))
     return [(ids, open_rows, matching)]
 
 
-def scan_jobs(jobs, pos, cargo, claims, me, tick, stale_ticks, failed):
-    """scan_slice() over all jobs in JOB_CHUNK slices, one atomic call each; returns (ids, open_rows, matching nearest first)."""
+def scan_jobs(jobs, pos, cargo, claims, me, tick, stale_ticks, failed, priorities):
+    """scan_slice() over all jobs in JOB_CHUNK slices, one atomic call each; returns (ids, open_rows, matching by prio, then nearest first)."""
     ids = []
     open_rows = []
     matching = []
-    for slice_ids, slice_open, slice_matching in run_batched(scan_slice, jobs, JOB_CHUNK, pos, cargo, claims, me, tick, stale_ticks, failed):
+    for slice_ids, slice_open, slice_matching in run_batched(scan_slice, jobs, JOB_CHUNK, pos, cargo, claims, me, tick, stale_ticks, failed, priorities):
         ids.extend(slice_ids)
         open_rows.extend(slice_open)
         matching.extend(slice_matching)
     matching.sort()
     return ids, open_rows, matching
+
+
+def top_priority(rows):
+    """Lowest prio among rows, DEFAULT_PRIORITY when rows is empty."""
+    if not rows:
+        return DEFAULT_PRIORITY
+    return min([row["prio"] for row in rows])
+
+
+def at_priority(rows, prio):
+    """Rows whose prio equals prio."""
+    return [row for row in rows if row["prio"] == prio]
+
+
+def stale_priorities(priorities, live_ids):
+    """Ids in priorities whose blueprint is not in live_ids (finished or cancelled)."""
+    return [job_id for job_id in priorities if job_id not in live_ids]
 
 
 def station_trip_wh(rows, stations, wh_per_meter, wh_per_progress, progress_per_trip, margin, reserve):

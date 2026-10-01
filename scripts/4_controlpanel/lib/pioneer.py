@@ -198,6 +198,34 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         self.log.print(f"[{self.name}] Released {len(dead)} build claim(s) on finished/removed blueprints.")
         return len(dead)
 
+    def read_construction_priorities(self):
+        """{blueprint_id: int} from the construction.priority archive dict ({} when absent or unreadable)."""
+        try:
+            return construction_plan.clean_priorities(archive.get(construction_plan.PRIORITY_KEY, {}))
+        except Exception as error:
+            swallowed("pioneer.PioneerController.read_construction_priorities: archive.get", error)
+            return {}
+
+    def prune_construction_priorities(self, priorities, live_job_ids):
+        """
+        Drops construction.priority entries whose blueprint is not live.
+        priorities must be read before the job lists, so an entry written
+        after its blueprint was queued is never mistaken for a dead one.
+        """
+        stale = construction_plan.stale_priorities(priorities, live_job_ids)
+        if not stale:
+            return 0
+        dead = set(stale)
+
+        def updater(current):
+            if not isinstance(current, dict):
+                return {}
+            return {k: v for k, v in current.items() if k not in dead}
+
+        archive.transaction(construction_plan.PRIORITY_KEY, {}, updater)
+        self.log.debug(f"[{self.name}] Pruned {len(dead)} construction.priority entr(ies) of finished/removed blueprints.")
+        return len(dead)
+
     def planned_progress_for_job(self, job):
         """Remaining progress capped at TARGET_CONSTRUCTION_PROGRESS_PER_TRIP, for trip budgeting."""
         remaining = max(0.0, 1.0 - (getattr(job, "progress", 0.0) or 0.0))
@@ -453,6 +481,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     self.log.end(f"[{self.name}] Field recharge done.")
                     continue
 
+                # Priorities first: see prune_construction_priorities().
+                priorities = self.read_construction_priorities()
+
                 # Query paused and pending constructions
                 paused = []
                 pending = []
@@ -486,6 +517,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         if active_now is not None:
                             live_ids = {getattr(j, "id", getattr(j, "blueprint_id", None)) for j in (active_now or [])}
                             self.release_finished_construction_claims(live_ids, self.get_claims())
+                            self.prune_construction_priorities(priorities, live_ids)
                     if failed_jobs:
                         failed_jobs.clear()
                     if self.distance_to_home() > 3.0:
@@ -513,13 +545,27 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         lists_ok = False
                 current_pos = self.get_position()
                 cargo = self.cargo_counts()
-                scan_args = (current_pos, cargo, existing_claims, self.name, curr_tick, self.CLAIM_STALE_TICKS, failed_jobs)
+                scan_args = (current_pos, cargo, existing_claims, self.name, curr_tick, self.CLAIM_STALE_TICKS, failed_jobs, priorities)
                 paused_ids, paused_rows, _ = construction_plan.scan_jobs(paused, *scan_args)
                 pending_ids, pending_rows, matching = construction_plan.scan_jobs(pending, *scan_args)
                 if lists_ok:
                     active_ids, _, _ = construction_plan.scan_jobs(active, *scan_args)
-                    self.release_finished_construction_claims(set(paused_ids + pending_ids + active_ids), existing_claims)
+                    live_ids = set(paused_ids + pending_ids + active_ids)
+                    self.release_finished_construction_claims(live_ids, existing_claims)
+                    self.prune_construction_priorities(priorities, live_ids)
                 self.log.debug(f"[{self.name}] Job scan: {len(paused_rows)}/{len(paused_ids)} paused and {len(pending_rows)}/{len(pending_ids)} pending open, {len(matching)} matching cargo {cargo}.")
+
+                # Only the lowest open priority is worked on: a lower-priority job
+                # is neither built nor stocked for while a higher one is open
+                # (failed this pass or claimed by a peer counts as not open).
+                top_prio = construction_plan.top_priority(paused_rows + pending_rows)
+                held_back = len(paused_rows) + len(pending_rows)
+                paused_rows = construction_plan.at_priority(paused_rows, top_prio)
+                pending_rows = construction_plan.at_priority(pending_rows, top_prio)
+                matching = [entry for entry in matching if entry[0] == top_prio]
+                held_back -= len(paused_rows) + len(pending_rows)
+                if held_back:
+                    self.log.debug(f"[{self.name}] Working priority {top_prio}: {len(paused_rows)} paused and {len(pending_rows)} pending job(s); {held_back} lower-priority job(s) held back.")
 
                 # 3. Check Paused Constructions first (resuming already-paid work)
                 active_job = None
@@ -567,7 +613,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     # the leg actually needs, so a job only reachable by conserving hard should
                     # still be attempted rather than rejected against a faster-than-necessary estimate.
                     candidate = None
-                    for _, _, row in matching:
+                    for _, _, _, row in matching:
                         if not row["coords"]:
                             continue
                         budget = self.calculate_trip_energy(
@@ -616,7 +662,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                                 # (the speedmode throttle floor), so reaching here means none of
                                 # these jobs are reachable even at the slowest possible throttle.
                                 req_details = []
-                                for _, _, row in matching:
+                                for _, _, _, row in matching:
                                     j_id = row["id"]
                                     if row["coords"]:
                                         j_budget = self.calculate_trip_energy(
@@ -658,6 +704,12 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     achievable_targets.append(row)
 
                 target_jobs = achievable_targets
+                if not target_jobs and held_back and pending_rows:
+                    # Every pending job at this priority was just marked failed;
+                    # rescan so the held-back lower-priority jobs get their turn.
+                    self.log.debug(f"[{self.name}] run_construction_loop(): no reachable job at priority {top_prio}; rescanning for lower-priority jobs.")
+                    flush_all()
+                    continue
                 if not target_jobs:
                     # All pending jobs currently marked failed; clear failure set and wait
                     self.log.debug(f"[{self.name}] run_construction_loop(): every pending job is unreachable this cycle; clearing failed_jobs and idling.")

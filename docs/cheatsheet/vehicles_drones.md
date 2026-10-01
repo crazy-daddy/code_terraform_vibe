@@ -137,7 +137,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   slices (`scan_jobs()`, `JOB_CHUNK = 16` jobs per call): job ids for the claim sweep, open rows
   (id, not in this pass's `failed_jobs`, no fresh peer claim per `claim_free()`), and cargo-matching
   rows (deconstruction, or materials aboard per one `cargo.stacks()` read, `cargo_counts()`) sorted
-  nearest first. Step 5's "permanently out of range" check runs as `station_trip_wh()`
+  by priority, then nearest first. Step 5's "permanently out of range" check runs as `station_trip_wh()`
   (`TRIP_CHUNK = 12` rows per call, nearest of the memoized station list).
   `get_construction_progress()` finds the job via `job_progress()` (`PROGRESS_CHUNK = 256`).
   Worst slice per function asserted below `ATOMIC_STEP_BUDGET = 4000` operations in
@@ -154,6 +154,19 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   recharges still runs on one load. Heartbeat: `publish_telemetry("BUILDING")` at every
   `execute_construction()`, `"RESTOCKING"` at every restock. A failed restock defers every open
   job needing that material for the pass (`ids_needing()`), not just the target job.
+- **Construction job priority (`construction.priority`, `run_construction_loop()`)**: each row
+  carries `prio` from the archive dict (`construction_plan.PRIORITY_KEY`, `{blueprint_id: int}`,
+  read once per pass before the job lists, cleaned by `clean_priorities()`); a blueprint without
+  an entry is `DEFAULT_PRIORITY = 0`, lower runs first, so a negative value raises a job and the
+  autoplay planner's plan-ahead jobs use 1. Each pass works only the lowest prio among open
+  paused + pending rows (`top_priority()`/`at_priority()`): lower-priority jobs are not built,
+  matched from cargo, or counted in the restock batch/`fair_share_batch()` while a higher one is
+  open. A job that failed this pass or is claimed by a peer is not open, so a peer or a stock
+  shortage lets the next priority through; when every pending job at the top priority was just
+  marked out of range, the loop rescans at once instead of idling. Entries of blueprints no longer
+  in any list are pruned each pass (`prune_construction_priorities()`, one transaction, only when
+  something is stale, skipped if a list read failed). With the key absent every job is prio 0 and
+  the loop behaves as without priorities.
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
   `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expire after
   `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral mining sites not exclusive**
