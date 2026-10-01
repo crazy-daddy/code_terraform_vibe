@@ -15,9 +15,9 @@
 # Inventory, then deployed at the outpost the "at" button picks (only outposts
 # with a Drone Depot are offered); that outpost becomes its HOME_DEPOT.
 #
-# Below the buttons: the coordinator's status (word-wrapped onto up to
-# STATUS_LINES lines) and the job queue, each job with a cancel button while
-# nothing is deployed yet (or it is blocked).
+# Below the buttons: the coordinator's status (word-wrapped by draw_text) and
+# the job queue, each job with a cancel button while nothing is deployed yet
+# (or it is blocked).
 #
 # Recommended card size: 2 x 2 (1000x400). At one column each picker moves to
 # its own row.
@@ -28,7 +28,6 @@ from drone_commission import DRONE_ROLES
 from drone_energy import DRONE_DEPOT_TYPE_IDS
 from fleet_commission import queue_pioneer, queue_drone, cancel_job, job_kind, job_home_base, CANCELLABLE_STATES
 from outpost_mining import HOME_OUTPOST_ID
-from panel_text import wrap_text, TEXT_CHAR_PX, TEXT_LINE_PX
 from swallow import swallowed
 from tree_console import TreeConsole, reset_all
 
@@ -40,7 +39,6 @@ BUTTON_W = 92
 BUTTON_H = 26
 PICKER_W = 206
 ROW_H = 28
-STATUS_LINES = 3
 # Panel loop iterations between outpost list refreshes.
 OUTPOST_REFRESH_LOOPS = 100
 
@@ -183,12 +181,11 @@ while True:
         panel.draw_text(24, y + 17, "Drone", 11, "text-secondary")
 
     status_y = y + section_h + 14
-    status_lines = wrap_text(str(state.get("status", "idle")), width - 48, STATUS_LINES) or [""]
-    for index, line in enumerate(status_lines):
-        panel.draw_text(24, status_y + index * TEXT_LINE_PX, line, 10, "text-secondary")
+    panel.draw_text(24, status_y, str(state.get("status", "idle")), 10, "text-secondary", width - 48)
+    bounds = panel.last_bounds()
 
     jobs = [j for j in state.get("jobs") or [] if isinstance(j, dict)]
-    top = status_y + 14 + (len(status_lines) - 1) * TEXT_LINE_PX
+    top = int(bounds.y + bounds.h) + 7 if bounds else status_y + 14
     max_rows = max(0, (height - top - 16) // ROW_H)
     if not jobs and top + 20 <= height:
         panel.label(24, top + 4, "Nothing queued", "muted")
@@ -202,7 +199,7 @@ while True:
         else:
             what = f"{job.get('role')} for {job_home_base(job) or 'home'}"
         line = f"{job.get('id')} {what}" + (f" - {detail}" if detail else "")
-        panel.draw_text(120, row_y + 16, line[: int((width - 220) // TEXT_CHAR_PX)], 10, "text-value")
+        panel.draw_text(120, row_y + 16, line[: int((width - 220) // 6)], 10, "text-value")
         if job_state in CANCELLABLE_STATES and panel.button(f"commission_cancel_{index}", width - 100, row_y, 76, 22, "cancel"):
             cancel_order(job)
     if len(jobs) > max_rows > 0:

@@ -26,7 +26,6 @@ from vehicle_upgrade import is_sport_nav_requested, request_sport_nav
 from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
 from fleet_decommission import decommission_state, request_decommission, cancel_decommission
 import fleet_status
-from panel_text import wrap_text
 
 # Sport Nav button only fits alongside the existing wide-layout row content
 # (chassis pill, battery bar, status text, role/home, recall switch) without
@@ -46,8 +45,28 @@ RETIRE_BTN_W = 64
 RETIRE_BTN_GAP = 8
 
 
+def wrap_text(text, width_px, max_lines=INTENT_LINES):
+    chars = int(width_px // INTENT_CHAR_PX)
+    if chars <= 2:
+        return []
+    lines, line = [], ""
+    for word in text.split(" "):
+        candidate = f"{line} {word}" if line else word
+        if len(candidate) <= chars or not line:
+            line = candidate
+            continue
+        lines.append(line)
+        line = word
+    if line:
+        lines.append(line)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1][:chars - 2] + ".."
+    return [l if len(l) <= chars else l[:chars - 2] + ".." for l in lines]
+
+
 def draw_intent(x, y, text, width_px):
-    for index, line in enumerate(wrap_text(text, width_px, INTENT_LINES, INTENT_CHAR_PX)):
+    for index, line in enumerate(wrap_text(text, width_px)):
         panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
 
 

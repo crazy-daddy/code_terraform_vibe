@@ -132,7 +132,6 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Wildcard pattern matching helpers | `patterns.py` |
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
-| Custom Panel text word wrap (`wrap_text()`, `TEXT_CHAR_PX = 7` px per font-size-10 character, `TEXT_LINE_PX = 13`) | `panel_text.py` — used by `vehicles_panel.py`, `drones_panel.py`, `fleet_commission_panel.py` |
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
 | Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_batched(fn, items, size, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
 | Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` (tier 5) — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
