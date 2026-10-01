@@ -36,6 +36,15 @@ def run_atomic(fn, *args):
     return list(map(lambda _: fn(*args), (0,)))[0]
 
 
+def run_batched(fn, items, size, *args):
+    """fn(items[i:i + size], *args) for each `size`-item slice, one atomic call per slice; the returned lists joined in order."""
+    items = list(items)
+    out = []
+    for start in range(0, len(items), size):
+        out.extend(run_atomic(fn, items[start:start + size], *args))
+    return out
+
+
 def run_chunked(step_fn, state):
     """
     Calls step_fn(state) atomically until it returns True (done). step_fn does

@@ -132,6 +132,17 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   `release_finished_construction_claims()` also sweeps this Pioneer's own `build_*` claims on
   no-longer-live blueprints each loop pass (one transaction per claims key, only when something
   needs releasing, skipped if any list read failed).
+- **Construction job scan (`lib/construction_plan.py`, pure, via `lib/atomic.py`)**: each
+  `run_construction_loop()` pass scans the paused/pending/active blueprint lists in atomic
+  slices (`scan_jobs()`, `JOB_CHUNK = 16` jobs per call): job ids for the claim sweep, open rows
+  (id, not in this pass's `failed_jobs`, no fresh peer claim per `claim_free()`), and cargo-matching
+  rows (deconstruction, or materials aboard per one `cargo.stacks()` read, `cargo_counts()`) sorted
+  nearest first. Step 5's "permanently out of range" check runs as `station_trip_wh()`
+  (`TRIP_CHUNK = 12` rows per call, nearest of the memoized station list).
+  `get_construction_progress()` finds the job via `job_progress()` (`PROGRESS_CHUNK = 256`).
+  Worst slice per function asserted below `ATOMIC_STEP_BUDGET = 4000` operations in
+  `tests/test_construction_plan.py`. Only the scan is atomic: claims, archive writes, trip
+  budgeting (logs) and driving stay outside.
 - Fleet coordination (`lib/vehicle_claims.py`): atomic `archive.transaction()` claims (mirrored to
   `rover.claims` / `survey.claims`), heartbeat-renewed via `refresh_claim()`, expire after
   `CLAIM_STALE_TICKS = 36000` ticks (1 sim hour). **Mineral mining sites not exclusive**

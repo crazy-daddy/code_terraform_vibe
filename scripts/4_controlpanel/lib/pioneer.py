@@ -17,6 +17,8 @@ import drill_sites
 import fleet_intent
 from outpost_mining import HOME_OUTPOST_ID
 from swallow import swallowed
+import construction_plan
+from atomic import run_batched
 from tree_console import flush_all, reset_all
 
 class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMixin):
@@ -125,18 +127,10 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         same POI), a construction job is NOT shareable: two Constructor
         Pioneers both loading/building the same blueprint would double-load
         materials and waste a trip, so this reuses vehicle_claims.py's
-        existing EXCLUSIVE claim mechanism as-is (see is_construction_job_free())
+        existing EXCLUSIVE claim mechanism as-is (see construction_plan.claim_free())
         rather than mining_reservations.py's non-exclusive yield-debit pattern.
         """
-        return f"build_{job_id}"
-
-    def is_construction_job_free(self, job_id, existing_claims, curr_tick):
-        """True unless job_id is freshly claimed by a peer Constructor Pioneer."""
-        claim = existing_claims.get(self.construction_claim_key(job_id))
-        if not claim or claim.get("vehicle") == self.name or claim.get("rover") == self.name:
-            return True
-        claim_age = curr_tick - claim.get("tick", 0)
-        return not (curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS)
+        return construction_plan.claim_key(job_id)
 
     def get_construction_progress(self, blueprint_id):
         """
@@ -165,9 +159,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                 swallowed("pioneer.PioneerController.get_construction_progress: getter", error)
                 continue
             any_list_read = True
-            for c in jobs:
-                if getattr(c, "id", None) == blueprint_id:
-                    return getattr(c, "progress", 0.0) or 0.0
+            progress = construction_plan.job_progress(jobs, blueprint_id)
+            if progress is not None:
+                return progress
         if any_list_read:
             self.log.debug(f"[{self.name}] get_construction_progress({blueprint_id}): not in any blueprint list -- treating as complete (1.0)")
             return 1.0
@@ -342,18 +336,16 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
             swallowed("pioneer.PioneerController.cargo_count: self.vehicle.cargo.stacks", error)
             return 0
 
-    def batch_required_count(self, pending, item_id, max_limit=None):
-        """Sums required_count across pending jobs that need item_id,
-        up to optional max_limit, so a route split into many segment jobs
-        can be stocked in one Inventory trip instead of one per job."""
-        total = 0
-        for job in pending:
-            job_item = getattr(job, "required_item", None)
-            if job_item == item_id:
-                total += max(0, getattr(job, "required_count", 0))
-                if max_limit is not None and total >= max_limit:
-                    return max_limit
-        return total
+    def cargo_counts(self):
+        """{item_id: units} aboard, from one cargo.stacks() read ({} if unreadable)."""
+        counts = {}
+        try:
+            for stack in self.vehicle.cargo.stacks():
+                item_id = getattr(stack, "id", None)
+                counts[item_id] = counts.get(item_id, 0) + getattr(stack, "count", 0)
+        except Exception as error:
+            swallowed("pioneer.PioneerController.cargo_counts: self.vehicle.cargo.stacks", error)
+        return counts
 
     def load_construction_materials(self, job, target_count=None):
         """Loads required_item from storage at this Pioneer's home outpost
@@ -480,9 +472,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                 # site), a construction job is NOT shareable -- two
                 # Constructor Pioneers both loading/building the same
                 # blueprint would double-load materials and waste a trip.
-                # Skip anything a peer already owns before any job selection
-                # below (self-owned claims pass through, per
-                # is_construction_job_free()).
+                # The job scan skips anything a peer already owns (self-owned
+                # claims pass through, per construction_plan.claim_free()).
                 existing_claims = self.get_claims()
                 curr_tick = self.get_current_tick()
                 active = []
@@ -493,27 +484,27 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         swallowed("pioneer.PioneerController.run_construction_loop: bp_component.active_constructions #2", error)
                         active = []
                         lists_ok = False
+                current_pos = self.get_position()
+                cargo = self.cargo_counts()
+                scan_args = (current_pos, cargo, existing_claims, self.name, curr_tick, self.CLAIM_STALE_TICKS, failed_jobs)
+                paused_ids, paused_rows, _ = construction_plan.scan_jobs(paused, *scan_args)
+                pending_ids, pending_rows, matching = construction_plan.scan_jobs(pending, *scan_args)
                 if lists_ok:
-                    live_job_ids = {getattr(j, "id", getattr(j, "blueprint_id", None)) for j in list(paused) + list(pending) + list(active)}
-                    self.release_finished_construction_claims(live_job_ids, existing_claims)
-                paused = [j for j in paused if self.is_construction_job_free(getattr(j, "id", None), existing_claims, curr_tick)]
-                pending = [j for j in pending if self.is_construction_job_free(getattr(j, "id", getattr(j, "blueprint_id", None)), existing_claims, curr_tick)]
+                    active_ids, _, _ = construction_plan.scan_jobs(active, *scan_args)
+                    self.release_finished_construction_claims(set(paused_ids + pending_ids + active_ids), existing_claims)
+                self.log.debug(f"[{self.name}] Job scan: {len(paused_rows)}/{len(paused_ids)} paused and {len(pending_rows)}/{len(pending_ids)} pending open, {len(matching)} matching cargo {cargo}.")
 
                 # 3. Check Paused Constructions first (resuming already-paid work)
                 active_job = None
-                for job in paused:
-                    job_id = getattr(job, "id", None)
-                    if not job_id or job_id in failed_jobs:
-                        continue
-                    coords = self.extract_coords(getattr(job, "position", None))
-                    if not coords:
+                for row in paused_rows:
+                    if not row["coords"]:
                         continue
                     budget = self.calculate_trip_energy(
-                        coords, planned_drill_units=0, planned_scans=0,
-                        planned_construction_progress=self.planned_progress_for_job(job),
+                        row["coords"], planned_drill_units=0, planned_scans=0,
+                        planned_construction_progress=self.planned_progress_for_job(row["job"]),
                     )
                     if budget["is_achievable"]:
-                        active_job = job
+                        active_job = row
                         break
                     elif self.distance_to_home() > 3.0:
                         # Cannot reach safely from current field position; recharge at nearest station
@@ -525,11 +516,11 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         break
 
                 if active_job:
-                    job_id = getattr(active_job, "id", None)
-                    coords = self.extract_coords(getattr(active_job, "position", None))
+                    job_id = active_job["id"]
+                    coords = active_job["coords"]
                     if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
                         self.log.debug(f"[{self.name}] Resuming paused construction job: {job_id} at {coords}.")
-                        success = self.execute_construction(job_id, coords, kind=getattr(active_job, "kind", None))
+                        success = self.execute_construction(job_id, coords, kind=active_job["kind"])
                         if not success:
                             failed_jobs.add(job_id)
                             self.release_target_claim(self.construction_claim_key(job_id))
@@ -541,46 +532,32 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     # Lost the race to a peer between filtering and claiming -- fall
                     # through to step 4 this cycle instead of executing nothing.
 
-                # 4. Check Pending Constructions matching current cargo
-                current_pos = self.get_position()
-                matching_jobs = []
-                for job in pending:
-                    job_id = getattr(job, "id", getattr(job, "blueprint_id", None))
-                    if not job_id or job_id in failed_jobs:
-                        continue
-                    req_item = getattr(job, "required_item", None)
-                    req_count = getattr(job, "required_count", 0)
-                    # Deconstruction (req_count <= 0 or req_item None) or items already in cargo
-                    if not req_item or req_count <= 0 or self.cargo_count(req_item) >= req_count:
-                        matching_jobs.append(job)
-
-                if matching_jobs:
-                    # Sort matching jobs by proximity to current vehicle coordinates
-                    matching_jobs.sort(key=lambda j: self.distance_between(current_pos, self.extract_coords(getattr(j, "position", None)) or (9999, 9999)))
+                # 4. Check Pending Constructions matching current cargo (deconstruction
+                # or materials aboard), nearest first
+                if matching:
                     # Gate on the speedmode throttle floor, not the typical calibrated rate:
                     # drive_with_recharge()/select_cruise_throttle() will pick whatever throttle
                     # the leg actually needs, so a job only reachable by conserving hard should
                     # still be attempted rather than rejected against a faster-than-necessary estimate.
                     candidate = None
-                    for job in matching_jobs:
-                        coords = self.extract_coords(getattr(job, "position", None))
-                        if not coords:
+                    for _, _, row in matching:
+                        if not row["coords"]:
                             continue
                         budget = self.calculate_trip_energy(
-                            coords, planned_drill_units=0, planned_scans=0,
-                            planned_construction_progress=self.planned_progress_for_job(job),
+                            row["coords"], planned_drill_units=0, planned_scans=0,
+                            planned_construction_progress=self.planned_progress_for_job(row["job"]),
                             wh_per_meter=self.minimum_wh_per_meter(),
                         )
                         if budget["is_achievable"]:
-                            candidate = job
+                            candidate = row
                             break
 
                     if candidate:
-                        job_id = getattr(candidate, "id", getattr(candidate, "blueprint_id", None))
-                        coords = self.extract_coords(getattr(candidate, "position", None))
+                        job_id = candidate["id"]
+                        coords = candidate["coords"]
                         if self.claim_target(self.construction_claim_key(job_id), {"type": "build", "coords": coords, "name": job_id}):
                             self.log.debug(f"[{self.name}] Executing chained construction job: {job_id} at {coords}.")
-                            success = self.execute_construction(job_id, coords, kind=getattr(candidate, "kind", None))
+                            success = self.execute_construction(job_id, coords, kind=candidate["kind"])
                             if not success:
                                 failed_jobs.add(job_id)
                                 self.release_target_claim(self.construction_claim_key(job_id))
@@ -612,13 +589,12 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                                 # (the speedmode throttle floor), so reaching here means none of
                                 # these jobs are reachable even at the slowest possible throttle.
                                 req_details = []
-                                for job in matching_jobs:
-                                    j_id = getattr(job, "id", getattr(job, "blueprint_id", "unknown"))
-                                    j_coords = self.extract_coords(getattr(job, "position", None))
-                                    if j_coords:
+                                for _, _, row in matching:
+                                    j_id = row["id"]
+                                    if row["coords"]:
                                         j_budget = self.calculate_trip_energy(
-                                            j_coords, planned_drill_units=0, planned_scans=0,
-                                            planned_construction_progress=self.planned_progress_for_job(job),
+                                            row["coords"], planned_drill_units=0, planned_scans=0,
+                                            planned_construction_progress=self.planned_progress_for_job(row["job"]),
                                             wh_per_meter=self.minimum_wh_per_meter(),
                                         )
                                         req_details.append(f"{j_id} ({j_budget['total_required_wh']:.1f} Wh)")
@@ -630,32 +606,29 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                                 sleep(5.0)
                                 continue
 
-                # 5. No matching jobs with current cargo: return to base, offload, and restock
-                # Filter out jobs that permanently exceed maximum vehicle battery capacity from nearest station
+                # 5. No matching jobs with current cargo: return to base, offload, and restock.
+                # Filter out jobs that permanently exceed maximum vehicle battery capacity from
+                # the closest charging station in the network, at the speedmode throttle floor
+                # (cheapest possible Wh/m) -- that's the true bound for a "permanently" unreachable
+                # verdict, since conserve mode can always throttle down that far to stretch a tight
+                # round trip. Also budget for the minimum useful on-site progress
+                # (TARGET_CONSTRUCTION_PROGRESS_PER_TRIP), since a trip that can't build anything
+                # meaningful isn't worth taking either.
                 _, cap_wh, _ = self.get_battery()
+                stations = [st["coords"] for st in self.get_all_charging_stations()] or [self.home_coords]
+                trips = run_batched(
+                    construction_plan.station_trip_wh, pending_rows, construction_plan.TRIP_CHUNK,
+                    stations, self.minimum_wh_per_meter(), self.wh_per_progress,
+                    self.TARGET_CONSTRUCTION_PROGRESS_PER_TRIP, self.SAFETY_MARGIN_MULTIPLIER, self.MIN_EMERGENCY_RESERVE_WH,
+                )
                 achievable_targets = []
-                for j in pending:
-                    j_id = getattr(j, "id", getattr(j, "blueprint_id", None))
-                    if not j_id or j_id in failed_jobs:
+                for row, required_wh in trips:
+                    if required_wh is not None and required_wh > cap_wh:
+                        if row["id"] not in failed_jobs:
+                            self.log.level("warn").print(f"[{self.name}] Construction job '{row['id']}' at {row['coords']} permanently exceeds battery capacity from nearest station even at minimum throttle ({required_wh:.1f} Wh required, {cap_wh:.1f} Wh max capacity). Marking failed.")
+                            failed_jobs.add(row["id"])
                         continue
-                    j_coords = self.extract_coords(getattr(j, "position", None))
-                    if j_coords:
-                        # Check whether job can be serviced from the closest charging station in the
-                        # network, at the speedmode throttle floor (cheapest possible Wh/m) -- that's
-                        # the true bound for a "permanently" unreachable verdict, since conserve mode
-                        # can always throttle down that far to stretch a tight round trip. Also budget
-                        # for the minimum useful on-site progress (TARGET_CONSTRUCTION_PROGRESS_PER_TRIP),
-                        # since a trip that can't build anything meaningful isn't worth taking either.
-                        st_near, _ = self.get_nearest_charging_station(from_coords=j_coords)
-                        dist_station_leg = self.distance_between(st_near, j_coords) * 2.0
-                        construction_wh = self.planned_progress_for_job(j) * self.wh_per_progress
-                        required_wh = ((dist_station_leg * self.minimum_wh_per_meter()) + construction_wh) * self.SAFETY_MARGIN_MULTIPLIER + self.MIN_EMERGENCY_RESERVE_WH
-                        if required_wh > cap_wh:
-                            if j_id not in failed_jobs:
-                                self.log.level("warn").print(f"[{self.name}] Construction job '{j_id}' at {j_coords} permanently exceeds battery capacity from nearest station even at minimum throttle ({required_wh:.1f} Wh required, {cap_wh:.1f} Wh max capacity). Marking failed.")
-                                failed_jobs.add(j_id)
-                            continue
-                    achievable_targets.append(j)
+                    achievable_targets.append(row)
 
                 target_jobs = achievable_targets
                 if not target_jobs:
@@ -673,11 +646,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                 # commits to it before the round trip home for materials, so a peer
                 # Constructor Pioneer doesn't also fetch and build the same job.
                 target_job = None
-                for candidate_job in target_jobs:
-                    candidate_id = getattr(candidate_job, "id", getattr(candidate_job, "blueprint_id", None))
-                    candidate_coords = self.extract_coords(getattr(candidate_job, "position", None))
-                    if self.claim_target(self.construction_claim_key(candidate_id), {"type": "build", "coords": candidate_coords, "name": candidate_id}):
-                        target_job = candidate_job
+                for candidate_row in target_jobs:
+                    if self.claim_target(self.construction_claim_key(candidate_row["id"]), {"type": "build", "coords": candidate_row["coords"], "name": candidate_row["id"]}):
+                        target_job = candidate_row
                         break
                 if not target_job:
                     # Every achievable job just got claimed out from under us; retry next cycle.
@@ -685,9 +656,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     sleep(2.0)
                     continue
 
-                job_id = getattr(target_job, "id", getattr(target_job, "blueprint_id", None))
-                required_item = getattr(target_job, "required_item", None)
-                required_count = getattr(target_job, "required_count", 0)
+                job_id = target_job["id"]
+                required_item = target_job["item"]
+                required_count = target_job["count"]
 
                 # Return to base for restocking
                 if self.distance_to_home() > 3.0:
@@ -713,13 +684,13 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                             swallowed("pioneer.PioneerController.run_construction_loop: self.vehicle.cargo.capacity", error)
                             free_space = 50
 
-                    batch_needed = self.batch_required_count(target_jobs, required_item, max_limit=free_space)
+                    batch_needed = construction_plan.batch_count(target_jobs, required_item, max_limit=free_space)
                     batch_needed = max(required_count, batch_needed)
 
                     # Check if we already have the materials loaded
                     if self.cargo_count(required_item) < required_count:
                         self.log.start(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
-                        loaded = self.load_construction_materials(target_job, target_count=batch_needed)
+                        loaded = self.load_construction_materials(target_job["job"], target_count=batch_needed)
                         self.log.end(f"[{self.name}] Stocking {'done' if loaded else 'failed'}.")
                         if not loaded:
                             # required_item genuinely isn't obtainable right now (e.g. Inventory

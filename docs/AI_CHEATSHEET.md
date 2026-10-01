@@ -85,6 +85,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot + drone chassis swaps), run by the `control_room_automation.py` Automation | `fleet_upgrade.py` — see §2k |
 | New Pioneers and drones from the COMMISSION card (queue, buy or craft, deploy, wait for script), run by the `control_room_automation.py` Automation | `fleet_commission.py` — see §2k-2 |
+| &nbsp;&nbsp;↳ Constructor Pioneer job scan (pure, atomic slices: claim/cargo filter, nearest-first order, station range check, progress lookup) | `construction_plan.py` — see `docs/cheatsheet/vehicles_drones.md` §2a |
 | &nbsp;&nbsp;↳ Pioneer role presets, shared `fleet.commission` state, `PioneerFittingMixin` (the new Pioneer mounts/installs its own parts) | `pioneer_commission.py` — see §2k-2 |
 | &nbsp;&nbsp;↳ drone presets (best craftable chassis + `LOADOUTS` modules), `fleet_commission` upgrade-order requester | `drone_commission.py` — see §2k-2 |
 | Retiring Pioneers and drones from the FLEET / DRONE FLEET retire buttons (recall, unload, undeploy, sell Pioneer parts, archive cleanup), run by the `control_room_automation.py` Automation | `fleet_decommission.py` — see §2k-4 |
@@ -129,7 +130,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
-| Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
+| Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_batched(fn, items, size, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
 | Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` (tier 5) — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
 | Script parking (idle machines' breakers off, solar scripts stopped at night; `ParkRequester` machine side, `ScriptParking` in `control_room_automation.py`) | `script_parking.py` — see dev_workflow.md §1d-2 |
 
