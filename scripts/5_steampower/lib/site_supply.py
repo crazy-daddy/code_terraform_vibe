@@ -107,9 +107,14 @@ CONSTRUCTION_ITEM_IDS = (
 EVICT_HOLD_ITEM_IDS = ("tar",)
 # Standing stockpiles, buffer tier: {building type: {item: target}} at every
 # outpost with that building. Tar piles up at home and Fabricator recipes draw
-# it in small amounts; Lead Plates keep a Fuel Assembler (reactor fuel) from
+# it in small amounts; a Refiner burns 2-5 tar per craft (lib/refiner.py takes
+# it from local storage); Lead Plates keep a Fuel Assembler (reactor fuel) from
 # waiting on a craft and a haul.
-SITE_STOCK_TARGETS = {"fabricator": {"tar": 2000}, "fuel_assembler": {"lead_plate": 200}}
+SITE_STOCK_TARGETS = {"fabricator": {"tar": 2000}, "refiner": {"tar": 2000}, "fuel_assembler": {"lead_plate": 200}}
+# Need tier inside a stockpile: {building type: {item: need level}}. A Refiner
+# stops without tar, so its outpost asks for 150 (30-75 crafts) at need
+# priority; the rest of the 2,000 stays buffer tier.
+SITE_STOCK_NEED = {"refiner": {"tar": 150}}
 # Stockpile items the Fabricators also craft for (backlog order: idle time
 # only). Tar is not: it comes from the plastic byproduct and home stock.
 SITE_STOCK_CRAFTED = ("lead_plate",)
@@ -197,23 +202,35 @@ def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
         log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
 
 
-def site_stock_targets(outpost):
-    """{item_id: target} SITE_STOCK_TARGETS asks of this outpost (max over its building types)."""
-    targets = {}
-    for type_id, items in sorted(SITE_STOCK_TARGETS.items()):
+def _stock_table(table, outpost):
+    """{item_id: units} a {building type: {item: units}} table asks of this outpost (max over its building types)."""
+    out = {}
+    for type_id, items in sorted(table.items()):
         if not discover_building_ids(type_id, outpost):
             continue
-        for item_id, target in items.items():
-            targets[item_id] = max(targets.get(item_id, 0), target)
-    return targets
+        for item_id, units in items.items():
+            out[item_id] = max(out.get(item_id, 0), units)
+    return out
 
 
-def stock_wants(outpost, targets, outposts, requests, tick, flying, wants):
-    """Raises wants to `targets` (site_stock_targets()) as buffer tier,
-    keeping any need level already planned (ship plan). Only items free at
-    another outpost or already in flight here: nothing to pull, no request."""
+def site_stock_targets(outpost):
+    """{item_id: target} SITE_STOCK_TARGETS asks of this outpost (max over its building types)."""
+    return _stock_table(SITE_STOCK_TARGETS, outpost)
+
+
+def site_stock_needs(outpost):
+    """{item_id: need level} SITE_STOCK_NEED asks of this outpost (max over its building types)."""
+    return _stock_table(SITE_STOCK_NEED, outpost)
+
+
+def stock_wants(outpost, targets, outposts, requests, tick, flying, wants, needs=None):
+    """Raises wants to `targets` (site_stock_targets()) as buffer tier, with
+    need level max(`needs` (site_stock_needs()), any need level already
+    planned (ship plan)). Only items free at another outpost or already in
+    flight here: nothing to pull, no request."""
     if not targets:
         return
+    needs = needs or {}
     site_id = getattr(outpost, "id", None)
     item_ids = sorted(targets)
     spare = free_elsewhere(item_ids, site_id, outposts, requests, tick)
@@ -222,7 +239,7 @@ def stock_wants(outpost, targets, outposts, requests, tick, flying, wants):
         target = targets[item_id]
         if spare.get(item_id, 0) <= 0 and flying.get(item_id, 0) <= 0 and item_id not in wants:
             continue
-        floor = wants[item_id][2] if item_id in wants else 0
+        floor = max(wants[item_id][2] if item_id in wants else 0, needs.get(item_id, 0))
         wants[item_id] = (max(target, floor), have.get(item_id, 0), floor)
         log.debug(f"stock_wants({getattr(outpost, 'id', None)}): {item_id} local={have.get(item_id, 0)} need level={floor} target={max(target, floor)}")
 
@@ -248,10 +265,11 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     flying = in_flight(site_id, tick)
     wants = consumer_wants(outpost, consumers or {}, sources or [], requests, tick, flying, outposts, anywhere, urgent)
     stock = site_stock_targets(outpost)
+    stock_need = site_stock_needs(outpost)
     smelter_ids = discover_smelter_ids(outpost)
     fabricator_ids = discover_fabricator_ids(outpost)
     if not smelter_ids and not fabricator_ids:
-        stock_wants(outpost, stock, outposts, requests, tick, flying, wants)
+        stock_wants(outpost, stock, outposts, requests, tick, flying, wants, stock_need)
         log.end()
         return wants
     ore_outputs = smelter_ores(outpost)
@@ -293,7 +311,7 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
         target = max(ore_stock_target(ore), floor)
         wants[ore] = (target, have.get(ore, 0), floor)
         log.debug(f"ore {ore} local={local} need level={floor} target={target}")
-    stock_wants(outpost, stock, outposts, requests, tick, flying, wants)
+    stock_wants(outpost, stock, outposts, requests, tick, flying, wants, stock_need)
     log.end()
     return wants
 

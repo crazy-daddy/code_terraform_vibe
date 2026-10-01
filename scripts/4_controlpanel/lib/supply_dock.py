@@ -25,7 +25,7 @@
 # SITE_PLAN_KEY) the order's items -- the order's items are then consumed at
 # that outpost, so its whole tree builds there (lib/site_plan.py).
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
-from storage import take_item, total_stock, local_port_target, best_unload_target, outpost_is_home
+from storage import take_item, total_stock, warehouse_stock, local_port_target, best_unload_target, outpost_is_home
 import lead_cask
 from archive import archive
 from version_guard import validate_game_version
@@ -50,13 +50,15 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
 
 
-def _order_readiness(order, reserved, stock=total_stock):
+def _order_readiness(order, reserved, stock=total_stock, cask_stock=None):
     """(items_ready, total_needed) for order -- how much of its still-owed
-    requirement is already coverable from current Inventory/Warehouse stock,
-    net of active Construction Blueprint reservations. Shared by the
-    per-instance and central scoring paths so both rank orders identically.
-    `stock(item_id)`: storage.total_stock(), or a SourceCache's stock()
-    snapshot (same Inventory + home Warehouses, one .stacks() sweep)."""
+    requirement is already coverable from current Inventory/Warehouse stock
+    (Lead Casks for hot items), net of active Construction Blueprint
+    reservations. Shared by the per-instance and central scoring paths so
+    both rank orders identically. `stock(item_id)`: storage.total_stock(),
+    or a SourceCache's stock() snapshot (same Inventory + home Warehouses,
+    one .stacks() sweep). `cask_stock(item_id)`: hot-item stock, default
+    lead_cask.network_cask_stock()."""
     items_ready = 0
     total_needed = 0
     requires = getattr(order, "requires", {}) or {}
@@ -64,7 +66,10 @@ def _order_readiness(order, reserved, stock=total_stock):
     for item_id, req_count in requires.items():
         still_needed = max(0, req_count - shipped.get(item_id, 0))
         total_needed += still_needed
-        in_stock = max(0, stock(item_id) - reserved.get(item_id, 0))
+        if item_id in lead_cask.HOT_ITEMS:
+            in_stock = (cask_stock or lead_cask.network_cask_stock)(item_id)
+        else:
+            in_stock = max(0, stock(item_id) - reserved.get(item_id, 0))
         items_ready += min(in_stock, still_needed)
     return items_ready, total_needed
 
@@ -104,19 +109,19 @@ def _weekly_infeasible(order, current_day, dispatch_capacity_per_hour):
     return remaining > max_shippable
 
 
-def _score_campaign_order(order, reserved, stock=total_stock):
+def _score_campaign_order(order, reserved, stock=total_stock, cask_stock=None):
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
-    items_ready, total_needed = _order_readiness(order, reserved, stock)
+    items_ready, total_needed = _order_readiness(order, reserved, stock, cask_stock)
     if total_needed > 0:
         prio += int((items_ready / total_needed) * 30)
     return prio
 
 
-def _score_weekly_order(order, reserved, stock=total_stock):
+def _score_weekly_order(order, reserved, stock=total_stock, cask_stock=None):
     prio = 5
-    items_ready, total_needed = _order_readiness(order, reserved, stock)
+    items_ready, total_needed = _order_readiness(order, reserved, stock, cask_stock)
     if total_needed > 0:
         prio += int((items_ready / total_needed) * 20)
     return prio
@@ -127,17 +132,68 @@ def _servable_at(order, outpost, has_cask):
     Lead Cask: hot cargo reaches a dock only from a cask at its own outpost. has_cask: {outpost_id: bool} memo."""
     if not any(item_id in lead_cask.HOT_ITEMS for item_id in (getattr(order, "requires", {}) or {})):
         return True
+    return _has_cask(outpost, has_cask)
+
+
+def _has_cask(outpost, has_cask):
+    """Whether outpost has a Lead Cask. has_cask: {outpost_id: bool} memo."""
     key = getattr(outpost, "id", None)
     if key not in has_cask:
         has_cask[key] = bool(lead_cask.casks_at(outpost))
     return has_cask[key]
 
 
-def _dock_affinity(order, outpost, cache, site_plan):
+def _local_cask_units(order, outpost):
+    """Still-owed hot units (Raw Uranium, Fuel Rods) of order that the Lead Casks at
+    `outpost` hold right now. Hot cargo loads only from a cask at the dock's own
+    outpost, so a dock beside a stocked cask is the one place that can ship it."""
+    requires = getattr(order, "requires", {}) or {}
+    shipped = getattr(order, "shipped", {}) or {}
+    units = 0
+    for item_id, req_count in requires.items():
+        if item_id in lead_cask.HOT_ITEMS:
+            still_needed = max(0, req_count - shipped.get(item_id, 0))
+            if still_needed:
+                units += min(still_needed, lead_cask.cask_stock(item_id, outpost))
+    return units
+
+
+def _cask_order_ids(candidates, outpost, has_cask, memo):
+    """Ids of candidate orders the Lead Casks at `outpost` can ship from right now
+    (_local_cask_units() > 0); a dock there takes these first. Empty without a cask.
+    memo: {(outpost_id, order_id): units}."""
+    if not _has_cask(outpost, has_cask):
+        return set()
+    out_id = getattr(outpost, "id", None)
+    ids = set()
+    for c in candidates:
+        order = c["order"]
+        key = (out_id, order.id)
+        if key not in memo:
+            memo[key] = _local_cask_units(order, outpost)
+        if memo[key] > 0:
+            ids.add(order.id)
+    return ids
+
+
+def _dock_loaded(dock):
+    """Units physically loaded in dock (0 if unreadable)."""
+    if not hasattr(dock, "total"):
+        return 0
+    try:
+        return dock.total()
+    except Exception as error:
+        swallowed("supply_dock._dock_loaded: dock.total", error)
+        return 0
+
+
+def _dock_affinity(order, outpost, cache=None, site_plan=None):
     """How well a dock at `outpost` suits order: units of its still-owed items
     already stocked there, plus one per item whose tree the site plan builds
-    there. Only breaks ties between equally ranked orders/docks."""
+    there. Only breaks ties between equally ranked orders/docks. Without
+    `cache` (per-dock fallback) local stock is read from storage directly."""
     site_id = getattr(outpost, "id", None) or home_outpost_id()
+    site_plan = site_plan or {}
     requires = getattr(order, "requires", {}) or {}
     shipped = getattr(order, "shipped", {}) or {}
     score = 0
@@ -146,7 +202,13 @@ def _dock_affinity(order, outpost, cache, site_plan):
         if item_id in lead_cask.HOT_ITEMS:
             score += min(still_needed, lead_cask.cask_stock(item_id, outpost))
         else:
-            score += min(still_needed, cache.local_stock(item_id, outpost))
+            if cache is not None:
+                local = cache.local_stock(item_id, outpost)
+            elif outpost_is_home(outpost):
+                local = total_stock(item_id)
+            else:
+                local = warehouse_stock(item_id, outpost)
+            score += min(still_needed, local)
         if site_id in (site_plan.get(item_id) or []):
             score += 1
     return score
@@ -223,7 +285,7 @@ def plan_dock_assignments(clock=None):
     try:
         for o in orders_api.list_orders():
             if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
-                priority = _score_campaign_order(o, reserved, cache.stock)
+                priority = _score_campaign_order(o, reserved, cache.stock, cache.cask_stock)
                 candidates.append({"order": o, "priority": priority})
                 log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
@@ -236,13 +298,19 @@ def plan_dock_assignments(clock=None):
                 log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
                       f"remaining amount can't ship before it expires on day {o.expires_day}.")
                 continue
-            priority = _score_weekly_order(o, reserved, cache.stock)
+            priority = _score_weekly_order(o, reserved, cache.stock, cache.cask_stock)
             candidates.append({"order": o, "priority": priority})
             log.debug(f"weekly order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
     except Exception as error:
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_weekly_orders", error)
 
     log.debug(f"{len(candidates)} candidate order(s), {len(docks)} discovered dock(s), total_dispatch_capacity={total_dispatch_capacity:.1f} u/h")
+
+    site_plan = archive.get(SITE_PLAN_KEY, {})
+    site_plan = site_plan if isinstance(site_plan, dict) else {}
+    has_cask = {}
+    # {(outpost_id, order_id): _local_cask_units()}, shared by the stability and assignment passes.
+    cask_units = {}
 
     plan = {}
     idle_dock_ids = []
@@ -254,17 +322,18 @@ def plan_dock_assignments(clock=None):
             swallowed("supply_dock.plan_dock_assignments: dock.current_order", error)
             curr = None
         if curr and can_fulfill_order(curr, cache):
-            plan[dock_id] = curr.id
-            assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
-            log.debug(f"{dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
+            cask_ids = _cask_order_ids(candidates, getattr(dock, "outpost", None), has_cask, cask_units)
+            if not cask_ids or curr.id in cask_ids or _dock_loaded(dock) > 0:
+                plan[dock_id] = curr.id
+                assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
+                log.debug(f"{dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
+                continue
+            log.debug(f"{dock_id} is empty and its Lead Cask holds cargo for {sorted(cask_ids)}, leaves '{curr.id}'")
         else:
-            idle_dock_ids.append(dock_id)
             log.debug(f"{dock_id} is idle/unfulfillable ({'no current order' if not curr else 'current order no longer fulfillable'}), needs a new assignment")
+        idle_dock_ids.append(dock_id)
 
     if candidates:
-        site_plan = archive.get(SITE_PLAN_KEY, {})
-        site_plan = site_plan if isinstance(site_plan, dict) else {}
-        has_cask = {}
         for dock_id in idle_dock_ids:
             outpost = getattr(docks[dock_id], "outpost", None)
             eligible = [c for c in candidates if _servable_at(c["order"], outpost, has_cask)]
@@ -274,9 +343,10 @@ def plan_dock_assignments(clock=None):
                 continue
             # Scored before the sort: _dock_affinity() may read storage (a remote
             # outpost's first local_stock()), which must not run inside a key callback.
+            cask_ids = _cask_order_ids(eligible, outpost, has_cask, cask_units)
             for c in eligible:
                 c["affinity"] = _dock_affinity(c["order"], outpost, cache, site_plan)
-            eligible.sort(key=lambda c: (assigned_counts.get(c["order"].id, 0), -c["priority"], -c["affinity"]))
+            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, assigned_counts.get(c["order"].id, 0), -c["priority"], -c["affinity"]))
             best = eligible[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
@@ -309,6 +379,7 @@ class SupplyDockController:
         self._warned_no_local_storage = False
         self._last_report = ""
         self.idle = False  # standing by: no order, no cargo (set by step())
+        self.plan_assigned = False  # last desired_order_id() came from the central plan
         self.parker = ParkRequester(self.name, "supply_dock")
         self.log = TreeConsole(module="supply_dock")
 
@@ -422,9 +493,14 @@ class SupplyDockController:
             self.log.end()
             return None
 
-        candidates.sort(key=lambda c: c["priority"], reverse=True)
+        site_plan = archive.get(SITE_PLAN_KEY, {})
+        site_plan = site_plan if isinstance(site_plan, dict) else {}
+        cask_ids = _cask_order_ids(candidates, self.outpost(), has_cask, {})
+        for c in candidates:
+            c["affinity"] = _dock_affinity(c["order"], self.outpost(), None, site_plan)
+        candidates.sort(key=lambda c: (c["order"].id not in cask_ids, -c["priority"], -c["affinity"]))
         winner = candidates[0]["order"]
-        self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (priority={candidates[0]['priority']}) among {len(candidates)} candidate(s)")
+        self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (priority={candidates[0]['priority']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")
         self.log.end()
         return winner
 
@@ -439,8 +515,10 @@ class SupplyDockController:
             if planned_id is None or self.order_is_active(planned_id):
                 self.log.debug(f"using central plan assignment -> {planned_id!r}")
                 self.log.end()
+                self.plan_assigned = True
                 return planned_id
             self.log.debug(f"central plan assignment {planned_id!r} is no longer active (plan older than the order's completion)")
+        self.plan_assigned = False
         best = self.pick_best_order()
         self.log.debug(f"fell back to pick_best_order() -> {getattr(best, 'id', None)!r}")
         self.log.end()
@@ -493,6 +571,16 @@ class SupplyDockController:
                     self.log.print(f"[{self.name}] Cleared undeliverable order '{curr_order.name}'.")
                     curr_order = None
 
+        desired_id = self.desired_order_id()
+        # Only the central plan moves a dock off a still-fulfillable order (it releases an
+        # empty dock for an order its Lead Cask can ship); the per-dock fallback never does.
+        if curr_order and desired_id and self.plan_assigned and getattr(curr_order, "id", None) != desired_id:
+            if _dock_loaded(self.dock) == 0 and hasattr(self.dock, "clear_order"):
+                clear_res = self.dock.clear_order()
+                if clear_res.status == "ok":
+                    self.log.print(f"[{self.name}] Switching from '{curr_order.name}' to planned order '{desired_id}'.")
+                    curr_order = None
+
         if not curr_order:
             # set_order() rejects with "cargo_present" while any cargo is
             # still physically loaded -- including leftovers from a
@@ -503,7 +591,6 @@ class SupplyDockController:
                 self.drain_dock_cargo()
                 return
 
-            desired_id = self.desired_order_id()
             if not desired_id:
                 self.idle = True
                 self.report("standby", f"[{self.name}] No active Earth Orders available. Standing by.")

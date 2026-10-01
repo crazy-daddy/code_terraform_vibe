@@ -4,7 +4,7 @@ stranded ore eviction) and Supply Docks at fab outposts (E7)."""
 import unittest
 
 from harness import StubTestCase, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
-from game_stubs import Recipe
+from game_stubs import Recipe, Store
 import fleet_status
 
 
@@ -394,6 +394,62 @@ class RemoteSupplyDockTests(StubTestCase):
         w.add_order("o1", {"steel_plate": 5})
         w.add_order("o2", {"gas_pipe_segment": 5})
         self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_2": "o2"})
+
+    def test_planner_prioritizes_local_uranium_over_unstocked_tech_order(self):
+        w = self.world
+        _Cask(w, "lead_cask_1", w.home, material="raw_uranium", count=20)
+        dock = w.add_supply_dock("supply_dock_1", w.home)
+        o_tech = w.add_order("o_tech", {"advanced_circuit": 10})
+        o_tech.reward_kind = "tech"
+        w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
+        o_uranium = w.add_order("o_uranium", {"raw_uranium": 20})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "o_uranium"})
+
+    def test_controller_step_switches_empty_order_to_order_with_local_uranium(self):
+        w = self.world
+        _Cask(w, "lead_cask_1", w.home, material="raw_uranium", count=20)
+        dock = w.add_supply_dock("supply_dock_1", w.home)
+        o_tech = w.add_order("o_tech", {"advanced_circuit": 10})
+        o_tech.reward_kind = "tech"
+        w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
+        dock.order = o_tech
+        o_uranium = w.add_order("o_uranium", {"raw_uranium": 20})
+        supply_dock.plan_dock_assignments()
+        ctrl = supply_dock.SupplyDockController(dock)
+        ctrl.step()
+        self.assertEqual(getattr(dock.current_order(), "id", None), "o_uranium")
+
+    def test_empty_dock_keeps_unstocked_order_without_cask_cargo(self):
+        # The held order drives Fabricator demand (production._all_dock_orders()),
+        # so an empty dock with nothing in a local cask must not drop it for a stocked order.
+        w = self.world
+        dock = w.add_supply_dock("supply_dock_1", w.home)
+        o_tech = w.add_order("o_tech", {"advanced_circuit": 10})
+        o_tech.reward_kind = "tech"
+        w.add_fabricator("fabricator_1", w.home, recipes=[Recipe("craft_circuit", {}, "advanced_circuit")])
+        dock.order = o_tech
+        w.inventory.add("steel_plate", 5)
+        w.add_order("o_steel", {"steel_plate": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_1": "o_tech"})
+
+    def test_hot_readiness_counts_cask_stock(self):
+        w = self.world
+        _Cask(w, "lead_cask_1", w.home, material="raw_uranium", count=10)
+        order = w.add_order("o_uranium", {"raw_uranium": 20})
+        self.assertEqual(supply_dock._order_readiness(order, {}), (10, 20))
+
+
+class _Cask(Store):
+    type_id = "lead_cask"
+
+    def __init__(self, world, cask_id, outpost, material="", count=0, capacity=100):
+        super().__init__(world, cask_id, "lead_cask", outpost, capacity=capacity, items={material: count} if material and count > 0 else {})
+        self.id = cask_id
+        world.components[cask_id] = self
+
+    def material(self):
+        m = [i for i, n in self.items.items() if n > 0]
+        return m[0] if m else ""
 
 
 if __name__ == "__main__":

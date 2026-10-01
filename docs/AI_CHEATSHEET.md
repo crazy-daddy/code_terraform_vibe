@@ -120,6 +120,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Steam Turbine (steam-to-grid power) | `steam_turbine.py` |
 | Water Pump / Oil Pump (route well output to network Liquid Tanks) | `fluid_pump.py` `FluidPumpController(pump, fluid_id)` — see §1c, simpler cousin of `thermal_cap.py` (no overpressure/relief); `water_pump.py` = compat shim for old save slots |
 | Exotic Gas Cap / Exotic Spring Tap (route deposit fluid to network tanks) | `exotic_cap.py` `ExoticCapController(cap)` (tier 9): `FluidPumpController` subclass, Gas Tanks for a Cap, Liquid Tanks / Large Liquid Tanks for a Tap, `fluid_id` = `deposit().fluid()`; valve always open; parks only through a long dormant phase (see dev_workflow.md §1d-2) |
+| Refiner (purify raw exotic gas/liquid + tar into creature-grade fluids) | `refiner.py` `RefinerController(refiner)` (tier 9): refines the fluid with the emptiest tanks among those with raw stock (dwell + margin against flip-flop), routes raw from and refined to network tanks, tar from local storage (stockpile via `site_supply`); soft-shed Tier 2 by `clear_recipe()`; parks when idle — see wildlife.md |
 | Oil Generator (last-resort power) | `oil_generator.py` — see §1c-1 (tier 5+) |
 | Steam Condenser (steam → water, steam-reserve and water-fill guards) | `steam_condenser.py` — see §1c-2 (tier 5+) |
 | Essence Liquifier (Depot → sample feed, essence → Liquid Tank) | `essence_liquifier.py` — see §1h (tier 5+) |

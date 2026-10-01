@@ -76,6 +76,7 @@ WAKE_AFTER_TICKS = {
     # its life-form requests before they expire.
     "seed_maker": 3000,
     "feed_maker": 3000,
+    "refiner": 3000,
     "fuel_assembler": 3000,
     # Parked while empty and unassigned, without feed, or capped at the Mk I ceiling
     # (lib/habitat.py); the Wildlife planner wakes it when that changes.

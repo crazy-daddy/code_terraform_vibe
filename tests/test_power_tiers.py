@@ -27,6 +27,8 @@ class ShedThresholdTests(unittest.TestCase):
         self.assertNotIn("habitat_*", power5.SOFT_SHED_PATTERNS)
         self.assertIn("feed_maker_*", power5.SOFT_SHED_PATTERNS)
         self.assertIn("feed_maker_*", power5.DEFAULT_SHEDDING_TIERS[1])
+        self.assertIn("refiner_*", power5.SOFT_SHED_PATTERNS)
+        self.assertIn("refiner_*", power5.DEFAULT_SHEDDING_TIERS[1])
 
     def test_fuel_assemblers_shed_first_and_hard(self):
         self.assertIn("fuel_assembler_*", power5.DEFAULT_SHEDDING_TIERS[0])

@@ -28,6 +28,7 @@ DEFAULT_SHEDDING_TIERS = [
         "smelter_*",
         "fabricator_*",
         "feed_maker_*",
+        "refiner_*",
     ],
 ]
 
@@ -44,12 +45,12 @@ DEFAULT_SHEDDING_TIERS = [
 # Soft-shed instead: still listed in power.shedded so
 # SmelterController/FabricatorController's own step() can see it and pause
 # starting/topping-up production, but set_powered() is never called on it.
-# Feed Makers (feed_maker_*) are crafters too and are soft-shed the same way.
+# Feed Makers and Refiners are crafters too and are soft-shed the same way.
 # Only these crafters are soft-shed -- a Tier 1 pattern
 # like heater_*/pressure_* draws power continuously regardless of whether it's
 # "producing" anything, so cutting its breaker is the only way to actually
 # reduce its draw.
-SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*", "feed_maker_*"}
+SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*", "feed_maker_*", "refiner_*"}
 
 # Exact day/night cycle timings from the decompiled simworker (its
 # `dayCycleDuration: 600` / `daylight: {...}` schedule, fractions of a full

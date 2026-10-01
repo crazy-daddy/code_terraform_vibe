@@ -61,12 +61,13 @@ DEFAULT_SHEDDING_TIERS = [
         "smelter_*",
         "fabricator_*",
         "feed_maker_*",
+        "refiner_*",
     ],
     [
         "habitat_*",
     ],
 ]
-SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*", "feed_maker_*"}
+SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*", "feed_maker_*", "refiner_*"}
 
 # Steam Turbine: 108 W from 90 t/h (docs/components/steam_turbine.md).
 STEAM_WH_PER_TON = 108.0 / 90.0

@@ -113,6 +113,13 @@ class SiteSupplyTests(StubTestCase):
         self.publish()
         self.assertEqual(site_requests(w, w.home.id).get("tar"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["tar"], 0))
 
+    def test_refiner_site_stocks_tar_with_need_floor(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"tar": 5000}, capacity=100000)
+        w.components["refiner_1"] = _Building("refiner_1", "refiner", self.remote)
+        self.publish()
+        self.assertEqual(site_requests(w, "outpost_2").get("tar"), (site_supply.SITE_STOCK_TARGETS["refiner"]["tar"], site_supply.SITE_STOCK_NEED["refiner"]["tar"]))
+
     def test_fuel_assembler_site_stocks_and_orders_lead_plates(self):
         w = self.world
         w.components["fuel_assembler_1"] = _Building("fuel_assembler_1", "fuel_assembler", self.remote)
