@@ -144,3 +144,8 @@ def batch_count(rows, item_id, max_limit=None):
             if max_limit is not None and total >= max_limit:
                 return max_limit
     return total
+
+
+def ids_needing(rows, item_id):
+    """Ids of rows needing item_id."""
+    return [row["id"] for row in rows if row["item"] == item_id]

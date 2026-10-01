@@ -96,6 +96,11 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(cp.batch_count(rows, "pipe"), 40)
         self.assertEqual(cp.batch_count(rows, "pipe", max_limit=30), 30)
 
+    def test_ids_needing(self):
+        rows = [{"id": "a", "item": "pipe"}, {"id": "b", "item": "line"}, {"id": "c", "item": "pipe"}, {"id": "d", "item": None}]
+        self.assertEqual(cp.ids_needing(rows, "pipe"), ["a", "c"])
+        self.assertEqual(cp.ids_needing(rows, "bridge"), [])
+
 
 class BudgetTests(unittest.TestCase):
     """Each atomic call stays under ATOMIC_STEP_BUDGET at its worst input (the hard cap is 10,000 steps)."""

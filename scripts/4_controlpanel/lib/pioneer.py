@@ -699,11 +699,14 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         loaded = self.load_construction_materials(target_job["job"], target_count=batch_needed)
                         self.log.end(f"[{self.name}] Stocking {'done' if loaded else 'failed'}.")
                         if not loaded:
-                            # required_item genuinely isn't obtainable right now (e.g. Inventory
-                            # empty and nothing produces it yet) -- defer this job rather than
-                            # retrying it forever and starving every other pending job behind it
-                            # in the list (failed_jobs clears once no other option remains).
-                            self.log.level("warn").print(f"[{self.name}] Could not load materials for job {job_id}; deferring to try other pending jobs.")
+                            # required_item isn't obtainable right now (home storage empty,
+                            # or a peer holds the whole stock) -- defer every job needing it,
+                            # not just this one, so jobs whose materials are on hand get a
+                            # turn this cycle instead of after one failed restock per job
+                            # (failed_jobs clears once no other option remains).
+                            deferred = construction_plan.ids_needing(target_jobs, required_item)
+                            self.log.level("warn").print(f"[{self.name}] Could not load {required_item} for job {job_id}; deferring {len(deferred)} job(s) needing it to try other pending jobs.")
+                            failed_jobs.update(deferred)
                             failed_jobs.add(job_id)
                             self.release_target_claim(self.construction_claim_key(job_id))
                             flush_all()
