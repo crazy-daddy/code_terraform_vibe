@@ -11,6 +11,7 @@ import pioneer_commission
 import drone_upgrade
 import production
 import cash
+import logistics_requests
 
 DRONE_RECIPES = [
     Recipe(f"craft_{item}", {"iron_ingot": 1}, item)
@@ -253,6 +254,35 @@ class DroneCommissionTests(CommissionTestCase):
         self.assertEqual(self.job(job_id)["state"], "attach", self.debug_log())
         self.assertEqual(self.computer.calls, [("drone_medium", "outpost_2")])
         self.assertTrue(fleet_commission.commission_fast())
+
+    def test_part_built_remotely_awaits_haul_home(self):
+        w = self.world
+        job_id = fleet_commission.queue_drone("hauler")
+        self.steps(1)
+        order = self.orders()["fleet_commission"]
+        w.add_warehouse("warehouse_2", w.add_outpost("outpost_2"), {"drone_medium": 1})
+        for item_id, n in order.items():
+            if item_id != "drone_medium":
+                w.inventory.add(item_id, n)
+        self.steps(1)
+        self.assertEqual(self.job(job_id)["state"], "crafting")
+        status = pioneer_commission.commission_state()["status"]
+        self.assertIn("awaiting haul home (1x drone_medium)", status)
+        self.assertNotIn("crafting (", status)
+
+        logistics_requests.reserve_pickup("pioneer_1", "home", "drone_medium", 1, w.clock.now, source_id="outpost_2")
+        self.steps(1)
+        self.assertIn("hauling home (1x drone_medium)", pioneer_commission.commission_state()["status"])
+
+    def test_unhauled_part_warns_once(self):
+        w = self.world
+        fleet_commission.queue_drone("hauler")
+        self.steps(1)
+        w.add_warehouse("warehouse_2", w.add_outpost("outpost_2"), {"drone_medium": 1})
+        self.steps(1)
+        w.clock.now += fleet_commission.HAUL_HOME_WARN_TICKS
+        self.steps(2)
+        self.assertEqual(self.debug_log().count("not hauled home"), 1, self.debug_log())
 
     def test_crafting_wait_is_not_fast(self):
         fleet_commission.queue_drone("hauler")

@@ -3,9 +3,12 @@
 # A drone job crafts its whole kit before deploying: the best chassis the
 # Fabricator can build (or Inventory already holds), an electric thruster and
 # one module per LOADOUTS slot of that chassis (lib/drone_upgrade.py), each at
-# its best obtainable tier. The Fabricator builds them through
-# fabricator.upgrade_orders (requester COMMISSION_REQUESTER); they stay in
-# Inventory (storage.INVENTORY_ONLY_ITEM_IDS) for deploy() and couple().
+# its best obtainable tier. A Fabricator builds them through
+# fabricator.upgrade_orders (requester COMMISSION_REQUESTER); deploy() and
+# couple() take them from home Inventory (storage.INVENTORY_ONLY_ITEM_IDS).
+# Parts a remote fab site builds are hauled home on site supply's home pull
+# request (lib/site_supply.py consumer_wants()) and unloaded straight into
+# Inventory (storage.best_unload_target()).
 # A part the Fabricator can't craft but the Shop sells (the miner's Portable
 # Bio Extractor) is bought instead, through the cash manager (consumer
 # "drone_commission", lib/cash.py); spec["buy"] lists those parts.

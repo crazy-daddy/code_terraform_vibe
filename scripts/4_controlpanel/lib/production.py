@@ -3,7 +3,7 @@ from archive import archive
 from storage import total_stock, discover_storage_buildings, outpost_is_home
 from outpost_mining import ore_stock_target, RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
-from logistics_requests import active_requests, in_flight, outpost_free_tiers
+from logistics_requests import active_requests, in_flight, outpost_free_tiers, aboard_units
 from tree_console import TreeConsole
 from swallow import swallowed
 import mining_reservations
@@ -1317,7 +1317,8 @@ def outpost_by_site_id(site_id):
 
 def root_remaining(item_id, target, cache):
     """Units of a root target still to build anywhere: target minus stock
-    anywhere on the network and every Fabricator's pipeline."""
+    anywhere on the network (cargo aboard haulers included) and every
+    Fabricator's pipeline."""
     return max(0, target - cache.network_stock(item_id) - get_fabricator_pipeline(cache).get(item_id, 0))
 
 
@@ -1712,7 +1713,7 @@ def get_smelter_demands(cache=None):
          as gross need as-is.
       3. Dock orders for Smelter outputs NOT already covered by (2).
       4. Net once: minus stock anywhere on the network (home Inventory +
-         every outpost's Warehouses, SourceCache.network_stock(), so ingots
+         every outpost's Warehouses + hauler cargo, SourceCache.network_stock(), so ingots
          a remote Smelter made aren't refined again at home) and minus what's
          already staged in every Fabricator's stockpile.
 
@@ -2005,6 +2006,7 @@ class SourceCache:
         self._pipeline_by_site = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
+        self._aboard = None  # logistics_requests.aboard_units() snapshot, see network_stock()
         self._blueprint_demand = None  # _cascade_blueprint_demand() memo
         self._recipe_index = None  # _recipe_index() for this pass
 
@@ -2088,11 +2090,14 @@ class SourceCache:
         return held.get(item_id, 0)
 
     def network_stock(self, item_id):
-        """stock() plus every non-home outpost's local Warehouses (local_stock()):
-        units anywhere in storage on the network."""
+        """stock() plus every non-home outpost's local Warehouses (local_stock())
+        plus cargo loaded aboard a hauler (logistics_requests.aboard_units()):
+        units anywhere on the network, moving ones included."""
         if self._remote_outposts is None:
             self._remote_outposts = [o for o in _all_outposts() if not outpost_is_home(o)]
-        total = self.stock(item_id)
+        if self._aboard is None:
+            self._aboard = aboard_units()
+        total = self.stock(item_id) + self._aboard.get(item_id, 0)
         for outpost in self._remote_outposts:
             total += self.local_stock(item_id, outpost)
         return total

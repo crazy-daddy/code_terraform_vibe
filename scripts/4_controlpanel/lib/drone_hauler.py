@@ -596,7 +596,7 @@ class DroneHaulerMixin:
                 except Exception as e:
                     self._host.log.debug(f"load {item_id} at '{source['id']}' raised: {e}")
             self._host.log.print(f"[{self._host.name}] Loaded {moved}/{amount}x {item_id} at drill '{source['id']}'.")
-            logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, moved, curr_tick, source_id=source["id"])
+            logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, moved, curr_tick, source_id=source["id"], aboard=True)
             moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
         self._host.log.end()
         return moved_by_item
@@ -691,7 +691,7 @@ class DroneHaulerMixin:
             waited += DEPOT_UNLOAD_RETRY_S
 
         for item_id, amount in loads:
-            logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, moved_by_item.get(item_id, 0), curr_tick, source_id=source["id"])
+            logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, moved_by_item.get(item_id, 0), curr_tick, source_id=source["id"], aboard=True)
         depot_stage.clear_stage(self._host.name, depot["id"])
         total = sum(moved_by_item.values())
         self._host.log.print(f"[{self._host.name}] Loaded {moved_by_item} at Depot '{depot['id']}' ({source['id']})" + (f"; {remaining} not staged in time." if remaining else "."))
@@ -810,7 +810,7 @@ class DroneHaulerMixin:
         curr_tick = self._host.get_current_tick()
         self._release_all()
         for item_id, units in contents.items():
-            logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, units, curr_tick)
+            logistics_requests.reserve_pickup(self._host.name, dest_id, item_id, units, curr_tick, aboard=True)
         self._reserve_yield(self._outposts_by_id().get(dest_id), contents, curr_tick)
         self._save_haul_mission(dest_id)
         self._host.set_intent(fleet_intent.describe("hauling", contents, dest=dest_id, root=fleet_intent.haul_root(contents, dest_id, curr_tick)))

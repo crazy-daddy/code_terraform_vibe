@@ -209,6 +209,23 @@ def _fill_fraction(building):
         return 1.0
 
 
+def _inventory_first(item_id, min_amount, outpost):
+    """True when item_id must stay in Inventory, Inventory has room for
+    min_amount, and no active Supply Dock order at outpost owes it."""
+    if not must_stay_in_inventory(item_id):
+        return False
+    inventory = _component("inventory")
+    if not inventory or not hasattr(inventory, "space_for"):
+        return False
+    try:
+        if inventory.space_for(item_id) < min_amount:
+            return False
+    except Exception as error:
+        swallowed("storage._inventory_first: inventory.space_for", error)
+        return False
+    return item_id not in _items_demanded_by_active_dock_orders(outpost)
+
+
 def best_unload_target(item_id, min_amount=1, outpost=None):
     """
     Destination id string for offloading item_id, else None if there is nowhere
@@ -230,8 +247,18 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
     output port to it -- a non-local target from a Warehouse-only outpost. Returns
     None instead so callers can skip the stack (leave it staged) rather than
     attempt a connection that can't work.
+
+    At home, an item that must stay in Inventory (must_stay_in_inventory())
+    goes straight to "inventory" while it has room for min_amount, so a
+    hauled-in kit or module doesn't wait in a Warehouse for
+    reclaim_inventory_only_items_from_warehouses(). Items an active Supply
+    Dock order owes keep the Warehouse routing, as in that sweep.
     """
     log.start(f"best_unload_target({item_id})", level="debug")
+    if outpost_is_home(outpost) and _inventory_first(item_id, min_amount, outpost):
+        log.debug("Inventory-only item with room in Inventory -> 'inventory'")
+        log.end()
+        return "inventory"
     holders = []
     others = []
     for building in discover_storage_buildings(outpost):

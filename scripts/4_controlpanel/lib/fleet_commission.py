@@ -35,7 +35,12 @@
 # outpost, which needs a Drone Depot):
 #   queued    -> spec: best craftable chassis + LOADOUTS modules
 #   crafting  -> kit ordered via fabricator.upgrade_orders until Inventory
-#                holds all of it
+#                holds all of it. A part a remote fab site built reaches
+#                home Inventory through site supply's home pull request
+#                (lib/site_supply.py consumer_wants()) and a hauler serving
+#                home; the status splits "crafting" from "awaiting haul
+#                home", and warns once per job when built parts sat
+#                unhauled for HAUL_HOME_WARN_TICKS
 #   deploying -> waits while a fleet_upgrade drone swap is deploying (both
 #                adopt "the new drone"), snapshots owned drones, then
 #                computer.deploy(chassis, outpost); a full Depot waits;
@@ -54,7 +59,8 @@ import fleet_status
 from pioneer_commission import PIONEER_KIT_ID, commission_state, update_commission, build_spec, spec_parts
 from drone_commission import COMMISSION_REQUESTER, build_drone_spec, drone_spec_parts, drone_craft_parts, drone_buy_parts
 from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade
-from production import set_upgrade_order, fabricator_unlocked_outputs
+from production import set_upgrade_order, fabricator_unlocked_outputs, home_outpost_id, SourceCache
+from logistics_requests import in_flight, REQUEST_STALE_TICKS
 from outpost_mining import HOME_OUTPOST_ID
 import cash
 from tree_console import TreeConsole
@@ -75,6 +81,9 @@ FAST_STATES = {"pioneer": ("queued", "deploying", "attach"), "drone": ("queued",
 # Advances per job per pass: queued -> crafting -> deploying -> attach -> script start fit in one pass
 # when the kit is already in Inventory.
 MAX_ADVANCES_PER_PASS = 5
+# Built kit parts that sat outside Inventory this long with nothing in flight
+# home get one warning per job: no hauler serves home.
+HAUL_HOME_WARN_TICKS = REQUEST_STALE_TICKS
 
 
 def _component(component_id):
@@ -147,6 +156,11 @@ class FleetCommissionCoordinator:
 
     def __init__(self):
         self.log = TreeConsole(module="fleet_commission")
+        self._tick = 0
+        # {job_id: first tick built parts waited unhauled}; a job id in
+        # _haul_warned got its warning already.
+        self._unhauled_since = {}
+        self._haul_warned = set()
 
     # ------------------------------------------------------------ lookups
 
@@ -173,6 +187,41 @@ class FleetCommissionCoordinator:
         except Exception as error:
             swallowed("fleet_commission.FleetCommissionCoordinator._inventory_count: inventory.count", error)
             return 0
+
+    def _kit_wait_text(self, job_id, label, short):
+        """
+        Status for a drone kit not yet all in Inventory: parts still to craft
+        vs parts already built elsewhere on the network (a remote fab site's
+        Warehouse, a home Warehouse before the reclaim sweep, a hauler's
+        cargo) awaiting the trip home. Warns once per job when built parts sit
+        HAUL_HOME_WARN_TICKS with nothing in flight home.
+        """
+        cache = SourceCache()
+        built = {}
+        for item_id, n in short.items():
+            elsewhere = cache.network_stock(item_id) - self._inventory_count(item_id)
+            if elsewhere > 0:
+                built[item_id] = min(n, elsewhere)
+        crafting = {i: n - built.get(i, 0) for i, n in short.items() if n - built.get(i, 0) > 0}
+        coming = in_flight(home_outpost_id(), self._tick) if built else {}
+        hauling = {i: min(n, coming.get(i, 0)) for i, n in built.items() if coming.get(i, 0) > 0}
+        waiting = {i: n - hauling.get(i, 0) for i, n in built.items() if n - hauling.get(i, 0) > 0}
+        self.log.debug(f"{label}: short {short} -> to craft {crafting}, built elsewhere {built}, in flight home {hauling}.")
+
+        if waiting and not hauling:
+            since = self._unhauled_since.setdefault(job_id, self._tick)
+            if self._tick - since >= HAUL_HOME_WARN_TICKS and job_id not in self._haul_warned:
+                self._haul_warned.add(job_id)
+                self.log.level("warn").print(f"[fleet_commission] {label}: {waiting} built but not hauled home for {self._tick - since} ticks. Home needs a pull hauler (Pioneer based at home) or a Drone Depot for floating drone haulers.")
+        else:
+            self._unhauled_since.pop(job_id, None)
+
+        def fmt(parts):
+            return ", ".join(f"{n}x {i}" for i, n in parts.items())
+        texts = [f"crafting ({fmt(crafting)})"] if crafting else []
+        texts += [f"hauling home ({fmt(hauling)})"] if hauling else []
+        texts += [f"built, awaiting haul home ({fmt(waiting)})"] if waiting else []
+        return f"{label}: {'; '.join(texts)}"
 
     def _pioneers(self):
         """Sorted ids of every owned Pioneer, or None when the fleet can't be read."""
@@ -268,6 +317,7 @@ class FleetCommissionCoordinator:
 
     def step(self, current_tick):
         """One coordinator pass. Returns a short summary for control_room_automation's automation line."""
+        self._tick = current_tick
         state = commission_state()
         pioneers = self._pioneers()
         drones = self._drones()
@@ -467,10 +517,10 @@ class FleetCommissionCoordinator:
             parts = drone_spec_parts(spec)
             short = {item: n - self._inventory_count(item) for item, n in parts.items() if self._inventory_count(item) < n}
             if short:
-                self.log.debug(f"{label}: waiting on the Fabricator for {short}.")
-                _ret = f"{label}: crafting ({', '.join(f'{n}x {i}' for i, n in short.items())})"
+                _ret = self._kit_wait_text(job_id, label, short)
                 self.log.end()
                 return _ret
+            self._unhauled_since.pop(job_id, None)
             if drones is None:
                 self.log.end()
                 return f"{label}: fleet unreadable"

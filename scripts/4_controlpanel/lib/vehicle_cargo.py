@@ -101,10 +101,10 @@ class VehicleCargoMixin:
                 stacks = []
 
         def unload_one(item_id, count):
-            """Sends count units of item_id, preferring a Warehouse with room
-            at target_outpost (see storage.best_unload_target()) and falling
-            back to Inventory. Returns (moved, went_full) for the caller's
-            bookkeeping."""
+            """Sends count units of item_id to storage.best_unload_target() at
+            target_outpost: a Warehouse with room, Inventory as the home
+            fallback, and Inventory first at home for Inventory-only items.
+            Returns (moved, went_full) for the caller's bookkeeping."""
             target = best_unload_target(item_id, count, outpost=target_outpost)
             if target is None:
                 self._host.log.level("warn").print(f"[{self._host.name}] WARNING: no local storage at destination has room for {item_id}. Cargo remains aboard.")
@@ -542,7 +542,7 @@ class VehicleCargoMixin:
             else:
                 moved = take_item(self._host.vehicle.input, item_id, amount, outpost=source["outpost"])
             self._host.log.print(f"[{self._host.name}] Picked up {moved}/{amount}x {item_id} at '{source['id']}'.")
-            logistics_requests.reserve_pickup(self._host.name, home_id, item_id, moved, curr_tick, source_id=source["id"])
+            logistics_requests.reserve_pickup(self._host.name, home_id, item_id, moved, curr_tick, source_id=source["id"], aboard=True)
             moved_by_item[item_id] = moved_by_item.get(item_id, 0) + moved
 
         if not (is_drill or is_pump) and self._host.find_charging_station(source["outpost"]) is not None:

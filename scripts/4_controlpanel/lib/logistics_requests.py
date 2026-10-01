@@ -16,7 +16,8 @@
 #                                                "min": m, "by": requester,
 #                                                "buy": bool, "tick": n}}}
 #   logistics.pickups  = {pickup_key: {"vehicle", "dest", "source",
-#                                      "item_id", "units", "tick"}}
+#                                      "item_id", "units", "tick",
+#                                      "aboard"}}
 # Two demand tiers per request: "min" is what the requester needs to keep
 # working (the need tier), "target" the stock it would like on hand (the
 # buffer tier above min). "min" missing or >= target means all need. Need
@@ -34,6 +35,10 @@
 # "source" (outpost or drill id, None for legacy entries) lets a planner
 # debit stock another hauler has already promised itself (reserved_from()),
 # so two haulers never plan the same units at the same source.
+# "aboard": True once the hauler has loaded the units (reserve_pickup(...,
+# aboard=True) after each take); a planned-only entry still has them at the
+# source. aboard_units() sums the loaded ones, so stock counts can include
+# cargo on the move without counting a planned pickup twice.
 
 from archive import archive
 from storage import warehouse_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
@@ -201,12 +206,13 @@ def pickup_key(vehicle_name, dest_outpost_id, item_id, source_id=None):
     return f"{base}:{source_id}" if source_id else base
 
 
-def reserve_pickup(vehicle_name, dest_outpost_id, item_id, units, curr_tick=None, source_id=None):
+def reserve_pickup(vehicle_name, dest_outpost_id, item_id, units, curr_tick=None, source_id=None, aboard=False):
     """
     Debits `units` of item_id headed for dest_outpost_id (and, with
     source_id, taken from that outpost/drill) until released (or stale).
     Re-reserving the same (vehicle, dest, item, source) overwrites, so the
-    planned amount can be corrected to what actually got loaded.
+    planned amount can be corrected to what actually got loaded; pass
+    aboard=True then, so aboard_units() counts them.
     """
     tick = curr_tick if curr_tick is not None else _now_tick()
     key = pickup_key(vehicle_name, dest_outpost_id, item_id, source_id)
@@ -216,6 +222,8 @@ def reserve_pickup(vehicle_name, dest_outpost_id, item_id, units, curr_tick=None
             pickups = {}
         if units > 0:
             pickups[key] = {"vehicle": vehicle_name, "dest": dest_outpost_id, "source": source_id, "item_id": item_id, "units": units, "tick": tick}
+            if aboard:
+                pickups[key]["aboard"] = True
         else:
             pickups.pop(key, None)
         return pickups
@@ -330,6 +338,22 @@ def in_flight(dest_outpost_id, curr_tick=None):
         return totals
     for entry in raw.values():
         if not _is_fresh(entry, tick, PICKUP_STALE_TICKS) or entry.get("dest") != dest_outpost_id:
+            continue
+        item_id = entry.get("item_id")
+        if item_id:
+            totals[item_id] = totals.get(item_id, 0) + (entry.get("units", 0) or 0)
+    return totals
+
+
+def aboard_units(curr_tick=None):
+    """{item_id: units} loaded aboard a hauler and not delivered yet, any destination."""
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    raw = archive.get(PICKUPS_KEY, {})
+    totals = {}
+    if not isinstance(raw, dict):
+        return totals
+    for entry in raw.values():
+        if not entry.get("aboard") or not _is_fresh(entry, tick, PICKUP_STALE_TICKS):
             continue
         item_id = entry.get("item_id")
         if item_id:
