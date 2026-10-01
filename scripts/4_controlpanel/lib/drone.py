@@ -64,7 +64,7 @@ class DroneController(
         "bio_extractor": "extract",
     }
 
-    def __init__(self, drone, home_depot=None, cruise_throttle=None):
+    def __init__(self, drone, home_depot=None):
         self.drone = drone
         self.name = getattr(drone, "id", getattr(drone, "name", "drone"))
 
@@ -82,18 +82,13 @@ class DroneController(
         self.detect_engine()
 
         # A drone that replaced an older one in a fleet upgrade inherits that
-        # drone's script variables for any left at their default (None) --
+        # drone's HOME_DEPOT when its own is left at the default (None) --
         # see lib/drone_upgrade.py inherited_params().
         inherited = inherited_params(self.name) or {}
         if home_depot is None and inherited.get("HOME_DEPOT") not in (None, "", "None"):
             home_depot = inherited["HOME_DEPOT"]
-        if cruise_throttle is None and inherited.get("CRUISE_THROTTLE") not in (None, "", "None"):
-            try:
-                cruise_throttle = float(inherited["CRUISE_THROTTLE"])
-            except (TypeError, ValueError):
-                pass
         if inherited:
-            self.log.debug(f"[{self.name}] Replacement drone; inherited script variables {inherited} -> home_depot={home_depot!r}, cruise_throttle={cruise_throttle!r}.")
+            self.log.debug(f"[{self.name}] Replacement drone; inherited script variables {inherited} -> home_depot={home_depot!r}.")
 
         # HOME_DEPOT script variable: depot id/display name (hardwired to that
         # depot) or outpost id (any free depot there). None = auto (archived
@@ -102,10 +97,8 @@ class DroneController(
         self.home_depot_pool: "str | None" = None
         self.resolve_home()
 
-        # Kept separately from the effective value: a fleet upgrade hands the
-        # override (not the fleet default) on to the replacement drone.
-        self.cruise_throttle_override = cruise_throttle
-        self.cruise_throttle = cruise_throttle if cruise_throttle is not None else self.default_cruise_throttle()
+        # Fleet-wide default from the DRONE FLEET card's slider.
+        self.cruise_throttle = self.default_cruise_throttle()
 
         self.state = "INIT"
         self.intent = None  # set_intent(); published in telemetry for the fleet cards

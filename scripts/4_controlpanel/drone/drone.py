@@ -6,10 +6,8 @@ from drone import DroneController
 # Role is auto-detected from mounted modules; a hauler (Cargo Pods, no bio
 # module) floats between jobs and only uses HOME_DEPOT as its recall target.
 HOME_DEPOT = "${HOME_DEPOT:None}"
-CRUISE_THROTTLE = "${CRUISE_THROTTLE:None}"
 
 HOME_DEPOT = None if HOME_DEPOT in ("None", "") else HOME_DEPOT
-CRUISE_THROTTLE = float(CRUISE_THROTTLE) if CRUISE_THROTTLE not in ("None", "") else None
 
-controller = DroneController(self, home_depot=HOME_DEPOT, cruise_throttle=CRUISE_THROTTLE)
+controller = DroneController(self, home_depot=HOME_DEPOT)
 controller.run()

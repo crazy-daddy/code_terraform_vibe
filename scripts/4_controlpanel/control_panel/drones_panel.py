@@ -5,8 +5,7 @@
 # vehicle.default_cruise_throttle exactly, see docs/AI_CHEATSHEET.md) actually
 # gets set from the UI. Same pure-intent-publish pattern as vehicles_panel.py's
 # vehicle slider: this card only writes the archive value, each drone's own
-# script picks it up via DroneController.__init__ (only when constructed with
-# cruise_throttle=None -- an explicit per-drone override is unaffected).
+# script picks it up via DroneController.__init__ at its next start.
 #
 # Recall switch per row (lib/drone_claims.py's is_drone_recalled()/
 # set_drone_recalled()), same pure-intent-publish pattern as vehicles_panel.py's

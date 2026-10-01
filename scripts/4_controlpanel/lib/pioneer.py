@@ -41,8 +41,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         "miner": "drill",
     }
 
-    def __init__(self, vehicle, home_base=None, cruise_throttle=None):
-        super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
+    def __init__(self, vehicle, home_base=None):
+        super().__init__(vehicle, home_base=home_base)
 
     def detect_role(self, role_override=None):
         """

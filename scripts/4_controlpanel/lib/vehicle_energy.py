@@ -307,12 +307,9 @@ class VehicleEnergyMixin:
         Fleet-wide default cruise_throttle from the archive
         (DEFAULT_CRUISE_THROTTLE_KEY), falling back to
         DEFAULT_CRUISE_THROTTLE_FALLBACK=0.5 if never set or unreadable.
-        VehicleController.__init__ calls this exactly once at construction
-        when the thin entrypoint script passes cruise_throttle=None, so
-        raising the archive value (e.g. to 1.0) speeds up every such vehicle
-        without editing each one's script -- a vehicle constructed with an
-        explicit cruise_throttle instead keeps that override regardless of
-        this archive value.
+        VehicleController.__init__ calls this exactly once at construction,
+        so a new archive value (FLEET card slider) applies to every vehicle
+        from its next script start.
         """
         value = archive.get(DEFAULT_CRUISE_THROTTLE_KEY, None)
         if value is None:
@@ -622,9 +619,9 @@ class VehicleEnergyMixin:
 
     def select_cruise_throttle(self, target_x, target_y):
         """
-        Picks this leg's driving throttle: self.cruise_throttle (set at
-        construction, or the archive-backed default_cruise_throttle() when
-        the entrypoint script passed None -- see VehicleController.__init__),
+        Picks this leg's driving throttle: self.cruise_throttle (the
+        archive-backed default_cruise_throttle() read at construction -- see
+        VehicleController.__init__),
         capped down only as far as needed to still leave a safe reserve to
         reach a charging station from the destination
         (max_safe_throttle_for_leg()). Never higher than requested, never

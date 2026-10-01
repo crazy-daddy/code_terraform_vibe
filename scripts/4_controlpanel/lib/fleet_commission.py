@@ -562,7 +562,7 @@ class FleetCommissionCoordinator:
                 new_id = res.machine_id
             lineage = {
                 "from": None, "job": job_id, "role": role, "engine": spec.get("engine"), "kind": spec.get("kind"),
-                "params": {"HOME_DEPOT": outpost_id or "None", "CRUISE_THROTTLE": "None"}, "fitted": False,
+                "params": {"HOME_DEPOT": outpost_id or "None"}, "fitted": False,
             }
             update_fleet_upgrade(lambda s: s.setdefault("lineage", {}).update({new_id: lineage}))
             self._patch(job_id, state="attach", new_id=new_id)

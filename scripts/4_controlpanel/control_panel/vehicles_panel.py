@@ -135,9 +135,7 @@ while True:
     # Fleet-wide default cruise_throttle (lib/vehicle_energy.py's
     # default_cruise_throttle()) -- a pure intent publish, same pattern as
     # the per-vehicle recall switch below: this card only writes the archive
-    # value, each vehicle's own script reads it (only when constructed with
-    # cruise_throttle=None -- an explicit per-vehicle override, e.g. the
-    # demand-driven transporter role's cruise_throttle=1.0, is unaffected).
+    # value, each vehicle's own script reads it at its next start.
     # slider() works in a flat 0-1 range, matching MIN/MAX_SPEEDMODE_THROTTLE's
     # [0.10, 1.0] band closely enough that no remapping is needed -- a value
     # below 0.10 just clamps up to the safe floor when default_cruise_throttle()

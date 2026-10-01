@@ -137,10 +137,10 @@ def lineage_entry(drone_id):
 
 
 def inherited_params(drone_id):
-    """HOME_DEPOT/CRUISE_THROTTLE the drone this one replaced was running with
-    ({} if it isn't a replacement). DroneController uses them for any script
-    variable left at its default (None), so a hand-pasted or default-filled
-    script still behaves like the old drone."""
+    """HOME_DEPOT the drone this one replaced was running with ({} if it isn't
+    a replacement). DroneController uses it when its own script variable is
+    left at the default (None), so a hand-pasted or default-filled script
+    still goes home like the old drone."""
     entry = lineage_entry(drone_id)
     params = entry.get("params") if entry else None
     return params if isinstance(params, dict) else {}
@@ -273,11 +273,7 @@ class DroneUpgradeMixin:
     def swap_params(self):
         """This drone's script variables as the old slot had them ("None" = default)."""
         home = getattr(self._host, "home_depot_override", None)
-        throttle = getattr(self._host, "cruise_throttle_override", None)
-        return {
-            "HOME_DEPOT": str(home) if home else "None",
-            "CRUISE_THROTTLE": str(throttle) if throttle is not None else "None",
-        }
+        return {"HOME_DEPOT": str(home) if home else "None"}
 
     def handle_upgrade_request_if_active(self):
         """

@@ -103,8 +103,8 @@ class VehicleNavigationMixin:
         stalled_cycles = 0
         stall_recoveries = 0
 
-        # Pick this leg's throttle from self.cruise_throttle (construction
-        # override, or the archive-backed default_cruise_throttle()), capped
+        # Pick this leg's throttle from self.cruise_throttle (the
+        # archive-backed default_cruise_throttle()), capped
         # down only as far as needed for a safe return reserve.
         throttle = self._host.select_cruise_throttle(target_x, target_y)
         if timeout_ticks is None:
