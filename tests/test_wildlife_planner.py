@@ -1,7 +1,6 @@
 import unittest
 
 import harness
-import atomic
 import wildlife_common as wc
 import wildlife_planner as wp
 from wildlife_data import SPECIES, BONUS_TREES, FEED_PER_CRAFT, FORAGE_PER_CRAFT
@@ -186,13 +185,6 @@ class WakeAlertTests(harness.StubTestCase):
     def test_idle_summary(self):
         plan = wp.build_plan(snap(habitats=1, statuses={"habitat_1": established("salt_tortoise")}))
         self.assertEqual(wp.summary_line(plan), wp.IDLE_SUMMARY)
-
-
-class AtomicTests(harness.StubTestCase):
-    def test_build_plan_runs_as_one_callback(self):
-        statuses = {"habitat_%d" % (i + 1): established(s, rate=50.0) for i, s in enumerate(sorted(SPECIES))}
-        s = snap(habitats=16, statuses=statuses, insight=10, schedule=wp.schedule_for(16))
-        self.assertEqual(atomic.run_atomic(wp.build_plan, s), wp.build_plan(s))
 
 
 class SnapshotTests(harness.StubTestCase):

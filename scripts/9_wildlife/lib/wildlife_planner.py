@@ -7,13 +7,15 @@
 #   1. Snapshot (game reads): Habitats on the network, their `wildlife.status`
 #      telemetry, the Feed Makers' `wildlife.feed` (unlocked recipes and
 #      their inputs), cataloged creatures, home stock of feed and life forms.
-#   2. build_plan(snapshot): pure, run as one atomic callback
-#      (lib/atomic.py). Walks the offline revival schedule
-#      (wildlife_model.schedule_for(live Habitat count)) the way the optimizer
-#      does: steps run strictly in order; a step that can never run (species
-#      already revived, node bought, not cataloged, recipe locked, no Habitat
-#      left) is skipped; the first step that can run later (Insight short,
-#      Breakthrough source below 10,000) stops the walk, holding Insight.
+#   2. build_plan(snapshot): pure, called directly. Its cost grows with
+#      Habitats and statuses past the 10,000-step cap of one atomic callback
+#      (lib/atomic.py), and an hourly pass needs no single-tick speed.
+#      Walks the offline revival schedule (wildlife_model.schedule_for(live
+#      Habitat count)) the way the optimizer does: steps run strictly in
+#      order; a step that can never run (species already revived, node
+#      bought, not cataloged, recipe locked, no Habitat left) is skipped;
+#      the first step that can run later (Insight short, Breakthrough
+#      source below 10,000) stops the walk, holding Insight.
 #      Then feed demand per feed item (priority classes in wildlife_common),
 #      the Forage reserve for the Plant Terraformer, life-form targets, the
 #      Habitats to wake and the operator alerts.
@@ -25,7 +27,6 @@
 # done: with no free Habitat a revive step can never run and is skipped.
 
 from archive import archive
-from atomic import run_atomic
 from swallow import swallowed
 from tree_console import TreeConsole
 import logistics_requests
@@ -510,7 +511,7 @@ def plan(clock):
     log.start(f"[WILDLIFE] plan: {len(snap['habitat_ids'])} Habitat(s), insight {snap['insight']:.2f}", level="debug")
     prev = archive.get(wc.PLAN_KEY, {}) or {}
     pure = {k: v for k, v in snap.items() if k != "home"}
-    result = run_atomic(build_plan, pure)
+    result = build_plan(pure)
     if not _write(result):
         log.end("write rejected")
         return state["summary"]
