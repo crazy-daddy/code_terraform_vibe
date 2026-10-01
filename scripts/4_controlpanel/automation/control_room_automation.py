@@ -113,12 +113,29 @@ last_mixer_gate_tick = 0
 last_drill_tick = 0
 last_parking_tick = 0
 parking = None              # ScriptParking, created once power_control is available
-parking_summary = ["nothing parked"]  # one automation card item per parked kind
-drill_summary = "no drills"
-# count = docks assigned by the last plan; signature = plan_signature() at that plan; plan_tick = its tick
-dock_plan = {"last_tick": 0, "count": 0, "signature": None, "plan_tick": 0}
+# signature = plan_signature() at the last plan; plan_tick = its tick
+dock_plan = {"last_tick": 0, "signature": None, "plan_tick": 0}
 # tick = last coordinator pass; summary = its result, published with the storage pass's summary
 commission = {"tick": 0, "summary": "commission idle"}
+# "<step> error" for each step that failed since the last summary publish
+errors = []
+# Coordinator summaries that mean "nothing for the operator to see"; left off the AUTOMATION card.
+IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off",
+                  "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle")
+QUIET_SUMMARY = "all quiet"
+
+
+def report_error(what, error):
+    """Prints a failed step to the console and keeps it for the next AUTOMATION card summary."""
+    print(f"[AUTOMATION] {what} error: {error}")
+    if f"{what} error" not in errors:
+        errors.append(f"{what} error")
+
+
+def card_items(summaries):
+    """AUTOMATION card items: this pass's errors, then every non-idle coordinator summary."""
+    items = errors + [s for s in (str(s) for s in summaries) if s not in IDLE_SUMMARIES]
+    return items or [QUIET_SUMMARY]
 
 
 def plan_docks_if_due(clock):
@@ -135,12 +152,11 @@ def plan_docks_if_due(clock):
         signature = supply_dock.plan_signature()
         if signature == dock_plan["signature"] and now - dock_plan["plan_tick"] < DOCK_PLAN_MAX_TICK_INTERVAL:
             return
-        plan = supply_dock.plan_dock_assignments(clock=clock)
-        dock_plan["count"] = sum(1 for v in plan.values() if v)
+        supply_dock.plan_dock_assignments(clock=clock)
         dock_plan["signature"] = signature
         dock_plan["plan_tick"] = now
     except Exception as e:
-        print(f"[AUTOMATION] Supply Dock planning error: {e}")
+        report_error("Supply Dock planning", e)
 
 def step_commission(now):
     """One FleetCommissionCoordinator pass; keeps its summary for the automation line."""
@@ -149,7 +165,7 @@ def step_commission(now):
     try:
         commission["summary"] = fleet_commissioner.step(now)
     except Exception as e:
-        print(f"[AUTOMATION] Fleet commission error: {e}")
+        report_error("Fleet commission", e)
 
 
 def commission_if_due(clock):
@@ -166,9 +182,7 @@ def between_steps(clock):
     commission_if_due(clock)
 
 mixer_gate = None           # MixerGate, created lazily once power_control is available
-mixer_gate_summary = "no Mixers"
 biomass_retirement = None   # BiomassRetirement, created once biomass is complete
-grid_count = 0              # last solar-sync grid census; carries over on ticks solar_due is False
 fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state lives in archive)
 fleet_commissioner = FleetCommissionCoordinator()  # same
 fleet_decommissioner = FleetDecommissionCoordinator()  # same
@@ -187,7 +201,6 @@ while True:
 
         if solar_due:
             last_solar_tick = current_tick
-            grid_count = 0
             try:
                 elevation = clock.get_elevation() if clock else 0.0
                 live_grids = power.grids() if power and hasattr(power, "grids") else []
@@ -200,7 +213,6 @@ while True:
                         manager = PowerGridManager(grid, clock=clock, power=power)
                         grid_managers[anchor] = manager
                     manager.supervise_grid(grid, elevation)
-                    grid_count += 1
 
                 # Grids that stopped being reported (merged into another via a new
                 # power line) -- release anything they still had shed rather than
@@ -210,7 +222,7 @@ while True:
                         grid_managers[stale_anchor].release_all()
                         del grid_managers[stale_anchor]
             except Exception as e:
-                print(f"[AUTOMATION] Grid supervision error: {e}")
+                report_error("Grid supervision", e)
 
         if mixer_gate_due:
             last_mixer_gate_tick = current_tick
@@ -218,22 +230,18 @@ while True:
                 if biomass_retirement is None and mixer_gate is None and power:
                     mixer_gate = MixerGate(power=power, clock=clock)
                 if mixer_gate is not None and biomass_retirement is None:
-                    gate_states = mixer_gate.step(current_tick)
-                    if gate_states:
-                        paused = sum(1 for st in gate_states.values() if st.get("state") == "pause")
-                        mixer_gate_summary = f"{len(gate_states)} Mixer(s) ({paused} paused)"
+                    mixer_gate.step(current_tick)
             except Exception as e:
-                print(f"[AUTOMATION] Mixer gate error: {e}")
+                report_error("Mixer gate", e)
 
         between_steps(clock)
 
         if last_drill_tick == 0 or current_tick - last_drill_tick >= DRILL_TELEMETRY_TICK_INTERVAL:
             last_drill_tick = current_tick
             try:
-                drill_count = publish_all_drills()
-                drill_summary = f"{drill_count} drill(s) reported" if drill_count else "no drills"
+                publish_all_drills()
             except Exception as e:
-                print(f"[AUTOMATION] Drill telemetry error: {e}")
+                report_error("Drill telemetry", e)
 
         if last_parking_tick == 0 or current_tick - last_parking_tick >= PARKING_TICK_INTERVAL:
             last_parking_tick = current_tick
@@ -241,37 +249,35 @@ while True:
                 if parking is None and power:
                     parking = ScriptParking(power=power, clock=clock)
                 if parking is not None:
-                    parking_summary = parking.step(
-                        power.grids() if hasattr(power, "grids") else [],
+                    parking.step(
+                        power.grids() if power and hasattr(power, "grids") else [],
                         clock.get_elevation() if clock and hasattr(clock, "get_elevation") else None,
                         archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {},
                     )
             except Exception as e:
-                print(f"[AUTOMATION] Script parking error: {e}")
+                report_error("Script parking", e)
 
         if storage_due:
             last_storage_tick = current_tick
-            cash_summary = "cash idle"
             try:
-                cash_summary = cash_manager.step(current_tick)
+                cash_manager.step(current_tick)
             except Exception as e:
-                print(f"[AUTOMATION] Cash manager error: {e}")
+                report_error("Cash manager", e)
 
             try:
                 rebalance_inventory_to_warehouses()
             except Exception as e:
-                print(f"[AUTOMATION] Rebalance sweep error: {e}")
+                report_error("Rebalance sweep", e)
 
             between_steps(clock)
 
             try:
                 reclaim_inventory_only_items_from_warehouses()
             except Exception as e:
-                print(f"[AUTOMATION] Reclaim sweep error: {e}")
+                report_error("Reclaim sweep", e)
 
             between_steps(clock)
 
-            outpost_new_count = 0
             try:
                 network = get_component("outpost_network")
                 if network and hasattr(network, "outposts"):
@@ -283,7 +289,6 @@ while True:
                     for new_id in new_ids:
                         assigned = outpost_mining.reevaluate_unassigned_near_outpost(new_id)
                         print(f"[AUTOMATION] New outpost '{new_id}' detected -- assigned {assigned} nearby resource marker(s).")
-                        outpost_new_count += 1
                     if current_ids != known_ids:
                         archive.set(OUTPOST_KNOWN_IDS_KEY, sorted(current_ids))
 
@@ -299,45 +304,41 @@ while True:
                         try:
                             consolidate_cross_warehouse_stock(o)
                         except Exception as e:
-                            print(f"[AUTOMATION] Cross-warehouse consolidation error at '{o_id}': {e}")
+                            report_error(f"Cross-warehouse consolidation at '{o_id}'", e)
                         between_steps(clock)
             except Exception as e:
-                print(f"[AUTOMATION] Outpost sync error: {e}")
+                report_error("Outpost sync", e)
 
             try:
                 if biomass_retirement is None and biomass_complete():
                     biomass_retirement = BiomassRetirement(power=power)
                 if biomass_retirement is not None:
-                    mixer_gate_summary = biomass_retirement.step(current_tick)
+                    biomass_retirement.step(current_tick)
             except Exception as e:
-                print(f"[AUTOMATION] Biomass retirement error: {e}")
+                report_error("Biomass retirement", e)
 
             try:
                 plan_sites()
             except Exception as e:
-                print(f"[AUTOMATION] Fab site plan error: {e}")
+                report_error("Fab site plan", e)
 
-            site_count = 0
             try:
-                site_count = sum(1 for wants in publish_site_requests(current_tick).values() if wants)
+                publish_site_requests(current_tick)
             except Exception as e:
-                print(f"[AUTOMATION] Site supply error: {e}")
+                report_error("Site supply", e)
 
-            salt_summary = "no home salt request"
             try:
                 network = get_component("outpost_network")
                 home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None) if network else None
-                salt_target = publish_home_salt_request(home, current_tick)
-                if salt_target is not None:
-                    salt_summary = f"home salt target {salt_target}"
+                publish_home_salt_request(home, current_tick)
             except Exception as e:
-                print(f"[AUTOMATION] Home salt request error: {e}")
+                report_error("Home salt request", e)
 
             upgrade_summary = "fleet upgrade idle"
             try:
                 upgrade_summary = fleet_upgrader.step(current_tick)
             except Exception as e:
-                print(f"[AUTOMATION] Fleet upgrade error: {e}")
+                report_error("Fleet upgrade", e)
 
             step_commission(current_tick)
 
@@ -345,13 +346,10 @@ while True:
             try:
                 decommission_summary = fleet_decommissioner.step(current_tick)
             except Exception as e:
-                print(f"[AUTOMATION] Fleet decommission error: {e}")
+                report_error("Fleet decommission", e)
 
-            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join([
-                f"{grid_count} grid(s) supervised", "rebalance swept", f"{outpost_new_count} new outpost(s)",
-                f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", salt_summary, str(upgrade_summary),
-                str(commission["summary"]), str(decommission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
-            ]))
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items([upgrade_summary, commission["summary"], decommission_summary])))
+            errors.clear()
 
     flush_all()
     sleep(1.0)
