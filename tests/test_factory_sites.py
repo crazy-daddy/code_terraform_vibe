@@ -4,6 +4,7 @@ stranded ore eviction) and Supply Docks at fab outposts (E7)."""
 import unittest
 
 from harness import StubTestCase, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
+from game_stubs import Recipe
 
 
 def requests_by(world, outpost_id, requester):
@@ -209,6 +210,72 @@ class StrandedOreTests(StubTestCase):
         w = self.world
         w.add_warehouse("wh_remote", self.remote, {"iron_ore": 30})
         w.add_supply_dock("supply_dock_2", self.remote).order = w.add_order("o1", {"iron_ore": 20})
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+
+class _Info:
+    def __init__(self, category):
+        self.category = category
+
+
+class _Catalog:
+    CATEGORIES = {"iron_ingot": "refined", "glass": "refined", "steel_plate": "crafted", "gas_pipe_segment": "crafted",
+                  "battery_pack": "crafted", "bracket_kit": "construction_kit", "tar": "crafted"}
+
+    def lookup(self, item_id):
+        category = self.CATEGORIES.get(item_id)
+        return _Info(category) if category else None
+
+
+class StrandedGoodsTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.world.services["item_catalog"] = _Catalog()
+        self.fab = self.world.add_outpost("outpost_2")
+        self.world.add_warehouse("wh_fab", self.fab, capacity=100000)
+        self.world.add_fabricator("fabricator_2", self.fab)
+
+    def publish(self):
+        return site_supply.publish_site_requests(self.world.clock.now)
+
+    def test_home_ingots_and_intermediates_go_to_fab_site(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"iron_ingot": 40, "glass": 7}, capacity=100000)
+        self.publish()
+        self.assertEqual(w.notebook.data[site_supply.STRANDED_KEY], {"home": {"glass": w.clock.now, "iron_ingot": w.clock.now}})
+        w.clock.now += site_supply.EVICT_AFTER_TICKS
+        self.publish()
+        wants = requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)
+        self.assertEqual(wants["iron_ingot"], (40, 0))
+        self.assertEqual(wants["glass"], (7, 0))
+        self.assertEqual(requests_by(w, "home", site_supply.EVICT_REQUESTER), {})
+
+    def test_deployables_constructor_items_and_held_goods_stay_home(self):
+        w = self.world
+        w.components["fabricator_2"]._recipes.append(Recipe("craft_fertilizer", {"tar": 1, "glass": 1}, "fertilizer"))
+        w.add_warehouse("wh_home", w.home, {"gas_pipe_segment": 12, "battery_pack": 3, "tar": 500}, capacity=100000)
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_requested_goods_are_not_stranded(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"iron_ingot": 40}, capacity=100000)
+        logistics_requests.set_requests("home", "someone", {"iron_ingot": (50, 40)}, w.clock.now)
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_home_fabricator_keeps_goods(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"iron_ingot": 40}, capacity=100000)
+        w.add_fabricator("fabricator_1", w.home)
+        self.publish()
+        self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
+
+    def test_no_catalog_evicts_nothing(self):
+        w = self.world
+        del w.services["item_catalog"]
+        w.add_warehouse("wh_home", w.home, {"iron_ingot": 40}, capacity=100000)
         self.publish()
         self.assertEqual(w.notebook.data.get(site_supply.STRANDED_KEY, {}), {})
 

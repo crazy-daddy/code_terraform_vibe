@@ -238,7 +238,6 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         for seed_id, n in self.paving_seed_demand(layout, cells, rules, len(spare_items), unpaved).items():
             now[seed_id] = now.get(seed_id, 0) + n
         self.publish_seed_demand(now, rotation, curr_tick, layout, rules)
-        self.publish_salt_request(layout, rules, self.home_id, curr_tick)
         kit_order, automators_wanted = self.publish_kit_order(cells)
 
         kept = self.kept_garden()

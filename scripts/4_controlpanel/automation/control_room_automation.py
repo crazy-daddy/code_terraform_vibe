@@ -46,6 +46,8 @@
 #     fab sites that build its tree, then lib/site_supply.py publishes the
 #     ingots/ore/finished goods each outpost needs hauled in and evicts ore
 #     stranded at an outpost that lost its Smelters.
+#   - Home salt request (lib/pump_salt.py publish_home_salt_request()): the
+#     field's buffer plus what the Plant Terraformers still need to 5m km^2.
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController do
 # none of this themselves -- it's a hard dependency on this script running
 # (see legacy/README.md for pre-Control-Room saves). The manual
@@ -65,6 +67,7 @@ from fleet_commission import FleetCommissionCoordinator, commission_fast
 from fleet_decommission import FleetDecommissionCoordinator
 from cash import CashManager
 from site_supply import publish_site_requests
+from pump_salt import publish_home_salt_request
 from site_plan import plan_sites
 from mining_drill import publish_all_drills
 from script_parking import ScriptParking
@@ -320,6 +323,16 @@ while True:
             except Exception as e:
                 print(f"[AUTOMATION] Site supply error: {e}")
 
+            salt_summary = "no home salt request"
+            try:
+                network = get_component("outpost_network")
+                home = next((o for o in network.outposts() if getattr(o, "is_home", False)), None) if network else None
+                salt_target = publish_home_salt_request(home, current_tick)
+                if salt_target is not None:
+                    salt_summary = f"home salt target {salt_target}"
+            except Exception as e:
+                print(f"[AUTOMATION] Home salt request error: {e}")
+
             upgrade_summary = "fleet upgrade idle"
             try:
                 upgrade_summary = fleet_upgrader.step(current_tick)
@@ -336,7 +349,7 @@ while True:
 
             archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join([
                 f"{grid_count} grid(s) supervised", "rebalance swept", f"{outpost_new_count} new outpost(s)",
-                f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", str(upgrade_summary),
+                f"{dock_plan['count']} dock(s) assigned", f"{site_count} supply site(s)", salt_summary, str(upgrade_summary),
                 str(commission["summary"]), str(decommission_summary), str(cash_summary), str(mixer_gate_summary), drill_summary, *parking_summary,
             ]))
 

@@ -686,7 +686,7 @@ def inventory_stack_size():
     return DEFAULT_STACK_SIZE
 
 
-def _must_stay_in_inventory(item_id):
+def must_stay_in_inventory(item_id):
     """True if item_catalog classifies item_id as one of
     NON_WAREHOUSABLE_CATEGORIES -- equipment that deploys straight from
     Inventory, or vehicle-slot gear needed to equip a Pioneer/Rover -- so the
@@ -699,7 +699,7 @@ def _must_stay_in_inventory(item_id):
     try:
         info = catalog.lookup(item_id)
     except Exception as error:
-        swallowed("storage._must_stay_in_inventory: catalog.lookup", error)
+        swallowed("storage.must_stay_in_inventory: catalog.lookup", error)
         return False
     return bool(info) and getattr(info, "category", None) in NON_WAREHOUSABLE_CATEGORIES
 
@@ -707,7 +707,7 @@ def _must_stay_in_inventory(item_id):
 def _occupied_stackable_slots_by_item():
     """{item_id: [count_per_occupied_slot, ...]} for Inventory, skipping empty,
     property-bearing (non-stackable), and Inventory-only-category slots
-    (see _must_stay_in_inventory)."""
+    (see must_stay_in_inventory)."""
     inventory = _component("inventory")
     if not inventory or not hasattr(inventory, "get_slots"):
         return {}
@@ -727,7 +727,7 @@ def _occupied_stackable_slots_by_item():
         count = getattr(slot, "count", 0)
         if count <= 0:
             continue
-        if _must_stay_in_inventory(item_id):
+        if must_stay_in_inventory(item_id):
             continue  # equipment/module/portable: must stay in Inventory
         per_item.setdefault(item_id, []).append(count)
     return per_item
@@ -840,7 +840,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
     """
     Reverse of rebalance_inventory_to_warehouses(): sweeps every discovered
     Warehouse for stock in NON_WAREHOUSABLE_CATEGORIES (see
-    _must_stay_in_inventory) and moves it back to Inventory.
+    must_stay_in_inventory) and moves it back to Inventory.
 
     This exists as a safety net, not a normal code path -- nothing in this
     codebase should ever *place* such an item into a Warehouse to begin with
@@ -885,7 +885,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
             count = getattr(slot, "count", 0)
             if not item_id or count <= 0:
                 continue
-            if not _must_stay_in_inventory(item_id):
+            if not must_stay_in_inventory(item_id):
                 continue
             if item_id in dock_demanded:
                 log.debug(f"leaving {count}x {item_id} in Warehouse '{building['id']}' -- an active Supply Dock order still owes it, ships straight from the Warehouse")

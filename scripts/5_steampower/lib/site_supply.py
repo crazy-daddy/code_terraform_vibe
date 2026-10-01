@@ -44,11 +44,21 @@
 # home Smelter refines it (home requests it, requester EVICT_REQUESTER), else
 # the first smelting site by id that does (its site-supply ore target is
 # raised by that ore), else home. Requested until it is gone.
+#
+# Stranded goods: ingots and intermediates (item_catalog category in
+# EVICT_GOODS_CATEGORIES) that some Fabricator recipe takes as input are
+# evicted the same way from an outpost with no Fabricator (home included)
+# that neither requests nor consumes them, to goods_destination(): home when
+# home has a Fabricator, else the first fab site by id. Deployables stay put:
+# construction kits are another category, storage.must_stay_in_inventory()
+# items (the Warehouse sweep's Inventory-only list) are skipped, and so are
+# CONSTRUCTION_ITEM_IDS (what a Pioneer's Constructor loads at home) and
+# EVICT_HOLD_ITEM_IDS.
 
 from archive import archive
-from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, REQUEST_STALE_TICKS
+from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
 from production import discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, get_site_ship_plan, ship_units, SourceCache
-from storage import outpost_is_home
+from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -66,8 +76,20 @@ REPUBLISH_TICKS = REQUEST_STALE_TICKS // 2
 # what is stranded now.
 STRANDED_KEY = "site_supply.stranded"
 EVICT_REQUESTER = "site_evict"
-# How long ore sits stranded before home requests it.
+# How long ore or goods sit stranded before they are evicted.
 EVICT_AFTER_TICKS = REQUEST_STALE_TICKS
+# item_catalog categories of stranded goods: ingots and intermediates.
+EVICT_GOODS_CATEGORIES = ("refined", "crafted")
+# Constructor materials (docs/components/constructor_module.md): a Pioneer
+# loads them at home for pipe/power line jobs, so they stay there like kits.
+CONSTRUCTION_ITEM_IDS = (
+    "gas_pipe_segment", "liquid_pipe_segment", "power_line_segment",
+    "gas_pipe_bridge", "liquid_pipe_bridge", "power_line_bridge",
+)
+# Goods never evicted although a Fabricator recipe takes them: tar is also the
+# Refiner's reagent (docs/database/recipes_refiner.md), and where the Refiner
+# will stand is open, so tar stays where it is until a Refiner requests it.
+EVICT_HOLD_ITEM_IDS = ("tar",)
 
 
 def _component(component_id):
@@ -283,23 +305,107 @@ def stranded_ore(outposts, requests, home_id, smelt_ores, consumers=None):
     return result
 
 
-def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None):
-    """Tracks stranded ore (STRANDED_KEY), publishes home's evict request for
-    what sat there EVICT_AFTER_TICKS and is headed home, and returns
-    (that request's wants, {site_id: {ore: units}} free stranded ore headed
-    to each other smelting site)."""
+def fab_sites(outposts):
+    """Sorted ids of every outpost with a Fabricator."""
+    return sorted(getattr(o, "id", None) for o in outposts if getattr(o, "id", None) is not None and discover_fabricator_ids(o))
+
+
+def goods_destination(source_id, home_id, fab_ids):
+    """Outpost stranded goods go to: home when home has a Fabricator, else
+    the first other fab site by id; None when there is none."""
+    if home_id in fab_ids:
+        return home_id
+    for site_id in fab_ids:
+        if site_id != source_id:
+            return site_id
+    return None
+
+
+def _category(catalog, item_id):
+    try:
+        info = catalog.lookup(item_id)
+    except Exception as error:
+        swallowed("site_supply._category: catalog.lookup", error)
+        return None
+    return getattr(info, "category", None) if info else None
+
+
+def evictable_goods(cache):
+    """Item ids that may be evicted as stranded goods: Fabricator recipe
+    inputs in EVICT_GOODS_CATEGORIES, minus storage.must_stay_in_inventory(),
+    Constructor items and EVICT_HOLD_ITEM_IDS. Empty without an item_catalog."""
+    catalog = _component("item_catalog")
+    if not catalog or not hasattr(catalog, "lookup"):
+        return set()
+    inputs = set()
+    for recipe in cache.fabricator_recipes():
+        inputs |= set(getattr(recipe, "inputs", {}) or {})
+    skip = set(CONSTRUCTION_ITEM_IDS) | set(EVICT_HOLD_ITEM_IDS)
+    candidates = {i for i in inputs if i not in skip and _category(catalog, i) in EVICT_GOODS_CATEGORIES}
+    return {i for i in candidates if not must_stay_in_inventory(i)}
+
+
+def held_item_ids(outpost):
+    """Item ids in an outpost's Warehouses and Drone Depots (what a hauler can load)."""
+    held = set()
+    for building in discover_storage_buildings(outpost):
+        component = building["component"]
+        try:
+            held |= set(component.materials() or [])
+        except Exception as error:
+            swallowed("site_supply.held_item_ids: component.materials", error)
+    for depot in local_depots(outpost):
+        held |= {i for i, units in depot_stock(depot).items() if units > 0}
+    return held
+
+
+def stranded_goods(outposts, requests, home_id, fab_ids, goods, consumers=None):
+    """{outpost_id: {item_id: units}} evictable goods (evictable_goods()) at
+    an outpost with no Fabricator that it neither requests nor consumes,
+    when some fab site can take them (goods_destination())."""
+    consumers = consumers or {}
+    result = {}
+    if not goods:
+        return result
+    for outpost in outposts:
+        site_id = getattr(outpost, "id", None)
+        if site_id is None or site_id in fab_ids or goods_destination(site_id, home_id, fab_ids) is None:
+            continue
+        kept = set(requests.get(site_id, {}))
+        items = sorted(i for i in held_item_ids(outpost) & goods if i not in kept and (consumers.get(i) or {}).get(site_id, 0) <= 0)
+        held = {item_id: units for item_id, units in outpost_stock(items, outpost).items() if units > 0}
+        if held:
+            result[site_id] = held
+    return result
+
+
+def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, goods=None):
+    """Tracks stranded ore and goods (STRANDED_KEY), publishes home's evict
+    request for what sat there EVICT_AFTER_TICKS and is headed home, and
+    returns (that request's wants, {site_id: {item_id: units}} free stranded
+    units headed to each other site). goods = evictable_goods() (none when
+    omitted)."""
     home = next((o for o in outposts if outpost_is_home(o)), None)
     home_id = getattr(home, "id", None)
     if smelt_ores is None:
         smelt_ores = smelting_sites(outposts)
+    fab_ids = fab_sites(outposts)
+
+    def destination(item_id, source_id):
+        if item_id in RAW_ORE_ITEM_IDS:
+            return evict_destination(item_id, source_id, home_id, smelt_ores)
+        return goods_destination(source_id, home_id, fab_ids)
+
     stranded = stranded_ore(outposts, requests, home_id, smelt_ores, consumers)
+    for site_id, held in stranded_goods(outposts, requests, home_id, fab_ids, goods or set(), consumers).items():
+        stranded.setdefault(site_id, {}).update(held)
     stored = archive.get(STRANDED_KEY, {})
     stored = stored if isinstance(stored, dict) else {}
     seen = {}
     for site_id, held in stranded.items():
         previous = stored.get(site_id)
         previous = previous if isinstance(previous, dict) else {}
-        seen[site_id] = {ore: previous.get(ore, tick) for ore in held}
+        seen[site_id] = {item_id: previous.get(item_id, tick) for item_id in held}
     if seen != stored:
         archive.set(STRANDED_KEY, seen)
 
@@ -308,59 +414,59 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None):
     by_id = {getattr(o, "id", None): o for o in outposts}
     ripe = {}
     for site_id, first_seen in seen.items():
-        for ore, first_tick in first_seen.items():
+        for item_id, first_tick in first_seen.items():
             if tick - first_tick >= EVICT_AFTER_TICKS:
-                ripe.setdefault(ore, []).append(site_id)
+                ripe.setdefault(item_id, []).append(site_id)
     free = {}
     for site_id in sorted({s for sites in ripe.values() for s in sites}):
-        ores = [ore for ore in sorted(ripe) if site_id in ripe[ore]]
-        for_need, _for_buffer = outpost_free_tiers(by_id[site_id], ores, requests, tick)
-        for ore, units in for_need.items():
-            dest = evict_destination(ore, site_id, home_id, smelt_ores)
+        items = [item_id for item_id in sorted(ripe) if site_id in ripe[item_id]]
+        for_need, _for_buffer = outpost_free_tiers(by_id[site_id], items, requests, tick)
+        for item_id, units in for_need.items():
+            dest = destination(item_id, site_id)
             bucket = free.setdefault(dest, {})
-            bucket[ore] = bucket.get(ore, 0) + units
-            log.debug(f"evict_stranded: {units} {ore} stranded at {site_id} -> {dest}")
+            bucket[item_id] = bucket.get(item_id, 0) + units
+            log.debug(f"evict_stranded: {units} {item_id} stranded at {site_id} -> {dest}")
 
     home_requests = requests.get(home_id, {})
     home_free = free.get(home_id, {})
-    ores = sorted(o for o in ripe if evict_destination(o, None, home_id, smelt_ores) == home_id and home_requests.get(o, {}).get("by", EVICT_REQUESTER) == EVICT_REQUESTER)
+    items = sorted(i for i in ripe if destination(i, None) == home_id and home_requests.get(i, {}).get("by", EVICT_REQUESTER) == EVICT_REQUESTER)
     wants = {}
-    if ores:
-        have = outpost_stock(ores, home)
+    if items:
+        have = outpost_stock(items, home)
         flying = in_flight(home_id, tick)
-        for ore in ores:
-            if home_free.get(ore, 0) > 0 or flying.get(ore, 0) > 0:
-                level = have.get(ore, 0) + flying.get(ore, 0) + home_free.get(ore, 0)
-                wants[ore] = (level, have.get(ore, 0), level)
-                log.debug(f"evict_stranded: {ore} stranded at {sorted(ripe[ore])}, free={home_free.get(ore, 0)} in flight={flying.get(ore, 0)} -> home level {level}")
+        for item_id in items:
+            if home_free.get(item_id, 0) > 0 or flying.get(item_id, 0) > 0:
+                level = have.get(item_id, 0) + flying.get(item_id, 0) + home_free.get(item_id, 0)
+                wants[item_id] = (level, have.get(item_id, 0), level)
+                log.debug(f"evict_stranded: {item_id} stranded at {sorted(ripe[item_id])}, free={home_free.get(item_id, 0)} in flight={flying.get(item_id, 0)} -> home level {level}")
     if _publish(home_id, EVICT_REQUESTER, wants, requests, tick):
         if wants:
-            described = ", ".join(ore + " from " + "/".join(sorted(ripe[ore])) for ore in sorted(wants))
-            log.print(f"Evicting stranded ore to home: {described}.")
+            described = ", ".join(item_id + " from " + "/".join(sorted(ripe[item_id])) for item_id in sorted(wants))
+            log.print(f"Evicting stranded stock to home: {described}.")
         else:
-            log.print("Stranded ore evicted.")
+            log.print("Stranded stock evicted.")
     return wants, {site_id: extra for site_id, extra in free.items() if site_id != home_id}
 
 
-def add_evicted_ore(outpost, wants, extra, tick):
-    """Raises this smelting site's ore request targets by the stranded ore
+def add_evicted(outpost, wants, extra, tick):
+    """Raises this site's request targets by the stranded ore or goods
     headed here (buffer tier: need level unchanged)."""
     site_id = getattr(outpost, "id", None)
-    ores = sorted(extra)
-    have = outpost_stock(ores, outpost)
+    items = sorted(extra)
+    have = outpost_stock(items, outpost)
     flying = in_flight(site_id, tick)
-    for ore in ores:
-        target, _have, floor = wants.get(ore, (0, 0, 0))
-        level = have.get(ore, 0) + flying.get(ore, 0) + extra[ore]
+    for item_id in items:
+        target, _have, floor = wants.get(item_id, (0, 0, 0))
+        level = have.get(item_id, 0) + flying.get(item_id, 0) + extra[item_id]
         if level > target:
-            wants[ore] = (level, have.get(ore, 0), floor)
-            log.debug(f"add_evicted_ore({site_id}): {ore} +{extra[ore]} stranded -> target {level} (need level {floor})")
+            wants[item_id] = (level, have.get(item_id, 0), floor)
+            log.debug(f"add_evicted({site_id}): {item_id} +{extra[item_id]} stranded -> target {level} (need level {floor})")
 
 
 def publish_site_requests(curr_tick):
     """Plans and publishes every outpost's site requests (withdrawing them
-    where nothing is needed any more, raised by stranded ore headed to a
-    smelting site) and home's stranded-ore evict request. Returns
+    where nothing is needed any more, raised by stranded ore or goods headed
+    to that site) and home's evict request. Returns
     {outpost_id: wants}."""
     outposts = _outposts()
     requests = active_requests(curr_tick)
@@ -374,7 +480,7 @@ def publish_site_requests(curr_tick):
             planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources)
     # Stranded check against this pass's plan: a site that just lost its
     # Smelters frees its ore for eviction right away.
-    _home_wants, evicted = evict_stranded(outposts, planned_requests(requests, planned, curr_tick), curr_tick, consumers, smelting_sites(outposts))
+    _home_wants, evicted = evict_stranded(outposts, planned_requests(requests, planned, curr_tick), curr_tick, consumers, smelting_sites(outposts), evictable_goods(cache))
     published = {}
     notes = []
     for outpost in outposts:
@@ -383,7 +489,7 @@ def publish_site_requests(curr_tick):
             continue
         wants = planned[site_id]
         if evicted.get(site_id):
-            add_evicted_ore(outpost, wants, evicted[site_id], curr_tick)
+            add_evicted(outpost, wants, evicted[site_id], curr_tick)
         if wants or any(e.get("by") == SITE_SUPPLY_REQUESTER for e in requests.get(site_id, {}).values()):
             published[site_id] = wants
         if not _publish(site_id, SITE_SUPPLY_REQUESTER, wants, requests, curr_tick):

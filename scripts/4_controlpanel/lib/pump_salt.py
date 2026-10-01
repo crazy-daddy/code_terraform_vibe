@@ -1,5 +1,5 @@
 # Water Pump salt as a pickup source for the reverse hauler
-# (lib/vehicle_cargo.py run_pull_loop()).
+# (lib/vehicle_cargo.py run_pull_loop()), and home's salt request.
 #
 # Pumps make salt as a byproduct into their `output` (a PickupOutputSlot);
 # only a physically present Rover or Pioneer can take() it -- drones get
@@ -9,12 +9,19 @@
 # coordinates. The well list is cached (PUMP_CACHE_TICKS); salt counts are
 # read live.
 #
-# Salt reserve: all pumps together make at most 50 salt/h, and from the third
-# Plants band on every Terraformer Forage needs salt, so salt produced early
-# and stored shortens the late game. A home reverse hauler with nothing else
-# to do tops a home salt reserve up to SALT_RESERVE_TARGET
-# (salt_reserve_deficit()), never filling home Warehouses past
-# SALT_RESERVE_KEEP_FREE units of room.
+# Home salt request (publish_home_salt_request(), requester SALT_REQUESTER_ID,
+# run by the Control Room Automation so it outlives the Harvester and
+# Terraformer scripts): salt's only consumers are home's Plants -- the field
+# (Harvester hand care, Dispensers) and the Plant Terraformers from 1.25m km^2
+# on. All pumps together make at most 50 salt/h, so salt stored early
+# shortens the late game. logistics.requests holds one requester per item per
+# outpost, so this one request covers both:
+#   min    = SALT_FIELD_UNITS (one Warehouse slot): the field's stock, need tier
+#   target = min + salt_to_finish(Plants km^2): what the Terraformers still
+#            burn up to 5m km^2, buffer tier; capped so home Warehouses keep
+#            SALT_KEEP_FREE units of room
+# Being a real request, outpost_free_tiers() keeps it back from other
+# outposts' buffers, and salt anywhere on the network is pulled home.
 
 from storage import discover_storage_buildings, total_stock
 import logistics_requests
@@ -24,15 +31,23 @@ from swallow import swallowed
 log = TreeConsole(module="pump_salt")
 
 SALT_ITEM_ID = "salt"
+SALT_REQUESTER_ID = "salt_reserve"
 PUMP_CACHE_TICKS = 3000        # re-walk the journal's wells at most every ~5 min
 PUMP_ARRIVAL_PRECISION_M = 2.0
-# Home salt the idle reverse hauler stocks up to: the Terraformers' whole
-# salt use from 1.25m to 5m km^2 (0.002 salt/Forage, docs/cheatsheet/bio_seeds_planting.md).
-SALT_RESERVE_TARGET = 13000
-# Warehouse room (units) the reserve always leaves free at home: two slots.
-SALT_RESERVE_KEEP_FREE = 4000
-# A reserve trip only runs with at least this much salt planned.
-SALT_RESERVE_MIN_LOAD = 20
+# Need tier of the home salt request: one Warehouse slot for the field.
+SALT_FIELD_UNITS = 2000
+# Warehouse room (units) the salt target always leaves free at home: two slots.
+SALT_KEEP_FREE = 4000
+# Plant Terraformer bands that use salt (docs/guide/plant_terraformer_guide.md):
+# (from km^2, to km^2, km^2 per Forage). Salt: 1 per SALT_FORAGE_PER_ITEM
+# Forage, rounded up per batch -- at most one extra item per full Mk II batch
+# (TERRAFORMER_MK2_BATCH Forage).
+SALT_BANDS = ((1250000, 2250000, 5.0 / 3.0), (2250000, 3500000, 1.0), (3500000, 5000000, 1.0 / 3.0))
+SALT_FORAGE_PER_ITEM = 500
+TERRAFORMER_MK2_BATCH = 6600
+# Republish at least this often (well inside logistics_requests.REQUEST_STALE_TICKS
+# = 6000) and at once when the target changes.
+SALT_REQUEST_REFRESH_TICKS = 1200
 
 _cache = {"tick": None, "pumps": {}}
 
@@ -116,17 +131,56 @@ def _free_warehouse_units(outpost):
     return max(0, free)
 
 
-def salt_reserve_deficit(outpost, curr_tick=None):
-    """
-    Salt units the home reserve still wants (0 away from home): up to
-    SALT_RESERVE_TARGET minus salt at home and salt already on its way, and
-    never more than the Warehouse room above SALT_RESERVE_KEEP_FREE.
-    """
-    if outpost is None or not getattr(outpost, "is_home", False):
+def salt_to_finish(plants_km2):
+    """Salt the Plant Terraformers still burn from `plants_km2` up to 5m km^2 (None = 0 km^2)."""
+    done = float(plants_km2 or 0.0)
+    forage = 0.0
+    for low, high, km2_per_forage in SALT_BANDS:
+        if done < high:
+            forage += (high - max(done, low)) / km2_per_forage
+    if forage <= 0:
         return 0
-    have = total_stock(SALT_ITEM_ID, outpost)
-    flying = logistics_requests.in_flight(getattr(outpost, "id", None), curr_tick).get(SALT_ITEM_ID, 0)
-    room = _free_warehouse_units(outpost) - SALT_RESERVE_KEEP_FREE
-    deficit = max(0, min(SALT_RESERVE_TARGET - have - flying, room))
-    log.debug(f"salt_reserve_deficit: have {have}, in flight {flying}, room {room} -> {deficit}.")
-    return int(deficit)
+    return int(-(-(forage / SALT_FORAGE_PER_ITEM + forage / TERRAFORMER_MK2_BATCH) // 1))
+
+
+def plants_km2():
+    """Permanent Plants km^2 from the Plants Sensor, or None when there is none."""
+    try:
+        sensor = get_component("plants_sensor")
+        return float(sensor.get_value()) if sensor else None
+    except Exception as error:
+        swallowed("pump_salt.plants_km2: get_component", error)
+        return None
+
+
+# Last published target and tick (-1 = not yet published by this script run).
+_published = {"target": -1, "tick": -1}
+
+
+def publish_home_salt_request(home, curr_tick=None):
+    """
+    Publishes home's salt request (see module header); returns its target, or
+    None when there is no home. Republished on a target change or every
+    SALT_REQUEST_REFRESH_TICKS.
+    """
+    home_id = getattr(home, "id", None)
+    if not home_id:
+        return None
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    km2 = plants_km2()
+    finish = salt_to_finish(km2)
+    have = total_stock(SALT_ITEM_ID, home)
+    room = max(0, _free_warehouse_units(home) - SALT_KEEP_FREE)
+    target = max(SALT_FIELD_UNITS, min(SALT_FIELD_UNITS + finish, have + room))
+    due = (
+        target != _published["target"]
+        or tick < _published["tick"]
+        or tick - _published["tick"] >= SALT_REQUEST_REFRESH_TICKS
+    )
+    if due:
+        logistics_requests.set_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (target, have, SALT_FIELD_UNITS)}, tick)
+        if target != _published["target"]:
+            log.debug(f"home salt request: plants {km2} km^2, Terraformers still need {finish}, have {have}, room {room} -> target {target} (min {SALT_FIELD_UNITS}).")
+        _published["target"] = target
+        _published["tick"] = tick
+    return target

@@ -120,6 +120,15 @@ class Store:
     def space_for(self, item_id):
         return max(0, self.capacity_units - self.used())
 
+    def capacity(self):
+        return self.capacity_units
+
+    def materials(self):
+        return sorted(i for i, n in self.items.items() if n > 0)
+
+    def total(self):
+        return self.used()
+
     def fill_percent(self):
         return self.used() / self.capacity_units if self.capacity_units else 1.0
 

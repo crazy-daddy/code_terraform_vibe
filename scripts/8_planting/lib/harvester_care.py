@@ -1,19 +1,17 @@
-# Harvester mixin: manual crop care (light, water, salt) and the field's salt
-# supply request. Composed by FieldKeeperController (lib/field_keeper.py).
+# Harvester mixin: manual crop care (light, water, salt). Composed by
+# FieldKeeperController (lib/field_keeper.py).
 #
 # Each Harvester treatment covers one cell for 24 h (docs/components/harvester.md).
 # A treatment is due when its manual timer drops below CARE_REFRESH_H and no
 # provider (Grow Lamp / Sprinkler / Dispenser) covers the cell -- a provider
 # shows up as the condition flag set with no manual time left.
 #
-# Salt only reaches the field through Inventory. While the layout holds salt
-# species, a `salt` request at home is published via lib/logistics_requests.py;
-# the reverse hauler fetches it from Water Pumps (lib/pump_salt.py).
+# Salt only reaches the field through Inventory. Home's salt request (field and
+# Terraformers) is published by the Control Room Automation
+# (lib/pump_salt.py publish_home_salt_request()).
 
-import logistics_requests
 import harvester_pure
 from atomic import run_atomic
-from storage import total_stock
 import field_layout
 from swallow import swallowed
 from typing import TYPE_CHECKING
@@ -25,9 +23,6 @@ CARE_REFRESH_H = 4.0      # a treatment below this triggers a care tour
 CARE_BATCH_H = 12.0       # a tour (and any visit) also renews everything below this,
                           # so renewals line up and later tours need fewer trips
 SALT_MIN_STOCK = 3        # salt species are only planted with at least this much salt at home
-SALT_STOCK_TARGET = 2000  # home salt buffer requested from haulers (one Warehouse slot)
-SALT_NEED_UNITS = 30      # need tier of that request: 2 Dispenser refills + 2 Terraformer batches + hand care
-REQUESTER_ID = "field_keeper"
 
 _HAND_STATUSES = ("growing", "stalled")
 _KEPT_STATUSES = ("growing", "stalled", "mature")
@@ -69,16 +64,6 @@ class HarvesterCareMixin:
         if self.salt_in_inventory() >= SALT_MIN_STOCK:
             return []
         return self.salt_species(rules)
-
-    def publish_salt_request(self, layout, rules, home_id, curr_tick):
-        if not home_id:
-            return
-        wanted = set(self.salt_species(rules))
-        if any(sp in wanted for sp in layout.values()):
-            have = total_stock("salt")
-            logistics_requests.set_requests(home_id, REQUESTER_ID, {"salt": (SALT_STOCK_TARGET, have, SALT_NEED_UNITS)}, curr_tick)
-        else:
-            logistics_requests.clear_requests(REQUESTER_ID, home_id)
 
     # ---------------------------------------------------------------- care
 

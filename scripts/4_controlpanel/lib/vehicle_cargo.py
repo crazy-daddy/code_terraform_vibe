@@ -621,10 +621,6 @@ class VehicleCargoMixin:
                     # keep a small but real delivery waiting.
                     wanted = min(PULL_MIN_LOAD_UNITS, reachable)
                 if not route or planned <= 0 or planned < wanted:
-                    # Nothing requested can move: the lowest-priority job is
-                    # the home salt reserve (lib/pump_salt.py).
-                    route, planned, wanted = self._plan_salt_reserve(capacity, curr_tick)
-                if not route or planned <= 0 or planned < wanted:
                     if not need and not buffer:
                         if not self._host.is_at_base():
                             self._host.return_to_base()
@@ -693,24 +689,6 @@ class VehicleCargoMixin:
                     swallowed("vehicle_cargo.VehicleCargoMixin.run_pull_loop: self._host.vehicle.nav.brake", exc)
             flush_all()
             sleep(poll_interval)
-
-    def _plan_salt_reserve(self, capacity, curr_tick):
-        """
-        (route, planned, wanted) for a salt reserve top-up from the Water
-        Pumps (pump_salt.salt_reserve_deficit(), home only); an empty route
-        when the reserve is full or the pumps hold less than
-        SALT_RESERVE_MIN_LOAD.
-        """
-        deficit = pump_salt.salt_reserve_deficit(self._host.home_outpost, curr_tick)
-        if deficit <= 0:
-            return [], 0, 0
-        route, _reachable = self._plan_pull_route({}, {pump_salt.SALT_ITEM_ID: deficit}, capacity, curr_tick)
-        # Pumps only: salt in another outpost's Warehouse is already stored.
-        route = [(src, loads) for src, loads in route if src.get("kind") == "pump"]
-        planned = sum(a for _src, loads in route for _i, a in loads)
-        wanted = min(pump_salt.SALT_RESERVE_MIN_LOAD, capacity, deficit)
-        self._host.log.debug(f"[{self._host.name}] pull: nothing requested can move; salt reserve wants {deficit}, trip plans {planned} (minimum {wanted}).")
-        return route, planned, wanted
 
     def _finish_pull_delivery(self, poll_interval):
         """Drives home, unloads, releases this vehicle's pickup debits and recharges."""
