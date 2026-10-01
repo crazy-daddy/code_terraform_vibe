@@ -142,7 +142,8 @@ class CheckerSelfTests(unittest.TestCase):
 class LogBlocksBalancedTests(unittest.TestCase):
     def test_every_start_is_closed_on_every_path(self):
         problems = []
-        for path in sorted(glob.glob(os.path.join(ROOT, "**", "*.py"), recursive=True)):
+        for path in sorted(glob.glob(os.path.join(ROOT, "**", "*.py"), recursive=True)
+                           + glob.glob(os.path.join(ROOT, "..", "autoplay", "**", "*.py"), recursive=True)):
             if path.endswith("tree_console.py"):
                 continue
             with open(path) as handle:

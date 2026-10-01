@@ -14,6 +14,7 @@ import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
+AUTOPLAY_DIR = os.path.join(REPO_ROOT, "autoplay")
 
 # Executable modules, plus the type-only ones the game erases and the special ones.
 GAME_MODULES = {
@@ -30,6 +31,9 @@ def _lib_modules():
         lib_dir = os.path.join(SCRIPTS_DIR, tier, "lib")
         if os.path.isdir(lib_dir):
             names.update(f[:-3] for f in os.listdir(lib_dir) if f.endswith(".py"))
+    autoplay_lib = os.path.join(AUTOPLAY_DIR, "lib")
+    if os.path.isdir(autoplay_lib):
+        names.update(f[:-3] for f in os.listdir(autoplay_lib) if f.endswith(".py"))
     return names
 
 
@@ -59,7 +63,7 @@ class GameImportTests(unittest.TestCase):
     def test_scripts_import_only_game_modules_and_our_libs(self):
         libs = _lib_modules()
         bad = []
-        for root, _dirs, files in os.walk(SCRIPTS_DIR):
+        for root, _dirs, files in [w for top in (SCRIPTS_DIR, AUTOPLAY_DIR) for w in os.walk(top)]:
             for name in files:
                 if not name.endswith(".py"):
                     continue

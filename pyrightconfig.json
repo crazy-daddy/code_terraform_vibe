@@ -14,6 +14,15 @@
         ".pyright-resolved/lib",
         "scripts/4_controlpanel/lib",
         "scripts/5_steampower/lib",
+        "autoplay/lib",
+        ".pyright-resolved/stubs"
+      ]
+    },
+    {
+      "root": "autoplay",
+      "extraPaths": [
+        "autoplay/lib",
+        ".pyright-resolved/lib",
         ".pyright-resolved/stubs"
       ]
     },

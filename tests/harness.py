@@ -48,7 +48,8 @@ def _install_builtins(world):
     builtins.sleep = lambda _seconds: None  # type: ignore[attr-defined]
 
 
-_LIB_DIRS = _tier_lib_dirs(TEST_TIER)
+# autoplay/lib (the infrastructure planner) sits after every tier: it imports their modules, never the reverse.
+_LIB_DIRS = _tier_lib_dirs(TEST_TIER) + [os.path.join(REPO_ROOT, "autoplay", "lib")]
 for _lib_dir in reversed(_LIB_DIRS):
     if _lib_dir not in sys.path:
         sys.path.insert(0, _lib_dir)

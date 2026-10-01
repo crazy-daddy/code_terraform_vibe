@@ -15,6 +15,7 @@ import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
+AUTOPLAY_DIR = os.path.join(REPO_ROOT, "autoplay")
 REFERENCE_DIR = os.path.join(REPO_ROOT, "docs", "extracted", "reference")
 REFERENCE_FILES = ("builtins.md", "global-functions.md", "builtin-types.md")
 
@@ -39,7 +40,7 @@ class GameBuiltinsTests(unittest.TestCase):
             self.skipTest("docs/extracted/reference/ not generated")
         missing = _missing_builtins()
         bad = []
-        for root, _dirs, files in os.walk(SCRIPTS_DIR):
+        for root, _dirs, files in [w for top in (SCRIPTS_DIR, AUTOPLAY_DIR) for w in os.walk(top)]:
             for name in files:
                 if not name.endswith(".py"):
                     continue
