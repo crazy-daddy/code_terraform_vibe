@@ -520,6 +520,7 @@ class PlantTerraformerController:
                 stall_streak_threshold=FLUID_STALL_STREAK_BLACKLIST_THRESHOLD,
                 neutral_grace_steps=FLUID_NEUTRAL_GRACE_STEPS,
                 label=f"{self.name}.water_in",
+                reserve_fluid="water",
             )
 
         def on_dropped(source_id, reason):

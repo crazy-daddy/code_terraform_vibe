@@ -112,7 +112,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Field Mining Drill telemetry (fill, time-to-full, stall warnings, pickup advert) | `mining_drill.py` — see §1j (tier `7_miningdrills`) |
 | Weather Station signal decoding (storm aftermath coordinates for Raw Uranium / Storm Glass) | `weather_signals.py` — see §1m (tier `7_miningdrills`) |
 | Fuel Assembler (Fuel Rods for local Reactors / Mk IV generators, then Nuclear Batteries; reserve-gated bursts) | `fuel_assembler.py` — see §1n (tier `10_nuclear`) |
-| Reactor (measured-gain heat control just under 900 °C, rod feed from local Lead Casks, cooling water routing) | `reactor.py` — see §1c-4 (tier `10_nuclear`) |
+| Reactor (measured-gain heat control just under 900 °C, rod feed from local Lead Casks, cooling water routing, water reservation publisher) | `reactor.py` — see §1c-4 (tier `10_nuclear`) |
 | Lead Cask roles (`lead_cask.roles`), hot-cargo stock/room/take, misfiled-uranium repair | `lead_cask.py` — see §1n (tier 4 lib; used by `drone_weather`, `supply_dock`, `terraforming`, `production`) |
 | Field Mining Drills as pull-hauler sources (recorded positions, connect/take) | `drill_sites.py` — see §2i (lives in tier 4 lib, since the hauler imports it at every tier) |
 | Fabrication | `fabricator.py` |

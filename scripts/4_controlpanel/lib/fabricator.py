@@ -240,6 +240,7 @@ class FabricatorController:
                 stall_streak_threshold=FLUID_STALL_STREAK_BLACKLIST_THRESHOLD,
                 neutral_grace_steps=FLUID_NEUTRAL_GRACE_STEPS,
                 label=f"{self.name}.{fluid_key}",
+                reserve_fluid="water" if fluid_key == "water_in" else None,
             )
             self._fluid_routers[fluid_key] = router
         return router

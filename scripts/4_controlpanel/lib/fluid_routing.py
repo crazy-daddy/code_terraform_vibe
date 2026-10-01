@@ -402,10 +402,10 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
 TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir", "gas_tank")
 
 
-def fluid_reserve_fraction(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir")):
+def fluid_reserve_tons(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir")):
     """
-    Network-wide fill of every tank eligible for fluid_id (tank_is_eligible_target()):
-    summed level() / summed capacity(), None when there is no such tank or none is readable.
+    (level t, capacity t) summed over every tank eligible for fluid_id (tank_is_eligible_target())
+    network-wide, None when there is no such tank or none is readable.
     """
     level = capacity = 0.0
     for tank, _outpost_id in discover_network_buildings(type_ids, resolve=True, fluid_id=fluid_id):
@@ -415,8 +415,55 @@ def fluid_reserve_fraction(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reser
                 level += float(tank.level())
                 capacity += cap
         except Exception as error:
-            swallowed("fluid_routing.fluid_reserve_fraction: tank.capacity", error)
-    return level / capacity if capacity > 0 else None
+            swallowed("fluid_routing.fluid_reserve_tons: tank.capacity", error)
+    return (level, capacity) if capacity > 0 else None
+
+
+def fluid_reserve_fraction(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir")):
+    """Network-wide fill (0-1) of every tank eligible for fluid_id, None when there is no such tank."""
+    tons = fluid_reserve_tons(fluid_id, type_ids)
+    return tons[0] / tons[1] if tons else None
+
+
+# Water reservation for Reactors (§1c-4): while the Reactor controller's
+# WATER_RESERVE_KEY entry says "hold" (pooled water tanks below the Reactors'
+# floor), every FluidInputRouter built with reserve_fluid="water" disconnects
+# its port, and the Harvester skips refill_water(). Only the Reactors keep
+# drawing. An entry older than WATER_RESERVE_FRESH_TICKS (no Reactor script
+# running) never holds.
+WATER_RESERVE_KEY = "fluid_routing.water_reserve"
+WATER_RESERVE_FRESH_TICKS = 1200
+_WATER_RESERVE_MEMO = {"tick": None, "hold": False}
+
+
+def _clock_tick():
+    clock = get_component("clock")
+    if clock is None:
+        return 0
+    try:
+        return clock.tick()
+    except Exception as error:
+        swallowed("fluid_routing._clock_tick: clock.tick", error)
+        return 0
+
+
+def water_reserve_holds(curr_tick=None):
+    """True while the Reactors' water reserve is held for them alone (read once per tick)."""
+    now = _clock_tick() if curr_tick is None else curr_tick
+    if _WATER_RESERVE_MEMO["tick"] == now:
+        return _WATER_RESERVE_MEMO["hold"]
+    entry = {}
+    try:
+        entry = archive.get(WATER_RESERVE_KEY, {}) or {}
+    except Exception as error:
+        swallowed("fluid_routing.water_reserve_holds: archive.get", error)
+    hold = False
+    if isinstance(entry, dict) and entry.get("hold"):
+        written = entry.get("tick", 0)
+        hold = isinstance(written, (int, float)) and 0 <= now - written < WATER_RESERVE_FRESH_TICKS
+    _WATER_RESERVE_MEMO["tick"] = now
+    _WATER_RESERVE_MEMO["hold"] = hold
+    return hold
 
 
 def assign_tanks_from_current_fluid(overwrite=False):
@@ -593,7 +640,7 @@ def rank_own_outpost_first(pairs, own_outpost_id):
 
 
 class FluidInputEvent:
-    """Result of FluidInputRouter.ensure(). .kind is one of "no_port"/"healthy"/"pending"/"connected"/
+    """Result of FluidInputRouter.ensure(). .kind is one of "no_port"/"reserved"/"healthy"/"pending"/"connected"/
     "waiting"/"not_found"/"exhausted". .source_id is set for "healthy" (the healthy peer, if known),
     "pending" (the declared source) and "connected"."""
 
@@ -635,8 +682,10 @@ class FluidInputRouter:
     """
 
     def __init__(self, discover, rescan_interval_ticks, discovery_cache_interval_ticks,
-                 neutral_grace_steps, stall_streak_threshold=None, label="input"):
+                 neutral_grace_steps, stall_streak_threshold=None, label="input", reserve_fluid=None):
         self.discover = discover
+        # "water": yields the port while water_reserve_holds() (Reactor reservation).
+        self.reserve_fluid = reserve_fluid
         self.stall_streak_threshold = stall_streak_threshold
         self.neutral_grace_steps = neutral_grace_steps
         self.label = label
@@ -655,6 +704,19 @@ class FluidInputRouter:
         """Last discovered candidate ids (empty before first discovery)."""
         return self._cache.value or []
 
+    def _yield_to_reserve(self, port):
+        """Disconnects the port for the water reservation; the next ensure() after it lifts reconnects."""
+        self.stall_streak = 0
+        self.steps_since_connect = 0
+        self.was_healthy = False
+        try:
+            own_id = port.connected_id() if hasattr(port, "connected_id") else None
+            if own_id and hasattr(port, "disconnect"):
+                port.disconnect()
+                log.debug(f"FluidInputRouter({self.label}): water reserved for Reactors, disconnected '{own_id}'")
+        except Exception as error:
+            swallowed("fluid_routing.FluidInputRouter._yield_to_reserve: port.disconnect", error)
+
     def _drop(self, source_id, curr_tick, reason, on_dropped):
         self.blacklist.blacklist(source_id, curr_tick)
         self._cache.invalidate()
@@ -669,6 +731,11 @@ class FluidInputRouter:
             _ret = FluidInputEvent("no_port")
             log.end()
             return _ret
+
+        if self.reserve_fluid == "water" and water_reserve_holds(curr_tick):
+            self._yield_to_reserve(port)
+            log.end()
+            return FluidInputEvent("reserved")
 
         self.stall_streak = self.stall_streak + 1 if is_starved else 0
         starved_out = self.stall_streak_threshold is not None and self.stall_streak >= self.stall_streak_threshold

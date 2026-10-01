@@ -3,6 +3,7 @@ import math
 import unittest
 
 import harness
+import fluid_routing
 import reactor as rx
 
 SECONDS_PER_GH = 25.0
@@ -74,6 +75,44 @@ class _RodInput:
 
     def count(self):
         return self.staged
+
+
+class _Tank:
+    type_id = "liquid_tank"
+
+    def __init__(self, world, tank_id, outpost, level, capacity=100.0):
+        self.id = tank_id
+        self.outpost = outpost
+        self.tons = level
+        self.cap = capacity
+        world.components[tank_id] = self
+
+    def fluid(self):
+        return "water" if self.tons > 0 else ""
+
+    def level(self):
+        return self.tons
+
+    def capacity(self):
+        return self.cap
+
+
+class _WaterPort:
+    def __init__(self, source="tank_a"):
+        self.source = source
+        self.disconnects = 0
+
+    def connected_id(self):
+        return self.source
+
+    def connect(self, source_id):
+        self.source = source_id
+        return _Result()
+
+    def disconnect(self):
+        self.source = ""
+        self.disconnects += 1
+        return _Result()
 
 
 class _SimReactor:
@@ -156,6 +195,15 @@ class ReactorTests(harness.StubTestCase):
         super().setUp()
         self.clock = _SimClock()
         self.world.services["clock"] = self.clock
+        fluid_routing._WATER_RESERVE_MEMO.update({"tick": None, "hold": False})
+        self.notified = []
+        self._orig_notify = rx._notify
+        rx._notify = lambda text, **_kw: self.notified.append(text)
+
+    def tearDown(self):
+        rx._notify = self._orig_notify
+        fluid_routing._WATER_RESERVE_MEMO.update({"tick": None, "hold": False})
+        super().tearDown()
 
     def make(self, conditions, staged=3):
         machine = _SimReactor(self.world, self.clock, self.world.home, conditions, staged)
@@ -229,6 +277,64 @@ class ReactorTests(harness.StubTestCase):
         controller.ensure_rods(force=True)
         controller.ensure_rods(force=True)
         self.assertEqual(self.debug_log().count("holds any"), 1)
+
+
+    # -- water reservation --
+    def publish(self, controller):
+        controller.reserve_tick = None
+        controller.publish_water_reserve()
+        return fluid_routing.archive.get(fluid_routing.WATER_RESERVE_KEY)
+
+    def test_reserve_holds_below_floor_with_hysteresis(self):
+        tank = _Tank(self.world, "tank_a", self.world.home, 40.0, capacity=200.0)
+        _, controller = self.make([1.0])
+        entry = self.publish(controller)
+        self.assertTrue(entry["hold"])
+        self.assertEqual(len(self.notified), 1)
+        self.assertEqual(entry["floor_t"], rx.WATER_RESERVE_HOURS * rx.COOLANT_MAX_T_PER_GH)
+        tank.tons = 55.0  # above floor, under the release line
+        self.assertTrue(self.publish(controller)["hold"])
+        tank.tons = 61.0
+        self.assertFalse(self.publish(controller)["hold"])
+
+    def test_reserve_floor_capped_by_tank_capacity(self):
+        _Tank(self.world, "tank_a", self.world.home, 35.0, capacity=80.0)
+        _, controller = self.make([1.0])
+        entry = self.publish(controller)
+        self.assertEqual(entry["floor_t"], 80.0 * rx.WATER_RESERVE_MAX_FRACTION)
+        self.assertTrue(entry["hold"])
+
+    def test_no_water_tank_never_holds(self):
+        _, controller = self.make([1.0])
+        self.assertFalse(self.publish(controller)["hold"])
+
+    def test_only_lowest_id_reactor_publishes(self):
+        _Tank(self.world, "tank_a", self.world.home, 10.0)
+        _, controller = self.make([1.0])
+        controller.name = "reactor_2"
+        controller.reserve_tick = None
+        controller.publish_water_reserve()
+        self.assertIsNone(fluid_routing.archive.get(fluid_routing.WATER_RESERVE_KEY))
+
+    def _router(self, reserve_fluid):
+        return fluid_routing.FluidInputRouter(discover=lambda: [], rescan_interval_ticks=150,
+                                              discovery_cache_interval_ticks=100, neutral_grace_steps=5,
+                                              stall_streak_threshold=5, label="t", reserve_fluid=reserve_fluid)
+
+    def test_router_yields_water_port_while_held(self):
+        fluid_routing.archive.set(fluid_routing.WATER_RESERVE_KEY, {"hold": True, "tick": self.clock.now})
+        port = _WaterPort()
+        self.assertEqual(self._router("water").ensure(port, self.clock.now).kind, "reserved")
+        self.assertEqual(port.disconnects, 1)
+        other = _WaterPort()
+        self.assertNotEqual(self._router(None).ensure(other, self.clock.now + 1).kind, "reserved")
+        self.assertEqual(other.disconnects, 0)
+
+    def test_stale_reserve_entry_does_not_hold(self):
+        fluid_routing.archive.set(fluid_routing.WATER_RESERVE_KEY, {"hold": True, "tick": self.clock.now})
+        later = self.clock.now + fluid_routing.WATER_RESERVE_FRESH_TICKS
+        self.assertFalse(fluid_routing.water_reserve_holds(later))
+        self.assertTrue(fluid_routing.water_reserve_holds(self.clock.now + 1))
 
 
 if __name__ == "__main__":

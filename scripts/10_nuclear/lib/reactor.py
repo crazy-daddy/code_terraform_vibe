@@ -34,6 +34,16 @@
 #   - Cooling water: `water_in` kept on a water source by FluidInputRouter
 #     (production.FLUID_SOURCE_TYPE_IDS["water_in"], own outpost first);
 #     starved = status "no_coolant". 0.5-1 t/h.
+#   - Water reservation: the lowest-id Reactor on the network publishes
+#     fluid_routing.WATER_RESERVE_KEY every WATER_RESERVE_PUBLISH_TICKS. It
+#     holds while the pooled water tanks (fluid_routing.fluid_reserve_tons())
+#     are below the floor = WATER_RESERVE_HOURS of full-heat cooling per
+#     Reactor, capped at WATER_RESERVE_MAX_FRACTION of tank capacity, and
+#     releases at WATER_RESERVE_RELEASE_FACTOR x floor. While it holds, every
+#     other water consumer's FluidInputRouter disconnects and Harvesters skip
+#     refills. No water tank: never holds (nothing to measure).
+#     A starved Reactor does not overheat (no heating, no fuel use, cools at
+#     60 °C/h); the reservation keeps its output.
 # Not parked: heat returns to 0 when the script stops. No archive state; the
 # gain is re-measured within a few polls after a restart.
 
@@ -41,6 +51,7 @@ import math
 
 import fluid_routing
 import lead_cask
+from archive import archive
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
@@ -82,6 +93,15 @@ WATER_STALL_STREAK_BLACKLIST_THRESHOLD = 5
 WATER_RESCAN_INTERVAL_TICKS = 150
 WATER_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 WATER_NEUTRAL_GRACE_STEPS = 5
+
+# Water reservation (see header).
+COOLANT_MAX_T_PER_GH = 1.0
+WATER_RESERVE_HOURS = 48.0
+WATER_RESERVE_MAX_FRACTION = 0.5
+WATER_RESERVE_RELEASE_FACTOR = 1.25
+WATER_RESERVE_PUBLISH_TICKS = 300
+REACTOR_DISCOVERY_TICKS = 600
+REACTOR_TYPE_ID = "reactor"
 
 RUNNING = "running"
 
@@ -134,6 +154,10 @@ class ReactorController:
         self.last_rod_check = None
         self.rods_warned = False
         self.water_warned = False
+        self.reactor_ids = []
+        self.reactor_ids_tick = None
+        self.reserve_tick = None
+        self.reserve_hold = False
         self.router = fluid_routing.FluidInputRouter(
             discover=self._discover_water,
             rescan_interval_ticks=WATER_RESCAN_INTERVAL_TICKS,
@@ -297,6 +321,47 @@ class ReactorController:
             self.rods_warned = True
             self.log.level("warn").print(f"[{self.name}] {staged} Fuel Rod(s) staged and no Lead Cask at '{getattr(outpost, 'id', '?')}' holds any.")
 
+    def network_reactors(self, now):
+        """Reactor ids network-wide, rediscovered every REACTOR_DISCOVERY_TICKS."""
+        if self.reactor_ids_tick is None or not 0 <= now - self.reactor_ids_tick < REACTOR_DISCOVERY_TICKS:
+            pairs = fluid_routing.discover_network_buildings(REACTOR_TYPE_ID, resolve=False)
+            self.reactor_ids = sorted({str(b_id) for b_id, _ in pairs if b_id} | {self.name})
+            self.reactor_ids_tick = now
+        return self.reactor_ids
+
+    def water_floor(self, reactors, capacity):
+        """Tons held back for the Reactors' cooling."""
+        return min(WATER_RESERVE_HOURS * COOLANT_MAX_T_PER_GH * reactors, WATER_RESERVE_MAX_FRACTION * capacity)
+
+    def publish_water_reserve(self):
+        """Leader only: writes the reservation verdict (fluid_routing.WATER_RESERVE_KEY)."""
+        now = self.tick()
+        if self.reserve_tick is not None and 0 <= now - self.reserve_tick < WATER_RESERVE_PUBLISH_TICKS:
+            return
+        self.reserve_tick = now
+        reactors = self.network_reactors(now)
+        if reactors[0] != self.name:
+            return
+        tons = fluid_routing.fluid_reserve_tons("water")
+        if tons is None:
+            hold, level, floor = False, 0.0, 0.0
+        else:
+            level, capacity = tons
+            floor = self.water_floor(len(reactors), capacity)
+            line = floor * WATER_RESERVE_RELEASE_FACTOR if self.reserve_hold else floor
+            hold = level < line
+        if hold != self.reserve_hold:
+            self.reserve_hold = hold
+            if hold:
+                self.log.level("warn").print(f"[{self.name}] Water reserve ON: tanks {level:.0f} t < {floor:.0f} t floor; only Reactors draw water.")
+                _notify(f"[Power] Water reserved for {len(reactors)} Reactor(s): tanks at {level:.0f} t.")
+            else:
+                self.log.print(f"[{self.name}] Water reserve OFF: tanks {level:.0f} t (release at {floor * WATER_RESERVE_RELEASE_FACTOR:.0f} t).")
+        try:
+            archive.set(fluid_routing.WATER_RESERVE_KEY, {"hold": hold, "level_t": round(level, 1), "floor_t": round(floor, 1), "tick": now, "by": self.name})
+        except Exception as error:
+            swallowed("reactor.ReactorController.publish_water_reserve: archive.set", error)
+
     # ------------------------------------------------------------------
     # Loop
     # ------------------------------------------------------------------
@@ -348,6 +413,7 @@ class ReactorController:
         self.set_heat(heat)
         self.ensure_rods(force=status == "no_fuel")
         self.ensure_water()
+        self.publish_water_reserve()
         settled = reason == "hold" and abs(temp - TARGET_C) <= STEADY_BAND_C
         return STEADY_POLL_GH if settled else POLL_GH
 

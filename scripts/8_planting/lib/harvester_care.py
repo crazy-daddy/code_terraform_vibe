@@ -9,8 +9,11 @@
 # Salt only reaches the field through Inventory. Home's salt request (field and
 # Terraformers) is published by the Control Room Automation
 # (lib/pump_salt.py publish_home_salt_request()).
+#
+# Refills skip while the Reactors' water reserve holds (fluid_routing.water_reserve_holds()).
 
 import harvester_pure
+import fluid_routing
 from atomic import run_atomic
 import field_layout
 from swallow import swallowed
@@ -129,6 +132,9 @@ class HarvesterCareMixin:
         except Exception as error:
             swallowed("harvester_care.HarvesterCareMixin.ensure_water: h.water_level", error)
             return True
+        if fluid_routing.water_reserve_holds():
+            self._host.log.debug(f"[{self._host.name}] Water reserved for the Reactors; skipping refill_water.")
+            return False
         res = self._host.act("refill_water")
         status = getattr(res, "status", "?")
         if status in ("ok", "already_full"):

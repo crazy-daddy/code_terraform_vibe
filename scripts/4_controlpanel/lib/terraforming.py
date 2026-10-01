@@ -101,6 +101,7 @@ class Mk3FluidFeed:
             stall_streak_threshold=FLUID_STALL_STREAK_BLACKLIST_THRESHOLD,
             neutral_grace_steps=FLUID_NEUTRAL_GRACE_STEPS,
             label=f"{name}.{fluid_key}",
+            reserve_fluid="water" if fluid_key == "water_in" else None,
         )
 
     def _own_outpost_id(self):

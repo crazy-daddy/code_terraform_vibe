@@ -102,6 +102,8 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     `FluidOutputRouter` (Cap/Pump/Liquifier) rebalances among targets by `fill_pct()`.
     `FluidInputRouter` (Turbine, Fabricator, Biomass Mixer) ignores fill and only asks whether fluid
     arrives. Per `ensure()` call:
+    0. Built with `reserve_fluid="water"` and `water_reserve_holds()` (Reactor water reservation,
+       §1c-4) → disconnects the port, returns `"reserved"`.
     1. Any peer in `HEALTHY_CONNECTION_STATES` (`"local"`/`"ready"`, declared by either side), and
        starvation streak below threshold → healthy.
     2. Own declared link in `BROKEN_CONNECTION_STATES` → drop now. Starved ≥
@@ -223,6 +225,9 @@ Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `10_nuclear/nucl
 - **Poll**: every `POLL_GH = 0.04` game h while settling or near a boundary, `STEADY_POLL_GH = 0.1` once holding within `STEADY_BAND_C = 15` of the target; `sleep(poll × clock.real_seconds_per_hour())` (fallback `FALLBACK_SECONDS_PER_GH = 25`).
 - **Fuel Rods**: keeps `ROD_STAGE = 1` rod in `input` (capacity 3) from this outpost's Lead Casks (`lead_cask.take_from_casks()`), every `ROD_CHECK_INTERVAL_TICKS = 600` ticks and at once on `"no_fuel"`. The Fuel Assembler counts staged rods in its target (§1n). No rods: one warn until a load succeeds.
 - **Cooling water** (0.5-1 t/h, 3 t buffer): `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, own outpost first (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `status() == "no_coolant"`.
+- **Water reservation** (archive `fluid_routing.WATER_RESERVE_KEY = "fluid_routing.water_reserve"`): the lowest-id Reactor on the network (reactor list rediscovered every `REACTOR_DISCOVERY_TICKS = 600`) writes `{"hold", "level_t", "floor_t", "tick", "by"}` every `WATER_RESERVE_PUBLISH_TICKS = 300` ticks. Floor = `WATER_RESERVE_HOURS = 48` × `COOLANT_MAX_T_PER_GH = 1.0` t/h × Reactors, capped at `WATER_RESERVE_MAX_FRACTION = 0.5` of pooled capacity; pool = `fluid_routing.fluid_reserve_tons("water")` (water-eligible Liquid/Large Liquid Tanks network-wide). Holds below the floor, releases at `WATER_RESERVE_RELEASE_FACTOR = 1.25` × floor; no water tank → never holds. Hold start warns and `notify()`s.
+  - **Consumers** (`fluid_routing.water_reserve_holds()`, archive read once per tick, entry older than `WATER_RESERVE_FRESH_TICKS = 1200` never holds, so a stopped Reactor script releases everything): `FluidInputRouter(reserve_fluid="water")` in Mk III Pressure/Oxygen `water_in` (`Mk3FluidFeed`), Fabricator `water_in`, Bio Caster `water_in`, Plant Terraformer, Sprinkler (`field_provider`), Habitat water medium; Harvester `ensure_water()` skips `refill_water()`. Each disconnects while held and reconnects through its router after.
+  - A starved Reactor does not overheat (simworker: no heating, no fuel use, cools at 60 °C/h); the reservation protects its output.
 - **Status changes** logged at info (running) or warn; overheat also `notify()`s.
 - Not parked and not in any shedding tier: heat returns to 0 when the script stops. No archive state; the gain is re-measured within a few polls after a restart.
 - Simulated closed loop (`tests/test_reactor.py`, per-tick simworker physics): from cold ~6 game h to the target, then ~4.8 kW mean across alternating 0.72/1.25 conditions, peak 878 °C.

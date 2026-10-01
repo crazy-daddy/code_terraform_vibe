@@ -303,6 +303,7 @@ class HabitatController:
                 stall_streak_threshold=FLUID_STALL_STREAK_BLACKLIST_THRESHOLD,
                 neutral_grace_steps=FLUID_NEUTRAL_GRACE_STEPS,
                 label=f"{self.name}.{MEDIA[medium]['port']}",
+                reserve_fluid="water" if fluid_id == "water" else None,
             )
         event = self.routers[medium].ensure(port, curr_tick, False)
         if event.kind == "connected":
