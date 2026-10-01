@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from drone import DroneController
 
+# cargo.unload() calls per item and unload: hot cargo fills one Lead Cask per call.
+UNLOAD_MAX_ROUNDS = 4
+
+
 class DroneCargoMixin:
     """Cargo accounting and Drone Depot unload behavior mixed into DroneController."""
 
@@ -122,15 +126,23 @@ class DroneCargoMixin:
         for item_id, count in contents.items():
             if count <= 0:
                 continue
-            try:
-                res = self._host.drone.cargo.unload(item_id, count)
-            except Exception as error:
-                swallowed("drone_cargo.DroneCargoMixin.unload_cargo_at_depot: self._host.drone.cargo.unload", error)
-                continue
-            moved = getattr(res, "moved", 0) or 0
-            unloaded += moved
-            self._host.log.debug(f"{item_id} moved {moved}/{count} (status={res.status}).")
-            if res.status in ("slots_full", "target_full") or moved < count:
+            # Hot cargo (Raw Uranium) goes into one Lead Cask per call, so
+            # repeat while a call still moves something.
+            left = count
+            res = None
+            for _round in range(UNLOAD_MAX_ROUNDS):
+                try:
+                    res = self._host.drone.cargo.unload(item_id, left)
+                except Exception as error:
+                    swallowed("drone_cargo.DroneCargoMixin.unload_cargo_at_depot: self._host.drone.cargo.unload", error)
+                    break
+                moved = getattr(res, "moved", 0) or 0
+                unloaded += moved
+                left -= moved
+                self._host.log.debug(f"{item_id} moved {moved}/{count}, {left} left (status={res.status}).")
+                if moved <= 0 or left <= 0:
+                    break
+            if res is not None and left > 0:
                 depot_full = True
                 self._host.log.level("warn").print(f"[{self._host.name}] Drone Depot notice for {item_id}: {res.status} - {res.message}")
 

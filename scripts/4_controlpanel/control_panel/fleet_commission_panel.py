@@ -31,7 +31,7 @@ from swallow import swallowed
 from tree_console import TreeConsole, reset_all
 
 PIONEER_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("scout", "+ Scout"), ("constructor", "+ Builder")]
-DRONE_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner")]
+DRONE_LABELS = [("hauler", "+ Hauler"), ("miner", "+ Miner"), ("aftermath", "+ Storm")]
 STATE_COLORS = {"queued": "text-muted", "buying": "accent", "crafting": "accent", "deploying": "accent", "attach": "warning", "fitting": "accent", "blocked": "error"}
 ROW_LABEL_W = 64
 BUTTON_W = 92

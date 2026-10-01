@@ -9,7 +9,7 @@
 #   - drone_energy.py: engine detection, battery/oil accounting, linear per-meter trip budgeting, drone_service/drone_depot discovery
 #   - drone_claims.py: exclusive biosite claims + scout empty-POI cache + mission persistence
 #   - drone_cargo.py: cargo accounting/load-unload + home-biome filtering
-#   - drone_scout.py / drone_mining.py / drone_hauler.py: role loops
+#   - drone_scout.py / drone_mining.py / drone_hauler.py / drone_weather.py: role loops
 #   - drone_upgrade.py: fleet-upgrade handshake, new-chassis fitting, in-place module upgrades
 #
 # Electric and heli drones: the engine is auto-detected at startup
@@ -24,6 +24,7 @@ from drone_cargo import DroneCargoMixin
 from drone_scout import DroneScoutMixin
 from drone_mining import DroneMiningMixin
 from drone_hauler import DroneHaulerMixin
+from drone_weather import DroneWeatherMixin
 from drone_upgrade import DroneUpgradeMixin, inherited_params
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
@@ -38,6 +39,7 @@ class DroneController(
     DroneScoutMixin,
     DroneMiningMixin,
     DroneHaulerMixin,
+    DroneWeatherMixin,
     DroneUpgradeMixin,
 ):
     """
@@ -48,8 +50,9 @@ class DroneController(
     .outpost property of its own, unlike ground vehicles/buildings -- see
     docs/models/vehicles_and_modules.md's DroneSmall/DroneMedium/DroneLarge
     class definitions), detects role from mounted field module
-    (bio_scanner -> scout, bio_extractor -> miner, neither but Cargo Pods ->
-    hauler), and dispatches to the matching loop. A hauler ignores its home
+    (bio_scanner -> scout, bio_extractor -> miner, neither but Shield Plating
+    and Cargo Pods -> aftermath, Cargo Pods only -> hauler), and dispatches to
+    the matching loop. A hauler ignores its home
     (floating, see drone_hauler.py); the home still anchors recall.
     """
     ROLE_MODULES = {
@@ -265,6 +268,9 @@ class DroneController(
             return None
         if not present:
             capacity = self.cargo_capacity()
+            if capacity > 0 and self.plated:
+                self.log.end(f"[{self.name}] Shield Plating and {capacity} unit(s) of Cargo Pods: role 'aftermath'")
+                return "aftermath"
             if capacity > 0:
                 self.log.end(f"[{self.name}] No bio module, {capacity} unit(s) of Cargo Pods: role 'hauler'")
                 return "hauler"
@@ -278,8 +284,8 @@ class DroneController(
     def run(self, role_override=None):
         """
         Unified entrypoint: detects this drone's role from its mounted field
-        module (Bio Scanner -> scout, Bio Extractor -> miner, only Cargo Pods
-        -> hauler) and dispatches
+        module (Bio Scanner -> scout, Bio Extractor -> miner, Shield Plating
+        and Cargo Pods -> aftermath, only Cargo Pods -> hauler) and dispatches
         to the matching loop. role_override forces a specific role, required
         when both/neither module is mounted (see detect_role()).
         """
@@ -309,5 +315,7 @@ class DroneController(
             self.run_miner_loop()
         elif role == "hauler":
             self.run_hauler_loop()
+        elif role == "aftermath":
+            self.run_aftermath_loop()
         else:
             self.log.level("warn").print(f"[{self.name}] Unknown role '{role}'.")

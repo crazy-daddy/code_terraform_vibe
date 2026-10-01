@@ -29,6 +29,10 @@
 # The Depot controller (lib/drone_depot.py drain_freight()) drains unloaded
 # freight into local storage while the drone unloads in rounds.
 #
+# Between haul jobs the hauler also collects Storm Glass aftermaths
+# (lib/drone_weather.py try_aftermath_pickup()) and delivers the glass like
+# any other cargo aboard.
+#
 # Stalls: a Depot where docking, loading or unloading fails
 # STALL_MAX_ATTEMPTS times in a row goes on cooldown (in memory, per drone)
 # for STALL_COOLDOWN_TICKS, so the drone moves on to other jobs and
@@ -879,9 +883,15 @@ class DroneHaulerMixin:
                         sleep(poll_interval)
                         continue
 
+                # Storm Glass aftermaths (lib/drone_weather.py): one about to
+                # expire beats a haul job; any other only fills idle time.
+                if self._host.try_aftermath_pickup(urgent_only=True):
+                    continue
                 curr_tick = self._host.get_current_tick()
                 job = self._plan_haul_job(curr_tick)
                 if job is None:
+                    if self._host.try_aftermath_pickup(urgent_only=False):
+                        continue
                     self._idle("No haul job")
                     flush_all()
                     sleep(poll_interval)

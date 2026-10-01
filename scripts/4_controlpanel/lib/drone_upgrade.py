@@ -41,7 +41,9 @@ CARGO_POD_TIERS = ["cargo_pod_small", "cargo_pod_medium", "cargo_pod_large"]
 OIL_TANK_TIERS = ["oil_tank_small", "oil_tank_medium", "oil_tank_large"]
 BATTERY_TIERS = ["battery_pack"]
 THRUSTER_BY_ENGINE = {"electric": "electric_thruster", "heli": "heli_thruster"}
-ROLE_MODULE_ITEMS = {"miner": "portable_bio_extractor", "scout": "portable_bio_scanner"}
+# The aftermath role's "role" module is Shield Plating (lib/drone_weather.py):
+# it is what detect_role() keys on, and it halves every Cargo Pod.
+ROLE_MODULE_ITEMS = {"miner": "portable_bio_extractor", "scout": "portable_bio_scanner", "aftermath": "shield_plating"}
 
 # Role loadout per chassis, one category per module slot (1..N). "energy" is
 # battery_pack (electric) or the best Oil Tank (heli); "cargo" the best
@@ -57,6 +59,11 @@ LOADOUTS = {
         "drone_small": ["energy", "cargo"],
         "drone_medium": ["energy", "cargo", "cargo"],
         "drone_large": ["energy", "energy", "cargo", "cargo", "cargo"],
+    },
+    # No small chassis: plating plus a battery leaves no slot for a Cargo Pod.
+    "aftermath": {
+        "drone_medium": ["role", "energy", "cargo"],
+        "drone_large": ["role", "energy", "energy", "cargo", "cargo"],
     },
 }
 
@@ -402,6 +409,7 @@ class DroneUpgradeMixin:
         categories = {module_category(m) for m in coupled}
         viable = bool(slots.get(0)) and "energy" in categories and (
             (role == "miner" and "role" in categories) or (role == "hauler" and "cargo" in categories)
+            or (role == "aftermath" and "role" in categories and "cargo" in categories)
         )
         if viable:
             update_fleet_upgrade(lambda s: s.get("lineage", {}).get(self._host.name, {}).update({"fitted": True}))

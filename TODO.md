@@ -349,7 +349,7 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
 
 - [x] **Weather Station signal decoding** (`lib/weather_signals.py`, §1m): one leader script reads every station's receiver, validates checksums, assembles coordinates into `weather.aftermaths`. Not yet live-verified.
 - [ ] **Station coverage**: dust (uranium) messages need a powered station in all 5 biomes; only 1 station is deployed (`outpost_5`). Buy and deploy one per missing biome (60,000 cr each).
-- [ ] **Aftermath collection**: drone role that takes `weather.aftermaths` entries (claimed, one drone per site), flies to the exact coordinate after `ready_gh`, repeats `collect()` (5 units per batch) until `nothing_here`, and unloads at home. Uranium needs Shield Plating or exposure management (+40 per unplated batch, cap 100, service clears 10/h).
+- [x] **Aftermath collection** (`lib/drone_weather.py`, §2j-1): plated `aftermath` drone role (uranium + glass, uranium into the home outpost's Lead Cask), haulers take Storm Glass between jobs. Not yet live-verified: commission/plate one drone, watch the next thunderstorm aftermath.
 - [ ] **Fuel Assembler + Reactor** controllers (docs/components/fuel_assembler.md, reactor.md, lead_cask.md).
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations

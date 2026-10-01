@@ -17,7 +17,7 @@ A drill needs no control. It extracts on its own; the only script surface is `dr
 
 ### 1m. Weather Station Signal Decoding (`lib/weather_signals.py`, tier `7_miningdrills`)
 
-Recovers storm aftermath coordinates (Raw Uranium from dust storms, Storm Glass from thunderstorms; docs/guide/weather_system.md) and publishes them for drone collection. Collection itself is not automated yet.
+Recovers storm aftermath coordinates (Raw Uranium from dust storms, Storm Glass from thunderstorms; docs/guide/weather_system.md) and publishes them for drone collection (collection: §2j-1 in `vehicles_drones.md`).
 
 - **Reception** (simworker `Fre()`): a powered station hears every `broadcast` copy plus its own biome's dust channel, planet-wide (no distance check). Thunder: 4 packets, all broadcast, so one station suffices. Dust: `DUST_PACKET_TOTAL = 8` packets, packet 1 broadcast, the other 7 spread over all 5 biome channels, so a dust message completes only with one powered station in **every** biome. Missing biomes are warned on change.
 - **One running script**: `signal_receiver` is a read-only property, so the leader (lowest id among powered stations) reads every station's receiver; every other station's script ends at once. Stations re-discovered (and leadership re-checked) every `STATION_REFRESH_SWEEPS = 10` sweeps. Weather Stations are in no shed tier (§1a).

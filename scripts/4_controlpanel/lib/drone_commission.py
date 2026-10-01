@@ -29,7 +29,7 @@ from drone_upgrade import LOADOUTS, THRUSTER_BY_ENGINE, BATTERY_TIERS, CARGO_POD
 DRONE_CHASSIS_TIERS = ["drone_small", "drone_medium", "drone_large"]
 # Roles the card offers: the ones with a LOADOUTS entry (scouts are one-off,
 # hand-built).
-DRONE_ROLES = tuple(r for r in ("hauler", "miner") if r in LOADOUTS)
+DRONE_ROLES = tuple(r for r in ("hauler", "miner", "aftermath") if r in LOADOUTS)
 # Electric only: heli drones need an oil-distribution check first (TODO.md).
 COMMISSION_ENGINE = "electric"
 # fabricator.upgrade_orders requester id for commissioned drone kits
