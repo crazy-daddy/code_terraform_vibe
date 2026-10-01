@@ -927,9 +927,11 @@ ROLELESS_WARNED: dict = {}
 
 def commission_fill_for(state: dict, stem: str):
     """upgrade_fill_for() for a Pioneer slot: ("inherit", source, {"HOME_BASE"})
-    when the COMMISSION card deployed it, ("hold", reason, None) while a
-    commissioned Pioneer is being deployed and the save predates this slot's
-    machine, else ("normal", None, None)."""
+    when the COMMISSION card deployed it, ("hold", reason, None) while the
+    save predates this slot's machine, else ("normal", None, None). Holds on
+    any missing machine, like a drone slot: the coordinator deploys in the
+    same pass that leaves "buying", so an older save never shows the job in
+    "deploying"."""
     commission = state.get("fleet_commission") or {}
     if not isinstance(commission, dict):
         return ("normal", None, None)
@@ -939,12 +941,7 @@ def commission_fill_for(state: dict, stem: str):
         home = entry.get("home_base")
         return ("inherit", "commission %s" % entry.get("job"), {"HOME_BASE": home if home else "None"})
     if (state.get("machine_types") or {}).get(stem) is None:
-        deploying = [
-            j for j in commission.get("jobs") or []
-            if isinstance(j, dict) and j.get("kind", "pioneer") == "pioneer" and j.get("state") == "deploying"
-        ]
-        if deploying:
-            return ("hold", "machine not in save yet, Pioneer %s deploying (waiting for the next autosave)" % deploying[0].get("id"), None)
+        return ("hold", "machine not in save yet (waiting for the next autosave)", None)
     return ("normal", None, None)
 
 
