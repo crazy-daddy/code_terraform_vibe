@@ -1,4 +1,4 @@
-# Power & Fluids (§1a–§1c-3)
+# Power & Fluids (§1a–§1c-4)
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §1.
 
@@ -211,3 +211,18 @@ every cycle — delivery self-limits to what connected tank accepts.
 - `is_degraded()` transitions logged at info level (warn when starved).
 - No archive state.
 - **Mk IV rod magazine** (`Mk4RodFeed`, same three controllers): while `tier() >= 4`, every `MK4_CHECK_INTERVAL_TICKS = 600` ticks, tops `input` up to `MK4_MAGAZINE_TARGET = 1` Fuel Rod from the Lead Casks at the generator's own outpost (`lead_cask.take_from_casks()`; hot cargo never crosses outposts). A Mk IV burns 1 rod per 240 game h (simworker `0.1 / 24` per h) and stops without one. No rods: one warn until a load succeeds. The Fuel Assembler counts each Mk IV in its rod target (§1n).
+
+### 1c-4. Reactor: Measured-Gain Heat Control (`10_nuclear/lib/reactor.py` `ReactorController`)
+
+Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `10_nuclear/nuclear/reactor.py`. Fuel use follows commanded heat (1 rod per 72 game h at heat 1.0), output follows core temperature, so the most energy per rod comes from holding the core just under 900 °C.
+
+- **Game model** (simworker reactor step): steady temperature = heat × gain, gain = `TEMP_SCALE_C = 1200` × hidden condition in [0.7, 1.25] (`GAIN_MIN_C = 840` … `GAIN_MAX_C = 1500`), redrawn every `CONDITION_PERIOD_GH = 12` game h at whole multiples of `clock.elapsed_game_hours()`. First-order lag at `LAG_PER_GH = 0.6`. Output: 0 below 300 °C, 50% at 600, 100% at exactly 900, back to 0 across 900-950; 950 overheats (cools to 600 and restarts by itself). Overheated, no rod or no water: no fuel used.
+- **Gain**: two running readings with the same heat at least `MIN_SAMPLE_GH = 0.03` apart give the temperature the core is heading to, `S = (T1 − T0·e^(−0.6·dt)) / (1 − e^(−0.6·dt))` (`steady_state()`); gain sample = S / heat (heat ≥ `MIN_HEAT_FOR_GAIN = 0.05`), clamped to the physical range, blended `GAIN_BLEND = 0.5`; a sample more than `GAIN_JUMP_FRACTION = 0.10` off replaces the gain. Forgotten at each 12 h boundary, on overheat and on a trip.
+- **Heat**: `TARGET_C = 880` / gain (97% output, 20 °C under the red band), clamped 0-1 (gain 840 → heat 1.0, 840 °C, 90% output). Unknown gain, or within `BOUNDARY_LEAD_GH = 0.15` before a boundary: `SAFE_HEAT = TARGET_C / GAIN_MAX_C` (≈ 0.587), which cannot pass the target under any condition. Changes under `HEAT_DEADBAND = 0.005` are not sent.
+- **Trip guard**: temperature ≥ `TRIP_C = 910` → `SAFE_HEAT`, gain forgotten. Catches a bad estimate or a missed boundary: the worst jump (840 → 1500 at heat 1.0) needs ~0.19 game h from 840 to 910 °C.
+- **Poll**: every `POLL_GH = 0.04` game h while settling or near a boundary, `STEADY_POLL_GH = 0.1` once holding within `STEADY_BAND_C = 15` of the target; `sleep(poll × clock.real_seconds_per_hour())` (fallback `FALLBACK_SECONDS_PER_GH = 25`).
+- **Fuel Rods**: keeps `ROD_STAGE = 1` rod in `input` (capacity 3) from this outpost's Lead Casks (`lead_cask.take_from_casks()`), every `ROD_CHECK_INTERVAL_TICKS = 600` ticks and at once on `"no_fuel"`. The Fuel Assembler counts staged rods in its target (§1n). No rods: one warn until a load succeeds.
+- **Cooling water** (0.5-1 t/h, 3 t buffer): `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, own outpost first (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `status() == "no_coolant"`.
+- **Status changes** logged at info (running) or warn; overheat also `notify()`s.
+- Not parked and not in any shedding tier: heat returns to 0 when the script stops. No archive state; the gain is re-measured within a few polls after a restart.
+- Simulated closed loop (`tests/test_reactor.py`, per-tick simworker physics): from cold ~6 game h to the target, then ~4.8 kW mean across alternating 0.72/1.25 conditions, peak 878 °C.

@@ -357,7 +357,8 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [x] Supply Dock hot cargo: Raw Uranium / Fuel Rods sourceable (casks, live aftermaths, assembler recipes), loaded from local casks, hot orders only to docks at an outpost with a cask (`vestibule_28`/`_29`, `helios_30`).
   - [x] Mk IV terraformer rod magazine (`terraforming.Mk4RodFeed`) and Mk IV generators in the rod target.
   - [ ] Validate live: `lead_cask.transfer_to()` cask to cask for uranium, Supply Dock `input.connect(cask)` + `take("fuel_rod")`, Mk IV `input.count()`/`take()` from a cask.
-  - [ ] Reactor controller (heat control with measured gain, cooling water, rod feed from the cask).
+  - [x] Reactor controller (`lib/reactor.py`, tier `10_nuclear`, §1c-4): measured-gain heat control at 880 °C, safe heat before each 12 h condition change, 910 °C trip guard, rod feed from local casks, cooling water routing.
+  - [ ] Validate live (Reactor): `elapsed_game_hours()` boundaries match the condition redraws, measured gain vs. the settled `temperature() / heat()`, `input.connect(cask)` + `take("fuel_rod")`, water routing, overheat never reached.
 - [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations

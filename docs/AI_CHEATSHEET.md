@@ -14,7 +14,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 0, 0a, 0b | `lib/` module map, runtime limits, `TreeConsole` logging, `swallowed()` | this file |
 | 1 | Terraforming formula table | this file |
 | 1a, 1a-0, 1a-1 | Brownout load-shedding, steam-aware Power Guard, grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
-| 1b, 1c, 1c-1, 1c-2, 1c-3 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
+| 1b, 1c, 1c-1, 1c-2, 1c-3, 1c-4 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine, Reactor heat control | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1d, 1d-1 | Tick-cost profiling, script cost model (cost scales with running-script count) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
@@ -111,6 +111,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Field Mining Drill telemetry (fill, time-to-full, stall warnings, pickup advert) | `mining_drill.py` — see §1j (tier `7_miningdrills`) |
 | Weather Station signal decoding (storm aftermath coordinates for Raw Uranium / Storm Glass) | `weather_signals.py` — see §1m (tier `7_miningdrills`) |
 | Fuel Assembler (Fuel Rods for local Reactors / Mk IV generators, then Nuclear Batteries; reserve-gated bursts) | `fuel_assembler.py` — see §1n (tier `10_nuclear`) |
+| Reactor (measured-gain heat control just under 900 °C, rod feed from local Lead Casks, cooling water routing) | `reactor.py` — see §1c-4 (tier `10_nuclear`) |
 | Lead Cask roles (`lead_cask.roles`), hot-cargo stock/room/take, misfiled-uranium repair | `lead_cask.py` — see §1n (tier 4 lib; used by `drone_weather`, `supply_dock`, `terraforming`, `production`) |
 | Field Mining Drills as pull-hauler sources (recorded positions, connect/take) | `drill_sites.py` — see §2i (lives in tier 4 lib, since the hauler imports it at every tier) |
 | Fabrication | `fabricator.py` |
