@@ -5,7 +5,7 @@ from swallow import swallowed
 from storage import take_item
 import fluid_routing
 import logistics_requests
-from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
+from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricator_unlocked_outputs, set_upgrade_order, set_backlog_order
 
 # Plant Terraformer: the only machine that turns harvested Forage into
 # permanent Plants km² (docs/components/plant_terraformer.md,
@@ -62,16 +62,26 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
 #   - Forage: one full batch, only away from home -- the field's Harvester
 #     delivers to home Inventory, so home is a SOURCE of Forage, not a sink.
 #   - Salt / Growth Accelerant: SUPPORT_REQUEST_BATCHES batches' worth.
-#   - Fertilizer: requested as Mk I (`fertilizer`), counted in Mk I potency
-#     equivalents across all tiers.
+#   - Fertilizer: requested as the tier the Fabricator crafts
+#     (craft_fertilizer_item()), counted in that tier's potency units across
+#     all tiers.
 #   logistics.requests holds one entry per item per outpost; an item another
 #   requester (e.g. the field Harvester's salt) already owns here is left
 #   alone -- its target keeps the outpost stocked, and the Terraformer draws
 #   from the same stock.
 # Source side: an item this outpost doesn't request itself (home Forage) is
 # only consumed above what other outposts request (remote_retain()), so a
-# home Terraformer can't eat the batch a hauler is coming for. Nothing here
-# makes the Fabricator craft Fertilizer/Accelerant yet (TODO.md).
+# home Terraformer can't eat the batch a hauler is coming for.
+#
+# Fabricator orders (fabricator_orders()): Fertilizer and Growth Accelerant
+# are crafted at home. Every Mk II Terraformer writes the same two orders
+# for the whole fleet (fleet_size() from `plant.terraformer` telemetry):
+#   - need: NEED_CYCLES batches per machine, a standing upgrade order
+#     (production.set_upgrade_order(), ranked above Earth orders);
+#   - backlog: BACKLOG_HOURS of the fleet's use, a backlog order
+#     (production.set_backlog_order(), crafted only in idle Fabricator time).
+# Both are capped by what the rest of the Plants ladder still needs
+# (remaining_forage()), so they shrink to 0 near completion.
 
 STATUS_KEY = "plant.terraformer"
 REQUESTER_ID = "plant_terraformer"
@@ -103,6 +113,26 @@ SUPPORT_HOLDER_CAP = 10
 # Fertilizer item ids, best potency first (fertilizer_potency(): 50/30/10).
 FERTILIZER_ITEM_IDS = ("fertilizer_mk3", "fertilizer_mk2", "fertilizer")
 
+# Fertilizer tier the Fabricator is asked for, cheapest first: per potency,
+# Mk II needs less Fabricator time and Tar than Mk I, and Mk III's Neutron
+# Capacitor chain costs about 5x Mk II (§1k). The first unlocked one wins.
+FERTILIZER_CRAFT_PREFERENCE = ("fertilizer_mk2", "fertilizer")
+
+# Fabricator need order: batches per running Mk II Terraformer (this + next).
+NEED_CYCLES = 2
+
+# Fabricator backlog order: hours of the fleet's use, one batch per machine
+# every CYCLE_HOURS.
+BACKLOG_HOURS = 24
+CYCLE_HOURS = 3
+
+# Plants ladder (plant_terraformer_guide.md): phase -> (km² per Forage, band
+# Forage). Phase 6 is Continental complete.
+PLANTS_BANDS = {1: (20.0, 25000), 2: (5.0, 150000), 3: (5.0 / 3, 600000), 4: (1.0, 1250000), 5: (1.0 / 3, 4500000)}
+
+# First phase each Fabricator-crafted input is needed in (cumulative after).
+CRAFTED_SUPPORT_FIRST_PHASE = {"fertilizer": 4, "growth_accelerant": 5}
+
 # Salt / Growth Accelerant / Fertilizer staged at the outpost, in batches'
 # worth (Mk I full batch: 3 Salt; Mk II: 14 Salt, 27 potency, 1
 # Accelerant; Fertilizer/Accelerant capped by the holder), so one batch is on
@@ -125,6 +155,36 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 STOP_STATUSES = ("complete", "needs_mk2")
 
 
+def remaining_forage(phase, remaining_km2, from_phase=1):
+    """Forage still to convert from phase `from_phase` on: the rest of the current band plus every later band."""
+    total = 0.0
+    if phase in PLANTS_BANDS and phase >= from_phase:
+        total += max(remaining_km2, 0.0) / PLANTS_BANDS[phase][0]
+    for band_phase, (_, band_forage) in PLANTS_BANDS.items():
+        if band_phase > phase and band_phase >= from_phase:
+            total += band_forage
+    return total
+
+
+def _ceil(value):
+    whole = int(value)
+    return whole + 1 if value > whole else whole
+
+
+def order_sizes(per_batch, full_batch, machines, forage_left):
+    """
+    (need, backlog) item counts for one crafted input. per_batch = items per
+    full batch of full_batch Forage (fractional for Fertilizer potency).
+    Both are capped by forage_left; backlog is never below need.
+    """
+    if per_batch <= 0 or full_batch <= 0 or machines <= 0:
+        return 0, 0
+    left = _ceil(forage_left * per_batch / full_batch)
+    need = min(_ceil(NEED_CYCLES * machines * per_batch), left)
+    backlog = min(_ceil(BACKLOG_HOURS * machines * per_batch / CYCLE_HOURS), left)
+    return need, max(need, backlog)
+
+
 class PlantTerraformerController:
     """Keeps one Plant Terraformer fed with Forage, Water and support items and runs it in full-ish batches."""
 
@@ -142,6 +202,9 @@ class PlantTerraformerController:
         self._water_router = None
         self._published_targets = None
         self._published_tick = None
+        self._published_orders = None
+        self._craft_fertilizer = None
+        self._craft_fertilizer_tick = 0
         self._resume_pending = self._was_running()
 
     def get_current_tick(self):
@@ -464,17 +527,18 @@ class PlantTerraformerController:
         if "salt" in required and reqs.get("salt"):
             targets["salt"] = int(reqs["salt"]) * SUPPORT_REQUEST_BATCHES
         if reqs.get("fertilizer_potency"):
-            per_batch = -(-int(reqs["fertilizer_potency"]) // max(self._potency("fertilizer"), 1))
-            targets["fertilizer"] = min(per_batch, SUPPORT_HOLDER_CAP) * SUPPORT_REQUEST_BATCHES
+            item_id = self.craft_fertilizer_item()
+            per_batch = -(-int(reqs["fertilizer_potency"]) // max(self._potency(item_id), 1))
+            targets[item_id] = min(per_batch, SUPPORT_HOLDER_CAP) * SUPPORT_REQUEST_BATCHES
         if "growth_accelerant" in required and reqs.get("growth_accelerant"):
             targets["growth_accelerant"] = min(int(reqs["growth_accelerant"]), SUPPORT_HOLDER_CAP) * SUPPORT_REQUEST_BATCHES
         return targets
 
     def _have(self, item_id):
-        """Published "have": local stock; Fertilizer in Mk I potency equivalents over all tiers."""
-        if item_id != "fertilizer":
+        """Published "have": local stock; Fertilizer in item_id's potency units over all tiers."""
+        if item_id not in FERTILIZER_ITEM_IDS:
             return self.local_stock(item_id)
-        unit = max(self._potency("fertilizer"), 1)
+        unit = max(self._potency(item_id), 1)
         return sum(self.local_stock(i) * self._potency(i) for i in FERTILIZER_ITEM_IDS) // unit
 
     def publish_requests(self, reqs, required, requests, curr_tick):
@@ -508,6 +572,74 @@ class PlantTerraformerController:
                 self.log.print(f"[{self.name}] Demand withdrawn at {self.outpost_id}.")
         self._published_targets = targets
         self._published_tick = curr_tick
+
+    # -------------------------------------------------- Fabricator orders
+
+    def craft_fertilizer_item(self, curr_tick=None):
+        """First FERTILIZER_CRAFT_PREFERENCE item the Fabricator has unlocked; curr_tick re-reads it every REQUEST_REFRESH_TICKS."""
+        due = self._craft_fertilizer is None or (
+            curr_tick is not None
+            and (curr_tick < self._craft_fertilizer_tick or curr_tick - self._craft_fertilizer_tick >= REQUEST_REFRESH_TICKS)
+        )
+        if due:
+            unlocked = fabricator_unlocked_outputs()
+            item_id = next((i for i in FERTILIZER_CRAFT_PREFERENCE if i in unlocked), FERTILIZER_CRAFT_PREFERENCE[-1])
+            if item_id != self._craft_fertilizer:
+                self.log.debug(f"[{self.name}] Fertilizer to craft: {item_id} (unlocked: {sorted(i for i in unlocked if i in FERTILIZER_ITEM_IDS)}).")
+            self._craft_fertilizer = item_id
+            self._craft_fertilizer_tick = curr_tick or 0
+        return self._craft_fertilizer
+
+    def fleet_size(self, curr_tick):
+        """Mk II Terraformers on the ladder: fresh, non-stopped `plant.terraformer` entries plus this one."""
+        status = archive.get(STATUS_KEY, {})
+        count = 1
+        if not isinstance(status, dict):
+            return count
+        for machine_id, entry in status.items():
+            if machine_id == self.name or not isinstance(entry, dict):
+                continue
+            if curr_tick - entry.get("tick", 0) >= STATUS_STALE_TICKS or entry.get("status") in STOP_STATUSES:
+                continue
+            if int(entry.get("tier", 1) or 1) >= 2:
+                count += 1
+        return count
+
+    def fabricator_orders(self, reqs, required, phase, remaining, machines):
+        """({item_id: need}, {item_id: backlog}) for the Fabricator-crafted inputs this phase needs (see module header)."""
+        need, backlog = {}, {}
+        full = int(reqs.get("forage", 0) or 0)
+        if full <= 0:
+            return need, backlog
+        crafted = []
+        if reqs.get("fertilizer_potency"):
+            item_id = self.craft_fertilizer_item()
+            per_batch = int(reqs["fertilizer_potency"]) / float(max(self._potency(item_id), 1))
+            crafted.append((item_id, per_batch, CRAFTED_SUPPORT_FIRST_PHASE["fertilizer"]))
+        if "growth_accelerant" in required and reqs.get("growth_accelerant"):
+            crafted.append(("growth_accelerant", float(reqs["growth_accelerant"]), CRAFTED_SUPPORT_FIRST_PHASE["growth_accelerant"]))
+        for item_id, per_batch, first_phase in crafted:
+            forage_left = remaining_forage(phase, remaining, first_phase)
+            n, b = order_sizes(per_batch, full, machines, forage_left)
+            self.log.debug(f"[{self.name}] {item_id}: {per_batch:.2f}/batch x {machines} machine(s), {forage_left:,.0f} Forage left -> need {n}, backlog {b}.")
+            if n > 0:
+                need[item_id] = n
+            if b > 0:
+                backlog[item_id] = b
+        return need, backlog
+
+    def publish_fabricator_orders(self, need, backlog):
+        """Writes both orders (production skips unchanged writes); info line when they change."""
+        orders = (need, backlog)
+        if orders == self._published_orders:
+            return
+        set_upgrade_order(REQUESTER_ID, need)
+        set_backlog_order(REQUESTER_ID, backlog)
+        if need or backlog:
+            self.log.print(f"[{self.name}] Fabricator orders: need {need}, backlog {backlog}.")
+        elif self._published_orders:
+            self.log.print(f"[{self.name}] Fabricator orders withdrawn.")
+        self._published_orders = orders
 
     # ------------------------------------------------------------- control
 
@@ -604,11 +736,18 @@ class PlantTerraformerController:
             requests = logistics_requests.active_requests(curr_tick) or {}
             if "water" in required:
                 self.ensure_water(curr_tick)
+            if reqs.get("fertilizer_potency"):
+                self.craft_fertilizer_item(curr_tick)
             moved = self.feed(reqs, required, in_flight, requests)
             self.publish_requests(reqs, required, requests, curr_tick)
-        elif self._published_targets is None or self._published_targets:
-            logistics_requests.clear_requests(REQUESTER_ID, self.outpost_id)
-            self._published_targets = {}
+            self.publish_fabricator_orders(*self.fabricator_orders(reqs, required, phase, remaining, self.fleet_size(curr_tick)))
+        else:
+            if self._published_targets is None or self._published_targets:
+                logistics_requests.clear_requests(REQUESTER_ID, self.outpost_id)
+                self._published_targets = {}
+            # A Mk I machine ("needs_mk2") leaves the Mk II fleet's orders alone.
+            if status == "complete":
+                self.publish_fabricator_orders({}, {})
 
         held = self.onboard()
         full_batch = int(reqs.get("forage", 0) or 0)

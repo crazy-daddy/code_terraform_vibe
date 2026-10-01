@@ -55,6 +55,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 - `fleet.decommission`: one shared dict `{machine_id: {kind, state, attempts, reason}}` for Pioneer and drone retirement — see §2k-4. Written by the retire buttons (FLEET / DRONE FLEET cards), the machine's own script (`ready`) and the coordinator.
 - `drone.loadouts`: retired key, purged by `ArchiveCleaner` (`RETIRED_KEY_PREFIXES`). Drone slot contents come from `drone.modules()`, §2k.
 - `fabricator.upgrade_orders`: `{requester_id: {item_id: qty}}` — §2a-1 item 5.
+- `fabricator.backlog_orders`: `{requester_id: {item_id: qty}}` — §2a-1 item 6.
 - `drone.home_depots`: one shared dict `{drone_name: outpost_id (pool) | depot_id (hardwired)}` of pinned drone homes (not one key per drone). Written by `resolve_home_depot()` in `lib/drone_energy.py`; `HOME_DEPOT` script variable overrides and overwrites the entry. Entries of drones no longer in `fleet.drones()` pruned on every write. See §2h.
 - `logistics.requests`: `{outpost_id: {item_id: {"target", "have", "min"?, "buy"?, "by", "tick"}}}` pull requests (`min` = need tier, absent = all need; `buy: True` = a Pioneer pull hauler may buy it at the Shop) — see §2i. Entries stale after `REQUEST_STALE_TICKS = 6000`.
 - `depot.stage`: `{depot_id: {item_id: {"units", "by", "tick"}}}` hauler-drone stage requests (`lib/depot_stage.py`), fulfilled by the Depot's `fulfil_stage()` — see §2h/§2j. Stale after `STAGE_STALE_TICKS = 9000`, pruned on every write.

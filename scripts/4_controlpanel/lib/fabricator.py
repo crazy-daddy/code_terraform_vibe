@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
@@ -360,7 +360,19 @@ class FabricatorController:
         _, order = find_dock_order_requiring(item_id)
         if order:
             return f"Supply Dock Order {getattr(order, 'name', getattr(order, 'id', 'active'))}"
+        if item_id in get_backlog_orders():
+            return "backlog order"
         return "building stock target"
+
+    @staticmethod
+    def backlog_only(item_id, have, upgrade_items, stock_targets):
+        """True when item_id's upgrade order and stock target are met (`have` =
+        local stock + pipeline) and no Supply Dock order needs it, so what's
+        still missing is backlog."""
+        if have < max(upgrade_items.get(item_id, 0), stock_targets.get(item_id, 0)):
+            return False
+        _, order = find_dock_order_requiring(item_id)
+        return not order
 
     def choose_recipe(self, cache=None):
         # One snapshot for the whole pass (step() shares its own): targets, stock,
@@ -375,6 +387,8 @@ class FabricatorController:
         targets = get_site_fabricator_targets(site_id, cache)
         manual_items = get_manual_orders()
         upgrade_items = get_upgrade_orders()
+        backlog_items = get_backlog_orders()
+        stock_targets = get_fabricator_stock_targets() if backlog_items else {}
         try:
             recipes = self.machine.list_recipes()
         except Exception as error:
@@ -392,6 +406,7 @@ class FabricatorController:
         pipeline = get_fabricator_pipeline(cache, site_id)
 
         candidates = []
+        have_by_item = {}
         for recipe in recipes:
             target = targets.get(getattr(recipe, "output_item", None), 0)
             if target <= 0:
@@ -405,9 +420,10 @@ class FabricatorController:
             missing = max(0, target - current - in_pipeline)
             if missing > 0:
                 candidates.append((missing, recipe))
+                have_by_item[recipe.output_item] = current + in_pipeline
                 self.log.debug(f"candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
 
-        # Five priority tiers, biggest shortfall first within each:
+        # Six priority tiers, biggest shortfall first within each:
         #   0. An item a manual order transitively needs as an INPUT (e.g.
         #      machine_frame under a manual drone_service_station_kit order) --
         #      see production.get_manual_order_blocking_items(). The manual
@@ -428,6 +444,8 @@ class FabricatorController:
         #      input it is blocked on.
         #   4. Everything else (Earth Orders, Supply Dock, stock targets),
         #      biggest shortfall first.
+        #   5. A backlog order (production.get_backlog_orders()) whose upgrade
+        #      order and stock target are already met -- filler for idle time.
         # Skip anything currently blocked on an unavailable input (e.g.
         # unsurveyed titanium) so the Fabricator keeps building whatever else
         # it actually can. Also skip a recipe another Fabricator already
@@ -443,6 +461,8 @@ class FabricatorController:
                 return 1
             if output_item in blueprint_items:
                 return 2
+            if output_item in backlog_items and self.backlog_only(output_item, have_by_item.get(output_item, 0), upgrade_items, stock_targets):
+                return 5
             if output_item in upgrade_items or output_item in upgrade_blocking:
                 return 3
             return 4
@@ -459,7 +479,7 @@ class FabricatorController:
             recipe_id = getattr(recipe, "id", "")
             if self.claim_recipe(recipe_id):
                 output_item = getattr(recipe, "output_item", None)
-                tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall")[_priority_tier(recipe)]
+                tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall", "backlog order")[_priority_tier(recipe)]
                 self.log.debug(f"claimed '{recipe_id}' (missing={missing}, {tier_reason})")
                 self.log.end()
                 return recipe

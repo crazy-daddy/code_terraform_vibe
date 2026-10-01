@@ -614,12 +614,31 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # field-machine kits (8_planting/lib/harvester_machines.py). "bio_caster" = the
 # Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
 # "fleet_commission" = a drone kit the COMMISSION card queued (lib/drone_commission.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission")
+# "plant_terraformer" = the Plant Terraformers' next two batches of Fertilizer /
+# Growth Accelerant (8_planting/lib/plant_terraformer.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer")
+
+# Backlog orders: same {requester_id: {item_id: quantity}} shape as
+# UPGRADE_ORDERS_KEY, but filler work. The quantity is folded into the
+# Fabricator targets like any floor, and choose_recipe() ranks a backlog
+# item below every other demand (tier 5) once its non-backlog floors are
+# met, so it only uses otherwise idle Fabricator time. A requester owns and
+# clears its own entry.
+BACKLOG_ORDERS_KEY = "fabricator.backlog_orders"
 
 
 def get_upgrade_orders():
     """{item_id: quantity} summed across every requester's entry in UPGRADE_ORDERS_KEY."""
-    stored = archive.get(UPGRADE_ORDERS_KEY, {})
+    return _summed_orders(UPGRADE_ORDERS_KEY)
+
+
+def get_backlog_orders():
+    """{item_id: quantity} summed across every requester's entry in BACKLOG_ORDERS_KEY."""
+    return _summed_orders(BACKLOG_ORDERS_KEY)
+
+
+def _summed_orders(key):
+    stored = archive.get(key, {})
     if not isinstance(stored, dict):
         return {}
     totals = {}
@@ -635,8 +654,17 @@ def get_upgrade_orders():
 def set_upgrade_order(requester, items):
     """Replaces requester's upgrade order with items ({item_id: qty}); empty or None
     clears it. Plain read first, so an unchanged order costs no archive write."""
+    _set_requester_order(UPGRADE_ORDERS_KEY, requester, items)
+
+
+def set_backlog_order(requester, items):
+    """set_upgrade_order() for BACKLOG_ORDERS_KEY."""
+    _set_requester_order(BACKLOG_ORDERS_KEY, requester, items)
+
+
+def _set_requester_order(key, requester, items):
     wanted = {i: int(q) for i, q in (items or {}).items() if q and q > 0}
-    stored = archive.get(UPGRADE_ORDERS_KEY, {})
+    stored = archive.get(key, {})
     current = stored.get(requester) if isinstance(stored, dict) else None
     if (current or {}) == wanted:
         return
@@ -650,7 +678,7 @@ def set_upgrade_order(requester, items):
             orders.pop(requester, None)
         return orders
 
-    archive.transaction(UPGRADE_ORDERS_KEY, {}, updater)
+    archive.transaction(key, {}, updater)
 
 
 def fabricator_unlocked_outputs(cache=None):
@@ -1044,7 +1072,7 @@ def fabricator_root_targets(cache=None):
     """
     (roots, consumers, fabricator_outputs): the root Fabricator targets
     before the intermediate cascade -- standing stock targets, manual orders,
-    upgrade orders, Supply Dock orders and blueprint demand, max()-folded per
+    upgrade and backlog orders, Supply Dock orders and blueprint demand, max()-folded per
     item into {item_id: qty} -- plus {item_id: {site_id: qty}}, where each
     root is consumed (its Supply Dock's outpost for dock orders, home for
     everything else; dock order items the Fabricator can't build included,
@@ -1107,6 +1135,13 @@ def fabricator_root_targets(cache=None):
         targets[item_id] = max(targets.get(item_id, 0), quantity)
         home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: fleet upgrade order raises target for {item_id} -> {targets[item_id]}")
+
+    # Backlog orders (get_backlog_orders()): same fold; choose_recipe() ranks
+    # the part above every other floor last (tier 5).
+    for item_id, quantity in get_backlog_orders().items():
+        targets[item_id] = max(targets.get(item_id, 0), quantity)
+        home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
+        log.trace(f"get_fabricator_targets: backlog order raises target for {item_id} -> {targets[item_id]}")
 
     order_sites = _dock_order_sites()
     consumers = {}

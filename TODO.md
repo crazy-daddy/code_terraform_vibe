@@ -249,7 +249,8 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
     - [x] Plant Terraformer controller (`8_planting/lib/plant_terraformer.py`, thin `bio/plant_terraformer.py`): feeds Forage/Salt/Fertilizer/Accelerant per `batch_requirements()`, Water router, start at `MIN_START_FORAGE`, restart recovery, demand advert as local stock targets in `logistics.requests` (Forage away from home, Salt/Fertilizer/Accelerant per phase) read by the pull/drone haulers, Depot fallback loader, home holds back remote targets, `plant.terraformer` telemetry. Stub-tested only; see §1k.
       - [ ] Validate live: `input.stacks()` shows holder contents, batch start at the threshold, preload while running, `is_enabled()`/restart resume, power draw while enabled-but-blocked vs running.
       - [ ] Remote Terraformer Forage delivery: validate live that the floating drone hauler carries home Forage to a remote Terraformer's Depot outpost (home Crop Automator Forage counts as free stock; the home Depot stages it via `take_item()`).
-      - [ ] Fertilizer / Growth Accelerant supply for Mk II phases (needs a code-written Fabricator order channel that `fleet_upgrade._prune()` doesn't wipe).
+      - [x] Fertilizer / Growth Accelerant supply for Mk II phases: Fabricator need order (2 batches per Mk II machine, upgrade order) + 24 h backlog order (new idle-only Fabricator tier 5), Mk II Fertilizer preferred, capped by the rest of the ladder (§1k).
+        - [ ] Validate live: `fabricator.upgrade_orders["plant_terraformer"]`/`fabricator.backlog_orders` appear, the Fabricator crafts `fertilizer_mk2`, haulers stage it at remote Terraformers, blocker leaves `fertilizer`.
       - [ ] Control Panel card: phase, km² to next phase, batch progress, onboard Forage.
     - [ ] Plant Terraformer placement: the farm itself uses 0 building slots (field machines occupy field cells, not building capacity), so only Terraformers compete for home's slots. Inventory is location-bound for ordinary I/O (only deployment works from Inventory anywhere), so Harvester Forage (lands in home Inventory) feeds a Terraformer at home, or has to be hauled to an outpost Warehouse. Band 1 (0–500k km²) needs Forage only (25,000).
     - [ ] New saves: leave cheap loose items on the harvesting field instead of selling them (little cash) -- an item cell costs +1 heat to enter vs +7 empty, and they're free paving for the planting path (`harvester_paving.py`). Needs a value threshold in the early sweep (`lib/harvesting.py` `find_best_target()`), and ideally carrying the items onto the future path cells instead of leaving them where they spawned.
@@ -265,6 +266,7 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
   - [ ] Feed batch Forage + Water via Auto Feeders.
   - [ ] Progress through Mk I band (0 to 2,250,000 km²).
   - [ ] Upgrade to Mk II and inject Fertilizer + Growth Accelerant (2,250,000 to 5,000,000 km²).
+  - [ ] Field yield boosters: Yield Amplifier upkeep (one item = whole field +200% for 24 h) is the Forage lever, since the field (~2,600-3,200/h) is short of 3 Mk II Terraformers (6,600/h). Per-cell Fertilizer (Mk II; Mk III only if dosing labour, not the Fabricator, limits) only from idle Fabricator time after the Terraformer backlog: one dose per cell per 8 h of growth is ~10x the Terraformers' Fertilizer draw.
   - [ ] Monitor area, batch progress, input buffers, and power draw; pause cleanly when any input is missing.
 
 ---
