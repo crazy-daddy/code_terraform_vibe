@@ -31,7 +31,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | this file |
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |
 | 7 | Control Room panels | [`cheatsheet/panels.md`](cheatsheet/panels.md) |
-| 8, 9, 10 | Live debugging, tiered `scripts/` + `scripts_sync.py`, offline stub tests (`tests/`) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
+| 8, 8a, 9, 10 | Live debugging, sim fast-forward via WebView2 DevTools, tiered `scripts/` + `scripts_sync.py`, offline stub tests (`tests/`) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 
 ## 🗺️ Progression Walkthroughs & Speedrun Guides
 
