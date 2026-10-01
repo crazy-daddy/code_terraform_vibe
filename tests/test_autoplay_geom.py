@@ -98,6 +98,32 @@ class RouterTests(unittest.TestCase):
         path = g.route([k(0, 0)], [k(5, 0)], wall, bridgeable=wall, max_nodes=2000)
         self.assertEqual(path, [])  # two adjacent lines cannot be crossed by one 3-tile bridge
 
+    def test_neighbour_lines_crossed_with_a_jog(self):
+        # Lines at x=2 and x=4 (one free lane between): bridges 1..3 and 3..5 in one row would
+        # share tile 3, so the route lands, steps one tile sideways and bridges from there.
+        lines = {k(x, y) for x in (2, 4) for y in range(-200, 201)}
+        path = g.route([k(0, 0)], [k(6, 0)], lines, bridgeable=lines, max_nodes=5000)
+        bridges = [b for b in g.path_plan(path) if b[0] == "bridge"]
+        self.assertEqual(len(bridges), 2)
+        first, second = (set(g.bridge_tiles(b[1], b[2])) for b in bridges)
+        self.assertFalse(first & second)
+
+    def test_no_u_turn_back_onto_a_landing(self):
+        # Single free lane at x=3 that is only 1 tile tall: no sideways room, so no route.
+        lines = {k(x, y) for x in (2, 4) for y in range(-200, 201)}
+        walls = lines | {k(3, y) for y in range(-200, 201) if y != 0}
+        path = g.route([k(0, 0)], [k(6, 0)], walls, bridgeable=lines, max_nodes=5000)
+        self.assertEqual(path, [])
+
+    def test_bridges_back_to_back(self):
+        # Lines at x=2 and x=5: bridge 1..3, next bridge starts right after at 4..6.
+        lines = {k(x, y) for x in (2, 5) for y in range(-200, 201)}
+        path = g.route([k(0, 0)], [k(7, 0)], lines, bridgeable=lines, max_nodes=5000)
+        bridges = [b for b in g.path_plan(path) if b[0] == "bridge"]
+        self.assertEqual([b[1] for b in bridges], [k(2, 0), k(5, 0)])
+        first = set(g.bridge_tiles(bridges[0][1], bridges[0][2]))
+        self.assertFalse(first & set(g.bridge_tiles(bridges[1][1], bridges[1][2])))
+
     def test_reuses_source_network_for_free(self):
         network = [k(x, 0) for x in range(10)]
         path = g.route(network, [k(9, 3)], set())

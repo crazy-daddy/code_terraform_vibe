@@ -30,7 +30,7 @@ STEP_COST = 1
 BRIDGE_COST = 6          # a bridge hop (3 tiles) costs this instead of 2 steps: bridges are a scarcer item than segments
 SOFT_TILE_COST = 4       # extra cost to walk a tile in `soft` (another site's footprint)
 ROUTE_MAX_NODES = 20000  # expanded tiles before the router gives up
-ROUTE_STEP_NODES = 12    # expanded tiles per route_step() call (worst ~280 operations each, tests/test_autoplay_geom.py)
+ROUTE_STEP_NODES = 10    # expanded nodes per route_step() call (worst ~375 operations each, tests/test_autoplay_geom.py)
 SEED_CHUNK = 40          # source tiles per route_seed() call (~80 operations each)
 
 _DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
@@ -135,9 +135,12 @@ def route_init(sources, goals, blocked, bridgeable=None, soft=None, max_nodes=RO
     `sources` to any tile in `goals`.
       blocked:    tiles the route may not enter (other networks of the medium, foreign pieces).
       bridgeable: blocked tiles a bridge may pass over (the middle of a 3-tile hop
-                  whose two end tiles are free). Default: none.
+                  whose two end tiles are free). Default: none. Bridges may not overlap:
+                  a bridge never starts or lands on the previous bridge's landing tile.
       soft:       free tiles that cost SOFT_TILE_COST extra (other sites' footprints).
     Sources cost nothing to start from, so an existing network is reused for free.
+    Search nodes are tile * 2 + landed: a tile reached by a bridge landing (may
+    not start the next bridge) is kept apart from the same tile reached on foot.
     Pass sources=() and feed them through route_seed() in SEED_CHUNK slices when
     there are many (a whole network) and the call runs atomically.
     """
@@ -167,11 +170,12 @@ def route_seed(tiles, state):
     g_cost = state["g"]
     box = state["box"]
     for tile in tiles:
-        if tile in blocked or tile in g_cost:
+        node = tile * 2
+        if tile in blocked or node in g_cost:
             continue
-        g_cost[tile] = 0
-        state["came"][tile] = None
-        heappush(state["open"], (_box_distance(tile, box), 0, tile))
+        g_cost[node] = 0
+        state["came"][node] = None
+        heappush(state["open"], (_box_distance(tile, box), 0, node))
     return []
 
 
@@ -196,37 +200,43 @@ def route_step(state, nodes=ROUTE_STEP_NODES):
         if not open_heap or state["expanded"] >= state["max_nodes"]:
             state["done"] = True
             return True
-        _f, cost, tile = heappop(open_heap)
-        if tile in closed:
+        _f, cost, node = heappop(open_heap)
+        if node in closed:
             continue
-        closed.add(tile)
+        closed.add(node)
         state["expanded"] += 1
+        tile = node // 2
         if tile in goals:
-            state["found"] = tile
+            state["found"] = node
             state["done"] = True
             return True
+        link = came[node]
+        last_land = link[2] if link else None  # landing tile of the latest bridge on this path
+        may_bridge = node % 2 == 0 and tile != last_land
         for offset, jump in _STEPS:
             nxt = tile + offset
             bridge_over = None
             if nxt in blocked:
-                if nxt not in bridgeable:
+                if not may_bridge or nxt not in bridgeable:
                     continue
                 bridge_over = nxt
                 nxt = tile + jump
-                if nxt in blocked:
+                if nxt in blocked or nxt == last_land:
                     continue
                 new_cost = cost + BRIDGE_COST
+                nxt_node = nxt * 2 + 1
             else:
                 new_cost = cost + STEP_COST
-            if nxt in closed:
+                nxt_node = nxt * 2
+            if nxt_node in closed:
                 continue
             if nxt in soft:
                 new_cost += SOFT_TILE_COST
-            if new_cost >= g_cost.get(nxt, new_cost + 1):
+            if new_cost >= g_cost.get(nxt_node, new_cost + 1):
                 continue
-            g_cost[nxt] = new_cost
-            came[nxt] = (tile, bridge_over)
-            heappush(open_heap, (new_cost + _box_distance(nxt, box), new_cost, nxt))
+            g_cost[nxt_node] = new_cost
+            came[nxt_node] = (node, bridge_over, nxt if bridge_over is not None else last_land)
+            heappush(open_heap, (new_cost + _box_distance(nxt, box), new_cost, nxt_node))
     return False
 
 
@@ -236,14 +246,14 @@ def route_path(state):
     goal tile; bridge_over is the tile a bridge hop crossed to reach `tile`,
     else None. Empty list when no route was found.
     """
-    tile = state["found"]
-    if tile is None:
+    node = state["found"]
+    if node is None:
         return []
     path = []
-    while tile is not None:
-        link = state["came"][tile]
-        path.append((tile, link[1] if link else None))
-        tile = link[0] if link else None
+    while node is not None:
+        link = state["came"][node]
+        path.append((node // 2, link[1] if link else None))
+        node = link[0] if link else None
     path.reverse()
     return path
 
