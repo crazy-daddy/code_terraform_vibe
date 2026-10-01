@@ -188,7 +188,19 @@ class RefinerTestCase(harness.StubTestCase):
         delay = self.ctrl.step()
         self.assertEqual(self.comp.recipe, "refine_sulfur_gas")
         self.assertEqual(delay, refiner.IDLE_POLL_S)
-        self.assertEqual(archive.get(refiner.STATUS_KEY)["refiner_1"]["blocker"], "no_feedstock")
+        self.assertEqual(archive.get(refiner.STATUS_KEY)["refiner_1"]["blocker"], "no_raw_supply")
+
+    def test_no_raw_stock_leaves_input_unrouted(self):
+        self.comp.recipe = "refine_sulfur_gas"
+        self.totals = {"raw_sulfur_gas": [0.0, 5000.0], "sulfur_gas": [0.0, 5000.0]}
+        routed = []
+        self.ctrl.route_input = lambda rid, spec, curr_tick: routed.append(rid)
+        self.ctrl.step()
+        self.assertEqual(routed, [])
+        self.totals = {"raw_sulfur_gas": [50.0, 5000.0], "sulfur_gas": [0.0, 5000.0]}
+        self.ctrl._totals_tick = -refiner.TOTALS_REFRESH_TICKS
+        self.ctrl.step()
+        self.assertEqual(routed, ["refine_sulfur_gas"])
 
     def test_shared_port_switch_drains_output_then_purges(self):
         self.comp.recipe = "refine_sulfur_gas"

@@ -24,7 +24,7 @@
 #     first fluid they see and report no fluid id, so only a port the old
 #     recipe shared is purged.
 #   - Ports: gas_in / liquid_in from tanks eligible for the raw fluid (own
-#     outpost first, FluidInputRouter); gas_out / liquid_out to tanks eligible
+#     outpost first, FluidInputRouter), only while the recipe has raw supply; gas_out / liquid_out to tanks eligible
 #     for the refined fluid (FluidOutputRouter).
 #   - Tar (input, 50-unit bin): refilled to full via take_item() from this
 #     outpost's storage once it drops to TAR_REFILL_AT. The outpost's tar
@@ -157,6 +157,8 @@ class RefinerController:
         self._since = None
         self._switch_to = None
         self._switch_tick = 0
+        # Recipe ids with raw feedstock available (last pick_recipe()); None = pinned, always route.
+        self._raw_ok = None
         self._last_status = None
         self._status_tick = -STATUS_REFRESH_TICKS
 
@@ -189,6 +191,10 @@ class RefinerController:
         except Exception as error:
             swallowed("refiner.RefinerController._level: port.level", error)
             return 0.0
+
+    def raw_available(self, rid):
+        """Whether rid had raw feedstock (tank stock or a staged craft) at the last pick; pinned -> True."""
+        return self._raw_ok is None or rid in self._raw_ok
 
     def shed(self):
         return self.name in (archive.get("power.shedded", []) or [])
@@ -255,12 +261,14 @@ class RefinerController:
 
     def pick_recipe(self, unlocked, current, curr_tick):
         if self.pinned:
+            self._raw_ok = None
             return self.pinned if self.pinned in unlocked else current or None
         staged = {}
         if current in unlocked:
             spec = unlocked[current]
             staged[current] = self._level(self._port(spec["input_port"])) >= spec["raw_tons"]
         candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged)
+        self._raw_ok = set(candidates)
         if self._since is None:
             self._since = curr_tick
         choice = choose_recipe(candidates, current if current in unlocked else None, curr_tick - self._since)
@@ -382,13 +390,15 @@ class RefinerController:
 
     # ------------------------------------------------------------- status
 
-    def blocker(self, spec):
+    def blocker(self, rid, spec):
         if self.shed():
             return "shed"
         if not spec:
             return "no_recipe"
         if self._switch_to:
             return "switching"
+        if not self.raw_available(rid):
+            return "no_raw_supply"
         if self.tar_count() < spec["tar"]:
             return "no_tar"
         if self._level(self._port(spec["input_port"])) < spec["raw_tons"]:
@@ -449,10 +459,12 @@ class RefinerController:
         spec = unlocked.get(current) if current else None
         if spec and not self._switch_to:
             self.top_up_tar()
-            self.route_input(current, spec, curr_tick)
+            # No raw stock anywhere: leave the input alone instead of starving and blacklisting empty tanks.
+            if self.raw_available(current):
+                self.route_input(current, spec, curr_tick)
             self.route_output(current, spec, curr_tick)
 
-        blocker = self.blocker(spec)
+        blocker = self.blocker(current, spec)
         self.publish_status(current, blocker, curr_tick)
         busy = running or blocker in (None, "switching")
         return ACTIVE_POLL_S if busy else IDLE_POLL_S
