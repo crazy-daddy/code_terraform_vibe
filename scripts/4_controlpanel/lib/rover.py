@@ -21,6 +21,7 @@ class RoverController(VehicleController):
     """
     def __init__(self, vehicle, home_base=None, cruise_throttle=None):
         super().__init__(vehicle, home_base=home_base, cruise_throttle=cruise_throttle)
+        self.role = "rover"
         self.last_target_diagnostics = {}
 
     def wh_per_meter_at_throttle(self, throttle, cargo_units=None):

@@ -395,13 +395,15 @@ def set_drone_yield_enabled(enabled):
 
 
 def drone_haulers_present(curr_tick=None):
-    """True when fleet.status holds a hauler-role drone heard from within HAULER_FRESH_TICKS."""
+    """True when fleet.status holds a hauler-role drone heard from within
+    HAULER_FRESH_TICKS. Ground vehicles publish a role too; only drone
+    entries carry "engine"."""
     tick = curr_tick if curr_tick is not None else _now_tick()
     status = archive.get(FLEET_STATUS_KEY, {})
     if not isinstance(status, dict):
         return False
     for entry in status.values():
-        if isinstance(entry, dict) and entry.get("role") == "hauler" and tick - (entry.get("tick", 0) or 0) < HAULER_FRESH_TICKS:
+        if isinstance(entry, dict) and entry.get("role") == "hauler" and entry.get("engine") and tick - (entry.get("tick", 0) or 0) < HAULER_FRESH_TICKS:
             return True
     return False
 

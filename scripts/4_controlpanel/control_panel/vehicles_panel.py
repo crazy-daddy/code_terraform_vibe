@@ -1,5 +1,6 @@
 # ct-panel: vehicles_panel
-# Control Room fleet card: live vehicle state, battery, mission, and rescue status.
+# Control Room fleet card: live vehicle state (" - docked" appended when docked),
+# battery, role and home outpost (fleet.status), mission, and rescue status.
 # Also publishes a per-vehicle "recall" toggle: on -> that vehicle abandons
 # its current job and returns to base now; off -> resumes normal operations.
 # This is a pure intent publish (archive.set), same pattern as
@@ -27,9 +28,9 @@ from fleet_decommission import decommission_state, request_decommission, cancel_
 import fleet_status
 
 # Sport Nav button only fits alongside the existing wide-layout row content
-# (role pill, battery bar, status text, location, recall switch) without
+# (chassis pill, battery bar, status text, role/home, recall switch) without
 # overlapping any of it -- narrower cards just don't show it, same trade-off
-# the row's own location text already makes via its "loc_x + 90 < recall_x" check.
+# the row's own role/home column already makes via its "home_x + 90 < controls_x" check.
 SPORT_NAV_BTN_MIN_WIDTH = 1100
 
 # Intent column (fleet.status[id]["intent"], lib/fleet_intent.py): what the
@@ -67,6 +68,25 @@ def wrap_text(text, width_px, max_lines=INTENT_LINES):
 def draw_intent(x, y, text, width_px):
     for index, line in enumerate(wrap_text(text, width_px)):
         panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
+
+
+def outpost_names():
+    """{outpost id: display name} for the home column; empty without outpost_network."""
+    network = get_component("outpost_network")
+    if not network or not hasattr(network, "outposts"):
+        return {}
+    return {o.id: o.name for o in network.outposts()}
+
+
+def draw_assignment(x, y, status, names, width_px):
+    """Role and home outpost (fleet.status "role"/"home") on two lines; blank until the script publishes them."""
+    chars = max(0, int(width_px // INTENT_CHAR_PX))
+    role = status.get("role")
+    home = status.get("home")
+    if role:
+        panel.draw_text(x, y, str(role)[:chars], 10, "text-value")
+    if home:
+        panel.draw_text(x, y + INTENT_LINE_PX, str(names.get(home, home))[:chars], 10, "text-secondary")
 
 
 # A switch keeps its own stored state; default_on only seeds it once. Code
@@ -146,6 +166,7 @@ while True:
     wide = width >= 900
     recall_x = width - 115  # fixed right-margin anchor: never overflows the card, at any width
     telemetry = fleet_status.get_all()
+    names = outpost_names()
     retiring = decommission_state()
     controls_x = recall_x - RETIRE_BTN_W - RETIRE_BTN_GAP  # left edge of the right-hand controls
 
@@ -211,28 +232,26 @@ while True:
             panel.draw_text(bar_x + bar_w + 8, y + 15, f"{level * 100:.0f}%", 10, "text-value")
 
             status_x = bar_x + bar_w + 44
-            panel.draw_text(status_x, y + 15, raw_status[:12], 10, "text-secondary")
+            status_text = f"{raw_status} - docked" if getattr(vehicle, "is_docked", False) else raw_status
+            panel.draw_text(status_x, y + 15, status_text[:18], 10, "text-secondary")
 
-            if getattr(vehicle, "is_docked", False):
-                location = "docked"
-            else:
-                location = f"({getattr(vehicle, 'x', 0):.0f}, {getattr(vehicle, 'y', 0):.0f})"
-            intent = str((telemetry.get(vehicle_id) or {}).get("intent") or "")
+            status_entry = telemetry.get(vehicle_id) or {}
+            intent = str(status_entry.get("intent") or "")
             if wide:
-                loc_x = status_x + 110
-                if loc_x + 90 < controls_x:
-                    panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
-                intent_x = loc_x + 95
+                home_x = status_x + 110
+                if home_x + 90 < controls_x:
+                    draw_assignment(home_x, y + 15, status_entry, names, 90)
+                intent_x = home_x + 95
                 intent_right = controls_x - 12
                 if role_label == "PIONEER" and width >= SPORT_NAV_BTN_MIN_WIDTH:
                     intent_right -= 92  # Sport Nav button below
                 if intent:
                     draw_intent(intent_x, y + 15, intent, intent_right - intent_x)
             else:
-                # Below the role pill, not overlapping it -- pill(40, y+22, ...)
+                # Below the chassis pill, not overlapping it -- pill(40, y+22, ...)
                 # renders taller than a 16px gap allows, so this needs real
                 # clearance (see row_height's matching bump below).
-                panel.draw_text(40, y + 46, location, 10, "text-secondary")
+                draw_assignment(40, y + 46, status_entry, names, 90)
                 if intent:
                     draw_intent(135, y + 46, intent, width - 24 - 135)
 

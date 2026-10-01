@@ -202,6 +202,7 @@ class DroneController(
             "target": target_desc or (self.current_target.get("name") if self.current_target else "none"),
             "intent": self.intent,
             "role": self.role,
+            "home": getattr(self.home_outpost, "id", None),
             "tick": self.get_current_tick(),
         }
         wrote = fleet_status.publish(self.name, telemetry)

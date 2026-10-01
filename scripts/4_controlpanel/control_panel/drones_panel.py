@@ -1,6 +1,6 @@
 # ct-panel: drones_panel
-# Control Room drone fleet card: live drone roster (battery/oil, status,
-# location) plus the fleet-wide default_cruise_throttle slider -- this is
+# Control Room drone fleet card: live drone roster (battery/oil, status with
+# " - docked" when docked, role and home outpost from fleet.status) plus the fleet-wide default_cruise_throttle slider -- this is
 # where drone.default_cruise_throttle (lib/drone_energy.py, added to mirror
 # vehicle.default_cruise_throttle exactly, see docs/AI_CHEATSHEET.md) actually
 # gets set from the UI. Same pure-intent-publish pattern as vehicles_panel.py's
@@ -82,6 +82,25 @@ def draw_intent(x, y, text, width_px):
         panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
 
 
+def outpost_names():
+    """{outpost id: display name} for the home column; empty without outpost_network."""
+    network = get_component("outpost_network")
+    if not network or not hasattr(network, "outposts"):
+        return {}
+    return {o.id: o.name for o in network.outposts()}
+
+
+def draw_assignment(x, y, status, names, width_px):
+    """Role and home outpost (fleet.status "role"/"home") on two lines; blank until the script publishes them."""
+    chars = max(0, int(width_px // INTENT_CHAR_PX))
+    role = status.get("role")
+    home = status.get("home")
+    if role:
+        panel.draw_text(x, y, str(role)[:chars], 10, "text-value")
+    if home:
+        panel.draw_text(x, y + INTENT_LINE_PX, str(names.get(home, home))[:chars], 10, "text-secondary")
+
+
 # A switch keeps its own stored state; default_on only seeds it once. Code
 # also changes a recall flag (retire request, blocked retirement), so the
 # switch is kept in step with the archive: a stored state that moved since
@@ -140,6 +159,7 @@ while True:
     wide = width >= 900
     recall_x = width - 115  # fixed right-margin anchor, matches vehicles_panel.py's vehicle card
     telemetry = fleet_status.get_all()
+    names = outpost_names()
     retiring = decommission_state()
     controls_x = recall_x - RETIRE_BTN_W - RETIRE_BTN_GAP  # left edge of the right-hand controls
 
@@ -206,24 +226,22 @@ while True:
             panel.draw_text(bar_x + bar_w + 8, y + 15, f"{level * 100:.0f}%", 10, "text-value")
 
             status_x = bar_x + bar_w + 44
-            panel.draw_text(status_x, y + 15, raw_status[:14], 10, "text-secondary")
+            status_text = f"{raw_status} - docked" if getattr(drone, "is_docked", False) else raw_status
+            panel.draw_text(status_x, y + 15, status_text[:20], 10, "text-secondary")
 
-            if getattr(drone, "is_docked", False):
-                location = str(getattr(drone, "current_station", "") or "docked")
-            else:
-                location = f"({getattr(drone, 'x', 0):.0f}, {getattr(drone, 'y', 0):.0f})"
-            intent = str((telemetry.get(drone_id) or {}).get("intent") or "")
+            status_entry = telemetry.get(drone_id) or {}
+            intent = str(status_entry.get("intent") or "")
             if wide:
-                loc_x = status_x + 120
-                if loc_x + 90 < controls_x:
-                    panel.draw_text(loc_x, y + 15, location, 10, "text-secondary")
-                intent_x = loc_x + 95
+                home_x = status_x + 120
+                if home_x + 90 < controls_x:
+                    draw_assignment(home_x, y + 15, status_entry, names, 90)
+                intent_x = home_x + 95
                 if intent:
                     draw_intent(intent_x, y + 15, intent, controls_x - 12 - intent_x)
             else:
                 # Below the kind pill, not overlapping it -- same clearance
-                # trade-off as vehicles_panel.py's narrow-layout location line.
-                panel.draw_text(40, y + 46, location, 10, "text-secondary")
+                # trade-off as vehicles_panel.py's narrow-layout role/home lines.
+                draw_assignment(40, y + 46, status_entry, names, 90)
                 if intent:
                     draw_intent(135, y + 46, intent, width - 24 - 135)
 

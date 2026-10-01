@@ -1,6 +1,7 @@
 # Shared live-telemetry dict for every ground vehicle and drone. One archive
 # key "fleet.status" = {name: {name, state, x, y, wh, level, target, intent, tick}}
-# (vehicles add "home": their HOME_BASE outpost id; drones "unit", "engine", "role")
+# (both add "home": home outpost id, and "role": job designation, None until
+# detected; drones also "unit", "engine")
 # instead of one key per vehicle -- the Data Archive has a fixed key-count cap
 # (CLAUDE.md rule 7). Written by VehicleController/DroneController
 # publish_telemetry(); the FLEET/DRONE FLEET cards read "intent" from it.

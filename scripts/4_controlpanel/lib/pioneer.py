@@ -104,6 +104,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         role = self.detect_role(role_override)
         if role is None:
             return
+        self.role = role
 
         if role == "constructor":
             self.run_construction_loop()

@@ -96,6 +96,7 @@ class VehicleController(
         # State tracking
         self.state = "INIT"
         self.intent = None  # set_intent(); published in telemetry for the fleet cards
+        self.role = None  # job designation ("hauler"/"miner"/...), set by the subclass run(); published for the fleet cards
         self.current_target = None
         self.current_target_key = None
         # True only while current_target_key holds a home-demand mine-type
@@ -197,6 +198,7 @@ class VehicleController(
             "target": target_desc or (self.current_target["name"] if self.current_target else "none"),
             "intent": self.intent,
             "home": self.home_base,
+            "role": self.role,
             "tick": self.get_current_tick()
         }
         wrote = fleet_status.publish(self.name, telemetry)
