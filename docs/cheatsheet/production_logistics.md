@@ -1,4 +1,4 @@
-# Production, Storage & Logistics (§1j, §2a-0…§2a-3, §2c, §2d, §2i, §2k-1, §2k-3, §2l)
+# Production, Storage & Logistics (§1j, §1m, §2a-0…§2a-3, §2c, §2d, §2i, §2k-1, §2k-3, §2l)
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Vehicle/drone energy, roles and fleet upgrades live in [`vehicles_drones.md`](vehicles_drones.md).
 
@@ -14,6 +14,17 @@ A drill needs no control. It extracts on its own; the only script surface is `dr
 - Thin script passes `drill_type` (published as `type`, used by `drill_sites.discover_drill_ids()`).
 - **Telemetry** `drill.status` (§4). Drills sit on mineral sites, not the outpost network, so `ArchiveCleaner.clean_machine_status()` can't prune them; each publish prunes other entries older than `STATUS_STALE_TICKS = 36000` instead.
 - **Pickup advert**: the `drill.status` entry's `items` is what the reverse hauler (§2i) reads as the drill's free stock; its position comes from `drill.positions`.
+
+### 1m. Weather Station Signal Decoding (`lib/weather_signals.py`, tier `7_miningdrills`)
+
+Recovers storm aftermath coordinates (Raw Uranium from dust storms, Storm Glass from thunderstorms; docs/guide/weather_system.md) and publishes them for drone collection. Collection itself is not automated yet.
+
+- **Reception** (simworker `Fre()`): a powered station hears every `broadcast` copy plus its own biome's dust channel, planet-wide (no distance check). Thunder: 4 packets, all broadcast, so one station suffices. Dust: `DUST_PACKET_TOTAL = 8` packets, packet 1 broadcast, the other 7 spread over all 5 biome channels, so a dust message completes only with one powered station in **every** biome. Missing biomes are warned on change.
+- **One running script**: `signal_receiver` is a read-only property, so the leader (lowest id among powered stations) reads every station's receiver; every other station's script ends at once. Stations re-discovered (and leadership re-checked) every `STATION_REFRESH_SWEEPS = 10` sweeps. Weather Stations are in no shed tier (§1a).
+- **Sweep**: every `SWEEP_GAME_HOURS = 1.0` world-clock hour (`clock.real_seconds_per_hour()`, fallback `DEFAULT_REAL_SECONDS_PER_HOUR = 25.0`). Messages stay audible until storm end + `SIGNAL_GRACE_GH = 4.0`.
+- **Validation**: valid copy = `sum(ord(c) for c in data) == checksum` and `data` = `event_id|number|total|dx|dy` matching the copy's fields. Noise copies reuse the valid checksum with a changed dx/dy. Coordinate = sum of dx/dy over packets 1..total (absolute world x/y).
+- **Timing**: aftermath appears at storm end = `expires_at_gh − SIGNAL_GRACE_GH` (`ready_gh`) and lasts `AFTERMATH_WINDOW_GH` = uranium 48 h, storm_glass 96 h. The coordinate is usually known before `ready_gh`. Units: uranium 14–28, glass 2–4 (`AFTERMATH_UNITS`); one `collect()` takes at most 5.
+- **Archive** (§4): `weather.signals` (incomplete messages, kept across restarts; dropped when their window closes) and `weather.aftermaths` (decoded sites, pruned after `expires_gh`). The leader's Signal Board shows the newest decoded site via `resolve()`.
 
 ### 2a-0. Supply Dock cargo draining (`lib/supply_dock.py` `SupplyDockController`)
 

@@ -19,7 +19,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1l | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule (§1l-1); Wildlife automation: planner, Habitat, Feed Maker (§1l-2) | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
-| 1j | Field Mining Drill telemetry | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
+| 1j, 1m | Field Mining Drill telemetry, Weather Station signal decoding | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2, 2a | Vehicle table, vehicle energy budgeting, claims, recall, navigation | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
 | 2a-0 … 2a-3 | Supply Dock, demand cascade, multi-Fabricator/Smelter/Dock, per-site order trees, `SourceCache` | [`cheatsheet/production_logistics.md`](cheatsheet/production_logistics.md) |
 | 2b, 2b-1 | Vehicle mining, Pioneer roles, Pioneer auto-upgrade | [`cheatsheet/vehicles_drones.md`](cheatsheet/vehicles_drones.md) |
@@ -108,6 +108,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Wildlife automation (revival schedule walk, feed demand, Forage reserve, life-form requests; Habitat revival/feed/fluid bands/parking; demand-driven feed crafting) | `wildlife_planner.py` (run by `control_room_automation.py`) + `habitat.py` + `feed_maker.py` (thin `bio/habitat.py`, `bio/feed_maker.py`), shared keys/tunables `wildlife_common.py` — see §1l-2 (tier `9_wildlife`) |
 | Water Pump byproduct salt as pull-hauler source; home salt request (field + Terraformers to 5m km²) | `pump_salt.py` — see §2i and §1k Salt budget (tier 4 lib, imported by `vehicle_cargo.py` and the Control Room Automation) |
 | Field Mining Drill telemetry (fill, time-to-full, stall warnings, pickup advert) | `mining_drill.py` — see §1j (tier `7_miningdrills`) |
+| Weather Station signal decoding (storm aftermath coordinates for Raw Uranium / Storm Glass) | `weather_signals.py` — see §1m (tier `7_miningdrills`) |
 | Field Mining Drills as pull-hauler sources (recorded positions, connect/take) | `drill_sites.py` — see §2i (lives in tier 4 lib, since the hauler imports it at every tier) |
 | Fabrication | `fabricator.py` |
 | Thermal Cap (steam capture, anti-overpressure) | `thermal_cap.py` |

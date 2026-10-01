@@ -20,7 +20,7 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 
 Repo moved to a dev root (`C:\Users\Adrian\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
 
-- [ ] **`weather_station`** had no non-empty instance to seed a canonical script from — still needs one written at whatever tier it belongs.
+- [x] **`weather_station`** canonical script written (`7_miningdrills/weather/weather_station.py`, `lib/weather_signals.py`; see Phase 10).
 - [x] **`7_miningdrills` tier (2026-09-23)** — gated on the first deployed Mining Drill of any variant via the new OR-key `"buildings_any"` (`criteria_met()` in `devtools/scripts_sync.py`). Telemetry controller written (`7_miningdrills/lib/mining_drill.py`, thin `mining/mining_drill{,_industrial,_heavy}.py`; publishes `drill.status`, warns on full/stalled/near-full — see `docs/AI_CHEATSHEET.md` §1j). Not yet live-verified; confirm 1 stockpile unit = 1 t for the time-to-full estimate.
 - [ ] **Extend `.criteria` beyond `tech`/`outpost_count`** if a future tier needs a Terraform-Progress-style numeric threshold — no plain "total TP" field was found in the save state on a quick pass this session; would need another look at `state.planet` or elsewhere in the save schema.
 - [ ] **Adopt `inspirations/vakermit`'s `build_docs.py` workflow** *(partly covered 2026-09-24: `devtools/split_docs_manual.py` now regenerates `docs/` from an in-game DOCS Manual export — the remaining gain would be skipping the manual export step)* (extracts `docs/` straight from the game's own binary, keyed by content not byte offsets) as a maintenance utility for refreshing `docs/` after game updates. Deferred this session since `docs/` isn't currently known to be stale and this is a separate side quest from the scripts/ restructuring. See `inspirations/vakermit/tools/build_docs.py`, `jsparse.py`, `pe.py` for the reference implementation.
@@ -342,6 +342,15 @@ Automates Phase 6 end to end as a new `scripts/9_wildlife/` tier (thin entrypoin
 - [ ] **Open questions for later:** which biome outposts exist today. (Resolved: typeIds are `feed_maker` and `habitat`, from `state.machines`.)
 
 ---
+
+## ☢️ Phase 10: Nuclear power (in progress)
+
+Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium → Fuel Assembler makes Fuel Rods → Reactor (5,000 W, cooling water). Nuclear Program is researched.
+
+- [x] **Weather Station signal decoding** (`lib/weather_signals.py`, §1m): one leader script reads every station's receiver, validates checksums, assembles coordinates into `weather.aftermaths`. Not yet live-verified.
+- [ ] **Station coverage**: dust (uranium) messages need a powered station in all 5 biomes; only 1 station is deployed (`outpost_5`). Buy and deploy one per missing biome (60,000 cr each).
+- [ ] **Aftermath collection**: drone role that takes `weather.aftermaths` entries (claimed, one drone per site), flies to the exact coordinate after `ready_gh`, repeats `collect()` (5 units per batch) until `nothing_here`, and unloads at home. Uranium needs Shield Plating or exposure management (+40 per unplated batch, cap 100, service clears 10/h).
+- [ ] **Fuel Assembler + Reactor** controllers (docs/components/fuel_assembler.md, reactor.md, lead_cask.md).
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations
 - [ ] Standardize every long-running script:
