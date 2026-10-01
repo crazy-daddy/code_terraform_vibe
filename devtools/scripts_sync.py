@@ -19,10 +19,13 @@ differences documented in the plan this came from:
      dirs claiming the same number (`10_hi`, `10_ho`) raise `TierNamingError`
      rather than being guessed past. The active tier is derived automatically,
      per save, from the save's own state file - see `read_save_state()`. No
-     hint file, no manual bookkeeping. This assumes unlocks are monotonic
-     (`resolve_active_tier()` stops walking at the first tier whose `.criteria`
-     isn't met yet) - an out-of-order save where a higher tier's `.criteria`
-     is satisfied before a lower one's isn't handled specially.
+     hint file. `resolve_active_tier()` stops walking at the first tier whose
+     `.criteria` isn't met - an out-of-order save where a higher tier's
+     `.criteria` is satisfied before a lower one's isn't handled specially.
+     Building-count criteria can stop holding once buildings are sold, so the
+     highest tier a save has reached is kept in
+     devtools/.sync-backups/tier_high_water.json and the active tier never
+     drops below it (delete the save's entry there to re-derive it).
 
   2. `lib/` is not a flat, single-version directory - it is itself a per-tier
      category (`scripts/<tier>/lib/<module>.py`), resolved with the exact same
@@ -526,6 +529,41 @@ def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: Optional[
             active = tier
         else:
             break
+    return _apply_tier_high_water(save_dir, tiers, active)
+
+
+# Highest tier each save has reached (save folder name -> tier dir name).
+# Building-count criteria can stop holding after the player sells or
+# decommissions buildings (e.g. Steam Turbines replaced by a Reactor); the
+# save keeps its progression, so the active tier never drops below this mark.
+TIER_HIGH_WATER_FILE = BACKUP_DIR / "tier_high_water.json"
+
+
+def _tier_high_water_store() -> dict:
+    try:
+        data = json.loads(TIER_HIGH_WATER_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _apply_tier_high_water(save_dir: Path, tiers: list, active: str) -> str:
+    """The higher of `active` and this save's recorded high-water tier; records
+    a new mark when `active` exceeds it. A recorded tier no longer under
+    scripts/ is ignored."""
+    store = _tier_high_water_store()
+    mark = store.get(save_dir.name)
+    if mark in tiers and tiers.index(mark) > tiers.index(active):
+        warn("  tier  criteria now resolve to %s; staying at reached tier %s (%s)"
+             % (active, mark, show(TIER_HIGH_WATER_FILE)))
+        return mark
+    if mark != active:
+        store[save_dir.name] = active
+        try:
+            TIER_HIGH_WATER_FILE.parent.mkdir(parents=True, exist_ok=True)
+            TIER_HIGH_WATER_FILE.write_text(json.dumps(store, indent=1, sort_keys=True), encoding="utf-8")
+        except OSError as error:
+            warn("  tier  cannot write %s: %s" % (show(TIER_HIGH_WATER_FILE), error))
     return active
 
 
