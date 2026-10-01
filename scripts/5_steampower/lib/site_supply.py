@@ -34,7 +34,9 @@
 #     pulled in from the other supply sites (outposts with a Smelter or
 #     Fabricator) that built them -- blueprint materials from every other
 #     outpost: request local + in-flight + min(short, free there), kept while
-#     units are in flight.
+#     units are in flight. A blueprint material no Fabricator will add more
+#     of (settled_items()) is flagged urgent: haulers skip their minimum
+#     load for it, since waiting brings no fuller load.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
 # leftover ore becomes free stock that pull haulers take wherever it is
@@ -58,7 +60,7 @@
 
 from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
-from production import discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_site_ship_plan, ship_units, SourceCache
+from production import discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
@@ -127,11 +129,12 @@ def free_elsewhere(item_ids, site_id, outposts, requests, tick):
     return totals
 
 
-def consumer_wants(outpost, consumers, sources, requests, tick, flying, outposts=None, anywhere=()):
-    """{root_item: (target, have, min)} finished root targets consumed at
-    this outpost that it pulls in from the other supply sites, or from every
-    other outpost for items in `anywhere` (blueprint materials). See the
-    module comment."""
+def consumer_wants(outpost, consumers, sources, requests, tick, flying, outposts=None, anywhere=(), urgent=()):
+    """{root_item: (target, have, min, urgent)} finished root targets
+    consumed at this outpost that it pulls in from the other supply sites,
+    or from every other outpost for items in `anywhere` (blueprint
+    materials); items in `urgent` are flagged urgent. See the module
+    comment."""
     site_id = getattr(outpost, "id", None)
     item_ids = sorted(i for i, sites in consumers.items() if (sites or {}).get(site_id, 0) > 0)
     others = [o for o in sources if getattr(o, "id", None) != site_id]
@@ -148,8 +151,8 @@ def consumer_wants(outpost, consumers, sources, requests, tick, flying, outposts
         short = max(0, consumers[item_id][site_id] - local)
         pull = min(short, spare.get(item_id, 0))
         if pull > 0 or flying.get(item_id, 0) > 0:
-            wants[item_id] = (local + pull, have.get(item_id, 0), local + pull)
-            log.debug(f"consumer_wants({site_id}): {item_id} consumed={consumers[item_id][site_id]} local={local} free at other sites={spare.get(item_id, 0)} -> pull {pull}")
+            wants[item_id] = (local + pull, have.get(item_id, 0), local + pull, item_id in urgent)
+            log.debug(f"consumer_wants({site_id}): {item_id} consumed={consumers[item_id][site_id]} local={local} free at other sites={spare.get(item_id, 0)} -> pull {pull}{' (urgent)' if item_id in urgent else ''}")
     return wants
 
 
@@ -174,14 +177,14 @@ def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
         log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
 
 
-def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None, anywhere=()):
+def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None, anywhere=(), urgent=()):
     """{item_id: (target, have, min)} this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
     nothing). See the module comment."""
     log.start("plan_site", level="debug")
     site_id = getattr(outpost, "id", None)
     flying = in_flight(site_id, tick)
-    wants = consumer_wants(outpost, consumers or {}, sources or [], requests, tick, flying, outposts, anywhere)
+    wants = consumer_wants(outpost, consumers or {}, sources or [], requests, tick, flying, outposts, anywhere, urgent)
     smelter_ids = discover_smelter_ids(outpost)
     fabricator_ids = discover_fabricator_ids(outpost)
     if not smelter_ids and not fabricator_ids:
@@ -232,13 +235,32 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     return wants
 
 
+def settled_items(item_ids, roots, cache):
+    """The item_ids no Fabricator will add more of: none in any Fabricator's
+    pipeline (production.get_fabricator_pipeline()) and no units of its root
+    target left to build (production.root_remaining()). Hauling one of
+    these cannot wait for a fuller load."""
+    pipeline = get_fabricator_pipeline(cache)
+    settled = set()
+    for item_id in sorted(item_ids):
+        building = pipeline.get(item_id, 0)
+        remaining = root_remaining(item_id, roots.get(item_id, 0), cache)
+        if building <= 0 and remaining <= 0:
+            settled.add(item_id)
+        log.debug(f"settled_items: {item_id} pipeline={building} root remaining={remaining} -> {'urgent' if item_id in settled else 'wait for batch'}")
+    return settled
+
+
 def _unchanged(existing, wants, tick):
     """True when the published entries match wants and are young enough to skip a republish."""
     if set(existing) != set(wants):
         return False
-    for item_id, (target, _have, floor) in wants.items():
+    for item_id, values in wants.items():
+        target, floor = values[0], values[2]
         entry = existing[item_id]
         if entry.get("target") != target or request_min(entry) != min(floor, target):
+            return False
+        if bool(entry.get("urgent")) != (len(values) > 3 and bool(values[3])):
             return False
         if tick - entry.get("tick", 0) >= REPUBLISH_TICKS:
             return False
@@ -267,10 +289,13 @@ def planned_requests(requests, planned, tick):
         if not wants:
             continue
         bucket = result.setdefault(site_id, {})
-        for item_id, (target, have, floor) in wants.items():
+        for item_id, values in wants.items():
+            target, have, floor = values[0], values[1], values[2]
             entry = {"target": target, "have": have, "by": SITE_SUPPLY_REQUESTER, "tick": tick}
             if floor is not None and floor < target:
                 entry["min"] = max(0, floor)
+            if len(values) > 3 and values[3]:
+                entry["urgent"] = True
             bucket[item_id] = entry
     return result
 
@@ -462,7 +487,8 @@ def add_evicted(outpost, wants, extra, tick):
     have = outpost_stock(items, outpost)
     flying = in_flight(site_id, tick)
     for item_id in items:
-        target, _have, floor = wants.get(item_id, (0, 0, 0))
+        current = wants.get(item_id, (0, 0, 0))
+        target, floor = current[0], current[2]
         level = have.get(item_id, 0) + flying.get(item_id, 0) + extra[item_id]
         if level > target:
             wants[item_id] = (level, have.get(item_id, 0), floor)
@@ -480,11 +506,12 @@ def publish_site_requests(curr_tick):
     _roots, consumers, _outputs = fabricator_root_targets(cache)
     sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o)]
     anywhere = set(blueprint_required_items(cache))
+    urgent = settled_items(anywhere, _roots, cache)
     planned = {}
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)
         if site_id is not None:
-            planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources, anywhere)
+            planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources, anywhere, urgent)
     # Stranded check against this pass's plan: a site that just lost its
     # Smelters frees its ore for eviction right away.
     _home_wants, evicted = evict_stranded(outposts, planned_requests(requests, planned, curr_tick), curr_tick, consumers, smelting_sites(outposts), evictable_goods(cache))
@@ -502,7 +529,7 @@ def publish_site_requests(curr_tick):
         if not _publish(site_id, SITE_SUPPLY_REQUESTER, wants, requests, curr_tick):
             continue
         if wants:
-            notes.append(f"Site supply at '{site_id}': {', '.join(f'{i} {t}' for i, (t, _h, _m) in sorted(wants.items()))}.")
+            notes.append(f"Site supply at '{site_id}': {', '.join(f'{i} {wants[i][0]}' for i in sorted(wants))}.")
         else:
             notes.append(f"Site supply at '{site_id}': withdrawn (no Smelter/Fabricator demand).")
     if notes:

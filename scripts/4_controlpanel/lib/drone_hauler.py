@@ -119,6 +119,7 @@ class DroneHaulerMixin:
             depots_by_outpost.setdefault(depot.get("outpost_id"), []).append(depot)
 
         dests = []
+        requests = logistics_requests.active_requests(curr_tick)
         for outpost_id, depots in depots_by_outpost.items():
             outpost = outposts.get(outpost_id)
             if outpost is None:
@@ -135,8 +136,9 @@ class DroneHaulerMixin:
             need = {i: u for i, u in need.items() if u > 0}
             buffer = {i: u for i, u in buffer.items() if u > 0}
             if need or buffer:
+                urgent = {i for i, e in requests.get(outpost_id, {}).items() if e.get("urgent") and i in need}
                 dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots,
-                              "need": need, "buffer": buffer, "deficits": self._sum_tiers(need, buffer)})
+                              "need": need, "buffer": buffer, "deficits": self._sum_tiers(need, buffer), "urgent": urgent})
         self._warn_if_home_has_no_depot(outposts, depots_by_outpost)
         self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}=need {d['need']} buffer {d['buffer']}" for d in dests) or "none"))
         self._host.log.end()
@@ -387,9 +389,10 @@ class DroneHaulerMixin:
     def _plan_haul_job(self, curr_tick):
         """
         Best job network-wide, or None: for every destination, plan a route
-        over drills and other Depot outposts and rank it by need-tier units,
-        then all units, per (route meters + HAUL_TRIP_OVERHEAD_M)
-        (logistics_requests.haul_rank()). Jobs not flyable even on a full tank are
+        over drills and other Depot outposts and rank it by urgent units,
+        need-tier units, then all units, per (route meters +
+        HAUL_TRIP_OVERHEAD_M) (logistics_requests.haul_rank()). A route
+        carrying an urgent item skips HAUL_MIN_LOAD_UNITS. Jobs not flyable even on a full tank are
         dropped; the caller refuels first when the chosen job needs more
         than is aboard.
         Returns {"dest", "route", "units", "fuel"}.
@@ -426,15 +429,17 @@ class DroneHaulerMixin:
         for dest, candidate in self._candidate_routes(dests, sources, capacity, start, services):
             route, units, need_units, meters, fuel = (candidate["route"], candidate["units"], candidate["need_units"],
                                                        candidate["meters"], candidate["fuel"])
-            wanted = min(HAUL_MIN_LOAD_UNITS, reachable[dest["outpost_id"]])
+            urgent = logistics_requests.urgent_units(route, dest.get("urgent", ()))
+            # An urgent blocker flies alone; nothing more arrives by waiting.
+            wanted = 1 if urgent > 0 else min(HAUL_MIN_LOAD_UNITS, reachable[dest["outpost_id"]])
             if not route or units < wanted or units <= 0:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) < minimum {wanted}; skipped.")
                 continue
             if fuel > full_tank:
                 self._host.log.debug(f"haul: '{dest['outpost_id']}' needs {fuel:.1f} {self._host.energy_unit()} > full tank {full_tank:.1f}; out of range.")
                 continue
-            rank = logistics_requests.haul_rank(units, need_units, meters, HAUL_TRIP_OVERHEAD_M)
-            self._host.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({need_units} need), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, need rate {rank[0]:.4f}, rate {rank[1]:.3f}.")
+            rank = logistics_requests.haul_rank(units, need_units, meters, HAUL_TRIP_OVERHEAD_M, urgent)
+            self._host.log.debug(f"haul: candidate -> '{dest['outpost_id']}' via {[s['id'] for s, _l in route]}: {units} unit(s) ({need_units} need, {urgent} urgent), {meters:.0f} m, fuel {fuel:.1f} {self._host.energy_unit()}, urgent rate {rank[0]:.4f}, need rate {rank[1]:.4f}, rate {rank[2]:.3f}.")
             if logistics_requests.rank_beats(rank, best_rank):
                 best, best_rank = {"dest": dest, "route": route, "units": units, "wanted": wanted, "fuel": fuel, "seen": seen}, rank
         self._host.log.end()

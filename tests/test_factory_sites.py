@@ -160,6 +160,32 @@ class ConsumerHaulingTests(StubTestCase):
         self.publish()
         self.assertEqual(w.notebook.get(logistics_requests.REQUESTS_KEY, {}), {})
 
+    def test_settled_blueprint_material_is_urgent(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"liquid_pipe_bridge": 1})
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_fabricator("fabricator_2", self.remote)
+        only_target(w, "gas_pipe_segment", 0)
+        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
+        self.publish()
+        self.assertEqual(logistics_requests.urgent_items("outpost_2", w.clock.now), {"liquid_pipe_bridge"})
+
+    def test_blueprint_material_still_to_build_is_not_urgent(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"liquid_pipe_bridge": 1})
+        w.add_warehouse("wh_remote", self.remote)
+        bridge = Recipe("craft_liquid_pipe_bridge", {"liquid_pipe_segment": 2}, "liquid_pipe_bridge", duration_game_hours=0.1)
+        w.add_fabricator("fabricator_2", self.remote, [bridge])
+        only_target(w, "gas_pipe_segment", 0)
+        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.add_blueprint("bp_1", "liquid_pipe_bridge")
+        w.add_blueprint("bp_2", "liquid_pipe_bridge")
+        self.publish()
+        # One of two exists, one is still to build: wait for the batch.
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["liquid_pipe_bridge"], (1, 1))
+        self.assertEqual(logistics_requests.urgent_items("outpost_2", w.clock.now), set())
+
 
 class StrandedOreTests(StubTestCase):
     def setUp(self):

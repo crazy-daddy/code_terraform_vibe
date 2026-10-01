@@ -147,6 +147,11 @@ class HaulRankTests(unittest.TestCase):
         self.assertTrue(logistics_requests.rank_beats(a, b))
         self.assertTrue(logistics_requests.rank_beats(b, None))
 
+    def test_urgent_units_beat_need_rate(self):
+        need_run = logistics_requests.haul_rank(100, 100, 100, 300)
+        blocker = logistics_requests.haul_rank(1, 1, 2000, 300, urgent_units=1)
+        self.assertTrue(logistics_requests.rank_beats(blocker, need_run))
+
 
 class FluidOnlySwitchTests(StubTestCase):
     def test_met_fluid_only_recipe_switches_while_running(self):

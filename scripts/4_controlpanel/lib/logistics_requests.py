@@ -14,7 +14,8 @@
 # Archive shape (one shared dict per concern, CLAUDE.md rule 7):
 #   logistics.requests = {outpost_id: {item_id: {"target": t, "have": h,
 #                                                "min": m, "by": requester,
-#                                                "buy": bool, "tick": n}}}
+#                                                "buy": bool, "urgent": bool,
+#                                                "tick": n}}}
 #   logistics.pickups  = {pickup_key: {"vehicle", "dest", "source",
 #                                      "item_id", "units", "tick",
 #                                      "aboard"}}
@@ -32,6 +33,10 @@
 # "buy": True (set_requests(buyable=True)) lets a Pioneer pull hauler buy the
 # item at the Shop on a home pickup (SHOP_SOURCE_ID) when no free stock covers
 # it; unflagged requests are never bought.
+# "urgent": True marks a blocker nothing more will arrive for by waiting
+# (lib/site_supply.py: a blueprint material no Fabricator is still building).
+# A route carrying an urgent item skips the hauler's minimum load and ranks
+# first (haul_rank(), urgent_items()).
 # "source" (outpost or drill id, None for legacy entries) lets a planner
 # debit stock another hauler has already promised itself (reserved_from()),
 # so two haulers never plan the same units at the same source.
@@ -60,27 +65,39 @@ DRONE_YIELD_KEY = "logistics.drone_yield"
 # gap (the field Harvester republishes between care tours, ~5 minutes).
 REQUEST_STALE_TICKS = 6000
 
-def haul_rank(units, need_units, meters, overhead_m):
+def haul_rank(units, need_units, meters, overhead_m, urgent_units=0.0):
     """
-    Planner ranking of one haul/pull candidate: (need-tier units, all
-    units) per (route m + overhead_m). Compared with rank_beats(): need
-    throughput decides, all units only break a tie, so a trip serving a
-    requester that is about to stall always beats filling a buffer however
-    big the buffer load is.
+    Planner ranking of one haul/pull candidate: (urgent units, need-tier
+    units, all units) per (route m + overhead_m). Compared with
+    rank_beats(): urgent throughput decides, then need throughput, all
+    units only break a tie, so a trip serving a requester that is about to
+    stall always beats filling a buffer however big the buffer load is.
     """
     per = meters + overhead_m
     if per <= 0:
         per = 1.0
-    return (need_units / per, units / per)
+    return (urgent_units / per, need_units / per, units / per)
 
 
 def rank_beats(rank, best):
     """True when haul_rank() `rank` beats `best` (None = no candidate yet)."""
     if best is None:
         return True
-    if rank[0] != best[0]:
-        return rank[0] > best[0]
-    return rank[1] > best[1]
+    for mine, theirs in zip(rank, best):
+        if mine != theirs:
+            return mine > theirs
+    return False
+
+
+def urgent_items(outpost_id, curr_tick=None):
+    """Item ids whose request at `outpost_id` is flagged urgent."""
+    requests = active_requests(curr_tick).get(outpost_id, {})
+    return {item_id for item_id, entry in requests.items() if entry.get("urgent")}
+
+
+def urgent_units(route, urgent):
+    """Units of `urgent` items a route [(source, [(item_id, units), ...]), ...] carries."""
+    return sum(n for _src, loads in route for i, n in loads if i in urgent)
 
 # A drone hauler counts as present (drone_served_source()) while its
 # fleet.status heartbeat is younger than this (10 minutes).
@@ -120,8 +137,9 @@ def _is_fresh(entry, curr_tick, stale_ticks):
 def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
     """
     Replaces every request `requester` holds at `outpost_id` with `wants`
-    ({item_id: (target, have)} or {item_id: (target, have, min)}), in one
-    transaction. Without min the whole target is need tier. buyable=True
+    ({item_id: (target, have)}, (target, have, min) or (target, have, min,
+    urgent)), in one transaction. Without min the whole target is need
+    tier; urgent=True flags the entry "urgent". buyable=True
     marks the entries as Shop-buyable (buyable_deficits()): a Pioneer pull
     hauler may buy them at home instead of finding free stock. An empty
     `wants` just withdraws the requester's entries there. Stale entries of
@@ -151,6 +169,8 @@ def set_requests(outpost_id, requester, wants, curr_tick=None, buyable=False):
                     entry["min"] = max(0, values[2])
                 if buyable:
                     entry["buy"] = True
+                if len(values) > 3 and values[3]:
+                    entry["urgent"] = True
                 bucket[item_id] = entry
             requests[outpost_id] = bucket
         return requests
