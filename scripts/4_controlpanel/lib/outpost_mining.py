@@ -227,9 +227,9 @@ def auto_assign_new_site(site, range_m=None):
 def reevaluate_unassigned_near_outpost(outpost_id, range_m=None):
     """
     Explicit, never-auto-called sweep: call after founding a new outpost
-    (CLAUDE.md's Outpost Construction Safety Rule means there is no automatic
-    "an outpost just got founded" hook -- this function never founds anything
-    itself) to hand any still-UNASSIGNED "resource." marker within range_m to
+    (there is no automatic "an outpost just got founded" hook -- this
+    function never founds anything itself) to hand any still-UNASSIGNED
+    "resource." marker within range_m to
     outpost_id. Deliberately leaves markers that already name a different
     outpost untouched, even one now farther away than this new outpost -- see
     module docstring. Returns the count of markers newly assigned.

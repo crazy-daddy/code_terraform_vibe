@@ -21,8 +21,8 @@ You are an expert automation engineer and Python developer specializing in the g
    - Always enforce "there-and-back" energy budgeting (safety margin + hard emergency-reserve floor, per-vehicle calibrated Wh/meter) exactly as implemented in `lib/vehicle_energy.py` — see [`docs/cheatsheet/vehicles_drones.md`](docs/cheatsheet/vehicles_drones.md#2a-vehicle-energy-budgeting-detail-libvehicle_energypy-vehicleenergymixin) for current constants.
    - Use atomic site reservations in `archive` (`lib/vehicle_claims.py`) with heartbeat renewal and timeout expiration to prevent duplicate assignments or collisions.
    - Enforce deadlock/terrain stall detection and staggered base staging slots (`lib/vehicle_navigation.py`).
-5. **Outpost Construction Safety Rule**:
-   - **NEVER** automatically found or construct an Outpost! Outpost foundation increases future outpost costs. All construction must be explicitly gated by human operator approval (e.g. via Control Panel or explicit command) — **until** the planned building planner (deploys buildings from inventory via script; see TODO.md) exists. Outposts can now be decommissioned, so founding is no longer permanent; once the building planner ships, it may place outposts without per-instance human approval. Manual or ad-hoc script-driven founding outside the planner stays gated under this rule.
+5. **Outpost Founding**:
+   - Scripts may found outposts: outposts can be decommissioned, so founding is not permanent. Each founding still raises the cost of the next outpost, so code that founds one logs why (`debug()` decision trail, Development Workflow rule 7). The `autoplay/` infrastructure planner does not plan outposts yet; it places only extractors, pipes, bridges and power lines.
 6. **Decoupled Inter-Component Communication**:
    - Prefer Signal Bus (`get_component("comms")`) for real-time order/event broadcasts with age/stale checks (`latest_info()`).
    - Provide direct component read fallbacks when Signal Bus publishers are missing or stale.
