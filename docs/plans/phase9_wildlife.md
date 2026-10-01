@@ -145,6 +145,25 @@ The state is derived live each step, so a restart is safe: `species()`, `revival
 - `docs/DESIGN_HISTORY.md`: add a short entry on why revival is Insight-gated.
 - `TODO.md`: tick the done Phase 9 items, note that parking and the panel card are deferred, and resolve the open question (typeId `feed_maker`).
 
+## Exotic fluid supply vs demand (16 Habitats, estimate)
+
+Deposit ranges: [docs/gameknowledge/exotics.md](../gameknowledge/exotics.md). Demand: the Mk II "all 16" totals of [docs/cheatsheet/wildlife.md](../cheatsheet/wildlife.md) §1l, spread evenly over about 3,500 h (the 16-Habitat schedule's ~147 d). Supply: every deposit at its worst roll (lowest peak rate, shortest active, longest dormant), refining 1:1. The optimizer models only a per-tier ready time, not these rates.
+
+The "untreated" totals ignore the retain perks. Four species have one: `bone_walker` (gas and liquid), `vent_drifter` (gas), `tidal_cephalopod` (liquid), `glacial_wyrm` (liquid). A retained apex stage uses the species' base fluid. Adjusted totals below are rough (per-species doc figures moved between fluids) and assume all four perks are bought, which the 32 spare Insight allows.
+
+| Fluid | Mk II total (t) | Adjusted (t) | Mean demand (t/h) | Worst supply (t/h) | Verdict |
+|---|---|---|---|---|---|
+| sulfur_gas (raw) | 30,614 | ~23,800 | 6.7 | 10 (2 deposits) | OK, tight before tar |
+| cryofluid (raw) | 19,040 | ~18,260 | 5.2 | 10 (2) | OK |
+| quicksilver (raw) | 4,877 | ~2,440 | 0.7 | 2.3 (1) | OK, `spire_drake` only |
+| chlorine (raw) | 8,940 | 8,940 | 2.5 | 2.3 (1) | short |
+| brine | 20,295 | ~23,500 | 6.7 | 31 (3) | fine |
+| swamp_gas + ammonia | 18,658 | ~25,500 | 7.2 | 62 (6) | fine |
+
+- **Chlorine is the risk.** Only `spire_drake` and `glacial_wyrm` need it (~4,470 t each), `glacial_wyrm`'s retain perk covers liquid only, and the demand sits in the late legendary stages, far shorter than the full run. A single worst-roll deposit then gates the finish. Even the best roll averages only 13.8 t/h. Bank chlorine in tanks ahead of the legendary stages.
+- The averages assume peak-rate capture for the whole active phase. Live, ammonia_2 averages about 13 t/h, near the worst common roll (10.5 t/h), so real margins may be smaller.
+- Open: tar draw for the refined fluids (about 6.7 t/h of sulfur_gas at the mean), tank capacity for banking, and a per-stage demand timeline to turn the chlorine concern into a number. Next step if wanted: cap each fluid's supply in `devtools/wildlife_optimizer.py` from the deposits' real rates and cycles read from the save.
+
 ## Verification
 - Unit tests (`tests/`, `harness.World` + ad-hoc fakes as in `tests/test_mining_drill.py`):
   - `test_wildlife_model.py`: the growth-hours table in §1l within ~5 %, and the Insight curve.
