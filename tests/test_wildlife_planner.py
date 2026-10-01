@@ -152,6 +152,12 @@ class FeedDemandTests(harness.StubTestCase):
         plan = wp.build_plan(snap(habitats=1, statuses=statuses))
         self.assertNotIn(wc.feed_item_of("salt_tortoise"), plan["feed_demand"])
 
+    def test_starved_colony_keeps_feed_demand(self):
+        statuses = {"habitat_1": established("salt_tortoise", pop=800, rate=0.0, feed_level=0.0)}
+        plan = wp.build_plan(snap(habitats=1, statuses=statuses))
+        row = plan["feed_demand"][wc.feed_item_of("salt_tortoise")]
+        self.assertGreaterEqual(row[0], wc.FEED_TOPUP_TARGET)
+
     def test_forage_reserve_covers_crafts_plus_one(self):
         statuses = {"habitat_1": established("magmatic_annelid", rate=10.0, feed_level=50.0)}
         plan = wp.build_plan(snap(habitats=1, statuses=statuses))

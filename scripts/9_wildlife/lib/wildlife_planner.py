@@ -236,7 +236,10 @@ def _feed_demand(snap, colonies, statuses, nodes, model):
         item = wc.feed_item_of(species)
         bin_level = float(entry.get("feed_level") or 0.0)
         if entry.get("established"):
-            rate = float(entry.get("rate") or 0.0)
+            # breeding_rate() reads 0 while the colony is blocked, an empty
+            # feed bin included; the model rate keeps a starved colony's feed
+            # in demand (a colony at its ceiling models 0).
+            rate = float(entry.get("rate") or 0.0) or (model.get(hid) or (0.0, 0.0))[1]
             per_h = wc.feed_per_hour(species, rate, nodes)
             use[species] = per_h
             target = wc.FEED_BUFFER_H * per_h
