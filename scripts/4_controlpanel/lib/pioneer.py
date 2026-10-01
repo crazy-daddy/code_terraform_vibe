@@ -356,7 +356,8 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         return total
 
     def load_construction_materials(self, job, target_count=None):
-        """Loads required_item from home Inventory or a Warehouse into cargo,
+        """Loads required_item from storage at this Pioneer's home outpost
+        (Inventory too when that is the home outpost) into cargo,
         aiming for target_count (e.g. a whole chain of upcoming same-material
         jobs) but succeeding once this job's own required_count is met, since
         storage may not have the full batch on hand. Clamps the load request
@@ -391,11 +392,12 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         if missing <= 0:
             return have >= required_count
 
-        moved = take_item(self.vehicle.input, required_item, missing)
+        # run_construction_loop() returns to self.home_outpost before stocking.
+        moved = take_item(self.vehicle.input, required_item, missing, outpost=self.home_outpost)
         if moved > 0:
             self.log.print(f"[{self.name}] Loaded {moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
         elif self.cargo_count(required_item) < required_count:
-            self.log.level("warn").print(f"[{self.name}] Could not load {required_item}: not found in Inventory or any Warehouse.")
+            self.log.level("warn").print(f"[{self.name}] Could not load {required_item}: none in storage at '{self.home_base}'.")
         return self.cargo_count(required_item) >= required_count
 
     def run_construction_loop(self):
