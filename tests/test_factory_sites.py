@@ -5,6 +5,7 @@ import unittest
 
 from harness import StubTestCase, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
 from game_stubs import Recipe
+import fleet_status
 
 
 def requests_by(world, outpost_id, requester):
@@ -133,6 +134,29 @@ class ConsumerHaulingTests(StubTestCase):
         w.add_fabricator("fabricator_1", w.home)
         w.add_warehouse("wh_remote", self.remote, {"gas_pipe_segment": 5})
         only_target(w, "gas_pipe_segment", 10)
+        self.publish()
+        self.assertEqual(w.notebook.get(logistics_requests.REQUESTS_KEY, {}), {})
+
+    def test_builder_site_pulls_blueprint_material_from_any_outpost(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"liquid_pipe_bridge": 1})
+        w.add_warehouse("wh_remote", self.remote)
+        w.add_fabricator("fabricator_2", self.remote)
+        only_target(w, "gas_pipe_segment", 0)
+        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
+        self.publish()
+        # Home has no Smelter/Fabricator, still a source for blueprint material.
+        self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER), {"liquid_pipe_bridge": (1, 1)})
+        self.assertEqual(requests_by(w, "home", site_supply.SITE_SUPPLY_REQUESTER), {})
+
+    def test_blueprint_material_stays_at_builder_site(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"liquid_pipe_bridge": 1})
+        w.add_fabricator("fabricator_2", self.remote)
+        only_target(w, "gas_pipe_segment", 0)
+        w.notebook.set(fleet_status.FLEET_STATUS_KEY, {"pioneer_2": {"role": "constructor", "home": "outpost_2", "tick": 1}})
+        w.add_blueprint("liquid_bridge_blueprint_9", "liquid_pipe_bridge")
         self.publish()
         self.assertEqual(w.notebook.get(logistics_requests.REQUESTS_KEY, {}), {})
 

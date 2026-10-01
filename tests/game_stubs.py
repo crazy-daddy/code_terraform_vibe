@@ -493,6 +493,24 @@ class Journal:
         return []
 
 
+class Construction:
+    def __init__(self, job_id, required_item, required_count):
+        self.id = job_id
+        self.required_item = required_item
+        self.required_count = required_count
+
+
+class ConstructionBlueprints:
+    def __init__(self):
+        self.pending = []
+
+    def pending_constructions(self):
+        return list(self.pending)
+
+    def paused_constructions(self):
+        return []
+
+
 class World:
     """One fake save. `get_component` is installed as the game builtin."""
 
@@ -513,6 +531,7 @@ class World:
             "journal": Journal(),
             "orders": Orders(),
             "commander": Commander(),
+            "construction_blueprint": ConstructionBlueprints(),
         }
         self.services["shop"] = Shop(self)
 
@@ -541,6 +560,11 @@ class World:
         dock = SupplyDock(self, dock_id, outpost)
         self.components[dock_id] = dock
         return dock
+
+    def add_blueprint(self, job_id, required_item, required_count=1):
+        job = Construction(job_id, required_item, required_count)
+        self.services["construction_blueprint"].pending.append(job)
+        return job
 
     def add_order(self, order_id, requires, shipped=None):
         order = Order(order_id, requires, shipped)

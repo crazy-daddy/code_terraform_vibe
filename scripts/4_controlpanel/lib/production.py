@@ -7,6 +7,7 @@ from logistics_requests import active_requests, in_flight, outpost_free_tiers, a
 from tree_console import TreeConsole
 from swallow import swallowed
 import mining_reservations
+import fleet_status
 
 log = TreeConsole(module="production")
 
@@ -217,6 +218,20 @@ def _home_outpost():
 def home_outpost_id():
     """Id of the home outpost (outpost_network.home()), HOME_OUTPOST_ID when unavailable."""
     return getattr(_home_outpost(), "id", None) or HOME_OUTPOST_ID
+
+
+def construction_site_id():
+    """Outpost a Constructor Pioneer loads its materials at: the home_base of
+    the most recently reporting "constructor" in fleet_status, home_outpost_id()
+    when none reports. Assumes every Constructor shares one home."""
+    best_tick, site_id = None, None
+    for entry in fleet_status.get_all().values():
+        if not isinstance(entry, dict) or entry.get("role") != "constructor" or not entry.get("home"):
+            continue
+        tick = entry.get("tick", 0) or 0
+        if best_tick is None or tick > best_tick:
+            best_tick, site_id = tick, entry["home"]
+    return site_id or home_outpost_id()
 
 
 def smelter_ores(outpost):
@@ -911,6 +926,50 @@ def _vehicle_cargo_counts(item_ids):
     return {k: v for k, v in counts.items() if v > 0}
 
 
+def blueprint_required_items(cache=None):
+    """{item_id: units} pending/paused Construction Blueprints still need as
+    their own required_item (summed across jobs, deduped by job id), minus
+    units already aboard vehicles. The seed of _walk_blueprint_demand().
+    Memoized on `cache`."""
+    if cache is not None and cache._blueprint_seeds is not None:
+        return dict(cache._blueprint_seeds)
+    frontier = {}
+    bp = _component("construction_blueprint")
+    if bp:
+        seen_jobs = set()
+        for getter_name in ("pending_constructions", "paused_constructions"):
+            getter = getattr(bp, getter_name, None)
+            if not getter:
+                continue
+            try:
+                for job in getter():
+                    job_id = getattr(job, "id", None)
+                    if job_id and job_id in seen_jobs:
+                        continue
+                    item_id = getattr(job, "required_item", None)
+                    count = getattr(job, "required_count", 0)
+                    if not item_id or count <= 0:
+                        continue
+                    if job_id:
+                        seen_jobs.add(job_id)
+                    frontier[item_id] = frontier.get(item_id, 0) + count
+            except Exception as error:
+                swallowed("production.blueprint_required_items: getter", error)
+
+    # A constructor Pioneer loads a whole batch for chained jobs before
+    # driving out, and every job stays pending until actually built -- so
+    # while the materials ride in its cargo they're in neither Inventory nor
+    # a Warehouse, and the Fabricator re-crafted the full batch (seen live:
+    # 3 Oil Pump blueprints -> 6 pumps built, 3 left over). Net those out.
+    if frontier:
+        for item_id, carried in _vehicle_cargo_counts(frontier).items():
+            frontier[item_id] = max(0, frontier[item_id] - carried)
+            log.trace(f"{carried}x {item_id} already aboard vehicles -> seed demand {frontier[item_id]}")
+    if cache is not None:
+        cache._blueprint_seeds = dict(frontier)
+    return frontier
+
+
 def _cascade_blueprint_demand(cache=None):
     """Memoized on `cache` (one blueprint + fleet cargo walk per pass) -- see _walk_blueprint_demand()."""
     if cache is None:
@@ -946,38 +1005,7 @@ def _walk_blueprint_demand(cache):
     recipe chains.
     """
     log.start("_cascade_blueprint_demand", level="debug")
-    frontier = {}
-    bp = _component("construction_blueprint")
-    if bp:
-        seen_jobs = set()
-        for getter_name in ("pending_constructions", "paused_constructions"):
-            getter = getattr(bp, getter_name, None)
-            if not getter:
-                continue
-            try:
-                for job in getter():
-                    job_id = getattr(job, "id", None)
-                    if job_id and job_id in seen_jobs:
-                        continue
-                    item_id = getattr(job, "required_item", None)
-                    count = getattr(job, "required_count", 0)
-                    if not item_id or count <= 0:
-                        continue
-                    if job_id:
-                        seen_jobs.add(job_id)
-                    frontier[item_id] = frontier.get(item_id, 0) + count
-            except Exception as error:
-                swallowed("production._cascade_blueprint_demand: getter", error)
-
-    # A constructor Pioneer loads a whole batch for chained jobs before
-    # driving out, and every job stays pending until actually built -- so
-    # while the materials ride in its cargo they're in neither Inventory nor
-    # a Warehouse, and the Fabricator re-crafted the full batch (seen live:
-    # 3 Oil Pump blueprints -> 6 pumps built, 3 left over). Net those out.
-    if frontier:
-        for item_id, carried in _vehicle_cargo_counts(frontier).items():
-            frontier[item_id] = max(0, frontier[item_id] - carried)
-            log.trace(f"{carried}x {item_id} already aboard vehicles -> seed demand {frontier[item_id]}")
+    frontier = blueprint_required_items(cache)
 
     stock = _stock_fn(cache)
     total_needed = {}
@@ -1074,9 +1102,11 @@ def fabricator_root_targets(cache=None):
     before the intermediate cascade -- standing stock targets, manual orders,
     upgrade and backlog orders, Supply Dock orders and blueprint demand, max()-folded per
     item into {item_id: qty} -- plus {item_id: {site_id: qty}}, where each
-    root is consumed (its Supply Dock's outpost for dock orders, home for
-    everything else; dock order items the Fabricator can't build included,
-    for hauling), plus the set of Fabricator-buildable item ids.
+    root is consumed (its Supply Dock's outpost for dock orders,
+    construction_site_id() for a blueprint's own required_item, home for
+    everything else; dock order items the Fabricator can't build and
+    blueprint items included, for hauling), plus the set of
+    Fabricator-buildable item ids.
     Memoized on `cache`.
     """
     log.start("fabricator_root_targets", level="debug")
@@ -1174,14 +1204,23 @@ def fabricator_root_targets(cache=None):
     for item_id, count in _cascade_blueprint_demand(cache).items():
         if item_id in fabricator_outputs:
             targets[item_id] = max(targets.get(item_id, 0), count)
-            home_wants[item_id] = max(home_wants.get(item_id, 0), count)
             log.trace(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
 
-    # Everything but dock orders is consumed at home (Inventory-side stock
-    # targets, manual/upgrade orders, blueprint loading).
+    # Stock targets and manual/upgrade/backlog orders are consumed at home
+    # (Inventory side). A blueprint's own required_item is consumed where the
+    # Constructor Pioneer loads it (construction_site_id()); the intermediates
+    # beneath it are Fabricator inputs, consumed at whichever fab site builds
+    # the item, so they are no consumer root.
     for item_id, qty in home_wants.items():
         site = consumers.setdefault(item_id, {})
         site[home_id] = max(site.get(home_id, 0), qty)
+    seeds = {i: n for i, n in blueprint_required_items(cache).items() if n > 0}
+    if seeds:
+        builder_site = construction_site_id()
+        for item_id, qty in seeds.items():
+            site = consumers.setdefault(item_id, {})
+            site[builder_site] = max(site.get(builder_site, 0), qty)
+            log.trace(f"fabricator_root_targets: blueprint needs {qty}x {item_id} at {builder_site}")
 
     if cache is not None:
         cache._root_targets = (dict(targets), {i: dict(c) for i, c in consumers.items()}, set(fabricator_outputs))
@@ -2043,6 +2082,7 @@ class SourceCache:
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
         self._aboard = None  # logistics_requests.aboard_units() snapshot, see network_stock()
         self._blueprint_demand = None  # _cascade_blueprint_demand() memo
+        self._blueprint_seeds = None  # blueprint_required_items() memo
         self._recipe_index = None  # _recipe_index() for this pass
 
     def _build_stock_map(self):
