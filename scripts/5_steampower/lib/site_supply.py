@@ -34,9 +34,11 @@
 #     pulled in from the other supply sites (outposts with a Smelter or
 #     Fabricator) that built them -- blueprint materials from every other
 #     outpost: request local + in-flight + min(short, free there), kept while
-#     units are in flight. A blueprint material no Fabricator will add more
-#     of (settled_items()) is flagged urgent: haulers skip their minimum
-#     load for it, since waiting brings no fuller load.
+#     units are in flight. A blueprint material or fleet upgrade order part
+#     (production.get_upgrade_orders(): a commissioned drone's kit, a chassis
+#     swap) no Fabricator will add more of (settled_items()) is flagged
+#     urgent: haulers skip their minimum load for it, since waiting brings no
+#     fuller load and a job waits on it.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
 # leftover ore becomes free stock that pull haulers take wherever it is
@@ -60,7 +62,7 @@
 
 from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
-from production import discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, SourceCache
+from production import discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, SourceCache
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
@@ -506,7 +508,7 @@ def publish_site_requests(curr_tick):
     _roots, consumers, _outputs = fabricator_root_targets(cache)
     sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o)]
     anywhere = set(blueprint_required_items(cache))
-    urgent = settled_items(anywhere, _roots, cache)
+    urgent = settled_items(anywhere | set(get_upgrade_orders()), _roots, cache)
     planned = {}
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)
