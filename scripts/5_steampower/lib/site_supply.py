@@ -42,7 +42,9 @@
 #     (production.get_upgrade_orders(): a commissioned drone's kit, a chassis
 #     swap) no Fabricator will add more of (settled_items()) is flagged
 #     urgent: haulers skip their minimum load for it, since waiting brings no
-#     fuller load and a job waits on it. Recurring consumable orders
+#     fuller load and a job waits on it. Manual orders built off home
+#     (production.manual_transit_wants()) are always flagged urgent so
+#     completed units haul home immediately. Recurring consumable orders
 #     (production.RECURRING_ORDER_REQUESTERS: Terraformer Fertilizer /
 #     Growth Accelerant) are never urgent; Fuel Assembler Lead Plates stay
 #     urgent.
@@ -69,7 +71,7 @@
 
 from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
-from production import set_backlog_order, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache
+from production import set_backlog_order, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
@@ -567,7 +569,7 @@ def publish_site_requests(curr_tick):
     _roots, consumers, _outputs = fabricator_root_targets(cache)
     sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o)]
     anywhere = set(blueprint_required_items(cache))
-    urgent = settled_items(anywhere | set(get_upgrade_orders(skip=RECURRING_ORDER_REQUESTERS)), _roots, cache)
+    urgent = settled_items(anywhere | set(get_upgrade_orders(skip=RECURRING_ORDER_REQUESTERS)), _roots, cache) | set(manual_transit_wants(cache))
     planned = {}
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)

@@ -186,6 +186,15 @@ class ConsumerHaulingTests(StubTestCase):
         self.assertEqual(requests_by(w, "outpost_2", site_supply.SITE_SUPPLY_REQUESTER)["liquid_pipe_bridge"], (1, 1))
         self.assertEqual(logistics_requests.urgent_items("outpost_2", w.clock.now), set())
 
+    def test_manual_transit_order_is_urgent_at_home(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"lead_cask": 2})
+        w.add_fabricator("fabricator_2", self.remote)
+        only_target(w, "gas_pipe_segment", 0)
+        w.notebook.set(production.MANUAL_TRANSIT_KEY, {"lead_cask": {"units": 2, "base": 0}})
+        self.publish()
+        self.assertIn("lead_cask", logistics_requests.urgent_items(w.home.id, w.clock.now))
+
 
 class StrandedOreTests(StubTestCase):
     def setUp(self):
