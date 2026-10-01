@@ -66,6 +66,20 @@ FEED_PER_CRAFT = 20
 FORAGE_PER_CRAFT = 100
 FEED_CRAFT_HOURS = 0.3
 FEED_MAKER_MK2_SPEED = 1.5
+# Auto Feeder (simworker `ioTransport`): 0.01 game h per unit moved, x0.5 with
+# Fast Feeders, / Mk II speed. Input and output share one feeder endpoint, so
+# per craft it is busy for Forage + forms + feed out (~0.62 h Mk I with Fast
+# Feeders), longer than the craft: Feed Maker output is feeder-bound.
+FEEDER_HOURS_PER_UNIT = 0.01
+FAST_FEEDERS_MULTIPLIER = 0.5
+FORMS_PER_CRAFT = 3
+
+
+def feed_cycle_hours(speed=1.0, fast_feeders=True):
+    """Game hours per craft for one Feed Maker: the longer of craft and feeder time."""
+    units = FORAGE_PER_CRAFT + FORMS_PER_CRAFT + FEED_PER_CRAFT
+    feeder = units * FEEDER_HOURS_PER_UNIT * (FAST_FEEDERS_MULTIPLIER if fast_feeders else 1.0)
+    return max(FEED_CRAFT_HOURS, feeder) / speed
 
 # Species: rarity plus gas/liquid base -> apex (`bk`); None = never required.
 SPECIES = {

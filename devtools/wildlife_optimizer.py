@@ -250,7 +250,7 @@ class Sim:
         if not self.sc.feed_makers:
             return 1.0
         speed = wd.FEED_MAKER_MK2_SPEED if wd.FEED_MAKER_MK2_WILDLIFE in self.milestones else 1.0
-        supply = self.sc.feed_makers * wd.FEED_PER_CRAFT / wd.FEED_CRAFT_HOURS * speed
+        supply = self.sc.feed_makers * wd.FEED_PER_CRAFT / wd.feed_cycle_hours(speed)
         demand = sum(r * wd.FEED_PER_BIRTH * self.colonies[s]["static"]["feed_multiplier"] for s, (r, _cap) in rates.items())
         self.feed_peak = max(self.feed_peak, demand)
         return 1.0 if demand <= supply else supply / demand

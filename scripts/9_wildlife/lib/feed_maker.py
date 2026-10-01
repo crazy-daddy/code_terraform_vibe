@@ -176,8 +176,11 @@ class FeedMakerController:
             if room < sum(inputs.values()):
                 return 0
             need = dict(inputs)
+        # Stock lands when a transfer starts; the feeder then cools down for the
+        # units moved. Forms first, Forage (100 units) last: the craft starts
+        # with the Forage and runs during its cooldown.
         moved = 0
-        for item, qty in need.items():
+        for item, qty in sorted(need.items(), key=lambda kv: kv[1]):
             moved += take_item(self.maker.input, item, qty, outpost=self.outpost)
         return moved
 
