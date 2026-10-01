@@ -1,16 +1,25 @@
 # Phase 9 — Feed Maker + Habitat controllers (tier `9_wildlife`)
 
-## Status (2026-09-30)
-Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/wildlife_optimizer.py`, `tests/test_wildlife_model.py`, `WILDLIFE_SCHEDULE`. The results are in `docs/cheatsheet/wildlife.md` §1l-1.
+## Status (2026-10-01)
+Done: `.criteria`, `lib/wildlife_data.py`, `lib/wildlife_model.py`, `devtools/wildlife_optimizer.py`, `WILDLIFE_SCHEDULES` (§1l-1); the planner (`lib/wildlife_planner.py`), `lib/habitat.py`, `lib/feed_maker.py`, `lib/wildlife_common.py`, entrypoints `bio/habitat.py` / `bio/feed_maker.py`, and the edits to existing libs (power tiers, cash, parking, archive cleaner, Control Room Automation, Plant Terraformer Forage reserve). Behaviour and tunables: `docs/cheatsheet/wildlife.md` §1l-2. Stub-tested only; not deployed live yet.
 
-Decided:
+Decided (2026-09-30):
 - The Adaptation is optional per revival (`revive` / `revive_raw` steps).
 - The target is the 5,000,000 Wildlife pillar, so the Refiner and Deep Exotics are needed.
 - Schedules are stored per Habitat count (5/10/16) in `WILDLIFE_SCHEDULES`; the planner uses `wildlife_model.schedule_for(live_habitat_count)`.
-- The schedules assume parking: a colony at the Mk I ceiling frees its Habitat until Mk II, and one at 350k frees it for good. Parking (ship_computer undeploy/redeploy + `rehouse()`) is therefore part of the planner work, no longer deferred.
-- Open: Forage supply (about 1,000 Forage/h at peak with 10+ Habitats) and Feed Maker count (2 Mk II make 200 feed/h).
 
-Next: planner (walks `WILDLIFE_SCHEDULE`), Habitat controller, Feed Maker controller, edits to existing libs. See below.
+Decided (2026-10-01):
+1. No overcapping the home slot cap: the Habitat count is whatever fits; more come when Warehouses move out. Nothing assumes 16.
+2. Feed before Plants: the Plant Terraformer leaves `wildlife.plan.forage_reserve`.
+3. Feed is reserved before revival: it is staged in the Habitat's own bin (nobody else can take it). Rearing eats no feed (no births), so this costs at most one craft.
+4. Parking at the Mk I ceiling for a later revival (undeploy/rehouse) is deferred: 1–2 % gain at 5–10 Habitats, none at 16.
+5. Fluid supply (taps, pipes, Refiner) is out of scope until unlocked; the Habitat only routes from tanks that already hold the fluid.
+6. Habitat kits are bought and deployed by hand until the autobuilder.
+7. Habitats are shed last (power tier 3); an unpowered Habitat only pauses.
+8. Established Habitats park on `no_feed` and at the Mk I ceiling, with an operator alert (notify + AUTOMATION card).
+9. Buffers, not just-in-time: feed to a 24 game-hour stock target, life forms to 48 game hours.
+
+Next: deploy and observe live (see Verification), then the Refiner / fluid supply once Exotic Husbandry unlocks.
 
 ## Original session scope
 1. Save this plan in the repo as `docs/plans/phase9_wildlife.md`, and link it from the TODO.md Phase 9 header, so a later session can resume.

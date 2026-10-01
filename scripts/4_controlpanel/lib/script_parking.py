@@ -71,6 +71,10 @@ WAKE_AFTER_TICKS = {
     # Below logistics_requests.REQUEST_STALE_TICKS (6000): the woken script republishes
     # its life-form requests before they expire.
     "seed_maker": 3000,
+    "feed_maker": 3000,
+    # Parked while empty and unassigned, without feed, or capped at the Mk I ceiling
+    # (lib/habitat.py); the Wildlife planner wakes it when that changes.
+    "habitat": 6000,
 }
 # Station kinds: never park the last awake one of a type (see the module docstring).
 STATION_KINDS = ("charging_station", "drone_service_station")

@@ -35,7 +35,7 @@ from script_parking import ParkRequester
 OIL_GENERATOR_RATED_W = 700.0
 
 # Hysteresis on the combined reserve fraction. Start sits above the Power
-# Guard's EMERGENCY_SHED_TIER1_FRACTION (0.10) so oil can catch the grid
+# Guard's tier-1 EMERGENCY_SHED_FRACTIONS[0] (0.10) so oil can catch the grid
 # before loads get shed; stop sits above its EMERGENCY_RESTORE_FRACTION
 # (0.25) so shed loads are back on before oil burning ends.
 OIL_START_RESERVE_FRACTION = 0.15

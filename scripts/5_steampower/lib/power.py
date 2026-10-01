@@ -35,9 +35,14 @@ from turbine_commit import TurbineCommitment
 # lib/production.py imports this. Decompiled simworker's dayCycleDuration.
 DAY_CYCLE_DURATION_SECONDS = 600
 
-# Same tier lists and soft-shed rule as 4_controlpanel's lib/power.py -- see
+# Tiers 1-2 and the soft-shed rule match 4_controlpanel's lib/power.py -- see
 # there for why Charging Stations are never shed and why Smelters/Fabricators
-# are only flagged (they idle at 0 W anyway). Archive override keys
+# are only flagged (they idle at 0 W anyway). Feed Makers are crafters too
+# (power only while a craft runs), so they are flagged the same way. Tier 3
+# holds the Habitats: an unpowered Habitat only pauses (no breeding, no
+# rearing progress, no failure; simworker skips unpowered Habitats), so they
+# shed last, below their own lower threshold. 4_controlpanel's copy keeps two
+# tiers: Habitats come long after this tier replaces it. Archive override keys
 # 'power.shedding_tiers' / 'power.shedding_tiers:<anchor>' still apply.
 DEFAULT_SHEDDING_TIERS = [
     [
@@ -52,9 +57,13 @@ DEFAULT_SHEDDING_TIERS = [
     [
         "smelter_*",
         "fabricator_*",
+        "feed_maker_*",
+    ],
+    [
+        "habitat_*",
     ],
 ]
-SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*"}
+SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*", "feed_maker_*"}
 
 # Steam Turbine: 108 W from 90 t/h (docs/components/steam_turbine.md).
 STEAM_WH_PER_TON = 108.0 / 90.0
@@ -65,12 +74,21 @@ DAILY_LOSS_WARN_FRACTION = 0.20
 DAILY_HISTORY_LENGTH = 7
 
 # Emergency guard on the combined reserve fraction (battery + steam, in Wh).
-# Tier 1 sheds below the first value, all tiers below the second; everything
-# restores once the reserve is back above RESTORE (hysteresis, so a grid
-# hovering at the threshold does not toggle breakers every second).
-EMERGENCY_SHED_TIER1_FRACTION = 0.10
-EMERGENCY_SHED_ALL_FRACTION = 0.05
+# Tier N sheds below the Nth value (tiers past the list use the last one);
+# everything restores once the reserve is back above RESTORE (hysteresis, so
+# a grid hovering at the threshold does not toggle breakers every second).
+EMERGENCY_SHED_FRACTIONS = (0.10, 0.05, 0.02)
 EMERGENCY_RESTORE_FRACTION = 0.25
+
+
+def tiers_to_shed(frac, tier_count):
+    """How many leading tiers to shed at reserve fraction `frac`."""
+    count = 0
+    for t_idx in range(tier_count):
+        if frac >= EMERGENCY_SHED_FRACTIONS[min(t_idx, len(EMERGENCY_SHED_FRACTIONS) - 1)]:
+            break
+        count += 1
+    return count
 
 # Gas Tanks normally appear in grid.members (buildings at a connected outpost
 # are members with an empty roles list). The outpost walk below is only a
@@ -372,22 +390,17 @@ class PowerGridManager:
             return
         tiers = self.get_shedding_tiers()
 
-        if frac < EMERGENCY_SHED_ALL_FRACTION:
-            tiers_to_shed = len(tiers)
-        elif frac < EMERGENCY_SHED_TIER1_FRACTION:
-            tiers_to_shed = 1
-        else:
-            tiers_to_shed = 0
+        shed_count = tiers_to_shed(frac, len(tiers))
         self.log.trace(
             f"[POWER] Guard '{grid_id_str}': reserve {total_wh:.0f}/{total_cap:.0f} Wh ({frac*100:.1f}%) "
-            f"[battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {tiers_to_shed}/{len(tiers)} tier(s)."
+            f"[battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {shed_count}/{len(tiers)} tier(s)."
         )
 
         changed = False
-        if tiers_to_shed:
+        if shed_count:
             reason = f"combined reserve {frac*100:.0f}%"
             newly = []
-            for t_idx in range(tiers_to_shed):
+            for t_idx in range(shed_count):
                 for pattern in tiers[t_idx]:
                     soft = pattern in SOFT_SHED_PATTERNS
                     for m_id in self._resolve(pattern, grid_machines):

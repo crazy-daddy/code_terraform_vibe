@@ -492,6 +492,9 @@ class Journal:
     def surveyed_sites(self, _planet):
         return []
 
+    def cataloged_creatures(self, _planet):
+        return []
+
 
 class Construction:
     def __init__(self, job_id, required_item, required_count):

@@ -109,3 +109,39 @@ class BacklogTierTests(StubTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _Outpost:
+    def __init__(self, outpost_id, is_home):
+        self.id = outpost_id
+        self.is_home = is_home
+
+
+class _HomeTerraformer:
+    id = "plant_terraformer_1"
+
+    def __init__(self):
+        self.outpost = _Outpost("outpost_home", True)
+
+
+class WildlifeForageReserveTests(StubTestCase):
+    def controller(self, machine, stock):
+        ctrl = plant_terraformer.PlantTerraformerController(machine)
+        ctrl.local_stock = lambda item_id: stock
+        return ctrl
+
+    def test_home_leaves_feed_maker_forage(self):
+        self.world.notebook.data["wildlife.plan"] = {"forage_reserve": 1500}
+        ctrl = self.controller(_HomeTerraformer(), 4000)
+        self.assertEqual(ctrl.available("forage", {}), 2500)
+        self.assertEqual(ctrl.available("salt", {}), 4000)
+
+    def test_reserve_above_stock_leaves_nothing(self):
+        self.world.notebook.data["wildlife.plan"] = {"forage_reserve": 5000}
+        self.assertEqual(self.controller(_HomeTerraformer(), 4000).available("forage", {}), 0)
+
+    def test_remote_terraformer_ignores_reserve(self):
+        self.world.notebook.data["wildlife.plan"] = {"forage_reserve": 1500}
+        machine = _HomeTerraformer()
+        machine.outpost = _Outpost("outpost_2", False)
+        self.assertEqual(self.controller(machine, 4000).available("forage", {}), 4000)

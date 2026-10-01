@@ -70,6 +70,7 @@ from site_supply import publish_site_requests
 from pump_salt import publish_home_salt_request
 from site_plan import plan_sites
 from mining_drill import publish_all_drills
+import wildlife_planner
 from script_parking import ScriptParking
 from tree_console import flush_all, reset_all
 
@@ -105,6 +106,8 @@ PARKING_TICK_INTERVAL = 50
 # checked at the top of every loop and between the storage pass's sub-steps, like dock planning.
 # The storage pass steps the coordinator regardless.
 COMMISSION_FAST_TICK_INTERVAL = 30
+# The Wildlife planner (lib/wildlife_planner.py) runs on its own interval
+# (wildlife_planner.PLAN_TICK_INTERVAL); a no-op without Habitats.
 
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
@@ -120,7 +123,7 @@ commission = {"tick": 0, "summary": "commission idle"}
 # "<step> error" for each step that failed since the last summary publish
 errors = []
 # Coordinator summaries that mean "nothing for the operator to see"; left off the AUTOMATION card.
-IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off",
+IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", wildlife_planner.IDLE_SUMMARY,
                   "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle")
 QUIET_SUMMARY = "all quiet"
 
@@ -176,10 +179,19 @@ def commission_if_due(clock):
     step_commission(now)
 
 
+def plan_wildlife_if_due(clock):
+    """Wildlife planner pass when due; its summary goes on the AUTOMATION card."""
+    try:
+        wildlife_planner.plan_if_due(clock)
+    except Exception as e:
+        report_error("Wildlife planner", e)
+
+
 def between_steps(clock):
     """Short-interval checks run between the storage pass's slow sub-steps."""
     plan_docks_if_due(clock)
     commission_if_due(clock)
+    plan_wildlife_if_due(clock)
 
 mixer_gate = None           # MixerGate, created lazily once power_control is available
 biomass_retirement = None   # BiomassRetirement, created once biomass is complete
@@ -348,7 +360,8 @@ while True:
             except Exception as e:
                 report_error("Fleet decommission", e)
 
-            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items([upgrade_summary, commission["summary"], decommission_summary])))
+            plan_wildlife_if_due(clock)
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items([upgrade_summary, commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 
     flush_all()

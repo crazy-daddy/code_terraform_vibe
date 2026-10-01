@@ -71,6 +71,8 @@ MACHINE_STATUS_KEYS = {
     "essence_liquifier.status": "essence_liquifier",
     "biomass_mixer.status": "biomass_mixer",
     "waste_sink.status": "garbage_disposal",  # Waste Processor typeId (decompiled)
+    "wildlife.status": "habitat",
+    "wildlife.feed": "feed_maker",
 }
 
 

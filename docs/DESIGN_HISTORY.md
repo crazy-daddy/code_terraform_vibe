@@ -605,3 +605,9 @@ Wildlife pillar is 5,000,000 of a possible 5,600,000, which needs nearly every s
 therefore the Refiner and Deep Exotics, so the target moved to 5,000,000. At that target the
 slowest colonies (Legendaries, Rares) set the finish and are revived early, and colonies park at the
 Mk I ceiling and at 350,000 to free Habitats.
+
+In-game, parking colonies to free Habitats for later revivals was deferred: it gains 1-2 % at 5-10
+Habitats and nothing at 16, while undeploy/rehouse adds risk. The planner skips revive steps with no
+free Habitat instead. Feed comes before Plants (the Plant Terraformer leaves the Feed Makers' Forage
+reserve), feed is reserved by staging it in the reviving Habitat's own bin, and Habitats shed last
+because an unpowered Habitat only pauses.

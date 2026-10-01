@@ -71,7 +71,9 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 #   from the same stock.
 # Source side: an item this outpost doesn't request itself (home Forage) is
 # only consumed above what other outposts request (remote_retain()), so a
-# home Terraformer can't eat the batch a hauler is coming for.
+# home Terraformer can't eat the batch a hauler is coming for. At home it
+# also leaves the Wildlife planner's Forage reserve for the Feed Makers
+# (wildlife_reserve()): feed comes before Plants.
 #
 # Fabricator orders (fabricator_orders()): Fertilizer and Growth Accelerant
 # are crafted at home. Every Mk II Terraformer writes the same two orders
@@ -85,6 +87,8 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 
 STATUS_KEY = "plant.terraformer"
 REQUESTER_ID = "plant_terraformer"
+# Wildlife planner output; its forage_reserve is left for the Feed Makers.
+WILDLIFE_PLAN_KEY = "wildlife.plan"
 
 # 10 ticks/s -> 1 h. Entries of Terraformers that stopped publishing are
 # pruned by the next publish (one shared dict, CLAUDE.md rule 7).
@@ -272,8 +276,19 @@ class PlantTerraformerController:
                 retain = max(retain, int(entry.get("target", 0) or 0))
         return retain
 
+    def wildlife_reserve(self, item_id):
+        """
+        Home Forage the Feed Makers need for the feed the Wildlife planner
+        wants (`wildlife.plan.forage_reserve`, lib/wildlife_planner.py): feed
+        comes first, the Terraformer uses what is left.
+        """
+        if item_id != "forage" or not self.is_home:
+            return 0
+        plan = archive.get(WILDLIFE_PLAN_KEY, {}) or {}
+        return int(plan.get("forage_reserve", 0) or 0) if isinstance(plan, dict) else 0
+
     def available(self, item_id, requests):
-        return max(self.local_stock(item_id) - self.remote_retain(item_id, requests), 0)
+        return max(self.local_stock(item_id) - self.remote_retain(item_id, requests) - self.wildlife_reserve(item_id), 0)
 
     def _take(self, item_id, amount, requests):
         """
