@@ -45,6 +45,9 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
 
     def __init__(self, vehicle, home_base=None):
         super().__init__(vehicle, home_base=home_base)
+        # Blueprint progress (0-1) after the last constructor.execute() of the
+        # latest execute_construction() call; 1.0 = finished.
+        self.last_build_progress = 0.0
 
     def detect_role(self, role_override=None):
         """
@@ -246,8 +249,10 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         because the job is still incomplete and needs another recharge round later.
         """
         self.log.start(f"[{self.name}] Build '{blueprint_id}' ({kind or 'blueprint'}) at {coords}")
+        self.last_build_progress = 0.0
         ok = self._execute_construction(blueprint_id, coords, kind)
-        self.log.end(f"[{self.name}] Build '{blueprint_id}' {'finished or paused for later' if ok else 'failed'}")
+        outcome = ("finished" if self.last_build_progress >= 1.0 else "paused for later") if ok else "failed"
+        self.log.end(f"[{self.name}] Build '{blueprint_id}' {outcome}")
         return ok
 
     def _execute_construction(self, blueprint_id, coords, kind):
@@ -285,6 +290,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
             wh_before, _, _ = self.get_battery()
             res = self.vehicle.constructor.execute(blueprint_id)
             progress_after = self.get_construction_progress(blueprint_id)
+            self.last_build_progress = progress_after
             self.calibrate_wh_per_progress(progress_after - progress_before, wh_before - self.get_battery()[0])
             self.log.print(f"[{self.name}] Constructor result: {res.status} - {res.message}")
 
@@ -526,7 +532,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                             self.release_target_claim(self.construction_claim_key(job_id))
                             flush_all()
                             sleep(2.0)
-                        elif self.get_construction_progress(job_id) >= 1.0:
+                        elif self.last_build_progress >= 1.0:
                             self.release_target_claim(self.construction_claim_key(job_id))
                         continue
                     # Lost the race to a peer between filtering and claiming -- fall
@@ -563,7 +569,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                                 self.release_target_claim(self.construction_claim_key(job_id))
                                 flush_all()
                                 sleep(2.0)
-                            elif self.get_construction_progress(job_id) >= 1.0:
+                            elif self.last_build_progress >= 1.0:
                                 self.release_target_claim(self.construction_claim_key(job_id))
                             continue
                         # Lost the race to a peer between filtering and claiming --

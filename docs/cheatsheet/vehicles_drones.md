@@ -125,7 +125,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   `"poi_"`. `claim_target()` called at each of three commit points (resuming paused job,
   executing cargo-matching pending job, committing before round trip home).
   `execute_construction()` heartbeats via `refresh_claim()` every attempt (no-op if not owner).
-  Released on completion (`get_construction_progress() >= 1.0`) or genuine failure, held across
+  Released on completion (`last_build_progress >= 1.0`, the progress read after the last `execute()` of `execute_construction()`) or genuine failure, held across
   incomplete "still paused" outcome, released wholesale on unhandled exception.
   **Blueprint missing from every list (pending/active/paused) counts as complete (1.0)** — game
   drops finished blueprints from all lists.

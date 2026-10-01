@@ -64,6 +64,9 @@ STATION_DISCOVERY_TTL_TICKS = 20
 # {"stations": (tick, [station dicts])}
 _STATION_MEMO = {}
 
+# {vehicle name: station id last logged by get_nearest_charging_station()}
+_NEAREST_LOGGED = {}
+
 # Building type id as returned by OutpostRef.buildings() / Machine.typeId
 # ("charging_station"), not the component doc name
 # ("vehicle_charging_station"), which never matches and silently made every
@@ -702,21 +705,24 @@ class VehicleEnergyMixin:
         """
         Returns the closest known charging station tuple: (coords, station_info_dict).
         If no station is detected, falls back to (self.home_coords, {}).
+        Logs the choice only when it differs from the last one this vehicle
+        logged; drive polls and budgets ask many times per trip.
         """
-        self._host.log.start(f"[{self._host.name}] get_nearest_charging_station", level="debug")
         ref_coords = from_coords if from_coords is not None else self._host.get_position()
         stations = self.get_all_charging_stations()
         if not stations:
-            self._host.log.debug(f"no stations discovered network-wide, falling back to home slot {self._host.home_coords}.")
-            self._host.log.end()
+            if _NEAREST_LOGGED.get(self._host.name) != "home_slot":
+                _NEAREST_LOGGED[self._host.name] = "home_slot"
+                self._host.log.debug(f"[{self._host.name}] get_nearest_charging_station: no stations discovered network-wide, falling back to home slot {self._host.home_coords}.")
             return self._host.home_coords, {"id": "home_slot", "coords": self._host.home_coords, "component": self._host.home_charging_station}
 
         best_station = min(
             stations,
             key=lambda st: self._host.distance_between(ref_coords, st["coords"])
         )
-        self._host.log.debug(f"chose '{best_station.get('id')}' at {best_station['coords']} ({self._host.distance_between(ref_coords, best_station['coords']):.1f}m), out of {len(stations)} candidate(s).")
-        self._host.log.end()
+        if _NEAREST_LOGGED.get(self._host.name) != best_station.get("id"):
+            _NEAREST_LOGGED[self._host.name] = best_station.get("id")
+            self._host.log.debug(f"[{self._host.name}] get_nearest_charging_station: chose '{best_station.get('id')}' at {best_station['coords']} ({self._host.distance_between(ref_coords, best_station['coords']):.1f}m), out of {len(stations)} candidate(s).")
         return best_station["coords"], best_station
 
     def get_outpost_ref(self, outpost_id=None):
