@@ -611,3 +611,40 @@ Habitats and nothing at 16, while undeploy/rehouse adds risk. The planner skips 
 free Habitat instead. Feed comes before Plants (the Plant Terraformer leaves the Feed Makers' Forage
 reserve), feed is reserved by staging it in the reviving Habitat's own bin, and Habitats shed last
 because an unpowered Habitat only pauses.
+
+## §1 — Lightning Rods Evaluated, Deferred (2026-10-01)
+
+Question: are Lightning Rods a cheap power source? Answer: a real one, but not worth it while
+steam/nuclear cover the grid. Mechanics below come from the decompiled simworker (`ZC` storm
+generator, `uw` strike generator, `chargeRodsAt`, power tick), checked against 66 days of
+Station3 `strikes()` history.
+
+**Mechanics**
+- Storm slots every 24 game hours; slot index `% 4 == 0` is dust, the rest thunder (75 %).
+  Post-unlock extra dust storms are scheduled separately and bring no lightning.
+- A storm crosses the 1,800 × 1,800 m map in a straight line at 200–260 m/h, radius 120–220 m,
+  lifetime about 12–15 h (starts/ends off-map). Strikes: `round(6 + baseIntensity × 8)` = 8–14,
+  uniform in time, within `0.8 × radius` of the storm centre, only on-map. Energy
+  `1500 + U × intensity × 1500` Wh, intensity scaled by pressure/heat (Station3 mean ≈ 1,850 Wh).
+- Weather Station logs strikes within `stationRadiusM = 300` while powered — no script needed;
+  planet-wide log cap 300. Rod catches within `rodCatchRadiusM = 600`; only the nearest rod in range
+  gets the strike. Bank cap 4,000 Wh, capture × integrity, integrity −0.05/day.
+- A rod discharges only after the subnet's conventional batteries are empty and generation is
+  short; it never charges from surplus. It feeds only its own subnet, so remote rods need lines.
+
+**Yield estimate (4 rods at about (±450, ±450))**
+- Strike supply far exceeds the 4 kWh bank: a rod in a storm's path fills in 2–3 strikes. Using
+  strikes as they land would need a ~2 kW deficit, so most storm energy is wasted regardless.
+- A storm path passes within 600 m of ~2 (sometimes 3) of the 4 rods. Typical
+  2 × 4 kWh × 0.75 storms/day ≈ 6 kWh/day ≈ 250 W; best case ≈ 500 W. Integrity barely matters
+  (surplus strikes still fill a worn rod), so repairs every 1–2 weeks suffice.
+
+**Why deferred**
+- Harvesting needs a "rod drain mode": batteries held at 0 between storms, turbines/oil throttled
+  so the grid stays short and the rods empty before the next storm. With no partial load shedding,
+  a rod running dry at 0 battery pauses the whole subnet (restart needs 1 h of deficit in storage).
+- Gain is 2–4 Steam Turbines' worth, paid back only as saved steam/oil, not script count: 4 rods
+  add repair scripts and controller complexity. This save goes nuclear instead.
+- If revisited: replay past storms from the save seed (`storm_<n>` via `ZC`/`uw`) in a devtool to
+  score rod layouts before building, then add drain mode to the turbine target and Oil Generator
+  start rule (power guard already counts rod reserve via `measure_grid()`).

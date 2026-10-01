@@ -351,6 +351,7 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
 - [ ] **Station coverage**: dust (uranium) messages need a powered station in all 5 biomes; only 1 station is deployed (`outpost_5`). Buy and deploy one per missing biome (60,000 cr each).
 - [x] **Aftermath collection** (`lib/drone_weather.py`, §2j-1): plated `aftermath` drone role (uranium + glass, uranium into the home outpost's Lead Cask), haulers take Storm Glass between jobs. Not yet live-verified: commission/plate one drone, watch the next thunderstorm aftermath.
 - [ ] **Fuel Assembler + Reactor** controllers (docs/components/fuel_assembler.md, reactor.md, lead_cask.md).
+- [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations
 - [ ] Standardize every long-running script:
