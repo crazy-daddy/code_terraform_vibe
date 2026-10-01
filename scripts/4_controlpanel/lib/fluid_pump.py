@@ -86,6 +86,7 @@ class FluidPumpController:
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
             discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
             fluid_id=fluid_id,
+            label=f"{self.name}.{fluid_id}_out",
         )
 
     def get_current_tick(self):

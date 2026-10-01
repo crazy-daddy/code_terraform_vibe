@@ -166,22 +166,89 @@ def healthy_peer_id(port):
     return None
 
 
-def declared_connection_state(port):
-    """FluidConnection.state of this port's OWN declared target (connected_id()), or None if it has
-    none or the target isn't in connections() yet."""
+def declared_connection(port):
+    """FluidConnection of this port's OWN declared target (connected_id()), or None if it has none or
+    the target isn't in connections() yet."""
     if not port or not hasattr(port, "connected_id"):
         return None
     try:
         own_id = port.connected_id()
     except Exception as error:
-        swallowed("fluid_routing.declared_connection_state: port.connected_id", error)
+        swallowed("fluid_routing.declared_connection: port.connected_id", error)
         return None
     if not own_id:
         return None
     for conn in port_connections(port):
         if getattr(conn, "machine_id", None) == own_id:
-            return getattr(conn, "state", None)
+            return conn
     return None
+
+
+def declared_connection_state(port):
+    """FluidConnection.state of this port's OWN declared target, or None (see declared_connection())."""
+    return getattr(declared_connection(port), "state", None)
+
+
+# A "conflict" link is not like "unreachable": the game assigned it to the one pipe component that
+# reaches both ends, and that component already carries a different fluid, so ALL flow on it stops
+# -- including every unrelated route already using it (docs/guide/flow_networks_fluids.md). The
+# router that caused it disconnects at once and leaves that source alone for this long (~5 min at
+# 10 ticks/sec); the operator fixes it by building a separate pipe for the fluid that doesn't touch
+# the other one. Retrying sooner would stall the other fluid's pipe again on every attempt.
+CONFLICT_BLACKLIST_TICKS = 3000
+# A link that was flowing before turning "conflict" was most likely joined by someone else's new
+# route; that newcomer yields at once, so the established side waits this many checks before it
+# also drops (covers an intruder our routers don't control, e.g. a manual connect()).
+ESTABLISHED_CONFLICT_GRACE_STEPS = 5
+# {router label: {"source": id, "fluid": id or None, "tick": t}} -- one entry per port that yielded a
+# pipe conflict, pruned after CONFLICT_BLACKLIST_TICKS. control_room_automation.py lists the live ones
+# on the AUTOMATION card (active_pipe_conflicts()).
+PIPE_CONFLICTS_KEY = "fluid_routing.pipe_conflicts"
+
+
+def _prune_conflicts(stored, curr_tick):
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        label: entry for label, entry in stored.items()
+        if isinstance(entry, dict) and (curr_tick == 0 or curr_tick - entry.get("tick", 0) < CONFLICT_BLACKLIST_TICKS)
+    }
+
+
+def yield_pipe_conflict(port, label, source_id, fluid, curr_tick, blacklist):
+    """Disconnects port's own declaration onto source_id (the "conflict" link), blacklists source_id
+    for CONFLICT_BLACKLIST_TICKS and reports it: warn log, notify() and a PIPE_CONFLICTS_KEY entry.
+    Only pipe conflicts are reported this way -- an "unreachable" source is normal with several
+    separate pipe networks and stays a quiet debug-level blacklist."""
+    try:
+        port.disconnect()
+    except Exception as error:
+        swallowed("fluid_routing.yield_pipe_conflict: port.disconnect", error)
+    blacklist.blacklist(source_id, curr_tick, CONFLICT_BLACKLIST_TICKS)
+    fluid_text = fluid or "fluid"
+    message = (
+        f"[Pipe conflict] {label} -> '{source_id}': the only pipe reaching it carries another fluid; "
+        f"disconnected, retry in {CONFLICT_BLACKLIST_TICKS} ticks. Build a separate {fluid_text} pipe that doesn't touch it."
+    )
+    log.level("warn").print(message)
+    notify(message, level="warn", duration_seconds=10.0)
+
+    def updater(stored):
+        stored = _prune_conflicts(stored, curr_tick)
+        stored[label] = {"source": source_id, "fluid": fluid, "tick": curr_tick}
+        return stored
+    if not archive.transaction(PIPE_CONFLICTS_KEY, {}, updater):
+        log.level("warn").print(f"yield_pipe_conflict: archive write failed for {label}.")
+
+
+def active_pipe_conflicts(curr_tick):
+    """["<label> x <source>", ...] for every pipe conflict still inside its blacklist window; prunes
+    expired entries from PIPE_CONFLICTS_KEY."""
+    stored = archive.get(PIPE_CONFLICTS_KEY, {})
+    live = _prune_conflicts(stored, curr_tick)
+    if isinstance(stored, dict) and len(live) != len(stored):
+        archive.set(PIPE_CONFLICTS_KEY, live)
+    return [f"{label} x {entry.get('source')}" for label, entry in sorted(live.items())]
 
 
 def fill_pct_of(building):
@@ -225,19 +292,26 @@ class PerEntryBlacklist:
     def __init__(self, rescan_interval_ticks):
         self.rescan_interval_ticks = rescan_interval_ticks
         self._blacklisted_at = {}
+        # entry_id -> its own expiry when blacklist() was given one (pipe conflicts); else rescan_interval_ticks.
+        self._durations = {}
 
     def is_blacklisted(self, entry_id, curr_tick):
         blacklisted_at = self._blacklisted_at.get(entry_id)
         if blacklisted_at is None:
             return False
         age = curr_tick - blacklisted_at
-        still_blacklisted = curr_tick == 0 or age < self.rescan_interval_ticks
+        duration = self._durations.get(entry_id, self.rescan_interval_ticks)
+        still_blacklisted = curr_tick == 0 or age < duration
         if not still_blacklisted:
-            log.debug(f"PerEntryBlacklist: '{entry_id}' blacklist expired (age={age} >= {self.rescan_interval_ticks}), eligible again")
+            log.debug(f"PerEntryBlacklist: '{entry_id}' blacklist expired (age={age} >= {duration}), eligible again")
         return still_blacklisted
 
-    def blacklist(self, entry_id, curr_tick):
-        log.debug(f"PerEntryBlacklist: blacklisting '{entry_id}' at tick={curr_tick} (expires after {self.rescan_interval_ticks} ticks)")
+    def blacklist(self, entry_id, curr_tick, duration_ticks=None):
+        if duration_ticks is None:
+            self._durations.pop(entry_id, None)
+        else:
+            self._durations[entry_id] = duration_ticks
+        log.debug(f"PerEntryBlacklist: blacklisting '{entry_id}' at tick={curr_tick} (expires after {self._durations.get(entry_id, self.rescan_interval_ticks)} ticks)")
         self._blacklisted_at[entry_id] = curr_tick
 
     def filter_reachable(self, entries, curr_tick, key=lambda e: e):
@@ -554,6 +628,10 @@ class FluidInputRouter:
         self.stall_streak = 0
         # Starts at 0 on (re)start so a link that's merely neutral after a power cycle gets its grace too.
         self.steps_since_connect = 0
+        # True once the port has had a healthy link since this router last connected it; decides who
+        # yields a pipe conflict (see ESTABLISHED_CONFLICT_GRACE_STEPS).
+        self.was_healthy = False
+        self.conflict_steps = 0
 
     @property
     def known_candidates(self):
@@ -582,6 +660,8 @@ class FluidInputRouter:
         if peer and not starved_out:
             if self.stall_streak:
                 log.debug(f"FluidInputRouter({self.label}): healthy link via '{peer}' but starved {self.stall_streak}/{self.stall_streak_threshold} -- waiting (source may be temporarily dry)")
+            self.was_healthy = True
+            self.conflict_steps = 0
             _ret = FluidInputEvent("healthy", peer)
             log.end()
             return _ret
@@ -592,7 +672,24 @@ class FluidInputRouter:
         except Exception as error:
             swallowed("fluid_routing.FluidInputRouter.ensure: port.connected_id", error)
             own_id = None
-        own_state = declared_connection_state(port)
+        own_conn = declared_connection(port)
+        own_state = getattr(own_conn, "state", None)
+
+        if own_id and own_state == "conflict":
+            self.conflict_steps += 1
+            if self.was_healthy and self.conflict_steps < ESTABLISHED_CONFLICT_GRACE_STEPS:
+                log.debug(f"FluidInputRouter({self.label}): established link to '{own_id}' in conflict ({self.conflict_steps}/{ESTABLISHED_CONFLICT_GRACE_STEPS}), waiting for the newcomer to yield")
+                _ret = FluidInputEvent("pending", own_id)
+                log.end()
+                return _ret
+            yield_pipe_conflict(port, self.label, own_id, getattr(own_conn, "fluid", None), curr_tick, self.blacklist)
+            self._cache.invalidate()
+            self.stall_streak = 0
+            self.was_healthy = False
+            self.conflict_steps = 0
+            own_id = None
+        else:
+            self.conflict_steps = 0
 
         # The port keeps pointing at a dropped source until a new connect() succeeds -- don't
         # re-drop it every call (that would re-warn, restart its blacklist clock so it never
@@ -639,13 +736,18 @@ class FluidInputRouter:
                 swallowed("fluid_routing.FluidInputRouter.ensure: port.connect", error)
                 continue
             if res.status == "ok":
-                link_state = declared_connection_state(port)
+                link = declared_connection(port)
+                link_state = getattr(link, "state", None)
+                if link_state == "conflict":
+                    yield_pipe_conflict(port, self.label, source_id, getattr(link, "fluid", None), curr_tick, self.blacklist)
+                    continue
                 if link_state in BROKEN_CONNECTION_STATES:
                     self.blacklist.blacklist(source_id, curr_tick)
                     log.debug(f"FluidInputRouter({self.label}): '{source_id}' accepted but link state '{link_state}'; blacklisted, trying next")
                     continue
                 self.steps_since_connect = 0
                 self.stall_streak = 0
+                self.was_healthy = False
                 log.debug(f"FluidInputRouter({self.label}): connected -> '{source_id}' (link state '{link_state}')")
                 _ret = FluidInputEvent("connected", source_id)
                 log.end()
@@ -691,9 +793,10 @@ class FluidOutputRouter:
     """
 
     def __init__(self, type_ids, rebalance_fill_fraction, connection_grace_ticks,
-                 rescan_interval_ticks, discovery_cache_interval_ticks, fluid_id=None):
+                 rescan_interval_ticks, discovery_cache_interval_ticks, fluid_id=None, label="output"):
         self.type_ids = type_ids
         self.fluid_id = fluid_id
+        self.label = label
         self.rebalance_fill_fraction = rebalance_fill_fraction
         self.connection_grace_ticks = connection_grace_ticks
         self.discovery_cache_interval_ticks = discovery_cache_interval_ticks
@@ -712,6 +815,10 @@ class FluidOutputRouter:
         # then only ever updated by this router's own connect() calls.
         self._connected_id = None
         self._id_synced = False
+        # True once the current target has flowed unstalled since this router connected it: such a
+        # link turning "conflict" was joined by someone else, so this side keeps the plain stall
+        # blacklist instead of yielding (FluidInputRouter.was_healthy, same rule).
+        self.was_healthy = False
 
     @property
     def _cached_targets(self):
@@ -759,10 +866,14 @@ class FluidOutputRouter:
         self.ticks_since_connect += 1
 
         if is_stalled and current_id and not self.blacklist.is_blacklisted(current_id, curr_tick) and self.ticks_since_connect >= self.connection_grace_ticks:
-            log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' stalled past grace period ({self.ticks_since_connect} >= {self.connection_grace_ticks} ticks), blacklisting")
-            self.blacklist.blacklist(current_id, curr_tick)
-            if on_blacklisted:
-                on_blacklisted(current_id)
+            link = None if self.was_healthy else declared_connection(port)
+            if getattr(link, "state", None) == "conflict":
+                yield_pipe_conflict(port, self.label, current_id, getattr(link, "fluid", None), curr_tick, self.blacklist)
+            else:
+                log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' stalled past grace period ({self.ticks_since_connect} >= {self.connection_grace_ticks} ticks), blacklisting")
+                self.blacklist.blacklist(current_id, curr_tick)
+                if on_blacklisted:
+                    on_blacklisted(current_id)
             current_id = None
             self._connected_id = None
             self._cache.invalidate()
@@ -778,6 +889,8 @@ class FluidOutputRouter:
         if (current_id and not self.blacklist.is_blacklisted(current_id, curr_tick)
                 and (self.fluid_id is None or tank_is_eligible_target(self._resolve_target(current_id), self.fluid_id))
                 and fill_pct_of(self._resolve_target(current_id)) < self.rebalance_fill_fraction):
+            if not is_stalled:
+                self.was_healthy = True
             _ret = FluidOutputEvent("healthy")
             log.end()
             return _ret
@@ -806,7 +919,13 @@ class FluidOutputRouter:
                 swallowed("fluid_routing.FluidOutputRouter.ensure_connection: port.connect", error)
                 continue
             if res.status == "ok":
+                link = declared_connection(port)
+                if getattr(link, "state", None) == "conflict":
+                    yield_pipe_conflict(port, self.label, target.id, getattr(link, "fluid", None), curr_tick, self.blacklist)
+                    self._connected_id = None
+                    continue
                 self.ticks_since_connect = 0
+                self.was_healthy = False
                 self._connected_id = target.id
                 log.debug(f"FluidOutputRouter({self.type_ids}): connected -> '{target.id}' (fill={fill_pct_of(target):.2f})")
                 _ret = FluidOutputEvent("connected", target_id=target.id, fill_pct=fill_pct_of(target))

@@ -96,6 +96,7 @@ class EssenceLiquifierController:
             rescan_interval_ticks=RESCAN_INTERVAL_TICKS,
             discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
             fluid_id=self.fluid_id,
+            label=f"{self.name}.{self.fluid_id}_out",
         )
         self.log.debug(f"[{self.name}] Host biome '{biome}' -> output port '{self.fluid_id}_out', routing to Liquid Tanks latched/assigned to '{self.fluid_id}'.")
         return True

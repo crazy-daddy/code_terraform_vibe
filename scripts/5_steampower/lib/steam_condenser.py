@@ -108,6 +108,7 @@ class SteamCondenserController:
             rescan_interval_ticks=WATER_RESCAN_INTERVAL_TICKS,
             discovery_cache_interval_ticks=WATER_DISCOVERY_CACHE_INTERVAL_TICKS,
             fluid_id="water",
+            label=f"{self.name}.water_out",
         )
 
     def get_current_tick(self):

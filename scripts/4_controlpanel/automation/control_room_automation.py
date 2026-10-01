@@ -71,6 +71,7 @@ from pump_salt import publish_home_salt_request
 from site_plan import plan_sites
 from mining_drill import publish_all_drills
 import wildlife_planner
+from fluid_routing import active_pipe_conflicts
 from script_parking import ScriptParking
 from tree_console import flush_all, reset_all
 
@@ -361,7 +362,12 @@ while True:
                 report_error("Fleet decommission", e)
 
             plan_wildlife_if_due(clock)
-            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items([upgrade_summary, commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
+            conflict_items = []
+            try:
+                conflict_items = [f"pipe conflict: {c}" for c in active_pipe_conflicts(current_tick)]
+            except Exception as e:
+                report_error("Pipe conflicts", e)
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [upgrade_summary, commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 
     flush_all()

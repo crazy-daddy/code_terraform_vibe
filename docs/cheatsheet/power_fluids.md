@@ -109,6 +109,18 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     3. Slow path: connect first non-blacklisted candidate; a link whose state is already broken
        right after `connect()` "ok" is blacklisted and the next candidate tried in the same pass.
        A source already blacklisted but still declared on the port isn't re-dropped every call.
+    4. **Pipe conflict** (link state `"conflict"`: the only pipe component reaching both ends
+       already carries another fluid, so all flow on it stops, other routes included).
+       `connect()` has no status for this (outcomes are only `ok`/`not_found`/`incompatible`), so
+       it is read from `FluidConnection.state`. The newcomer yields: a router whose port had no
+       healthy link since its own `connect()` calls `fluid_routing.yield_pipe_conflict()` —
+       `port.disconnect()`, blacklist the source for `CONFLICT_BLACKLIST_TICKS=3000` (~5 min),
+       warn log + `notify()`, entry in `fluid_routing.pipe_conflicts` (§4). A link that was
+       healthy first waits `ESTABLISHED_CONFLICT_GRACE_STEPS=5` checks, then yields the same way.
+       `FluidOutputRouter` checks right after `connect()` and on the stall path while not yet
+       healthy (established output links keep the plain stall blacklist). Only conflicts notify;
+       `"unreachable"` stays a quiet debug-level blacklist (separate pipe networks are normal).
+       The AUTOMATION card lists live conflicts (`active_pipe_conflicts()`).
   - **Discovery cost**: the network walk is skipped entirely while a connection is healthy — Cap/
     Pump check one `fill_pct()` on the already-connected id; input routers return on a healthy
     peer. When discovery does run, `TickedDiscoveryCache` holds results for
