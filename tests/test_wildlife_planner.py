@@ -7,10 +7,11 @@ from wildlife_data import SPECIES, BONUS_TREES, FEED_PER_CRAFT, FORAGE_PER_CRAFT
 
 
 def snap(habitats=2, statuses=None, insight=0.0, schedule=(), targets=(), prev_assign=None, feed_stock=None,
-         recipes=None, recipe_inputs=None, parked=(), populations=None, mk2_packs=0, cataloged=None):
+         recipes=None, recipe_inputs=None, parked=(), populations=None, mk2_packs=0, cataloged=None,
+         fluid_stock=None, prev_supply=None, prev_ration=None, tick=1000):
     ids = ["habitat_%d" % (i + 1) for i in range(habitats)]
     return {
-        "tick": 1000,
+        "tick": tick,
         "habitat_ids": ids,
         "statuses": statuses or {},
         "parked": set(parked),
@@ -21,6 +22,9 @@ def snap(habitats=2, statuses=None, insight=0.0, schedule=(), targets=(), prev_a
         "schedule": tuple(schedule),
         "targets": list(targets),
         "prev_assign": prev_assign or {},
+        "prev_ration": prev_ration or {},
+        "prev_supply": prev_supply or {},
+        "fluid_stock": fluid_stock or {},
         "feed_stock": feed_stock or {},
         "form_stock": {},
         "populations": populations or {},
@@ -28,9 +32,15 @@ def snap(habitats=2, statuses=None, insight=0.0, schedule=(), targets=(), prev_a
     }
 
 
-def established(species, pop=1000, rate=10.0, feed_level=50.0, bought=None, tier=1, parked=""):
+def established(species, pop=1000, rate=10.0, feed_level=50.0, bought=None, tier=1, parked="", gas=None, liquid=None):
     return {"species": species, "target": "", "established": True, "rearing": False, "pop": pop, "rate": rate,
-            "feed_level": feed_level, "bought": bought or {}, "tier": tier, "parked": parked, "feed_item": wc.feed_item_of(species)}
+            "feed_level": feed_level, "bought": bought or {}, "tier": tier, "parked": parked, "feed_item": wc.feed_item_of(species),
+            "gas": gas, "liquid": liquid}
+
+
+def gas_row(fluid, level=450.0, flow=0.0, band=(250.0, 650.0)):
+    """Status medium entry: [held, level, band, required, flow]."""
+    return [fluid if level > 0 else "", level, list(band), fluid, flow]
 
 
 class BootstrapTests(harness.StubTestCase):
@@ -159,7 +169,114 @@ class FeedDemandTests(harness.StubTestCase):
         self.assertLessEqual(plan["form_targets"]["lava_algae"], wc.FORM_REQUEST_CAP)
 
 
+class FeedPriorityTests(harness.StubTestCase):
+    def test_fluid_holding_colony_before_rearing_and_feed_only(self):
+        statuses = {
+            "habitat_1": established("salt_tortoise", pop=30000, rate=100.0, gas=gas_row("swamp_gas")),
+            "habitat_2": established("spire_drake", pop=1000, rate=5.0),
+            "habitat_3": {"species": "hive_sentinel", "target": "", "established": False, "rearing": True, "feed_level": 5.0},
+        }
+        plan = wp.build_plan(snap(habitats=3, statuses=statuses))
+        held = plan["feed_demand"][wc.feed_item_of("salt_tortoise")][1]
+        rearing = plan["feed_demand"][wc.feed_item_of("hive_sentinel")][1]
+        feed_only = plan["feed_demand"][wc.feed_item_of("spire_drake")][1]
+        self.assertLess(held, rearing)
+        self.assertLess(rearing, feed_only)
+        self.assertEqual(held // wc.PRIO_RANK_SCALE, wc.PRIO_FLUID_HELD)
+
+    def test_empty_buffer_is_feed_only(self):
+        statuses = {"habitat_1": established("salt_tortoise", pop=30000, rate=100.0, gas=gas_row("swamp_gas", level=0.0))}
+        plan = wp.build_plan(snap(habitats=1, statuses=statuses))
+        self.assertEqual(plan["feed_demand"][wc.feed_item_of("salt_tortoise")][1] // wc.PRIO_RANK_SCALE, wc.PRIO_GROWING)
+
+    def test_rank_uses_model_rate_not_live_rate(self):
+        colonies = {"hollow_choir": "habitat_1", "salt_tortoise": "habitat_2"}
+        statuses = {"habitat_1": established("hollow_choir", pop=1000, rate=3.0),
+                    "habitat_2": established("salt_tortoise", pop=30000, rate=100.0)}
+        before = wp._colony_model(colonies, statuses, set())
+        statuses["habitat_1"]["rate"] = 0.0
+        statuses["habitat_2"]["rate"] = 0.0
+        self.assertEqual(wp._colony_model(colonies, statuses, set()), before)
+        self.assertGreater(before["habitat_1"][0], before["habitat_2"][0])
+
+
+class FluidRationTests(harness.StubTestCase):
+    """Three swamp_gas colonies, slowest first: hollow_choir (rare), mycelial_husk (uncommon), salt_tortoise (common)."""
+
+    def statuses(self, slow_level=450.0):
+        return {
+            "habitat_1": established("salt_tortoise", pop=30000, rate=100.0, gas=gas_row("swamp_gas", flow=0.4)),
+            "habitat_2": established("mycelial_husk", pop=5000, rate=20.0, gas=gas_row("swamp_gas", flow=0.4)),
+            "habitat_3": established("hollow_choir", pop=1000, rate=3.0, gas=gas_row("swamp_gas", level=slow_level, flow=0.4)),
+        }
+
+    def needs(self, statuses):
+        colonies = {e["species"]: hid for hid, e in statuses.items()}
+        model = wp._colony_model(colonies, statuses, set())
+        return {row[0]: row[1] for row in wp._consumers(colonies, statuses, model)["swamp_gas"]}
+
+    def plan(self, statuses, inflow, stock=0.0, prev_ration=None):
+        # Steady state: same stock as last pass, so measured inflow = what the Habitats drew (3 x 0.4).
+        prev = {"swamp_gas": [stock, inflow, 750]}
+        return wp.build_plan(snap(habitats=3, statuses=statuses, fluid_stock={"swamp_gas": stock}, prev_supply=prev,
+                                  prev_ration=prev_ration, tick=1000))
+
+    def test_first_pass_grants_all_and_records_supply(self):
+        plan = wp.build_plan(snap(habitats=3, statuses=self.statuses(), fluid_stock={"swamp_gas": 10.0}))
+        self.assertEqual(plan["fluid_ration"], {})
+        self.assertEqual(plan["fluid_supply"]["swamp_gas"][:3], [10.0, None, 1000])
+
+    def test_ample_supply_grants_all(self):
+        plan = self.plan(self.statuses(), inflow=1.2, stock=500.0)
+        self.assertEqual(plan["fluid_ration"], {})
+        self.assertEqual(plan["alerts"][wc.PARK_RATIONED], [])
+
+    def test_short_supply_denies_fastest_first(self):
+        statuses = self.statuses()
+        needs = self.needs(statuses)
+        self.assertLess(needs["habitat_3"] + needs["habitat_2"], 1.2)
+        self.assertGreater(sum(needs.values()), 1.2)
+        plan = self.plan(statuses, inflow=1.2)
+        self.assertEqual(plan["fluid_ration"], {"habitat_1": ["swamp_gas"]})
+        self.assertIn("1 fluid-rationed", wp.summary_line(plan))
+
+    def test_walk_stops_at_slowest_that_does_not_fit(self):
+        # The slowest colony needs a full fill: stock banks up for it, nobody faster gets gas.
+        plan = self.plan(self.statuses(slow_level=0.0), inflow=1.2)
+        self.assertEqual(set(plan["fluid_ration"]), {"habitat_1", "habitat_2", "habitat_3"})
+
+    def test_hysteresis_keeps_a_denied_colony_denied_at_the_edge(self):
+        statuses = self.statuses()
+        total = sum(self.needs(statuses).values())
+        # Budget just above the total need, but below it once the hysteresis margin is taken off.
+        inflow = total / (1.0 - wc.RATION_HYSTERESIS / 2)
+        for hid in statuses:
+            statuses[hid]["gas"][wc.MEDIUM_FLOW] = inflow / 3
+        plan = self.plan(statuses, inflow=inflow)
+        self.assertEqual(plan["fluid_ration"], {})
+        plan = self.plan(statuses, inflow=inflow, prev_ration={"habitat_1": ["swamp_gas"]})
+        self.assertEqual(plan["fluid_ration"], {"habitat_1": ["swamp_gas"]})
+
+    def test_capped_colony_is_not_a_consumer(self):
+        statuses = {"habitat_1": established("salt_tortoise", pop=175000, rate=0.0, gas=gas_row("swamp_gas"))}
+        plan = self.plan(statuses, inflow=0.0)
+        self.assertEqual(plan["fluid_ration"], {})
+        self.assertNotIn("swamp_gas", plan["fluid_supply"])
+
+    def test_inflow_is_smoothed_stock_change_plus_draw(self):
+        self.assertIsNone(wp._inflow(100.0, 2.0, None, 1000))
+        self.assertEqual(wp._inflow(100.0, 2.0, [50.0, None, 750], 1000), 52.0)
+        self.assertAlmostEqual(wp._inflow(100.0, 2.0, [50.0, 1.0, 750], 1000) or 0.0, 1.0 + wc.RATION_INFLOW_ALPHA * 51.0)
+
+
 class WakeAlertTests(harness.StubTestCase):
+    def test_wakes_rationed_habitat_once_granted(self):
+        statuses = {"habitat_1": established("salt_tortoise", pop=30000, gas=gas_row("swamp_gas", level=100.0), parked=wc.PARK_RATIONED)}
+        plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"], fluid_stock={"swamp_gas": 500.0},
+                                  prev_supply={"swamp_gas": [500.0, 5.0, 750]}, prev_ration={"habitat_1": ["swamp_gas"]}))
+        self.assertEqual(plan["fluid_ration"], {})
+        self.assertEqual(plan["wakes"], [("habitat_1", "fluid granted")])
+
     def test_wakes_parked_no_feed_once_feed_in_stock(self):
         item = wc.feed_item_of("salt_tortoise")
         statuses = {"habitat_1": established("salt_tortoise", feed_level=0.0, parked=wc.PARK_NO_FEED)}

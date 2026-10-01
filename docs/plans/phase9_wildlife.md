@@ -18,6 +18,7 @@ Decided (2026-10-01):
 7. Habitats are shed last (power tier 3); an unpowered Habitat only pauses.
 8. Established Habitats park on `no_feed` and at the Mk I ceiling, with an operator alert (notify + AUTOMATION card).
 9. Buffers, not just-in-time: feed to a 24 game-hour stock target, life forms to 48 game hours.
+10. Fluid supply is not assumed ample (see "Exotic fluid supply vs demand"). The planner rations each fluid to the slowest colonies first within the tank budget. A denied Habitat stops intake and keeps its buffer, and parks once that buffer leaves the band. Feed goes to fluid-holding colonies before rearing and feed-only ones, because a starved buffer bleeds until it parks. Simworker check: an unpowered or capped Habitat neither meters nor bleeds. Details in §1l-2.
 
 Next: deploy and observe live (see Verification), then the Refiner / fluid supply once Exotic Husbandry unlocks.
 

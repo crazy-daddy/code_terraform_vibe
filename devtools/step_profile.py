@@ -204,6 +204,32 @@ def target_pull(size, scenario=None):
     return plan
 
 
+def target_wildlife_ration(_size):
+    """wildlife_planner: model ranks + fluid ration, worst case (16 colonies, every node bought, gas and liquid each, every fluid short)."""
+    from atomic import run_atomic
+    import wildlife_planner
+    from wildlife_data import SPECIES, BONUS_TREES
+    colonies = {}
+    statuses = {}
+    stock = {}
+    prev = {}
+    for i, species in enumerate(sorted(SPECIES)):
+        hid = "habitat_%d" % (i + 1)
+        colonies[species] = hid
+        gas, liquid = "gas_%d" % (i % 4), "liquid_%d" % (i % 3)
+        statuses[hid] = {"species": species, "established": True, "pop": 20000 + 1000 * i, "tier": 1,
+                         "gas": ["", 0.0, [250.0, 650.0], gas, 1.0], "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0]}
+        for fluid in (gas, liquid):
+            stock[fluid] = 0.0
+            prev[fluid] = [0.0, 0.5, 0]
+    nodes = set(tree[slot][0] for tree in BONUS_TREES.values() for slot in ("adaptation", "breakthrough"))
+
+    def plan():
+        model = wildlife_planner._colony_model(colonies, statuses, nodes)
+        run_atomic(wildlife_planner._ration_pass, colonies, statuses, model, stock, prev, {}, 250)
+    return plan
+
+
 TARGETS = {
     "fabricator": target_fabricator,
     "smelter": target_smelter,
@@ -211,6 +237,7 @@ TARGETS = {
     "raw_demands": target_raw_demands,
     "haul": target_haul,
     "pull": target_pull,
+    "wildlife_ration": target_wildlife_ration,
 }
 
 

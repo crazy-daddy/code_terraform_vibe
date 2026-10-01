@@ -6,7 +6,8 @@
 # One pass:
 #   1. Snapshot (game reads): Habitats on the network, their `wildlife.status`
 #      telemetry, the Feed Makers' `wildlife.feed` (unlocked recipes and
-#      their inputs), cataloged creatures, home stock of feed and life forms.
+#      their inputs), cataloged creatures, home stock of feed and life forms,
+#      tank stock of each fluid a Habitat band needs.
 #   2. build_plan(snapshot): pure, called directly. Its cost grows with
 #      Habitats and statuses past the 10,000-step cap of one atomic callback
 #      (lib/atomic.py), and an hourly pass needs no single-tick speed.
@@ -16,9 +17,13 @@
 #      bought, not cataloged, recipe locked, no Habitat left) is skipped;
 #      the first step that can run later (Insight short, Breakthrough
 #      source below 10,000) stops the walk, holding Insight.
-#      Then feed demand per feed item (priority classes in wildlife_common),
-#      the Forage reserve for the Plant Terraformer, life-form targets, the
-#      Habitats to wake and the operator alerts.
+#      Then, as two atomic calls (each bounded by the Habitat count): each
+#      colony's hours to its ceiling at the full-support model rate, and the
+#      fluid ration (per fluid, slowest colonies first within the tank
+#      budget). Then feed demand per feed item (priority classes in
+#      wildlife_common, fluid-holding colonies first), the Forage reserve for
+#      the Plant Terraformer, life-form targets, the Habitats to wake and the
+#      operator alerts.
 #   3. Writes `wildlife.plan` / `wildlife.readiness`, the life-form requests
 #      at home (requester REQUESTER_ID), wakes, notify() on alert changes.
 #      Returns a one-line summary for the AUTOMATION card.
@@ -31,14 +36,17 @@ from swallow import swallowed
 from tree_console import TreeConsole
 import logistics_requests
 from script_parking import wake_for_visit, wake_kind, parked_ids
-from wildlife_data import SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT
-from wildlife_model import schedule_for
+from wildlife_data import SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H
+from wildlife_model import schedule_for, breeding_rate, breakthrough_effects, adaptation_effects
+from atomic import run_atomic, run_batched
+import fluid_routing
 import wildlife_common as wc
 
 PLAN_TICK_INTERVAL = 250            # one game hour
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
 REQUEST_REFRESH_TICKS = 1200        # republish at least this often (REQUEST_STALE_TICKS = 6000)
 IDLE_SUMMARY = "wildlife idle"
+MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/step_profile.py wildlife_ration)
 
 log = TreeConsole(module="wildlife_planner")
 
@@ -177,7 +185,43 @@ def _mk_ceiling(entry):
     return STAGE_CAPACITY[4] * (HABITAT_MK2_CAPACITY_FACTOR if tier >= 2 else 1)
 
 
-def _feed_demand(snap, colonies, statuses, nodes):
+def _model_rows(pairs, statuses, nodes, others):
+    """[[habitat_id, hours to the Mk ceiling, individuals/h]] for the (species, habitat_id) pairs given."""
+    shared = breakthrough_effects(nodes)
+    out = []
+    for species, hid in pairs:
+        entry = statuses.get(hid) or {}
+        pop = int(entry.get("pop") or 0)
+        left = max(0.0, _mk_ceiling(entry) - pop)
+        rate = breeding_rate(species, pop, shared + adaptation_effects(nodes, species), others) if left > 0 else 0.0
+        out.append([hid, left / rate if rate > 0 else 0.0, rate])
+    return out
+
+
+def _colony_model(colonies, statuses, nodes):
+    """
+    {habitat_id: (hours to the Mk ceiling, individuals/h)} for established
+    colonies at the full-support model rate (efficiency 1), not the live rate:
+    a starved or rationed colony's live rate drops and would reorder the ranks
+    every pass. A colony at its ceiling gets (0, 0). Runs atomically in
+    MODEL_CHUNK-colony slices (one breeding_rate() with every node bought is
+    ~600 steps).
+    """
+    pairs = [(s, hid) for s, hid in colonies.items() if s in SPECIES and (statuses.get(hid) or {}).get("established")]
+    others = max(0, len(pairs) - 1)
+    rows = run_batched(_model_rows, pairs, MODEL_CHUNK, statuses, nodes, others)
+    return {r[0]: (r[1], r[2]) for r in rows}
+
+
+def _holds_fluid(entry):
+    for medium in wc.TANK_TYPE_IDS:
+        row = entry.get(medium)
+        if isinstance(row, list) and len(row) > wc.MEDIUM_LEVEL and float(row[wc.MEDIUM_LEVEL] or 0.0) > 0:
+            return True
+    return False
+
+
+def _feed_demand(snap, colonies, statuses, nodes, model):
     """
     ({feed_item: [home stock target, priority, units short now]}, {species: feed per game hour}).
     Target = home buffer + what the Habitat bin still lacks; an item is listed
@@ -199,25 +243,105 @@ def _feed_demand(snap, colonies, statuses, nodes):
             if per_h > 0:
                 target = max(target, FEED_PER_CRAFT)
             bin_short = max(0.0, wc.FEED_TOPUP_TARGET - bin_level) if per_h > 0 else 0.0
-            left = max(0.0, _mk_ceiling(entry) - float(entry.get("pop") or 0))
-            hours_left = left / rate if rate > 0 else 1e9
-            rows.append((item, target + bin_short, wc.PRIO_GROWING, hours_left))
+            prio = wc.PRIO_FLUID_HELD if _holds_fluid(entry) else wc.PRIO_GROWING
+            rows.append((item, target + bin_short, prio, (model.get(hid) or (0.0, 0.0))[0]))
         elif entry.get("rearing"):
             # Established within 12 h: have the bin's first top-up ready.
             rows.append((item, max(0.0, wc.FEED_TOPUP_TARGET - bin_level), wc.PRIO_REARING, 0.0))
         else:
             rows.append((item, max(0.0, REVIVE_FEED_REQUIRED + wc.REARING_FEED_EXTRA - bin_level), wc.PRIO_RESERVE, 0.0))
-    growing = sorted((r for r in rows if r[2] == wc.PRIO_GROWING), key=lambda r: -r[3])
-    rank = {r[0]: i for i, r in enumerate(growing)}
+    ranked_prios = (wc.PRIO_FLUID_HELD, wc.PRIO_GROWING)
+    ranked = sorted((r for r in rows if r[2] in ranked_prios), key=lambda r: -r[3])
+    rank = {r[0]: i for i, r in enumerate(ranked)}
     demand = {}
     for item, units, prio, _hours in rows:
         target = int(units + 0.999)
         need = target - int(stock.get(item, 0))
         if need <= 0:
             continue
-        p = prio * wc.PRIO_RANK_SCALE + rank.get(item, 0) if prio == wc.PRIO_GROWING else prio * wc.PRIO_RANK_SCALE
+        p = prio * wc.PRIO_RANK_SCALE + rank.get(item, 0) if prio in ranked_prios else prio * wc.PRIO_RANK_SCALE
         demand[item] = [target, p, need]
     return demand, use
+
+
+def _consumers(colonies, statuses, model):
+    """
+    {fluid: [[habitat_id, need t/h, hours to ceiling, port flow t/h]]} for
+    established colonies below their ceiling whose band (or pre-fill) needs a
+    fluid. Need = consumption at the model rate + bleed + the fill to the band
+    centre spread over RATION_RUNWAY_H. A colony at its ceiling is skipped:
+    the game neither meters nor bleeds its buffers.
+    """
+    out = {}
+    for hid in colonies.values():
+        hours, rate = model.get(hid) or (0.0, 0.0)
+        if rate <= 0:
+            continue
+        entry = statuses.get(hid) or {}
+        for medium, per_birth in (("gas", GAS_PER_BIRTH_T), ("liquid", LIQUID_PER_BIRTH_T)):
+            row = entry.get(medium) or []
+            if len(row) <= wc.MEDIUM_FLOW:
+                continue
+            fluid = row[wc.MEDIUM_REQUIRED]
+            band = row[wc.MEDIUM_BAND]
+            if not fluid or not isinstance(band, list) or len(band) < 2:
+                continue
+            fill = max(0.0, (band[0] + band[1]) / 2.0 - float(row[wc.MEDIUM_LEVEL] or 0.0))
+            need = rate * per_birth + BUFFER_BLEED_T_PER_H + fill / wc.RATION_RUNWAY_H
+            out.setdefault(fluid, []).append([hid, need, hours, float(row[wc.MEDIUM_FLOW] or 0.0)])
+    return out
+
+
+def _inflow(stock, drawn, prev, now):
+    """
+    Smoothed gross tank inflow (t/h): stock change since the last pass plus
+    what the Habitats drew. None without a previous reading.
+    """
+    if not isinstance(prev, list) or len(prev) < 3:
+        return None
+    hours = (now - int(prev[2] or 0)) / float(wc.TICKS_PER_GAME_HOUR)
+    if hours <= 0:
+        return prev[1]
+    raw = max(0.0, (stock - float(prev[0] or 0.0)) / hours + drawn)
+    if prev[1] is None:
+        return raw
+    return prev[1] + wc.RATION_INFLOW_ALPHA * (raw - prev[1])
+
+
+def _fluid_ration(consumers, stock, prev_supply, prev_ration, now):
+    """
+    ({habitat_id: [denied fluids]}, {fluid: [stock t, inflow t/h, tick, need t/h]}).
+    Per fluid, colonies are granted slowest first while their need fits the
+    budget (inflow + stock / RATION_RUNWAY_H). The walk stops at the first
+    colony that does not fit, so stock banks up for it rather than going to
+    faster colonies. Without an inflow estimate (first pass) all are granted.
+    """
+    ration = {}
+    supply = {}
+    for fluid in sorted(consumers):
+        rows = sorted(consumers[fluid], key=lambda r: -r[2])
+        have = float(stock.get(fluid) or 0.0)
+        inflow = _inflow(have, sum(r[3] for r in rows), prev_supply.get(fluid), now)
+        supply[fluid] = [round(have, 1), None if inflow is None else round(inflow, 3), now, round(sum(r[1] for r in rows), 3)]
+        if inflow is None:
+            continue
+        budget = inflow + have / wc.RATION_RUNWAY_H
+        used = 0.0
+        blocked = False
+        for hid, need, _hours, _flow in rows:
+            granted_before = fluid not in (prev_ration.get(hid) or [])
+            limit = budget if granted_before else budget * (1.0 - wc.RATION_HYSTERESIS)
+            if not blocked and used + need <= limit:
+                used += need
+            else:
+                blocked = True
+                ration.setdefault(hid, []).append(fluid)
+    return ration, supply
+
+
+def _ration_pass(colonies, statuses, model, stock, prev_supply, prev_ration, now):
+    """Consumers and the fluid ration in one pure call (run atomically; bounded by the Habitat count)."""
+    return _fluid_ration(_consumers(colonies, statuses, model), stock, prev_supply, prev_ration, now)
 
 
 def _form_targets(snap, colonies, use, demand):
@@ -238,15 +362,17 @@ def _form_targets(snap, colonies, use, demand):
     return {f: min(wc.FORM_REQUEST_CAP, n) for f, n in targets.items()}
 
 
-def _wakes_and_alerts(snap, statuses, assign):
-    """([habitat ids to wake, with reason], {"no_feed": [...], "capped": [...]})."""
+def _wakes_and_alerts(snap, statuses, assign, ration):
+    """([habitat ids to wake, with reason], {"no_feed": [...], "capped": [...], "rationed": [...]}).
+
+    "rationed" lists every Habitat denied a fluid this pass, parked or not."""
     wakes = []
-    alerts = {wc.PARK_NO_FEED: [], wc.PARK_CAPPED: []}
+    alerts = {wc.PARK_NO_FEED: [], wc.PARK_CAPPED: [], wc.PARK_RATIONED: sorted(ration)}
     parked = snap["parked"]
     for hid in snap["habitat_ids"]:
         entry = statuses.get(hid) or {}
         reason = entry.get("parked") or ""
-        if reason in alerts:
+        if reason in (wc.PARK_NO_FEED, wc.PARK_CAPPED):
             alerts[reason].append(hid)
         if hid not in parked:
             continue
@@ -258,6 +384,8 @@ def _wakes_and_alerts(snap, statuses, assign):
                 wakes.append((hid, "feed in stock"))
         elif reason == wc.PARK_CAPPED and snap["mk2_packs"] > 0 and int(entry.get("tier") or 1) < 2:
             wakes.append((hid, "Mk II pack in Inventory"))
+        elif reason == wc.PARK_RATIONED and hid not in ration:
+            wakes.append((hid, "fluid granted"))
     return wakes, alerts
 
 
@@ -267,11 +395,14 @@ def build_plan(snap):
     bought, nodes = _purchased(statuses)
     colonies, assign, free = _colonies(snap["habitat_ids"], statuses, snap["prev_assign"])
     assign, buy, skipped, waiting = _walk(snap, colonies, free, assign, bought, snap["insight"])
-    demand, use = _feed_demand(snap, colonies, statuses, nodes)
+    model = _colony_model(colonies, statuses, nodes)
+    ration, supply = run_atomic(_ration_pass, colonies, statuses, model, snap["fluid_stock"],
+                                snap["prev_supply"], snap["prev_ration"], snap["tick"])
+    demand, use = _feed_demand(snap, colonies, statuses, nodes, model)
     forage = sum(wc.forage_for(v[2]) for v in demand.values())
     if forage:
         forage += wc.forage_for(FEED_PER_CRAFT)
-    wakes, alerts = _wakes_and_alerts(snap, statuses, assign)
+    wakes, alerts = _wakes_and_alerts(snap, statuses, assign, ration)
     missing_creatures = sorted(s for s in SPECIES if s not in snap["cataloged"])
     missing_recipes = sorted(s for s in SPECIES if snap["recipes"] and wc.recipe_of(s) not in snap["recipes"])
     return {
@@ -280,6 +411,8 @@ def build_plan(snap):
         "feed_demand": demand,
         "forage_reserve": forage,
         "form_targets": _form_targets(snap, colonies, use, demand),
+        "fluid_ration": ration,
+        "fluid_supply": supply,
         "progress": {
             "waiting": [list(waiting[0]), waiting[1]] if waiting else None,
             "skipped": [[list(step), reason] for step, reason in skipped],
@@ -301,6 +434,8 @@ def summary_line(plan):
         parts.append("%d capped at Mk I (Mk II needed)" % len(alerts[wc.PARK_CAPPED]))
     if alerts.get(wc.PARK_NO_FEED):
         parts.append("%d without feed" % len(alerts[wc.PARK_NO_FEED]))
+    if alerts.get(wc.PARK_RATIONED):
+        parts.append("%d fluid-rationed" % len(alerts[wc.PARK_RATIONED]))
     missing = (plan.get("readiness") or {}).get("missing_recipes") or []
     if missing:
         parts.append("%d feed recipe(s) locked" % len(missing))
@@ -379,6 +514,26 @@ def _inventory_count(item_id):
         return 0
 
 
+def _fluid_stock(statuses):
+    """{fluid: tons in every tank eligible for it}, for each fluid a Habitat band (or pre-fill) needs."""
+    wanted = {}
+    for entry in statuses.values():
+        for medium in wc.TANK_TYPE_IDS:
+            row = entry.get(medium)
+            if isinstance(row, list) and len(row) > wc.MEDIUM_REQUIRED and row[wc.MEDIUM_REQUIRED]:
+                wanted[row[wc.MEDIUM_REQUIRED]] = medium
+    out = {}
+    for fluid, medium in wanted.items():
+        total = 0.0
+        for tank, _outpost_id in fluid_routing.discover_network_buildings(wc.TANK_TYPE_IDS[medium], fluid_id=fluid):
+            try:
+                total += float(tank.level() or 0.0)
+            except Exception as error:
+                swallowed("wildlife_planner._fluid_stock: tank.level", error)
+        out[fluid] = total
+    return out
+
+
 def snapshot(now):
     """Every game read build_plan() needs; None when there is no Habitat."""
     habitat_ids, home = _network_habitats()
@@ -398,6 +553,8 @@ def snapshot(now):
         species = entry.get("species")
         if species:
             populations[species] = int(entry.get("pop") or 0)
+    if not isinstance(plan, dict):
+        plan = {}
     return {
         "tick": now,
         "habitat_ids": habitat_ids,
@@ -409,7 +566,10 @@ def snapshot(now):
         "insight": _insight(statuses, now),
         "schedule": schedule_for(len(habitat_ids)),
         "targets": list(targets) if isinstance(targets, list) else [],
-        "prev_assign": (plan.get("assign") or {}) if isinstance(plan, dict) else {},
+        "prev_assign": plan.get("assign") or {},
+        "prev_ration": plan.get("fluid_ration") or {},
+        "prev_supply": plan.get("fluid_supply") or {},
+        "fluid_stock": _fluid_stock(statuses),
         "feed_stock": {i: stock.get(i, 0) for i in feed_items},
         "form_stock": {f: stock.get(f, 0) for f in forms},
         "populations": populations,
@@ -450,7 +610,7 @@ def _publish_requests(snap: dict, plan: dict, now):
 
 
 def _write(plan):
-    stored = {k: plan[k] for k in ("assign", "buy", "feed_demand", "forage_reserve", "form_targets", "progress", "alerts", "tick")}
+    stored = {k: plan[k] for k in ("assign", "buy", "feed_demand", "forage_reserve", "form_targets", "fluid_ration", "fluid_supply", "progress", "alerts", "tick")}
 
     def updater(_old):
         return stored
@@ -463,8 +623,8 @@ def _write(plan):
     return True
 
 
-def _report(plan, prev_assign, prev_buy):
-    """Info lines for new assignments and purchases, debug for the walk, notify() on alert changes."""
+def _report(plan, prev_assign, prev_buy, prev_ration):
+    """Info lines for new assignments, purchases and ration changes, debug for the walk and fluid budgets, notify() on alert changes."""
     for hid, entry in plan["assign"].items():
         if (prev_assign.get(hid) or {}).get("species") != entry["species"]:
             first = " (Adaptation first)" if entry.get("adapt_first") else ""
@@ -472,6 +632,14 @@ def _report(plan, prev_assign, prev_buy):
     for hid, slot in plan["buy"].items():
         if prev_buy.get(hid) != slot:
             log.print(f"[WILDLIFE] {hid}: buy {slot}.")
+    ration = plan["fluid_ration"]
+    for hid in sorted(set(ration) | set(prev_ration)):
+        now_denied = sorted(ration.get(hid) or [])
+        if now_denied != sorted(prev_ration.get(hid) or []):
+            log.print(f"[WILDLIFE] {hid}: fluid " + (f"rationed ({', '.join(now_denied)} denied)." if now_denied else "granted again."))
+    for fluid, row in plan["fluid_supply"].items():
+        inflow = "n/a" if row[1] is None else f"{row[1]:.2f}"
+        log.debug(f"{fluid}: stock {row[0]:.0f} t, inflow {inflow} t/h, need {row[3]:.2f} t/h")
     progress = plan["progress"]
     signature = (progress["waiting"], [s[0] for s in progress["skipped"]])
     if signature != state["progress"]:
@@ -487,7 +655,7 @@ def _report(plan, prev_assign, prev_buy):
             log.level("warn").print(f"[WILDLIFE] Not cataloged: {missing['missing_creatures']}; feed recipes locked: {missing['missing_recipes']}.")
     alerts = plan["alerts"]
     if alerts != state["alerts"]:
-        if state["alerts"] is not None or alerts[wc.PARK_CAPPED] or alerts[wc.PARK_NO_FEED]:
+        if state["alerts"] is not None or alerts[wc.PARK_CAPPED] or alerts[wc.PARK_NO_FEED] or alerts[wc.PARK_RATIONED]:
             message = summary_line(plan)
             if message != IDLE_SUMMARY:
                 _notify(f"[Wildlife] {message}")
@@ -515,7 +683,7 @@ def plan(clock):
     if not _write(result):
         log.end("write rejected")
         return state["summary"]
-    _report(result, snap["prev_assign"], (prev.get("buy") or {}) if isinstance(prev, dict) else {})
+    _report(result, snap["prev_assign"], (prev.get("buy") or {}) if isinstance(prev, dict) else {}, snap["prev_ration"])
     _publish_requests(snap, result, now)
     for hid, reason in result["wakes"]:
         wake_for_visit(hid, reason, hold=False)

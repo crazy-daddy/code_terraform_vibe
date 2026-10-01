@@ -8,12 +8,14 @@
 
 from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT
 from wildlife_model import node_effects, static_bonuses
+from fluid_routing import LIQUID_TANK_TYPE_IDS
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).
 STATUS_KEY = "wildlife.status"
 # {feed_maker_id: telemetry incl. unlocked recipe ids}, written by each Feed Maker.
 FEED_KEY = "wildlife.feed"
-# The planner's decisions: assign / buy / feed_demand / forage_reserve / form_targets / progress / alerts.
+# The planner's decisions: assign / buy / feed_demand / forage_reserve / form_targets /
+# fluid_ration / fluid_supply / progress / alerts.
 PLAN_KEY = "wildlife.plan"
 # {missing_creatures: [...], missing_recipes: [...]}.
 READINESS_KEY = "wildlife.readiness"
@@ -45,16 +47,34 @@ FORM_BUFFER_H = 48.0
 FORM_REQUEST_MIN_CRAFTS = 20
 FORM_REQUEST_CAP = 1900
 
-# Feed demand priority classes (lower first).
+# Feed demand priority classes (lower first). The two established classes are
+# ordered by hours left to the Mk ceiling at the full-support model rate
+# (slowest first), as PRIO * PRIO_RANK_SCALE + rank.
 PRIO_RESERVE = 0      # Habitat staging for revive()
-PRIO_REARING = 1      # Habitat in the 12 h rearing window
-PRIO_GROWING = 2      # established, ordered by hours left to the Mk II ceiling (slowest first)
-PRIO_RANK_SCALE = 100  # PRIO_GROWING * scale + rank
+PRIO_FLUID_HELD = 1   # established, gas or liquid buffer non-empty: it bleeds while starved
+PRIO_REARING = 2      # Habitat in the 12 h rearing window
+PRIO_GROWING = 3      # established, feed-only
+PRIO_RANK_SCALE = 100
+
+# Fluid rationing (planner): per fluid, hourly budget = smoothed gross tank
+# inflow + tank stock / RATION_RUNWAY_H; colonies are granted slowest first
+# while their need fits. A colony not granted last pass must fit in
+# budget x (1 - RATION_HYSTERESIS).
+RATION_RUNWAY_H = 24.0
+RATION_INFLOW_ALPHA = 0.3
+RATION_HYSTERESIS = 0.1
+
+# Tanks a Habitat's gas_in / liquid_in draws from.
+TANK_TYPE_IDS = {"gas": ("gas_tank",), "liquid": LIQUID_TANK_TYPE_IDS}
+
+# Status `gas` / `liquid` entry: [held fluid, level t, band, required fluid, port flow t/h].
+MEDIUM_HELD, MEDIUM_LEVEL, MEDIUM_BAND, MEDIUM_REQUIRED, MEDIUM_FLOW = 0, 1, 2, 3, 4
 
 # Habitat park reasons (lib/habitat.py publishes `parked`).
 PARK_EMPTY = "empty"
 PARK_NO_FEED = "no_feed"
 PARK_CAPPED = "capped"
+PARK_RATIONED = "rationed"   # fluid denied by the planner and buffer out of band
 
 
 def feed_item_of(species):

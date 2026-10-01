@@ -92,21 +92,30 @@ def required_fluids(species, stage, retain_gas=False, retain_liquid=False):
     return out[0], out[1]
 
 
+def breakthrough_effects(purchased):
+    """Effects of every purchased Breakthrough (they act on all species). `purchased`: a set of node ids."""
+    effects = []
+    for tree in BONUS_TREES.values():
+        node_id, node_fx = tree["breakthrough"]
+        if node_id in purchased:
+            effects.extend(node_fx)
+    return effects
+
+
+def adaptation_effects(purchased, species):
+    """Effects of `species`' own Adaptation when purchased. `purchased`: a set of node ids."""
+    tree = BONUS_TREES.get(species)
+    if not tree or tree["adaptation"][0] not in purchased:
+        return []
+    return list(tree["adaptation"][1])
+
+
 def node_effects(purchased, species):
     """Effects of purchased nodes acting on `species`: every Breakthrough plus its own Adaptation.
 
     `purchased` is an iterable of node ids."""
     owned = set(purchased)
-    effects = []
-    for source, tree in BONUS_TREES.items():
-        node_id, node_fx = tree["breakthrough"]
-        if node_id in owned:
-            effects.extend(node_fx)
-        if source == species:
-            node_id, node_fx = tree["adaptation"]
-            if node_id in owned:
-                effects.extend(node_fx)
-    return effects
+    return breakthrough_effects(owned) + adaptation_effects(owned, species)
 
 
 def static_bonuses(effects):

@@ -337,6 +337,8 @@ Automates Phase 6 end to end as a new `scripts/9_wildlife/` tier (thin entrypoin
   - [x] Cap/Tap controller: `lib/exotic_cap.py` + `9_wildlife/fluids/exotic_gas_cap.py` / `exotic_spring_tap.py` (Oil Pump routing loop, valve always open, parks only through a long Deep-surveyed dormant phase). Live: cycles are under a minute real time, ammonia_2 averages ~13 t/h and Habitats drain gas_tank_26 as fast as it fills.
   - [ ] Validate live: caps/taps have a breaker and are grid members (else they never park), `deposit()` readable while unpowered, tank assignment for each exotic fluid, slots matched by the sync (`_unmatched/exotic_*`).
   - [ ] Refiner controller.
+  - [x] Short supply: the planner rations each fluid to the slowest colonies first (`fluid_ration`); a denied Habitat stops intake, keeps its buffer, and parks once out of band; feed goes first to fluid-holding colonies (`PRIO_FLUID_HELD`) (§1l-2).
+  - [ ] Validate the ration live: tank `level()` sums per fluid, Habitat port `flow_rate()` vs the intake setpoint, the inflow estimate against the caps' real output, and the real per-port intake limit vs `MAX_INTAKE_T_PER_H = 50`.
 - [ ] **Open questions for later:** which biome outposts exist today. (Resolved: typeIds are `feed_maker` and `habitat`, from `state.machines`.)
 
 ---

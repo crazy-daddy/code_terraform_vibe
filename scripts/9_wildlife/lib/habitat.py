@@ -9,11 +9,13 @@
 #     re-stage and retry up to MAX_REVIVE_RETRIES;
 #   - established: top up feed, regulate gas and liquid toward the band centre
 #     from tanks holding the required fluid, pre-fill a medium that opens at
-#     the next stage, buy queued Breakthroughs/Adaptations.
+#     the next stage, buy queued Breakthroughs/Adaptations. A fluid the
+#     planner rations away (`fluid_ration`) gets intake 0, without a purge.
 # Parks itself (breaker off, lib/script_parking.py) when empty and unassigned,
-# without feed anywhere at home, or capped at the Mk I ceiling; publishes the
-# reason so the planner can wake it and alert the operator. State is read
-# live each step, so a restart picks up where it was.
+# without feed anywhere at home, capped at the Mk I ceiling, or rationed with
+# its buffer out of band (an unpowered Habitat neither meters nor bleeds);
+# publishes the reason so the planner can wake it and alert the operator.
+# State is read live each step, so a restart picks up where it was.
 #
 # Publishes `wildlife.status[habitat_id]` (see docs/cheatsheet/wildlife.md §1l-2).
 
@@ -27,9 +29,6 @@ import fluid_routing
 import cash
 from wildlife_data import SPECIES, REVIVE_FEED_REQUIRED, REVIVAL_REAGENT_IDS, RARITY_REAGENTS, STAGE_CAPACITY, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H
 import wildlife_common as wc
-
-GAS_TANK_TYPE_IDS = ("gas_tank",)
-LIQUID_TANK_TYPE_IDS = fluid_routing.LIQUID_TANK_TYPE_IDS
 
 # Poll: established colonies wake in time for the next feed top-up, within these bounds (s).
 POLL_MIN_S = 5.0
@@ -55,8 +54,8 @@ FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 FLUID_NEUTRAL_GRACE_STEPS = 5
 
 MEDIA = {
-    "gas": {"port": "gas_in", "tanks": GAS_TANK_TYPE_IDS, "per_birth": GAS_PER_BIRTH_T},
-    "liquid": {"port": "liquid_in", "tanks": LIQUID_TANK_TYPE_IDS, "per_birth": LIQUID_PER_BIRTH_T},
+    "gas": {"port": "gas_in", "tanks": wc.TANK_TYPE_IDS["gas"], "per_birth": GAS_PER_BIRTH_T},
+    "liquid": {"port": "liquid_in", "tanks": wc.TANK_TYPE_IDS["liquid"], "per_birth": LIQUID_PER_BIRTH_T},
 }
 
 
@@ -93,6 +92,7 @@ class HabitatController:
         self.retries = 0
         self.blocker = None
         self.parked = ""
+        self.rationed_out = False
         self._last_failed = False
 
     # ------------------------------------------------------------ readings
@@ -126,11 +126,13 @@ class HabitatController:
         return out
 
     def plan_entry(self):
+        """(assignment, node slot to buy or None, [fluids the planner denies this Habitat])."""
         plan = archive.get(wc.PLAN_KEY, {}) or {}
         if not isinstance(plan, dict):
-            return {}, None
+            return {}, None, []
         assign = (plan.get("assign") or {}).get(self.name) or {}
-        return assign, (plan.get("buy") or {}).get(self.name)
+        denied = (plan.get("fluid_ration") or {}).get(self.name) or []
+        return assign, (plan.get("buy") or {}).get(self.name), list(denied)
 
     def bought(self):
         """{"adaptation": bool, "breakthrough": bool} from the live bonus tree; {} before a target exists."""
@@ -313,34 +315,60 @@ class HabitatController:
     def _set_intake(self, medium, rate):
         self._call("set_gas_intake" if medium == "gas" else "set_liquid_intake", None, rate)
 
-    def regulate(self, medium, birth_rate, near_next, curr_tick):
-        """One regulator step for `medium`; returns [fluid, level, band] for telemetry."""
+    def _port_flow(self, medium):
+        port = getattr(self.machine, MEDIA[medium]["port"], None)
+        fn = getattr(port, "flow_rate", None)
+        if fn is None:
+            return 0.0
+        try:
+            return float(fn() or 0.0)
+        except Exception as error:
+            swallowed("habitat.HabitatController._port_flow: flow_rate", error)
+            return 0.0
+
+    def regulate(self, medium, birth_rate, near_next, curr_tick, denied=()):
+        """
+        One regulator step for `medium`; returns [held fluid, level, band,
+        required fluid, port flow] for telemetry (wc.MEDIUM_*). A fluid in
+        `denied` (the planner's ration) gets intake 0 and no purge: the held
+        buffer keeps the colony breeding while it stays in band. Once the
+        active band is left, `self.rationed_out` asks the step to park.
+        """
         band = list(self._call(f"{medium}_band", []))
         level = float(self._call(f"{medium}_level", 0.0))
         held = self._call(f"{medium}_fluid", "")
         required = self._call(f"required_{medium}", "")
+        prefill = False
         if not band and near_next:
             band = list(self._call(f"next_{medium}_band", []))
             required = self._call(f"next_required_{medium}", "")
+            prefill = True
         if not band or not required:
             self._set_intake(medium, 0.0)
-            return [held, round(level, 1), []]
+            return [held, round(level, 1), [], "", 0.0]
+        out = [held, round(level, 1), band, required, round(self._port_flow(medium), 3)]
         if held and held != required:
             self._set_intake(medium, 0.0)
             self._call("purge_reserve", None, medium)
             self._call("purge_intake", None, MEDIA[medium]["port"])
             self.log.print(f"[{self.name}] {medium} reserve held '{held}', needs '{required}': purged.")
-            return [held, round(level, 1), band]
+            return out
+        if required in denied:
+            self._set_intake(medium, 0.0)
+            self.blocker = "fluid_rationed"
+            if not prefill and not band[0] <= level <= band[1]:
+                self.rationed_out = True
+            return out
         if level > band[1] + PURGE_MARGIN_T:
             self._set_intake(medium, 0.0)
             self._call("purge_reserve", None, medium)
             self.log.print(f"[{self.name}] {medium} {level:.0f} t far above band {band}: purged, refilling.")
-            return [held, round(level, 1), band]
+            return out
         if not self._route(medium, required, curr_tick):
             self._set_intake(medium, 0.0)
-            return [held, round(level, 1), band]
+            return out
         self._set_intake(medium, regulator_rate(level, band, birth_rate, MEDIA[medium]["per_birth"]))
-        return [held, round(level, 1), band]
+        return out
 
     # ------------------------------------------------------------ established
 
@@ -351,7 +379,7 @@ class HabitatController:
             level = float(self.stage_feed(item, wc.FEED_TOPUP_TARGET))
         return item, level
 
-    def established_step(self, species, buy, curr_tick):
+    def established_step(self, species, buy, denied, curr_tick):
         if buy:
             self.buy_node(buy)
         item, feed = self.top_up_feed(species)
@@ -361,15 +389,22 @@ class HabitatController:
         headroom = int(self._call("headroom", 1))
         next_pop = int(self._call("next_stage_population", 0))
         near_next = next_pop > 0 and rate > 0 and next_pop - pop < rate * PREFILL_LEAD_H
-        fluids = {m: self.regulate(m, rate, near_next, curr_tick) for m in MEDIA}
+        self.rationed_out = False
+        fluids = {m: self.regulate(m, rate, near_next, curr_tick, denied) for m in MEDIA}
         capped = tier < 2 and headroom <= 0 and pop >= STAGE_CAPACITY[4]
         no_feed = not self._call("feed_ok", True) and feed <= 0
         if capped:
             self.parked = wc.PARK_CAPPED
             self.blocker = "capped"
         elif no_feed:
+            # Parked (unpowered) buffers neither meter nor bleed; close the
+            # intakes so a wake starts from 0, not a stale setpoint.
+            for medium in MEDIA:
+                self._set_intake(medium, 0.0)
             self.parked = wc.PARK_NO_FEED
             self.blocker = "no_feed"
+        elif self.rationed_out:
+            self.parked = wc.PARK_RATIONED
         return item, feed, rate, fluids
 
     # ------------------------------------------------------------ loop
@@ -389,7 +424,7 @@ class HabitatController:
 
     def step(self):
         curr_tick = self.tick()
-        assign, buy = self.plan_entry()
+        assign, buy, denied = self.plan_entry()
         species = self._call("species", "")
         established = bool(self._call("is_established", False))
         previous = self.blocker
@@ -398,7 +433,7 @@ class HabitatController:
         item, feed, rate, fluids = "", float(self._call("feed_level", 0.0)), 0.0, {}
         poll = POLL_STAGING_S
         if established:
-            item, feed, rate, fluids = self.established_step(species, buy, curr_tick)
+            item, feed, rate, fluids = self.established_step(species, buy, denied, curr_tick)
             mult = wc.feed_multiplier(species, self._purchased_ids())
             poll = next_poll(feed, rate * 0.1 * mult)
         elif species:

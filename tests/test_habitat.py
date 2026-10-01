@@ -72,6 +72,9 @@ class _Habitat:
         self.levels = {"gas": 0.0, "liquid": 0.0}
         self.fluids = {"gas": "", "liquid": ""}
         self.required = {"gas": "", "liquid": ""}
+        self.next_bands = {"gas": [], "liquid": []}
+        self.next_required = {"gas": "", "liquid": ""}
+        self.next_pop = 0
         self.intake = {"gas": None, "liquid": None}
         self.purchased = {"adaptation": False, "breakthrough": False}
 
@@ -88,7 +91,7 @@ class _Habitat:
     def life_stage(self): return "thriving"
     def breeding_rate(self): return self.rate
     def breeding_efficiency(self): return 1.0
-    def next_stage_population(self): return 0
+    def next_stage_population(self): return self.next_pop
     def required_feed(self): return wc.feed_item_of(self._species or self._target)
     def feed_level(self): return float(self.input.items.get(self.required_feed(), 0))
     def feed_ok(self): return self.feed_level() > 0
@@ -109,10 +112,10 @@ class _Habitat:
     def liquid_fluid(self): return self.fluids["liquid"]
     def required_gas(self): return self.required["gas"]
     def required_liquid(self): return self.required["liquid"]
-    def next_gas_band(self): return []
-    def next_liquid_band(self): return []
-    def next_required_gas(self): return ""
-    def next_required_liquid(self): return ""
+    def next_gas_band(self): return self.next_bands["gas"]
+    def next_liquid_band(self): return self.next_bands["liquid"]
+    def next_required_gas(self): return self.next_required["gas"]
+    def next_required_liquid(self): return self.next_required["liquid"]
 
     def set_gas_intake(self, rate):
         self.intake["gas"] = rate
@@ -374,6 +377,53 @@ class RegulatorTests(HabitatTestCase):
         self.machine.fluids["gas"] = "swamp_gas"
         self.ctrl.step()
         self.assertEqual(self.machine.intake["liquid"], 0.0)
+
+    def ration(self):
+        self.world.notebook.data[wc.PLAN_KEY]["fluid_ration"] = {"habitat_1": ["swamp_gas"]}
+
+    def test_status_medium_entry(self):
+        self.machine.levels["gas"] = 450.0
+        self.machine.fluids["gas"] = "swamp_gas"
+        self.ctrl.step()
+        self.assertEqual(self.status()["gas"], ["swamp_gas", 450.0, [250.0, 650.0], "swamp_gas", 0.0])
+
+    def test_rationed_in_band_coasts(self):
+        self.ration()
+        self.machine.levels["gas"] = 450.0
+        self.machine.fluids["gas"] = "swamp_gas"
+        self.ctrl.step()
+        self.assertEqual(self.machine.intake["gas"], 0.0)
+        self.assertNotIn(("purge_reserve", "gas"), self.machine.calls)
+        self.assertEqual(self.status()["blocker"], "fluid_rationed")
+        self.assertEqual(self.status()["parked"], "")
+
+    def test_rationed_out_of_band_parks_without_purge(self):
+        self.ration()
+        self.machine.levels["gas"] = 800.0
+        self.machine.fluids["gas"] = "swamp_gas"
+        self.ctrl.step()
+        self.assertEqual(self.machine.intake["gas"], 0.0)
+        self.assertNotIn(("purge_reserve", "gas"), self.machine.calls)
+        self.assertEqual(self.status()["parked"], wc.PARK_RATIONED)
+
+    def test_rationed_prefill_skipped_without_parking(self):
+        self.ration()
+        self.machine.bands["gas"] = []
+        self.machine.required["gas"] = ""
+        self.machine.next_bands["gas"] = [250.0, 650.0]
+        self.machine.next_required["gas"] = "swamp_gas"
+        self.machine.next_pop = 30500
+        self.ctrl.step()
+        self.assertEqual(self.machine.intake["gas"], 0.0)
+        self.assertEqual(self.status()["parked"], "")
+
+    def test_no_feed_closes_intakes(self):
+        self.machine.input.items[wc.feed_item_of("salt_tortoise")] = 0
+        self.machine.levels["gas"] = 450.0
+        self.machine.fluids["gas"] = "swamp_gas"
+        self.ctrl.step()
+        self.assertEqual(self.status()["parked"], wc.PARK_NO_FEED)
+        self.assertEqual(self.machine.intake["gas"], 0.0)
 
     def test_no_source_blocker(self):
         self.ctrl._route = habitat.HabitatController._route.__get__(self.ctrl)
