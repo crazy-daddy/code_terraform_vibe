@@ -537,6 +537,8 @@ def resolve_active_tier(scripts_dir: Path, save_dir: Path, force_tier: Optional[
 # decommissions buildings (e.g. Steam Turbines replaced by a Reactor); the
 # save keeps its progression, so the active tier never drops below this mark.
 TIER_HIGH_WATER_FILE = BACKUP_DIR / "tier_high_water.json"
+# (save, resolved tier, mark) already warned about, so a watch loop warns once.
+_TIER_HIGH_WATER_REPORTED: set = set()
 
 
 def _tier_high_water_store() -> dict:
@@ -554,6 +556,10 @@ def _apply_tier_high_water(save_dir: Path, tiers: list, active: str) -> str:
     store = _tier_high_water_store()
     mark = store.get(save_dir.name)
     if mark in tiers and tiers.index(mark) > tiers.index(active):
+        reported = (save_dir.name, active, mark)
+        if reported in _TIER_HIGH_WATER_REPORTED:
+            return mark
+        _TIER_HIGH_WATER_REPORTED.add(reported)
         warn("  tier  criteria now resolve to %s; staying at reached tier %s (%s)"
              % (active, mark, show(TIER_HIGH_WATER_FILE)))
         return mark
