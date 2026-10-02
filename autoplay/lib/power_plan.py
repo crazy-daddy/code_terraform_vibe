@@ -10,8 +10,14 @@
 # A grid with no placeable member is skipped and logged.
 #
 # A minimum spanning tree (Kruskal, tile distance between the nearest
-# footprint tiles) gives the missing links; each pass queues the shortest
-# missing links, up to MAX_LINKS_PER_PASS, as plan_power_line() between the
+# footprint tiles) gives the missing links. No grid may hang on a field
+# structure: a link ending on a field structure whose grid has other members
+# also wires that structure's footprint perimeter (ring_legs()). Every line
+# feeding the structure crosses a perimeter tile, so the ring joins them and
+# deconstructing the structure keeps the grid whole; the ring's RING_PIECES
+# count into the link's MST cost, so outposts are preferred as link ends.
+# Each pass queues the cheapest missing links, up to MAX_LINKS_PER_PASS, as
+# plan_power_line() between the
 # two nearest footprint tiles (the game picks the L elbow; the other elbow is
 # tried when it is rejected). Completed power lines have no list API, so a
 # pass waits while any power-line job is still open: the grids only merge
@@ -19,13 +25,14 @@
 
 from atomic import run_atomic
 from swallow import swallowed
-from grid_geom import outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key
+from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key
 from blueprint_queue import stock, queue_power_route
 from construction_plan import DEFAULT_PRIORITY
 from drill_sites import known_positions
 
 POWER_ITEM = "power_line_segment"
 MAX_LINKS_PER_PASS = 1   # power links (plan_power_line routes) queued per pass
+RING_PIECES = 4 * (FOOTPRINT_TILES - 1)   # pieces around a footprint's perimeter (ring_legs())
 PAIR_CHUNK = 50          # footprint pairs per atomic edge slice (worst ~3,500 operations, tests/test_autoplay_power.py)
 
 # Site kind -> name of its method that returns the machine id standing on it.
@@ -71,13 +78,18 @@ def components(rows, outpost_xy, field_xy):
     """
     (placed, unplaced): placed = [{"anchor", "boxes"}] for every grid with at
     least one footprint on the map, unplaced = anchor ids of the others.
+    boxes = [(box, ring, member id)]; ring is True for a field structure in a
+    grid with other placed members: a link ending there must ring its
+    footprint (ring_legs()), so the grid does not hang on that structure.
     outpost_xy: {outpost_id: (x, y)} top-left anchors; field_xy: {machine_id: (x, y)} site centres.
     """
     placed = []
     unplaced = []
     for row in rows:
-        boxes = [outpost_box(*outpost_xy[o]) for o in row["outposts"] if o in outpost_xy]
-        boxes.extend([extractor_box(*field_xy[m]) for m in row["machines"] if m in field_xy])
+        boxes = [(outpost_box(*outpost_xy[o]), False, o) for o in row["outposts"] if o in outpost_xy]
+        fields = [m for m in row["machines"] if m in field_xy]
+        shared = len(boxes) + len(fields) > 1
+        boxes.extend([(extractor_box(*field_xy[m]), shared, m) for m in fields])
         if boxes:
             placed.append({"anchor": row["anchor"], "boxes": boxes})
         else:
@@ -86,8 +98,8 @@ def components(rows, outpost_xy, field_xy):
 
 
 def flat_boxes(comps):
-    """[(component index, box)] over every component's footprints."""
-    return [(index, box) for index, comp in enumerate(comps) for box in comp["boxes"]]
+    """[(component index, box, ring cost)] over every component's footprints."""
+    return [(index, box, RING_PIECES if ring else 0) for index, comp in enumerate(comps) for box, ring, _name in comp["boxes"]]
 
 
 def pair_segments(count, size=None):
@@ -117,20 +129,21 @@ def pair_segments(count, size=None):
 
 def edge_slice(segments, boxes):
     """
-    Nearest footprint pair for each (i, j0, j1) segment: box i against boxes
-    j0..j1-1 of another component. [(tiles apart, ci, cj, i, j)] with ci < cj,
-    only the shortest per component pair within this call.
+    Cheapest footprint pair for each (i, j0, j1) segment: box i against boxes
+    j0..j1-1 of another component. [(cost, ci, cj, i, j)] with ci < cj, only
+    the cheapest per component pair within this call. cost = tiles apart plus
+    the ring cost of both ends.
     """
     best = {}
     for i, j0, j1 in segments:
-        ci, (ax0, ay0, ax1, ay1) = boxes[i]
+        ci, (ax0, ay0, ax1, ay1), ring_i = boxes[i]
         for j in range(j0, j1):
-            cj, (bx0, by0, bx1, by1) = boxes[j]
+            cj, (bx0, by0, bx1, by1), ring_j = boxes[j]
             if ci == cj:
                 continue
             dx = bx0 - ax1 if bx0 > ax1 else (ax0 - bx1 if ax0 > bx1 else 0)
             dy = by0 - ay1 if by0 > ay1 else (ay0 - by1 if ay0 > by1 else 0)
-            dist = dx + dy
+            dist = dx + dy + ring_i + ring_j
             pair = (ci, cj) if ci < cj else (cj, ci)
             held = best.get(pair)
             if held is None or dist < held[0]:
@@ -140,8 +153,8 @@ def edge_slice(segments, boxes):
 
 def component_edges(boxes):
     """
-    Shortest link per component pair over all boxes: [(tiles apart, ci, cj,
-    tile in ci, tile in cj)] (edge_slice() in atomic batches of PAIR_CHUNK pairs).
+    Cheapest link per component pair over flat_boxes(): [(cost, ci, cj, i, j)],
+    i/j = the boxes it joins (edge_slice() in atomic batches of PAIR_CHUNK pairs).
     """
     best = {}
     edges = []
@@ -152,11 +165,7 @@ def component_edges(boxes):
         held = best.get(pair)
         if held is None or edge[0] < held[0]:
             best[pair] = edge
-    out = []
-    for dist, ci, cj, i, j in best.values():
-        _dist, tile_i, tile_j = box_closest(boxes[i][1], boxes[j][1])
-        out.append((dist, ci, cj, tile_i, tile_j))
-    return out
+    return list(best.values())
 
 
 def _root(parent, node):
@@ -198,6 +207,13 @@ def link_routes(tile_a, tile_b):
             cx, cy = tile_centre(corner)
             routes.append([[ax, ay, cx, cy], [cx, cy, bx, by]])
     return routes
+
+
+def ring_legs(box):
+    """Four legs [x1, y1, x2, y2] wiring the perimeter tiles of a footprint box (RING_PIECES pieces)."""
+    x0, y0 = tile_centre(tile_key(box[0], box[1]))
+    x1, y1 = tile_centre(tile_key(box[2], box[3]))
+    return [[x0, y0, x1, y0], [x1, y0, x1, y1], [x1, y1, x0, y1], [x0, y1, x0, y0]]
 
 
 def _game_reads():
@@ -256,32 +272,36 @@ class PowerPlanner:
         if len(comps) < 2:
             self.log.debug(f"Power: {len(rows)} grid(s), {len(comps)} placed; nothing to join.")
             return "joined"
-        links = spanning_links(len(comps), component_edges(flat_boxes(comps)))
+        flat = flat_boxes(comps)
+        links = spanning_links(len(comps), component_edges(flat))
         self.log.start(f"Power: joining {len(comps)} grids ({len(links)} link(s) missing)")
-        outcome = self._queue_links(comps, links)
+        outcome = self._queue_links(comps, flat, links)
         self.log.end(outcome)
         return "queued" if outcome.startswith("queued") else "waiting"
 
-    def _queue_links(self, comps, links):
+    def _queue_links(self, comps, flat, links):
         """Queues up to MAX_LINKS_PER_PASS links; returns the block's outcome line."""
+        members = [name for comp in comps for _box, _ring, name in comp["boxes"]]
         have = stock(POWER_ITEM)
         queued = 0
         short = 0
-        for dist, ci, cj, tile_a, tile_b in links:
+        for cost, ci, cj, i, j in links:
             if queued >= MAX_LINKS_PER_PASS:
                 break
             pair = (comps[ci]["anchor"], comps[cj]["anchor"])
-            names = f"{pair[0]} -> {pair[1]}"
+            names = f"{members[i]} -> {members[j]}"
             if pair in self.failed:
                 self.log.debug(f"{names}: rejected earlier this run; skipped.")
                 continue
-            if dist > have:
-                self.log.debug(f"{names}: needs {dist} {POWER_ITEM}, {have} in stock; skipped.")
+            if cost > have:
+                self.log.debug(f"{names}: needs {cost} {POWER_ITEM}, {have} in stock; skipped.")
                 short += 1
                 continue
-            if self._queue_link(names, dist, tile_a, tile_b):
+            dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
+            rings = [(members[k], flat[k][1]) for k in (i, j) if flat[k][2]]
+            if self._queue_link(names, dist, tile_a, tile_b, rings):
                 queued += 1
-                have -= dist
+                have -= cost
             else:
                 self.failed.add(pair)
         if queued:
@@ -290,16 +310,23 @@ class PowerPlanner:
             return f"waiting for {POWER_ITEM} ({have} in stock)"
         return "no link could be planned"
 
-    def _queue_link(self, names, dist, tile_a, tile_b):
-        """True when the link was queued. A link whose pieces all exist already
-        (no job created) while the grids stay apart does not connect: logged and False."""
-        if dist < 1:
+    def _queue_link(self, names, dist, tile_a, tile_b, rings):
+        """
+        True when the link was queued. rings = [(member id, box)] of field
+        structures the link ends on that also feed other members: their
+        footprint perimeter is wired too, all in one all-or-nothing route.
+        A link whose pieces all exist already (no job created) while the grids
+        stay apart does not connect: logged and False.
+        """
+        if dist < 1 and not rings:
             self.log.level("warn").print(f"Power link {names}: footprints touch but grids stay apart; not plannable.")
             return False
+        ring_part = [leg for _name, box in rings for leg in ring_legs(box)]
+        ring_note = f" + ring around {', '.join([name for name, _box in rings])}" if rings else ""
         for legs in link_routes(tile_a, tile_b):
-            status, ids, message = queue_power_route(legs, DEFAULT_PRIORITY)
+            status, ids, message = queue_power_route((legs if dist else []) + ring_part, DEFAULT_PRIORITY)
             if status == "ok" and ids:
-                self.log.print(f"Power link {names}: {dist} tiles, {len(ids)} job(s) queued.")
+                self.log.print(f"Power link {names}: {dist} tiles{ring_note}, {len(ids)} job(s) queued.")
                 return True
             if status == "ok":
                 self.log.level("warn").print(f"Power link {names}: every piece already exists but the grids stay apart.")

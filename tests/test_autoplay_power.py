@@ -131,7 +131,7 @@ class GeometryTests(unittest.TestCase):
 
 class SpanningTests(unittest.TestCase):
     def comps(self, *origins):
-        return [{"anchor": f"g{i}", "boxes": [g.outpost_box(x, y)]} for i, (x, y) in enumerate(origins)]
+        return [{"anchor": f"g{i}", "boxes": [(g.outpost_box(x, y), False, f"o{i}")]} for i, (x, y) in enumerate(origins)]
 
     def test_n_components_get_n_minus_1_links(self):
         comps = self.comps((0, 0), (100, 0), (0, 100), (500, 500), (100, 100))
@@ -143,20 +143,43 @@ class SpanningTests(unittest.TestCase):
             while parent[n] != n:
                 n = parent[n]
             return n
-        for _d, a, b, _ta, _tb in links:
+        for _d, a, b, _i, _j in links:
             parent[root(a)] = root(b)
         self.assertEqual(len({root(n) for n in range(5)}), 1)
 
     def test_link_uses_nearest_footprints_of_multi_box_component(self):
-        comps = [{"anchor": "home", "boxes": [g.outpost_box(0, 0), g.outpost_box(300, 0)]},
-                 {"anchor": "pump", "boxes": [g.extractor_box(400, 15)]}]
-        links = pp.spanning_links(2, pp.component_edges(pp.flat_boxes(comps)))
+        comps = [{"anchor": "home", "boxes": [(g.outpost_box(0, 0), False, "home"), (g.outpost_box(300, 0), False, "o1")]},
+                 {"anchor": "pump", "boxes": [(g.extractor_box(400, 15), False, "pump")]}]
+        flat = pp.flat_boxes(comps)
+        links = pp.spanning_links(2, pp.component_edges(flat))
         self.assertEqual(len(links), 1)
-        dist, ci, cj, ta, tb = links[0]
-        self.assertEqual((ci, cj), (0, 1))
-        self.assertEqual(ta, k(33, 0))
-        self.assertEqual(tb, k(38, 0))
-        self.assertEqual(dist, 5)
+        cost, ci, cj, i, j = links[0]
+        self.assertEqual((ci, cj, i, j), (0, 1, 1, 2))
+        self.assertEqual(g.box_closest(flat[i][1], flat[j][1]), (5, k(33, 0), k(38, 0)))
+        self.assertEqual(cost, 5)
+
+    def test_ring_cost_prefers_outpost_over_shared_field_structure(self):
+        # grid "main" = outpost far away + cap close by; the lone pump links to the outpost
+        # unless the cap is more than RING_PIECES tiles nearer.
+        rows = pp.grid_rows([Grid("main", outposts=["o1"], machines=["cap"]), Grid("pump", machines=["pump"])])
+        far = {"o1": (0, 0)}
+        comps, _ = pp.components(rows, far, {"cap": (220, 20), "pump": (300, 20)})
+        self.assertEqual([r for _b, r, _n in comps[0]["boxes"]], [False, True])
+        self.assertEqual([r for _b, r, _n in comps[1]["boxes"]], [False])  # lone structure: leaf, no ring
+        flat = pp.flat_boxes(comps)
+        cost, _ci, _cj, i, j = pp.spanning_links(2, pp.component_edges(flat))[0]
+        # cap: 5 tiles apart + 12 ring = 17 < outpost 25 tiles apart -> cap, ringed
+        self.assertEqual((comps[0]["boxes"][i][2], cost), ("cap", 5 + pp.RING_PIECES))
+        comps, _ = pp.components(rows, far, {"cap": (220, 20), "pump": (150, 20)})
+        flat = pp.flat_boxes(comps)
+        cost, _ci, _cj, i, j = pp.spanning_links(2, pp.component_edges(flat))[0]
+        # cap: 4 + 12 = 16 > outpost 10 tiles apart -> outpost
+        self.assertEqual((comps[0]["boxes"][i][2], cost), ("o1", 10))
+
+    def test_ring_legs_cover_perimeter(self):
+        legs = pp.ring_legs(g.extractor_box(50, 50))
+        self.assertEqual(legs[0], [35.0, 35.0, 65.0, 35.0])
+        self.assertEqual(sum(int(abs(a - c) + abs(b - d)) // g.TILE_M for a, b, c, d in legs), pp.RING_PIECES)
 
     def test_components_skip_unplaced(self):
         rows = pp.grid_rows([Grid("a", outposts=["o1"]), Grid("b", machines=["pump1"]), Grid("c", machines=["solar"])])
@@ -185,7 +208,7 @@ class SpanningTests(unittest.TestCase):
             self.assertTrue(all(sum(j1 - j0 for _i, j0, j1 in batch) <= 5 for batch in batches))
 
     def test_edge_slice_budget(self):
-        comps = [{"anchor": f"g{i}", "boxes": [g.outpost_box(i * 100, 0)]} for i in range(3 * pp.PAIR_CHUNK)]
+        comps = [{"anchor": f"g{i}", "boxes": [(g.outpost_box(i * 100, 0), True, f"m{i}")]} for i in range(3 * pp.PAIR_CHUNK)]
         boxes = pp.flat_boxes(comps)
         batches = pp.pair_segments(len(boxes))
         self.assertLess(max(ops(pp.edge_slice, batch, boxes) for batch in batches), ATOMIC_STEP_BUDGET)
@@ -223,6 +246,18 @@ class PowerPassTests(harness.StubTestCase):
         self.assertEqual(len(planned), 17)
         self.assertTrue(all(e["f"] == "power" and e["p"] == 0 for e in planned.values()))
         self.assertEqual(self.world.notebook.data.get(PRIORITY_KEY, {}), {})
+
+    def test_link_to_shared_field_structure_rings_it(self):
+        self.world.services["journal"] = Journal([Site("water", 220, 20, "wp1"), Site("water", 320, 20, "wp2")])
+        self.world.services["power_control"] = Power([Grid("main", outposts=["home"], machines=["wp1"]),
+                                                     Grid("wp2", machines=["wp2"])])
+        self.assertEqual(self.run_pass(), "queued")
+        # wp1 box tiles 20..23, wp2 box 30..33: link (23,0)->(30,0), then the four sides of wp1's footprint
+        self.assertEqual(self.blueprints.calls, [(235.0, 5.0, 305.0, 5.0), (205.0, 5.0, 235.0, 5.0),
+                                                 (235.0, 5.0, 235.0, 35.0), (235.0, 35.0, 205.0, 35.0),
+                                                 (205.0, 35.0, 205.0, 5.0)])
+        self.assertEqual(len(bq.planned()), 7 + pp.RING_PIECES)
+        self.assertIn("ring around wp1", self.debug_log())
 
     def test_waits_while_power_job_open(self):
         self.blueprints.jobs = [Job("j1", "power_line", "power", 10, 5)]
