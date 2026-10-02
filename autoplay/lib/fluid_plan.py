@@ -13,9 +13,9 @@
 # Gas and liquid ignore each other; power is not involved.
 #
 # Terminals of a fluid: field structures producing it (water/oil pumps,
-# thermal caps, exotic caps/taps by their deposit's fluid()) and outposts
-# whose roles list it. Producers are field structures only: fluids made inside
-# an outpost (Refiner outputs, condenser water) have none yet and are skipped. A terminal is connected when a footprint tile already
+# thermal caps, exotic caps/taps by their deposit's fluid()), outposts whose
+# roles make it ("out": condenser water, Refiner outputs) and outposts whose
+# roles take it ("in"). A fluid nobody makes is skipped. A terminal is connected when a footprint tile already
 # carries the fluid. Each pass routes at most MAX_ROUTES_PER_PASS routes, A*
 # from every tile carrying the fluid (reused for free) to the free footprint
 # tiles of the unconnected terminals; a route ends on the first footprint tile
@@ -70,11 +70,18 @@ def fluid_order(fluids):
 
 
 def terminals(fluid, producers, outpost_xy, demand):
-    """[{"name", "producer": bool, "tiles"}] of one fluid: its producers by name, then its consumer outposts by id."""
+    """
+    [{"name", "producer": bool, "tiles"}] of one fluid: field producers by
+    name, then producing outposts, then consuming outposts, each by id. An
+    outpost that makes and takes the fluid is listed once, as a producer.
+    """
     out = [{"name": row["name"], "producer": True, "tiles": row["tiles"]}
            for row in sorted(producers, key=lambda r: r["name"]) if row["fluid"] == fluid]
-    out.extend([{"name": outpost_id, "producer": False, "tiles": outpost_tiles(*outpost_xy[outpost_id])}
-                for outpost_id in sorted(demand) if fluid in demand[outpost_id] and outpost_id in outpost_xy])
+    placed = [outpost_id for outpost_id in sorted(demand) if outpost_id in outpost_xy]
+    makers = [outpost_id for outpost_id in placed if fluid in demand[outpost_id]["out"]]
+    takers = [outpost_id for outpost_id in placed if fluid in demand[outpost_id]["in"] and outpost_id not in makers]
+    out.extend([{"name": outpost_id, "producer": True, "tiles": outpost_tiles(*outpost_xy[outpost_id])} for outpost_id in makers])
+    out.extend([{"name": outpost_id, "producer": False, "tiles": outpost_tiles(*outpost_xy[outpost_id])} for outpost_id in takers])
     return out
 
 
@@ -122,7 +129,7 @@ def route_request(fluid, terms, layer_occ, held, demand, routable, failed):
             out["failed"].append(term["name"])
         elif not ports["free"]:
             out["full"].append(term["name"])
-        elif not term["producer"] and reserved_for(demand.get(term["name"], []), fluid, len(ports["free"]), layer_occ, term["tiles"], routable):
+        elif term["name"] in demand and reserved_for(demand[term["name"]]["order"], fluid, len(ports["free"]), layer_occ, term["tiles"], routable):
             out["reserved"].append(term["name"])
         else:
             open_terms.append((term, ports["free"]))
@@ -218,15 +225,15 @@ class FluidPlanner:
             return "done"
         self._write_port_status(port_status(demand, outpost_xy, topo.occ))
         producers = site_rows(surveyed_sites())
-        routable = {row["fluid"] for row in producers if row["fluid"]}
+        routable = {row["fluid"] for row in producers if row["fluid"]} | {f for entry in demand.values() for f in entry["out"]}
         structures = _structures(outpost_xy, producers)
         queued = 0
         waiting = False
-        for fluid in fluid_order([f for fluids in demand.values() for f in fluids]):
+        for fluid in fluid_order([f for entry in demand.values() for f in entry["in"]]):
             if queued >= MAX_ROUTES_PER_PASS:
                 break
             if fluid not in routable:
-                self.log.debug(f"Fluid {fluid}: no producer on the map; skipped.")
+                self.log.debug(f"Fluid {fluid}: no producer (field structure or outpost role \"out\"); skipped.")
                 continue
             outcome = self._fluid(fluid, topo, demand, routable, producers, outpost_xy, structures)
             if outcome == "queued":

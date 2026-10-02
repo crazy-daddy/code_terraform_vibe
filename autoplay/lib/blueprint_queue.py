@@ -164,8 +164,9 @@ def _note_network(fluid, runs):
     def updater(networks):
         if not isinstance(networks, dict):
             networks = {}
-        stored = networks.get(fluid)
-        kept = list(stored) if isinstance(stored, list) else []
+        kept = networks.get(fluid, [])
+        if not isinstance(kept, list):
+            kept = []
         for run in runs:
             if run not in kept:
                 kept.append(run)

@@ -1,15 +1,16 @@
 # Outpost roles for the infrastructure planner (autoplay/infra_planner_automation.py):
-# which fluids each outpost needs piped in.
+# which fluids each outpost needs piped in and which it makes.
 #
 # Archive shapes (one shared dict per concern):
-#   autoplay.role_presets = {role: [fluid_id, ...]}  seeded with DEFAULT_ROLE_PRESETS
-#                           when missing, then operator-editable.
+#   autoplay.role_presets = {role: {"in": [fluid_id, ...], "out": [fluid_id, ...]}}
+#                           seeded with DEFAULT_ROLE_PRESETS when missing, then
+#                           operator-editable; a plain list is "in" only.
 #   autoplay.outpost_roles = {outpost_id: role | [role, ...]}  operator-set; entries
 #                           of outposts that no longer exist are pruned.
 # The home outpost always has HOME_ROLES on top of its entry: the Harvester's
-# field sits there. Any other outpost without an entry needs no fluid. Fluid
-# order within a preset is the outpost's service order when its footprint runs
-# out of ports for a medium.
+# field sits there. Any other outpost without an entry has no fluid. An
+# outpost's fluids in role order ("in" before "out" per role, duplicates
+# dropped) are its service order when its footprint runs out of ports.
 
 from archive import archive
 from swallow import swallowed
@@ -17,24 +18,26 @@ from swallow import swallowed
 PRESETS_KEY = "autoplay.role_presets"
 ROLES_KEY = "autoplay.outpost_roles"
 
-# Fluid consumers per role (docs/database/fluids.md "Consumed by" / "Tier input").
+# Fluids per role (docs/database/fluids.md "Consumed by" / "Produced by" / "Tier input").
 DEFAULT_ROLE_PRESETS = {
-    "factory": ["water", "oil", "steam"],   # Fabricator recipes
-    "terraform": ["water", "steam"],        # Oxygen/Pressure Mk III water, Heat Mk III steam
-    "power": ["steam", "oil"],              # Steam Turbine, Oil Generator
-    "farm": ["water"],                      # Sprinkler, Plant Terraformer (home field only)
-    "steam_hub": ["steam"],
-    "refinery": ["raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver"],   # Refiner recipes
-    "wildlife": ["ammonia", "swamp_gas", "sulfur_gas", "chlorine", "brine", "cryofluid", "quicksilver"],   # Habitat gas_in / liquid_in
+    "factory": {"in": ["water", "oil", "steam"]},     # Fabricator recipes
+    "terraform": {"in": ["water", "steam"]},          # Oxygen/Pressure Mk III water, Heat Mk III steam
+    "power": {"in": ["steam", "oil"]},                # Steam Turbine, Oil Generator
+    "farm": {"in": ["water"]},                        # Sprinkler, Plant Terraformer (home field only)
+    "condenser": {"in": ["steam"], "out": ["water"]},   # Steam Condenser
+    "reactor": {"in": ["water"]},                     # Reactor coolant
+    "refinery": {"in": ["raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver"],
+                 "out": ["sulfur_gas", "chlorine", "cryofluid", "quicksilver"]},   # Refiner recipes
+    "wildlife": {"in": ["ammonia", "swamp_gas", "sulfur_gas", "chlorine", "brine", "cryofluid", "quicksilver"]},   # Habitat gas_in / liquid_in
 }
 HOME_ROLES = ["farm"]
 
 # One-fluid sub-roles, so exotics can be spread over several outposts:
-# refinery_<refined fluid> takes its raw feed, wildlife_<fluid> one Habitat fluid.
-for _raw in DEFAULT_ROLE_PRESETS["refinery"]:
-    DEFAULT_ROLE_PRESETS["refinery_" + _raw[len("raw_"):]] = [_raw]
-for _fluid in DEFAULT_ROLE_PRESETS["wildlife"]:
-    DEFAULT_ROLE_PRESETS["wildlife_" + _fluid] = [_fluid]
+# refinery_<refined fluid> refines its raw feed, wildlife_<fluid> takes one Habitat fluid.
+for _raw in DEFAULT_ROLE_PRESETS["refinery"]["in"]:
+    DEFAULT_ROLE_PRESETS["refinery_" + _raw[len("raw_"):]] = {"in": [_raw], "out": [_raw[len("raw_"):]]}
+for _fluid in DEFAULT_ROLE_PRESETS["wildlife"]["in"]:
+    DEFAULT_ROLE_PRESETS["wildlife_" + _fluid] = {"in": [_fluid]}
 
 
 def presets():
@@ -55,27 +58,42 @@ def outpost_roles():
     return raw if isinstance(raw, dict) else {}
 
 
+def _fluid_list(value):
+    return [fluid for fluid in value if isinstance(fluid, str)] if isinstance(value, (list, tuple)) else []
+
+
 def fluids_for(roles, role_presets):
-    """Ordered, de-duplicated fluids of one outpost's roles (a role name or a list of them); unknown roles add nothing."""
+    """
+    {"in": [...], "out": [...], "order": [...]} of one outpost's roles (a role
+    name or a list of them), each ordered and de-duplicated; order = every
+    fluid in role order, a role's "in" before its "out". Unknown roles add nothing.
+    """
     names = [roles] if isinstance(roles, str) else (roles if isinstance(roles, (list, tuple)) else [])
-    out = []
+    out = {"in": [], "out": [], "order": []}
     for name in names:
-        fluids = role_presets.get(name)
-        for fluid in fluids if isinstance(fluids, (list, tuple)) else []:
-            if isinstance(fluid, str) and fluid not in out:
-                out.append(fluid)
+        preset = role_presets.get(name)
+        if isinstance(preset, (list, tuple)):
+            preset = {"in": preset}
+        if not isinstance(preset, dict):
+            continue
+        for side in ("in", "out"):
+            for fluid in _fluid_list(preset.get(side)):
+                if fluid not in out[side]:
+                    out[side].append(fluid)
+                if fluid not in out["order"]:
+                    out["order"].append(fluid)
     return out
 
 
 def demand(outpost_ids, roles_map, role_presets, home_id=None):
-    """{outpost_id: [fluid, ...]} for the live outposts with at least one fluid; home_id gets HOME_ROLES after its own roles."""
+    """{outpost_id: fluids_for()} for the live outposts with at least one fluid; home_id gets HOME_ROLES after its own roles."""
     out = {}
     for outpost_id in outpost_ids:
         roles = roles_map.get(outpost_id)
         if outpost_id == home_id:
             roles = ([roles] if isinstance(roles, str) else list(roles or [])) + HOME_ROLES
         fluids = fluids_for(roles, role_presets)
-        if fluids:
+        if fluids["order"]:
             out[outpost_id] = fluids
     return out
 

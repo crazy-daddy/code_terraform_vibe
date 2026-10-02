@@ -73,8 +73,8 @@ Same conventions as `scripts/` code (game imports only, one-line imports, `swall
 Pure modules (`grid_geom`, route/tree math) take plain data so CPython tests cover them.
 
 ## Archive keys (one dict per concern)
-- `autoplay.role_presets` `{role: [fluid_id, ...]}` — seeded with defaults
-  (e.g. `factory: [water, steam]`, `steam_hub: [steam]`, `wildlife: [...]`), operator-editable.
+- `autoplay.role_presets` `{role: {"in": [fluid_id, ...], "out": [fluid_id, ...]}}` — seeded with defaults
+  (e.g. `factory: {in: [water, oil, steam]}`, `condenser: {in: [steam], out: [water]}`), operator-editable.
 - `autoplay.outpost_roles` `{outpost_id: role | [role, ...]}` — operator-set; pruned for gone outposts.
 - `autoplay.planned` `{blueprint_id: {"k": kind, "f": fluid|"power"|None, "p": prio, "seg": [x1,y1,x2,y2]|None, "site": id|None}}`
   — what the planner queued; pruned when the job leaves pending/active/paused.
@@ -188,8 +188,8 @@ headless Automation (`infra_planner_automation.py`, role marker `# ct-automation
    (presets incl. `refinery_<fluid>`/`wildlife_<fluid>` sub-roles, home always `farm`), `fluid_plan` (one route
    per pass, foreign footprints are walls, bridges over other lines, port reservation, `autoplay.port_status`),
    `blueprint_queue.queue_pipe_route()`, cheatsheet §11e/§11f, `tests/test_autoplay_fluid.py`. Not live-tested.
-   Open: producers inside outposts (Refiner outputs, condenser water) are not terminals yet, so refined
-   exotics only route from common-exotic caps; `autoplay.networks` is never pruned (phase 5b).
+   Role presets carry `"in"`/`"out"` fluids, so outposts produce too (`condenser` steam → water,
+   `refinery_<fluid>` raw → refined). Open: `autoplay.networks` is never pruned (phase 5b).
 5. `extractor_plan` demand pass, then plan-ahead pass at prio 1.
 5b. `relic_cleanup` (per-layer deconstruction of dead pipe components).
 6. sync flag + docs; TODO.md entry under "Building planner". **Done** (pulled ahead of 4/5): `scripts_sync.py --include-autoplay`

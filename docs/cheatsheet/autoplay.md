@@ -114,7 +114,7 @@ Scripts cannot list completed power lines. Their tiles live in `construction.pow
 
 ## §11e Fluid pass (`autoplay/lib/fluid_plan.py`)
 
-One pipe network per fluid, joining the fluid's producers to the outposts whose roles need it (§11f).
+One pipe network per fluid, joining the fluid's producers to the outposts whose roles take it (§11f).
 
 **Game facts this rests on.** Pipes have no fluid of their own: `plan_pipe(fluid_id, …)` keeps only the medium (simworker `tre()`), and a component's contents come from the `connect()` relationships routed through it (set by the pump/cap/consumer scripts, not the planner). The planner's fluid for its own ghosts and not-yet-connected pipes lives in `autoplay.networks`. Between two locations the game splits the fluids over the components reaching both; one more fluid than components there is a conflict on `connect()`. So a network touches only its own fluid's terminals:
 
@@ -125,7 +125,7 @@ One pipe network per fluid, joining the fluid's producers to the outposts whose 
 
 Gas and liquid layers ignore each other.
 
-**Terminals.** Producers = extractors on surveyed sites: water/oil pumps (`pump_id()`), thermal caps (steam), exotic caps/taps (deposit `fluid()`). Fluids made inside an outpost (Refiner output, condenser water) have no producer yet and are skipped (`no producer` debug line). Consumers = outposts whose roles list the fluid. A terminal is connected when one of its footprint tiles carries the fluid.
+**Terminals.** Producers = extractors on surveyed sites (water/oil pumps `pump_id()`, thermal caps for steam, exotic caps/taps by deposit `fluid()`) and outposts whose roles list the fluid under `"out"` (condenser water, Refiner outputs). Consumers = outposts whose roles list it under `"in"`; an outpost on both sides is one producer terminal. Only fluids some outpost takes are routed; one without any producer is skipped (`no producer` debug line). A terminal is connected when one of its footprint tiles carries the fluid.
 
 **Route.** Per pass at most `MAX_ROUTES_PER_PASS` routes, fluids in `FLUID_ORDER` then by name. A* from every tile carrying the fluid (reused for free) to the free footprint tiles of all unconnected terminals; the route stops on the first footprint tile it reaches, so it takes one port. With no network yet, the first producer (by id) with a free tile is the source and only consumer outposts are goals. `path_plan()` steps go out via `blueprint_queue.queue_pipe_route()` (§11c). A route the game rejects, or a search that finds no path, marks its terminals failed until the script restarts. Stock gate: `<medium>_pipe_segment` ≥ route pieces and `<medium>_pipe_bridge` ≥ bridges, else the pass reports `waiting`.
 
@@ -145,7 +145,7 @@ The run loop ends once the power pass reports one grid and the fluid pass report
 
 | Key | Shape | Writer |
 | :--- | :--- | :--- |
-| `autoplay.role_presets` | `{role: [fluid, ...]}` | seeded with `DEFAULT_ROLE_PRESETS` when missing; operator-editable |
+| `autoplay.role_presets` | `{role: {"in": [fluid, ...], "out": [fluid, ...]}}` (a plain list = `"in"` only) | seeded with `DEFAULT_ROLE_PRESETS` when missing; operator-editable |
 | `autoplay.outpost_roles` | `{outpost_id: role \| [role, ...]}` | operator; entries of gone outposts pruned each pass |
 
-Default presets: `factory` water, oil, steam · `terraform` water, steam · `power` steam, oil · `farm` water · `steam_hub` steam · `refinery` the four raw exotics · `wildlife` the refined/common exotics (ammonia, swamp_gas, sulfur_gas, chlorine, brine, cryofluid, quicksilver). One-fluid sub-roles spread exotics over outposts: `refinery_<fluid>` (its raw feed, e.g. `refinery_quicksilver` = raw_quicksilver) and `wildlife_<fluid>`. The home outpost always has `HOME_ROLES` (`farm`: the Harvester field is there) after its own roles. An outpost's fluid order (roles in order, presets in order, duplicates dropped) is its port service order. Example: `{"home": ["wildlife_ammonia"], "outpost_3": ["factory", "refinery_chlorine"]}`.
+Default presets (in → out): `factory` water, oil, steam · `terraform` water, steam · `power` steam, oil · `farm` water · `condenser` steam → water · `reactor` water · `refinery` the four raw exotics → sulfur_gas, chlorine, cryofluid, quicksilver · `wildlife` ammonia, swamp_gas, sulfur_gas, chlorine, brine, cryofluid, quicksilver. One-fluid sub-roles spread exotics over outposts: `refinery_<fluid>` (`refinery_quicksilver` = raw_quicksilver → quicksilver) and `wildlife_<fluid>`. The home outpost always has `HOME_ROLES` (`farm`: the Harvester field is there) after its own roles. An outpost's fluid order (roles in order, each role's in before its out, duplicates dropped) is its port service order. Example: `{"home": ["wildlife_ammonia"], "outpost_3": ["factory", "refinery_chlorine"]}`.
