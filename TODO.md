@@ -18,7 +18,7 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
 
-Repo moved to a dev root (`C:\Users\Adrian\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
+Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
 
 - [x] **`weather_station`** canonical script written (`7_miningdrills/weather/weather_station.py`, `lib/weather_signals.py`; see Phase 10).
 - [x] **`7_miningdrills` tier (2026-09-23)** — gated on the first deployed Mining Drill of any variant via the new OR-key `"buildings_any"` (`criteria_met()` in `devtools/scripts_sync.py`). Telemetry controller written (`7_miningdrills/lib/mining_drill.py`, thin `mining/mining_drill{,_industrial,_heavy}.py`; publishes `drill.status`, warns on full/stalled/near-full — see `docs/AI_CHEATSHEET.md` §1j). Not yet live-verified; confirm 1 stockpile unit = 1 t for the time-to-full estimate.
@@ -102,7 +102,7 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
 
 ## 🌐 Phase 3: Multi-Outpost Coordination & Production Network
 
-The save has grown past a single production base: multiple outposts are founded, several sit near ore deposits home doesn't have easy access to, and home itself is about to run more than one Smelter/Fabricator. This phase covers everything needed to coordinate production/logistics across that — split out of what used to be Phase 2's "Outpost Networks" scope because it has grown large enough to deserve its own phase. Full design for the mining-network half in `C:\Users\Adrian\.claude\plans\agile-frolicking-flurry.md` (Multi-Outpost Mining Network + Multi-Smelter Leader Election section).
+The save has grown past a single production base: multiple outposts are founded, several sit near ore deposits home doesn't have easy access to, and home itself is about to run more than one Smelter/Fabricator. This phase covers everything needed to coordinate production/logistics across that — split out of what used to be Phase 2's "Outpost Networks" scope because it has grown large enough to deserve its own phase. Full design for the mining-network half in `C:\Users\<user>\.claude\plans\agile-frolicking-flurry.md` (Multi-Outpost Mining Network + Multi-Smelter Leader Election section).
 
 ### Outpost Infrastructure & Freight
 - [ ] Building planner: deploy structures from inventory via script. Once built, it may place Outposts without per-instance human approval — decommissioning now exists, so founding is no longer permanent (see CLAUDE.md's Outpost Construction Safety Rule).
