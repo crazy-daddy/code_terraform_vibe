@@ -140,6 +140,57 @@ class ScriptParkingTests(StubTestCase):
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls, [])
 
+    def test_untracked_dark_machine_with_stale_request_is_adopted_and_woken(self):
+        self.request("smelter_1", "smelter")
+        self.power.powered["smelter_1"] = False  # parked by a pass whose record was lost
+        self.grids[0].members[0].powered = False
+        self.world.clock.now += WAKE_AFTER_TICKS["smelter"]
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [])
+        self.assertEqual(self.world.notebook.data[PARKED_KEY]["smelter_1"]["mode"], "breaker")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("smelter_1", True)])
+        self.assertNotIn("smelter_1", self.world.notebook.data[PARKED_KEY])
+
+    def test_dark_machine_without_request_or_shed_is_not_adopted(self):
+        self.power.powered["smelter_1"] = False
+        self.grids[0].members[0].powered = False
+        self.request("supply_dock_1", "supply_dock")
+        self.power.powered["supply_dock_1"] = False
+        self.grids[0].members[1].powered = False
+        self.world.notebook.data["power.shedded"] = ["supply_dock_1"]
+        self.world.clock.now += script_parking.REQUEST_FRESH_TICKS + 1
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.world.notebook.data.get(PARKED_KEY, {}), {})
+
+    def test_park_is_recorded_before_the_breaker_and_dropped_when_it_fails(self):
+        seen = []
+        set_powered = self.power.set_powered
+
+        def recording(machine_id, on):
+            seen.append(machine_id in self.world.notebook.data.get(PARKED_KEY, {}))
+            return set_powered(machine_id, on) if machine_id != "supply_dock_1" else _Result("failed")
+        self.power.set_powered = recording
+        self.request("smelter_1", "smelter")
+        self.request("supply_dock_1", "supply_dock")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(seen, [True, True])
+        self.assertIn("smelter_1", self.world.notebook.data[PARKED_KEY])
+        self.assertNotIn("supply_dock_1", self.world.notebook.data[PARKED_KEY])
+
+    def test_entries_written_by_others_during_a_pass_survive(self):
+        self.request("smelter_1", "smelter")
+        set_powered = self.power.set_powered
+
+        def turbine_writes_meanwhile(machine_id, on):
+            self.world.notebook.data.setdefault(PARKED_KEY, {})["turbine_1"] = {"kind": "steam_turbine", "mode": "turbine", "since": 0}
+            return set_powered(machine_id, on)
+        self.power.set_powered = turbine_writes_meanwhile
+        self.world.clock.now += 1
+        self.parking.step(self.grids, 10.0)
+        self.assertIn("turbine_1", self.world.notebook.data[PARKED_KEY])
+        self.assertIn("smelter_1", self.world.notebook.data[PARKED_KEY])
+
     def test_dock_with_an_order_stays_and_parked_dock_wakes_on_assignment(self):
         self.request("supply_dock_1", "supply_dock")
         self.parking.step(self.grids, 10.0, {"supply_dock_1": "order_7"})

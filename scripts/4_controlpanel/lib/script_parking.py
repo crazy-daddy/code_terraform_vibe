@@ -309,6 +309,7 @@ class ScriptParking:
         now = _now_tick()
         parked = archive.get(PARKED_KEY, {}) or {}
         parked = dict(parked) if isinstance(parked, dict) else {}
+        before = dict(parked)
         requests = archive.get(PARK_REQUESTS_KEY, {}) or {}
         requests = requests if isinstance(requests, dict) else {}
         shed = set(archive.get("power.shedded", []) or [])
@@ -343,6 +344,7 @@ class ScriptParking:
 
         if woken:
             self._clear_requests(woken)
+        changed = self._adopt_orphans(parked, requests, woken, shed, members, now) or changed
         for machine_id, request in requests.items():
             if machine_id in parked or machine_id in woken or machine_id in shed or not isinstance(request, dict):
                 continue
@@ -359,18 +361,70 @@ class ScriptParking:
                 continue
             if kind in HELD_KINDS and _held(machine_id, now):
                 continue
+            entry = {"kind": kind, "mode": "breaker", "since": now}
+            if request.get("wake_after") is not None:
+                entry["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
+            # Recorded before the breaker goes off: a script killed in between leaves an
+            # entry for a powered machine (dropped next pass), never an untracked dark one.
+            self._commit({}, {machine_id: entry})
             if self._set_powered(machine_id, False):
-                parked[machine_id] = {"kind": kind, "mode": "breaker", "since": now}
-                if request.get("wake_after") is not None:
-                    parked[machine_id]["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
+                parked[machine_id] = entry
+                before[machine_id] = entry
                 log.debug(f"parked {machine_id} ({kind})")
-                changed = True
+            else:
+                self._commit({machine_id: entry}, {})
 
         changed = self._solar(elevation, members, parked, now) or changed
         if changed:
-            archive.set(PARKED_KEY, parked)
+            self._commit(before, parked)
         log.end()
         return self._summary(parked)
+
+    @staticmethod
+    def _commit(before, after):
+        """Applies only the difference between before and after to PARKED_KEY, in one
+        transaction, so entries other scripts wrote meanwhile (turbine_commit,
+        wake_for_visit()) survive."""
+        dropped = [m for m in before if m not in after]
+        written = {m: e for m, e in after.items() if before.get(m) is not e}
+        if not dropped and not written:
+            return
+
+        def updater(parked):
+            parked = parked if isinstance(parked, dict) else {}
+            for machine_id in dropped:
+                parked.pop(machine_id, None)
+            parked.update(written)
+            return parked
+
+        try:
+            archive.transaction(PARKED_KEY, {}, updater)
+        except Exception as error:
+            swallowed("script_parking.ScriptParking._commit: archive.transaction", error)
+
+    def _adopt_orphans(self, parked, requests, woken, shed, members, now):
+        """
+        Backup scan: a machine switched off at its breaker with a stale park request, but
+        in neither PARKED_KEY nor the shed list, was parked by a pass whose record got
+        lost. Nothing else would switch it on, so it goes back into `parked` with its
+        request tick as `since`, which makes its re-check due. Returns True when any was adopted.
+        """
+        adopted = []
+        for machine_id, request in requests.items():
+            if machine_id in parked or machine_id in woken or machine_id in shed or not isinstance(request, dict):
+                continue
+            kind = request.get("kind")
+            tick = request.get("tick", 0)
+            if kind not in WAKE_AFTER_TICKS or now - tick <= REQUEST_FRESH_TICKS:
+                continue
+            member = members.get(machine_id)
+            if member is None or member[2] or self._is_powered(machine_id):
+                continue
+            parked[machine_id] = {"kind": kind, "mode": "breaker", "since": tick}
+            adopted.append(machine_id)
+        if adopted:
+            log.level("warn").print(f"[PARKING] Re-adopted {len(adopted)} untracked dark machine(s): {', '.join(sorted(adopted))}.")
+        return bool(adopted)
 
     # ------------------------------------------------------------------ wake
 
@@ -393,7 +447,7 @@ class ScriptParking:
     @staticmethod
     def _last_awake(kind, machine_id, members, parked, shed):
         """True when machine_id is the only station of its kind on the grids that is neither parked nor shed."""
-        awake = [m for m, (_anchor, type_id) in members.items() if type_id == kind and m not in parked and m not in shed]
+        awake = [m for m, (_anchor, type_id, _powered) in members.items() if type_id == kind and m not in parked and m not in shed]
         return awake == [machine_id] or not awake
 
     @staticmethod
@@ -481,7 +535,7 @@ class ScriptParking:
         changed = False
         if elevation <= 0:
             stopped = []
-            for machine_id, (_anchor, type_id) in members.items():
+            for machine_id, (_anchor, type_id, _powered) in members.items():
                 if type_id != SOLAR_TYPE_ID or machine_id in parked or not self._is_running(machine_id):
                     continue
                 if self._run(machine_id, "stop"):
@@ -507,14 +561,14 @@ class ScriptParking:
 
     @staticmethod
     def _members(grids):
-        """{machine_id: (grid anchor id, type_id)} over every grid."""
+        """{machine_id: (grid anchor id, type_id, powered)} over every grid."""
         out = {}
         for grid in grids:
             anchor = getattr(grid, "anchor_id", None)
             for member in getattr(grid, "members", []) or []:
                 member_id = getattr(member, "id", None)
                 if member_id:
-                    out[member_id] = (anchor, getattr(member, "type_id", ""))
+                    out[member_id] = (anchor, getattr(member, "type_id", ""), bool(getattr(member, "powered", True)))
         return out
 
     def _is_powered(self, machine_id):
