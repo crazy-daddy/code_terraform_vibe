@@ -18,7 +18,7 @@ Finished items live in [TODO_done.md](TODO_done.md). When an item and all of its
 
 ## 🗂️ Dev Tooling: Tiered `scripts/` Migration (2026-09-22)
 
-Repo moved to a dev root (`C:\Users\Adrian\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
+Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the live save folder, with source of truth reorganized under `scripts/<tier>/<category>/` and synced in via `devtools/scripts_sync.py`. See [`docs/cheatsheet/dev_workflow.md` §9](docs/cheatsheet/dev_workflow.md#-9-dev-workflow-tiered-scripts--devtoolsscripts_syncpy) for the full scheme. Follow-ups from that migration, not yet done:
 
 - [x] **`weather_station`** canonical script written (`7_miningdrills/weather/weather_station.py`, `lib/weather_signals.py`; see Phase 10).
 - [x] **`7_miningdrills` tier (2026-09-23)** — gated on the first deployed Mining Drill of any variant via the new OR-key `"buildings_any"` (`criteria_met()` in `devtools/scripts_sync.py`). Telemetry controller written (`7_miningdrills/lib/mining_drill.py`, thin `mining/mining_drill{,_industrial,_heavy}.py`; publishes `drill.status`, warns on full/stalled/near-full — see `docs/AI_CHEATSHEET.md` §1j). Not yet live-verified; confirm 1 stockpile unit = 1 t for the time-to-full estimate.
@@ -102,7 +102,7 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
 
 ## 🌐 Phase 3: Multi-Outpost Coordination & Production Network
 
-The save has grown past a single production base: multiple outposts are founded, several sit near ore deposits home doesn't have easy access to, and home itself is about to run more than one Smelter/Fabricator. This phase covers everything needed to coordinate production/logistics across that — split out of what used to be Phase 2's "Outpost Networks" scope because it has grown large enough to deserve its own phase. Full design for the mining-network half in `C:\Users\Adrian\.claude\plans\agile-frolicking-flurry.md` (Multi-Outpost Mining Network + Multi-Smelter Leader Election section).
+The save has grown past a single production base: multiple outposts are founded, several sit near ore deposits home doesn't have easy access to, and home itself is about to run more than one Smelter/Fabricator. This phase covers everything needed to coordinate production/logistics across that — split out of what used to be Phase 2's "Outpost Networks" scope because it has grown large enough to deserve its own phase. Full design for the mining-network half in `C:\Users\<user>\.claude\plans\agile-frolicking-flurry.md` (Multi-Outpost Mining Network + Multi-Smelter Leader Election section).
 
 ### Outpost Infrastructure & Freight
 - [ ] Building planner: deploy structures from inventory via script, Outposts included (see AGENTS.md rule 5, Outpost Founding).
@@ -374,6 +374,11 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [x] Reactor water reservation (§1c-4, `fluid_routing.water_reserve`): below 48 t/Reactor of pooled water tanks only Reactors draw water; other consumers' routers disconnect, Harvesters skip refills.
   - [ ] Reactor load following: fuel follows heat, not output, so a full battery wastes rods; coast or lower heat while other generation covers the grid.
   - [ ] Validate live (Reactor): `elapsed_game_hours()` boundaries match the condition redraws, measured gain vs. the settled `temperature() / heat()`, `input.connect(cask)` + `take("fuel_rod")`, water routing, overheat never reached, water reserve hold/release and consumers reconnecting after it.
+- [ ] **Future runs: rush to atomic power** ([docs/plans/atomic_rush.md](docs/plans/atomic_rush.md)): Reactor = 5,000 W from one running script vs ~46 turbine scripts.
+  - [ ] Nuclear prep track in the tier 4+ decision engine: Weather Station in every biome and uranium stockpiling from Weather Program (TI 330,000), plated drone, Fuel Assembler + lead mining, Hot Freight Proof order for the Fuel Rod blueprint, all done before TI 650,000.
+  - [ ] Cash manager consumer for the Reactor (750,000 cr), ranked ahead of tier upgrades and saved for before the gate.
+  - [ ] Before the gate, add power as Oil Generators (700 W per script) instead of turbines or solar, sized to the oil surplus (§1c-1 surplus base load) so Tar/Plastics stay supplied; measure oil yield per well early in the run.
+  - [ ] Retire solar trackers early; once a Reactor runs, let turbine commitment park the turbines (keep them as backup, don't sell).
 - [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations

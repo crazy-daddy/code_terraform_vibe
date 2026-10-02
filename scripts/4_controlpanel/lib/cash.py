@@ -10,7 +10,7 @@
 #     and after a Shop purchase. The decision is made live, inside one
 #     archive transaction, so two consumers can't both spend the same credits.
 #
-# Rules (Adrian, 2026-09-29):
+# Rules (owner, 2026-09-29):
 #   - Operating consumers (OPERATING: Bio Lab reagents, Pioneer reagent Shop
 #     pulls) go first: they may spend down to 0. The floor exists for them.
 #   - Capital consumers spend only above the floor, in priority order

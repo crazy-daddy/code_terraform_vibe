@@ -86,6 +86,18 @@ class ScheduleTests(harness.StubTestCase):
                                   schedule=[("break", "salt_tortoise"), ("revive", "spire_drake")]))
         self.assertEqual(plan["buy"], {"habitat_2": "breakthrough", "habitat_3": "adaptation"})
 
+    def test_purchases_pass_a_gated_breakthrough_from_surplus(self):
+        statuses = self.base_statuses()
+        schedule = [("break", "salt_tortoise"), ("break", "magmatic_annelid"), ("revive", "spire_drake")]
+        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=8,
+                                  populations={"salt_tortoise": 5000, "magmatic_annelid": 12000}, schedule=schedule))
+        self.assertEqual(plan["buy"], {"habitat_1": "breakthrough"})
+        self.assertEqual(plan["assign"], {})
+        self.assertEqual(plan["progress"]["waiting"][0], ["break", "salt_tortoise"])
+        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=7,
+                                  populations={"salt_tortoise": 5000, "magmatic_annelid": 12000}, schedule=schedule))
+        self.assertEqual(plan["buy"], {})
+
     def test_blocked_steps_skipped_with_reason(self):
         plan = wp.build_plan(snap(habitats=3, statuses=self.base_statuses(), insight=2,
                                   recipes=[wc.recipe_of(s) for s in SPECIES if s != "spire_drake"],
@@ -335,6 +347,14 @@ class WakeAlertTests(harness.StubTestCase):
         statuses = {"habitat_1": {"species": "", "target": "", "parked": wc.PARK_EMPTY}}
         plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"]))
         self.assertEqual(plan["wakes"], [("habitat_1", "assigned magmatic_annelid")])
+
+    def test_wakes_parked_habitat_with_queued_purchase(self):
+        statuses = {"habitat_1": established("salt_tortoise", pop=175000, rate=0.0, parked=wc.PARK_CAPPED),
+                    "habitat_2": established("magmatic_annelid", feed_level=0.0, parked=wc.PARK_NO_FEED)}
+        plan = wp.build_plan(snap(habitats=2, statuses=statuses, parked=["habitat_1", "habitat_2"], insight=5.0, populations={"salt_tortoise": 175000},
+                                  schedule=[("break", "salt_tortoise"), ("adapt", "magmatic_annelid")]))
+        self.assertEqual(plan["buy"], {"habitat_1": "breakthrough", "habitat_2": "adaptation"})
+        self.assertEqual(plan["wakes"], [("habitat_1", "buy breakthrough"), ("habitat_2", "buy adaptation")])
 
     def test_idle_summary(self):
         plan = wp.build_plan(snap(habitats=1, statuses={"habitat_1": established("salt_tortoise")}))

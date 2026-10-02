@@ -80,7 +80,7 @@ WAKE_AFTER_TICKS = {
     "refiner": 3000,
     "fuel_assembler": 3000,
     # Parked while empty and unassigned, without feed, or capped at the Mk I ceiling
-    # (lib/habitat.py); the Wildlife planner wakes it when that changes.
+    # (lib/habitat.py); the Wildlife planner wakes it when that changes or a node purchase is queued.
     "habitat": 6000,
 }
 # Station kinds: never park the last awake one of a type (see the module docstring).
