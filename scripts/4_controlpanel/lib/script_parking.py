@@ -35,6 +35,7 @@ from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
 import fluid_routing
+from atomic import run_batched
 # lib/power.py is imported where it is used (_low_reserve_grids()): the tier-5 power.py imports
 # turbine_commit, which imports this module, so a module-level import would be a cycle.
 power = None
@@ -235,6 +236,20 @@ def wake_kind(kind, reason):
     return woken
 
 
+# Grid members per atomic _member_rows() call (~15 operations each).
+MEMBER_CHUNK = 150
+
+
+def _member_rows(members, anchor):
+    """[(member id, (anchor, type_id, powered))] for one grid's members; pure reads, run atomically."""
+    rows = []
+    for member in members:
+        member_id = getattr(member, "id", None)
+        if member_id:
+            rows.append((member_id, (anchor, getattr(member, "type_id", ""), bool(getattr(member, "powered", True)))))
+    return rows
+
+
 def _held(machine_id, now):
     """True while wake_for_visit() holds machine_id awake."""
     try:
@@ -342,6 +357,7 @@ class ScriptParking:
                 del parked[machine_id]
                 changed = True
 
+        awake = None  # {station kind: ids neither parked nor shed}, built on first use
         if woken:
             self._clear_requests(woken)
         changed = self._adopt_orphans(parked, requests, woken, shed, members, now) or changed
@@ -357,8 +373,11 @@ class ScriptParking:
                 continue
             if kind == "oil_generator" and (oil_surplus or members[machine_id][0] in low_grids):
                 continue  # reserve already low or oil in surplus: stay ready instead of parking and waking again
-            if kind in STATION_KINDS and self._last_awake(kind, machine_id, members, parked, shed):
-                continue
+            if kind in STATION_KINDS:
+                if awake is None:
+                    awake = self._awake_stations(members, parked, shed)
+                if awake[kind] <= {machine_id}:
+                    continue  # last one awake of its kind
             if kind in HELD_KINDS and _held(machine_id, now):
                 continue
             entry = {"kind": kind, "mode": "breaker", "since": now}
@@ -370,6 +389,8 @@ class ScriptParking:
             if self._set_powered(machine_id, False):
                 parked[machine_id] = entry
                 before[machine_id] = entry
+                if awake is not None and kind in awake:
+                    awake[kind].discard(machine_id)
                 log.debug(f"parked {machine_id} ({kind})")
             else:
                 self._commit({machine_id: entry}, {})
@@ -445,10 +466,13 @@ class ScriptParking:
         return None
 
     @staticmethod
-    def _last_awake(kind, machine_id, members, parked, shed):
-        """True when machine_id is the only station of its kind on the grids that is neither parked nor shed."""
-        awake = [m for m, (_anchor, type_id, _powered) in members.items() if type_id == kind and m not in parked and m not in shed]
-        return awake == [machine_id] or not awake
+    def _awake_stations(members, parked, shed):
+        """{station kind: ids on the grids neither parked nor shed}, for every STATION_KINDS kind."""
+        awake = {kind: set() for kind in STATION_KINDS}
+        for machine_id, (_anchor, type_id, _powered) in members.items():
+            if type_id in awake and machine_id not in parked and machine_id not in shed:
+                awake[type_id].add(machine_id)
+        return awake
 
     @staticmethod
     def _well_active(machine_id):
@@ -561,14 +585,12 @@ class ScriptParking:
 
     @staticmethod
     def _members(grids):
-        """{machine_id: (grid anchor id, type_id, powered)} over every grid."""
+        """{machine_id: (grid anchor id, type_id, powered)} over every grid. The member
+        attribute reads run in atomic batches (_member_rows())."""
         out = {}
         for grid in grids:
-            anchor = getattr(grid, "anchor_id", None)
-            for member in getattr(grid, "members", []) or []:
-                member_id = getattr(member, "id", None)
-                if member_id:
-                    out[member_id] = (anchor, getattr(member, "type_id", ""), bool(getattr(member, "powered", True)))
+            rows = run_batched(_member_rows, getattr(grid, "members", []) or [], MEMBER_CHUNK, getattr(grid, "anchor_id", None))
+            out.update(rows)
         return out
 
     def _is_powered(self, machine_id):
