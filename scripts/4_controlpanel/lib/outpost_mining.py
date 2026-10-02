@@ -312,6 +312,26 @@ def assigned_ores_for(outpost_id):
     return result
 
 
+def assigned_ores_by_outpost():
+    """{outpost_id: set of ores} from one markers.list() scan: assigned_ores_for() for every
+    outpost at once, for passes that ask about several outposts."""
+    markers = _markers()
+    if not markers:
+        return {}
+    try:
+        candidates = markers.list(RESOURCE_MARKER_PREFIX)
+    except Exception as error:
+        swallowed("outpost_mining.assigned_ores_by_outpost: markers.list", error)
+        return {}
+    result = {}
+    for marker in candidates:
+        outpost_id = getattr(marker, "note", "")
+        item_id = _item_id_from_label(getattr(marker, "label", ""))
+        if outpost_id and item_id:
+            result.setdefault(outpost_id, set()).add(item_id)
+    return result
+
+
 def ore_stock_target(item_id):
     """
     Stock target (units) for raw ore item_id, the same at every outpost --

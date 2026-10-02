@@ -24,8 +24,21 @@
 # toward the dock whose outpost already holds or plans to build (production
 # SITE_PLAN_KEY) the order's items -- the order's items are then consumed at
 # that outpost, so its whole tree builds there (lib/site_plan.py).
-from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
+#
+# Dock site roles (DockRoles): the buildings at a dock's outpost decide which
+# order items it ships. A Fabricator gives crafted items (Fabricator recipe
+# outputs), a Smelter gives every raw ore and Smelter output, a resource
+# marker naming the outpost (lib/outpost_mining.py) gives that ore, a Lead
+# Cask gives Raw Uranium and Fuel Rods. Items with none of these kinds ship
+# from any dock. A dock takes only orders it covers at least one role-bound
+# item of; it ranks orders by the share it covers, and the rest of a mixed
+# order reaches its outpost as a site-supply consumer request
+# (5_steampower lib/site_supply.py). An empty dock leaves an order it covers
+# nothing of, so a dock at a nuclear site without Fabricators never waits on
+# a crafted-only order.
+from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
 from storage import take_item, total_stock, warehouse_stock, local_port_target, best_unload_target, outpost_is_home
+from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
 from archive import archive
 from version_guard import validate_game_version
@@ -48,6 +61,98 @@ ORDER_PLAN_ARCHIVE_KEY = "supply_dock.order_plan"
 # in one shot, so a heavy shortfall spreads across several `step()` cycles and
 # a sibling dock's own poll gets a chance to interleave.
 SUPPLY_DOCK_LOAD_CHUNK_SIZE = 10
+
+# Dock site roles (module comment).
+ROLE_FAB = "fab"
+ROLE_MINE = "mine"
+ROLE_CASK = "cask"
+
+
+class DockRoles:
+    """Per-pass memo of dock site roles and item kinds (module comment).
+    Never held across passes: a new building changes a site's roles."""
+
+    def __init__(self, cache=None):
+        self.cache = cache if cache is not None else SourceCache()
+        self._fab_items = None
+        self._mine_items = None
+        self._marker_ores = None
+        self._sites = {}
+
+    def item_roles(self, item_id):
+        """Roles that ship item_id; empty = any dock ships it."""
+        if item_id in lead_cask.HOT_ITEMS:
+            return {ROLE_CASK}
+        if self._fab_items is None:
+            self._fab_items = {getattr(r, "output_item", None) for r in self.cache.fabricator_recipes()} - {None}
+            self._mine_items = set(RAW_ORE_ITEM_IDS) | ({getattr(r, "output_item", None) for r in self.cache.smelter_recipes()} - {None})
+        roles = set()
+        if item_id in self._fab_items:
+            roles.add(ROLE_FAB)
+        if item_id in self._mine_items:
+            roles.add(ROLE_MINE)
+        return roles
+
+    def site(self, outpost):
+        """(roles, marker ores) of the dock site `outpost` (None = home); (None, None) when the site can't be resolved."""
+        if outpost is None:
+            outpost = lead_cask.home_outpost()
+        site_id = getattr(outpost, "id", None)
+        if site_id is None:
+            return None, None
+        if site_id not in self._sites:
+            roles = set()
+            if discover_fabricator_ids(outpost):
+                roles.add(ROLE_FAB)
+            if discover_smelter_ids(outpost):
+                roles.add(ROLE_MINE)
+            if lead_cask.casks_at(outpost):
+                roles.add(ROLE_CASK)
+            if self._marker_ores is None:
+                self._marker_ores = assigned_ores_by_outpost()
+            self._sites[site_id] = (roles, self._marker_ores.get(site_id, set()))
+        return self._sites[site_id]
+
+    def covers(self, item_id, outpost):
+        """Whether a dock at `outpost` ships item_id itself (no hauling needed)."""
+        item_roles = self.item_roles(item_id)
+        if not item_roles:
+            return True
+        site_roles, ores = self.site(outpost)
+        if site_roles is None:
+            return True
+        return bool(item_roles & site_roles) or (ROLE_MINE in item_roles and item_id in ores)
+
+    def coverage(self, order, outpost):
+        """(covered, bound): still-owed role-bound items of order, and how many of them a dock at `outpost` covers."""
+        requires = getattr(order, "requires", {}) or {}
+        shipped = getattr(order, "shipped", {}) or {}
+        covered = bound = 0
+        for item_id, req_count in requires.items():
+            if req_count - shipped.get(item_id, 0) <= 0 or not self.item_roles(item_id):
+                continue
+            bound += 1
+            if self.covers(item_id, outpost):
+                covered += 1
+        return covered, bound
+
+    def serves(self, order, outpost):
+        """Whether a dock at `outpost` may take order: no role-bound item, or it covers at least one."""
+        covered, bound = self.coverage(order, outpost)
+        return bound == 0 or covered > 0
+
+    def share(self, order, outpost):
+        """Covered fraction of order's role-bound items at `outpost` (1.0 with none)."""
+        covered, bound = self.coverage(order, outpost)
+        return 1.0 if bound == 0 else covered / bound
+
+    def describe(self, outpost):
+        """Short role list of a site for debug lines."""
+        site_roles, ores = self.site(outpost)
+        if site_roles is None:
+            return "unknown site"
+        parts = sorted(site_roles) + [f"ore:{o}" for o in sorted(ores or ())]
+        return ", ".join(parts) if parts else "no roles"
 
 
 def _order_readiness(order, reserved, stock=total_stock, cask_stock=None):
@@ -311,6 +416,7 @@ def plan_dock_assignments(clock=None):
     has_cask = {}
     # {(outpost_id, order_id): _local_cask_units()}, shared by the stability and assignment passes.
     cask_units = {}
+    roles = DockRoles(cache)
 
     plan = {}
     idle_dock_ids = []
@@ -322,8 +428,14 @@ def plan_dock_assignments(clock=None):
             swallowed("supply_dock.plan_dock_assignments: dock.current_order", error)
             curr = None
         if curr and can_fulfill_order(curr, cache):
-            cask_ids = _cask_order_ids(candidates, getattr(dock, "outpost", None), has_cask, cask_units)
-            if not cask_ids or curr.id in cask_ids or _dock_loaded(dock) > 0:
+            outpost = getattr(dock, "outpost", None)
+            loaded = _dock_loaded(dock)
+            if loaded == 0 and not roles.serves(curr, outpost):
+                log.debug(f"{dock_id} is empty and its site ({roles.describe(outpost)}) covers no item of '{curr.id}', leaves it")
+                idle_dock_ids.append(dock_id)
+                continue
+            cask_ids = _cask_order_ids(candidates, outpost, has_cask, cask_units)
+            if not cask_ids or curr.id in cask_ids or loaded > 0:
                 plan[dock_id] = curr.id
                 assigned_counts[curr.id] = assigned_counts.get(curr.id, 0) + 1
                 log.debug(f"{dock_id} keeps still-fulfillable current order '{curr.id}' (stability)")
@@ -336,21 +448,22 @@ def plan_dock_assignments(clock=None):
     if candidates:
         for dock_id in idle_dock_ids:
             outpost = getattr(docks[dock_id], "outpost", None)
-            eligible = [c for c in candidates if _servable_at(c["order"], outpost, has_cask)]
+            eligible = [c for c in candidates if _servable_at(c["order"], outpost, has_cask) and roles.serves(c["order"], outpost)]
             if not eligible:
                 plan[dock_id] = None
-                log.debug(f"{dock_id}: every candidate needs hot cargo and its outpost has no Lead Cask, left unassigned")
+                log.debug(f"{dock_id}: no candidate it can serve (site roles: {roles.describe(outpost)}; hot cargo needs a Lead Cask), left unassigned")
                 continue
             # Scored before the sort: _dock_affinity() may read storage (a remote
             # outpost's first local_stock()), which must not run inside a key callback.
             cask_ids = _cask_order_ids(eligible, outpost, has_cask, cask_units)
             for c in eligible:
                 c["affinity"] = _dock_affinity(c["order"], outpost, cache, site_plan)
-            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, assigned_counts.get(c["order"].id, 0), -c["priority"], -c["affinity"]))
+                c["share"] = roles.share(c["order"], outpost)
+            eligible.sort(key=lambda c: (c["order"].id not in cask_ids, assigned_counts.get(c["order"].id, 0), -c["share"], -c["priority"], -c["affinity"]))
             best = eligible[0]["order"]
             plan[dock_id] = best.id
             assigned_counts[best.id] = assigned_counts.get(best.id, 0) + 1
-            log.debug(f"assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, priority={eligible[0]['priority']})")
+            log.debug(f"assigned {dock_id} -> order '{best.id}' (already {assigned_counts[best.id] - 1} dock(s) on it, role share={eligible[0]['share']:.2f}, priority={eligible[0]['priority']})")
     else:
         for dock_id in idle_dock_ids:
             plan[dock_id] = None
@@ -487,9 +600,10 @@ class SupplyDockController:
             swallowed("supply_dock.SupplyDockController.pick_best_order: get_component", error)
 
         has_cask = {}
-        candidates = [c for c in candidates if _servable_at(c["order"], self.outpost(), has_cask)]
+        roles = DockRoles()
+        candidates = [c for c in candidates if _servable_at(c["order"], self.outpost(), has_cask) and roles.serves(c["order"], self.outpost())]
         if not candidates:
-            self.log.debug("no fulfillable candidate orders found")
+            self.log.debug(f"no fulfillable candidate orders this dock can serve (site roles: {roles.describe(self.outpost())})")
             self.log.end()
             return None
 
@@ -498,7 +612,8 @@ class SupplyDockController:
         cask_ids = _cask_order_ids(candidates, self.outpost(), has_cask, {})
         for c in candidates:
             c["affinity"] = _dock_affinity(c["order"], self.outpost(), None, site_plan)
-        candidates.sort(key=lambda c: (c["order"].id not in cask_ids, -c["priority"], -c["affinity"]))
+            c["share"] = roles.share(c["order"], self.outpost())
+        candidates.sort(key=lambda c: (c["order"].id not in cask_ids, -c["share"], -c["priority"], -c["affinity"]))
         winner = candidates[0]["order"]
         self.log.debug(f"picked '{getattr(winner, 'name', winner.id)}' (priority={candidates[0]['priority']}, affinity={candidates[0]['affinity']}, local cask={winner.id in cask_ids}) among {len(candidates)} candidate(s)")
         self.log.end()
@@ -573,12 +688,16 @@ class SupplyDockController:
 
         desired_id = self.desired_order_id()
         # Only the central plan moves a dock off a still-fulfillable order (it releases an
-        # empty dock for an order its Lead Cask can ship); the per-dock fallback never does.
-        if curr_order and desired_id and self.plan_assigned and getattr(curr_order, "id", None) != desired_id:
+        # empty dock for an order its Lead Cask can ship, or from an order its site covers
+        # no item of -- then the plan entry may be None); the per-dock fallback never does.
+        if curr_order and self.plan_assigned and getattr(curr_order, "id", None) != desired_id:
             if _dock_loaded(self.dock) == 0 and hasattr(self.dock, "clear_order"):
                 clear_res = self.dock.clear_order()
                 if clear_res.status == "ok":
-                    self.log.print(f"[{self.name}] Switching from '{curr_order.name}' to planned order '{desired_id}'.")
+                    if desired_id:
+                        self.log.print(f"[{self.name}] Switching from '{curr_order.name}' to planned order '{desired_id}'.")
+                    else:
+                        self.log.print(f"[{self.name}] Released '{curr_order.name}': planner has no order for this dock's site.")
                     curr_order = None
 
         if not curr_order:

@@ -395,6 +395,7 @@ class RemoteSupplyDockTests(StubTestCase):
         w.inventory.add("steel_plate", 5)
         w.inventory.add("gas_pipe_segment", 5)
         w.add_warehouse("wh_remote", self.remote, {"gas_pipe_segment": 5})
+        w.add_fabricator("fabricator_2", self.remote)
         w.add_supply_dock("supply_dock_2", self.remote)
         w.add_order("o1", {"steel_plate": 5})
         w.add_order("o2", {"gas_pipe_segment": 5})
@@ -442,6 +443,127 @@ class RemoteSupplyDockTests(StubTestCase):
         _Cask(w, "lead_cask_1", w.home, material="raw_uranium", count=10)
         order = w.add_order("o_uranium", {"raw_uranium": 20})
         self.assertEqual(supply_dock._order_readiness(order, {}), (10, 20))
+
+
+class DockRoleTests(StubTestCase):
+    """Dock site roles (lib/supply_dock.py DockRoles): Fabricator -> crafted
+    items, Smelter or resource marker -> ore/ingots, Lead Cask -> hot items."""
+
+    def setUp(self):
+        super().setUp()
+        self.nuclear = self.world.add_outpost("outpost_nuclear")
+        self.world.add_smelter("smelter_1", self.world.home)
+        self.world.add_fabricator("fabricator_1", self.world.home)
+        self.world.inventory.add("steel_plate", 5)
+        _Cask(self.world, "lead_cask_1", self.nuclear, material="fuel_rod", count=10)
+
+    def test_nuclear_dock_skips_crafted_only_order(self):
+        w = self.world
+        w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        w.add_order("o_steel", {"steel_plate": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": None})
+
+    def test_crafted_order_goes_to_the_fab_site_dock(self):
+        w = self.world
+        w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        w.add_supply_dock("supply_dock_home", w.home)
+        w.add_order("o_steel", {"steel_plate": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": None, "supply_dock_home": "o_steel"})
+
+    def test_nuclear_dock_takes_mixed_order_and_pulls_crafted_part(self):
+        w = self.world
+        w.add_warehouse("wh_nuclear", self.nuclear)
+        w.add_warehouse("wh_home", w.home)
+        dock = w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        w.add_order("o_mixed", {"fuel_rod": 10, "steel_plate": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": "o_mixed"})
+        dock.order = w.services["orders"].orders["o_mixed"]
+        site_supply.publish_site_requests(w.clock.now)
+        self.assertEqual(requests_by(w, "outpost_nuclear", site_supply.SITE_SUPPLY_REQUESTER).get("steel_plate"), (5, 5))
+
+    def test_empty_dock_releases_order_its_site_covers_nothing_of(self):
+        w = self.world
+        dock = w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        dock.order = w.add_order("o_steel", {"steel_plate": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": None})
+        supply_dock.SupplyDockController(dock).step()
+        self.assertIsNone(dock.current_order())
+
+    def test_loaded_dock_keeps_off_role_order(self):
+        w = self.world
+        dock = w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        dock.order = w.add_order("o_steel", {"steel_plate": 5})
+        dock.input_buffer["steel_plate"] = 2
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": "o_steel"})
+
+    def test_order_without_role_bound_items_goes_anywhere(self):
+        w = self.world
+        w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        w.inventory.add("biomass", 5)
+        w.add_order("o_bio", {"biomass": 5})
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_nuclear": "o_bio"})
+
+    def test_resource_marker_makes_a_mining_site_for_that_ore(self):
+        w = self.world
+        mine = w.add_outpost("outpost_mine")
+        _Markers(w).add("resource.poi_1_1", "Iron Ore - Rich", "outpost_mine")
+        w.add_warehouse("wh_mine", mine, {"iron_ore": 20})
+        w.add_supply_dock("supply_dock_mine", mine)
+        w.add_order("o_iron", {"iron_ore": 5})
+        w.add_order("o_silicon", {"silicon": 5})
+        # Network stock makes both orders fulfillable (can_fulfill_order()).
+        w.inventory.add("iron_ore", 5)
+        w.inventory.add("silicon", 5)
+        self.assertEqual(supply_dock.plan_dock_assignments(), {"supply_dock_mine": "o_iron"})
+        roles = supply_dock.DockRoles()
+        self.assertFalse(roles.covers("silicon", mine))
+        self.assertTrue(roles.covers("iron_ore", mine))
+
+    def test_marker_mining_site_is_a_pull_source(self):
+        w = self.world
+        mine = w.add_outpost("outpost_mine")
+        _Markers(w).add("resource.poi_1_1", "Iron Ore - Rich", "outpost_mine")
+        w.add_warehouse("wh_mine", mine, {"iron_ore": 20})
+        w.add_warehouse("wh_nuclear", self.nuclear)
+        dock = w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        dock.order = w.add_order("o_iron", {"iron_ore": 5})
+        site_supply.publish_site_requests(w.clock.now)
+        entry = logistics_requests.active_requests(w.clock.now).get("outpost_nuclear", {}).get("iron_ore")
+        self.assertIsNotNone(entry)
+        self.assertGreaterEqual(logistics_requests.request_min(entry), 5)
+
+    def test_smelting_site_ore_request_keeps_dock_need(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"iron_ore": 20})
+        w.add_warehouse("wh_nuclear", self.nuclear)
+        w.add_smelter("smelter_n", self.nuclear)
+        dock = w.add_supply_dock("supply_dock_nuclear", self.nuclear)
+        dock.order = w.add_order("o_iron", {"iron_ore": 5})
+        site_supply.publish_site_requests(w.clock.now)
+        entry = logistics_requests.active_requests(w.clock.now).get("outpost_nuclear", {}).get("iron_ore")
+        self.assertGreaterEqual(logistics_requests.request_min(entry), 5)
+
+
+class _Marker:
+    def __init__(self, marker_id, label, note):
+        self.id = marker_id
+        self.label = label
+        self.note = note
+
+
+class _Markers:
+    def __init__(self, world):
+        self.items = {}
+        world.components["markers"] = self
+
+    def add(self, marker_id, label, note):
+        self.items[marker_id] = _Marker(marker_id, label, note)
+
+    def get(self, marker_id):
+        return self.items.get(marker_id)
+
+    def list(self, prefix=""):
+        return [m for i, m in self.items.items() if i.startswith(prefix)]
 
 
 class _Cask(Store):

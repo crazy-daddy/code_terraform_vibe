@@ -49,9 +49,11 @@
 #     consumers: a Supply Dock order at the dock's outpost, a blueprint's
 #     required_item at the Constructor's home, everything else at home) are
 #     pulled in from the other supply sites (outposts with a Smelter or
-#     Fabricator) that built them -- blueprint materials from every other
-#     outpost: request local + in-flight + min(short, free there), kept while
-#     units are in flight. A blueprint material or fleet upgrade order part
+#     Fabricator, or a resource marker naming them as the ore's miner) that
+#     built or mined them -- blueprint materials from every other outpost:
+#     request local + in-flight + min(short, free there), kept while units
+#     are in flight. This is how a Supply Dock gets the order items its own
+#     site role doesn't cover (lib/supply_dock.py DockRoles). A blueprint material or fleet upgrade order part
 #     (production.get_upgrade_orders(): a commissioned drone's kit, a chassis
 #     swap) no Fabricator will add more of (settled_items()) is flagged
 #     urgent: haulers skip their minimum load for it, since waiting brings no
@@ -86,7 +88,7 @@ from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
 from production import set_backlog_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
-from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
+from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -398,6 +400,10 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     for ore, output in sorted(ore_outputs.items()):
         local = have.get(ore, 0) + flying.get(ore, 0)
         floor = local + ore_short.get(ore, 0) if output in gross else 0
+        # A consumer request (consumer_wants(): a dock order for the ore here) keeps its need level.
+        consumed = wants.get(ore)
+        if consumed:
+            floor = max(floor, consumed[2])
         target = max(ore_stock_target(ore), floor)
         wants[ore] = (target, have.get(ore, 0), floor)
         log.debug(f"ore {ore} local={local} need level={floor} target={target}")
@@ -675,7 +681,8 @@ def publish_site_requests(curr_tick):
     requests = active_requests(curr_tick)
     cache = SourceCache()
     _roots, consumers, _outputs = fabricator_root_targets(cache)
-    sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o)]
+    marker_ores = assigned_ores_by_outpost()
+    sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o) or marker_ores.get(getattr(o, "id", None))]
     anywhere = set(blueprint_required_items(cache))
     urgent = settled_items(anywhere | set(get_upgrade_orders(skip=RECURRING_ORDER_REQUESTERS)), _roots, cache) | set(manual_transit_wants(cache))
     build_site = construction_site_id()
