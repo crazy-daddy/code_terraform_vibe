@@ -184,7 +184,7 @@ Single source of truth for what Fabricator builds, feeds `get_material_demands()
 `SourceCache` (instantiate once per pass, thread through every call) memoizes:
 - `smelter_recipes()`/`fabricator_recipes()`/`surveyed_sites()` — each game call fires at most once per cache instance.
 - `can_source_item()`/`can_source_fluid()` results per item/fluid-key — shared sub-item (e.g. Steel under both Circuit Panel and Iron Ingot) resolves once, not per branch. Separate `_item_stack` set does cycle detection so memo never poisoned with in-progress answer.
-- Stock snapshot: `_build_stock_map()` calls `.stacks()` once per Inventory/Warehouse (returns every `ItemStack` in one call), sums by `.id` into one `{item_id: total_units}` dict; `stock(item_id)` = plain dict lookup. Total cost `1+W` calls per pass regardless of distinct items — strictly better than `.count()`-per-item `total_stock()` (`D*(1+W)`).
+- Stock snapshot: `_build_stock_map()` calls `.stacks()` once per Inventory/Warehouse (returns every `ItemStack` in one call), sums by `.id` into one `{item_id: total_units}` dict; `stock(item_id)` = plain dict lookup. Forage also adds the home Crop Automator outputs (`storage.crop_automator_forage_total()`), so Forage-fed recipes (Reinforced Biopolymer, Enrichment Compound) stay sourceable while the field keeps its Forage; `building_stock()` stays Inventory/Warehouse only. Total cost `1+W` calls per pass regardless of distinct items — strictly better than `.count()`-per-item `total_stock()` (`D*(1+W)`).
 
 - `_cascade_blueprint_demand()` result (blueprint + fleet-cargo walk) on `cache._blueprint_demand`; callers get a copy.
 

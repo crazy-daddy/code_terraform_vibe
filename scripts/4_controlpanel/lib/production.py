@@ -1,6 +1,6 @@
 # Shared production-demand planning for mining and refining automation.
 from archive import archive
-from storage import total_stock, discover_storage_buildings, outpost_is_home
+from storage import total_stock, discover_storage_buildings, outpost_is_home, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
 from outpost_mining import RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
 from logistics_requests import active_requests, in_flight, outpost_free_tiers, aboard_units, DRONE_DEPOT_TYPE_IDS
@@ -2223,14 +2223,21 @@ class SourceCache:
                         held[stack_item_id] = held.get(stack_item_id, 0) + count
             except Exception as error:
                 swallowed("production.SourceCache._build_stock_map: component.stacks", error)
+        # Crop Automators keep their Forage in their own output (lib/storage.py),
+        # which take_item() pulls from directly. Counted in totals only:
+        # building_stock() stays Inventory/Warehouse.
+        forage = crop_automator_forage_total()
+        if forage > 0:
+            totals[CROP_AUTOMATOR_ITEM_ID] = totals.get(CROP_AUTOMATOR_ITEM_ID, 0) + forage
         self._building_stock = per_building
         log.trace(f"scanned {len(sources)} storage components, {len(totals)} distinct items")
         log.end()
         return totals
 
     def stock(self, item_id):
-        """Item's total units across Inventory + every Warehouse, from this
-        pass's one-shot stock snapshot -- see _build_stock_map()."""
+        """Item's total units across Inventory + every Warehouse (+ Crop
+        Automator outputs for Forage), from this pass's one-shot stock
+        snapshot -- see _build_stock_map()."""
         if self._stock_map is None:
             self._stock_map = self._build_stock_map()
         return self._stock_map.get(item_id, 0)
