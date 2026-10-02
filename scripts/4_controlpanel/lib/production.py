@@ -1971,8 +1971,9 @@ def get_smelter_demands(cache=None):
 
 
 def fab_site_gross_need(fabricator_ids, smelter_outputs, cache):
-    """{smelter_output: units} the Fabricators' active recipes still need
-    staged: inputs x crafts_remaining (their split share) - stockpile."""
+    """{item_id: units} the Fabricators' active recipes still need staged:
+    inputs x crafts_remaining (their split share) - stockpile, for the
+    inputs in `smelter_outputs` (every input when None)."""
     need = {}
     for fabricator_id in fabricator_ids:
         fabricator = _component(fabricator_id)
@@ -1987,7 +1988,7 @@ def fab_site_gross_need(fabricator_ids, smelter_outputs, cache):
             swallowed("production.fab_site_gross_need: fabricator.get_stockpile", error)
             stockpile = {}
         for item_id, per_craft in (getattr(recipe, "inputs", {}) or {}).items():
-            if item_id not in smelter_outputs:
+            if smelter_outputs is not None and item_id not in smelter_outputs:
                 continue
             missing = per_craft * crafts_remaining - stockpile.get(item_id, 0)
             if missing > 0:

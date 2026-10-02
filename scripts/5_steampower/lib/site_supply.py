@@ -20,6 +20,9 @@
 #     Its ship plan (production.get_site_ship_plan(): intermediates spare
 #     elsewhere that it hauls in instead of building) is requested too,
 #     level = local + in flight + to ship, kept while units are in flight.
+#     Raw inputs (no Smelter or Fabricator makes them, e.g. Forage) its
+#     Fabricators still need staged are requested the same way, need tier:
+#     local + in flight + min(short, free at other outposts).
 #     Ingot buffer (production.fab_site_ingot_targets()): every Smelter
 #     output a Fabricator recipe takes is requested up to its buffer target,
 #     need level at least its need tier, always published so other sites'
@@ -125,8 +128,9 @@ EVICT_HOLD_ITEM_IDS = ("tar",)
 # outpost with that building. Tar piles up at home and Fabricator recipes draw
 # it in small amounts; a Refiner burns 2-5 tar per craft (lib/refiner.py takes
 # it from local storage); Lead Plates keep a Fuel Assembler (reactor fuel) from
-# waiting on a craft and a haul.
-SITE_STOCK_TARGETS = {"fabricator": {"tar": 2000}, "refiner": {"tar": 2000}, "fuel_assembler": {"lead_plate": 200}}
+# waiting on a craft and a haul. Forage grows only on the home field, so a
+# fab site keeps some for its Forage recipes (6 per craft) before one starts.
+SITE_STOCK_TARGETS = {"fabricator": {"tar": 2000, "forage": 1000}, "refiner": {"tar": 2000}, "fuel_assembler": {"lead_plate": 200}}
 # Need tier inside a stockpile: {building type: {item: need level}}. A Refiner
 # stops without tar, so its outpost asks for 150 (30-75 crafts) at need
 # priority; the rest of the 2,000 stays buffer tier.
@@ -229,6 +233,27 @@ def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
         if level > 0 and level >= wants.get(item_id, (0,))[0]:
             wants[item_id] = (level, have.get(item_id, 0), level)
         log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
+
+
+def raw_input_wants(outpost, raw, outposts, requests, tick, flying, wants):
+    """Adds the raw inputs this fab site's Fabricators still need staged
+    (`raw`: {item_id: units}, inputs no Smelter or Fabricator makes, e.g.
+    Forage from the home Crop Automators) to wants, all need tier: level =
+    local + in flight + min(short, free at other outposts). Kept while units
+    are in flight; nothing free and nothing in flight, no request."""
+    site_id = getattr(outpost, "id", None)
+    item_ids = sorted(raw)
+    have = outpost_stock(item_ids, outpost)
+    spare = free_elsewhere(item_ids, site_id, outposts, requests, tick)
+    for item_id in item_ids:
+        local = have.get(item_id, 0) + flying.get(item_id, 0)
+        pull = min(max(0, raw[item_id] - local), spare.get(item_id, 0))
+        if pull <= 0 and flying.get(item_id, 0) <= 0:
+            continue
+        level = local + pull
+        if level >= wants.get(item_id, (0,))[0]:
+            wants[item_id] = (level, have.get(item_id, 0), level)
+        log.debug(f"raw_input_wants({site_id}): {item_id} staged need={raw[item_id]} local={local} free elsewhere={spare.get(item_id, 0)} -> pull {pull}")
 
 
 def ingot_wants(outpost, cache, wants):
@@ -368,7 +393,12 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     if fabricator_ids:
         ship_wants(outpost, requests, cache, flying, smelter_outputs, wants)
 
-    gross = fab_site_gross_need(fabricator_ids, smelter_outputs, cache)
+    staged_need = fab_site_gross_need(fabricator_ids, None, cache)
+    gross = {i: u for i, u in staged_need.items() if i in smelter_outputs}
+    fabricator_outputs = {getattr(r, "output_item", None) for r in cache.fabricator_recipes()} - {None}
+    raw = {i: u for i, u in staged_need.items() if i not in smelter_outputs and i not in fabricator_outputs}
+    if raw:
+        raw_input_wants(outpost, raw, outposts, requests, tick, flying, wants)
     item_ids = sorted(set(gross) | set(ore_outputs) | {ore_for[i] for i in gross if i in ore_for})
     have = outpost_stock(item_ids, outpost)
     spare = free_elsewhere(sorted(gross), site_id, outposts, requests, tick)

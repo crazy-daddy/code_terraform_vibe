@@ -209,6 +209,46 @@ class SiteSupplyTests(StubTestCase):
         self.publish()
         self.assertEqual(w.notebook.data[logistics_requests.REQUESTS_KEY]["outpost_2"]["iron_ore"]["tick"], w.clock.now)
 
+    def _forage_fab(self, outpost):
+        recipe = Recipe("craft_reinforced_biopolymer", {"forage": 6, "gas_pipe_segment": 1}, "reinforced_biopolymer", output_count=4)
+        self.world.add_fabricator("fabricator_2", outpost, FABRICATOR_RECIPES + [recipe])
+        patcher = mock.patch.object(production, "get_fabricator_active_recipe", lambda fabricator, cache=None: (recipe, 50))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_remote_fab_site_requests_raw_input_free_at_home(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"forage": 5000}, capacity=100000)
+        w.add_warehouse("wh_remote", self.remote, {"forage": 40})
+        self._forage_fab(self.remote)
+        self.publish()
+        requests = site_requests(w, "outpost_2")
+        # 50 crafts x 6 = 300 staged need, 40 local: pull 260, need tier.
+        self.assertEqual(requests["forage"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["forage"], 300))
+        # A Fabricator-made input is the ship plan's job, not a raw input.
+        self.assertNotIn("gas_pipe_segment", requests)
+
+    def test_raw_input_capped_by_free_elsewhere(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"forage": 100}, capacity=100000)
+        self._forage_fab(self.remote)
+        self.publish()
+        self.assertEqual(site_requests(w, "outpost_2")["forage"], (site_supply.SITE_STOCK_TARGETS["fabricator"]["forage"], 100))
+
+    def test_no_raw_input_anywhere_no_request(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote)
+        self._forage_fab(self.remote)
+        self.publish()
+        self.assertNotIn("forage", site_requests(w, "outpost_2"))
+
+    def test_fab_site_stocks_forage_buffer(self):
+        w = self.world
+        w.add_warehouse("wh_home", w.home, {"forage": 5000}, capacity=100000)
+        w.add_fabricator("fabricator_2", self.remote)
+        self.publish()
+        self.assertEqual(site_requests(w, "outpost_2").get("forage"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["forage"], 0))
+
 
 class _Site:
     def __init__(self, kind, machine="", medium=None):
