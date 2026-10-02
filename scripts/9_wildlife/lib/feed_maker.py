@@ -6,11 +6,14 @@
 #   - What to make: `wildlife.plan.feed_demand` ({feed_item: [home stock
 #     target, priority, short]}) against live home stock (Inventory + home
 #     Warehouses) and its own output bin. Lowest priority class first, then the
-#     largest deficit, among recipes whose inputs are all at home. A recipe
-#     another fresh Feed Maker is running is left to it unless its deficit is
-#     larger than one craft.
-#   - Switching recipe: waits for the running craft, ejects the leftovers
-#     (clear_recipe() rejects `material_present`), then set_recipe().
+#     largest deficit, among recipes whose inputs are all at home. The set
+#     recipe stays while it is short and no recipe of a better class is; rank
+#     changes inside a class don't switch. A recipe another fresh Feed Maker is
+#     running is left to it unless its deficit is larger than one craft.
+#   - Switching recipe: waits for the running craft, then set_recipe(), which
+#     takes a loaded stockpile (only a foreign feed in the output bin blocks
+#     it). The loaded Forage stays for the next recipe; items the new recipe
+#     doesn't use are ejected only when they leave no room for its craft.
 #   - Stocks one craft at a time and the next one once the 200-unit stockpile
 #     has room; finished feed goes to a home Warehouse (Inventory fallback).
 #   - Soft-shed (`power.shedded`, lib/power.py): starts no new craft.
@@ -27,8 +30,12 @@ import wildlife_common as wc
 from wildlife_data import FEED_PER_CRAFT
 
 ACTIVE_POLL_S = 2.0          # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
+# After a step that moved items: the call returns once its feeder transfer is
+# done, and the craft ran during the Forage transfer, so the next step is due now.
+FAST_POLL_S = 0.2
 IDLE_POLL_S = 20.0
 RECIPE_REFRESH_TICKS = 1200  # republish unlocked recipes at least this often
+PUBLISH_REFRESH_TICKS = 600  # status rewritten on change, else at least this often
 
 
 class FeedMakerController:
@@ -45,6 +52,8 @@ class FeedMakerController:
         self._recipes = {}
         self._recipes_tick = -RECIPE_REFRESH_TICKS
         self._last_blocker = None
+        self._published = None
+        self._published_tick = -PUBLISH_REFRESH_TICKS
 
     def tick(self):
         try:
@@ -133,6 +142,10 @@ class FeedMakerController:
         if not ready:
             return None
         ready.sort()
+        best_class = ready[0][0] // wc.PRIO_RANK_SCALE
+        for prio, _short, _not_current, rid in ready:
+            if rid == current and prio // wc.PRIO_RANK_SCALE <= best_class:
+                return current
         return ready[0][3]
 
     # ------------------------------------------------------------ crafting
@@ -140,27 +153,31 @@ class FeedMakerController:
     def stockpile(self):
         return dict(self._call("get_stockpile", {}))
 
-    def eject_all(self):
+    def eject_strays(self, inputs):
+        """Ejects stockpile items `inputs` doesn't use, only when they leave no room for its craft."""
+        loaded = self.stockpile()
+        room = int(self._call("get_stockpile_capacity", 200)) - int(self._call("get_stockpile_used", 0))
+        missing = sum(max(0, qty - loaded.get(item, 0)) for item, qty in inputs.items())
         target = local_port_target(self.outpost)
-        for item, count in self.stockpile().items():
-            if count <= 0 or not target:
+        if room >= missing or not target:
+            return
+        for item, count in loaded.items():
+            if item in inputs or count <= 0:
                 continue
             try:
                 self.maker.input.eject(target, item, count)
             except Exception as error:
-                swallowed("feed_maker.FeedMakerController.eject_all: input.eject", error)
+                swallowed("feed_maker.FeedMakerController.eject_strays: input.eject", error)
 
-    def switch_to(self, rid):
-        """True once `rid` is the set recipe; ejects the old recipe's leftovers first."""
+    def switch_to(self, rid, inputs):
+        """True once `rid` is the set recipe; the loaded stockpile carries over."""
         current = self._call("get_recipe", "")
         if current == rid:
             return True
-        if self._call("is_running", False):
+        if self._call("is_running", False) or float(self._call("get_progress", 0.0)) > 0:
             return False
         self.log.start(f"[{self.name}] Switching recipe '{current or '-'}' -> '{rid}'")
-        self.eject_all()
-        if current:
-            self._call("clear_recipe", None)
+        self.eject_strays(inputs)
         result = self._call("set_recipe", None, rid)
         status = getattr(result, "status", "")
         self.log.end(status or "no result")
@@ -185,8 +202,9 @@ class FeedMakerController:
         return moved
 
     def drain_output(self):
+        """Empties the output bin to a home Warehouse (Inventory fallback); True when it held feed."""
         if int(self._call("get_output_count", 0)) <= 0:
-            return
+            return False
         try:
             moved = drain_port_to_storage(self.maker.output, outpost=self.outpost)
             if moved:
@@ -195,17 +213,22 @@ class FeedMakerController:
             swallowed("feed_maker.FeedMakerController.drain_output: drain_port_to_storage", error)
         target = local_port_target(self.outpost)
         if int(self._call("get_output_count", 0)) <= 0 or not target:
-            return
+            return True
         try:
             self.maker.output.connect(target)
             for item, count in self.output_counts().items():
                 self.maker.output.send(item, count)
         except Exception as error:
             swallowed("feed_maker.FeedMakerController.drain_output: output.send", error)
+        return True
 
     # ---------------------------------------------------------------- loop
 
     def publish(self, recipes, blocker, curr_tick):
+        """Writes `wildlife.feed[id]` when recipe, run state or blocker change, else every PUBLISH_REFRESH_TICKS."""
+        key = (self._call("get_recipe", ""), bool(self._call("is_running", False)), blocker, len(recipes))
+        if key == self._published and curr_tick - self._published_tick < PUBLISH_REFRESH_TICKS:
+            return
         entry = {
             "recipes": {rid: r["inputs"] for rid, r in recipes.items()},
             "recipe": self._call("get_recipe", ""),
@@ -229,13 +252,16 @@ class FeedMakerController:
 
         if not archive.transaction(wc.FEED_KEY, {}, updater):
             self.log.level("warn").print(f"[{self.name}] {wc.FEED_KEY} write rejected.")
+            return
+        self._published = key
+        self._published_tick = curr_tick
 
     def shed(self):
         return self.name in (archive.get("power.shedded", []) or [])
 
     def step(self):
         curr_tick = self.tick()
-        self.drain_output()
+        drained = self.drain_output()
         recipes = self.recipes(curr_tick)
         deficits = self.deficits(recipes)
         running = bool(self._call("is_running", False))
@@ -246,13 +272,16 @@ class FeedMakerController:
         elif deficits:
             rid = self.pick(recipes, deficits, self.stockpile(), self.claims(curr_tick))
             blocker = None if rid else "no_inputs"
-        if rid and self.switch_to(rid):
-            self.load(recipes[rid]["inputs"])
+        moved = 0
+        if rid and self.switch_to(rid, recipes[rid]["inputs"]):
+            moved = self.load(recipes[rid]["inputs"])
         if blocker != self._last_blocker:
             if blocker == "no_inputs":
                 self.log.print(f"[{self.name}] Feed short {sorted(deficits)} but no recipe has all inputs at home.")
             self._last_blocker = blocker
         self.publish(recipes, blocker, curr_tick)
+        if moved or drained:
+            return FAST_POLL_S
         busy = running or rid is not None
         return ACTIVE_POLL_S if busy else IDLE_POLL_S
 

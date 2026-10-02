@@ -47,13 +47,21 @@ FORM_BUFFER_H = 48.0
 FORM_REQUEST_MIN_CRAFTS = 20
 FORM_REQUEST_CAP = 1900
 
-# Feed demand priority classes (lower first). The two established classes are
-# ordered by hours left to the Mk ceiling at the full-support model rate
-# (slowest first), as PRIO * PRIO_RANK_SCALE + rank.
+# An established colony is urgent while its bin plus home stock is below
+# max(FEED_TOPUP_TARGET, this many game hours of its use); its demand row then
+# asks only for that cover, the rest of the FEED_BUFFER_H target follows in its
+# normal class once the cover is met.
+FEED_URGENT_H = 4.0
+
+# Feed demand priority classes (lower first), as PRIO * PRIO_RANK_SCALE + rank.
+# Urgent colonies rank emptiest bin first, then slowest; the two buffer
+# classes by hours left to the Mk ceiling at the full-support model rate
+# (slowest first).
 PRIO_RESERVE = 0      # Habitat staging for revive()
-PRIO_FLUID_HELD = 1   # established, gas or liquid buffer non-empty: it bleeds while starved
-PRIO_REARING = 2      # Habitat in the 12 h rearing window
-PRIO_GROWING = 3      # established, feed-only
+PRIO_URGENT = 1       # established, bin + home stock below its urgent cover
+PRIO_FLUID_HELD = 2   # established, gas or liquid buffer non-empty: it bleeds while starved
+PRIO_REARING = 3      # Habitat in the 12 h rearing window
+PRIO_GROWING = 4      # established, feed-only
 PRIO_RANK_SCALE = 100
 
 # Fluid rationing (planner): per fluid, hourly budget = smoothed gross tank

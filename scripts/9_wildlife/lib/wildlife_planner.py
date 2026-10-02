@@ -226,7 +226,9 @@ def _feed_demand(snap, colonies, statuses, nodes, model):
     ({feed_item: [home stock target, priority, units short now]}, {species: feed per game hour}).
     Target = home buffer + what the Habitat bin still lacks; an item is listed
     while home stock is below it. Feed Makers craft until live home stock
-    reaches the target.
+    reaches the target. An established colony whose bin + home stock is below
+    its urgent cover (wc.FEED_URGENT_H) asks for that cover only, in
+    PRIO_URGENT, so no colony starves while others build their buffers.
     """
     stock = snap["feed_stock"]
     rows = []
@@ -246,18 +248,26 @@ def _feed_demand(snap, colonies, statuses, nodes, model):
             if per_h > 0:
                 target = max(target, FEED_PER_CRAFT)
             bin_short = max(0.0, wc.FEED_TOPUP_TARGET - bin_level) if per_h > 0 else 0.0
-            prio = wc.PRIO_FLUID_HELD if _holds_fluid(entry) else wc.PRIO_GROWING
-            rows.append((item, target + bin_short, prio, (model.get(hid) or (0.0, 0.0))[0]))
+            hours = (model.get(hid) or (0.0, 0.0))[0]
+            cover = max(wc.FEED_TOPUP_TARGET, wc.FEED_URGENT_H * per_h)
+            if per_h > 0 and bin_level + stock.get(item, 0) < cover:
+                rows.append((item, cover - bin_level, wc.PRIO_URGENT, hours, bin_level))
+            else:
+                prio = wc.PRIO_FLUID_HELD if _holds_fluid(entry) else wc.PRIO_GROWING
+                rows.append((item, target + bin_short, prio, hours, bin_level))
         elif entry.get("rearing"):
             # Established within 12 h: have the bin's first top-up ready.
-            rows.append((item, max(0.0, wc.FEED_TOPUP_TARGET - bin_level), wc.PRIO_REARING, 0.0))
+            rows.append((item, max(0.0, wc.FEED_TOPUP_TARGET - bin_level), wc.PRIO_REARING, 0.0, bin_level))
         else:
-            rows.append((item, max(0.0, REVIVE_FEED_REQUIRED + wc.REARING_FEED_EXTRA - bin_level), wc.PRIO_RESERVE, 0.0))
+            rows.append((item, max(0.0, REVIVE_FEED_REQUIRED + wc.REARING_FEED_EXTRA - bin_level), wc.PRIO_RESERVE, 0.0, bin_level))
     ranked_prios = (wc.PRIO_FLUID_HELD, wc.PRIO_GROWING)
     ranked = sorted((r for r in rows if r[2] in ranked_prios), key=lambda r: -r[3])
     rank = {r[0]: i for i, r in enumerate(ranked)}
+    urgent = sorted((r for r in rows if r[2] == wc.PRIO_URGENT), key=lambda r: (r[4], -r[3]))
+    rank.update((r[0], i) for i, r in enumerate(urgent))
+    ranked_prios += (wc.PRIO_URGENT,)
     demand = {}
-    for item, units, prio, _hours in rows:
+    for item, units, prio, _hours, _bin in rows:
         target = int(units + 0.999)
         need = target - int(stock.get(item, 0))
         if need <= 0:

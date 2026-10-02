@@ -125,11 +125,42 @@ class FeedDemandTests(harness.StubTestCase):
             "habitat_1": established("magmatic_annelid", pop=100000, rate=150.0),
             "habitat_2": established("spire_drake", pop=1000, rate=5.0),
         }
-        plan = wp.build_plan(snap(habitats=2, statuses=statuses))
+        plan = wp.build_plan(snap(habitats=2, statuses=statuses, feed_stock={wc.feed_item_of("magmatic_annelid"): 20}))
         fast = plan["feed_demand"][wc.feed_item_of("magmatic_annelid")]
         slow = plan["feed_demand"][wc.feed_item_of("spire_drake")]
         self.assertLess(slow[1], fast[1])
         self.assertGreaterEqual(fast[1], wc.PRIO_GROWING * wc.PRIO_RANK_SCALE)
+
+    def test_empty_bin_is_urgent_before_buffers(self):
+        statuses = {
+            "habitat_1": established("salt_tortoise", pop=20000, rate=100.0, feed_level=0.0),
+            "habitat_2": established("spire_drake", pop=1000, rate=5.0, gas=gas_row("sulfur_gas")),
+        }
+        plan = wp.build_plan(snap(habitats=2, statuses=statuses))
+        starving = plan["feed_demand"][wc.feed_item_of("salt_tortoise")]
+        buffered = plan["feed_demand"][wc.feed_item_of("spire_drake")]
+        self.assertEqual(starving[1] // wc.PRIO_RANK_SCALE, wc.PRIO_URGENT)
+        self.assertEqual(buffered[1] // wc.PRIO_RANK_SCALE, wc.PRIO_FLUID_HELD)
+        self.assertEqual(starving[0], wc.FEED_TOPUP_TARGET)
+
+    def test_urgent_ranks_emptiest_bin_first(self):
+        statuses = {
+            "habitat_1": established("spire_drake", pop=1000, rate=5.0, feed_level=20.0),
+            "habitat_2": established("salt_tortoise", pop=20000, rate=100.0, feed_level=0.0),
+        }
+        plan = wp.build_plan(snap(habitats=2, statuses=statuses))
+        empty = plan["feed_demand"][wc.feed_item_of("salt_tortoise")][1]
+        low = plan["feed_demand"][wc.feed_item_of("spire_drake")][1]
+        self.assertEqual(low // wc.PRIO_RANK_SCALE, wc.PRIO_URGENT)
+        self.assertLess(empty, low)
+
+    def test_covered_colony_returns_to_buffer_class(self):
+        item = wc.feed_item_of("salt_tortoise")
+        statuses = {"habitat_1": established("salt_tortoise", pop=20000, rate=100.0, feed_level=0.0)}
+        plan = wp.build_plan(snap(habitats=1, statuses=statuses, feed_stock={item: wc.FEED_TOPUP_TARGET}))
+        row = plan["feed_demand"][item]
+        self.assertEqual(row[1] // wc.PRIO_RANK_SCALE, wc.PRIO_GROWING)
+        self.assertGreater(row[0], wc.FEED_TOPUP_TARGET)
 
     def test_target_is_buffer_hours_of_use_and_stock_counts(self):
         statuses = {"habitat_1": established("magmatic_annelid", rate=100.0, feed_level=50.0)}

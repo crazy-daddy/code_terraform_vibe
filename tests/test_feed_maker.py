@@ -119,9 +119,11 @@ class FeedMakerTests(FeedMakerTestCase):
         ctrl = feed_maker.FeedMakerController(maker)
         self.assertEqual(ctrl.step(), feed_maker.IDLE_POLL_S)
         self.feed_stock[item] = 10
-        self.assertEqual(ctrl.step(), feed_maker.ACTIVE_POLL_S)
+        self.assertEqual(ctrl.step(), feed_maker.FAST_POLL_S)
         self.assertIn(("set_recipe", wc.recipe_of("salt_tortoise")), maker.calls)
         self.assertIn(("forage", 100), self.taken)
+        maker.running = True
+        self.assertEqual(ctrl.step(), feed_maker.ACTIVE_POLL_S)
 
     def test_priority_class_beats_bigger_deficit(self):
         self.demand({wc.feed_item_of("salt_tortoise"): [500, 200, 500], wc.feed_item_of("spire_drake"): [5, 0, 5]})
@@ -129,13 +131,32 @@ class FeedMakerTests(FeedMakerTestCase):
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(maker.recipe, wc.recipe_of("spire_drake"))
 
-    def test_switch_ejects_leftovers_first(self):
+    def test_switch_keeps_loaded_forage(self):
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker(recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 60, "sea_algae": 1})
+        maker = _FeedMaker(recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 100, "sea_algae": 1})
         feed_maker.FeedMakerController(maker).step()
-        names = [c[0] for c in maker.calls]
-        self.assertLess(names.index("eject"), names.index("set_recipe"))
-        self.assertIn(("eject", "forage", 60), maker.calls)
+        self.assertEqual(maker.recipe, wc.recipe_of("spire_drake"))
+        self.assertNotIn("eject", [c[0] for c in maker.calls])
+        self.assertNotIn("clear_recipe", [c[0] for c in maker.calls])
+        self.assertNotIn(("forage", 100), self.taken)
+        self.assertEqual(maker.stock_pile["forage"], 100)
+
+    def test_switch_ejects_strays_only_without_room(self):
+        self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
+        maker = _FeedMaker(recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 50, "sea_algae": 140})
+        feed_maker.FeedMakerController(maker).step()
+        self.assertIn(("eject", "sea_algae", 140), maker.calls)
+        self.assertNotIn("forage", [c[1] for c in maker.calls if c[0] == "eject"])
+
+    def test_current_recipe_kept_within_class(self):
+        tortoise, drake = wc.recipe_of("salt_tortoise"), wc.recipe_of("spire_drake")
+        self.demand({wc.feed_item_of("salt_tortoise"): [40, 105, 40], wc.feed_item_of("spire_drake"): [200, 101, 200]})
+        maker = _FeedMaker(recipe=tortoise)
+        feed_maker.FeedMakerController(maker).step()
+        self.assertEqual(maker.recipe, tortoise)
+        self.demand({wc.feed_item_of("salt_tortoise"): [40, 105, 40], wc.feed_item_of("spire_drake"): [200, 1, 200]})
+        feed_maker.FeedMakerController(maker).step()
+        self.assertEqual(maker.recipe, drake)
 
     def test_running_craft_finishes_before_switch(self):
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
