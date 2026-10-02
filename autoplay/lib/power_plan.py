@@ -23,7 +23,7 @@
 # pass waits while any power-line job is still open: the grids only merge
 # once the line is built.
 
-from atomic import run_atomic
+from atomic import run_atomic, run_chunked
 from swallow import swallowed
 from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key
 from blueprint_queue import stock, queue_power_route
@@ -34,6 +34,9 @@ POWER_ITEM = "power_line_segment"
 MAX_LINKS_PER_PASS = 1   # power links (plan_power_line routes) queued per pass
 RING_PIECES = 4 * (FOOTPRINT_TILES - 1)   # pieces around a footprint's perimeter (ring_legs())
 PAIR_CHUNK = 50          # footprint pairs per atomic edge slice (worst ~3,500 operations, tests/test_autoplay_power.py)
+FLOOD_STEP_TILES = 30    # ledger tiles per atomic flood_step() call (worst ~3,100 operations, tests/test_autoplay_power.py)
+LINE_NAME = "line"       # member name of a bare power-line run in logs
+_NEIGHBOURS = (1, -1, 1 << 16, -(1 << 16))   # tile_key() offsets of the 4 neighbours
 
 # Site kind -> name of its method that returns the machine id standing on it.
 _SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id"}
@@ -97,22 +100,117 @@ def components(rows, outpost_xy, field_xy):
     return (placed, unplaced)
 
 
+def box_tiles(box):
+    """Every tile_key() of an inclusive tile box."""
+    return [tile_key(tx, ty) for tx in range(box[0], box[2] + 1) for ty in range(box[1], box[3] + 1)]
+
+
+def flood_init(comps, power_tiles):
+    """
+    State for flood_step(): which component each ledger power tile belongs
+    to, flooding over 4-neighbouring power tiles from the power tiles inside
+    each component's footprints.
+    """
+    owner = {}
+    queue = []
+    for index, comp in enumerate(comps):
+        for box, _ring, _name in comp["boxes"]:
+            for tile in box_tiles(box):
+                if tile not in power_tiles:
+                    continue
+                held = owner.get(tile)
+                if held is None:
+                    owner[tile] = index
+                    queue.append(tile)
+                elif held != index:
+                    owner[tile] = -1
+    return {"tiles": power_tiles, "owner": owner, "queue": queue, "next": 0}
+
+
+def flood_step(state):
+    """Spreads ownership from up to FLOOD_STEP_TILES queued tiles; True when done. A tile two components reach is contested (-1)."""
+    owner = state["owner"]
+    tiles = state["tiles"]
+    queue = state["queue"]
+    end = min(len(queue), state["next"] + FLOOD_STEP_TILES)
+    for position in range(state["next"], end):
+        tile = queue[position]
+        index = owner[tile]
+        if index < 0:
+            continue
+        for offset in _NEIGHBOURS:
+            other = tile + offset
+            if other not in tiles:
+                continue
+            held = owner.get(other)
+            if held is None:
+                owner[other] = index
+                queue.append(other)
+            elif held != index and held >= 0:
+                owner[other] = -1
+    state["next"] = end
+    return end >= len(queue)
+
+
+def line_runs(owner):
+    """[(component index, box)] horizontal runs of owned (not contested) power tiles."""
+    by_row = {}
+    for tile, index in owner.items():
+        if index >= 0:
+            tx, ty = tile_xy(tile)
+            by_row.setdefault((index, ty), []).append(tx)
+    runs = []
+    for (index, ty), xs in by_row.items():
+        xs.sort()
+        start = xs[0]
+        last = xs[0]
+        for tx in xs[1:]:
+            if tx != last + 1:
+                runs.append((index, (start, ty, last, ty)))
+                start = tx
+            last = tx
+        runs.append((index, (start, ty, last, ty)))
+    return runs
+
+
+def attach_lines(comps, power_tiles):
+    """Adds each component's ledger power-line runs to its boxes (ring False, member LINE_NAME); returns (runs added, contested tiles)."""
+    if not power_tiles:
+        return (0, 0)
+    state = flood_init(comps, power_tiles)
+    run_chunked(flood_step, state)
+    runs = line_runs(state["owner"])
+    for index, box in runs:
+        comps[index]["boxes"].append((box, False, LINE_NAME))
+    contested = len([1 for index in state["owner"].values() if index < 0])
+    return (len(runs), contested)
+
+
 def flat_boxes(comps):
     """[(component index, box, ring cost)] over every component's footprints."""
     return [(index, box, RING_PIECES if ring else 0) for index, comp in enumerate(comps) for box, ring, _name in comp["boxes"]]
 
 
-def pair_segments(count, size=None):
+def pair_segments(comp_of, size=None):
     """
     Work for edge_slice() in batches of at most `size` box pairs: a list of
-    batches, each a list of (i, j0, j1) = box i against boxes j0 <= j < j1, j0 > i.
+    batches, each a list of (i, j0, j1) = box i against boxes j0 <= j < j1.
+    comp_of = component index per box, grouped (flat_boxes() order): box i is
+    only paired with the boxes of later components.
     """
     size = size or PAIR_CHUNK
+    count = len(comp_of)
+    next_start = [count] * count
+    boundary = count
+    for i in range(count - 1, -1, -1):
+        if i + 1 < count and comp_of[i + 1] != comp_of[i]:
+            boundary = i + 1
+        next_start[i] = boundary
     batches = []
     batch = []
     room = size
-    for i in range(count - 1):
-        j0 = i + 1
+    for i in range(count):
+        j0 = next_start[i]
         while j0 < count:
             j1 = min(count, j0 + room)
             batch.append((i, j0, j1))
@@ -158,7 +256,7 @@ def component_edges(boxes):
     """
     best = {}
     edges = []
-    for batch in pair_segments(len(boxes)):
+    for batch in pair_segments([box[0] for box in boxes]):
         edges.extend(run_atomic(edge_slice, batch, boxes))
     for edge in edges:
         pair = (edge[1], edge[2])
@@ -244,6 +342,14 @@ def _game_reads():
     return (rows, outpost_xy, site_machines(sites, known_positions()))
 
 
+def _end_name(member, tile):
+    """Log name of a link end: the member id, or the line tile's world centre."""
+    if member != LINE_NAME:
+        return member
+    x, y = tile_centre(tile)
+    return f"line ({x:.0f}, {y:.0f})"
+
+
 class PowerPlanner:
     """One power pass per planner tick; see the module header."""
 
@@ -251,11 +357,12 @@ class PowerPlanner:
         self.log = log
         self.failed = set()   # (anchor, anchor) links the game rejected this run; not retried until restart
 
-    def run_pass(self, topo):
+    def run_pass(self, topo, power_tiles=None):
         """
         "waiting" (power jobs still open, or links blocked by stock), "queued"
         (a link was planned), "joined" (one placed grid, nothing to do) or
-        "error" (power_control unreadable).
+        "error" (power_control unreadable). power_tiles: tile_key() set of the
+        power-line ledger (power_survey.ledger_tiles()); lines there are link ends too.
         """
         if any(row["medium"] == "power" for row in topo.job_rows):
             open_jobs = len([row for row in topo.job_rows if row["medium"] == "power"])
@@ -272,6 +379,8 @@ class PowerPlanner:
         if len(comps) < 2:
             self.log.debug(f"Power: {len(rows)} grid(s), {len(comps)} placed; nothing to join.")
             return "joined"
+        runs, contested = attach_lines(comps, power_tiles or set())
+        self.log.debug(f"Power: {len(power_tiles or ())} ledger tile(s) -> {runs} line run(s) as link ends, {contested} contested tile(s) dropped.")
         flat = flat_boxes(comps)
         links = spanning_links(len(comps), component_edges(flat))
         self.log.start(f"Power: joining {len(comps)} grids ({len(links)} link(s) missing)")
@@ -298,6 +407,7 @@ class PowerPlanner:
                 short += 1
                 continue
             dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
+            names = f"{_end_name(members[i], tile_a)} -> {_end_name(members[j], tile_b)}"
             rings = [(members[k], flat[k][1]) for k in (i, j) if flat[k][2]]
             if self._queue_link(names, dist, tile_a, tile_b, rings):
                 queued += 1

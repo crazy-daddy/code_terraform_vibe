@@ -202,15 +202,62 @@ class SpanningTests(unittest.TestCase):
 
     def test_pair_segments_cover_every_pair_once(self):
         for count in (0, 1, 2, 7, 30):
-            batches = pp.pair_segments(count, size=5)
+            batches = pp.pair_segments(list(range(count)), size=5)
             pairs = [(i, j) for batch in batches for i, j0, j1 in batch for j in range(j0, j1)]
             self.assertEqual(sorted(pairs), [(i, j) for i in range(count) for j in range(i + 1, count)])
             self.assertTrue(all(sum(j1 - j0 for _i, j0, j1 in batch) <= 5 for batch in batches))
 
+    def test_pair_segments_skip_same_component(self):
+        comp_of = [0, 0, 0, 1, 1, 2]
+        batches = pp.pair_segments(comp_of, size=4)
+        pairs = sorted((i, j) for batch in batches for i, j0, j1 in batch for j in range(j0, j1))
+        expected = sorted((i, j) for i in range(6) for j in range(i + 1, 6) if comp_of[i] != comp_of[j])
+        self.assertEqual(pairs, expected)
+
+    def test_flood_assigns_lines_and_drops_contested(self):
+        comps = [{"anchor": "a", "boxes": [(g.outpost_box(0, 0), False, "o_a")]},
+                 {"anchor": "b", "boxes": [(g.outpost_box(200, 0), False, "o_b")]}]
+        # a's line runs east from its footprint edge (3,1) to (8,1); b's line west from (20,1) to (12,1); (10,1) touches neither
+        power = {k(x, 1) for x in range(3, 9)} | {k(x, 1) for x in range(12, 21)} | {k(10, 5)}
+        runs, contested = pp.attach_lines(comps, power)
+        self.assertEqual(contested, 0)
+        self.assertIn(((3, 1, 8, 1), False, pp.LINE_NAME), comps[0]["boxes"])
+        self.assertIn(((12, 1, 20, 1), False, pp.LINE_NAME), comps[1]["boxes"])
+        self.assertEqual(runs, 2)  # the orphan tile (10,5) is reached by no footprint
+
+    def test_flood_contested_tile_dropped(self):
+        comps = [{"anchor": "a", "boxes": [(g.outpost_box(0, 0), False, "o_a")]},
+                 {"anchor": "b", "boxes": [(g.outpost_box(60, 0), False, "o_b")]}]
+        power = {k(x, 1) for x in range(3, 7)}  # (3,1) in a, (6,1) in b: both floods meet
+        _runs, contested = pp.attach_lines(comps, power)
+        self.assertGreater(contested, 0)
+
+    def test_line_end_beats_footprint_and_ring(self):
+        # main = outpost far west + shared cap; its line runs east to x tile 27; lone pump at tiles 30..33
+        comps = [{"anchor": "main", "boxes": [(g.outpost_box(0, 0), False, "o1"), (g.extractor_box(220, 20), True, "cap")]},
+                 {"anchor": "pump", "boxes": [(g.extractor_box(320, 20), False, "pump")]}]
+        pp.attach_lines(comps, {k(x, 1) for x in range(23, 28)})
+        flat = pp.flat_boxes(comps)
+        cost, _ci, _cj, i, j = pp.spanning_links(2, pp.component_edges(flat))[0]
+        self.assertEqual(cost, 3)  # line end (27,1) to pump edge (30,1), no ring
+        self.assertEqual(flat[i][2], 0)
+
+    def test_flood_step_budget(self):
+        comps = [{"anchor": "a", "boxes": [(g.outpost_box(0, 0), False, "o_a")]}]
+        power = {k(x, y) for x in range(0, 40) for y in range(0, 40)}
+        state = pp.flood_init(comps, power)
+        worst = 0
+        while True:
+            done = [False]
+            worst = max(worst, ops(lambda: done.__setitem__(0, pp.flood_step(state))))
+            if done[0]:
+                break
+        self.assertLess(worst, ATOMIC_STEP_BUDGET)
+
     def test_edge_slice_budget(self):
         comps = [{"anchor": f"g{i}", "boxes": [(g.outpost_box(i * 100, 0), True, f"m{i}")]} for i in range(3 * pp.PAIR_CHUNK)]
         boxes = pp.flat_boxes(comps)
-        batches = pp.pair_segments(len(boxes))
+        batches = pp.pair_segments([box[0] for box in boxes])
         self.assertLess(max(ops(pp.edge_slice, batch, boxes) for batch in batches), ATOMIC_STEP_BUDGET)
 
 

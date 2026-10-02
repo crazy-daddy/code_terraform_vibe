@@ -154,6 +154,8 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Production/storage/logistics 
   recharges still runs on one load. Heartbeat: `publish_telemetry("BUILDING")` at every
   `execute_construction()`, `"RESTOCKING"` at every restock. A failed restock defers every open
   job needing that material for the pass (`ids_needing()`), not just the target job.
+- **Construction hold (`construction.hold`, `run_construction_loop()`)**: `{"by", "tick", "kinds"}`; while fresh (`construction_plan.held_kinds()`, younger than `HOLD_STALE_TICKS = 600`), jobs of a held kind are dropped from the open rows and cargo matches after the scan. They still count as live for claim and priority pruning. The autoplay power survey holds `deconstruct` while it probes.
+- **Power-line ledger (`construction.power_tiles`, `execute_construction()`)**: a finished job (`res.status == "ok"`) calls `note_finished_power_job()` → `construction_plan.note_power_job()` in one transaction: a `power_line` piece adds its two tiles (`power_job_tiles()` from the job position); a `deconstruct` or `power_bridge` job marks its tiles dirty for re-probing. See [autoplay.md §11d](autoplay.md).
 - **Construction job priority (`construction.priority`, `run_construction_loop()`)**: each row
   carries `prio` from the archive dict (`construction_plan.PRIORITY_KEY`, `{blueprint_id: int}`,
   read once per pass before the job lists, cleaned by `clean_priorities()`); a blueprint without

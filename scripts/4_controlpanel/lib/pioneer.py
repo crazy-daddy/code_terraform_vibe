@@ -206,6 +206,27 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
             swallowed("pioneer.PioneerController.read_construction_priorities: archive.get", error)
             return {}
 
+    def read_construction_hold(self, tick):
+        """Job kinds held by a fresh construction.hold (lib/construction_plan.py held_kinds()); empty when absent or unreadable."""
+        try:
+            return construction_plan.held_kinds(archive.get(construction_plan.HOLD_KEY, None), tick)
+        except Exception as error:
+            swallowed("pioneer.PioneerController.read_construction_hold: archive.get", error)
+            return set()
+
+    def note_finished_power_job(self, kind, coords):
+        """Records a finished power-line, power-bridge or deconstruction job in construction.power_tiles."""
+        if kind not in (construction_plan.POWER_LINE_KIND, construction_plan.POWER_BRIDGE_KIND, construction_plan.DECONSTRUCT_KIND):
+            return
+        if not coords:
+            return
+
+        def updater(current):
+            return construction_plan.note_power_job(current, kind, coords[0], coords[1])
+
+        archive.transaction(construction_plan.POWER_TILES_KEY, construction_plan.empty_power_ledger(), updater)
+        self.log.debug(f"[{self.name}] Power ledger: noted {kind} at ({coords[0]:.0f}, {coords[1]:.0f}).")
+
     def prune_construction_priorities(self, priorities, live_job_ids):
         """
         Drops construction.priority entries whose blueprint is not live.
@@ -328,6 +349,10 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         drill_sites.record_built_drill(self.vehicle.input, str(kind), coords)
                     except Exception as error:
                         self.log.level("warn").print(f"[{self.name}] Could not record new drill position: {error}")
+                try:
+                    self.note_finished_power_job(kind, coords)
+                except Exception as error:
+                    swallowed("pioneer.PioneerController._execute_construction: note_finished_power_job", error)
                 self.log.trace(f"execute_construction() exit: blueprint '{blueprint_id}' complete")
                 self.log.end()
                 return True
@@ -553,6 +578,13 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                     live_ids = set(paused_ids + pending_ids + active_ids)
                     self.release_finished_construction_claims(live_ids, existing_claims)
                     self.prune_construction_priorities(priorities, live_ids)
+                held = self.read_construction_hold(curr_tick)
+                if held:
+                    # Held jobs still count as live above (claims, priorities); they are only not worked on.
+                    paused_rows = [row for row in paused_rows if row["kind"] not in held]
+                    pending_rows = [row for row in pending_rows if row["kind"] not in held]
+                    matching = [entry for entry in matching if entry[3]["kind"] not in held]
+                    self.log.debug(f"[{self.name}] Construction hold: skipping {', '.join(sorted(held))} jobs.")
                 self.log.debug(f"[{self.name}] Job scan: {len(paused_rows)}/{len(paused_ids)} paused and {len(pending_rows)}/{len(pending_ids)} pending open, {len(matching)} matching cargo {cargo}.")
 
                 # Only the lowest open priority is worked on: a lower-priority job

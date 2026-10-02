@@ -169,6 +169,13 @@ headless Automation (`infra_planner_automation.py`, role marker `# ct-automation
    extractor footprint's edge tile connect (docs say "use the site coordinates")? If not, the pass warns
    "every piece already exists but the grids stay apart" → switch extractor endpoints to the site centre tile.
    Field power structures without a surveyed site (if any) cannot be placed; their grids are skipped and logged.
+3a. **Power-line ledger** (done): scripts cannot list power lines, so
+   `construction.power_tiles` holds their tiles. One-off full-map survey by `mark_deconstruct(x, y, "power")`
+   probes (`autoplay/lib/power_survey.py`, under a `construction.hold` on deconstruct jobs), then Pioneers
+   record every finished power job (`note_power_job()`), the planner re-probes dirty tiles and checks
+   vanished jobs. Ledger lines are link ends for the power pass (no ring needed). Ring rule for shared
+   field structures: `5bd36e5`. Live check pending (expected: 745 power tiles, 29 probe jobs cancelled;
+   `thermal_cap_4` links 2 tiles to the bare line). Details: cheatsheet autoplay.md §11d.
 4. `autoplay_roles` + `fluid_plan` (water first, then oil, steam) + conflict tests.
 5. `extractor_plan` demand pass, then plan-ahead pass at prio 1.
 5b. `relic_cleanup` (per-layer deconstruction of dead pipe components).

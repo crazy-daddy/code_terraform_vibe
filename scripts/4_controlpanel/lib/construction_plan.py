@@ -203,3 +203,143 @@ def fair_share(batch, stock, builders):
     if builders <= 1:
         return batch
     return min(batch, -(-max(0, stock) // builders))
+
+
+# ---------------------------------------------------------------- power-line ledger
+# Scripts cannot list completed power lines, so the tiles they cover are kept
+# in one archive key, POWER_TILES_KEY:
+#   {"surveyed": tick | None, "rows": {"<ty>": [[tx0, tx1], ...]}, "dirty": [[tx, ty], ...]}
+# Tiles are world tile indices (floor(coord / POWER_TILE_M)); rows hold
+# inclusive runs per tile row. "surveyed" is the tick of the last full map
+# survey (autoplay/lib/power_survey.py), None when one is due. A Pioneer that
+# finishes a job updates the ledger (note_power_job()): a power-line piece adds
+# its two tiles; a deconstruction or a power bridge marks its tiles dirty (a
+# removed piece may leave others on the tile; a bridge job has no axis), and
+# whoever keeps the ledger re-probes dirty tiles.
+POWER_TILES_KEY = "construction.power_tiles"
+POWER_TILE_M = 10
+POWER_DIRTY_MAX = 400        # dirty tiles kept; beyond this the ledger asks for a full survey instead
+POWER_LINE_KIND = "power_line"
+POWER_BRIDGE_KIND = "power_bridge"
+DECONSTRUCT_KIND = "deconstruct"
+
+# Jobs of a held kind are left alone by Pioneers while the hold is fresh:
+#   HOLD_KEY = {"by": str, "tick": int, "kinds": [kind, ...]}
+# A holder refreshes "tick" while it works and deletes the key when done; a
+# stale hold (crashed holder) stops counting after HOLD_STALE_TICKS.
+HOLD_KEY = "construction.hold"
+HOLD_STALE_TICKS = 600
+
+
+def held_kinds(raw, tick):
+    """Job kinds a fresh HOLD_KEY value holds, else an empty set (tick 0 = unknown clock: fresh)."""
+    if not isinstance(raw, dict):
+        return set()
+    kinds = raw.get("kinds")
+    held_tick = raw.get("tick", 0)
+    if not isinstance(kinds, list) or not isinstance(held_tick, int):
+        return set()
+    if tick and tick - held_tick >= HOLD_STALE_TICKS:
+        return set()
+    return {kind for kind in kinds if isinstance(kind, str)}
+
+
+def _power_tile(coord):
+    return int(coord // POWER_TILE_M)
+
+
+def power_job_tiles(x, y):
+    """
+    (tx, ty) tiles of a job at world position (x, y): a line piece's midpoint
+    sits on a tile edge (x on an edge = horizontal piece joining two tiles,
+    y on an edge = vertical piece); any other position is the one tile it is in.
+    """
+    x_edge = x % POWER_TILE_M == 0
+    y_edge = y % POWER_TILE_M == 0
+    if x_edge and not y_edge:
+        tx = _power_tile(x)
+        return [(tx - 1, _power_tile(y)), (tx, _power_tile(y))]
+    if y_edge and not x_edge:
+        ty = _power_tile(y)
+        return [(_power_tile(x), ty - 1), (_power_tile(x), ty)]
+    return [(_power_tile(x), _power_tile(y))]
+
+
+def power_rows_decode(rows):
+    """Set of (tx, ty) from the ledger's "rows" value; malformed entries are skipped."""
+    tiles = set()
+    if not isinstance(rows, dict):
+        return tiles
+    for row_key, runs in rows.items():
+        try:
+            ty = int(row_key)
+        except (TypeError, ValueError):
+            continue
+        for run in runs if isinstance(runs, list) else []:
+            if isinstance(run, list) and len(run) == 2 and isinstance(run[0], int) and isinstance(run[1], int):
+                tiles.update([(tx, ty) for tx in range(run[0], run[1] + 1)])
+    return tiles
+
+
+def power_rows_encode(tiles):
+    """The ledger's "rows" value for a set of (tx, ty): inclusive runs per row."""
+    by_row = {}
+    for tx, ty in tiles:
+        by_row.setdefault(ty, []).append(tx)
+    rows = {}
+    for ty, xs in by_row.items():
+        xs.sort()
+        runs = []
+        for tx in xs:
+            if runs and tx == runs[-1][1] + 1:
+                runs[-1][1] = tx
+            elif not runs or tx > runs[-1][1]:
+                runs.append([tx, tx])
+        rows[str(ty)] = runs
+    return rows
+
+
+def empty_power_ledger():
+    return {"surveyed": None, "rows": {}, "dirty": []}
+
+
+def clean_power_ledger(raw):
+    """A well-formed ledger dict from the raw POWER_TILES_KEY value."""
+    if not isinstance(raw, dict):
+        return empty_power_ledger()
+    surveyed = raw.get("surveyed")
+    rows = raw.get("rows")
+    dirty = raw.get("dirty")
+    return {
+        "surveyed": surveyed if isinstance(surveyed, int) and not isinstance(surveyed, bool) else None,
+        "rows": rows if isinstance(rows, dict) else {},
+        "dirty": [d for d in dirty if isinstance(d, list) and len(d) == 2] if isinstance(dirty, list) else [],
+    }
+
+
+def mark_power_dirty(ledger, tiles):
+    """Adds (tx, ty) tiles to the ledger's dirty list; past POWER_DIRTY_MAX the ledger asks for a full survey. Returns the ledger."""
+    known = {(d[0], d[1]) for d in ledger["dirty"]}
+    for tile in tiles:
+        if tile not in known:
+            known.add(tile)
+            ledger["dirty"].append([tile[0], tile[1]])
+    if len(ledger["dirty"]) > POWER_DIRTY_MAX:
+        ledger["surveyed"] = None
+        ledger["dirty"] = []
+    return ledger
+
+
+def note_power_job(raw, kind, x, y):
+    """The ledger after a finished job of `kind` at (x, y); unchanged for kinds that do not touch power lines."""
+    ledger = clean_power_ledger(raw)
+    if kind == POWER_LINE_KIND:
+        tiles = power_rows_decode(ledger["rows"])
+        tiles.update(power_job_tiles(x, y))
+        ledger["rows"] = power_rows_encode(tiles)
+    elif kind == POWER_BRIDGE_KIND:
+        tx, ty = _power_tile(x), _power_tile(y)
+        mark_power_dirty(ledger, [(tx, ty), (tx - 1, ty), (tx + 1, ty), (tx, ty - 1), (tx, ty + 1)])
+    elif kind == DECONSTRUCT_KIND:
+        mark_power_dirty(ledger, power_job_tiles(x, y))
+    return ledger
