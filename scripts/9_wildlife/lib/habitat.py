@@ -294,6 +294,7 @@ class HabitatController:
         port = getattr(self.machine, MEDIA[medium]["port"], None)
         if port is None:
             return False
+        self._drop_wrong_source(medium, port, fluid_id)
         if self.router_fluid.get(medium) != fluid_id:
             self.router_fluid[medium] = fluid_id
             self.routers[medium] = fluid_routing.FluidInputRouter(
@@ -312,6 +313,41 @@ class HabitatController:
             self.blocker = f"no_{fluid_id}_source"
             return False
         return True
+
+    def _drop_wrong_source(self, medium, port, fluid_id):
+        """
+        Disconnects the port's declared source when its link carries, or the tank is assigned
+        to, a fluid other than `fluid_id` (the base-fluid tank once a stage switches to the
+        apex fluid), and empties the inlet, which keeps the first fluid it took. The router
+        accepts any link that moves fluid, so without this the old fluid keeps flowing into
+        the reserve and is purged there every step.
+        """
+        if not hasattr(port, "connected_id") or not hasattr(port, "disconnect"):
+            return
+        try:
+            own_id = port.connected_id()
+        except Exception as error:
+            swallowed("habitat.HabitatController._drop_wrong_source: connected_id", error)
+            return
+        if not own_id:
+            return
+        link_fluid = getattr(fluid_routing.declared_connection(port), "fluid", None)
+        assigned = fluid_routing.get_tank_assignments().get(own_id)
+        wrong = link_fluid if link_fluid and link_fluid != fluid_id else None
+        if wrong is None and assigned and assigned != fluid_id:
+            wrong = assigned
+        if wrong is None:
+            return
+        self._set_intake(medium, 0.0)
+        try:
+            port.disconnect()
+        except Exception as error:
+            swallowed("habitat.HabitatController._drop_wrong_source: disconnect", error)
+            return
+        self._call("purge_intake", None, MEDIA[medium]["port"])
+        self.routers.pop(medium, None)
+        self.router_fluid.pop(medium, None)
+        self.log.print(f"[{self.name}] {MEDIA[medium]['port']}: '{own_id}' carries '{wrong}', needs '{fluid_id}': disconnected.")
 
     def _set_intake(self, medium, rate):
         self._call("set_gas_intake" if medium == "gas" else "set_liquid_intake", None, rate)
