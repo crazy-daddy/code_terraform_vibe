@@ -86,6 +86,18 @@ class ScheduleTests(harness.StubTestCase):
                                   schedule=[("break", "salt_tortoise"), ("revive", "spire_drake")]))
         self.assertEqual(plan["buy"], {"habitat_2": "breakthrough", "habitat_3": "adaptation"})
 
+    def test_purchases_pass_a_gated_breakthrough_from_surplus(self):
+        statuses = self.base_statuses()
+        schedule = [("break", "salt_tortoise"), ("break", "magmatic_annelid"), ("revive", "spire_drake")]
+        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=8,
+                                  populations={"salt_tortoise": 5000, "magmatic_annelid": 12000}, schedule=schedule))
+        self.assertEqual(plan["buy"], {"habitat_1": "breakthrough"})
+        self.assertEqual(plan["assign"], {})
+        self.assertEqual(plan["progress"]["waiting"][0], ["break", "salt_tortoise"])
+        plan = wp.build_plan(snap(habitats=3, statuses=statuses, insight=7,
+                                  populations={"salt_tortoise": 5000, "magmatic_annelid": 12000}, schedule=schedule))
+        self.assertEqual(plan["buy"], {})
+
     def test_blocked_steps_skipped_with_reason(self):
         plan = wp.build_plan(snap(habitats=3, statuses=self.base_statuses(), insight=2,
                                   recipes=[wc.recipe_of(s) for s in SPECIES if s != "spire_drake"],

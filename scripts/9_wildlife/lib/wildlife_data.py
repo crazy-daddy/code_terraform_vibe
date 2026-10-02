@@ -197,7 +197,8 @@ BONUS_TREES = {
 # an Adaptation. Steps run strictly in order: ("revive", S) buys S's
 # Adaptation, then revives; ("revive_raw", S) revives without it; ("adapt", S)
 # buys the Adaptation of a revived species; ("break", S) buys S's Breakthrough
-# once S has 10,000 individuals (Insight is held until then). A revive step
+# once S has 10,000 individuals (the optimizer holds Insight until then;
+# the planner holds only its cost and lets later purchases use the rest). A revive step
 # waits for a free Habitat: colonies park at the Mk I ceiling (175,000) until
 # Mk II and at 350,000 for good, and parked Mk I colonies are rehoused before
 # any revival once Mk II is installed.
