@@ -393,7 +393,7 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [x] Step 1: spec extractor + committed `tests/game_spec.json`.
   - [x] Step 2: stub contract test against the spec (fix `set_order` → `unknown_order`).
   - [ ] Step 3: `devtools/stub_census.py` gap report (optional).
-  - [ ] Step 4: consolidate and extend `tests/game_stubs.py`.
+  - [x] Step 4: consolidate and extend `tests/game_stubs.py`.
   - [ ] Step 5: migrate tests off private fakes.
   - [ ] Step 6: sample world, no-private-fakes guard, dev_workflow docs.
 - [ ] **Consolidate remaining per-entity archive keys into shared dicts** (archive key-count cap, see CLAUDE.md rule 7): remaining: `biomass_mixer.gate.<id>` (bounded by mixer count, do when next touching `biomass_mixer_gate.py`) and per-grid `power.shedded:`/`power.daily:`/`power.daily_hist:`/`power.night_wh:<anchor>` (4 keys per grid; deferred until 8+ separate grids — two `power.py` tiers, and global `power.shedded` must stay flat).

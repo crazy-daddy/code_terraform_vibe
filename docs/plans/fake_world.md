@@ -105,7 +105,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - **Done when:** it runs against the live save and prints the table.
 - **Verify:** `python devtools/stub_census.py`; `git status` shows no new files outside the tool.
 
-### - [ ] Step 4: Consolidate and extend `game_stubs.py`
+### - [x] Step 4: Consolidate and extend `game_stubs.py`
 - **Goal:** shared fakes for everything tests currently hand-roll.
 - **Read first:** `tests/game_stubs.py`, the private fakes in `tests/test_turbine_commit.py`,
   `tests/test_fuel_assembler.py`, `tests/test_habitat.py`, `tests/test_fleet_commission.py`;
@@ -214,6 +214,48 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - Pyright on the new test reports `ast` narrowing errors (`Cannot access attribute "func"
   for class "AST"`); `tests/test_log_blocks_balanced.py` shows the same, so it is the local
   Pyright setup, not the code.
+
+### Step 4 (2026-10-02)
+- Step 3 (census) was skipped; the fake list came from the plan and a scan of private fake
+  class names in `tests/`.
+- New in `game_stubs.py`: spec loader `game_spec()` / `machine_spec()` / `default_data()` /
+  `spec_recipe()` / `spec_recipes()`; `Result(**payload)` for extra fields (`machine_id`,
+  `message_id`, `packet`, `count`); `Recipe` gains `name` and `power_draw`; `Position`,
+  `FluidPort`, `Tank` (gas/liquid), `BatteryBank` (the `battery` building), `SteamTurbine`,
+  `PowerGrid` / `PowerGridMember` / `PowerSummary` / `PowerControl`, `RunControl`, `Comms` +
+  `BroadcastInfo` / `CommsMessage`, `MobileUnit` → `Drone` / `Pioneer` with `Cargo`,
+  `VehicleBattery` / `DroneBattery`, `MountSlot`, `UnitRef` (DroneRef / VehicleRef /
+  MobileUnitRef), `Fleet`, `Computer`, `DroneDepot`, `Habitat` + bonus tree / node / insight.
+  Builders: `add_tank`, `add_battery`, `add_turbine`, `add_grid`, `add_drone`, `add_pioneer`,
+  `add_drone_depot`, `add_habitat`.
+- Default services `power_control`, `run_control`, `fleet`, `computer`, `comms` are also typed
+  `World` attributes (`world.power_control`, ...), so tests reach them without Pyright
+  complaints. `World.get_component()` now checks `components` before `services`: a test that
+  places a private fake under a service id (`components["power_control"]` in
+  `test_mining_drill.py`) still wins over the default.
+- Semantics worth knowing: `PowerGrid.members` and `stored` / `capacity` are rebuilt from the
+  world on each read (stored = member `BatteryBank` charge unless the test passes it);
+  `PowerControl.is_powered` defaults to True, `set_powered` answers `not_found` for an unknown
+  id and `not_toggleable` when the spec's `canPowerOff` is false. `RunControl.start/stop`
+  answer `not_found` for ids that are no component. `Computer.deploy` needs the kit in
+  Inventory and creates a `Drone` (any `instancePrefix == "drone"` machine) or `Pioneer`;
+  `forced_status` overrides every answer. Comms broadcast ages do not advance with the clock;
+  the test helper `Comms.publish(channel, value, age_seconds)` sets one. Drones and pioneers
+  carry `_mobile = True`, so `OutpostRef.buildings()` skips them like the game does.
+- Units follow the docs: `Tank.fill_pct()` and `VehicleBattery.level()` are 0-1 fractions,
+  `DroneBattery.level()` and `BatteryBank.get_level()` are Wh. `test_turbine_commit.py`'s
+  private `_Tank.fill_pct()` returns a percent (90.0); `lib/turbine_commit.py` accepts both,
+  so step 5 can pass 0.9 to `Tank` with the same result.
+- Not added: a shared Lead Cask (`api.lead_cask` has no transfer method; the private
+  `_Cask.transfer_to` in tests has no spec entry, so step 5 should check what lib calls first),
+  item `Slot` variants with `eject` side logs (`test_habitat.py`'s `_Port`), and `_Power`
+  stand-ins for `lib/power.py` helpers (those fake our own module, not the game).
+- `harness._reset_module_state` needed nothing: all new state lives on the per-test `World`.
+- The contract test maps every new class (`COMPONENTS` / `VALUE_TYPES`, `MobileUnit` in
+  `NOT_API`, `Comms.publish` in `TEST_HELPERS`) and adds `SharedFakeTests` (spec defaults,
+  grid members and power switches, deploy and fleet refs, comms).
+- `World.local_store()` narrows with `store is None or not isinstance(...)`: with the typed
+  components the repo's Pyright config no longer narrows `isinstance` alone there.
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).

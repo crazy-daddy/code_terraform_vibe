@@ -37,6 +37,22 @@ COMPONENTS = {
     "ConstructionBlueprints": ["api.construction_blueprint"],
     "Slot": ["types.InputSlot", "types.OutputSlot"],
     "OutpostRef": ["types.OutpostRef"],
+    "FluidPort": ["types.FluidPort"],
+    "Tank": ["api.gas_tank", "api.liquid_tank"],
+    "BatteryBank": ["api.battery"],
+    "SteamTurbine": ["api.steam_turbine"],
+    "PowerControl": ["api.power_control"],
+    "RunControl": ["api.run_control"],
+    "Comms": ["api.comms"],
+    "Fleet": ["api.fleet"],
+    "Computer": ["api.computer"],
+    "Drone": ["api.drone"],
+    "Pioneer": ["api.pioneer"],
+    "Cargo": ["types.Cargo", "types.DroneCargo"],
+    "VehicleBattery": ["types.Battery"],
+    "DroneBattery": ["types.DroneBattery"],
+    "DroneDepot": ["api.drone_station"],
+    "Habitat": ["api.habitat"],
 }
 VALUE_TYPES = {
     "Result": ["types.ActionResult", "types.TransferResult"],
@@ -48,13 +64,25 @@ VALUE_TYPES = {
     "DockSlot": ["types.DockSlot"],
     "ShopItem": ["types.ShopItem"],
     "Construction": ["types.Construction"],
+    "Position": ["types.Position"],
+    "PowerGrid": ["types.PowerGrid"],
+    "PowerGridMember": ["types.PowerGridMember"],
+    "PowerSummary": ["types.PowerSummary"],
+    "BroadcastInfo": ["types.BroadcastInfo"],
+    "CommsMessage": ["types.CommsMessage"],
+    "UnitRef": ["types.DroneRef", "types.VehicleRef", "types.MobileUnitRef"],
+    "MountSlot": ["types.MountSlot"],
+    "HabitatBonusNode": ["types.HabitatBonusNode"],
+    "HabitatBonusTree": ["types.HabitatBonusTree"],
+    "HabitatInsight": ["types.HabitatInsight"],
 }
 # Base classes and the world itself: checked through their subclasses, or not API.
-NOT_API = {"World", "Building", "Machine"}
+NOT_API = {"World", "Building", "Machine", "MobileUnit"}
 # Public test-only methods per stub class.
 TEST_HELPERS = {
     "Store": {"add", "remove"},
     "Console": {"text"},
+    "Comms": {"publish"},
 }
 # Public test-only attributes per value type.
 TEST_STATE = {}
@@ -181,6 +209,58 @@ class StubContractTests(unittest.TestCase):
     def test_status_collector_sees_literals(self):
         statuses = _result_statuses(game_stubs.Slot.take)
         self.assertTrue({"no_connection", "buffer_full", "ok", "partial", "source_empty"} <= statuses, statuses)
+
+
+class SharedFakeTests(unittest.TestCase):
+    """The new fakes take their defaults from the spec and see each other."""
+
+    def setUp(self):
+        self.world = game_stubs.World()
+
+    def test_spec_defaults(self):
+        w = self.world
+        self.assertEqual(w.add_battery("battery_1", w.home).get_capacity(), 500)
+        self.assertEqual(w.add_tank("gas_tank_1", w.home, type_id="gas_tank").capacity(), 5000)
+        self.assertEqual(w.add_drone_depot("drone_station_1", w.home).bay_count(), 1)
+        recipe = game_stubs.spec_recipe("smelt_iron_ingot")
+        assert recipe is not None
+        self.assertEqual(recipe.duration_game_hours, 0.08)
+        self.assertIn("smelt_iron_ingot", [r.id for r in game_stubs.spec_recipes("smelter")])
+
+    def test_grid_members_and_power_switches(self):
+        w = self.world
+        w.add_battery("battery_1", w.home, charge=200.0)
+        w.add_smelter("smelter_1", w.home)
+        grid = w.add_grid("grid_a", ["battery_1", "smelter_1"], consumed=10.0, generated=4.0)
+        power = w.power_control
+        self.assertEqual((grid.stored, grid.capacity, grid.net), (200.0, 500, -6.0))
+        self.assertEqual(power.set_powered("battery_1", False).status, "not_toggleable")
+        self.assertEqual(power.set_powered("smelter_1", False).status, "ok")
+        self.assertEqual([m.powered for m in grid.members], [True, False])
+        self.assertIs(power.grid("smelter_1"), grid)
+
+    def test_deploy_and_fleet_refs(self):
+        w = self.world
+        computer, fleet = w.computer, w.fleet
+        self.assertEqual(computer.deploy("drone_small").status, "no_kit")
+        w.inventory.add("drone_small", 1)
+        result = computer.deploy("drone_small")
+        self.assertEqual((result.status, result.machine_id), ("ok", "drone_1"))
+        self.assertEqual([(r.id, r.kind, r.category) for r in fleet.drones()], [("drone_1", "drone_small", "drone")])
+        self.assertEqual(w.home.buildings(), [])
+        self.assertEqual(w.run_control.start("drone_1").status, "ok")
+        self.assertEqual(computer.undeploy("drone_1").status, "ok")
+        self.assertEqual(w.inventory.count("drone_small"), 1)
+
+    def test_comms_broadcast_and_queue(self):
+        comms = self.world.comms
+        comms.publish("power.orders", {"tier": 2}, age_seconds=30.0)
+        info = comms.latest_info("power.orders")
+        assert info is not None
+        self.assertEqual((info.value, info.age_seconds), ({"tier": 2}, 30.0))
+        message_id = comms.send("jobs", "a").message_id
+        self.assertEqual(comms.receive("jobs").packet.id, message_id)
+        self.assertEqual(comms.receive("jobs").status, "empty")
 
 
 if __name__ == "__main__":
