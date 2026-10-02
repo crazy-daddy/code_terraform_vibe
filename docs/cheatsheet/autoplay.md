@@ -151,10 +151,39 @@ Gas and liquid layers ignore each other.
 
 | Key | Shape | Writer |
 | :--- | :--- | :--- |
-| `autoplay.role_presets` | `{role: {"in": [fluid, ...], "out": [fluid, ...]}}` (a plain list = `"in"` only) | seeded with `DEFAULT_ROLE_PRESETS` when missing; operator-editable |
+| `autoplay.role_presets` | `{role: {"in": [fluid, ...], "out": [fluid, ...]}}` (a plain list = `"in"` only) | seeded with `DEFAULT_ROLE_PRESETS` when missing; default roles the stored dict lacks are added, operator edits of existing roles kept |
 | `autoplay.outpost_roles` | `{outpost_id: role \| [role, ...]}` | operator; entries of gone outposts pruned each pass |
 
 Default presets (in → out): `factory` water, oil, steam · `terraform` water, steam · `power` steam, oil · `farm` water · `condenser` steam → water · `reactor` water · `drone_service` oil · `bio_caster` steam, water · `biomass_mixer` the five essences · `refinery` the four raw exotics → sulfur_gas, chlorine, cryofluid, quicksilver · `wildlife` ammonia, swamp_gas, sulfur_gas, chlorine, brine, cryofluid, quicksilver. One-fluid sub-roles: `refinery_<fluid>` (`refinery_quicksilver` = raw_quicksilver → quicksilver) and `wildlife_<fluid>` spread exotics over outposts; `liquifier_<biome>` → `<biome>_essence` (an Essence Liquifier makes its outpost biome's essence); `storage_<fluid>` = that fluid in and out (tanks; the outpost becomes a producer terminal on that network). `fluids_for()` also returns `"supply"`: the `"out"` fluids of source roles; `condenser` (`BACKUP_ROLES`) and `storage_<fluid>` are no source (§11g). Waste Processors have no role (generic sink, wire locally). The home outpost always has `HOME_ROLES` (`farm`: the Harvester field is there) after its own roles. An outpost's fluid order (roles in order, each role's in before its out, duplicates dropped) is its port service order. Example: `{"home": ["wildlife_ammonia"], "outpost_3": ["factory", "refinery_chlorine"]}`.
+
+**Designation vs buildings.** `autoplay.outpost_roles` is the designation (intent) every autoplay pass goes by, also for roles whose buildings are not deployed or not unlocked yet. Machine scripts go by the buildings actually there. `bio_<biome>` presets: none, except `bio_volcanic` = the `bio_caster` fluids.
+
+**Role catalog** (`ROLE_CATALOG`, code-side; fluids stay in the presets). Per role: `buildings` (groups; a group is a type_id or a list of alternatives), `biome` lock, `unique` (max-one-per-outpost machine), `items` (item logistics, needs a Drone Depot), `ore`, `biosites`.
+
+| Role | Buildings | Flags |
+| :--- | :--- | :--- |
+| `factory` / `smelter` | fabricator / smelter | items |
+| `mining` | warehouse or large_warehouse | items, ore |
+| `storage` | warehouse or large_warehouse | items (exempt only: may go over the cap) |
+| `drone_depot` | drone_station (any size) | |
+| `drone_service`, `power`, `condenser`, `reactor`, `terraform`, `biomass_mixer`, `refinery[_<fluid>]` | their machine (power: turbine or oil generator; terraform: O2, pressure or heat) | |
+| `wildlife[_<fluid>]` | habitat | items |
+| `bio_<biome>` | bio_collector, bio_lab, bio_exchange + the biome's processor (`BIO_PROCESSORS`; frozen has none) | biome, unique, items, biosites |
+| `weather_<biome>` | weather_station | biome, unique |
+| `liquifier_<biome>` | essence_liquifier | biome, items, biosites |
+| `storage_<fluid>` | liquid_tank, gas_tank or bulk_liquid_reservoir | |
+
+Not in the catalog (`farm`, operator roles): fluids only, never observed or missing.
+
+| Function | Answer |
+| :--- | :--- |
+| `observed(name, type_counts)` / `observed_roles()` | every group has a deployed alternative; `observed_roles()` leaves out `FAMILY_PREFIXES` sub-roles (a tank does not tell which fluid) |
+| `role_gaps(designated, type_counts)` | `missing` = designated catalog roles not observed (building planner backlog); `extra` = observed, not designated, and not covered by a designated role's buildings |
+| `unlocked(name, available_kits)` | every group has an alternative whose kit (`kit_id()`, `KIT_IDS` where it differs from the type_id) is available; non-catalog roles always |
+| `biome_ok()` / `biome_locks()` | biome lock check; more than one lock in a designation = no outpost can host it |
+| `bundle_slots(roles)` | `(counted, penalized)`: one slot per distinct group; penalized = groups with a `PENALIZED_TYPES` machine |
+
+**Overcrowding** (simworker machine table): counted buildings over the outpost cap (`buildings_capacity`) cost 10% each (floor 20%), but only `PENALIZED_TYPES` (production machines, bio chain, generators, Supply Dock, charging station, drone service station, lightning rod) slow down. Warehouses, tanks, batteries, Drone Depots, Lead Cask and Weather Station count but are exempt. Field structures, sensors and vehicles do not count.
 
 ## §11g Extractor pass and urgency tiers (`autoplay/lib/extractor_plan.py`, `autoplay/lib/supply_tiers.py`)
 

@@ -93,8 +93,12 @@ class RolesTests(harness.StubTestCase):
     def test_presets_seeded_and_operator_edit_kept(self):
         self.assertEqual(roles.presets(), roles.DEFAULT_ROLE_PRESETS)
         self.assertEqual(self.world.notebook.data[roles.PRESETS_KEY], roles.DEFAULT_ROLE_PRESETS)
-        self.world.notebook.set(roles.PRESETS_KEY, {"mine": ["oil"]})
-        self.assertEqual(roles.presets(), {"mine": ["oil"]})
+        self.world.notebook.set(roles.PRESETS_KEY, {"mine": ["oil"], "factory": ["water"]})
+        got = roles.presets()
+        self.assertEqual(got["mine"], ["oil"])
+        self.assertEqual(got["factory"], ["water"])
+        self.assertEqual(got["bio_volcanic"], roles.DEFAULT_ROLE_PRESETS["bio_volcanic"])
+        self.assertEqual(self.world.notebook.data[roles.PRESETS_KEY], got)
 
     def test_fluids_for_multiple_roles_in_order(self):
         presets = {"farm": ["water"], "wildlife": {"in": ["ammonia", "water"]}, "power": {"in": ["steam", "oil"]},
