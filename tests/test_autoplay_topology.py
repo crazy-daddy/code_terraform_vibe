@@ -132,6 +132,57 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class CountingPipe(FakePipe):
+    """FakePipe counting contents() reads (one per full row read)."""
+    reads = 0
+
+    def contents(self):
+        CountingPipe.reads += 1
+        return self._contents
+
+
+class IncrementalReadTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        import builtins
+        self.pipes = [CountingPipe(f"p{i}", "liquid", 5, 5 + 10 * i, 5, 15 + 10 * i, contents="water") for i in range(5)]
+        builtins.list_pipes = lambda: list(self.pipes)
+        self.world.services["construction_blueprint"] = None
+        CountingPipe.reads = 0
+
+    def tearDown(self):
+        import builtins
+        del builtins.list_pipes
+        super().tearDown()
+
+    def test_only_new_pipes_read_and_removed_dropped(self):
+        t = topo.Topology()
+        t.read()
+        self.assertEqual(CountingPipe.reads, 5)
+        self.assertIn("full read", t.last)
+        t.read()
+        self.assertEqual(CountingPipe.reads, 5)  # nothing new: no pipe read again
+        self.pipes.append(CountingPipe("p9", "gas", 105, 5, 115, 5, contents="steam"))
+        t.read()
+        self.assertEqual(CountingPipe.reads, 6)
+        self.assertEqual(t.occ["gas"][k(10, 0)], "steam")
+        self.pipes = [p for p in self.pipes if p.id != "p0"]
+        t.read()
+        self.assertNotIn("p0", t.cache)
+        self.assertNotIn(k(0, 0), t.occ["liquid"])
+        self.assertIn("1 removed", t.last)
+
+    def test_full_refresh_catches_contents_change(self):
+        t = topo.Topology()
+        t.read()
+        self.pipes[0]._contents = "oil"
+        for _ in range(topo.FULL_REFRESH_PASSES):
+            t.read()
+        self.assertEqual(t.occ["liquid"][k(0, 0)], "water")  # not seen yet by the incremental reads
+        t.read()
+        self.assertEqual(t.occ["liquid"][k(0, 0)], "oil")
+
+
 class AtomicBudgetTests(unittest.TestCase):
     """Worst slice of every atomically run function stays under construction_plan.ATOMIC_STEP_BUDGET."""
 
@@ -143,3 +194,6 @@ class AtomicBudgetTests(unittest.TestCase):
         jobs = [FakeJob(f"j{i}", "pipe", "liquid", 10, 5 + 10 * i) for i in range(topo.JOB_CHUNK)]
         self.assertLess(ops(topo.read_pipe_slice, pipes), ATOMIC_STEP_BUDGET)
         self.assertLess(ops(topo.read_job_slice, jobs), ATOMIC_STEP_BUDGET)
+        known = {f"p{i}": None for i in range(5000)}
+        fresh = [FakePipe(f"n{i}", "liquid", 5, 5, 5, 15) for i in range(topo.ID_CHUNK)]
+        self.assertLess(ops(topo.new_pipe_slice, fresh, known), ATOMIC_STEP_BUDGET)

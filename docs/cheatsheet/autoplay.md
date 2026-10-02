@@ -35,7 +35,7 @@ Tiles are packed into one int (`tile_key()`), neighbour = key ± `1` (y) or ± `
 
 ## §11a Occupancy (`autoplay/lib/infra_topology.py`)
 
-`Topology().read()` builds `occ = {layer: {tile: label}}` from `list_pipes()`, the pending/active/paused construction jobs and `autoplay.networks`. Label = the piece's `contents()`; else the planner's own fluid for that tile; else `FOREIGN` (`"?"`). Conflicted pieces and tiles claimed by two labels are `FOREIGN`. Power-line ghosts are `POWER`; completed power lines have no list API (subnets via `power_control.grids()`).
+`Topology` lives for the whole planner run: the first `read()` reads every pipe; later reads read only pipes with a new id (`new_pipe_slice()`, atomic) and drop vanished ids, and every `FULL_REFRESH_PASSES` reads it re-reads all pipes, because an existing pipe's `contents()` can change without a new id. The pipe occupancy (`pipe_occupancy()`) is rebuilt only when pipes or `autoplay.networks` changed; job ghosts are overlaid every read (`overlay_jobs()`). `read()` builds `occ = {layer: {tile: label}}` from `list_pipes()`, the pending/active/paused construction jobs and `autoplay.networks`. Label = the piece's `contents()`; else the planner's own fluid for that tile; else `FOREIGN` (`"?"`). Conflicted pieces and tiles claimed by two labels are `FOREIGN`. Power-line ghosts are `POWER`; completed power lines have no list API (subnets via `power_control.grids()`).
 
 `walls(layer, fluid)` = every tile with another label; `held(layer, fluid)` = tiles of that fluid. `footprint_ports(footprint, layer, fluid)` → `held` / `free` / `others`; the footprint is full for that medium when `held` and `free` are both empty. Gas fluids: `GAS_FLUIDS` (steam, ammonia, swamp_gas, raw/refined sulfur gas and chlorine); every other fluid is a liquid.
 
@@ -44,6 +44,8 @@ Tiles are packed into one int (`tile_key()`), neighbour = key ± `1` (y) or ± `
 | `PIPE_CHUNK` | 16 | pipes per atomic read slice (~190 operations each) |
 | `JOB_CHUNK` | 20 | jobs per atomic read slice |
 | `PIPE_PROGRESS_EVERY` | 500 | pipes between map-read progress lines (debug) |
+| `ID_CHUNK` | 200 | pipes per atomic new-id check (`new_pipe_slice()`) |
+| `FULL_REFRESH_PASSES` | 30 | incremental reads between full pipe re-reads |
 
 Archive: `autoplay.networks` = `{fluid: [[x1, y1, x2, y2], ...]}` (straight runs, tile centres) the planner laid.
 

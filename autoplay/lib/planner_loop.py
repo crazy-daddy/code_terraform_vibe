@@ -45,6 +45,7 @@ def _upkeep_ledger(log, survey_locked):
 def run_planner():
     log = TreeConsole(module="infra_planner")
     power = PowerPlanner(log)
+    topo = Topology()
     survey_locked = False
     log.print("Infrastructure planner online.")
     while True:
@@ -52,8 +53,8 @@ def run_planner():
         outcome = "error"
         try:
             mark = _tick()
-            topo = Topology().read(log)
-            mark = _phase(log, mark, f"map read, {len(topo.pipe_rows)} pipes, {len(topo.job_rows)} utility jobs")
+            topo.read(log)
+            mark = _phase(log, mark, f"map read: {topo.last}, {len(topo.job_rows)} utility jobs")
             dropped = prune_planned(topo.job_ids, topo.jobs_ok)
             vanished = power_survey.track_jobs(topo)
             mark = _phase(log, mark, f"bookkeeping, {dropped} planned job(s) dropped, {vanished} vanished power tile(s) to re-probe")

@@ -35,6 +35,8 @@ GAS_FLUIDS = ("steam", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "
 
 PIPE_CHUNK = 16   # pipes per atomic read slice (worst ~190 operations each, see tests)
 PIPE_PROGRESS_EVERY = 500   # pipes between progress lines (debug) while reading
+ID_CHUNK = 200              # pipes per atomic id-check slice (new_pipe_slice())
+FULL_REFRESH_PASSES = 30    # passes between full pipe re-reads (catches contents() changes of existing pipes)
 JOB_CHUNK = 20    # construction jobs per atomic read slice (worst ~165 operations each)
 
 _JOB_GETTERS = ("pending_constructions", "active_constructions", "paused_constructions")
@@ -122,11 +124,11 @@ def _claim(layer, tile, label):
         layer[tile] = FOREIGN
 
 
-def build_occupancy(pipe_rows, job_rows, labels):
+def pipe_occupancy(pipe_rows, labels):
     """
-    {layer: {tile: label}} from read_pipe_slice()/read_job_slice() rows and
-    planned_labels(). A piece's label: its contents(); else the planner's own
-    fluid for that tile; else FOREIGN. Conflicted pieces are FOREIGN.
+    {layer: {tile: label}} from read_pipe_slice() rows and planned_labels().
+    A piece's label: its contents(); else the planner's own fluid for that
+    tile; else FOREIGN. Conflicted pieces are FOREIGN.
     """
     occ = {layer: {} for layer in LAYERS}
     for row in pipe_rows:
@@ -141,6 +143,12 @@ def build_occupancy(pipe_rows, job_rows, labels):
             else:
                 label = row["contents"] or own.get(tile) or FOREIGN
             _claim(layer, tile, label)
+    return occ
+
+
+def overlay_jobs(pipe_occ, job_rows, labels):
+    """A copy of pipe_occupancy() with the job ghosts (read_job_slice() rows) claimed on top."""
+    occ = {layer: dict(tiles) for layer, tiles in pipe_occ.items()}
     for row in job_rows:
         medium = row["medium"]
         layer = occ[medium]
@@ -153,6 +161,16 @@ def build_occupancy(pipe_rows, job_rows, labels):
         for tile in row["tiles"]:
             _claim(layer, tile, own.get(tile) or FOREIGN)
     return occ
+
+
+def build_occupancy(pipe_rows, job_rows, labels):
+    """{layer: {tile: label}} from pipe rows, job rows and planned_labels() (pipe_occupancy() + overlay_jobs())."""
+    return overlay_jobs(pipe_occupancy(pipe_rows, labels), job_rows, labels)
+
+
+def new_pipe_slice(pipes, known):
+    """Pipes of a slice whose id is not in `known` (atomic-safe: reads only)."""
+    return [pipe for pipe in pipes if pipe.id not in known]
 
 
 def walls(layer_occ, fluid):
@@ -197,29 +215,65 @@ def summary(occ):
 
 
 class Topology:
-    """One pass's occupancy read from the game (pipes, jobs, autoplay.networks)."""
+    """
+    The map's utility occupancy (pipes, jobs, autoplay.networks), kept across
+    passes: read() re-reads only pipes with a new id and drops vanished ones;
+    every FULL_REFRESH_PASSES passes (and on the first) it re-reads every pipe,
+    since an existing pipe's contents() can change without a new id. The pipe
+    occupancy is rebuilt only when pipes or autoplay.networks changed; job
+    ghosts are overlaid on every read.
+    """
 
     def __init__(self):
+        self.cache = {}        # pipe id -> read_pipe_slice() row
         self.pipe_rows = []
         self.job_rows = []
         self.job_ids = set()   # every pending/active/paused job id, utility or not
         self.jobs_ok = False   # False when a job list could not be read: job_ids is then incomplete
         self.occ = {layer: {} for layer in LAYERS}
+        self.pipe_occ = {layer: {} for layer in LAYERS}
+        self.networks = None   # autoplay.networks value pipe_occ was built with
+        self.passes = 0        # reads since the last full pipe read
+        self.last = ""         # what the latest read did, for the pass log
 
-    def read(self, log=None):
-        """Reads the game state; returns self. Missing APIs leave the matching rows empty.
-        log: TreeConsole for a debug progress line every PIPE_PROGRESS_EVERY pipes."""
+    def _read_rows(self, pipes, log):
+        rows = []
+        for start in range(0, len(pipes), PIPE_PROGRESS_EVERY):
+            rows.extend(run_batched(read_pipe_slice, pipes[start:start + PIPE_PROGRESS_EVERY], PIPE_CHUNK))
+            if log is not None and len(pipes) > PIPE_PROGRESS_EVERY:
+                log.debug(f"Map read: {min(start + PIPE_PROGRESS_EVERY, len(pipes))}/{len(pipes)} pipes.")
+                log.flush()
+        return rows
+
+    def _read_pipes(self, log):
+        """Updates the pipe cache; returns True when it changed."""
         try:
             pipes = list_pipes() or []  # type: ignore[name-defined]  # game builtin
         except Exception as error:
             swallowed("infra_topology.Topology.read: list_pipes", error)
-            pipes = []
-        self.pipe_rows = []
-        for start in range(0, len(pipes), PIPE_PROGRESS_EVERY):
-            self.pipe_rows.extend(run_batched(read_pipe_slice, pipes[start:start + PIPE_PROGRESS_EVERY], PIPE_CHUNK))
-            if log is not None and len(pipes) > PIPE_PROGRESS_EVERY:
-                log.debug(f"Map read: {min(start + PIPE_PROGRESS_EVERY, len(pipes))}/{len(pipes)} pipes.")
-                log.flush()
+            self.last = "pipes unreadable, cache kept"
+            return False
+        if not self.cache or self.passes >= FULL_REFRESH_PASSES:
+            self.cache = {row["id"]: row for row in self._read_rows(pipes, log)}
+            self.passes = 0
+            self.last = f"full read of {len(pipes)} pipes"
+            return True
+        self.passes += 1
+        fresh = run_batched(new_pipe_slice, pipes, ID_CHUNK, self.cache)
+        removed = len(self.cache) - (len(pipes) - len(fresh))
+        if removed > 0:
+            live = {pipe.id for pipe in pipes}
+            for pipe_id in [pipe_id for pipe_id in self.cache if pipe_id not in live]:
+                del self.cache[pipe_id]
+        for row in self._read_rows(fresh, log):
+            self.cache[row["id"]] = row
+        self.last = f"{len(fresh)} new, {max(removed, 0)} removed of {len(pipes)} pipes"
+        return bool(fresh) or removed > 0
+
+    def read(self, log=None):
+        """Updates the occupancy from the game; returns self. Missing APIs leave the matching rows empty.
+        log: TreeConsole for a debug progress line every PIPE_PROGRESS_EVERY pipes read."""
+        pipes_changed = self._read_pipes(log)
         jobs = []
         self.jobs_ok = False
         blueprints = get_component("construction_blueprint")
@@ -234,6 +288,11 @@ class Topology:
         self.job_ids = {job.id for job in jobs}
         self.job_rows = run_batched(read_job_slice, jobs, JOB_CHUNK)
         networks = archive.get(NETWORKS_KEY, {})
-        labels = planned_labels(networks if isinstance(networks, dict) else {})
-        self.occ = build_occupancy(self.pipe_rows, self.job_rows, labels)
+        networks = networks if isinstance(networks, dict) else {}
+        labels = planned_labels(networks)
+        if pipes_changed or networks != self.networks:
+            self.pipe_rows = list(self.cache.values())
+            self.pipe_occ = pipe_occupancy(self.pipe_rows, labels)
+            self.networks = networks
+        self.occ = overlay_jobs(self.pipe_occ, self.job_rows, labels)
         return self
