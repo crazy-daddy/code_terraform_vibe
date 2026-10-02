@@ -1,8 +1,10 @@
 # Run loop of the infrastructure planner (autoplay/infra_planner_automation.py):
 # one pass per PASS_SLEEP_S, ending the script once a pass finds nothing left
-# to plan and nothing of its own still open. Restart the script to plan again.
+# to plan, nothing of its own still open and no outpost proposal waiting for
+# the operator. Restart the script to plan again.
 #
-# Pass order: read the map (infra_topology.Topology), prune autoplay.planned,
+# Pass order: the founding pass (outpost_plan.OutpostPlanner: needs, sites,
+# proposals as map markers, operator answers), then read the map (infra_topology.Topology), prune autoplay.planned,
 # keep the power-line ledger current (power_survey: one-off full survey when
 # the ledger has none, vanished-job check, dirty-tile re-probe), then the
 # power pass (power_plan.PowerPlanner) with the ledger's line tiles, then the
@@ -10,7 +12,10 @@
 # (extractor_plan.ExtractorPlanner). Plan-ahead work (supply_tiers) runs only
 # while the passes before it have nothing urgent left. The script ends once
 # the power pass has nothing to join, the fluid pass nothing to route and
-# the extractor pass nothing to place.
+# the extractor pass nothing to place, unless founding proposals wait: then
+# the loop only watches their markers every WATCH_SLEEP_S (a full founding
+# pass when OutpostPlanner.due()), and runs the other passes again once a
+# designation was written.
 
 from swallow import swallowed
 from tree_console import TreeConsole, reset_all, flush_all
@@ -19,9 +24,11 @@ from blueprint_queue import prune_planned
 from power_plan import PowerPlanner
 from fluid_plan import FluidPlanner
 from extractor_plan import ExtractorPlanner
+from outpost_plan import OutpostPlanner
 import power_survey
 
-PASS_SLEEP_S = 60   # seconds between passes while work is open
+PASS_SLEEP_S = 60    # seconds between passes while work is open
+WATCH_SLEEP_S = 300  # seconds between marker checks while only proposals wait
 
 
 def _tick():
@@ -49,16 +56,42 @@ def _upkeep_ledger(log, survey_locked):
     return survey_locked
 
 
+def _founding(log, founding, infra_done):
+    """The founding pass; returns its outcome ("error" on failure)."""
+    try:
+        mark = _tick()
+        outcome = founding.run_pass(not infra_done or founding.due())
+        _phase(log, mark, f"founding pass: {outcome}")
+        return outcome
+    except Exception as error:
+        swallowed("planner_loop._founding: pass", error)
+        log.level("error").print(f"Founding pass failed: {error}")
+        return "error"
+
+
 def run_planner():
     log = TreeConsole(module="infra_planner")
+    founding = OutpostPlanner(log)
     power = PowerPlanner(log)
     fluids = FluidPlanner(log)
     extractors = ExtractorPlanner(log)
     topo = Topology()
     survey_locked = False
+    infra_done = False
     log.print("Infrastructure planner online.")
     while True:
         reset_all()
+        founding_outcome = _founding(log, founding, infra_done)
+        if founding_outcome == "changed":
+            infra_done = False
+        if infra_done:
+            if founding_outcome != "waiting":
+                log.print("Infrastructure planner: no outpost proposal waits any more. Ending.")
+                flush_all()
+                return
+            flush_all()
+            sleep(WATCH_SLEEP_S)
+            continue
         outcome = "error"
         fluid_outcome = "error"
         extractor_outcome = "error"
@@ -82,8 +115,12 @@ def run_planner():
             swallowed("planner_loop.run_planner: pass", error)
             log.level("error").print(f"Planner pass failed: {error}")
         if outcome == "joined" and fluid_outcome == "done" and extractor_outcome == "done":
-            log.print("Infrastructure planner: grids joined, fluid networks routed, extractors placed. Ending.")
-            flush_all()
-            return
+            if founding_outcome != "waiting":
+                log.print("Infrastructure planner: grids joined, fluid networks routed, extractors placed. Ending.")
+                flush_all()
+                return
+            log.print("Infrastructure planner: grids joined, fluid networks routed, extractors placed; "
+                      "watching outpost proposals.")
+            infra_done = True
         flush_all()
         sleep(PASS_SLEEP_S)

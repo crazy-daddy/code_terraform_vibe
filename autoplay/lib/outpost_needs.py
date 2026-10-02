@@ -17,7 +17,9 @@
 #    "per_warehouse": slots of the Warehouse kind to build: 5, 15 once the
 #                     Large Warehouse kit is available. Wildlife roles unlock
 #                     after it (Plants 2,250,000 vs Biomass 30,000), so they
-#                     are always sized with 15.}
+#                     are always sized with 15,
+#    "refused": [[role, outpost_id], ...] designations the operator rejected
+#               (outpost_plan); host_check() skips them}
 #
 # A need is {"role", "biome", "urgency", "why", "found", "locked"} (+ "ores"
 # for mining). Urgency:
@@ -240,6 +242,8 @@ def host_check(need, entry, snap):
     role = need["role"]
     if covers(entry, role):
         return (None, "has it", 0)
+    if [role, entry["id"]] in snap.get("refused", []):
+        return (None, "operator rejected", 0)
     if not biome_ok(role, entry.get("biome")):
         return (None, "biome " + str(entry.get("biome")), 0)
     current = _current_roles(entry)

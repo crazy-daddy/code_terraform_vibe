@@ -78,7 +78,7 @@ The pass waits while any power-line job is open: completed lines have no list AP
 | `FLOOD_STEP_TILES` | 30 | ledger tiles per atomic `flood_step()` (~3,100 operations worst) |
 | `PASS_SLEEP_S` (`planner_loop.py`) | 60 | seconds between passes while work is open |
 
-Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass, fluid pass (§11e, plan-ahead only when power is `joined`), extractor pass (§11g, plan-ahead only when power is `joined` and fluid `done`); each phase ends with a debug `Pass: <phase> (<sim s>)` line; the script ends once power reports `joined`, fluid `done` and extractors `done`.
+Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): founding pass (§11j), read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass, fluid pass (§11e, plan-ahead only when power is `joined`), extractor pass (§11g, plan-ahead only when power is `joined` and fluid `done`); each phase ends with a debug `Pass: <phase> (<sim s>)` line; the script ends once power reports `joined`, fluid `done` and extractors `done` and no outpost proposal waits. While proposals wait, the loop only runs the founding pass every `WATCH_SLEEP_S` = 300 s (marker reads; a full pass every `REPLAN_TICKS`), and runs the other passes again after a designation was written (`changed`).
 
 ## §11c Blueprint queue (`autoplay/lib/blueprint_queue.py`)
 
@@ -152,7 +152,7 @@ Gas and liquid layers ignore each other.
 | Key | Shape | Writer |
 | :--- | :--- | :--- |
 | `autoplay.role_presets` | `{role: {"in": [fluid, ...], "out": [fluid, ...]}}` (a plain list = `"in"` only) | seeded with `DEFAULT_ROLE_PRESETS` when missing; default roles the stored dict lacks are added, operator edits of existing roles kept |
-| `autoplay.outpost_roles` | `{outpost_id: role \| [role, ...]}` | operator; entries of gone outposts pruned each pass |
+| `autoplay.outpost_roles` | `{outpost_id: role \| [role, ...]}` | operator, and an approved designate proposal (§11j); entries of gone outposts pruned each pass |
 
 Default presets (in → out): `factory` water, oil, steam · `terraform` water, steam · `power` steam, oil · `farm` water · `condenser` steam → water · `reactor` water · `drone_service` oil · `bio_caster` steam, water · `biomass_mixer` the five essences · `refinery` the four raw exotics → sulfur_gas, chlorine, cryofluid, quicksilver · `wildlife` ammonia, swamp_gas, sulfur_gas, chlorine, brine, cryofluid, quicksilver. One-fluid sub-roles: `refinery_<fluid>` (`refinery_quicksilver` = raw_quicksilver → quicksilver) and `wildlife_<fluid>` spread exotics over outposts; `liquifier_<biome>` → `<biome>_essence` (an Essence Liquifier makes its outpost biome's essence); `storage_<fluid>` = that fluid in and out (tanks; the outpost becomes a producer terminal on that network). `fluids_for()` also returns `"supply"`: the `"out"` fluids of source roles; `condenser` (`BACKUP_ROLES`) and `storage_<fluid>` are no source (§11g). Waste Processors have no role (generic sink, wire locally). The home outpost always has `HOME_ROLES` (`farm`: the Harvester field is there) after its own roles. An outpost's fluid order (roles in order, each role's in before its out, duplicates dropped) is its port service order. Example: `{"home": ["wildlife_ammonia"], "outpost_3": ["factory", "refinery_chlorine"]}`.
 
@@ -245,3 +245,74 @@ A role is **covered** by an outpost that designates it or whose buildings make i
 Earth orders for life forms are no need (drones catch them anywhere). Only `now`/`soon` needs (`PROPOSE_URGENCIES`) reach `plan_hosts()`.
 
 **Merge before founding** (`plan_hosts()`, `host_check()`): each need tries existing outposts by free slots (most first), then id. A host must allow the role's biome, not cover it yet, and keep its counted buildings within `buildings_capacity` when the combined bundle has a penalized machine (`site_slots()`, new Warehouses for the added stock included; exempt-only bundles may go over). Item roles add `drone_depot` when the host has none. Home counts Warehouses like any outpost. It hosts other roles only until wildlife is unlocked (`home_reserved()`: Habitat kit available, a Habitat at home, or a wildlife/feed role designated there); from then on only `HOME_RESERVED_ROLES` and `wildlife_<fluid>` (wildlife lives at home: Forage comes from the home field). `mining` needs a site of each of its ores within range; `refinery_<fluid>` needs a raw deposit of its fluid within `supply_tiers.NEAR_TILES` and never founds (`found: False`). A host that takes a need counts its new roles for the next need. Leftover needs form **founding bundles** (`found_bundles()`): one per biome lock, one for `mining` (ores joined), one for the other roles, each with `drone_depot` when an item role is in it, `slots` (`site_slots()` on an empty outpost) and `over_cap` (a penalized bundle above `FOUNDED_CAPACITY` = 20 buildings).
+
+## §11i Outpost site scoring (`autoplay/lib/outpost_sites.py`)
+
+Where a founding bundle (§11h `found_bundles()`) should go. Decides from in-game data only: `nocturna.points_of_interest()`, `journal.discovered_sites()`, `nocturna.biome_at()`, `get_bounds()`, outposts and outpost ghosts (`read_world()`).
+
+**Placement checks** (`check()`, mirrors `plan_structure("outpost")`): the anchor is the placement square's NW corner, world y grows north; square `PLACE_M` = 20 m (x .. x+20, y-20 .. y), centre (x+10, y-10). Clearance is measured from a point to the `CLEAR_SIDE_M` = 26 m square around the centre: other outposts' centres and outpost ghosts `OUTPOST_CLEARANCE_M` = 40 m, every POI (unknown, scanned, biomass) `POI_CLEARANCE_M` = 20 m. The outpost's biome is the biome at the anchor. Rejections: `out_of_bounds`, `outpost_clearance`, `poi_clearance`, `biome <id>`.
+
+**Knowledge levels**: 1 = POI of kind `unknown`; 2 = kind known (discovered site, or a scanned POI kind such as `biomass`), details `None`; 3 = surveyed site (ore, purity, hardness, exotic fluid). A water/oil/thermal contact's fluid is known from its kind. Level 1–2 contacts count by expected value; the prior (`priors()`) comes from this save's own scans: kind shares over every contact of known kind, ore and exotic shares over surveyed sites, mean purity factor; flat when nothing is known.
+
+**Score terms** (higher better; `WEIGHTS`):
+
+| Term | Weight | Value |
+| :--- | :--- | :--- |
+| `ore` | 10 | per bundle ore (the need's ores): surveyed sites within `range_m` (outpost mining range) by purity factor, `HARD_FACTOR` when no available drill kit cuts the hardness, capped at `ORE_CAP` per ore; less-known contacts add P(mineral) × P(ore) × mean purity on top, up to `ORE_CAP` × ores |
+| `fluid` | 6 | per wanted field fluid (the bundle roles' `"in"` fluids with a field site: water, oil, steam, raw exotics, not made by the bundle itself): best contact within `NEAR_TILES` × 10 m, closeness 1 .. 0; unknown contacts by chance, up to 1 per fluid |
+| `exotic` | 1 | `EXOTIC_VALUE` per raw exotic deposit in fluid reach the bundle does not want (a later `refinery_` role), capped at 1 |
+| `biosite` | 2 | biomass contacts within `BIOSITE_RANGE_M` in the bundle's biome (bio-scanned = known, unknown POIs by P(biomass)), share of `BIOSITE_CAP`; only bundles with a `biosites` role |
+| `margin` | 4 | biome-locked bundles: share of the `MARGIN_PROBES_M` rings (8 directions) around the anchor holding only its biome |
+| `room` | 2 | share of 8 probe points at `ROOM_M` on the map and clear of other outposts |
+| `home` | −2 | per km from the home centre |
+| `grid` | −3 | per km to the nearest outpost (power line and pipe length) |
+
+`confidence` = share of the resource terms (ore, fluid, exotic, biosite) from known contacts; below `MIN_CONFIDENCE` a row carries `survey: True` (survey trip first, phase 4b). A bundle with ores keeps only anchors with ore in reach.
+
+**Search** (`rank_sites()`): `CANDIDATE_STEP_M` grid over the map, `check()`ed and scored without margin and room; the best `REFINE_TOP` are re-searched on a `REFINE_STEP_M` grid within `REFINE_RADIUS_M`, the best of those get margin and room (`add_detail()`). Contact values per bundle are computed once (`prepare_want()`, `value_rows()`: one value per term per contact) and bucketed in `CELL_M` cells. Scoring runs in `score_step()` chunks (`run_chunked`) of `STEP_UNITS` work units, resumable mid-anchor and mid-cell, so contact density never overruns a slice. Biome reads are cached per tile for the run.
+
+| Constant | Value | Meaning |
+| :--- | :--- | :--- |
+| `CANDIDATE_STEP_M` | 80 | coarse candidate grid |
+| `REFINE_STEP_M` / `REFINE_RADIUS_M` / `REFINE_TOP` | 20 / 40 / 5 | refine grid, window half-width, coarse candidates refined |
+| `CELL_M` | 150 | contact bucket size |
+| `BIOSITE_RANGE_M` | 300 | biomass contacts a bio / liquifier outpost counts |
+| `ORE_CAP` / `BIOSITE_CAP` | 2 / 6 | saturation per ore / of biosites |
+| `PURITY_FACTOR` | standard 1, rich 1.5, pure 2 | surveyed ore value |
+| `HARD_FACTOR` | 0.2 | ore site no available drill cuts (`hardness_limit()` over `extractor_plan.DRILL_KINDS` kits) |
+| `EXOTIC_VALUE` | 0.25 | per unwanted raw exotic deposit |
+| `MARGIN_PROBES_M` | 20, 40, 80, 160 | biome margin rings |
+| `ROOM_M` | 100 | room probe distance |
+| `MIN_CONFIDENCE` | 0.5 | below: survey first |
+| `FILTER_CHUNK` | 4 | anchors per atomic `check()` slice |
+| `VALUE_CHUNK` | 20 | contacts per atomic `value_rows()` slice |
+| `DETAIL_CHUNK` | 1 | rows per atomic `add_detail()` slice |
+| `STEP_UNITS` | 50 | work units (~45 operations) per `score_step()`: row 3, cell 1, anchor start 4, finish 14 |
+
+Slice costs are measured in `tests/test_autoplay_outpost_sites.py` against `ATOMIC_STEP_BUDGET` on a map several times denser in contacts than a real one.
+
+## §11j Outpost proposals (`autoplay/lib/outpost_plan.py`)
+
+The founding pass, first in the run loop: `outpost_needs` needs and hosts (§11h) and `outpost_sites` sites (§11i) become at most `MAX_PROPOSALS` = 5 proposals, each a map marker the operator answers. Nothing is bought or queued: an approved `found` proposal stays `approved`.
+
+| Key | Shape | Writer |
+| :--- | :--- | :--- |
+| `autoplay.outpost_proposals` | `{proposal_id: {"id", "kind": "found" \| "designate", "outpost", "x", "y", "biome", "lock", "roles", "needs", "ores", "urgency", "why": [...], "score", "confidence", "survey", "over_cap", "price", "status": "proposed" \| "approved" \| "built" \| "rejected", "ok", "moved", "blocked", "placed", "tick"}}` | founding pass, rewritten only on change |
+
+Proposal ids: `d-<outpost>` (designate, on the outpost's anchor, price 0) and `f-<biome lock | mining | general>` (one per founding bundle, at its best ranked site; price = the Shop catalogue `cost` of `outpost_kit`, which already counts every kit owned). Order: operator OK first, then urgency, designate before found, score. A rejected entry stays under `<id>~<tick>` for `REJECT_HOLD_TICKS` (newest `MAX_REJECTED` = 10): a rejected designation's (role, outpost) pairs go to the need snapshot as `"refused"` (`host_check()` skips them, so the need tries the next host or a founding); a rejected site holds anchors within `REJECT_RADIUS_M` for the same bundle.
+
+**Markers** (id `autoplay.outpost.<proposal_id>`, label `Outpost Suggestion`, icon `flag` found / `star` designate, color `accent` / `violet`, `warning` when blocked, `success` when approved; note = roles, urgency and reasons, price, score and confidence, then what blocks it or how to approve, at most 240 characters):
+- **Approve:** add the word `OK` to the label (any case). Approval needs no blocker: placement failure (`check()`), pending re-check, `survey` (confidence under `MIN_CONFIDENCE`), `over_cap`. The OK label is re-read each pass, so a blocker cleared later approves then. An approved designate writes its roles into `autoplay.outpost_roles` at once (status `built`, marker removed).
+- **Move:** a found marker dragged more than `MOVE_EPS_M` gives the new anchor, kept from then on; it is re-checked and re-scored (`recheck()`), a failure goes into the note. A dragged designate marker is put back.
+- **Reject:** delete the marker (only markers the planner placed count; a failed `markers.list()` skips the pass).
+- The planner places a marker only when its fields differ from what it reads back, keeps an operator label holding OK, and removes markers of proposals no longer open.
+
+Full pass (needs, hosts, merge) every pass while the other passes work, else every `REPLAN_TICKS`; sites are re-ranked only when the founding bundles change or after `RERANK_TICKS`. Every open found proposal gets `check()` on a full pass, a dragged one also in watch mode. Outcomes: `locked` (no Map Markers), `idle`, `waiting`, `changed`.
+
+| Constant | Value | Meaning |
+| :--- | :--- | :--- |
+| `MAX_PROPOSALS` / `MAX_REJECTED` | 5 / 10 | open proposals / rejected entries on hold |
+| `REJECT_HOLD_TICKS` | 864,000 (24 sim h) | hold of a rejected proposal |
+| `REJECT_RADIUS_M` | 100 | anchors a rejected site holds |
+| `REPLAN_TICKS` / `RERANK_TICKS` | 6,000 / 36,000 | full pass in watch mode / site re-rank with unchanged bundles |
+| `MOVE_EPS_M` | 0.5 | marker offset that counts as a drag |

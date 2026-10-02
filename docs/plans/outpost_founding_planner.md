@@ -216,8 +216,16 @@ Archive (one dict per concern):
    outposts (biome, cap with penalized machines, depot, site reach; home only until wildlife is unlocked), leftovers
    form founding bundles. Life-form Earth orders are no need (drones catch them anywhere).
    Cheatsheet §11h, `tests/test_autoplay_outpost_needs.py`.
-3. `outpost_sites` candidate generation + scoring + tests (fake biome map, sites, POIs); step-budget test.
+3. `outpost_sites` candidate generation + scoring + tests (fake biome map, sites, POIs); step-budget test. **Done**:
+   placement checks mirror the simworker (20 m square, clearance to the 26 m square around its centre); contact
+   values per bundle computed once, scoring in resumable `score_step()` chunks; drills from available kits for the
+   hardness penalty; pathing risk left out (no stall points readable yet). Cheatsheet §11i,
+   `tests/test_autoplay_outpost_sites.py`.
 4. `outpost_plan` proposals + approval + designate path (no spending) → first live run, read-only proposals.
+   **Code done** (live run pending): founding pass first in `planner_loop`; the loop keeps watching markers
+   (`WATCH_SLEEP_S`) while proposals wait; kit price read from the Shop catalogue (its `cost` already counts
+   owned kits); rejected designations go back to `plan_hosts()` as `"refused"`, so the need tries the next host.
+   Cheatsheet §11j, `tests/test_autoplay_outpost_plan.py`.
 4b. Scout rework: `autoplay.survey_requests` served first by the scout, `wrong_scanner` contacts recorded
    as known biomass, blacklist kept for truly unscannable contacts.
 5. Founding execution: cash consumer `outpost_founding`, kit purchase, blueprint, built detection,
