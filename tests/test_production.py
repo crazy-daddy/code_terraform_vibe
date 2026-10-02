@@ -1,7 +1,7 @@
 """Stub tests for lib/production.py demand, discovery and peer helpers."""
 import unittest
 
-from harness import StubTestCase, production, storage
+from harness import StubTestCase, production, storage, supply_dock
 from game_stubs import Store as storage_stub
 
 
@@ -180,6 +180,19 @@ class SourceCacheTests(StubTestCase):
         self.assertEqual(cache.held_stock("growth_accelerant", w.home), 6)
         self.assertEqual(cache.held_stock("growth_accelerant", remote), 12)
         self.assertEqual(cache.network_stock("growth_accelerant"), 18)
+
+
+class SupplyDockAssignTests(StubTestCase):
+    def test_unknown_or_completed_order_waits_for_next_plan(self):
+        w = self.world
+        dock = w.add_supply_dock("supply_dock_1", w.home)
+        w.add_order("o_done", {"glass": 1}).status = "completed"
+        controller = supply_dock.SupplyDockController(dock)
+        for order_id, status in (("o_gone", "unknown_order"), ("o_done", "completed")):
+            self.assertFalse(controller.assign_order(order_id, order_id, ""))
+            self.assertIn(f"order already {status}", self.debug_log())
+        self.assertIsNone(dock.current_order())
+        self.assertNotIn("Could not assign order", self.world.console.text("warn"))
 
 
 if __name__ == "__main__":

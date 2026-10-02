@@ -78,7 +78,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   live save appears in `machines`.
 - **Verify:** `python devtools/extract_game_spec.py` then spot-check the four facts above.
 
-### - [ ] Step 2: Contract test against the spec
+### - [x] Step 2: Contract test against the spec
 - **Goal:** fail when a stub invents a method, misnames a parameter, or returns a status the
   real method never returns.
 - **Read first:** `tests/game_stubs.py`, `tests/game_spec.json`, `tests/harness.py`.
@@ -92,7 +92,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   `_`, or a small allowlist like `add`/`remove` on `Store`) are exempt.
 - **Done when:** the test is green, `set_order` returns `unknown_order`, the lib branch has a
   test, and every other drift found is fixed or listed in the notes with a reason.
-- **Verify:** `python -m unittest tests.test_stub_contract -v`.
+- **Verify:** `python -m unittest discover -s tests -p test_stub_contract.py -v`.
 
 ### - [ ] Step 3: Census devtool (optional)
 - **Goal:** a printed gap list to choose what to stub next.
@@ -179,6 +179,41 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   global functions, 3 identical repeated registrations, and 9 code references (validators
   reading `.outcomeContract`), not contracts. Add a `functions` section from `GA` if a fake ever
   needs the cold-boot calls.
+
+### Step 2 (2026-10-02)
+- `tests/test_stub_contract.py` maps stub classes in two dicts: `COMPONENTS` (methods checked:
+  name, positional parameter names, literal `Result("...")` statuses incl. both branches of a
+  conditional) and `VALUE_TYPES` (public `self.x` attributes in `__init__` checked against the
+  type's fields). A stub class in neither dict nor `NOT_API` fails the test, so step 4 must
+  map every new fake. A union mapping (`Store` → warehouse + inventory, `Slot` → InputSlot +
+  OutputSlot) passes a method found in any entry. Parameters match by position as a prefix, so
+  a stub may omit trailing optional real parameters (`properties`, `channel`, ...).
+- Run it with `python -m unittest discover -s tests -p test_stub_contract.py -v`; the
+  `tests.test_stub_contract` form fails because `tests/` is not a package.
+- Statuses produced dynamically (`Result(status)`) are invisible to the check. `Slot` port
+  methods therefore map `World.local_store()`'s problem code (`no_connection` / `not_found` /
+  `not_local` / `inventory_not_local`) to literal statuses per side.
+- Drift fixed in `game_stubs.py`: `SupplyDock.set_order` (`unknown_order`, plus `completed` for
+  a completed order); `SupplyDock` no longer inherits recipe methods (new `Building` base);
+  `Store.compact` → `already_compact` (was `no_op`); port statuses `not_connected` →
+  `no_connection`, `empty` → `source_empty`, `not_found`/`not_local` → `source_missing` /
+  `source_not_local` (take) and `target_missing` / `target_not_local` (send, eject),
+  `inventory_not_local` for Inventory away from home, new `buffer_full` when the input buffer
+  has no room; renamed params `set_recipe(recipe_or_id)` (now also accepts a Recipe),
+  `set_enabled(on)`, `buy(item_id, quantity)`, `print(message, ...)`, `connect(name)`,
+  `eject(destination, ...)`, `surveyed_sites/cataloged_creatures(planet_id)`;
+  `Slot.count()` takes no item id (real API); `Notebook.keys(prefix=None)`;
+  `CatalogueEntry` → `ShopItem` (adds `name`); inline `DockSlot` type → class with `index`;
+  test-only `Store.used`/`Machine.input_used` → `_used`/`_input_used`.
+- Exempt helpers: `Store.add/remove`, `Console.text` (`TEST_HELPERS`). `Slot` and machine
+  state attributes (`buffer`, `connect_log`, `running`, ...) are not checked: attributes are
+  checked only for `VALUE_TYPES`.
+- No lib code branched on the old stub-only statuses; all tests passed unchanged.
+  `tests/test_fleet_commission.py` has its own private `CatalogueEntry` (step 5 should use
+  `game_stubs.ShopItem`).
+- Pyright on the new test reports `ast` narrowing errors (`Cannot access attribute "func"
+  for class "AST"`); `tests/test_log_blocks_balanced.py` shows the same, so it is the local
+  Pyright setup, not the code.
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).

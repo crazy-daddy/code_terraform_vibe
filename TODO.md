@@ -390,7 +390,7 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
 - [ ] Keep scripts and documentation aligned with the component/API guides after each major unlock.
 - [ ] **Shared fake world from the game spec** (see `docs/plans/fake_world.md`; one step per session):
   - [x] Step 1: spec extractor + committed `tests/game_spec.json`.
-  - [ ] Step 2: stub contract test against the spec (fix `set_order` → `unknown_order`).
+  - [x] Step 2: stub contract test against the spec (fix `set_order` → `unknown_order`).
   - [ ] Step 3: `devtools/stub_census.py` gap report (optional).
   - [ ] Step 4: consolidate and extend `tests/game_stubs.py`.
   - [ ] Step 5: migrate tests off private fakes.

@@ -7,7 +7,11 @@ outposts with Warehouses, home Inventory, Smelters, Fabricators, Supply
 Docks and Earth Orders, the Data Archive
 (notebook), clock and console. Port locality follows the docs: Inventory
 works at home only, and a remote machine's ports only reach storage at its
-own outpost (anything else answers "not_local").
+own outpost (anything else answers "not_local" / "source_not_local" /
+"target_not_local" / "inventory_not_local").
+
+Method names, parameter names and result statuses follow the real game
+API in tests/game_spec.json; tests/test_stub_contract.py checks them.
 
 Nothing here crafts on its own; a test sets machine state (buffers,
 `running`, stock) directly and then calls a controller step.
@@ -114,11 +118,11 @@ class Store:
     def stacks(self):
         return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
 
-    def used(self):
+    def _used(self):
         return sum(self.items.values())
 
     def space_for(self, item_id):
-        return max(0, self.capacity_units - self.used())
+        return max(0, self.capacity_units - self._used())
 
     def capacity(self):
         return self.capacity_units
@@ -127,13 +131,13 @@ class Store:
         return sorted(i for i, n in self.items.items() if n > 0)
 
     def total(self):
-        return self.used()
+        return self._used()
 
     def fill_percent(self):
-        return self.used() / self.capacity_units if self.capacity_units else 1.0
+        return self._used() / self.capacity_units if self.capacity_units else 1.0
 
     def compact(self):
-        return Result("no_op")
+        return Result("already_compact")
 
     def add(self, item_id, n):
         moved = min(n, self.space_for(item_id))
@@ -165,10 +169,8 @@ class Slot:
     def capacity(self):
         return self._capacity
 
-    def count(self, item_id=None):
-        if item_id is None:
-            return sum(self.buffer.values())
-        return self.buffer.get(item_id, 0)
+    def count(self):
+        return sum(self.buffer.values())
 
     def stacks(self):
         return [Stack(item_id, n) for item_id, n in self.buffer.items() if n > 0]
@@ -180,66 +182,103 @@ class Slot:
         return self.connected
 
     def _resolve(self, target_id):
-        """(store, status) for target_id as seen from this machine's outpost."""
+        """(store, problem) for target_id as seen from this machine's outpost;
+        see World.local_store()."""
         return self.machine.world.local_store(target_id, self.machine.outpost)
 
-    def connect(self, target_id):
-        self.connect_log.append(target_id)
-        store, status = self._resolve(target_id)
+    def connect(self, name):
+        self.connect_log.append(name)
+        store, problem = self._resolve(name)
+        if problem == "not_found":
+            return Result("not_found")
         if store is None:
-            return Result(status)
-        self.connected = target_id
+            return Result("not_local")
+        self.connected = name
         return Result("ok")
 
     # -- input side --
     def take(self, item_id, count):
-        store, status = self._resolve(self.connected)
+        store, problem = self._resolve(self.connected)
+        if problem == "no_connection":
+            return Result("no_connection")
+        if problem == "not_found":
+            return Result("source_missing")
+        if problem == "not_local":
+            return Result("source_not_local")
         if store is None:
-            return Result(status or "not_connected")
-        room = self._capacity - self.machine.input_used()
+            return Result("inventory_not_local")
+        room = self._capacity - self.machine._input_used()
+        if room <= 0:
+            return Result("buffer_full")
         moved = store.remove(item_id, min(count, room))
         if moved > 0:
             self.buffer[item_id] = self.buffer.get(item_id, 0) + moved
-        return Result("ok" if moved == count else ("partial" if moved > 0 else "empty"), moved)
+        return Result("ok" if moved == count else ("partial" if moved > 0 else "source_empty"), moved)
 
-    def eject(self, target_id, item_id, count):
-        store, status = self._resolve(target_id)
+    def eject(self, destination, item_id, count):
+        store, problem = self._resolve(destination)
+        if problem == "not_found":
+            return Result("target_missing")
+        if problem == "not_local":
+            return Result("target_not_local")
         if store is None:
-            return Result(status)
+            return Result("inventory_not_local")
         n = min(count, self.buffer.get(item_id, 0))
-        moved = store.add(item_id, n)
-        if moved > 0:
-            self.buffer[item_id] -= moved
-            if self.buffer[item_id] <= 0:
-                del self.buffer[item_id]
+        if n <= 0:
+            return Result("source_empty")
+        moved = self._unload(store, item_id, n)
         return Result("ok" if moved == count else ("partial" if moved > 0 else "target_full"), moved)
 
     # -- output side --
     def send(self, item_id, count):
-        store, status = self._resolve(self.connected)
+        store, problem = self._resolve(self.connected)
+        if problem == "no_connection":
+            return Result("no_connection")
+        if problem == "not_found":
+            return Result("target_missing")
+        if problem == "not_local":
+            return Result("target_not_local")
         if store is None:
-            return Result(status or "not_connected")
+            return Result("inventory_not_local")
         n = min(count, self.buffer.get(item_id, 0))
+        if n <= 0:
+            return Result("source_empty")
+        moved = self._unload(store, item_id, n)
+        return Result("ok" if moved == count else ("partial" if moved > 0 else "target_full"), moved)
+
+    def _unload(self, store, item_id, n):
+        """Moves up to n units of item_id from the buffer into store; units moved."""
         moved = store.add(item_id, n)
         if moved > 0:
             self.buffer[item_id] -= moved
             if self.buffer[item_id] <= 0:
                 del self.buffer[item_id]
-        return Result("ok" if moved == count else ("partial" if moved > 0 else "target_full"), moved)
+        return moved
 
 
-class Machine:
+class Building:
+    """Placed building with item buffers behind its ports."""
     type_id = ""
 
-    def __init__(self, world, machine_id, outpost, recipes):
+    def __init__(self, world, building_id, outpost):
         self.world = world
-        self.id = machine_id
+        self.id = building_id
         self.outpost = outpost
+        self.input_buffer = {}
+        self.output_buffer = {}
+
+    def _input_used(self):
+        return sum(self.input_buffer.values())
+
+
+class Machine(Building):
+    """Recipe machine (Smelter, Fabricator)."""
+
+    def __init__(self, world, machine_id, outpost, recipes):
+        super().__init__(world, machine_id, outpost)
         self._recipes = list(recipes)
         self.recipe = ""
         self.running = False
-        self.input_buffer = {}
-        self.output_buffer = {}
 
     def list_recipes(self):
         return list(self._recipes)
@@ -250,7 +289,8 @@ class Machine:
     def get_recipe(self):
         return self.recipe
 
-    def set_recipe(self, recipe_id):
+    def set_recipe(self, recipe_or_id):
+        recipe_id = getattr(recipe_or_id, "id", recipe_or_id)
         if self.find_recipe(recipe_id) is None:
             return Result("unknown_recipe")
         self.recipe = recipe_id
@@ -262,9 +302,6 @@ class Machine:
 
     def is_running(self):
         return self.running
-
-    def input_used(self):
-        return sum(self.input_buffer.values())
 
 
 class Smelter(Machine):
@@ -298,7 +335,7 @@ class Fabricator(Machine):
         return self.input._capacity
 
     def get_stockpile_used(self):
-        return self.input_used()
+        return self._input_used()
 
     def get_output_count(self):
         return sum(self.output_buffer.values())
@@ -335,13 +372,20 @@ class Orders:
         return self.orders.get(order_id)
 
 
-class SupplyDock(Machine):
+class DockSlot:
+    def __init__(self, index, item_id, count):
+        self.index = index
+        self.item_id = item_id
+        self.count = count
+
+
+class SupplyDock(Building):
     """Supply Dock: input port loads cargo into `input_buffer`; set_order()
     rejects while cargo is present. Nothing ships on its own."""
     type_id = "supply_dock"
 
     def __init__(self, world, dock_id, outpost):
-        super().__init__(world, dock_id, outpost, [])
+        super().__init__(world, dock_id, outpost)
         self.input = Slot(self, self.input_buffer, 200)
         self.order = None
         self.enabled = False
@@ -354,7 +398,9 @@ class SupplyDock(Machine):
             return Result("cargo_present")
         order = self.world.services["orders"].get_order(order_id)
         if order is None:
-            return Result("not_found")
+            return Result("unknown_order")
+        if order.status == "completed":
+            return Result("completed")
         self.order = order
         return Result("ok")
 
@@ -369,13 +415,13 @@ class SupplyDock(Machine):
         return sum(self.input_buffer.values())
 
     def slots(self):
-        return [type("DockSlot", (), {"item_id": i, "count": n})() for i, n in self.input_buffer.items() if n > 0]
+        return [DockSlot(index, i, n) for index, (i, n) in enumerate(self.input_buffer.items()) if n > 0]
 
     def is_enabled(self):
         return self.enabled
 
-    def set_enabled(self, enabled):
-        self.enabled = enabled
+    def set_enabled(self, on):
+        self.enabled = on
         return Result("ok")
 
     def dispatch_rate(self):
@@ -413,8 +459,8 @@ class Notebook:
         self.data.pop(key, None)
         return Result("ok")
 
-    def keys(self):
-        return list(self.data.keys())
+    def keys(self, prefix=None):
+        return [key for key in self.data if prefix is None or key.startswith(prefix)]
 
 
 class Clock:
@@ -437,9 +483,10 @@ class Commander:
         return self.credits
 
 
-class CatalogueEntry:
+class ShopItem:
     def __init__(self, item_id, cost):
         self.id = item_id
+        self.name = item_id
         self.cost = cost
 
 
@@ -451,10 +498,10 @@ class Shop:
         self.prices = dict(prices or {})
 
     def get_catalogue(self):
-        return [CatalogueEntry(i, c) for i, c in self.prices.items()]
+        return [ShopItem(i, c) for i, c in self.prices.items()]
 
-    def buy(self, item_id, qty):
-        cost = self.prices.get(item_id, 0) * qty
+    def buy(self, item_id, quantity):
+        cost = self.prices.get(item_id, 0) * quantity
         commander = self._world.services["commander"]
         if commander.credits < cost:
             return Result("insufficient_credits")
@@ -470,8 +517,8 @@ class Console:
     def now(self):
         return self.time_of_day
 
-    def print(self, msg, level="info", **_kwargs):
-        self.lines.append((level, msg))
+    def print(self, message, level="info", **_kwargs):
+        self.lines.append((level, message))
 
     def text(self, level=None):
         return "\n".join(m for lv, m in self.lines if level is None or lv == level)
@@ -489,10 +536,10 @@ class OutpostNetwork:
 
 
 class Journal:
-    def surveyed_sites(self, _planet):
+    def surveyed_sites(self, planet_id):
         return []
 
-    def cataloged_creatures(self, _planet):
+    def cataloged_creatures(self, planet_id):
         return []
 
 
@@ -581,11 +628,13 @@ class World:
         return self.components.get(component_id)
 
     def local_store(self, target_id, outpost):
-        """(store, status) for a port at `outpost` connecting to target_id."""
+        """(store, problem) for a port at `outpost` reaching target_id. problem
+        is "ok" (store set) or one of "no_connection", "not_found", "not_local",
+        "inventory_not_local"; each port method maps it to its own status."""
         if target_id is None:
-            return None, "not_connected"
+            return None, "no_connection"
         if target_id == "inventory":
-            return (self.inventory, "ok") if outpost is self.home else (None, "not_local")
+            return (self.inventory, "ok") if outpost is self.home else (None, "inventory_not_local")
         store = self.components.get(target_id)
         if not isinstance(store, Store):
             return None, "not_found"
