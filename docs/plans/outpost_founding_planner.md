@@ -188,7 +188,13 @@ Archive (one dict per concern):
    is available (Shop catalogue / Fabricator / Inventory, read in game) instead of research ids;
    `biome_locks()` replaces a unique-clash check (roles sharing a unique machine just share it).
    Cheatsheet §11f, `tests/test_autoplay_outpost_roles.py`.
-2. `outpost_needs` (later-checklist + now-signals) + tests with fake outposts/tech.
+2. `outpost_needs` (later-checklist + now-signals) + tests with fake outposts/tech. **Done**: pure core over one
+   snapshot (`snapshot()` reads it); now = Bio Orders without the biome's chain, Biomass essence deficit; soon =
+   next phase's essence, ores out of every outpost's range, every Smelter/Fab host full, refined exotic taken with
+   nothing refining it; later = end-state checklist and locked roles. `plan_hosts()` merges onto existing
+   outposts (biome, cap with penalized machines, depot, site reach; home takes no penalized role), leftovers
+   form founding bundles. Life-form Earth orders are no need (drones catch them anywhere).
+   Cheatsheet §11h, `tests/test_autoplay_outpost_needs.py`.
 3. `outpost_sites` candidate generation + scoring + tests (fake biome map, sites, POIs); step-budget test.
 4. `outpost_plan` proposals + approval + designate path (no spending) → first live run, read-only proposals.
 4b. Scout rework: `autoplay.survey_requests` served first by the scout, `wrong_scanner` contacts recorded

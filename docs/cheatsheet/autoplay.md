@@ -213,3 +213,19 @@ Per pass at most one extractor. Urgent ones go while fewer than `MAX_OPEN_URGENT
 | `MAX_OPEN_URGENT` | 2 | urgent extractor jobs of ours open at once |
 | `MAX_TRIES_PER_PASS` | 5 | sites tried per pass when the game rejects one |
 | `MATCH_TILES` | 1 | a drill or ghost this many tiles or fewer from a site stands on it |
+
+## §11h Outpost needs (`autoplay/lib/outpost_needs.py`)
+
+Need model of the outpost founding planner (`docs/plans/outpost_founding_planner.md`). Pure core over one snapshot (`snapshot()` reads it in game: outposts with designated roles, building type counts, used/capacity and biome; available kits; open Bio Orders per biome from the first Bio Exchange; `required_essences()` of the first Biomass Mixer; Smelter ores; surveyed mineral and fluid sites; fluids the designated roles take; `outpost_mining.resource_assignment_range_m()`).
+
+A role is **covered** by an outpost that designates it or whose buildings make it up (`observed()`) in a biome the role allows. Family sub-roles without a biome lock (`refinery_`, `storage_`, `wildlife_`) are covered only by designation.
+
+| Urgency | Need |
+| :--- | :--- |
+| `now` | `bio_<biome>`: open Bio Orders of a biome no outpost has the chain for · `liquifier_<biome>`: Biomass phase minimum above the biomes making essence (deficit only; missing biomes with an outpost first, then `BIOMES` order) |
+| `soon` | `liquifier_<biome>`: the next missing biome (next phase) · `mining` (+ `ores`): wanted ores whose surveyed sites are all out of range of every outpost (an ore with no surveyed site is survey work, no need) · `smelter`/`factory`: every outpost hosting it is at or over its cap · `refinery_<fluid>`: a designated role takes the refined fluid, a raw deposit is surveyed, nothing refines it |
+| `later` | end state: `weather_<biome>` and `liquifier_<biome>` in every biome, `bio_<biome>` where the biome has a processor (not frozen) · any locked role (`unlocked()` False, `locked: True`) |
+
+Earth orders for life forms are no need (drones catch them anywhere). Only `now`/`soon` needs (`PROPOSE_URGENCIES`) reach `plan_hosts()`.
+
+**Merge before founding** (`plan_hosts()`, `host_check()`): each need tries existing outposts by free slots (most first), then id. A host must allow the role's biome, not cover it yet, and keep its counted buildings within `buildings_capacity` when the combined bundle has a penalized machine (`bundle_slots()`; exempt-only bundles may go over). Item roles add `drone_depot` when the host has none. Home takes no role with a penalized machine (its slots are reserved). `mining` needs a site of each of its ores within range; `refinery_<fluid>` needs a raw deposit of its fluid within `supply_tiers.NEAR_TILES` and never founds (`found: False`). A host that takes a need counts its new roles for the next need. Leftover needs form **founding bundles** (`found_bundles()`): one per biome lock, one for `mining` (ores joined), one for the other roles, each with `drone_depot` when an item role is in it.
