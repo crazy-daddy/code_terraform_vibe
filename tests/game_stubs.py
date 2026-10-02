@@ -166,12 +166,18 @@ class OutpostRef:
         return f"OutpostRef({self.id!r})"
 
 
-class Store:
-    """Home Inventory or a Warehouse: unit-capacity item store."""
+# Hot radioactive items: only a Lead Cask (or a shielded receiver) holds them.
+HOT_ITEMS = ("raw_uranium", "fuel_rod")
+
+
+class PassiveStore:
+    """Passive storage endpoint (`passive_storage` in the spec): unit-capacity
+    item store with transfer_to() to another store at the same outpost."""
 
     def __init__(self, world, store_id, type_id, outpost, capacity=1000, items=None):
         self._world = world
         self.id = store_id
+        self.name = store_id
         self.type_id = type_id
         self.outpost = outpost
         self.capacity_units = capacity
@@ -180,32 +186,43 @@ class Store:
     def count(self, item_id):
         return self.items.get(item_id, 0)
 
-    def stacks(self):
-        return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
-
     def _used(self):
         return sum(self.items.values())
 
-    def space_for(self, item_id):
+    def _room_for(self, item_id):
         return max(0, self.capacity_units - self._used())
 
     def capacity(self):
         return self.capacity_units
 
-    def materials(self):
-        return sorted(i for i, n in self.items.items() if n > 0)
-
-    def total(self):
-        return self._used()
-
     def fill_percent(self):
         return self._used() / self.capacity_units if self.capacity_units else 1.0
 
-    def compact(self):
-        return Result("already_compact")
+    def transfer_to(self, target, item_id, count):
+        if count <= 0:
+            return Result("no_op", requested=count)
+        store, problem = self._world.local_store(target, self.outpost)
+        if problem == "not_found":
+            return Result("target_missing", requested=count)
+        if store is None:
+            return Result("target_not_local", requested=count)
+        if store is self:
+            return Result("same_storage", requested=count)
+        if self.count(item_id) <= 0:
+            return Result("source_empty", requested=count)
+        hot = item_id in HOT_ITEMS
+        if hot and not isinstance(store, LeadCask):
+            return Result("hot_cargo_requires_cask", requested=count)
+        if not hot and isinstance(store, LeadCask):
+            return Result("cask_accepts_hot_only", requested=count)
+        if isinstance(store, LeadCask) and store.material() not in ("", item_id):
+            return Result("target_wrong_material", requested=count)
+        moved = store.add(item_id, min(count, self.count(item_id)))
+        self.remove(item_id, moved)
+        return Result("ok" if moved == count else ("partial" if moved > 0 else "target_full"), moved, requested=count)
 
     def add(self, item_id, n):
-        moved = min(n, self.space_for(item_id))
+        moved = min(n, self._room_for(item_id))
         if moved > 0:
             self.items[item_id] = self.items.get(item_id, 0) + moved
         return moved
@@ -217,6 +234,42 @@ class Store:
             if self.items[item_id] <= 0:
                 del self.items[item_id]
         return moved
+
+
+class Store(PassiveStore):
+    """Home Inventory or a Warehouse."""
+
+    def stacks(self):
+        return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
+
+    def space_for(self, item_id):
+        return self._room_for(item_id)
+
+    def materials(self):
+        return sorted(i for i, n in self.items.items() if n > 0)
+
+    def total(self):
+        return self._used()
+
+    def compact(self):
+        return Result("already_compact")
+
+
+class LeadCask(PassiveStore):
+    """Lead Cask: 100 units of one hot item; latches to the first item put in
+    and unlatches when empty. add() refuses other or non-hot items."""
+    type_id = "lead_cask"
+
+    def __init__(self, world, cask_id, outpost, material="", count=0, capacity=100):
+        super().__init__(world, cask_id, self.type_id, outpost, capacity, {material: count} if material and count else None)
+
+    def material(self):
+        return next((i for i, n in self.items.items() if n > 0), "")
+
+    def _room_for(self, item_id):
+        if item_id not in HOT_ITEMS or self.material() not in ("", item_id):
+            return 0
+        return super()._room_for(item_id)
 
 
 class Slot:
@@ -1459,6 +1512,9 @@ class World:
         self.components[warehouse_id] = store
         return store
 
+    def add_lead_cask(self, cask_id, outpost, material="", count=0):
+        return self._place(LeadCask(self, cask_id, outpost, material, count))
+
     def add_smelter(self, smelter_id, outpost, recipes=None):
         machine = Smelter(self, smelter_id, outpost, recipes)
         self.components[smelter_id] = machine
@@ -1532,7 +1588,7 @@ class World:
         if target_id == "inventory":
             return (self.inventory, "ok") if outpost is self.home else (None, "inventory_not_local")
         store = self.components.get(target_id)
-        if store is None or not isinstance(store, Store):
+        if store is None or not isinstance(store, PassiveStore):
             return None, "not_found"
         if store.outpost is not outpost:
             return None, "not_local"
@@ -1544,6 +1600,6 @@ class World:
         if outpost is None or outpost is self.home:
             total += self.inventory.count(item_id)
         for component in self.components.values():
-            if isinstance(component, Store) and (outpost is None or component.outpost is outpost):
+            if isinstance(component, PassiveStore) and (outpost is None or component.outpost is outpost):
                 total += component.count(item_id)
         return total

@@ -22,7 +22,8 @@ SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_spec.
 
 # stub class -> spec entries ("api.<component>" or "types.<Type>") it fakes.
 COMPONENTS = {
-    "Store": ["api.warehouse", "api.inventory"],
+    "Store": ["api.warehouse", "api.inventory", "api.passive_storage"],
+    "LeadCask": ["api.lead_cask", "api.passive_storage"],
     "Smelter": ["api.smelter"],
     "Fabricator": ["api.fabricator"],
     "SupplyDock": ["api.supply_dock"],
@@ -77,10 +78,11 @@ VALUE_TYPES = {
     "HabitatInsight": ["types.HabitatInsight"],
 }
 # Base classes and the world itself: checked through their subclasses, or not API.
-NOT_API = {"World", "Building", "Machine", "MobileUnit"}
+NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore"}
 # Public test-only methods per stub class.
 TEST_HELPERS = {
     "Store": {"add", "remove"},
+    "LeadCask": {"add", "remove"},
     "Console": {"text"},
     "Comms": {"publish"},
 }
@@ -261,6 +263,20 @@ class SharedFakeTests(unittest.TestCase):
         message_id = comms.send("jobs", "a").message_id
         self.assertEqual(comms.receive("jobs").packet.id, message_id)
         self.assertEqual(comms.receive("jobs").status, "empty")
+
+    def test_lead_cask_transfers(self):
+        w = self.world
+        cask = w.add_lead_cask("lead_cask_1", w.home, "raw_uranium", 10)
+        other = w.add_lead_cask("lead_cask_2", w.home, "fuel_rod", 1)
+        w.add_warehouse("warehouse_1", w.home, {"iron_ore": 5})
+        self.assertEqual(cask.capacity(), 100)
+        self.assertEqual(cask.transfer_to("warehouse_1", "raw_uranium", 4).status, "hot_cargo_requires_cask")
+        self.assertEqual(w.components["warehouse_1"].transfer_to("lead_cask_1", "iron_ore", 1).status, "cask_accepts_hot_only")
+        self.assertEqual(cask.transfer_to("lead_cask_2", "raw_uranium", 4).status, "target_wrong_material")
+        other.remove("fuel_rod", 1)
+        result = cask.transfer_to("lead_cask_2", "raw_uranium", 4)
+        self.assertEqual((result.status, result.moved, other.material()), ("ok", 4, "raw_uranium"))
+        self.assertEqual(cask.count("raw_uranium"), 6)
 
 
 if __name__ == "__main__":

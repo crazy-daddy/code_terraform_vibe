@@ -246,10 +246,14 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   `DroneBattery.level()` and `BatteryBank.get_level()` are Wh. `test_turbine_commit.py`'s
   private `_Tank.fill_pct()` returns a percent (90.0); `lib/turbine_commit.py` accepts both,
   so step 5 can pass 0.9 to `Tank` with the same result.
-- Not added: a shared Lead Cask (`api.lead_cask` has no transfer method; the private
-  `_Cask.transfer_to` in tests has no spec entry, so step 5 should check what lib calls first),
-  item `Slot` variants with `eject` side logs (`test_habitat.py`'s `_Port`), and `_Power`
-  stand-ins for `lib/power.py` helpers (those fake our own module, not the game).
+- Shared methods sit in their own spec entries: `transfer_to` of Warehouse, Storage Bin and
+  Lead Cask is listed once under `api.passive_storage`, not under each component. Map a fake to
+  that entry too (`Store` and `LeadCask` do). The fakes share a `PassiveStore` base with
+  `transfer_to` (locality, `same_storage`, hot-cargo rules via `HOT_ITEMS`); `LeadCask` latches
+  to one hot item, 100 units; builder `add_lead_cask`. `World.local_store()` resolves any
+  `PassiveStore`, so machine ports can take from a cask.
+- Not added: item `Slot` variants with `eject` side logs (`test_habitat.py`'s `_Port`), and
+  `_Power` stand-ins for `lib/power.py` helpers (those fake our own module, not the game).
 - `harness._reset_module_state` needed nothing: all new state lives on the per-test `World`.
 - The contract test maps every new class (`COMPONENTS` / `VALUE_TYPES`, `MobileUnit` in
   `NOT_API`, `Comms.publish` in `TEST_HELPERS`) and adds `SharedFakeTests` (spec defaults,
