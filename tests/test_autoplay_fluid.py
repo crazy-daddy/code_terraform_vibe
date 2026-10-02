@@ -133,6 +133,10 @@ class RolesTests(harness.StubTestCase):
         self.assertEqual(presets["condenser"], {"in": ["steam"], "out": ["water"]})
         self.assertEqual(presets["refinery_quicksilver"], {"in": ["raw_quicksilver"], "out": ["quicksilver"]})
         self.assertEqual(presets["wildlife_ammonia"], {"in": ["ammonia"]})
+        self.assertEqual(presets["liquifier_deep"], {"out": ["deep_essence"]})
+        self.assertEqual(presets["storage_steam"], {"in": ["steam"], "out": ["steam"]})
+        self.assertEqual(len(presets["biomass_mixer"]["in"]), len(roles.BIOMES))
+        self.assertTrue(all(fluid in roles.FLUIDS for preset in presets.values() for side in preset.values() for fluid in side))
 
     def test_home_always_farms(self):
         presets = {"farm": ["water"], "wildlife": ["ammonia"]}

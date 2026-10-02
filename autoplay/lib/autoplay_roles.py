@@ -26,18 +26,32 @@ DEFAULT_ROLE_PRESETS = {
     "farm": {"in": ["water"]},                        # Sprinkler, Plant Terraformer (home field only)
     "condenser": {"in": ["steam"], "out": ["water"]},   # Steam Condenser
     "reactor": {"in": ["water"]},                     # Reactor coolant
+    "drone_service": {"in": ["oil"]},                 # Drone Service Station
+    "bio_caster": {"in": ["steam", "water"]},         # Bio Caster heat and cooling
+    "biomass_mixer": {"in": ["frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence", "deep_essence"]},
     "refinery": {"in": ["raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver"],
                  "out": ["sulfur_gas", "chlorine", "cryofluid", "quicksilver"]},   # Refiner recipes
     "wildlife": {"in": ["ammonia", "swamp_gas", "sulfur_gas", "chlorine", "brine", "cryofluid", "quicksilver"]},   # Habitat gas_in / liquid_in
 }
 HOME_ROLES = ["farm"]
+BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
+# Every fluid id (docs/database/fluids.md), for the storage_<fluid> sub-roles.
+FLUIDS = ("steam", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence",
+          "deep_essence", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine", "brine",
+          "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver")
 
 # One-fluid sub-roles, so exotics can be spread over several outposts:
-# refinery_<refined fluid> refines its raw feed, wildlife_<fluid> takes one Habitat fluid.
+# refinery_<refined fluid> refines its raw feed, wildlife_<fluid> takes one
+# Habitat fluid. liquifier_<biome>: an Essence Liquifier makes its outpost
+# biome's essence. storage_<fluid>: tanks that take and give back one fluid.
 for _raw in DEFAULT_ROLE_PRESETS["refinery"]["in"]:
     DEFAULT_ROLE_PRESETS["refinery_" + _raw[len("raw_"):]] = {"in": [_raw], "out": [_raw[len("raw_"):]]}
 for _fluid in DEFAULT_ROLE_PRESETS["wildlife"]["in"]:
     DEFAULT_ROLE_PRESETS["wildlife_" + _fluid] = {"in": [_fluid]}
+for _biome in BIOMES:
+    DEFAULT_ROLE_PRESETS["liquifier_" + _biome] = {"out": [_biome + "_essence"]}
+for _fluid in FLUIDS:
+    DEFAULT_ROLE_PRESETS["storage_" + _fluid] = {"in": [_fluid], "out": [_fluid]}
 
 
 def presets():
