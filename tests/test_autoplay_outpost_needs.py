@@ -114,10 +114,23 @@ class HostTests(unittest.TestCase):
         need = on._need("weather_deep", "soon", "test")
         self.assertEqual(on.host_check(need, full, snap([full]))[0], ["weather_deep"])
 
-    def test_home_takes_no_penalized_role(self):
+    def test_home_reserved_once_wildlife_is_unlocked(self):
         need = on._need("liquifier_frozen", "now", "test")
-        self.assertEqual(on.host_check(need, HOME, snap([HOME]))[1], "home slots reserved")
-        self.assertEqual(on.host_check(on._need("weather_frozen", "now", "t"), HOME, snap([HOME]))[0], ["weather_frozen"])
+        early = dict(HOME, used=5)
+        self.assertEqual(on.host_check(need, early, snap([early]))[0], ["liquifier_frozen", "drone_depot"])
+        late = snap([early], kits=ALL_KITS | {"habitat"})
+        self.assertEqual(on.host_check(need, early, late)[1], "home reserved for farm and wildlife")
+        self.assertEqual(on.host_check(on._need("weather_frozen", "now", "t"), early, late)[1],
+                         "home reserved for farm and wildlife")
+        housed = dict(early, types={"habitat": 1})
+        self.assertTrue(on.home_reserved(housed, set()))
+
+    def test_home_counts_warehouses_too(self):
+        home = dict(HOME, used=20, types={})
+        s = snap([home], stock={"smelter": ["a", "b", "c", "d", "e", "f"]})
+        # Smelter + Drone Depot + 2 Warehouses (6 slots) = 4: 24 of 25
+        self.assertEqual(on.host_check(on._need("smelter", "soon", "t"), home, s)[2], 4)
+        self.assertIsNone(on.host_check(on._need("smelter", "soon", "t"), dict(home, used=22), s)[0])
 
     def test_refinery_goes_only_near_raw_site_and_never_founds(self):
         far = outpost("outpost_1", "deep", 600, 600)
@@ -167,7 +180,7 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 0, 5), (5, 1, 3))   # 12 slots
         self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 10, 5), (3, 1, 1))
         self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 0, 15), (3, 1, 1))
-        self.assertEqual(roles.site_slots(["factory"], self.STOCK, 0, 5, home=True), (1, 1, 0))
+        self.assertEqual(roles.site_slots(["feed"], {}, 0, 15), (3, 1, 2))   # 30 life forms + Forage fallback
         self.assertEqual(roles.site_slots(["mining"], {"mining": ["cobalt"]}, 0, 5), (1, 0, 1))
 
     def test_merge_counts_warehouses_against_the_cap(self):
@@ -180,6 +193,20 @@ class WarehouseSlotTests(unittest.TestCase):
         added, reason, _extra = on.host_check(need, host(17), s)
         self.assertIsNone(added)
         self.assertIn("2 new Warehouse(s)", reason or "")
+
+    def test_bio_slots_match_bio_and_reagent_code(self):
+        import bio
+        import outpost_reagents
+        self.assertEqual(roles.BIO_STOCK_SLOTS,
+                         bio.MAX_LOCAL_BIO_ARTIFACTS + len(outpost_reagents.DEFAULT_REAGENT_STOCK_TARGETS))
+        self.assertEqual(roles.stock_slots(["bio_deep"], {}), roles.BIO_STOCK_SLOTS)
+
+    def test_wildlife_stock_from_archive_entries(self):
+        feed = {"feed_maker_1": {"recipes": {"craft_a": {"forage": 100, "frost_moth": 2}, "craft_b": {"forage": 100, "ice_eel": 1}}}}
+        status = {"habitat_1": {"feed_item": "feed_a"}, "habitat_2": {"feed_item": "feed_a"}, "habitat_3": {}}
+        self.assertEqual(on.wildlife_stock(feed, status),
+                         {"feed": ["forage", "frost_moth", "ice_eel"], "wildlife": ["feed_a"]})
+        self.assertEqual(on.wildlife_stock(None, []), {})
 
     def test_found_bundle_reports_buildings(self):
         s = snap([HOME], stock=self.STOCK, per_warehouse=5)

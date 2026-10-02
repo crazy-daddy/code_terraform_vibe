@@ -36,8 +36,11 @@
 # plan_hosts() merges needs onto existing outposts first (biome lock, slots
 # under the cap when the bundle has a penalized machine, a Drone Depot added
 # for item roles, new Warehouses for the added stock counted against the cap
-# (autoplay_roles.site_slots()), the role's site within reach); home takes no penalized
-# role (its slots are reserved). Leftover found needs group into founding
+# (autoplay_roles.site_slots(), home included), the role's site within
+# reach). Home hosts other roles only until wildlife is unlocked (Habitat kit
+# available, a Habitat at home, or wildlife designated there); from then on
+# its slots are reserved for HOME_RESERVED_ROLES (farm, Plant Terraformers,
+# Feed Makers, Habitats: Forage comes from the home field). Leftover found needs group into founding
 # bundles: one per biome lock, one for mining, one for the rest.
 # refinery_<fluid> never founds (found False): it goes onto an outpost with
 # a raw deposit of its fluid within supply_tiers.NEAR_TILES.
@@ -50,7 +53,8 @@ from infra_topology import surveyed_sites
 from outpost_mining import resource_assignment_range_m
 import autoplay_roles
 from autoplay_roles import BIOMES, BIO_PROCESSORS, role_flag, biome_ok, unlocked, bundle_slots, observed, observed_roles
-from autoplay_roles import site_slots, warehouse_slots, WAREHOUSE_SLOTS
+from autoplay_roles import site_slots, warehouse_slots, WAREHOUSE_SLOTS, HOME_RESERVED_ROLES
+from archive import archive
 
 URGENCIES = ("now", "soon", "later")
 PROPOSE_URGENCIES = ("now", "soon")
@@ -210,6 +214,17 @@ def _site_ok(need, entry, snap):
     return True
 
 
+def reserved_role(role):
+    """True for roles home keeps its slots for (HOME_RESERVED_ROLES, wildlife_<fluid> included)."""
+    return role in HOME_RESERVED_ROLES or role.startswith("wildlife_")
+
+
+def home_reserved(entry, kits):
+    """True once wildlife is unlocked, a Habitat stands at home or home designates wildlife."""
+    return unlocked("wildlife", kits) or entry.get("types", {}).get("habitat", 0) > 0 \
+        or any(reserved_role(name) and name not in ("farm", "plants") for name in entry.get("roles", []))
+
+
 def host_check(need, entry, snap):
     """
     (roles to add, None, counted buildings added) when `entry` can take the
@@ -223,14 +238,13 @@ def host_check(need, entry, snap):
         return (None, "biome " + str(entry.get("biome")), 0)
     current = _current_roles(entry)
     added = _with_depot([role], entry)
-    home = bool(entry.get("home"))
-    if home and bundle_slots(added)[1] > 0:
-        return (None, "home slots reserved", 0)
+    if entry.get("home") and home_reserved(entry, snap.get("kits", set())) and not reserved_role(role):
+        return (None, "home reserved for farm and wildlife", 0)
     stock = _stock(snap, need)
     per = snap.get("per_warehouse", 5)
     have_slots, have_buildings = warehouse_slots(entry.get("types", {}))
-    before = site_slots(current, stock, have_slots, per, home)
-    after = site_slots(current + added, stock, have_slots, per, home)
+    before = site_slots(current, stock, have_slots, per)
+    after = site_slots(current + added, stock, have_slots, per)
     extra = after[0] - before[0]
     used = max(entry.get("used", 0), before[0] + have_buildings)
     if after[1] and used + extra > entry.get("capacity", 0):
@@ -412,6 +426,29 @@ def read_stock_items(smelter_recipes, fabricator_recipes):
     if smelted and fabricator_recipes:
         out["factory"] = sorted(set([item_id for recipe in fabricator_recipes
                                      for item_id in (getattr(recipe, "inputs", None) or {}) if item_id in smelted]))
+    out.update(wildlife_stock(archive.get("wildlife.feed", {}), archive.get("wildlife.status", {})))
+    return out
+
+
+def wildlife_stock(feed, status):
+    """
+    {"feed": inputs of every Feed Maker recipe (wildlife.feed), "wildlife":
+    feed items of the housed species (wildlife.status)}; a role is left out
+    when its entry is empty or malformed.
+    """
+    out = {}
+    inputs = set()
+    for entry in (feed.values() if isinstance(feed, dict) else []):
+        recipes = entry.get("recipes", {}) if isinstance(entry, dict) else {}
+        for needs in (list(recipes.values()) if isinstance(recipes, dict) else []):
+            if isinstance(needs, dict):
+                inputs.update(needs.keys())
+    if inputs:
+        out["feed"] = sorted(inputs)
+    feeds = set([entry.get("feed_item") for entry in (status.values() if isinstance(status, dict) else [])
+                 if isinstance(entry, dict) and entry.get("feed_item")])
+    if feeds:
+        out["wildlife"] = sorted(feeds)
     return out
 
 

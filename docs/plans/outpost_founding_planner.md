@@ -49,6 +49,7 @@ Decisions taken with the user (2026-10-02):
 - Max one per outpost (not required at every outpost): `bio_collector`, `bio_lab`, `bio_exchange`, the
   biome's processor, `weather_station`.
 - Inventory works only at home; remote outposts need Warehouses + haulers. Harvesting field only at home.
+  Inventory holds 60 slots × 20 units at most, so it is no bulk store: home needs Warehouses too.
 
 ## Role catalog (unify naming)
 One catalog, extending `DEFAULT_ROLE_PRESETS` in [autoplay_roles.py](autoplay/lib/autoplay_roles.py) (same
@@ -163,14 +164,21 @@ Archive (one dict per concern):
 - **Slot budget:** an outpost with any `penalized` role keeps its counted buildings (incl. Warehouses,
   tanks, Depots, Weather Station) ≤ capacity: never plan over the cap there. Demand is local, so storage
   stays at the outpost that uses it.
-- **Warehouses come with the roles** (remote outposts have no Inventory): one 2000-unit slot per stocked item.
+- **Warehouses come with the roles**, home included: one 2000-unit slot per stocked item.
   Smelter = 1 slot per ore + 1 per ingot (+ byproducts) of its recipes; Fabricator = 1 slot per ingot its
-  recipes take + `FACTORY_BUFFER_SLOTS` for intermediates and finished goods; mining = 1 per mined ore; bio,
-  liquifier and wildlife roles a small guess (tune live). Items shared by two roles at one outpost take one
+  recipes take + `FACTORY_BUFFER_SLOTS` for intermediates and finished goods; mining = 1 per mined ore;
+  bio chain = 4 samples (`bio.MAX_LOCAL_BIO_ARTIFACTS`) + 5 reagents (`outpost_reagents`); Feed Makers = the
+  inputs of their recipes (Forage + life forms, up to 30, from `wildlife.feed`); Habitats = one feed per housed
+  species (`wildlife.status`, 16 planned); liquifier a small guess (tune live). Items shared by two roles at one
   slot (a smelter + mining outpost stocks each ore once). The slots beyond the Warehouses already there become
   new Warehouses (Large Warehouse, 15 slots, once its kit is available, else 5), and those count against the
   cap like any other building (`autoplay_roles.site_slots()`). Founding bundles report their building count
   incl. Warehouses and flag `over_cap`; phase 3 site scoring and phase 4 proposals use that count.
+- **Home is reserved late game.** Wildlife lives at home (Forage comes from the home field, so no feed
+  hauling): all Habitats, Feed Makers, Plant Terraformers and the farm, plus their Warehouses, fill home's
+  slots. Early on home may host other roles (Smelter, Fabricator, ...) within its cap. Once wildlife is unlocked
+  (Habitat kit available, a Habitat at home, or wildlife designated there) home takes only
+  `HOME_RESERVED_ROLES` (farm, plants, feed, wildlife). Roles home took early become relocation candidates then.
 - **One `storage` outpost at most**, for large stockpiles nobody uses locally yet: life-form stockpiles,
   stray tar until a Refiner takes it, etc. It holds only exempt buildings, so it may go over the cap. Need
   signal: such stock has no home elsewhere (home slot budget §1l-2, eviction holds). No Supply Dock there: docks
@@ -200,7 +208,7 @@ Archive (one dict per concern):
    snapshot (`snapshot()` reads it); now = Bio Orders without the biome's chain, Biomass essence deficit; soon =
    next phase's essence, ores out of every outpost's range, every Smelter/Fab host full, refined exotic taken with
    nothing refining it; later = end-state checklist and locked roles. `plan_hosts()` merges onto existing
-   outposts (biome, cap with penalized machines, depot, site reach; home takes no penalized role), leftovers
+   outposts (biome, cap with penalized machines, depot, site reach; home only until wildlife is unlocked), leftovers
    form founding bundles. Life-form Earth orders are no need (drones catch them anywhere).
    Cheatsheet §11h, `tests/test_autoplay_outpost_needs.py`.
 3. `outpost_sites` candidate generation + scoring + tests (fake biome map, sites, POIs); step-budget test.

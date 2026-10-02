@@ -183,17 +183,21 @@ Not in the catalog (`farm`, operator roles): fluids only, never observed or miss
 | `biome_ok()` / `biome_locks()` | biome lock check; more than one lock in a designation = no outpost can host it |
 | `bundle_slots(roles, warehouses=True)` | `(counted, penalized)`: one slot per distinct group; penalized = groups with a `PENALIZED_TYPES` machine; `warehouses=False` leaves the Warehouse group out |
 | `stock_slots(roles, stock)` | Warehouse slots the roles stock: distinct items of their lists in `stock` (`{role: [item, ...]}`; shared items once), fallback slots for item roles without a list, `FACTORY_BUFFER_SLOTS` for `factory`; `storage` 0 (sized by what it holds) |
-| `site_slots(roles, stock, have_slots, per_warehouse, home)` | `(counted, penalized, warehouses)`: machine groups + Warehouses for the stock beyond `have_slots`; home 0 Warehouses (Inventory) |
+| `site_slots(roles, stock, have_slots, per_warehouse)` | `(counted, penalized, warehouses)`: machine groups + Warehouses for the stock beyond `have_slots`; home too (Inventory: 60 slots × 20 at most, no bulk store) |
 | `warehouse_slots(type_counts)` | `(slots, buildings)` of the Warehouses standing at an outpost |
 
-**Warehouse stock** (remote outposts have no Inventory; one 2000-unit slot per item). Lists come from in-game recipes (`outpost_needs.read_stock_items()`): `smelter` = ores, outputs and byproducts of the Smelter recipes; `factory` = Smelter outputs the Fabricator recipes take; `mining` = the need's ores.
+**Warehouse stock** (every outpost, home included; one 2000-unit slot per item). Lists come from in-game data (`outpost_needs.read_stock_items()`): `smelter` = ores, outputs and byproducts of the Smelter recipes; `factory` = Smelter outputs the Fabricator recipes take; `mining` = the need's ores; `feed` = inputs of the Feed Maker recipes (`wildlife.feed`); `wildlife` = feed items of the housed species (`wildlife.status`).
 
 | Constant | Value | Meaning |
 | :--- | :--- | :--- |
 | `WAREHOUSE_SLOTS` | warehouse 5, large_warehouse 15 | slots per building; Large once its kit is available |
 | `FACTORY_BUFFER_SLOTS` | 10 | factory slots on top of its ingots (intermediates, finished goods) |
-| `STOCK_FALLBACK_SLOTS` | smelter 14 (`SMELTER_FALLBACK_SLOTS`), factory 7, mining 1 | a role with no readable list |
-| `STOCK_PREFIX_SLOTS` | `bio_` 2, `liquifier_` 2, `wildlife` 2 | samples, life forms, feed (guess, tune live) |
+| `STOCK_FALLBACK_SLOTS` | smelter 14 (`SMELTER_FALLBACK_SLOTS`), factory 7, mining 1, feed 30 (`FEED_FALLBACK_SLOTS`), wildlife 16 (`WILDLIFE_FALLBACK_SLOTS`) | a role with no readable list |
+| `BIO_STOCK_SLOTS` | 9 | `bio.MAX_LOCAL_BIO_ARTIFACTS` 4 + 5 `outpost_reagents` reagents (a test checks both) |
+| `STOCK_PREFIX_SLOTS` | `bio_` `BIO_STOCK_SLOTS`, `liquifier_` 2, `wildlife_` 1 | liquifier: life-form buffer (guess, tune live) |
+| `HOME_RESERVED_ROLES` | farm, plants, feed, wildlife | home keeps its slots for these once wildlife is unlocked (§11h) |
+
+Catalog roles for the home end state: `feed` (feed_maker, items), `plants` (plant_terraformer).
 
 **Overcrowding** (simworker machine table): counted buildings over the outpost cap (`buildings_capacity`) cost 10% each (floor 20%), but only `PENALIZED_TYPES` (production machines, bio chain, generators, Supply Dock, charging station, drone service station, lightning rod) slow down. Warehouses, tanks, batteries, Drone Depots, Lead Cask and Weather Station count but are exempt. Field structures, sensors and vehicles do not count.
 
@@ -240,4 +244,4 @@ A role is **covered** by an outpost that designates it or whose buildings make i
 
 Earth orders for life forms are no need (drones catch them anywhere). Only `now`/`soon` needs (`PROPOSE_URGENCIES`) reach `plan_hosts()`.
 
-**Merge before founding** (`plan_hosts()`, `host_check()`): each need tries existing outposts by free slots (most first), then id. A host must allow the role's biome, not cover it yet, and keep its counted buildings within `buildings_capacity` when the combined bundle has a penalized machine (`site_slots()`, new Warehouses for the added stock included; exempt-only bundles may go over). Item roles add `drone_depot` when the host has none. Home takes no role with a penalized machine (its slots are reserved). `mining` needs a site of each of its ores within range; `refinery_<fluid>` needs a raw deposit of its fluid within `supply_tiers.NEAR_TILES` and never founds (`found: False`). A host that takes a need counts its new roles for the next need. Leftover needs form **founding bundles** (`found_bundles()`): one per biome lock, one for `mining` (ores joined), one for the other roles, each with `drone_depot` when an item role is in it, `slots` (`site_slots()` on an empty outpost) and `over_cap` (a penalized bundle above `FOUNDED_CAPACITY` = 20 buildings).
+**Merge before founding** (`plan_hosts()`, `host_check()`): each need tries existing outposts by free slots (most first), then id. A host must allow the role's biome, not cover it yet, and keep its counted buildings within `buildings_capacity` when the combined bundle has a penalized machine (`site_slots()`, new Warehouses for the added stock included; exempt-only bundles may go over). Item roles add `drone_depot` when the host has none. Home counts Warehouses like any outpost. It hosts other roles only until wildlife is unlocked (`home_reserved()`: Habitat kit available, a Habitat at home, or a wildlife/feed role designated there); from then on only `HOME_RESERVED_ROLES` and `wildlife_<fluid>` (wildlife lives at home: Forage comes from the home field). `mining` needs a site of each of its ores within range; `refinery_<fluid>` needs a raw deposit of its fluid within `supply_tiers.NEAR_TILES` and never founds (`found: False`). A host that takes a need counts its new roles for the next need. Leftover needs form **founding bundles** (`found_bundles()`): one per biome lock, one for `mining` (ores joined), one for the other roles, each with `drone_depot` when an item role is in it, `slots` (`site_slots()` on an empty outpost) and `over_cap` (a penalized bundle above `FOUNDED_CAPACITY` = 20 buildings).

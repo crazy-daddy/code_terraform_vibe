@@ -97,6 +97,8 @@ ROLE_CATALOG = {
     "biomass_mixer": {"buildings": ["biomass_mixer"]},
     "refinery": {"buildings": ["refiner"]},
     "wildlife": {"buildings": ["habitat"], "items": True},
+    "feed": {"buildings": ["feed_maker"], "items": True},
+    "plants": {"buildings": ["plant_terraformer"]},
     "bio_caster": {"buildings": ["bio_caster"], "biome": "volcanic", "unique": True},
 }
 for _biome in BIOMES:
@@ -122,16 +124,25 @@ PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab
                    "steam_condenser", "oil_generator", "solar_generator", "oxygen_generator", "temp_heater",
                    "pressure_generator", "garbage_disposal", "lightning_rod", "charging_station",
                    "drone_service_station", "supply_dock")
-# Warehouse stock per role off home (remote outposts have no Inventory): one
-# 2000-unit slot per stocked item. stock_items() fills smelter / factory /
-# mining item lists from in-game recipes and sites; roles here without a
-# list use STOCK_FALLBACK_SLOTS. FACTORY_BUFFER_SLOTS = room on top of the
-# factory's ingots for intermediates and finished goods.
+# Warehouse stock per role, home included (Inventory holds 60 slots x 20
+# units at most: no bulk storage): one 2000-unit slot per stocked item.
+# outpost_needs.read_stock_items() fills smelter / factory / mining / feed /
+# wildlife item lists from in-game data; roles without a list use the
+# fallbacks. FACTORY_BUFFER_SLOTS = room on top of the factory's ingots for
+# intermediates and finished goods.
 WAREHOUSE_SLOTS = {"warehouse": 5, "large_warehouse": 15}
 FACTORY_BUFFER_SLOTS = 10
 SMELTER_FALLBACK_SLOTS = 14   # no Smelter recipe readable yet: 7 ores + 7 ingots
-STOCK_FALLBACK_SLOTS = {"smelter": SMELTER_FALLBACK_SLOTS, "factory": 7, "mining": 1}
-STOCK_PREFIX_SLOTS = {"bio_": 2, "liquifier_": 2, "wildlife": 2}   # samples, life forms, feed (guess, tune live)
+# bio chain: bio.MAX_LOCAL_BIO_ARTIFACTS samples + one slot per outpost_reagents
+# reagent (tests/test_autoplay_outpost_needs.py checks both).
+BIO_STOCK_SLOTS = 4 + 5
+FEED_FALLBACK_SLOTS = 30       # life forms the Feed Maker recipes take (+ Forage), wildlife.feed unreadable
+WILDLIFE_FALLBACK_SLOTS = 16   # one feed per housed species, 16 Habitats planned (§1l)
+STOCK_FALLBACK_SLOTS = {"smelter": SMELTER_FALLBACK_SLOTS, "factory": 7, "mining": 1,
+                        "feed": FEED_FALLBACK_SLOTS, "wildlife": WILDLIFE_FALLBACK_SLOTS}
+STOCK_PREFIX_SLOTS = {"bio_": BIO_STOCK_SLOTS, "liquifier_": 2, "wildlife_": 1}   # liquifier: life-form buffer (guess, tune live)
+# Roles home keeps its slots for once wildlife is unlocked (outpost_needs.home_reserved()).
+HOME_RESERVED_ROLES = ("farm", "plants", "feed", "wildlife")
 
 # Kit item ids that differ from the building's type_id.
 KIT_IDS = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium",
@@ -274,16 +285,13 @@ def stock_slots(roles, stock):
     return len(items) + extra
 
 
-def site_slots(roles, stock, have_slots=0, per_warehouse=5, home=False):
+def site_slots(roles, stock, have_slots=0, per_warehouse=5):
     """
     (counted, penalized, warehouses) a designation needs at one outpost:
     its machine groups (Warehouse group left out) plus the Warehouses its
-    stock_slots() need beyond the have_slots already standing there. Home
-    stocks in Inventory: no Warehouses.
+    stock_slots() need beyond the have_slots already standing there.
     """
     counted, penalized = bundle_slots(roles, warehouses=False)
-    if home:
-        return (counted, penalized, 0)
     deficit = max(0, stock_slots(roles, stock) - have_slots)
     count = (deficit + per_warehouse - 1) // per_warehouse
     return (counted + count, penalized, count)
