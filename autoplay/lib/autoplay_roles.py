@@ -122,6 +122,17 @@ PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab
                    "steam_condenser", "oil_generator", "solar_generator", "oxygen_generator", "temp_heater",
                    "pressure_generator", "garbage_disposal", "lightning_rod", "charging_station",
                    "drone_service_station", "supply_dock")
+# Warehouse stock per role off home (remote outposts have no Inventory): one
+# 2000-unit slot per stocked item. stock_items() fills smelter / factory /
+# mining item lists from in-game recipes and sites; roles here without a
+# list use STOCK_FALLBACK_SLOTS. FACTORY_BUFFER_SLOTS = room on top of the
+# factory's ingots for intermediates and finished goods.
+WAREHOUSE_SLOTS = {"warehouse": 5, "large_warehouse": 15}
+FACTORY_BUFFER_SLOTS = 10
+SMELTER_FALLBACK_SLOTS = 14   # no Smelter recipe readable yet: 7 ores + 7 ingots
+STOCK_FALLBACK_SLOTS = {"smelter": SMELTER_FALLBACK_SLOTS, "factory": 7, "mining": 1}
+STOCK_PREFIX_SLOTS = {"bio_": 2, "liquifier_": 2, "wildlife": 2}   # samples, life forms, feed (guess, tune live)
+
 # Kit item ids that differ from the building's type_id.
 KIT_IDS = {"drone_station": "drone_station_kit", "drone_station_medium": "drone_station_kit_medium",
            "drone_station_large": "drone_station_kit_large", "drone_service_station": "drone_service_station_kit"}
@@ -215,19 +226,73 @@ def biome_ok(name, biome):
     return lock is None or lock == biome
 
 
-def bundle_slots(roles):
+def bundle_slots(roles, warehouses=True):
     """
     (counted, penalized) building slots a designation needs: one slot per
     building group across its catalog roles, a type shared by two roles
     counted once; penalized = how many of them lose efficiency over the cap.
+    warehouses=False leaves the Warehouse group out (site_slots() sizes it).
     """
     seen = []
     for name in role_list(roles):
         for group in _groups(name):
-            if group not in seen:
+            if group not in seen and (warehouses or group != WAREHOUSES):
                 seen.append(group)
     penalized = len([group for group in seen if any(type_id in PENALIZED_TYPES for type_id in group)])
     return len(seen), penalized
+
+
+def _role_stock_fallback(name):
+    if name in STOCK_FALLBACK_SLOTS:
+        return STOCK_FALLBACK_SLOTS[name]
+    for prefix in STOCK_PREFIX_SLOTS:
+        if name.startswith(prefix):
+            return STOCK_PREFIX_SLOTS[prefix]
+    return 0
+
+
+def stock_slots(roles, stock):
+    """
+    Warehouse slots a designation stocks: the distinct items of its roles'
+    lists in stock ({role: [item_id, ...]}, an item shared by two roles
+    counted once), the fallback slots of item roles without a list, and
+    FACTORY_BUFFER_SLOTS for a factory. storage is sized by what it holds,
+    not by its role: 0 here.
+    """
+    items = set()
+    extra = 0
+    for name in role_list(roles):
+        if not role_flag(name, "items") or name == "storage":
+            continue
+        listed = stock.get(name)
+        if isinstance(listed, (list, tuple)) and listed:
+            items.update(listed)
+        else:
+            extra += _role_stock_fallback(name)
+        if name == "factory":
+            extra += FACTORY_BUFFER_SLOTS
+    return len(items) + extra
+
+
+def site_slots(roles, stock, have_slots=0, per_warehouse=5, home=False):
+    """
+    (counted, penalized, warehouses) a designation needs at one outpost:
+    its machine groups (Warehouse group left out) plus the Warehouses its
+    stock_slots() need beyond the have_slots already standing there. Home
+    stocks in Inventory: no Warehouses.
+    """
+    counted, penalized = bundle_slots(roles, warehouses=False)
+    if home:
+        return (counted, penalized, 0)
+    deficit = max(0, stock_slots(roles, stock) - have_slots)
+    count = (deficit + per_warehouse - 1) // per_warehouse
+    return (counted + count, penalized, count)
+
+
+def warehouse_slots(type_counts):
+    """(Warehouse slots, Warehouse buildings) standing at an outpost."""
+    slots = int(sum([WAREHOUSE_SLOTS[type_id] * type_counts.get(type_id, 0) for type_id in WAREHOUSE_SLOTS]))
+    return (slots, int(sum([type_counts.get(type_id, 0) for type_id in WAREHOUSE_SLOTS])))
 
 
 def biome_locks(roles):

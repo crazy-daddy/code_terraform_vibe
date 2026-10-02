@@ -181,7 +181,19 @@ Not in the catalog (`farm`, operator roles): fluids only, never observed or miss
 | `role_gaps(designated, type_counts)` | `missing` = designated catalog roles not observed (building planner backlog); `extra` = observed, not designated, and not covered by a designated role's buildings |
 | `unlocked(name, available_kits)` | every group has an alternative whose kit (`kit_id()`, `KIT_IDS` where it differs from the type_id) is available; non-catalog roles always |
 | `biome_ok()` / `biome_locks()` | biome lock check; more than one lock in a designation = no outpost can host it |
-| `bundle_slots(roles)` | `(counted, penalized)`: one slot per distinct group; penalized = groups with a `PENALIZED_TYPES` machine |
+| `bundle_slots(roles, warehouses=True)` | `(counted, penalized)`: one slot per distinct group; penalized = groups with a `PENALIZED_TYPES` machine; `warehouses=False` leaves the Warehouse group out |
+| `stock_slots(roles, stock)` | Warehouse slots the roles stock: distinct items of their lists in `stock` (`{role: [item, ...]}`; shared items once), fallback slots for item roles without a list, `FACTORY_BUFFER_SLOTS` for `factory`; `storage` 0 (sized by what it holds) |
+| `site_slots(roles, stock, have_slots, per_warehouse, home)` | `(counted, penalized, warehouses)`: machine groups + Warehouses for the stock beyond `have_slots`; home 0 Warehouses (Inventory) |
+| `warehouse_slots(type_counts)` | `(slots, buildings)` of the Warehouses standing at an outpost |
+
+**Warehouse stock** (remote outposts have no Inventory; one 2000-unit slot per item). Lists come from in-game recipes (`outpost_needs.read_stock_items()`): `smelter` = ores, outputs and byproducts of the Smelter recipes; `factory` = Smelter outputs the Fabricator recipes take; `mining` = the need's ores.
+
+| Constant | Value | Meaning |
+| :--- | :--- | :--- |
+| `WAREHOUSE_SLOTS` | warehouse 5, large_warehouse 15 | slots per building; Large once its kit is available |
+| `FACTORY_BUFFER_SLOTS` | 10 | factory slots on top of its ingots (intermediates, finished goods) |
+| `STOCK_FALLBACK_SLOTS` | smelter 14 (`SMELTER_FALLBACK_SLOTS`), factory 7, mining 1 | a role with no readable list |
+| `STOCK_PREFIX_SLOTS` | `bio_` 2, `liquifier_` 2, `wildlife` 2 | samples, life forms, feed (guess, tune live) |
 
 **Overcrowding** (simworker machine table): counted buildings over the outpost cap (`buildings_capacity`) cost 10% each (floor 20%), but only `PENALIZED_TYPES` (production machines, bio chain, generators, Supply Dock, charging station, drone service station, lightning rod) slow down. Warehouses, tanks, batteries, Drone Depots, Lead Cask and Weather Station count but are exempt. Field structures, sensors and vehicles do not count.
 
@@ -228,4 +240,4 @@ A role is **covered** by an outpost that designates it or whose buildings make i
 
 Earth orders for life forms are no need (drones catch them anywhere). Only `now`/`soon` needs (`PROPOSE_URGENCIES`) reach `plan_hosts()`.
 
-**Merge before founding** (`plan_hosts()`, `host_check()`): each need tries existing outposts by free slots (most first), then id. A host must allow the role's biome, not cover it yet, and keep its counted buildings within `buildings_capacity` when the combined bundle has a penalized machine (`bundle_slots()`; exempt-only bundles may go over). Item roles add `drone_depot` when the host has none. Home takes no role with a penalized machine (its slots are reserved). `mining` needs a site of each of its ores within range; `refinery_<fluid>` needs a raw deposit of its fluid within `supply_tiers.NEAR_TILES` and never founds (`found: False`). A host that takes a need counts its new roles for the next need. Leftover needs form **founding bundles** (`found_bundles()`): one per biome lock, one for `mining` (ores joined), one for the other roles, each with `drone_depot` when an item role is in it.
+**Merge before founding** (`plan_hosts()`, `host_check()`): each need tries existing outposts by free slots (most first), then id. A host must allow the role's biome, not cover it yet, and keep its counted buildings within `buildings_capacity` when the combined bundle has a penalized machine (`site_slots()`, new Warehouses for the added stock included; exempt-only bundles may go over). Item roles add `drone_depot` when the host has none. Home takes no role with a penalized machine (its slots are reserved). `mining` needs a site of each of its ores within range; `refinery_<fluid>` needs a raw deposit of its fluid within `supply_tiers.NEAR_TILES` and never founds (`found: False`). A host that takes a need counts its new roles for the next need. Leftover needs form **founding bundles** (`found_bundles()`): one per biome lock, one for `mining` (ores joined), one for the other roles, each with `drone_depot` when an item role is in it, `slots` (`site_slots()` on an empty outpost) and `over_cap` (a penalized bundle above `FOUNDED_CAPACITY` = 20 buildings).

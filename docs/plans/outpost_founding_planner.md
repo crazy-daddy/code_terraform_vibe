@@ -163,6 +163,14 @@ Archive (one dict per concern):
 - **Slot budget:** an outpost with any `penalized` role keeps its counted buildings (incl. Warehouses,
   tanks, Depots, Weather Station) ≤ capacity: never plan over the cap there. Demand is local, so storage
   stays at the outpost that uses it.
+- **Warehouses come with the roles** (remote outposts have no Inventory): one 2000-unit slot per stocked item.
+  Smelter = 1 slot per ore + 1 per ingot (+ byproducts) of its recipes; Fabricator = 1 slot per ingot its
+  recipes take + `FACTORY_BUFFER_SLOTS` for intermediates and finished goods; mining = 1 per mined ore; bio,
+  liquifier and wildlife roles a small guess (tune live). Items shared by two roles at one outpost take one
+  slot (a smelter + mining outpost stocks each ore once). The slots beyond the Warehouses already there become
+  new Warehouses (Large Warehouse, 15 slots, once its kit is available, else 5), and those count against the
+  cap like any other building (`autoplay_roles.site_slots()`). Founding bundles report their building count
+  incl. Warehouses and flag `over_cap`; phase 3 site scoring and phase 4 proposals use that count.
 - **One `storage` outpost at most**, for large stockpiles nobody uses locally yet: life-form stockpiles,
   stray tar until a Refiner takes it, etc. It holds only exempt buildings, so it may go over the cap. Need
   signal: such stock has no home elsewhere (home slot budget §1l-2, eviction holds). No Supply Dock there: docks

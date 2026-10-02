@@ -3,6 +3,7 @@ import unittest
 
 import harness
 import outpost_needs as on
+import autoplay_roles as roles
 from grid_geom import extractor_box
 
 ALL_KITS = {"smelter", "fabricator", "warehouse", "drone_station_kit", "weather_station", "essence_liquifier",
@@ -104,7 +105,7 @@ class HostTests(unittest.TestCase):
     def test_over_cap_with_penalized_machine_rejected(self):
         coastal = outpost("outpost_1", "coastal", 300, 0, types={"smelter": 1}, used=18)
         s = snap([coastal], bio_orders={"coastal": 1})
-        added, reason = on.host_check(on.needs(s)[0], coastal, s)
+        added, reason, _extra = on.host_check(on.needs(s)[0], coastal, s)
         self.assertIsNone(added)
         self.assertTrue((reason or "").startswith("over cap"), reason)
 
@@ -150,6 +151,41 @@ class HostTests(unittest.TestCase):
                           ("soon", None, ["factory", "drone_depot"]),
                           ("soon", None, ["mining", "drone_depot"])])
         self.assertEqual(bundles[2]["ores"], ["cobalt"])
+
+
+class WarehouseSlotTests(unittest.TestCase):
+    STOCK = {"smelter": ["iron_ore", "cobalt", "iron_ingot", "cobalt_ingot"], "factory": ["iron_ingot", "cobalt_ingot"]}
+
+    def test_stock_slots_share_items_between_roles(self):
+        self.assertEqual(roles.stock_slots(["smelter"], self.STOCK), 4)
+        self.assertEqual(roles.stock_slots(["smelter", "factory"], self.STOCK), 4 + roles.FACTORY_BUFFER_SLOTS)
+        self.assertEqual(roles.stock_slots(["mining", "smelter"], dict(self.STOCK, mining=["cobalt"])), 4)
+        self.assertEqual(roles.stock_slots(["smelter"], {}), roles.SMELTER_FALLBACK_SLOTS)
+        self.assertEqual(roles.stock_slots(["drone_depot", "weather_deep", "storage"], {}), 0)
+
+    def test_site_slots_count_warehouses_beyond_standing_slots(self):
+        self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 0, 5), (5, 1, 3))   # 12 slots
+        self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 10, 5), (3, 1, 1))
+        self.assertEqual(roles.site_slots(["factory", "drone_depot"], self.STOCK, 0, 15), (3, 1, 1))
+        self.assertEqual(roles.site_slots(["factory"], self.STOCK, 0, 5, home=True), (1, 1, 0))
+        self.assertEqual(roles.site_slots(["mining"], {"mining": ["cobalt"]}, 0, 5), (1, 0, 1))
+
+    def test_merge_counts_warehouses_against_the_cap(self):
+        def host(used):
+            return outpost("outpost_1", "deep", 300, 0, types={"warehouse": 1}, used=used)
+        need = on._need("smelter", "soon", "t")
+        s = snap([host(0)], stock={"smelter": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]})
+        # 12 slots, 5 standing: 2 new Warehouses + Smelter + Drone Depot = 4 buildings
+        self.assertEqual(on.host_check(need, host(16), s)[2], 4)
+        added, reason, _extra = on.host_check(need, host(17), s)
+        self.assertIsNone(added)
+        self.assertIn("2 new Warehouse(s)", reason or "")
+
+    def test_found_bundle_reports_buildings(self):
+        s = snap([HOME], stock=self.STOCK, per_warehouse=5)
+        bundle = on.found_bundles([on._need("factory", "soon", "f")], s)[0]
+        self.assertEqual(bundle["slots"], {"counted": 5, "penalized": 1, "warehouses": 3})
+        self.assertFalse(bundle["over_cap"])
 
 
 if __name__ == "__main__":

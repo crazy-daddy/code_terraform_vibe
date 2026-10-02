@@ -12,7 +12,9 @@
 #    "ore_sites": extractor_plan.mining_sites() rows,
 #    "fluid_sites": supply_tiers.fluid_sites() rows,
 #    "fluids_in": [fluid, ...] the designated roles take,
-#    "range_m": mining range of an outpost (outpost_mining)}
+#    "range_m": mining range of an outpost (outpost_mining),
+#    "stock": {role: [item_id, ...]} Warehouse stock lists (read_stock_items()),
+#    "per_warehouse": slots of the Warehouse kind to build (5, Large 15)}
 #
 # A need is {"role", "biome", "urgency", "why", "found", "locked"} (+ "ores"
 # for mining). Urgency:
@@ -33,7 +35,8 @@
 #
 # plan_hosts() merges needs onto existing outposts first (biome lock, slots
 # under the cap when the bundle has a penalized machine, a Drone Depot added
-# for item roles, the role's site within reach); home takes no penalized
+# for item roles, new Warehouses for the added stock counted against the cap
+# (autoplay_roles.site_slots()), the role's site within reach); home takes no penalized
 # role (its slots are reserved). Leftover found needs group into founding
 # bundles: one per biome lock, one for mining, one for the rest.
 # refinery_<fluid> never founds (found False): it goes onto an outpost with
@@ -47,10 +50,12 @@ from infra_topology import surveyed_sites
 from outpost_mining import resource_assignment_range_m
 import autoplay_roles
 from autoplay_roles import BIOMES, BIO_PROCESSORS, role_flag, biome_ok, unlocked, bundle_slots, observed, observed_roles
+from autoplay_roles import site_slots, warehouse_slots, WAREHOUSE_SLOTS
 
 URGENCIES = ("now", "soon", "later")
 PROPOSE_URGENCIES = ("now", "soon")
 FACTORY_ROLES = ("smelter", "factory")   # hosts full everywhere -> another host "soon"
+FOUNDED_CAPACITY = 20   # building cap of a founded outpost before Weather / Outpost Expansion bonuses
 EXTRA_HOST_ROLES = FACTORY_ROLES + ("mining",)   # a need for one more host, not for a first one
 REFINED_EXOTICS = ("sulfur_gas", "chlorine", "cryofluid", "quicksilver")
 
@@ -206,24 +211,33 @@ def _site_ok(need, entry, snap):
 
 
 def host_check(need, entry, snap):
-    """(roles to add, None) when `entry` can take the need, else (None, reason)."""
+    """
+    (roles to add, None, counted buildings added) when `entry` can take the
+    need, else (None, reason, 0). Buildings include the Warehouses the
+    added stock needs beyond the slots standing there (site_slots()).
+    """
     role = need["role"]
     if covers(entry, role):
-        return (None, "has it")
+        return (None, "has it", 0)
     if not biome_ok(role, entry.get("biome")):
-        return (None, "biome " + str(entry.get("biome")))
+        return (None, "biome " + str(entry.get("biome")), 0)
     current = _current_roles(entry)
     added = _with_depot([role], entry)
-    after, penalized = bundle_slots(current + added)
-    if entry.get("home") and bundle_slots(added)[1] > 0:
-        return (None, "home slots reserved")
-    extra = after - bundle_slots(current)[0]
-    used = max(entry.get("used", 0), bundle_slots(current)[0])
-    if penalized and used + extra > entry.get("capacity", 0):
-        return (None, f"over cap ({used}+{extra}/{entry.get('capacity', 0)})")
+    home = bool(entry.get("home"))
+    if home and bundle_slots(added)[1] > 0:
+        return (None, "home slots reserved", 0)
+    stock = _stock(snap, need)
+    per = snap.get("per_warehouse", 5)
+    have_slots, have_buildings = warehouse_slots(entry.get("types", {}))
+    before = site_slots(current, stock, have_slots, per, home)
+    after = site_slots(current + added, stock, have_slots, per, home)
+    extra = after[0] - before[0]
+    used = max(entry.get("used", 0), before[0] + have_buildings)
+    if after[1] and used + extra > entry.get("capacity", 0):
+        return (None, f"over cap ({used}+{extra}/{entry.get('capacity', 0)}, {after[2]} new Warehouse(s))", 0)
     if not _site_ok(need, entry, snap):
-        return (None, "site out of reach")
-    return (added, None)
+        return (None, "site out of reach", 0)
+    return (added, None, extra)
 
 
 def plan_hosts(open_needs, snap):
@@ -248,12 +262,12 @@ def plan_hosts(open_needs, snap):
         order = sorted(outposts, key=lambda entry: (entry.get("used", 0) - entry.get("capacity", 0), entry["id"]))
         taken = False
         for entry in order:
-            added, reason = host_check(need, entry, snap)
+            added, reason, extra = host_check(need, entry, snap)
             if added is None:
                 rejected.append((need["role"], entry["id"], reason))
                 continue
             entry["roles"].extend([name for name in added if name not in entry["roles"]])
-            entry["used"] = entry.get("used", 0) + bundle_slots(added)[0]
+            entry["used"] = entry.get("used", 0) + extra
             item = designate.setdefault(entry["id"], {"outpost": entry["id"], "roles": [], "needs": [],
                                                       "urgency": need["urgency"], "why": []})
             item["roles"].extend([name for name in added if name not in item["roles"]])
@@ -265,12 +279,26 @@ def plan_hosts(open_needs, snap):
             break
         if not taken and need["found"]:
             leftovers.append(need)
-    return {"designate": [designate[key] for key in sorted(designate)], "found": found_bundles(leftovers),
+    return {"designate": [designate[key] for key in sorted(designate)], "found": found_bundles(leftovers, snap),
             "rejected": rejected}
 
 
-def found_bundles(leftovers):
-    """Founding bundles of leftover needs: one per biome lock, one for mining, one for the other roles."""
+def _stock(snap, need=None):
+    """snap["stock"] with a mining need's ores as the mining list."""
+    stock = dict(snap.get("stock") or {})
+    if need is not None and need.get("ores"):
+        stock["mining"] = list(need["ores"])
+    return stock
+
+
+def found_bundles(leftovers, snap=None):
+    """
+    Founding bundles of leftover needs: one per biome lock, one for mining,
+    one for the other roles. "slots" = site_slots() of the bundle on an
+    empty outpost; over_cap when a bundle with a penalized machine needs
+    more than FOUNDED_CAPACITY buildings.
+    """
+    snap = snap or {}
     groups = {}
     for need in leftovers:
         key = need["biome"] or ("mining" if need["role"] == "mining" else "")
@@ -280,9 +308,13 @@ def found_bundles(leftovers):
         members = groups[key]
         roles = _with_depot([need["role"] for need in members])
         ores = sorted(set([ore for need in members for ore in need.get("ores", [])]))
+        stock = _stock(snap, {"ores": ores})
+        counted, penalized, warehouses = site_slots(roles, stock, 0, snap.get("per_warehouse", 5))
         bundles.append({"biome": members[0]["biome"], "roles": roles, "needs": [need["role"] for need in members],
                         "urgency": URGENCIES[min([_rank(need["urgency"]) for need in members])],
-                        "why": [need["why"] for need in members], "ores": ores})
+                        "why": [need["why"] for need in members], "ores": ores,
+                        "slots": {"counted": counted, "penalized": penalized, "warehouses": warehouses},
+                        "over_cap": bool(penalized) and counted > FOUNDED_CAPACITY})
     return sorted(bundles, key=lambda bundle: (_rank(bundle["urgency"]), bundle["roles"]))
 
 
@@ -295,7 +327,10 @@ def log_plan(log, open_needs, plan):
     for item in plan["designate"]:
         log.debug(f"Designate {item['outpost']} +{item['roles']} ({item['urgency']}): {'; '.join(item['why'])}.")
     for bundle in plan["found"]:
-        log.debug(f"Found {bundle['biome'] or 'any biome'} {bundle['roles']} ({bundle['urgency']}): {'; '.join(bundle['why'])}.")
+        slots = bundle["slots"]
+        log.debug(f"Found {bundle['biome'] or 'any biome'} {bundle['roles']} ({bundle['urgency']}, "
+                  f"{slots['counted']} buildings incl. {slots['warehouses']} Warehouse(s)"
+                  f"{', over cap' if bundle['over_cap'] else ''}): {'; '.join(bundle['why'])}.")
 
 
 # --- game readers (thin; each returns a safe default when unreadable) ---
@@ -349,14 +384,44 @@ def _machines(type_id):
     return out
 
 
-def read_kits():
-    """Kit ids the network can get: Shop catalogue, a Fabricator's recipe outputs, Inventory stacks."""
+def _recipes(type_id):
+    """list_recipes() of the first machine of type_id (identical per machine, tech-gated); [] without one."""
+    for machine in _machines(type_id)[:1]:
+        return list(_call(machine, "list_recipes", []) or [])
+    return []
+
+
+def read_stock_items(smelter_recipes, fabricator_recipes):
+    """
+    {"smelter": ores + ingots + byproducts of the Smelter recipes,
+     "factory": Smelter outputs the Fabricator recipes take}; a role is left
+    out when its recipes are unreadable (autoplay_roles fallbacks apply).
+    """
+    out = {}
+    smelted = []
+    items = []
+    for recipe in smelter_recipes:
+        inputs = list((getattr(recipe, "inputs", None) or {}).keys())
+        for item_id in inputs + [recipe.output_item, getattr(recipe, "byproduct_item", None)]:
+            if item_id and item_id not in items:
+                items.append(item_id)
+        if recipe.output_item not in smelted:
+            smelted.append(recipe.output_item)
+    if items:
+        out["smelter"] = items
+    if smelted and fabricator_recipes:
+        out["factory"] = sorted(set([item_id for recipe in fabricator_recipes
+                                     for item_id in (getattr(recipe, "inputs", None) or {}) if item_id in smelted]))
+    return out
+
+
+def read_kits(fabricator_recipes):
+    """Kit ids the network can get: Shop catalogue, the Fabricator recipe outputs, Inventory stacks."""
     kits = set()
     shop = get_component("shop")
     if shop is not None:
         kits.update([item.id for item in _call(shop, "get_catalogue", []) or []])
-    for fabricator in _machines("fabricator")[:1]:
-        kits.update([recipe.output_item for recipe in _call(fabricator, "list_recipes", []) or []])
+    kits.update([recipe.output_item for recipe in fabricator_recipes])
     inventory = get_component("inventory")
     if inventory is not None:
         kits.update([stack.item_id for stack in _call(inventory, "stacks", []) or []])
@@ -392,7 +457,11 @@ def snapshot():
         for fluid in autoplay_roles.fluids_for(entry["roles"], role_presets)["in"]:
             if fluid not in taken:
                 taken.append(fluid)
-    return {"outposts": outposts, "kits": read_kits(), "bio_orders": read_bio_orders(),
+    fabricator_recipes = _recipes("fabricator")
+    kits = read_kits(fabricator_recipes)
+    return {"outposts": outposts, "kits": kits, "bio_orders": read_bio_orders(),
+            "stock": read_stock_items(_recipes("smelter"), fabricator_recipes),
+            "per_warehouse": WAREHOUSE_SLOTS["large_warehouse" if "large_warehouse" in kits else "warehouse"],
             "essences_required": read_essences_required(), "ore_wanted": sorted(smelter_outposts()[1]),
             "ore_sites": mining_sites(sites), "fluid_sites": fluid_sites(sites), "fluids_in": taken,
             "range_m": resource_assignment_range_m()}
