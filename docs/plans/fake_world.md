@@ -261,6 +261,25 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - `World.local_store()` narrows with `store is None or not isinstance(...)`: with the typed
   components the repo's Pyright config no longer narrows `isinstance` alone there.
 
+### Step 5 (in progress)
+- Done: `test_turbine_commit`, `test_fuel_assembler` (2026-10-03).
+- `test_turbine_commit`: turbines via `add_turbine` (pass `output=108.0`; the shared default is
+  0), source tanks as `gas_tank` with `capacity=100.0` and level 90 (fill 0.9), grids via
+  `add_grid(..., stored=1000.0, capacity=1000.0)`, `world.power_control` for switches (a
+  player-off turbine is `power_control.powered[id] = False`). `_FreshTurbine` needed no subclass:
+  `add_turbine(..., output=0.0, throttle=1.0)`. A test with two steps mutates the grid's
+  `consumed` / `generated` between them.
+- `test_fuel_assembler`: casks are `LeadCask` (`add_lead_cask`; `.units` → `.count(item)`,
+  `put` → `add`); ports are `Slot`. Two local classes stay because `game_stubs` has no such
+  machine: `_Consumer(Building)` (reactor / Mk IV terraformer with `tier()`, 4-unit magazine)
+  and `_Assembler(Machine)` (records recipe calls, `get_progress`, `get_stockpile` without zero
+  entries). Its `stock_pile` / `out` became `input_buffer` / `output_buffer`. `_Power` stays: it
+  stands in for `lib/power.py`, not the game. `_PowerService` became `add_grid("grid_a",
+  ["fuel_assembler_1"])`.
+- A shared `Slot` sending into a cask of the wrong material answers `target_full` (moved 0),
+  where the private fake said `target_wrong_material`; `lib/fuel_assembler.py` only logs the
+  status, so no test depends on it.
+
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).
 - Simulating crafting, travel or power flow over time.
