@@ -347,51 +347,29 @@ class SnapshotTests(harness.StubTestCase):
         self.assertIsNone(self.world.notebook.data.get(wc.PLAN_KEY))
 
 
-class _Tank:
-    def __init__(self, tank_id, fluid, level):
-        self.id, self._fluid, self._level = tank_id, fluid, level
-
-    def fluid(self):
-        return self._fluid
-
-    def level(self):
-        return self._level
-
-
 class FluidStockTests(harness.StubTestCase):
     def setUp(self):
         super().setUp()
-        self.tanks = {
-            "gas": [_Tank("gas_tank_1", "ammonia", 100.0), _Tank("gas_tank_2", "steam", 50.0),
-                    _Tank("gas_tank_3", "ammonia", 30.0), _Tank("gas_tank_4", "", 0.0)],
-            "liquid": [_Tank("tank_1", "brine", 7.0)],
-        }
-        self.walks = []
-        self._orig = (wp.fluid_routing.discover_network_buildings, wp.fluid_routing.get_tank_assignments)
+        home = self.world.add_outpost("outpost_home", is_home=True)
+        other = self.world.add_outpost("outpost_2")
+        self.world.add_tank("gas_tank_1", home, "ammonia", 100.0, type_id="gas_tank")
+        self.world.add_tank("gas_tank_2", other, "steam", 50.0, type_id="gas_tank")
+        self.world.add_tank("gas_tank_3", home, "ammonia", 30.0, type_id="gas_tank")
+        self.world.add_tank("gas_tank_4", home, "", 0.0, type_id="gas_tank")
+        self.world.add_tank("tank_1", other, "brine", 7.0)
+        self.world.add_tank("tank_2", home, "ammonia", 9.0)
+        self.world.notebook.set(wp.fluid_routing.TANK_ASSIGNMENTS_KEY, {"gas_tank_3": wp.fluid_routing.RETIRING_ASSIGNMENT})
 
-        def discover(type_ids, resolve=True, fluid_id=None):
-            medium = next(m for m, ids in wc.TANK_TYPE_IDS.items() if tuple(ids) == tuple(type_ids))
-            self.walks.append((medium, fluid_id))
-            return [(t, "outpost_home") for t in self.tanks[medium]]
-
-        wp.fluid_routing.discover_network_buildings = discover
-        wp.fluid_routing.get_tank_assignments = lambda: {"gas_tank_3": wp.fluid_routing.RETIRING_ASSIGNMENT}
-
-    def tearDown(self):
-        wp.fluid_routing.discover_network_buildings, wp.fluid_routing.get_tank_assignments = self._orig
-        super().tearDown()
-
-    def test_one_walk_per_medium_counts_latched_eligible_tanks(self):
+    def test_counts_latched_eligible_tanks_of_the_required_medium(self):
         statuses = {
             "habitat_1": established("salt_tortoise", gas=["", 0, [], "ammonia", 0], liquid=["", 0, [], "brine", 0]),
             "habitat_2": established("veil_mantle", gas=["", 0, [], "steam", 0]),
         }
+        # gas_tank_3 is retiring, gas_tank_4 unlatched, tank_2 holds ammonia in a liquid tank.
         self.assertEqual(wp._fluid_stock(statuses), {"ammonia": 100.0, "steam": 50.0, "brine": 7.0})
-        self.assertEqual(sorted(self.walks), [("gas", None), ("liquid", None)])
 
-    def test_no_required_fluid_walks_nothing(self):
+    def test_no_required_fluid_reads_nothing(self):
         self.assertEqual(wp._fluid_stock({"habitat_1": established("salt_tortoise")}), {})
-        self.assertEqual(self.walks, [])
 
 
 if __name__ == "__main__":

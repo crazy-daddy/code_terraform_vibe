@@ -6,8 +6,8 @@
 # Time: one game day is 600 s (production.DAY_CYCLE_DURATION_SECONDS), so one
 # game hour is 25 s of script time and 250 clock ticks.
 
-from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT
-from wildlife_model import node_effects, static_bonuses
+from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS
+from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
 from fluid_routing import LIQUID_TANK_TYPE_IDS
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).
@@ -106,9 +106,17 @@ def feed_multiplier(species, purchased):
     return static_bonuses(node_effects(purchased, species))["feed_multiplier"]
 
 
-def feed_per_hour(species, rate, purchased):
-    """Feed a colony breeding `rate` individuals/h eats per game hour."""
-    return max(0.0, rate) * FEED_PER_BIRTH * feed_multiplier(species, purchased)
+def feed_multipliers(species_ids, purchased):
+    """{species: feed_multiplier(species, purchased)}; the Breakthrough part, shared by every species, is computed once."""
+    owned = set(purchased)
+    shared = feed_factor(breakthrough_effects(owned))
+    floor = BONUS_CAPS["feed_multiplier_floor"]
+    return {s: max(floor, feed_factor(adaptation_effects(owned, s), shared)) for s in species_ids}
+
+
+def feed_per_hour(rate, multiplier):
+    """Feed a colony breeding `rate` individuals/h eats per game hour, at feed multiplier `multiplier`."""
+    return max(0.0, rate) * FEED_PER_BIRTH * multiplier
 
 
 def crafts_for(feed_units):

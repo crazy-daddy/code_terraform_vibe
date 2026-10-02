@@ -8,19 +8,18 @@
 #      telemetry, the Feed Makers' `wildlife.feed` (unlocked recipes and
 #      their inputs), cataloged creatures, home stock of feed and life forms,
 #      tank stock of each fluid a Habitat band needs.
-#   2. build_plan(snapshot): pure, called directly. Its cost grows with
-#      Habitats and statuses past the 10,000-step cap of one atomic callback
-#      (lib/atomic.py), and an hourly pass needs no single-tick speed.
-#      Walks the offline revival schedule (wildlife_model.schedule_for(live
+#   2. build_plan(snapshot): pure, as a chain of atomic calls
+#      (lib/atomic.py), each bounded by the Habitat count; the whole plan in
+#      one call would pass the 10,000-step callback cap. First call:
+#      walks the offline revival schedule (wildlife_model.schedule_for(live
 #      Habitat count)) the way the optimizer does: steps run strictly in
 #      order; a step that can never run (species already revived, node
 #      bought, not cataloged, recipe locked, no Habitat left) is skipped;
 #      the first step that can run later (Insight short, Breakthrough
 #      source below 10,000) stops the walk, holding Insight.
-#      Then, as two atomic calls (each bounded by the Habitat count): each
-#      colony's hours to its ceiling at the full-support model rate, and the
-#      fluid ration (per fluid, slowest colonies first within the tank
-#      budget). Then feed demand per feed item (priority classes in
+#      Then each colony's hours to its ceiling at the full-support model
+#      rate (MODEL_CHUNK-colony slices), and the fluid ration (per fluid, slowest colonies first within the tank
+#      budget). Last call: feed demand per feed item (priority classes in
 #      wildlife_common, fluid-holding colonies first), the Forage reserve for
 #      the Plant Terraformer, life-form targets, the Habitats to wake and the
 #      operator alerts.
@@ -47,6 +46,7 @@ REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requ
 REQUEST_REFRESH_TICKS = 1200        # republish at least this often (REQUEST_STALE_TICKS = 6000)
 IDLE_SUMMARY = "wildlife idle"
 MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/step_profile.py wildlife_ration)
+TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/level() read in _fluid_stock() (~20 steps each)
 
 log = TreeConsole(module="wildlife_planner")
 
@@ -233,6 +233,7 @@ def _feed_demand(snap, colonies, statuses, nodes, model):
     stock = snap["feed_stock"]
     rows = []
     use = {}
+    multipliers = wc.feed_multipliers(colonies, nodes)
     for species, hid in colonies.items():
         entry = statuses.get(hid) or {}
         item = wc.feed_item_of(species)
@@ -242,7 +243,7 @@ def _feed_demand(snap, colonies, statuses, nodes, model):
             # feed bin included; the model rate keeps a starved colony's feed
             # in demand (a colony at its ceiling models 0).
             rate = float(entry.get("rate") or 0.0) or (model.get(hid) or (0.0, 0.0))[1]
-            per_h = wc.feed_per_hour(species, rate, nodes)
+            per_h = wc.feed_per_hour(rate, multipliers[species])
             use[species] = per_h
             target = wc.FEED_BUFFER_H * per_h
             if per_h > 0:
@@ -402,20 +403,34 @@ def _wakes_and_alerts(snap, statuses, assign, ration):
     return wakes, alerts
 
 
-def build_plan(snap):
-    """Pure: the whole plan from one snapshot (no game calls, no logging)."""
+def _assign_pass(snap):
+    """Purchases, colonies and the schedule walk in one pure call (run atomically; bounded by the Habitat count)."""
     statuses = snap["statuses"]
     bought, nodes = _purchased(statuses)
     colonies, assign, free = _colonies(snap["habitat_ids"], statuses, snap["prev_assign"])
     assign, buy, skipped, waiting = _walk(snap, colonies, free, assign, bought, snap["insight"])
-    model = _colony_model(colonies, statuses, nodes)
-    ration, supply = run_atomic(_ration_pass, colonies, statuses, model, snap["fluid_stock"],
-                                snap["prev_supply"], snap["prev_ration"], snap["tick"])
+    return nodes, colonies, assign, buy, skipped, waiting
+
+
+def _demand_pass(snap, colonies, nodes, model, assign, ration):
+    """Feed demand, Forage reserve, life-form targets, wakes and alerts in one pure call (run atomically; bounded by the Habitat count)."""
+    statuses = snap["statuses"]
     demand, use = _feed_demand(snap, colonies, statuses, nodes, model)
     forage = sum(wc.forage_for(v[2]) for v in demand.values())
     if forage:
         forage += wc.forage_for(FEED_PER_CRAFT)
     wakes, alerts = _wakes_and_alerts(snap, statuses, assign, ration)
+    return demand, forage, _form_targets(snap, colonies, use, demand), wakes, alerts
+
+
+def build_plan(snap):
+    """Pure: the whole plan from one snapshot (no game calls, no logging)."""
+    statuses = snap["statuses"]
+    nodes, colonies, assign, buy, skipped, waiting = run_atomic(_assign_pass, snap)
+    model = _colony_model(colonies, statuses, nodes)
+    ration, supply = run_atomic(_ration_pass, colonies, statuses, model, snap["fluid_stock"],
+                                snap["prev_supply"], snap["prev_ration"], snap["tick"])
+    demand, forage, form_targets, wakes, alerts = run_atomic(_demand_pass, snap, colonies, nodes, model, assign, ration)
     missing_creatures = sorted(s for s in SPECIES if s not in snap["cataloged"])
     missing_recipes = sorted(s for s in SPECIES if snap["recipes"] and wc.recipe_of(s) not in snap["recipes"])
     return {
@@ -423,7 +438,7 @@ def build_plan(snap):
         "buy": buy,
         "feed_demand": demand,
         "forage_reserve": forage,
-        "form_targets": _form_targets(snap, colonies, use, demand),
+        "form_targets": form_targets,
         "fluid_ration": ration,
         "fluid_supply": supply,
         "progress": {
@@ -538,18 +553,56 @@ def _fluid_stock(statuses):
     out = {fluid: 0.0 for fluid in wanted}
     if not out:
         return out
-    # One walk per medium, not per fluid: an unlatched tank holds nothing, so
-    # each tank counts only toward the fluid it is latched to.
+    # Each tank counts only toward the fluid it is latched to (an unlatched
+    # tank holds nothing); a latched tank is eligible unless retiring
+    # (fluid_routing.tank_is_eligible_target()). Discovery and reads run
+    # atomically: the ref walk in one call, the tank reads in TANK_CHUNK slices.
     assignments = fluid_routing.get_tank_assignments()
-    for medium in set(wanted.values()):
-        for tank, _outpost_id in fluid_routing.discover_network_buildings(wc.TANK_TYPE_IDS[medium]):
-            try:
-                fluid = tank.fluid()
-                if wanted.get(fluid) == medium and fluid_routing.tank_is_eligible_target(tank, fluid, assignments):
-                    out[fluid] += float(tank.level() or 0.0)
-            except Exception as error:
-                swallowed("wildlife_planner._fluid_stock: tank.level", error)
+    retiring = set(b_id for b_id, fluid in assignments.items() if fluid == fluid_routing.RETIRING_ASSIGNMENT)
+    types = {type_id: medium for medium in set(wanted.values()) for type_id in wc.TANK_TYPE_IDS[medium]}
+    network = get_component("outpost_network")
+    try:
+        outposts = list(network.outposts()) if network else []
+    except Exception as error:
+        swallowed("wildlife_planner._fluid_stock: network.outposts", error)
+        outposts = []
+    tanks = run_atomic(_tank_refs, outposts, types, retiring)
+    for fluid, level in run_batched(_tank_rows, tanks, TANK_CHUNK, wanted):
+        out[fluid] += level
     return out
+
+
+def _tank_refs(outposts, types, retiring):
+    """[(tank id, medium)] for every tank of a `types` type id on `outposts`, not retiring; pure reads, run atomically."""
+    out = []
+    seen = set(retiring)
+    for outpost in outposts:
+        for type_id, medium in types.items():
+            try:
+                refs = outpost.buildings(type_id)
+            except Exception as error:
+                swallowed("wildlife_planner._tank_refs: outpost.buildings", error)
+                continue
+            for ref in refs:
+                tank_id = getattr(ref, "id", None)
+                if tank_id and tank_id not in seen:
+                    seen.add(tank_id)
+                    out.append((tank_id, medium))
+    return out
+
+
+def _tank_rows(tanks, wanted):
+    """[(fluid, tons)] for the (tank id, medium) pairs latched to a fluid `wanted` from that medium; pure reads, run atomically."""
+    rows = []
+    for tank_id, medium in tanks:
+        try:
+            tank = get_component(tank_id)
+            fluid = tank.fluid() if tank else None
+            if fluid and wanted.get(fluid) == medium:
+                rows.append((fluid, float(tank.level() or 0.0)))
+        except Exception as error:
+            swallowed("wildlife_planner._tank_rows: tank.level", error)
+    return rows
 
 
 def snapshot(now):

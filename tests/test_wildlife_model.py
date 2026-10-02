@@ -77,6 +77,15 @@ class WildlifeModelTest(unittest.TestCase):
         self.assertAlmostEqual(wm.dynamic_bonuses(mycelium, 100, 0, 5)[0], 0.05)
         self.assertAlmostEqual(wm.dynamic_bonuses(mycelium, 100, 0, 15)[0], 0.12)
 
+    def test_feed_multipliers_match_feed_multiplier(self):
+        import wildlife_common as wc
+        all_nodes = sorted(tree[slot][0] for tree in wd.BONUS_TREES.values() for slot in ("adaptation", "breakthrough"))
+        for purchased in (set(), set(all_nodes[::2]), set(all_nodes[1::3]), set(all_nodes)):
+            species = sorted(wd.SPECIES)
+            got = wc.feed_multipliers(species, purchased)
+            for s in species:
+                self.assertEqual(got[s], wc.feed_multiplier(s, purchased), (s, sorted(purchased)))
+
     def test_natural_growth_ceiling(self):
         rate = wm.breeding_rate("salt_tortoise", 10 ** 9, [])
         self.assertAlmostEqual(rate, wd.NATURAL_RATE_CEILING, delta=0.5)

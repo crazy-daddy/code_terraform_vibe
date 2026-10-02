@@ -230,6 +230,40 @@ def target_wildlife_ration(_size):
     return plan
 
 
+def target_wildlife_plan(_size):
+    """wildlife_planner.build_plan(), worst case (16 established colonies, every node bought, recipes and forms known, every fluid short)."""
+    import wildlife_planner
+    import wildlife_common as wc
+    from wildlife_data import SPECIES
+    from wildlife_model import schedule_for
+    statuses = {}
+    stock = {}
+    prev = {}
+    recipe_inputs = {}
+    for i, species in enumerate(sorted(SPECIES)):
+        hid = "habitat_%d" % (i + 1)
+        gas, liquid = "gas_%d" % (i % 4), "liquid_%d" % (i % 3)
+        statuses[hid] = {"species": species, "established": True, "pop": 20000 + 1000 * i, "tier": 1, "feed_level": 10.0,
+                         "bought": {"adaptation": True, "breakthrough": True},
+                         "gas": ["", 0.0, [250.0, 650.0], gas, 1.0], "liquid": ["", 0.0, [300.0, 600.0], liquid, 1.0]}
+        recipe_inputs[wc.recipe_of(species)] = {"forage": 10, "form_%d" % (i % 6): 5, "form_%d" % ((i + 1) % 6): 3}
+        for fluid in (gas, liquid):
+            stock[fluid] = 0.0
+            prev[fluid] = [0.0, 0.5, 0]
+    habitat_ids = sorted(statuses)
+    snap = {
+        "tick": 250, "habitat_ids": habitat_ids, "statuses": statuses, "parked": set(habitat_ids[:4]),
+        "cataloged": set(SPECIES), "recipes": set(recipe_inputs), "recipe_inputs": recipe_inputs, "insight": 50.0,
+        "schedule": schedule_for(len(habitat_ids)), "targets": [], "prev_assign": {}, "prev_ration": {},
+        "prev_supply": prev, "fluid_stock": stock, "feed_stock": {}, "form_stock": {},
+        "populations": {s["species"]: s["pop"] for s in statuses.values()}, "mk2_packs": 0,
+    }
+
+    def plan():
+        wildlife_planner.build_plan(snap)
+    return plan
+
+
 TARGETS = {
     "fabricator": target_fabricator,
     "smelter": target_smelter,
@@ -238,6 +272,7 @@ TARGETS = {
     "haul": target_haul,
     "pull": target_pull,
     "wildlife_ration": target_wildlife_ration,
+    "wildlife_plan": target_wildlife_plan,
 }
 
 

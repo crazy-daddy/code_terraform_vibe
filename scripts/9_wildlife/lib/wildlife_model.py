@@ -118,18 +118,24 @@ def node_effects(purchased, species):
     return breakthrough_effects(owned) + adaptation_effects(owned, species)
 
 
+def feed_factor(effects, feed=1.0):
+    """`feed` times (1 - amount) of each feed effect, before the floor."""
+    for fx in effects:
+        if fx["kind"] == "feed":
+            feed *= 1.0 - min(1.0, max(0.0, fx["amount"]))
+    return feed
+
+
 def static_bonuses(effects):
     """Condition-free parts: feed multiplier, founding, retained fluids, band tolerance."""
-    feed = 1.0
+    feed = feed_factor(effects)
     founding = 0
     retain_gas = False
     retain_liquid = False
     band = {"gas": 0.0, "liquid": 0.0}
     for fx in effects:
         kind = fx["kind"]
-        if kind == "feed":
-            feed *= 1.0 - min(1.0, max(0.0, fx["amount"]))
-        elif kind == "founding":
+        if kind == "founding":
             founding += int(fx["amount"])
         elif kind == "retain":
             retain_gas = retain_gas or "gas" in fx["resources"]
