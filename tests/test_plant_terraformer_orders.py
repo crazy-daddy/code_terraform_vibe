@@ -145,3 +145,83 @@ class WildlifeForageReserveTests(StubTestCase):
         machine = _HomeTerraformer()
         machine.outpost = _Outpost("outpost_2", False)
         self.assertEqual(self.controller(machine, 4000).available("forage", {}), 4000)
+
+
+# Full Mk II batch in the Growth Accelerant phase (plant_terraformer_guide.md).
+ACCEL_REQS = {"forage": 6600, "water": 330, "salt": 14, "fertilizer_potency": 27, "growth_accelerant": 1}
+ACCEL_REQUIRED = ["forage", "water", "salt", "fertilizer", "growth_accelerant"]
+
+
+class _FeedTerraformer(_HomeTerraformer):
+    def __init__(self, held):
+        super().__init__()
+        self.held = dict(held)
+        self.enabled = True
+
+    def is_enabled(self):
+        return self.enabled
+
+    def set_enabled(self, enabled):
+        self.enabled = enabled
+
+    def fertilizer_potency(self, item_id):
+        return {"fertilizer_mk3": 50, "fertilizer_mk2": 30, "fertilizer": 10}[item_id]
+
+
+class FeedOrderTests(StubTestCase):
+    """A batch ending mid-load must not find a startable partial set in the holders."""
+
+    def controller(self, held, stock, transfer_cap=None):
+        machine = _FeedTerraformer(held)
+        ctrl = plant_terraformer.PlantTerraformerController(machine)
+        ctrl.onboard = lambda: dict(machine.held)
+        ctrl.water_level = lambda: 330.0
+        ctrl.available = lambda item_id, requests: stock.get(item_id, 0)
+        ctrl.loads = []
+
+        def take(item_id, amount, requests):
+            moved = max(min(amount, stock.get(item_id, 0), transfer_cap or amount), 0)
+            if moved:
+                machine.held[item_id] = machine.held.get(item_id, 0) + moved
+                ctrl.loads.append(item_id)
+            return moved
+
+        ctrl._take = take
+        return ctrl, machine
+
+    def test_in_flight_loads_forage_before_support(self):
+        stock = {"forage": 9000, "salt": 50, "fertilizer_mk2": 5, "growth_accelerant": 5}
+        ctrl, machine = self.controller({}, stock)
+        ctrl.feed(ACCEL_REQS, ACCEL_REQUIRED, True, {})
+        self.assertEqual(ctrl.loads[0], "forage")
+        self.assertEqual(machine.held["forage"], 6600)
+        self.assertEqual(machine.held["growth_accelerant"], 1)
+
+    def test_in_flight_holds_support_back_while_forage_short(self):
+        stock = {"forage": 9000, "salt": 50, "fertilizer_mk2": 5, "growth_accelerant": 5}
+        ctrl, machine = self.controller({}, stock, transfer_cap=2000)
+        moved = ctrl.feed(ACCEL_REQS, ACCEL_REQUIRED, True, {})
+        self.assertEqual(moved, {"forage": 2000})
+        self.assertNotIn("growth_accelerant", machine.held)
+
+    def test_in_flight_skips_forage_when_support_unreachable(self):
+        stock = {"forage": 9000, "salt": 50, "fertilizer_mk2": 5}
+        ctrl, machine = self.controller({}, stock)
+        self.assertEqual(ctrl.feed(ACCEL_REQS, ACCEL_REQUIRED, True, {}), {})
+
+    def test_idle_step_disables_before_loading(self):
+        stock = {"forage": 200, "salt": 50, "fertilizer_mk2": 5, "growth_accelerant": 5}
+        ctrl, machine = self.controller({"salt": 14, "fertilizer_mk2": 1, "growth_accelerant": 1}, stock)
+        machine.status = lambda: "no_forage"
+        machine.phase = lambda: 5
+        machine.required_inputs = lambda: ACCEL_REQUIRED
+        machine.batch_requirements = lambda: ACCEL_REQS
+        enabled_at_load = []
+        feed = ctrl.feed
+        ctrl.feed = lambda *args: enabled_at_load.append(machine.enabled) or feed(*args)
+        ctrl.publish_requests = lambda *args: None
+        ctrl.publish_fabricator_orders = lambda *args: None
+        ctrl.ensure_water = lambda tick: None
+        ctrl.step()
+        self.assertEqual(enabled_at_load, [False])
+        self.assertFalse(machine.enabled)

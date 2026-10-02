@@ -22,7 +22,8 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 #   - A cycle takes 3 h no matter how many Forage it holds, and the machine
 #     draws power (Mk I 180 W, Mk II 900 W) the whole time it is enabled,
 #     blocked or not. The km² per Forage is fixed per phase, so a small batch
-#     loses no km², only power.
+#     loses no km², but its whole-item Salt / Growth Accelerant and the power.
+#     When Forage is the bottleneck, waiting for a full batch costs no km².
 #   - A cycle commits the largest Forage batch EVERY loaded material supports
 #     (a half-full water tank halves the batch). supported_batch() computes
 #     that from the holders and the water_in level; an idle machine is
@@ -30,10 +31,15 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 #     a full batch) and is disabled otherwise -- also while an input (e.g.
 #     Fertilizer nobody crafts yet) is missing entirely. The limiting
 #     material is logged and published as `blocker`.
-#   - An enabled machine starts the next batch the moment one ends, so while
-#     a batch runs, Forage is preloaded only once the other materials already
-#     support start_threshold() and stock can reach it. Water and support
-#     items only rise until the next start, so the preloaded batch is full.
+#   - An enabled machine starts the next batch the moment one ends -- or, if
+#     it is idle, the moment its holders support one Forage, even while a
+#     timed transfer is still filling them. Salt and Growth Accelerant are
+#     whole items per batch, so a 200-Forage batch burns the same Accelerant
+#     as a full one. Hence: an idle machine is disabled before anything is
+#     loaded; while a batch runs, Forage is preloaded first (only once
+#     onboard + local stock of every material can reach start_threshold())
+#     and the support items only after the onboard Forage reaches it, so the
+#     holders stay unstartable until the next batch is full.
 #   - Stopping the script resets enabled to False and pauses an in-flight
 #     batch in place. On restart the batch is found again from get_progress()
 #     or the last published state, and the machine is re-enabled.
@@ -100,9 +106,9 @@ POLL_INTERVAL_S = 10.0
 
 # Share of a full batch (batch_requirements()["forage"], which already
 # shrinks near a phase threshold) the loaded materials must support before
-# an idle machine is enabled. Keeps the 3 h cycle's power cost from being
-# spent on a partial batch.
-START_BATCH_FRACTION = 0.95
+# an idle machine is enabled. A partial batch spends the same whole Salt /
+# Growth Accelerant items and 3 h of power as a full one.
+START_BATCH_FRACTION = 1.0
 
 # Floor on the start threshold (a full batch below it is used as is).
 MIN_START_FORAGE = 100
@@ -209,6 +215,8 @@ class PlantTerraformerController:
         self._published_targets = None
         self._published_tick = None
         self._published_orders = None
+        self._order_detail = []
+        self._foreign_owners = {}
         self._craft_fertilizer = None
         self._craft_fertilizer_tick = 0
         self._resume_pending = self._was_running()
@@ -453,24 +461,61 @@ class PlantTerraformerController:
             self.log.debug(f"[{self.name}] fertilizer potency {have}/{need_potency} after loading; short.")
         return moved_total
 
-    def feed(self, reqs, required, in_flight, requests):
-        """Loads every material the current recipe needs. Returns {item_id: moved}."""
+    def reachable_support(self, reqs, required, held, requests):
+        """Onboard support items plus what local stock can still load (holder caps applied), for support_limits()."""
+        reach = dict(held)
+        items = []
+        if "salt" in required and reqs.get("salt"):
+            items.append("salt")
+        if reqs.get("fertilizer_potency"):
+            items.extend(FERTILIZER_ITEM_IDS)
+        if "growth_accelerant" in required and reqs.get("growth_accelerant"):
+            items.append("growth_accelerant")
+        for item_id in items:
+            total = held.get(item_id, 0) + self.available(item_id, requests)
+            reach[item_id] = total if item_id == "salt" else min(total, SUPPORT_HOLDER_CAP)
+        return reach
+
+    def load_support(self, reqs, required, held, requests):
         moved = {}
-        held = self.onboard()
         if "salt" in required and reqs.get("salt"):
             moved["salt"] = self.load_salt(int(reqs["salt"]), held, requests)
         if reqs.get("fertilizer_potency"):
             moved["fertilizer"] = self.load_fertilizer(int(reqs["fertilizer_potency"]), held, requests)
         if "growth_accelerant" in required and reqs.get("growth_accelerant"):
             moved["growth_accelerant"] = self.load_accelerant(int(reqs["growth_accelerant"]), held, requests)
+        return moved
+
+    def feed(self, reqs, required, in_flight, requests):
+        """
+        Loads every material the current recipe needs. Returns {item_id: moved}.
+
+        A batch that ends while the machine is enabled starts the next one at
+        once from whatever is onboard, and Forage arrives in timed chunks. So
+        while a batch runs, Forage loads first and the support items only once
+        the onboard Forage reaches start_threshold(): until then a support item
+        the last batch consumed is missing and no partial batch can start.
+        Idle, step() disables the machine before loading, so support items
+        load first and the Forage gate sees them.
+        """
+        moved = {}
+        held = self.onboard()
         forage = int(reqs.get("forage", 0) or 0)
-        if forage > 0:
-            # Support items load first so the Forage preload gate sees them.
+        if in_flight and forage > 0:
+            limits = self.support_limits(reqs, required, self.reachable_support(reqs, required, held, requests))
+            moved["forage"] = self.load_forage(forage, held, in_flight, requests, min(limits.values()) if limits else forage)
+            if moved["forage"]:
+                held = self.onboard()
+            start_at = self.start_threshold(forage)
+            if held.get("forage", 0) < start_at:
+                self.log.debug(f"[{self.name}] batch running; support items held back: {held.get('forage', 0)} Forage onboard, next batch starts at {start_at}.")
+                return {k: v for k, v in moved.items() if v}
+        moved.update(self.load_support(reqs, required, held, requests))
+        if not in_flight and forage > 0:
             if any(moved.values()):
                 held = self.onboard()
             limits = self.support_limits(reqs, required, held)
-            support_limit = min(limits.values()) if limits else forage
-            moved["forage"] = self.load_forage(forage, held, in_flight, requests, support_limit)
+            moved["forage"] = self.load_forage(forage, held, in_flight, requests, min(limits.values()) if limits else forage)
         return {k: v for k, v in moved.items() if v}
 
     # --------------------------------------------------------------- water
@@ -565,13 +610,18 @@ class PlantTerraformerController:
             return
         here = requests.get(self.outpost_id) or {}
         targets = {}
+        foreign = {}
         for item_id, target in self.demand_targets(reqs, required).items():
             entry = here.get(item_id) or {}
             owner = entry.get("by") if isinstance(entry, dict) else None
             if owner in (None, REQUESTER_ID):
                 targets[item_id] = target
             else:
+                foreign[item_id] = owner
+        if foreign != self._foreign_owners:
+            for item_id, owner in foreign.items():
                 self.log.debug(f"[{self.name}] {item_id} already requested here by '{owner}'; not overriding.")
+            self._foreign_owners = foreign
 
         due = (
             targets != self._published_targets
@@ -626,6 +676,7 @@ class PlantTerraformerController:
     def fabricator_orders(self, reqs, required, phase, remaining, machines):
         """({item_id: need}, {item_id: backlog}) for the Fabricator-crafted inputs this phase needs (see module header)."""
         need, backlog = {}, {}
+        self._order_detail = []
         full = int(reqs.get("forage", 0) or 0)
         if full <= 0:
             return need, backlog
@@ -639,7 +690,7 @@ class PlantTerraformerController:
         for item_id, per_batch, first_phase in crafted:
             forage_left = remaining_forage(phase, remaining, first_phase)
             n, b = order_sizes(per_batch, full, machines, forage_left)
-            self.log.debug(f"[{self.name}] {item_id}: {per_batch:.2f}/batch x {machines} machine(s), {forage_left:,.0f} Forage left -> need {n}, backlog {b}.")
+            self._order_detail.append(f"[{self.name}] {item_id}: {per_batch:.2f}/batch x {machines} machine(s), {forage_left:,.0f} Forage left -> need {n}, backlog {b}.")
             if n > 0:
                 need[item_id] = n
             if b > 0:
@@ -647,10 +698,12 @@ class PlantTerraformerController:
         return need, backlog
 
     def publish_fabricator_orders(self, need, backlog):
-        """Writes both orders (production skips unchanged writes); info line when they change."""
+        """Writes both orders (production skips unchanged writes); info line and fabricator_orders()' sizing trail when they change."""
         orders = (need, backlog)
         if orders == self._published_orders:
             return
+        for line in self._order_detail:
+            self.log.debug(line)
         set_upgrade_order(REQUESTER_ID, need)
         set_backlog_order(REQUESTER_ID, backlog)
         if need or backlog:
@@ -751,6 +804,10 @@ class PlantTerraformerController:
 
         moved = {}
         if status not in STOP_STATUSES:
+            if not in_flight:
+                # An enabled idle machine starts a batch as soon as its holders
+                # support one Forage, so loading into it would start a partial one.
+                self.set_enabled(False, "idle, loading inputs")
             requests = logistics_requests.active_requests(curr_tick) or {}
             if "water" in required:
                 self.ensure_water(curr_tick)
