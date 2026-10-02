@@ -361,6 +361,11 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [x] Reactor water reservation (§1c-4, `fluid_routing.water_reserve`): below 48 t/Reactor of pooled water tanks only Reactors draw water; other consumers' routers disconnect, Harvesters skip refills.
   - [ ] Reactor load following: fuel follows heat, not output, so a full battery wastes rods; coast or lower heat while other generation covers the grid.
   - [ ] Validate live (Reactor): `elapsed_game_hours()` boundaries match the condition redraws, measured gain vs. the settled `temperature() / heat()`, `input.connect(cask)` + `take("fuel_rod")`, water routing, overheat never reached, water reserve hold/release and consumers reconnecting after it.
+- [ ] **Future runs: rush to atomic power** ([docs/plans/atomic_rush.md](docs/plans/atomic_rush.md)): Reactor = 5,000 W from one running script vs ~46 turbine scripts.
+  - [ ] Nuclear prep track in the tier 4+ decision engine: Weather Station in every biome and uranium stockpiling from Weather Program (TI 330,000), plated drone, Fuel Assembler + lead mining, Hot Freight Proof order for the Fuel Rod blueprint, all done before TI 650,000.
+  - [ ] Cash manager consumer for the Reactor (750,000 cr), ranked ahead of tier upgrades and saved for before the gate.
+  - [ ] Before the gate, add power as Oil Generators (700 W per script) instead of turbines or solar, sized to the oil surplus (§1c-1 surplus base load) so Tar/Plastics stay supplied; measure oil yield per well early in the run.
+  - [ ] Retire solar trackers early; once a Reactor runs, let turbine commitment park the turbines (keep them as backup, don't sell).
 - [ ] *(Deferred, not this save)* **Lightning Rods as a power source**: ~250–500 W from 4 rods, only via a risky battery-at-0 "rod drain mode". Mechanics, yield estimate and plan in `docs/DESIGN_HISTORY.md` §1 "Lightning Rods Evaluated, Deferred".
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations
