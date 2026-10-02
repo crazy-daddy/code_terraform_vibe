@@ -223,7 +223,10 @@ class WarehouseSlotTests(unittest.TestCase):
         got = on.smelter_stock(full)
         self.assertEqual(len(got["smelter"]), 2 * len(RAW_ORE_ITEM_IDS))
         self.assertEqual(len(got["factory"]), len(RAW_ORE_ITEM_IDS))
-        self.assertEqual(on.smelter_stock(full[:1]), {})
+        self.assertEqual(on.smelter_stock(full[:1]), {})   # Large Warehouse: end state, incomplete
+        early = on.smelter_stock(full[:2], large=False)       # small Warehouses: what is unlocked now
+        self.assertEqual((len(early["smelter"]), len(early["factory"])), (4, 2))
+        self.assertEqual(on.smelter_stock([], large=False), {})
 
     def test_liquifier_one_slot_per_life_form(self):
         self.assertEqual(roles.stock_slots(["liquifier_deep"], {}), 6)

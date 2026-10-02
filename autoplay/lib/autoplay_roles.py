@@ -125,11 +125,11 @@ PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab
                    "pressure_generator", "garbage_disposal", "lightning_rod", "charging_station",
                    "drone_service_station", "supply_dock")
 # Warehouse stock per role, home included (Inventory holds 60 slots x 20
-# units at most: no bulk storage): one 2000-unit slot per stocked item,
-# sized for the end state. outpost_needs.read_stock_items() fills smelter /
-# factory / feed item lists from in-game data only when complete (every ore
-# smelted, every species' feed recipe); mining lists its need's ores; other
-# roles use the fallbacks. FACTORY_BUFFER_SLOTS = room on top of the factory's ingots for
+# units at most: no bulk storage): one 2000-unit slot per stocked item.
+# outpost_needs.read_stock_items() fills smelter / factory lists (staged by
+# the Large Warehouse: unlocked recipes before it, every ore after) and the
+# feed list (complete only) from in-game data; mining lists its need's ores;
+# other roles use the fallbacks. FACTORY_BUFFER_SLOTS = room on top of the factory's ingots for
 # intermediates and finished goods.
 WAREHOUSE_SLOTS = {"warehouse": 5, "large_warehouse": 15}
 FACTORY_BUFFER_SLOTS = 10

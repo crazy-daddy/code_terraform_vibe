@@ -13,8 +13,11 @@
 #    "fluid_sites": supply_tiers.fluid_sites() rows,
 #    "fluids_in": [fluid, ...] the designated roles take,
 #    "range_m": mining range of an outpost (outpost_mining),
-#    "stock": {role: [item_id, ...]} Warehouse stock lists, complete ones only (read_stock_items()),
-#    "per_warehouse": slots of the Warehouse kind to build (5, Large 15)}
+#    "stock": {role: [item_id, ...]} Warehouse stock lists (read_stock_items()),
+#    "per_warehouse": slots of the Warehouse kind to build: 5, 15 once the
+#                     Large Warehouse kit is available. Wildlife roles unlock
+#                     after it (Plants 2,250,000 vs Biomass 30,000), so they
+#                     are always sized with 15.}
 #
 # A need is {"role", "biome", "urgency", "why", "found", "locked"} (+ "ores"
 # for mining). Urgency:
@@ -408,22 +411,24 @@ def _recipes(type_id):
     return []
 
 
-def read_stock_items(smelter_recipes):
+def read_stock_items(smelter_recipes, large):
     """
-    Stock lists from in-game data, each only when complete (a partial list
-    underestimates the end state; the role then uses its autoplay_roles
-    fallback): smelter_stock() and feed_stock().
+    Stock lists from in-game data: smelter_stock() (staged by the Large
+    Warehouse, `large`) and feed_stock() (complete lists only).
     """
-    out = smelter_stock(smelter_recipes)
+    out = smelter_stock(smelter_recipes, large)
     out.update(feed_stock(archive.get(FEED_KEY, {})))
     return out
 
 
-def smelter_stock(recipes):
+def smelter_stock(recipes, large=True):
     """
     {"smelter": ores + outputs + byproducts, "factory": the outputs (every
-    ingot a Fabricator may take)} once the Smelter recipes cover every ore
-    in RAW_ORE_ITEM_IDS; {} before that.
+    ingot a Fabricator may take)}. Two stages: before the Large Warehouse
+    (large False) the recipes unlocked now, sized for small Warehouses (a
+    later ore adds a Warehouse, and the Large swap frees slots again); from
+    then on the end state, so the list counts only once it covers every ore
+    in RAW_ORE_ITEM_IDS ({} before that: SMELTER_FALLBACK_SLOTS applies).
     """
     items = []
     outputs = []
@@ -436,7 +441,7 @@ def smelter_stock(recipes):
                 items.append(item_id)
         if recipe.output_item not in outputs:
             outputs.append(recipe.output_item)
-    if not all(ore in ores for ore in RAW_ORE_ITEM_IDS):
+    if not items or (large and not all(ore in ores for ore in RAW_ORE_ITEM_IDS)):
         return {}
     return {"smelter": items, "factory": sorted(outputs)}
 
@@ -505,9 +510,10 @@ def snapshot():
                 taken.append(fluid)
     fabricator_recipes = _recipes("fabricator")
     kits = read_kits(fabricator_recipes)
+    large = "large_warehouse" in kits
     return {"outposts": outposts, "kits": kits, "bio_orders": read_bio_orders(),
-            "stock": read_stock_items(_recipes("smelter")),
-            "per_warehouse": WAREHOUSE_SLOTS["large_warehouse" if "large_warehouse" in kits else "warehouse"],
+            "stock": read_stock_items(_recipes("smelter"), large),
+            "per_warehouse": WAREHOUSE_SLOTS["large_warehouse" if large else "warehouse"],
             "essences_required": read_essences_required(), "ore_wanted": sorted(smelter_outposts()[1]),
             "ore_sites": mining_sites(sites), "fluid_sites": fluid_sites(sites), "fluids_in": taken,
             "range_m": resource_assignment_range_m()}
