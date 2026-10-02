@@ -75,6 +75,16 @@ MACHINE_STATUS_KEYS = {
     "wildlife.feed": "feed_maker",
 }
 
+# Shared dicts {building_id: ...} spanning many building types, pruned of ids that are no
+# longer a building. Literal strings: script_parking / fluid_routing live in this tier, but
+# the dicts are plain data and the cleaner must not depend on their owners.
+BUILDING_ID_KEYS = (
+    "script.parked",  # lib/script_parking.py PARKED_KEY
+    "script.park_requests",  # PARK_REQUESTS_KEY
+    "script.park_holds",  # HOLDS_KEY
+    "fluid_routing.tank_assignments",
+)
+
 
 def safe_get_component(name):
     """Safely retrieves a game component without raising exceptions."""
@@ -122,6 +132,7 @@ class ArchiveCleaner:
             "missions_migrated": 0,
             "missions_removed": 0,
             "machine_status_removed": 0,
+            "building_entries_removed": 0,
             "corrupted_keys_deleted": 0,
             "errors": 0
         }
@@ -747,6 +758,68 @@ class ArchiveCleaner:
         self.stats["machine_status_removed"] += removed
         return f"{removed} stale machine status entr{'y' if removed == 1 else 'ies'} purged"
 
+    def get_live_building_ids(self):
+        """Ids of every building on the outpost network (outpost.buildings() with no type
+        filter). Empty when discovery fails or finds nothing."""
+        ids = set()
+        network = safe_get_component("outpost_network")
+        if network and hasattr(network, "outposts"):
+            try:
+                for outpost in network.outposts() or []:
+                    ids.update(str(b.id) for b in outpost.buildings() or [] if getattr(b, "id", None))
+            except Exception as e:
+                swallowed("archive_cleaner.ArchiveCleaner.get_live_building_ids: outposts", e)
+                self.log(f"[WARN] Failed listing network buildings: {e}")
+                return set()
+        self.console.debug(f"get_live_building_ids: resolved {len(ids)} building ids")
+        return ids
+
+    def _building_gone(self, building_id, live_ids):
+        """True when the id is off the network AND get_component() no longer resolves it.
+        The second check keeps machines the network listing omits (field drills, thermal
+        caps built on a vent) from being pruned."""
+        if building_id in live_ids:
+            return False
+        try:
+            return get_component(building_id) is None
+        except Exception as e:
+            swallowed("archive_cleaner.ArchiveCleaner._building_gone: get_component", e)
+            return False
+
+    def clean_building_entries(self, live_building_ids):
+        """
+        Drops BUILDING_ID_KEYS dict entries whose building no longer exists (e.g. a
+        decommissioned machine that was breaker-parked). Skipped entirely when the
+        network listing came back empty, so a failed walk never wipes the dicts.
+        """
+        if not live_building_ids:
+            return "skipped: could not list network buildings this run"
+        removed = 0
+        for key in BUILDING_ID_KEYS:
+            entries = self.archive.get(key, None)
+            if entries is None:
+                continue
+            if not isinstance(entries, dict):
+                self.log(f"  [DELETE BUILDING ENTRY] Key '{key}': not a dict, resetting")
+                removed += 1
+                if not self.dry_run:
+                    self.archive.delete(key)
+                continue
+            stale = [bid for bid in entries if self._building_gone(str(bid), live_building_ids)]
+            for bid in stale:
+                self.log(f"  [DELETE BUILDING ENTRY] {key}['{bid}']: building no longer exists")
+            if stale and not self.dry_run:
+                def updater(current, stale=stale):
+                    if not isinstance(current, dict):
+                        return {}
+                    for bid in stale:
+                        current.pop(bid, None)
+                    return current
+                self.archive.transaction(key, {}, updater)
+            removed += len(stale)
+        self.stats["building_entries_removed"] += removed
+        return f"{removed} entr{'y' if removed == 1 else 'ies'} of removed buildings purged"
+
     def clean_power_grid_state(self, active_grid_anchors):
         """
         Purges per-grid power.shedded:<anchor>/power.night_wh:<anchor> entries
@@ -976,6 +1049,7 @@ class ArchiveCleaner:
         self._stage("Purging retired key families", self.clean_retired_keys)
         self._stage("Checking resumable mission records", self.clean_missions, active_vehicles)
         self._stage("Checking machine status dicts", self.clean_machine_status)
+        self._stage("Checking per-building entries (parking, tank assignments)", self.clean_building_entries, self.get_live_building_ids())
         self._stage("Checking profiling entries", self.clean_profiling, current_tick)
         self._stage("Checking power & heating terraforming state", self.clean_power_and_heat)
         self._stage("Checking per-grid power state", self.clean_power_grid_state, active_grid_anchors)
