@@ -50,15 +50,37 @@ class _Cask:
 class _Collector(drone_weather.DroneWeatherMixin):
     """Just the host methods _collect_at_site() and _aftermath_candidates() use."""
 
-    def __init__(self, drone, plated=True, home_outpost=None, space=10):
+    CLAIM_STALE_TICKS = 36000
+
+    def __init__(self, drone, plated=True, home_outpost=None, space=10, name="drone_1"):
         self.drone = drone
-        self.name = "drone_1"
+        self.name = name
         self.plated = plated
         self.home_outpost = home_outpost
         self.cruise_throttle = 0.5
         self.space = space
         self.log = TreeConsole(module="drone_weather")
         self.released = []
+        self.aboard = {}
+        self.intent = "collecting"
+
+    def get_current_tick(self):
+        return 1000
+
+    def get_biosite_claims(self):
+        return {}
+
+    def claim_biosite(self, key, info):
+        return True
+
+    def calculate_trip_energy(self, coords):
+        return {"is_achievable": True, "total_required_wh": 1.0}
+
+    def cargo_count(self, item_id=None):
+        return sum(self.aboard.values()) if item_id is None else self.aboard.get(item_id, 0)
+
+    def set_intent(self, text):
+        self.intent = text
 
     def refresh_biosite_claim(self, key):
         pass
@@ -172,6 +194,59 @@ class CollectorTests(StubTestCase):
         self.world.components["research"] = _Research()
         candidates = collector._aftermath_candidates(collector.aftermath_kinds())
         self.assertEqual([(c["event_id"], c["limit"]) for c in candidates], [("storm_2", 30)])
+
+    def _uranium_ready(self):
+        class _Research:
+            def is_unlocked(self, research_id):
+                return research_id == drone_weather.HOT_CARGO_RESEARCH
+
+        self.world.components["research"] = _Research()
+        self.world.components["lead_cask_1"] = _Cask("lead_cask_1", self.home, material="raw_uranium", count=70)
+        self._publish({"storm_2": _entry(kind="uranium", ready=19.0), "storm_3": _entry(kind="uranium", ready=19.0, x=0, y=150)})
+
+    def test_second_drone_sees_room_reserved_by_first(self):
+        self._uranium_ready()
+        first = _Collector(_Drone([]), home_outpost=self.home)
+        target, _budget = first._select_aftermath_target(first._aftermath_candidates(first.aftermath_kinds()))
+        self.assertEqual((target["event_id"], target["limit"]), ("storm_2", 30))
+        self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000), 30)
+        second = _Collector(_Drone([]), home_outpost=self.home, name="drone_2")
+        self.assertEqual(second._aftermath_candidates(second.aftermath_kinds()), [])
+
+    def test_reservation_race_releases_claim(self):
+        # Both drones built their candidate lists before either reserved.
+        self._uranium_ready()
+        first = _Collector(_Drone([]), home_outpost=self.home)
+        second = _Collector(_Drone([]), home_outpost=self.home, name="drone_2")
+        late = second._aftermath_candidates(second.aftermath_kinds())
+        first._select_aftermath_target(first._aftermath_candidates(first.aftermath_kinds()))
+        self.assertEqual(second._select_aftermath_target(late), (None, None))
+        self.assertEqual(second.released, ["aftermath_storm_2", "aftermath_storm_3"])
+
+    def test_reserve_inbound_grants_net_of_others_and_prunes_stale(self):
+        lead_cask = drone_weather.lead_cask
+        lead_cask.set_inbound("old", "outpost_home", 50, 0)
+        self.assertEqual(lead_cask.reserve_inbound("a", "outpost_home", 40, 25, 40000), 25)
+        self.assertEqual(lead_cask.reserve_inbound("b", "outpost_home", 40, 25, 40000), 15)
+        self.assertEqual(lead_cask.reserve_inbound("c", "outpost_home", 40, 25, 40000), 0)
+        self.assertEqual(lead_cask.reserve_inbound("d", "elsewhere", 40, 25, 40000), 25)
+        self.assertEqual(sorted(drone_weather.archive.get(lead_cask.INBOUND_KEY, {})), ["a", "b", "d"])
+
+    def test_sync_tracks_uranium_aboard(self):
+        collector = _Collector(_Drone([]), home_outpost=self.home)
+        collector.aboard = {"raw_uranium": 12}
+        collector._sync_cask_reservation()
+        self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000), 12)
+        collector.aboard = {}
+        collector._sync_cask_reservation()
+        self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000), 0)
+
+    def test_trip_end_intent(self):
+        collector = _Collector(_Drone([]), home_outpost=self.home)
+        collector._end_trip_intent(_target("storm_2", "uranium"), 12)
+        self.assertEqual(collector.intent, "hauling raw_uranium from storm_2 to outpost_home")
+        collector._end_trip_intent(_target(), 0)
+        self.assertIsNone(collector.intent)
 
     def test_not_launched_before_arrival_would_be_ready(self):
         # 150 m at 150 m/h = 1 h away.

@@ -16,8 +16,11 @@
 # at its home Depot, which puts hot cargo into a Lead Cask at that outpost
 # (research_shielded_depot_ops required; "cask_missing" otherwise), so a
 # uranium site is only taken while the home outpost has cask room (casks
-# reserved for Fuel Rods in lead_cask.roles don't count). Storm
-# Glass (thunderstorms, 2-4 units) is ordinary cargo.
+# reserved for Fuel Rods in lead_cask.roles don't count). That room is shared
+# by every plated drone homed there, so a drone reserves its share in
+# lead_cask.inbound when it claims the site (reserve_inbound(); the grant is
+# the trip's limit), narrows it to the units collected, and drops it once no
+# uranium is aboard. Storm Glass (thunderstorms, 2-4 units) is ordinary cargo.
 #
 # One drone per site at a time: an exclusive claim in biosite.claims under
 # AFTERMATH_KEY_PREFIX + event_id (drone_claims.py). A site that needs more
@@ -152,10 +155,14 @@ class DroneWeatherMixin:
             return []
         uranium_room = 0
         if "uranium" in kinds and any(entry["kind"] == "uranium" for _e, entry in sites):
+            home_id = getattr(self._host.home_outpost, "id", None)
             if hot_cargo_unlocked():
-                uranium_room = cask_room(self._host.home_outpost)
+                room = cask_room(self._host.home_outpost)
+                promised = lead_cask.inbound_units(home_id, self._host.get_current_tick(), exclude=self._host.name)
+                uranium_room = room - promised
+                self._host.log.trace(f"[{self._host.name}] Lead Cask room at '{home_id}': {room} free, {promised} reserved by other drones.")
             if uranium_room <= 0:
-                self._host.log.debug(f"[{self._host.name}] Uranium aftermath(s) known but no Lead Cask room at '{getattr(self._host.home_outpost, 'id', None)}' (or {HOT_CARGO_RESEARCH} missing); skipping them.")
+                self._host.log.debug(f"[{self._host.name}] Uranium aftermath(s) known but no unreserved Lead Cask room at '{home_id}' (or {HOT_CARGO_RESEARCH} missing); skipping them.")
         speed = self._host.flight_speed_m_per_h(self._host.cruise_throttle)
         pos = self._host.position()
         candidates = []
@@ -203,10 +210,42 @@ class DroneWeatherMixin:
             if not budget["is_achievable"]:
                 self._host.log.trace(f"Aftermath {candidate['event_id']}: {budget['total_required_wh']:.1f} {self._host.energy_unit()} required, not achievable; skipping.")
                 continue
-            if self._host.claim_biosite(candidate["target_key"], {"coords": candidate["coords"], "name": candidate["target_key"]}):
-                return candidate, budget
-            self._host.log.debug(f"Lost claim race on aftermath {candidate['event_id']}; trying next candidate.")
+            if not self._host.claim_biosite(candidate["target_key"], {"coords": candidate["coords"], "name": candidate["target_key"]}):
+                self._host.log.debug(f"Lost claim race on aftermath {candidate['event_id']}; trying next candidate.")
+                continue
+            if candidate["kind"] == "uranium" and not self._reserve_cask_room(candidate):
+                self._host.release_biosite_claim(candidate["target_key"])
+                continue
+            return candidate, budget
         return None, None
+
+    def _reserve_cask_room(self, candidate):
+        """Reserves the uranium trip's Lead Cask room at home; narrows candidate["limit"] to the grant. False when none is left."""
+        home = self._host.home_outpost
+        home_id = getattr(home, "id", None)
+        granted = lead_cask.reserve_inbound(self._host.name, home_id, cask_room(home), candidate["limit"], self._host.get_current_tick())
+        if granted <= 0:
+            self._host.log.debug(f"Aftermath {candidate['event_id']}: Lead Cask room at '{home_id}' taken by other drones' reservations; skipping.")
+            return False
+        if granted < candidate["limit"]:
+            self._host.log.debug(f"Aftermath {candidate['event_id']}: reserved {granted} of {candidate['limit']} Lead Cask unit(s) at '{home_id}'.")
+        candidate["limit"] = granted
+        return True
+
+    def _sync_cask_reservation(self):
+        """Matches this drone's lead_cask.inbound entry to the Raw Uranium aboard (none aboard: released)."""
+        aboard = self._host.cargo_count(ITEM_BY_KIND["uranium"])
+        if aboard > 0:
+            lead_cask.set_inbound(self._host.name, getattr(self._host.home_outpost, "id", None), aboard, self._host.get_current_tick())
+        else:
+            lead_cask.release_inbound(self._host.name)
+
+    def _end_trip_intent(self, target, units):
+        """After a trip: the fleet card shows the load heading home, or no job."""
+        if units > 0:
+            self._host.set_intent(fleet_intent.describe("hauling", [target["item"]], source=target["event_id"], dest=getattr(self._host.home_outpost, "id", None)))
+        else:
+            self._host.set_intent(None)
 
     def _wait_for_ready(self, target):
         """Hovers on the site until ready_gh + READY_MARGIN_GH. False when the site expires first."""
@@ -359,11 +398,15 @@ class DroneWeatherMixin:
                 units, outcome = self._fly_and_collect(target)
                 # Releasing also clears the mission; cargo aboard is unloaded below or next cycle.
                 self._host.release_biosite_claim(target["target_key"])
+                self._sync_cask_reservation()
+                self._end_trip_intent(target, units)
                 if units > 0 and not self._host._return_and_unload():
                     log.end(f"{units} unit(s), {outcome}; unload deferred")
                     flush_all()
                     sleep(poll_interval)
                     continue
+                self._sync_cask_reservation()
+                self._host.set_intent(None)
                 log.end(f"{units} unit(s), {outcome}")
             except Exception as e:
                 log.level("error").print(f"[{self._host.name}] Aftermath loop exception: {e}")
@@ -380,10 +423,12 @@ class DroneWeatherMixin:
         site. Returns the claimed target, or None after sleeping (the caller
         starts the next cycle).
         """
+        self._sync_cask_reservation()
         if self._host.cargo_count() > 0:
             if not self._host._return_and_unload():
                 flush_all()
                 sleep(poll_interval)
+            self._sync_cask_reservation()
             return None
         curr_wh, _, _ = self._host.get_battery()
         if curr_wh <= self._host.energy_needed_to_return_comfortably():
@@ -435,5 +480,7 @@ class DroneWeatherMixin:
         self._host.log.start(f"[{self._host.name}] Storm Glass pickup {target['event_id']} at {target['coords']}")
         units, outcome = self._fly_and_collect(target)
         self._host.release_biosite_claim(target["target_key"])
+        # The cargo-aboard delivery sets its own hauling intent.
+        self._host.set_intent(None)
         self._host.log.end(f"{units} unit(s), {outcome}")
         return True

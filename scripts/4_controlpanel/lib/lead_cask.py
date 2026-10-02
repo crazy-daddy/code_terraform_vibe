@@ -13,6 +13,12 @@
 #   - repair() moves Raw Uranium out of a "fuel_rod" cask into other casks
 #     (transfer_to), and take_from_casks() drains such a cask first, so the
 #     cask unlatches and the next Fuel Rod latches it.
+#
+# Inbound reservations: `lead_cask.inbound` = {carrier: {"outpost", "units",
+# "tick"}}, Raw Uranium a drone has promised to unload at an outpost (claimed
+# site's share, then the units aboard). reserve_inbound() grants room atomically
+# against the other carriers' entries, so two drones never count on the same
+# cask room. Entries older than INBOUND_STALE_TICKS are ignored and pruned.
 
 from archive import archive
 from swallow import swallowed
@@ -22,6 +28,9 @@ URANIUM_ITEM = "raw_uranium"
 ROD_ITEM = "fuel_rod"
 HOT_ITEMS = (URANIUM_ITEM, ROD_ITEM)
 ROLES_KEY = "lead_cask.roles"
+INBOUND_KEY = "lead_cask.inbound"
+# Same expiry as drone_claims.CLAIM_STALE_TICKS.
+INBOUND_STALE_TICKS = 36000
 
 
 def home_outpost():
@@ -102,6 +111,64 @@ def room_for(item_id, outpost=None, casks=None):
         if c["material"] in ("", item_id):
             room += max(0, c["capacity"] - c["count"])
     return room
+
+
+def _live_inbound(entries, tick):
+    """{carrier: entry} of well-formed, non-stale inbound reservations."""
+    if not isinstance(entries, dict):
+        return {}
+    return {carrier: e for carrier, e in entries.items()
+            if isinstance(e, dict) and tick - e.get("tick", 0) < INBOUND_STALE_TICKS}
+
+
+def inbound_units(outpost_id, tick, exclude=None):
+    """Raw Uranium other carriers (all but exclude) have reserved at outpost_id."""
+    live = _live_inbound(archive.get(INBOUND_KEY, {}), tick)
+    return sum(int(e.get("units", 0)) for carrier, e in live.items() if carrier != exclude and e.get("outpost") == outpost_id)
+
+
+def reserve_inbound(carrier, outpost_id, room, wanted, tick):
+    """Reserves up to wanted units of room at outpost_id for carrier, net of the other carriers'
+    reservations; prunes stale entries. Returns the units granted (0 = nothing reserved)."""
+    granted = [0]
+
+    def updater(entries):
+        live = _live_inbound(entries, tick)
+        others = sum(int(e.get("units", 0)) for c, e in live.items() if c != carrier and e.get("outpost") == outpost_id)
+        granted[0] = max(0, min(wanted, room - others))
+        if granted[0] > 0:
+            live[carrier] = {"outpost": outpost_id, "units": granted[0], "tick": tick}
+        else:
+            live.pop(carrier, None)
+        return live
+
+    if not archive.transaction(INBOUND_KEY, {}, updater):
+        return 0
+    return granted[0]
+
+
+def set_inbound(carrier, outpost_id, units, tick):
+    """Sets carrier's reservation to units already aboard (no room check: they are committed)."""
+    def updater(entries):
+        live = _live_inbound(entries, tick)
+        live[carrier] = {"outpost": outpost_id, "units": units, "tick": tick}
+        return live
+
+    archive.transaction(INBOUND_KEY, {}, updater)
+
+
+def release_inbound(carrier):
+    """Drops carrier's reservation. Plain read first: most calls find none."""
+    entries = archive.get(INBOUND_KEY, {})
+    if not isinstance(entries, dict) or carrier not in entries:
+        return
+
+    def updater(stored):
+        stored = dict(stored) if isinstance(stored, dict) else {}
+        stored.pop(carrier, None)
+        return stored
+
+    archive.transaction(INBOUND_KEY, {}, updater)
 
 
 def unload_target(item_id, outpost=None, casks=None):
