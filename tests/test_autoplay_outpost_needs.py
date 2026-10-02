@@ -201,12 +201,32 @@ class WarehouseSlotTests(unittest.TestCase):
                          bio.MAX_LOCAL_BIO_ARTIFACTS + len(outpost_reagents.DEFAULT_REAGENT_STOCK_TARGETS))
         self.assertEqual(roles.stock_slots(["bio_deep"], {}), roles.BIO_STOCK_SLOTS)
 
-    def test_wildlife_stock_from_archive_entries(self):
-        feed = {"feed_maker_1": {"recipes": {"craft_a": {"forage": 100, "frost_moth": 2}, "craft_b": {"forage": 100, "ice_eel": 1}}}}
-        status = {"habitat_1": {"feed_item": "feed_a"}, "habitat_2": {"feed_item": "feed_a"}, "habitat_3": {}}
-        self.assertEqual(on.wildlife_stock(feed, status),
-                         {"feed": ["forage", "frost_moth", "ice_eel"], "wildlife": ["feed_a"]})
-        self.assertEqual(on.wildlife_stock(None, []), {})
+    def test_feed_stock_only_from_complete_recipe_list(self):
+        from wildlife_data import SPECIES
+        from wildlife_common import recipe_of
+        recipes = {recipe_of(s): {"forage": 100, "form_" + s: 1} for s in SPECIES}
+        got = on.feed_stock({"feed_maker_1": {"recipes": recipes}})
+        self.assertEqual(len(got["feed"]), len(SPECIES) + 1)
+        partial = dict(list(recipes.items())[:2])
+        self.assertEqual(on.feed_stock({"feed_maker_1": {"recipes": partial}}), {})
+        self.assertEqual(roles.stock_slots(["feed"], on.feed_stock({})), roles.FEED_FALLBACK_SLOTS)
+        self.assertEqual(on.feed_stock(None), {})
+
+    def test_smelter_stock_only_when_every_ore_smelts(self):
+        class Recipe:
+            def __init__(self, ore, out):
+                self.inputs = {ore: 2}
+                self.output_item = out
+                self.byproduct_item = None
+        from outpost_mining import RAW_ORE_ITEM_IDS
+        full = [Recipe(ore, ore + "_out") for ore in RAW_ORE_ITEM_IDS]
+        got = on.smelter_stock(full)
+        self.assertEqual(len(got["smelter"]), 2 * len(RAW_ORE_ITEM_IDS))
+        self.assertEqual(len(got["factory"]), len(RAW_ORE_ITEM_IDS))
+        self.assertEqual(on.smelter_stock(full[:1]), {})
+
+    def test_liquifier_one_slot_per_life_form(self):
+        self.assertEqual(roles.stock_slots(["liquifier_deep"], {}), 6)
 
     def test_found_bundle_reports_buildings(self):
         s = snap([HOME], stock=self.STOCK, per_warehouse=5)

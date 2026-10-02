@@ -186,15 +186,15 @@ Not in the catalog (`farm`, operator roles): fluids only, never observed or miss
 | `site_slots(roles, stock, have_slots, per_warehouse)` | `(counted, penalized, warehouses)`: machine groups + Warehouses for the stock beyond `have_slots`; home too (Inventory: 60 slots × 20 at most, no bulk store) |
 | `warehouse_slots(type_counts)` | `(slots, buildings)` of the Warehouses standing at an outpost |
 
-**Warehouse stock** (every outpost, home included; one 2000-unit slot per item). Lists come from in-game data (`outpost_needs.read_stock_items()`): `smelter` = ores, outputs and byproducts of the Smelter recipes; `factory` = Smelter outputs the Fabricator recipes take; `mining` = the need's ores; `feed` = inputs of the Feed Maker recipes (`wildlife.feed`); `wildlife` = feed items of the housed species (`wildlife.status`).
+**Warehouse stock** (every outpost, home included; one 2000-unit slot per item). Sized for the end state. Lists come from in-game data (`outpost_needs.read_stock_items()`), each only when complete, since a partial list underestimates: `smelter` = ores, outputs and byproducts of the Smelter recipes and `factory` = those outputs, once the recipes cover every `RAW_ORE_ITEM_IDS` ore (`smelter_stock()`); `feed` = inputs of the Feed Maker recipes in `wildlife.feed`, once they hold every species' recipe (`feed_stock()`, `wildlife_common.recipe_of()` over `wildlife_data.SPECIES`); `mining` = the need's ores. Otherwise, and for every other role, the fallbacks below.
 
 | Constant | Value | Meaning |
 | :--- | :--- | :--- |
 | `WAREHOUSE_SLOTS` | warehouse 5, large_warehouse 15 | slots per building; Large once its kit is available |
 | `FACTORY_BUFFER_SLOTS` | 10 | factory slots on top of its ingots (intermediates, finished goods) |
-| `STOCK_FALLBACK_SLOTS` | smelter 14 (`SMELTER_FALLBACK_SLOTS`), factory 7, mining 1, feed 30 (`FEED_FALLBACK_SLOTS`), wildlife 16 (`WILDLIFE_FALLBACK_SLOTS`) | a role with no readable list |
+| `STOCK_FALLBACK_SLOTS` | smelter 14 (`SMELTER_FALLBACK_SLOTS`), factory 7, mining 1, feed 30 (`FEED_FALLBACK_SLOTS`), wildlife 16 (`WILDLIFE_FALLBACK_SLOTS`) | a role without a complete list |
 | `BIO_STOCK_SLOTS` | 9 | `bio.MAX_LOCAL_BIO_ARTIFACTS` 4 + 5 `outpost_reagents` reagents (a test checks both) |
-| `STOCK_PREFIX_SLOTS` | `bio_` `BIO_STOCK_SLOTS`, `liquifier_` 2, `wildlife_` 1 | liquifier: life-form buffer (guess, tune live) |
+| `STOCK_PREFIX_SLOTS` | `bio_` `BIO_STOCK_SLOTS`, `liquifier_` 6 (`LIQUIFIER_STOCK_SLOTS`), `wildlife_` 1 | liquifier: one slot per life form of its biome |
 | `HOME_RESERVED_ROLES` | farm, plants, feed, wildlife | home keeps its slots for these once wildlife is unlocked (§11h) |
 
 Catalog roles for the home end state: `feed` (feed_maker, items), `plants` (plant_terraformer).

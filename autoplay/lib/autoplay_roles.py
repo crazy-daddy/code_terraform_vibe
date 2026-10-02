@@ -125,10 +125,11 @@ PENALIZED_TYPES = ("smelter", "fabricator", "refiner", "bio_collector", "bio_lab
                    "pressure_generator", "garbage_disposal", "lightning_rod", "charging_station",
                    "drone_service_station", "supply_dock")
 # Warehouse stock per role, home included (Inventory holds 60 slots x 20
-# units at most: no bulk storage): one 2000-unit slot per stocked item.
-# outpost_needs.read_stock_items() fills smelter / factory / mining / feed /
-# wildlife item lists from in-game data; roles without a list use the
-# fallbacks. FACTORY_BUFFER_SLOTS = room on top of the factory's ingots for
+# units at most: no bulk storage): one 2000-unit slot per stocked item,
+# sized for the end state. outpost_needs.read_stock_items() fills smelter /
+# factory / feed item lists from in-game data only when complete (every ore
+# smelted, every species' feed recipe); mining lists its need's ores; other
+# roles use the fallbacks. FACTORY_BUFFER_SLOTS = room on top of the factory's ingots for
 # intermediates and finished goods.
 WAREHOUSE_SLOTS = {"warehouse": 5, "large_warehouse": 15}
 FACTORY_BUFFER_SLOTS = 10
@@ -136,11 +137,12 @@ SMELTER_FALLBACK_SLOTS = 14   # no Smelter recipe readable yet: 7 ores + 7 ingot
 # bio chain: bio.MAX_LOCAL_BIO_ARTIFACTS samples + one slot per outpost_reagents
 # reagent (tests/test_autoplay_outpost_needs.py checks both).
 BIO_STOCK_SLOTS = 4 + 5
-FEED_FALLBACK_SLOTS = 30       # life forms the Feed Maker recipes take (+ Forage), wildlife.feed unreadable
+FEED_FALLBACK_SLOTS = 30       # life forms the Feed Maker recipes take (+ Forage) while wildlife.feed is incomplete
 WILDLIFE_FALLBACK_SLOTS = 16   # one feed per housed species, 16 Habitats planned (§1l)
+LIQUIFIER_STOCK_SLOTS = 6      # one per life form of the biome
 STOCK_FALLBACK_SLOTS = {"smelter": SMELTER_FALLBACK_SLOTS, "factory": 7, "mining": 1,
                         "feed": FEED_FALLBACK_SLOTS, "wildlife": WILDLIFE_FALLBACK_SLOTS}
-STOCK_PREFIX_SLOTS = {"bio_": BIO_STOCK_SLOTS, "liquifier_": 2, "wildlife_": 1}   # liquifier: life-form buffer (guess, tune live)
+STOCK_PREFIX_SLOTS = {"bio_": BIO_STOCK_SLOTS, "liquifier_": LIQUIFIER_STOCK_SLOTS, "wildlife_": 1}
 # Roles home keeps its slots for once wildlife is unlocked (outpost_needs.home_reserved()).
 HOME_RESERVED_ROLES = ("farm", "plants", "feed", "wildlife")
 

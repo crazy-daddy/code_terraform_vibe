@@ -168,8 +168,10 @@ Archive (one dict per concern):
   Smelter = 1 slot per ore + 1 per ingot (+ byproducts) of its recipes; Fabricator = 1 slot per ingot its
   recipes take + `FACTORY_BUFFER_SLOTS` for intermediates and finished goods; mining = 1 per mined ore;
   bio chain = 4 samples (`bio.MAX_LOCAL_BIO_ARTIFACTS`) + 5 reagents (`outpost_reagents`); Feed Makers = the
-  inputs of their recipes (Forage + life forms, up to 30, from `wildlife.feed`); Habitats = one feed per housed
-  species (`wildlife.status`, 16 planned); liquifier a small guess (tune live). Items shared by two roles at one
+  inputs of their recipes (Forage + life forms, up to 30); Habitats = one feed per housed species (16 planned);
+  liquifier = 6 (one per life form of its biome). Sized for the end state: a list read in game counts only when
+  complete (Smelter recipes for every ore, Feed Maker recipes for every species), else the end-state fallback,
+  since a partial list underestimates drastically. Items shared by two roles at one
   slot (a smelter + mining outpost stocks each ore once). The slots beyond the Warehouses already there become
   new Warehouses (Large Warehouse, 15 slots, once its kit is available, else 5), and those count against the
   cap like any other building (`autoplay_roles.site_slots()`). Founding bundles report their building count

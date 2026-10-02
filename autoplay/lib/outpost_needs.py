@@ -13,7 +13,7 @@
 #    "fluid_sites": supply_tiers.fluid_sites() rows,
 #    "fluids_in": [fluid, ...] the designated roles take,
 #    "range_m": mining range of an outpost (outpost_mining),
-#    "stock": {role: [item_id, ...]} Warehouse stock lists (read_stock_items()),
+#    "stock": {role: [item_id, ...]} Warehouse stock lists, complete ones only (read_stock_items()),
 #    "per_warehouse": slots of the Warehouse kind to build (5, Large 15)}
 #
 # A need is {"role", "biome", "urgency", "why", "found", "locked"} (+ "ores"
@@ -55,6 +55,9 @@ import autoplay_roles
 from autoplay_roles import BIOMES, BIO_PROCESSORS, role_flag, biome_ok, unlocked, bundle_slots, observed, observed_roles
 from autoplay_roles import site_slots, warehouse_slots, WAREHOUSE_SLOTS, HOME_RESERVED_ROLES
 from archive import archive
+from outpost_mining import RAW_ORE_ITEM_IDS
+from wildlife_common import FEED_KEY, recipe_of
+from wildlife_data import SPECIES
 
 URGENCIES = ("now", "soon", "later")
 PROPOSE_URGENCIES = ("now", "soon")
@@ -405,51 +408,57 @@ def _recipes(type_id):
     return []
 
 
-def read_stock_items(smelter_recipes, fabricator_recipes):
+def read_stock_items(smelter_recipes):
     """
-    {"smelter": ores + ingots + byproducts of the Smelter recipes,
-     "factory": Smelter outputs the Fabricator recipes take}; a role is left
-    out when its recipes are unreadable (autoplay_roles fallbacks apply).
+    Stock lists from in-game data, each only when complete (a partial list
+    underestimates the end state; the role then uses its autoplay_roles
+    fallback): smelter_stock() and feed_stock().
     """
-    out = {}
-    smelted = []
+    out = smelter_stock(smelter_recipes)
+    out.update(feed_stock(archive.get(FEED_KEY, {})))
+    return out
+
+
+def smelter_stock(recipes):
+    """
+    {"smelter": ores + outputs + byproducts, "factory": the outputs (every
+    ingot a Fabricator may take)} once the Smelter recipes cover every ore
+    in RAW_ORE_ITEM_IDS; {} before that.
+    """
     items = []
-    for recipe in smelter_recipes:
+    outputs = []
+    ores = set()
+    for recipe in recipes:
         inputs = list((getattr(recipe, "inputs", None) or {}).keys())
+        ores.update([item_id for item_id in inputs if item_id in RAW_ORE_ITEM_IDS])
         for item_id in inputs + [recipe.output_item, getattr(recipe, "byproduct_item", None)]:
             if item_id and item_id not in items:
                 items.append(item_id)
-        if recipe.output_item not in smelted:
-            smelted.append(recipe.output_item)
-    if items:
-        out["smelter"] = items
-    if smelted and fabricator_recipes:
-        out["factory"] = sorted(set([item_id for recipe in fabricator_recipes
-                                     for item_id in (getattr(recipe, "inputs", None) or {}) if item_id in smelted]))
-    out.update(wildlife_stock(archive.get("wildlife.feed", {}), archive.get("wildlife.status", {})))
-    return out
+        if recipe.output_item not in outputs:
+            outputs.append(recipe.output_item)
+    if not all(ore in ores for ore in RAW_ORE_ITEM_IDS):
+        return {}
+    return {"smelter": items, "factory": sorted(outputs)}
 
 
-def wildlife_stock(feed, status):
+def feed_stock(feed):
     """
-    {"feed": inputs of every Feed Maker recipe (wildlife.feed), "wildlife":
-    feed items of the housed species (wildlife.status)}; a role is left out
-    when its entry is empty or malformed.
+    {"feed": inputs of the Feed Maker recipes (wildlife.feed)} once the
+    recipes read there cover every species (wildlife_common.recipe_of());
+    {} before that.
     """
-    out = {}
-    inputs = set()
+    recipes = {}
     for entry in (feed.values() if isinstance(feed, dict) else []):
-        recipes = entry.get("recipes", {}) if isinstance(entry, dict) else {}
-        for needs in (list(recipes.values()) if isinstance(recipes, dict) else []):
-            if isinstance(needs, dict):
-                inputs.update(needs.keys())
-    if inputs:
-        out["feed"] = sorted(inputs)
-    feeds = set([entry.get("feed_item") for entry in (status.values() if isinstance(status, dict) else [])
-                 if isinstance(entry, dict) and entry.get("feed_item")])
-    if feeds:
-        out["wildlife"] = sorted(feeds)
-    return out
+        found = entry.get("recipes", {}) if isinstance(entry, dict) else {}
+        if isinstance(found, dict):
+            recipes.update(found)
+    if not all(recipe_of(species) in recipes for species in SPECIES):
+        return {}
+    inputs = set()
+    for needs in recipes.values():
+        if isinstance(needs, dict):
+            inputs.update(needs.keys())
+    return {"feed": sorted(inputs)}
 
 
 def read_kits(fabricator_recipes):
@@ -497,7 +506,7 @@ def snapshot():
     fabricator_recipes = _recipes("fabricator")
     kits = read_kits(fabricator_recipes)
     return {"outposts": outposts, "kits": kits, "bio_orders": read_bio_orders(),
-            "stock": read_stock_items(_recipes("smelter"), fabricator_recipes),
+            "stock": read_stock_items(_recipes("smelter")),
             "per_warehouse": WAREHOUSE_SLOTS["large_warehouse" if "large_warehouse" in kits else "warehouse"],
             "essences_required": read_essences_required(), "ore_wanted": sorted(smelter_outposts()[1]),
             "ore_sites": mining_sites(sites), "fluid_sites": fluid_sites(sites), "fluids_in": taken,
