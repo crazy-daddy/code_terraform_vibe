@@ -16,6 +16,7 @@ import drill_sites
 import fleet_intent
 from swallow import swallowed
 import construction_plan
+import logistics_requests
 from atomic import run_batched
 from tree_console import flush_all, reset_all
 
@@ -448,8 +449,27 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         if moved > 0:
             self.log.print(f"[{self.name}] Loaded {moved}x {required_item} for construction (stocking toward {goal} for chained jobs).")
         elif self.cargo_count(required_item) < required_count:
-            self.log.level("warn").print(f"[{self.name}] Could not load {required_item}: none in storage at '{self.home_base}'.")
+            self.log.debug(f"[{self.name}] Could not load {required_item}: none takeable at '{self.home_base}'.")
         return self.cargo_count(required_item) >= required_count
+
+    def material_wait_reason(self, item_id):
+        """
+        Why item_id can't be loaded at home right now, for the log: takeable
+        home stock, units haulers have reserved toward home
+        (logistics_requests.in_flight()), and the open logistics request for
+        it at home, if any. Two archive reads plus one stock scan.
+        """
+        tick = self.get_current_tick()
+        parts = [f"home stock {takeable_stock(item_id, outpost=self.home_outpost)}"]
+        flying = logistics_requests.in_flight(self.home_base, tick).get(item_id, 0)
+        if flying:
+            parts.append(f"{flying} en route")
+        request = logistics_requests.active_requests(tick).get(self.home_base, {}).get(item_id)
+        if isinstance(request, dict):
+            parts.append(f"requested by {request.get('by')} (target {request.get('target')})")
+        else:
+            parts.append("no haul request open")
+        return ", ".join(parts)
 
     def fair_share_batch(self, item_id, batch):
         """
@@ -477,6 +497,7 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
         self.log.print(f"Pioneer Controller ({self.name}) online. Monitoring construction blueprints.")
         bp_component = get_component("construction_blueprint")
         failed_jobs = set()
+        material_waits = set()  # items already announced at info level as awaited
 
         validate_game_version()
         while True:
@@ -804,14 +825,23 @@ class PioneerController(VehicleController, VehicleUpgradeMixin, PioneerFittingMi
                         self.log.start(f"[{self.name}] Stocking up to {batch_needed}x {required_item} for chained construction.")
                         loaded = self.load_construction_materials(target_job["job"], target_count=batch_needed)
                         self.log.end(f"[{self.name}] Stocking {'done' if loaded else 'failed'}.")
+                        if loaded:
+                            material_waits.discard(required_item)
                         if not loaded:
                             # required_item isn't obtainable right now (home storage empty,
                             # or a peer holds the whole stock) -- defer every job needing it,
                             # not just this one, so jobs whose materials are on hand get a
                             # turn this cycle instead of after one failed restock per job
                             # (failed_jobs clears once no other option remains).
+                            # Material still being fabricated or hauled home is normal, so
+                            # info once per wait, debug while it repeats.
                             deferred = construction_plan.ids_needing(target_jobs, required_item)
-                            self.log.level("warn").print(f"[{self.name}] Could not load {required_item} for job {job_id}; deferring {len(deferred)} job(s) needing it to try other pending jobs.")
+                            line = f"[{self.name}] Waiting for {required_item} ({self.material_wait_reason(required_item)}); deferring {len(deferred)} job(s) needing it."
+                            if required_item in material_waits:
+                                self.log.debug(line)
+                            else:
+                                self.log.print(line)
+                                material_waits.add(required_item)
                             failed_jobs.update(deferred)
                             failed_jobs.add(job_id)
                             self.release_target_claim(self.construction_claim_key(job_id))
