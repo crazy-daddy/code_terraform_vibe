@@ -388,6 +388,13 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [ ] Required research, blueprint, module, and service range verified.
 - [ ] Exercise failure scenarios: full Inventory, full output buffer, missing recipe, stale Rover claim, disconnected pipe, split power subnet, and stranded vehicle.
 - [ ] Keep scripts and documentation aligned with the component/API guides after each major unlock.
+- [ ] **Shared fake world from the game spec** (see `docs/plans/fake_world.md`; one step per session):
+  - [ ] Step 1: spec extractor + committed `tests/game_spec.json`.
+  - [ ] Step 2: stub contract test against the spec (fix `set_order` → `unknown_order`).
+  - [ ] Step 3: `devtools/stub_census.py` gap report (optional).
+  - [ ] Step 4: consolidate and extend `tests/game_stubs.py`.
+  - [ ] Step 5: migrate tests off private fakes.
+  - [ ] Step 6: sample world, no-private-fakes guard, dev_workflow docs.
 - [ ] **Consolidate remaining per-entity archive keys into shared dicts** (archive key-count cap, see CLAUDE.md rule 7): remaining: `biomass_mixer.gate.<id>` (bounded by mixer count, do when next touching `biomass_mixer_gate.py`) and per-grid `power.shedded:`/`power.daily:`/`power.daily_hist:`/`power.night_wh:<anchor>` (4 keys per grid; deferred until 8+ separate grids — two `power.py` tiers, and global `power.shedded` must stay flat).
 - [x] **Per-file debug verbosity levels for `TreeConsole`**, so `debug()` coverage can safely widen across most `lib/` files (CLAUDE.md rule 6) without the disk-write cost of leaving high-volume tracing on everywhere. New `console.log_levels` archive dict (`{module_name: "normal"|"verbose"}`, default `"normal"`, toggled manually via the Data Archive Notebook), read once at `TreeConsole.__init__` via an explicit `module=` kwarg (no `inspect`/frame introspection available in the sandbox to auto-detect a caller — found live: `import inspect` is rejected) — not re-checked per tick, so a script needs restarting after an archive edit. `debug()` is unchanged (always written, cheap "why" narration). New `TreeConsole.trace()` is for the genuinely high-volume stuff (method entry/exit, per-item loop detail): a true no-op — never calls `console` at all — unless the module is `"verbose"`. See `docs/AI_CHEATSHEET.md` §0a.
   - [ ] Sweep `lib/` files and add liberal `trace()`/`debug()` calls per CLAUDE.md rule 6, now that every call site is correctly keyed and named `self.log`. Not yet done.
