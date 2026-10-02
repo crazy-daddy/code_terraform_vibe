@@ -34,7 +34,7 @@ import logistics_requests
 import fleet_intent
 from biomass_retire import biomass_complete
 from drone_depot import lifeform_buffer_cap
-from storage import warehouse_stock
+from storage import warehouse_stocks
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -218,9 +218,10 @@ class DroneMiningMixin:
             if any(self._host.is_home_biome_sample(t) for t in types):
                 forms.update(types)
         forms.discard(None)
+        stashes = warehouse_stocks(list(forms), outpost)
         short = {}
         for form in forms:
-            missing = cap - warehouse_stock(form, outpost) - in_depots.get(form, 0)
+            missing = cap - stashes[form] - in_depots.get(form, 0)
             if missing > 0:
                 short[form] = missing
         self._host.log.trace(f"buffer shortfalls at '{getattr(outpost, 'id', '?')}' (cap {cap}): {short}.")

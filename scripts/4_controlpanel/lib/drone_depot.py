@@ -32,7 +32,7 @@
 # items alone until the drone clears the request.
 
 from archive import archive
-from storage import discover_storage_buildings, warehouse_stock, drain_port_to_storage
+from storage import discover_storage_buildings, warehouse_stocks, drain_port_to_storage
 import logistics_requests
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -212,8 +212,9 @@ class DroneDepotController:
             return
         cap = lifeform_buffer_cap(outpost)
         self._log_stage_state("active", f"staging life forms to Warehouse (cap {cap} per form): {forms}.")
+        stashes = warehouse_stocks(list(forms), outpost)
         for item_id, units in forms.items():
-            want = min(units, cap - warehouse_stock(item_id, outpost))
+            want = min(units, cap - stashes[item_id])
             if want <= 0:
                 self.log.trace(f"stage: '{item_id}' Warehouse buffer full (>= {cap}); leaving {units} in the Depot.")
                 continue
@@ -451,11 +452,11 @@ class DroneDepotController:
         deficits = logistics_requests.network_deficits()
         cap = lifeform_buffer_cap(outpost)
         outpost_id = getattr(outpost, "id", None)
+        candidates = {i: u for i, u in stock.items() if i not in staged and self._is_life_form(i)}
+        stashes = warehouse_stocks(list(candidates), outpost)
         surplus = {}
-        for item_id, units in stock.items():
-            if item_id in staged or not self._is_life_form(item_id):
-                continue
-            stash = warehouse_stock(item_id, outpost)
+        for item_id, units in candidates.items():
+            stash = stashes[item_id]
             needed = logistics_requests.retain_amount(item_id, outpost_id, requests) + deficits.get(item_id, 0)
             stash_full = stash >= cap or buffer_target(item_id, outpost)[0] is None
             if stash_full and stash >= needed:

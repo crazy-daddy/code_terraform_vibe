@@ -46,7 +46,7 @@
 # cargo on the move without counting a planned pickup twice.
 
 from archive import archive
-from storage import warehouse_stock, warehouse_stocks, stacks_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
+from storage import warehouse_stocks, stacks_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -703,28 +703,23 @@ def outpost_free_tiers(outpost, item_ids, requests=None, curr_tick=None, exclude
     outpost_id = getattr(outpost, "id", None)
     own = requests.get(outpost_id, {})
     taken = reserved_from(outpost_id, curr_tick, exclude_vehicle)
-    inventory = None
-    if getattr(outpost, "is_home", False):
-        try:
-            inventory = get_component("inventory")
-        except Exception as error:
-            swallowed("logistics_requests.outpost_free_tiers: get_component", error)
-            inventory = None
-    depot_totals = {}
+    stock = warehouse_stocks(item_ids, outpost)
     if include_depots:
         for depot in local_depots(outpost):
             for item_id, units in depot_stock(depot).items():
-                depot_totals[item_id] = depot_totals.get(item_id, 0) + units
+                if item_id in stock:
+                    stock[item_id] += units
+    if getattr(outpost, "is_home", False):
+        try:
+            for item_id, units in stacks_stock(get_component("inventory"), item_ids).items():
+                stock[item_id] += units
+        except Exception as error:
+            swallowed("logistics_requests.outpost_free_tiers: inventory stacks", error)
+        if CROP_AUTOMATOR_ITEM_ID in stock:
+            stock[CROP_AUTOMATOR_ITEM_ID] += crop_automator_forage_total(outpost)
     for_need, for_buffer = {}, {}
     for item_id in item_ids:
-        units = warehouse_stock(item_id, outpost) + depot_totals.get(item_id, 0)
-        if inventory is not None:
-            try:
-                units += inventory.count(item_id)
-            except Exception as error:
-                swallowed("logistics_requests.outpost_free_tiers: inventory.count", error)
-        if item_id == CROP_AUTOMATOR_ITEM_ID and inventory is not None:
-            units += crop_automator_forage_total(outpost)
+        units = stock[item_id]
         units -= taken.get(item_id, 0)
         entry = own.get(item_id)
         keep_need = request_min(entry) if entry else 0
