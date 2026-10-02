@@ -78,6 +78,7 @@ def _reset_module_state(world):
     archive.archive.notebook = world.notebook
     swallow._STATE["console"] = None
     tree_console._BUFFER.update({"console": None, "key": None, "lines": [], "chars": 0, "cap": 0})
+    tree_console._DEFAULT_CONSOLE["console"] = None
     swallow._LAST.clear()
     swallow._WARNED.clear()
     storage._recent_busy.clear()

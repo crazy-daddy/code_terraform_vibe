@@ -99,11 +99,23 @@ _PROBE_CHARS = 200000  # above the highest Advanced Scripting string limit (100,
 # One buffer for every TreeConsole in the script. `key` is (level, channel, color) of the pending run.
 _BUFFER = {"console": None, "key": None, "lines": [], "chars": 0, "cap": 0}
 
+# Console component every TreeConsole without an explicit `console` shares. get_component() returns a new
+# handle per call, and the buffer flushes when the console object changes, so separate lookups would split
+# every interleaved run of lines from two modules into one console.print each.
+_DEFAULT_CONSOLE: "dict[str, Console | None]" = {"console": None}
+
 # TreeConsoles with a debug block that holds its first line back (see "Collapsing" in the module doc).
 _HOLDING = []
 
 # Every TreeConsole in the script, so reset_all() can drop indent leaked by an exception.
 _INSTANCES = []
+
+
+def _default_console():
+    """The shared console component, looked up on first use."""
+    if _DEFAULT_CONSOLE["console"] is None:
+        _DEFAULT_CONSOLE["console"] = get_component("console")
+    return _DEFAULT_CONSOLE["console"]
 
 
 def _cap_from_error(message):
@@ -220,7 +232,7 @@ class TreeConsole:
         module: str = "",
         buffered: bool = True,
     ) -> None:
-        self.console = console if console is not None else get_component("console")
+        self.console = console if console is not None else _default_console()
         self.default_level = default_level
         self.buffered = buffered
         self._indent = 0

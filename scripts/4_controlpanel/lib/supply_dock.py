@@ -387,9 +387,17 @@ def plan_dock_assignments(clock=None):
             swallowed("supply_dock.plan_dock_assignments: dock.dispatch_rate", error)
 
     candidates = []
+    # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
+    fulfillable = {}
+
+    def check_order(order):
+        if order.id not in fulfillable:
+            fulfillable[order.id] = can_fulfill_order(order, cache)
+        return fulfillable[order.id]
+
     try:
         for o in orders_api.list_orders():
-            if getattr(o, "status", "") == "active" and can_fulfill_order(o, cache):
+            if getattr(o, "status", "") == "active" and check_order(o):
                 priority = _score_campaign_order(o, reserved, cache.stock, cache.cask_stock)
                 candidates.append({"order": o, "priority": priority})
                 log.debug(f"campaign order '{getattr(o, 'name', o.id)}' is a candidate, priority={priority}")
@@ -397,7 +405,7 @@ def plan_dock_assignments(clock=None):
         swallowed("supply_dock.plan_dock_assignments: orders_api.list_orders", error)
     try:
         for o in orders_api.list_weekly_orders():
-            if getattr(o, "status", "") != "active" or not can_fulfill_order(o, cache):
+            if getattr(o, "status", "") != "active" or not check_order(o):
                 continue
             if _weekly_infeasible(o, current_day, total_dispatch_capacity):
                 log.level("warn").print(f"[supply_dock planner] Skipping Weekly Earth Order '{getattr(o, 'name', o.id)}': "
@@ -427,7 +435,7 @@ def plan_dock_assignments(clock=None):
         except Exception as error:
             swallowed("supply_dock.plan_dock_assignments: dock.current_order", error)
             curr = None
-        if curr and can_fulfill_order(curr, cache):
+        if curr and check_order(curr):
             outpost = getattr(dock, "outpost", None)
             loaded = _dock_loaded(dock)
             if loaded == 0 and not roles.serves(curr, outpost):

@@ -2171,6 +2171,8 @@ class SourceCache:
         self._item_results = {}
         self._item_stack = set()
         self._surveyed_sites = None
+        self._surveyed_minerals = None  # surveyed_minerals() memo
+        self._sourcing_index = None  # {output_item: [recipes]}, sourcing_recipes() memo
         self._stock_map = None
         self._building_stock = None  # {source_id: {item_id: units}}, filled alongside _stock_map
         self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
@@ -2352,6 +2354,17 @@ class SourceCache:
                 self._fuel_assembler_recipes = []
         return self._fuel_assembler_recipes
 
+    def sourcing_recipes(self, item_id):
+        """Smelter, Fabricator and Fuel Assembler recipes that output item_id, in that order.
+        The output index is built once per pass."""
+        if self._sourcing_index is None:
+            index = {}
+            for recipes in (self.smelter_recipes(), self.fabricator_recipes(), self.fuel_assembler_recipes()):
+                for recipe in recipes:
+                    index.setdefault(getattr(recipe, "output_item", None), []).append(recipe)
+            self._sourcing_index = index
+        return self._sourcing_index.get(item_id, [])
+
     def cask_stock(self, item_id):
         if item_id not in self._cask_stock:
             self._cask_stock[item_id] = lead_cask.network_cask_stock(item_id)
@@ -2367,17 +2380,23 @@ class SourceCache:
                 self._surveyed_sites = []
         return self._surveyed_sites
 
+    def surveyed_minerals(self):
+        """Item ids of every surveyed mineral site, read once per pass (one kind() call per site)."""
+        if self._surveyed_minerals is None:
+            try:
+                self._surveyed_minerals = {
+                    getattr(site, "item_id", None)
+                    for site in self.surveyed_sites()
+                    if getattr(site, "kind", lambda: "")() == "mineral"
+                }
+            except Exception as error:
+                swallowed("production.SourceCache.surveyed_minerals: site.kind", error)
+                self._surveyed_minerals = set()
+        return self._surveyed_minerals
+
 
 def _has_surveyed_mineral(item_id, cache):
-    try:
-        return any(
-            getattr(site, "kind", lambda: "")() == "mineral"
-            and getattr(site, "item_id", None) == item_id
-            for site in cache.surveyed_sites()
-        )
-    except Exception as error:
-        swallowed("production._has_surveyed_mineral: getattr(site, 'kind', lambda: '')", error)
-        return False
+    return item_id in cache.surveyed_minerals()
 
 
 def can_source_item(item_id, cache=None):
@@ -2411,17 +2430,12 @@ def can_source_item(item_id, cache=None):
             result = True
             log.trace("live uranium aftermath site -> sourceable")
         if not result:
-            for recipes in (cache.smelter_recipes(), cache.fabricator_recipes(), cache.fuel_assembler_recipes()):
-                for recipe in recipes:
-                    if getattr(recipe, "output_item", None) != item_id:
-                        continue
-                    inputs = getattr(recipe, "inputs", {}) or {}
-                    fluid_inputs = getattr(recipe, "fluid_inputs", {}) or {}
-                    if all(can_source_fluid(fk, cache) for fk in fluid_inputs) and all(can_source_item(input_id, cache) for input_id in inputs):
-                        result = True
-                        log.trace(f"sourceable via recipe {getattr(recipe, 'id', '?')} (inputs={list(inputs.keys())}, fluids={list(fluid_inputs.keys())})")
-                        break
-                if result:
+            for recipe in cache.sourcing_recipes(item_id):
+                inputs = getattr(recipe, "inputs", {}) or {}
+                fluid_inputs = getattr(recipe, "fluid_inputs", {}) or {}
+                if all(can_source_fluid(fk, cache) for fk in fluid_inputs) and all(can_source_item(input_id, cache) for input_id in inputs):
+                    result = True
+                    log.trace(f"sourceable via recipe {getattr(recipe, 'id', '?')} (inputs={list(inputs.keys())}, fluids={list(fluid_inputs.keys())})")
                     break
             if not result:
                 log.trace("no stock, no surveyed mineral, no sourceable recipe -> not sourceable")
