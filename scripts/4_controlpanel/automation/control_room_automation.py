@@ -48,6 +48,10 @@
 #     stranded at an outpost that lost its Smelters.
 #   - Home salt request (lib/pump_salt.py publish_home_salt_request()): the
 #     field's buffer plus what the Plant Terraformers still need to 5m km^2.
+#   - Plants completion (8_planting lib/plants_retire.py, deployed at every
+#     tier like the Mixer gate): undeploys each Plant Terraformer once it
+#     reads "complete" and its own script has emptied its holders; retried
+#     every storage pass. Idles until a Terraformer reports "complete".
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController do
 # none of this themselves -- it's a hard dependency on this script running
 # (see legacy/README.md for pre-Control-Room saves). The manual
@@ -68,6 +72,7 @@ from fleet_decommission import FleetDecommissionCoordinator
 from cash import CashManager
 from site_supply import publish_site_requests
 from pump_salt import publish_home_salt_request
+import plants_retire
 from site_plan import plan_sites
 from production import reconcile_manual_transit
 from mining_drill import publish_all_drills
@@ -126,7 +131,8 @@ commission = {"tick": 0, "summary": "commission idle"}
 errors = []
 # Coordinator summaries that mean "nothing for the operator to see"; left off the AUTOMATION card.
 IDLE_SUMMARIES = ("commission idle", "decommission idle", "fleet upgrade off", wildlife_planner.IDLE_SUMMARY,
-                  "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle")
+                  "fleet upgrade: waiting for mining drills", "upgrade: fleet up to date", "fleet upgrade idle",
+                  plants_retire.IDLE_SUMMARY)
 QUIET_SUMMARY = "all quiet"
 
 
@@ -256,6 +262,7 @@ fleet_upgrader = FleetUpgradeCoordinator()  # stateless between cycles (state li
 fleet_commissioner = FleetCommissionCoordinator()  # same
 fleet_decommissioner = FleetDecommissionCoordinator()  # same
 cash_manager = CashManager()  # same
+plants_retirement = None    # plants_retire.PlantsRetirement, created on the first storage pass
 
 while True:
     reset_all()
@@ -368,6 +375,14 @@ while True:
             except Exception as e:
                 report_error("Home salt request", e)
 
+            plants_summary = plants_retire.IDLE_SUMMARY
+            try:
+                if plants_retirement is None:
+                    plants_retirement = plants_retire.PlantsRetirement()
+                plants_summary = plants_retirement.step(current_tick)
+            except Exception as e:
+                report_error("Plants retirement", e)
+
             upgrade_summary = "fleet upgrade idle"
             try:
                 upgrade_summary = fleet_upgrader.step(current_tick)
@@ -388,7 +403,7 @@ while True:
                 conflict_items = [f"pipe conflict: {c}" for c in active_pipe_conflicts(current_tick)]
             except Exception as e:
                 report_error("Pipe conflicts", e)
-            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [upgrade_summary, commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
+            archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 
     flush_all()

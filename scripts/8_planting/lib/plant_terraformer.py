@@ -2,7 +2,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from storage import take_item
+from storage import take_item, best_unload_target
 import fluid_routing
 import logistics_requests
 from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricator_unlocked_outputs, set_upgrade_order, set_backlog_order
@@ -93,6 +93,15 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 # request above hauls them in.
 # Both are capped by what the rest of the Plants ladder still needs
 # (remaining_forage()), so they shrink to 0 near completion.
+#
+# Finish line (forage_to_go()): every machine publishes the km² its running
+# batch adds (batch_km2); the Forage still to load fleet-wide is the rest of
+# the ladder minus the unfinished part of every fresh in-flight batch. Once
+# that is 0 the running batches reach 5,000,000 km² on their own: no more
+# loading, requests or Fabricator orders, idle machines stay off. Below a full
+# batch, the next batch's Forage (and the requests) shrink to what is left.
+# At "complete" the script ejects its holders to local storage and ends; the
+# Control Room Automation undeploys the empty machine (lib/plants_retire.py).
 
 STATUS_KEY = "plant.terraformer"
 REQUESTER_ID = "plant_terraformer"
@@ -169,6 +178,14 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 # Statuses where the machine can't use power at all: switched off.
 STOP_STATUSES = ("complete", "needs_mk2")
 
+# Game-hours per cycle; km2_rate() spreads the running batch over it.
+CYCLE_H = 3.0
+
+# Another Terraformer's in-flight batch counts toward the finish line only
+# while its telemetry is this fresh (10 ticks/s -> 1 min, 6 polls): a
+# stopped script pauses its batch.
+COMMIT_FRESH_TICKS = 600
+
 
 def remaining_forage(phase, remaining_km2, from_phase=1):
     """Forage still to convert from phase `from_phase` on: the rest of the current band plus every later band."""
@@ -179,6 +196,18 @@ def remaining_forage(phase, remaining_km2, from_phase=1):
         if band_phase > phase and band_phase >= from_phase:
             total += band_forage
     return total
+
+
+def forage_to_go(phase, remaining_km2, committed_km2):
+    """
+    Forage the fleet still has to load: remaining_forage() minus the km² the
+    in-flight batches add (committed_km2, at the current phase's km² per
+    Forage). 0 once those batches reach 5,000,000 km²; None for an unknown
+    phase (no cap).
+    """
+    if phase not in PLANTS_BANDS:
+        return None
+    return max(remaining_forage(phase, remaining_km2) - committed_km2 / PLANTS_BANDS[phase][0], 0.0)
 
 
 def _ceil(value):
@@ -222,7 +251,10 @@ class PlantTerraformerController:
         self._foreign_owners = {}
         self._craft_fertilizer = None
         self._craft_fertilizer_tick = 0
+        self._finishing = False
+        self._eject_warned = set()
         self._resume_pending = self._was_running()
+        self._batch_km2 = self._last_batch_km2() if self._resume_pending else 0.0
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -264,6 +296,106 @@ class PlantTerraformerController:
             return False
         entry = status.get(self.name) or {}
         return bool(entry.get("in_flight")) if isinstance(entry, dict) else False
+
+    def _last_batch_km2(self):
+        """Last published batch_km2 (script restart recovery while the batch is paused)."""
+        status = archive.get(STATUS_KEY, {})
+        if not isinstance(status, dict):
+            return 0.0
+        entry = status.get(self.name) or {}
+        if not isinstance(entry, dict):
+            return 0.0
+        return float(entry.get("batch_km2", 0.0) or 0.0)
+
+    # --------------------------------------------------------- finish line
+
+    def own_committed_km2(self, in_flight, progress, km2_rate):
+        """km² this machine's running batch still adds; remembers the batch's km² while km2_rate() reads 0 (paused)."""
+        if not in_flight:
+            self._batch_km2 = 0.0
+            return 0.0
+        if km2_rate > 0:
+            self._batch_km2 = km2_rate * CYCLE_H
+        return self._batch_km2 * max(1.0 - progress, 0.0)
+
+    def fleet_committed_km2(self, curr_tick, own_km2):
+        """own_km2 plus the unfinished km² of every other fresh, in-flight Terraformer batch (`plant.terraformer`)."""
+        status = archive.get(STATUS_KEY, {})
+        total = own_km2
+        if not isinstance(status, dict):
+            return total
+        for machine_id, entry in status.items():
+            if machine_id == self.name or not isinstance(entry, dict) or not entry.get("in_flight"):
+                continue
+            age = curr_tick - int(entry.get("tick", 0) or 0)
+            if age < 0 or age >= COMMIT_FRESH_TICKS or entry.get("status") in STOP_STATUSES:
+                continue
+            total += float(entry.get("batch_km2", 0.0) or 0.0) * max(1.0 - float(entry.get("progress", 0.0) or 0.0), 0.0)
+        return total
+
+    @staticmethod
+    def cap_batch(reqs, to_go):
+        """
+        reqs with the Forage batch cut to the Forage the fleet still has to
+        load. Support items stay at the full batch's amounts (a few more than
+        needed; the surplus is ejected at completion).
+        """
+        full = int(reqs.get("forage", 0) or 0)
+        if to_go is None or full <= 0:
+            return reqs
+        need = _ceil(to_go)
+        if need >= full:
+            return reqs
+        capped = dict(reqs)
+        capped["forage"] = need
+        return capped
+
+    @staticmethod
+    def request_batches(full_batch, to_go):
+        """Batches' worth of support items to request: SUPPORT_REQUEST_BATCHES, fewer when the ladder ends sooner."""
+        if to_go is None or full_batch <= 0:
+            return SUPPORT_REQUEST_BATCHES
+        return max(min(SUPPORT_REQUEST_BATCHES, _ceil(to_go / full_batch)), 1)
+
+    def report_finishing(self, finishing, to_go, committed_km2):
+        if finishing == self._finishing:
+            return
+        if finishing:
+            self.log.print(f"[{self.name}] Running batches ({committed_km2:,.0f} km²) reach 5,000,000 km²: no more loading or requests.")
+        else:
+            self.log.print(f"[{self.name}] {to_go:,.0f} Forage still to load fleet-wide; loading again.")
+        self._finishing = finishing
+
+    def eject_holders(self, held):
+        """Plants complete: ejects every holder stack to local storage (Warehouse, else Inventory at home, else a Drone Depot). Returns stacks moved."""
+        stacks = [(item_id, count) for item_id, count in held.items() if count > 0]
+        if not stacks:
+            return 0
+        self.log.start(f"[{self.name}] Plants complete: ejecting {len(stacks)} holder stack(s)")
+        port = getattr(self.machine, "input", None)
+        ejected = 0
+        for item_id, count in (stacks if port else []):
+            target = best_unload_target(item_id, 1, outpost=self.outpost)
+            if target is None:
+                depots = logistics_requests.local_depots(self.outpost)
+                target = depots[0].id if depots else None
+            if target is None:
+                if item_id not in self._eject_warned:
+                    self._eject_warned.add(item_id)
+                    self.log.level("warn").print(f"[{self.name}] No local store has room for {count}x '{item_id}'; retrying.")
+                continue
+            try:
+                res = port.eject(target, item_id, count)
+            except Exception as error:
+                self.log.level("warn").print(f"[{self.name}] eject({target!r}, '{item_id}', {count}) failed: {error}")
+                continue
+            moved = getattr(res, "moved", 0) or 0
+            self.log.debug(f"eject {item_id} x{count} -> '{target}': {getattr(res, 'status', '?')}, moved {moved}.")
+            if moved > 0:
+                ejected += 1
+                self._eject_warned.discard(item_id)
+        self.log.end(f"ejected {ejected}/{len(stacks)} stack(s)")
+        return ejected
 
     # ------------------------------------------------------------- feeding
 
@@ -585,19 +717,19 @@ class PlantTerraformerController:
 
     # ------------------------------------------------------------ requests
 
-    def demand_targets(self, reqs, required):
-        """{item_id: local stock target} for the next batch(es), before ownership checks."""
+    def demand_targets(self, reqs, required, batches=SUPPORT_REQUEST_BATCHES):
+        """{item_id: local stock target} for the next batch and `batches` batches of support items, before ownership checks."""
         targets = {}
         if not self.is_home and reqs.get("forage"):
             targets["forage"] = int(reqs["forage"])
         if "salt" in required and reqs.get("salt"):
-            targets["salt"] = int(reqs["salt"]) * SUPPORT_REQUEST_BATCHES
+            targets["salt"] = int(reqs["salt"]) * batches
         if reqs.get("fertilizer_potency"):
             item_id = self.craft_fertilizer_item()
             per_batch = -(-int(reqs["fertilizer_potency"]) // max(self._potency(item_id), 1))
-            targets[item_id] = min(per_batch, SUPPORT_HOLDER_CAP) * SUPPORT_REQUEST_BATCHES
+            targets[item_id] = min(per_batch, SUPPORT_HOLDER_CAP) * batches
         if "growth_accelerant" in required and reqs.get("growth_accelerant"):
-            targets["growth_accelerant"] = min(int(reqs["growth_accelerant"]), SUPPORT_HOLDER_CAP) * SUPPORT_REQUEST_BATCHES
+            targets["growth_accelerant"] = min(int(reqs["growth_accelerant"]), SUPPORT_HOLDER_CAP) * batches
         return targets
 
     def _have(self, item_id):
@@ -607,14 +739,14 @@ class PlantTerraformerController:
         unit = max(self._potency(item_id), 1)
         return sum(self.local_stock(i) * self._potency(i) for i in FERTILIZER_ITEM_IDS) // unit
 
-    def publish_requests(self, reqs, required, requests, curr_tick):
+    def publish_requests(self, reqs, required, requests, curr_tick, batches=SUPPORT_REQUEST_BATCHES):
         """Advertises this Terraformer's demand in logistics.requests (see module header)."""
         if not self.outpost_id:
             return
         here = requests.get(self.outpost_id) or {}
         targets = {}
         foreign = {}
-        for item_id, target in self.demand_targets(reqs, required).items():
+        for item_id, target in self.demand_targets(reqs, required, batches).items():
             entry = here.get(item_id) or {}
             owner = entry.get("by") if isinstance(entry, dict) else None
             if owner in (None, REQUESTER_ID):
@@ -676,8 +808,12 @@ class PlantTerraformerController:
                 count += 1
         return count
 
-    def fabricator_orders(self, reqs, required, phase, remaining, machines):
-        """({item_id: need}, {item_id: backlog}) for the Fabricator-crafted inputs this phase needs (see module header)."""
+    def fabricator_orders(self, reqs, required, phase, remaining, machines, to_go=None):
+        """
+        ({item_id: need}, {item_id: backlog}) for the Fabricator-crafted inputs
+        this phase needs (see module header); to_go (forage_to_go()) caps the
+        Forage left.
+        """
         need, backlog = {}, {}
         self._order_detail = []
         full = int(reqs.get("forage", 0) or 0)
@@ -692,6 +828,8 @@ class PlantTerraformerController:
             crafted.append(("growth_accelerant", float(reqs["growth_accelerant"]), CRAFTED_SUPPORT_FIRST_PHASE["growth_accelerant"]))
         for item_id, per_batch, first_phase in crafted:
             forage_left = remaining_forage(phase, remaining, first_phase)
+            if to_go is not None:
+                forage_left = min(forage_left, to_go)
             n, b = order_sizes(per_batch, full, machines, forage_left)
             self._order_detail.append(f"[{self.name}] {item_id}: {per_batch:.2f}/batch x {machines} machine(s), {forage_left:,.0f} Forage left -> need {n}, backlog {b}.")
             if n > 0:
@@ -727,12 +865,14 @@ class PlantTerraformerController:
             return
         self.log.debug(f"[{self.name}] {'enabled' if enabled else 'disabled'}: {reason}.")
 
-    def decide(self, status, in_flight, supported, limiter, full_batch):
+    def decide(self, status, in_flight, supported, limiter, full_batch, finishing=False):
         """(enable, reason, blocker) for this step; blocker is the limiting material while idle, else None."""
         if status in STOP_STATUSES:
             return False, status, None
         if in_flight:
             return True, "batch in flight", None
+        if finishing:
+            return False, "running batches reach 5,000,000 km²", None
         start_at = self.start_threshold(full_batch)
         if supported >= start_at:
             return True, f"loaded inputs support {supported} Forage (start at {start_at})", None
@@ -793,20 +933,31 @@ class PlantTerraformerController:
             self.log.debug(f"[{self.name}] pruned stale {STATUS_KEY}['{other_id}'].")
 
     def step(self):
+        """One poll. Returns True once Plants are complete and the holders are empty (the script can end)."""
         curr_tick = self.get_current_tick()
         status = str(self._call("status", "unknown"))
         phase = int(self._call("phase", 0))
         required = list(self._call("required_inputs", ["forage"]))
         reqs = dict(self._call("batch_requirements", {}))
-        remaining = float(self._call("remaining", 0.0))
+        remaining_read = self._call("remaining", None)
+        remaining = float(remaining_read or 0.0)
         progress = float(self._call("get_progress", 0.0))
         running = bool(self._call("is_running", False))
         in_flight = running or progress > 0 or self._resume_pending
+        km2_rate = float(self._call("km2_rate", 0.0))
 
         self.report_transitions(status, phase, remaining)
 
+        committed = self.fleet_committed_km2(curr_tick, self.own_committed_km2(in_flight, progress, km2_rate))
+        # An unreadable remaining() must not look like the finish line.
+        to_go = forage_to_go(phase, remaining, committed) if status not in STOP_STATUSES and remaining_read is not None else None
+        finishing = to_go is not None and to_go <= 0
+        self.report_finishing(finishing, to_go, committed)
+        batches = self.request_batches(int(reqs.get("forage", 0) or 0), to_go)
+        reqs = self.cap_batch(reqs, to_go)
+
         moved = {}
-        if status not in STOP_STATUSES:
+        if status not in STOP_STATUSES and not finishing:
             if not in_flight:
                 # An enabled idle machine starts a batch as soon as its holders
                 # support one Forage, so loading into it would start a partial one.
@@ -817,20 +968,22 @@ class PlantTerraformerController:
             if reqs.get("fertilizer_potency"):
                 self.craft_fertilizer_item(curr_tick)
             moved = self.feed(reqs, required, in_flight, requests)
-            self.publish_requests(reqs, required, requests, curr_tick)
-            self.publish_fabricator_orders(*self.fabricator_orders(reqs, required, phase, remaining, self.fleet_size(curr_tick)))
+            self.publish_requests(reqs, required, requests, curr_tick, batches)
+            self.publish_fabricator_orders(*self.fabricator_orders(reqs, required, phase, remaining, self.fleet_size(curr_tick), to_go))
         else:
             if self._published_targets is None or self._published_targets:
                 logistics_requests.clear_requests(REQUESTER_ID, self.outpost_id)
                 self._published_targets = {}
             # A Mk I machine ("needs_mk2") leaves the Mk II fleet's orders alone.
-            if status == "complete":
+            if status == "complete" or finishing:
                 self.publish_fabricator_orders({}, {})
+            if status == "complete":
+                self.eject_holders(self.onboard())
 
         held = self.onboard()
         full_batch = int(reqs.get("forage", 0) or 0)
         supported, limiter = self.supported_batch(reqs, required, held)
-        enable, reason, blocker = self.decide(status, in_flight, supported, limiter, full_batch)
+        enable, reason, blocker = self.decide(status, in_flight, supported, limiter, full_batch, finishing)
         self.report_blocker(blocker, supported, full_batch)
         self.set_enabled(enable, reason)
         if self._resume_pending:
@@ -849,7 +1002,8 @@ class PlantTerraformerController:
             "remaining_km2": round(remaining),
             "progress": round(progress, 3),
             "batch": int(self._call("batch_size", 0)),
-            "km2_rate": round(float(self._call("km2_rate", 0.0)), 1),
+            "km2_rate": round(km2_rate, 1),
+            "batch_km2": round(self._batch_km2, 1),
             "onboard": held,
             "enabled": enable,
             "blocker": blocker,
@@ -857,6 +1011,7 @@ class PlantTerraformerController:
             "in_flight": running or progress > 0,
             "tick": curr_tick,
         }, curr_tick)
+        return status == "complete" and not held
 
     def run(self, poll_interval=POLL_INTERVAL_S):
         self.log.print(f"Plant Terraformer ({self.name}) online, tier Mk {self._call('tier', 1)}.")
@@ -866,9 +1021,14 @@ class PlantTerraformerController:
             return
         while True:
             reset_all()
+            done = False
             try:
-                self.step()
+                done = self.step()
             except Exception as error:
                 self.log.level("error").print(f"[{self.name}] Plant Terraformer exception: {error}")
+            if done:
+                self.log.print(f"[{self.name}] Plants complete, holders empty: script ends; the Control Room Automation undeploys the machine.")
+                flush_all()
+                return
             flush_all()
             sleep(poll_interval)
