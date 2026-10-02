@@ -17,6 +17,7 @@ from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import wake_for_visit
+from atomic import run_batched
 
 log = TreeConsole(module="storage")
 
@@ -114,6 +115,9 @@ DISCOVERY_TTL_TICKS = 20
 
 # {(outpost_id, type_ids): (tick, [{"id", "component"}, ...])}
 _DISCOVERY_MEMO = {}
+# Warehouses per atomic stacks() read in warehouse_stocks(): a Large
+# Warehouse holds at most 15 stacks, under ~150 steps per building.
+STOCKS_CHUNK = 20
 
 
 def discover_storage_buildings(outpost=None, type_ids=STORAGE_TYPE_IDS):
@@ -216,19 +220,38 @@ def stacks_stock(component, item_ids):
     return totals
 
 
+def _stacks_rows(buildings):
+    """[[(item_id, units), ...]] per building, from one stacks() read each (count() needs item ids, so a store without stacks() gives None); pure reads, run atomically."""
+    rows = []
+    for building in buildings:
+        component = building["component"]
+        if not component or not hasattr(component, "stacks"):
+            rows.append(None)
+            continue
+        try:
+            rows.append([(stack.id, stack.count) for stack in component.stacks()])
+        except Exception as error:
+            swallowed("storage.warehouse_stocks: stacks", error)
+            rows.append([])
+    return rows
+
+
 def warehouse_stocks(item_ids, outpost=None):
-    """{item_id: warehouse_stock(item_id, outpost)} for every item, one stacks() read per Warehouse."""
+    """{item_id: warehouse_stock(item_id, outpost)} for every item, one stacks() read per Warehouse (atomic, STOCKS_CHUNK buildings per call)."""
     totals = {item_id: 0 for item_id in item_ids}
     if not totals:
         return totals
-    for building in discover_storage_buildings(outpost):
-        try:
-            stock = stacks_stock(building["component"], totals)
-        except Exception as error:
-            swallowed("storage.warehouse_stocks: stacks_stock", error)
-            continue
-        for item_id, units in stock.items():
-            totals[item_id] += units
+    buildings = discover_storage_buildings(outpost)
+    for building, row in zip(buildings, run_batched(_stacks_rows, buildings, STOCKS_CHUNK)):
+        if row is None:
+            try:
+                row = list(stacks_stock(building["component"], totals).items())
+            except Exception as error:
+                swallowed("storage.warehouse_stocks: stacks_stock", error)
+                continue
+        for item_id, units in row:
+            if item_id in totals:
+                totals[item_id] += units
     return totals
 
 
