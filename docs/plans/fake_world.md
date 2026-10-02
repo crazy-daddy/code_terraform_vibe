@@ -135,6 +135,30 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   (e.g. `_FreshTurbine(game_stubs.Turbine)`). Each commit is behaviour-neutral: same assertions.
 - **Done when:** the batch's files hold no class that duplicates a `game_stubs` export.
 - **Verify:** `python -m unittest discover -s tests`.
+- **Parallel finish (remaining 14 files, one session):** the coordinating session starts four
+  Sonnet subagents (not Haiku: deciding whether a private fake's behaviour differs from the
+  shared one, and whether a changed assertion still means the same, needs judgement), each in
+  its own worktree (`isolation: "worktree"`) so a half-edited file in one never fails another's
+  test run. Groups, so each cold start reads `game_stubs.py` once for several files:
+  - A, autoplay (`Result`, `Journal`, `Building`): `test_autoplay_fluid`,
+    `test_autoplay_outpost_sites`, `test_autoplay_power`, `test_autoplay_survey`,
+    `test_site_supply`.
+  - B, power (`PowerControl`, `Stack`, `Clock`): `test_ingot_buffer`, `test_mining_drill`,
+    `test_thermal_cap_parking`.
+  - C, fluids (`Tank`, `FluidPort`): `test_reactor`, `test_wildlife_planner`,
+    `test_ship_before_craft`.
+  - D, misc (`Recipe`, `Store`, `Drone`): `test_feed_maker`, `test_harvester_amplify`,
+    `test_drone_weather`.
+
+  Agent rules: edit only the group's test files; never `tests/game_stubs.py`, the contract test
+  or this plan. Where a shared fake lacks a method or behaviour, keep a small local subclass of
+  it and report the gap (what, which docs/spec entry). Keep every assertion's meaning; report
+  any assertion that had to change and why. Run the full suite in the worktree. Report: files
+  changed, fakes replaced, local subclasses kept, gaps, changed assertions, notes for this plan.
+  The coordinator then reviews each diff (watch for weakened assertions), cherry-picks the
+  worktrees, moves reported gaps into `game_stubs.py` (with contract-test coverage) in one pass,
+  drops the local subclasses that covered them, appends the notes, runs the suite and Pyright on
+  `tests/`, and commits per group.
 
 ### - [ ] Step 6: Sample world, guard test, docs
 - **Goal:** keep the shared world the default from now on.
