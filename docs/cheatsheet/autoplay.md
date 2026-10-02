@@ -76,11 +76,11 @@ The pass waits while any power-line job is open: completed lines have no list AP
 | `FLOOD_STEP_TILES` | 30 | ledger tiles per atomic `flood_step()` (~3,100 operations worst) |
 | `PASS_SLEEP_S` (`planner_loop.py`) | 60 | seconds between passes while work is open |
 
-Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass; each phase ends with a debug `Pass: <phase> (<sim s>)` line; the script ends once the pass reports one placed grid.
+Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass, fluid pass (§11e); each phase ends with a debug `Pass: <phase> (<sim s>)` line; the script ends once the power pass reports one placed grid and the fluid pass `done`.
 
 ## §11c Blueprint queue (`autoplay/lib/blueprint_queue.py`)
 
-The planner's only writer of blueprints. Archive `autoplay.planned` = `{blueprint_id: {"k": kind, "f": fluid | "power" | None, "p": prio, "seg": [x1, y1, x2, y2] | None, "site": id | None}}`; entries are dropped once their job is no longer pending/active/paused (skipped when a job list could not be read). Jobs with a prio other than `construction_plan.DEFAULT_PRIORITY` also get a `construction.priority` entry.
+The planner's only writer of blueprints: `queue_power_route()` (power legs) and `queue_pipe_route()` (§11e). Archive `autoplay.planned` = `{blueprint_id: {"k": kind, "f": fluid | "power" | None, "p": prio, "seg": [x1, y1, x2, y2] | None, "site": id | None}}`; entries are dropped once their job is no longer pending/active/paused (skipped when a job list could not be read). Jobs with a prio other than `construction_plan.DEFAULT_PRIORITY` also get a `construction.priority` entry.
 
 ## §11d Power-line ledger (`autoplay/lib/power_survey.py`, `construction.power_tiles`)
 
@@ -111,3 +111,41 @@ Scripts cannot list completed power lines. Their tiles live in `construction.pow
 | `SURVEY_PROGRESS_EVERY` | 2000 | probes between survey progress lines (debug: count, %, power tiles, cancelled jobs, sim s) |
 | `HOLD_STALE_TICKS` (`construction_plan`) | 600 | a hold older than this no longer counts |
 | `POWER_DIRTY_MAX` (`construction_plan`) | 400 | dirty tiles kept before a full re-survey is requested |
+
+## §11e Fluid pass (`autoplay/lib/fluid_plan.py`)
+
+One pipe network per fluid, joining the fluid's producers to the outposts whose roles need it (§11f).
+
+**Game facts this rests on.** Pipes have no fluid of their own: `plan_pipe(fluid_id, …)` keeps only the medium (simworker `tre()`), and a component's contents come from the `connect()` relationships routed through it (set by the pump/cap/consumer scripts, not the planner). The planner's fluid for its own ghosts and not-yet-connected pipes lives in `autoplay.networks`. Between two locations the game splits the fluids over the components reaching both; one more fluid than components there is a conflict on `connect()`. So a network touches only its own fluid's terminals:
+
+| Wall for fluid F (same medium layer) | Crossing |
+| :--- | :--- |
+| tiles of any other label (other fluids, `FOREIGN`) | 3-tile bridge (`plan_bridge`) |
+| footprints of every outpost and field structure that is not a terminal of F (outposts, sited pumps/caps, known drills) | never |
+
+Gas and liquid layers ignore each other.
+
+**Terminals.** Producers = extractors on surveyed sites: water/oil pumps (`pump_id()`), thermal caps (steam), exotic caps/taps (deposit `fluid()`). Fluids made inside an outpost (Refiner output, condenser water) have no producer yet and are skipped (`no producer` debug line). Consumers = outposts whose roles list the fluid. A terminal is connected when one of its footprint tiles carries the fluid.
+
+**Route.** Per pass at most `MAX_ROUTES_PER_PASS` routes, fluids in `FLUID_ORDER` then by name. A* from every tile carrying the fluid (reused for free) to the free footprint tiles of all unconnected terminals; the route stops on the first footprint tile it reaches, so it takes one port. With no network yet, the first producer (by id) with a free tile is the source and only consumer outposts are goals. `path_plan()` steps go out via `blueprint_queue.queue_pipe_route()` (§11c). A route the game rejects, or a search that finds no path, marks its terminals failed until the script restarts. Stock gate: `<medium>_pipe_segment` ≥ route pieces and `<medium>_pipe_bridge` ≥ bridges, else the pass reports `waiting`.
+
+**Ports.** A footprint with no free tile on a medium is *full* for it (logged, skipped). An outpost keeps its last free tiles for earlier fluids of its role order that still need a port and have a producer (*reserved*). `autoplay.port_status` = `{outpost_id: {"gas": [labels], "liquid": [labels], "full": [media]}}` for consumer outposts, rewritten only on change.
+
+| Constant | Value | Meaning |
+| :--- | :--- | :--- |
+| `MAX_ROUTES_PER_PASS` | 1 | fluid routes queued per pass |
+| `LABEL_CHUNK` | 200 | occupancy tiles per atomic `label_slice()` (~3,400 operations worst) |
+| `FLUID_ORDER` | water, oil, steam | routing order; other fluids follow by name |
+
+The run loop ends once the power pass reports one grid and the fluid pass reports `done`.
+
+`queue_pipe_route()` (§11c): one `plan_pipe` per straight run, one `plan_bridge` per bridge, all or nothing. A run that creates fewer jobs than its pieces minus `reusable_pieces()` (consecutive tile pairs both already carrying the fluid) is treated as `short` and the whole route is cancelled. On success, the runs are appended to `autoplay.networks[fluid]`; for a bridge, only its two end tiles are stored (as one-tile runs), because the middle tile belongs to the line it crosses.
+
+## §11f Outpost roles (`autoplay/lib/autoplay_roles.py`)
+
+| Key | Shape | Writer |
+| :--- | :--- | :--- |
+| `autoplay.role_presets` | `{role: [fluid, ...]}` | seeded with `DEFAULT_ROLE_PRESETS` when missing; operator-editable |
+| `autoplay.outpost_roles` | `{outpost_id: role \| [role, ...]}` | operator; entries of gone outposts pruned each pass |
+
+Default presets: `factory` water, oil, steam · `terraform` water, steam · `power` steam, oil · `farm` water · `steam_hub` steam · `refinery` the four raw exotics · `wildlife` the refined/common exotics (ammonia, swamp_gas, sulfur_gas, chlorine, brine, cryofluid, quicksilver). One-fluid sub-roles spread exotics over outposts: `refinery_<fluid>` (its raw feed, e.g. `refinery_quicksilver` = raw_quicksilver) and `wildlife_<fluid>`. The home outpost always has `HOME_ROLES` (`farm`: the Harvester field is there) after its own roles. An outpost's fluid order (roles in order, presets in order, duplicates dropped) is its port service order. Example: `{"home": ["wildlife_ammonia"], "outpost_3": ["factory", "refinery_chlorine"]}`.

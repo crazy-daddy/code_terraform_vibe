@@ -27,6 +27,7 @@ from atomic import run_atomic, run_chunked
 from swallow import swallowed
 from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key
 from blueprint_queue import stock, queue_power_route
+from infra_topology import outpost_positions, surveyed_sites
 from construction_plan import DEFAULT_PRIORITY
 from drill_sites import known_positions
 
@@ -324,21 +325,8 @@ def _game_reads():
     except Exception as error:
         swallowed("power_plan._game_reads: power_control.grids", error)
         return None
-    outpost_xy = {}
-    network = get_component("outpost_network")
-    if network is not None:
-        try:
-            for ref in network.outposts() or []:
-                outpost_xy[ref.id] = (float(ref.x), float(ref.y))
-        except Exception as error:
-            swallowed("power_plan._game_reads: outpost_network.outposts", error)
-    sites = []
-    journal = get_component("journal")
-    if journal is not None:
-        try:
-            sites = journal.surveyed_sites("nocturna") or []
-        except Exception as error:
-            swallowed("power_plan._game_reads: journal.surveyed_sites", error)
+    outpost_xy = outpost_positions() or {}
+    sites = surveyed_sites()
     return (rows, outpost_xy, site_machines(sites, known_positions()))
 
 

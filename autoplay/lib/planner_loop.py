@@ -5,13 +5,16 @@
 # Pass order: read the map (infra_topology.Topology), prune autoplay.planned,
 # keep the power-line ledger current (power_survey: one-off full survey when
 # the ledger has none, vanished-job check, dirty-tile re-probe), then the
-# power pass (power_plan.PowerPlanner) with the ledger's line tiles.
+# power pass (power_plan.PowerPlanner) with the ledger's line tiles, then the
+# fluid pass (fluid_plan.FluidPlanner). The script ends once the power pass
+# reports one grid and the fluid pass has nothing left to route.
 
 from swallow import swallowed
 from tree_console import TreeConsole, reset_all, flush_all
 from infra_topology import Topology
 from blueprint_queue import prune_planned
 from power_plan import PowerPlanner
+from fluid_plan import FluidPlanner
 import power_survey
 
 PASS_SLEEP_S = 60   # seconds between passes while work is open
@@ -45,12 +48,14 @@ def _upkeep_ledger(log, survey_locked):
 def run_planner():
     log = TreeConsole(module="infra_planner")
     power = PowerPlanner(log)
+    fluids = FluidPlanner(log)
     topo = Topology()
     survey_locked = False
     log.print("Infrastructure planner online.")
     while True:
         reset_all()
         outcome = "error"
+        fluid_outcome = "error"
         try:
             mark = _tick()
             topo.read(log)
@@ -62,12 +67,14 @@ def run_planner():
             tiles = power_survey.ledger_tiles()
             mark = _phase(log, mark, f"power ledger ready, {len(tiles)} tile(s)")
             outcome = power.run_pass(topo, tiles)
-            _phase(log, mark, f"power pass: {outcome}")
+            mark = _phase(log, mark, f"power pass: {outcome}")
+            fluid_outcome = fluids.run_pass(topo)
+            _phase(log, mark, f"fluid pass: {fluid_outcome}")
         except Exception as error:
             swallowed("planner_loop.run_planner: pass", error)
             log.level("error").print(f"Planner pass failed: {error}")
-        if outcome == "joined":
-            log.print("Infrastructure planner: one power grid, nothing to plan. Ending.")
+        if outcome == "joined" and fluid_outcome == "done":
+            log.print("Infrastructure planner: one power grid, every fluid network routed. Ending.")
             flush_all()
             return
         flush_all()

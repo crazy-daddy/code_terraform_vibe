@@ -41,6 +41,12 @@ Decisions taken with the user:
 - Topology reads: `list_pipes()` → `Pipe.start()/end()/type()/contents()/is_complete()`;
   `power_control.grids()` → `PowerGrid.outpost_ids/machine_ids` (subnet membership is free).
 - Gas vs liquid vs power are separate layers; only **same-medium** contact merges.
+- **Pipes have no fluid of their own** (user, confirmed in simworker `tre()`): `plan_pipe(fluid_id, ...)`
+  keeps only the medium; contents come from the `connect()` relationships routed through a component.
+  There is no "oil pipe": keeping fluids apart is entirely the planner's job.
+- **Fluids split over components** (user): between two endpoints the game assigns one fluid per
+  component reaching both; 2 components carry 2 fluids, a 3rd fluid there conflicts on `connect()`.
+  So a network may only touch its own fluid's terminals: foreign footprints are walls (not soft).
 - Outpost clearance 40 m, POI clearance 20 m (`simworker` `plan.outpostClearanceM`) — applies
   to placing structures only; pipes and wires may cross it (confirmed by hand).
 
@@ -88,7 +94,9 @@ producers = pumps (water/oil), thermal caps (steam), and later refiners/taps; re
 `autoplay.networks`, else `"?"` foreign). Foreign tiles are treated as walls for every fluid.
 Footprints come from `grid_geom.outpost_tiles(x, y)` (top-left anchor) and
 `grid_geom.extractor_tiles(x, y)` (centre anchor) — both 4×4. Routes may pass through
-outposts, POIs and their clearance rings; inside any footprint the same "never touch another
+POIs and clearance rings, but a fluid route never enters the footprint of an outpost or field
+structure that is not a terminal of its fluid (it would give that site a component a second
+relationship could pick up); inside a terminal footprint the same "never touch another
 same-medium network" rule applies as outside.
 
 **Footprint ports.** `infra_topology.footprint_ports(footprint, occ, medium)` = which
@@ -176,7 +184,12 @@ headless Automation (`infra_planner_automation.py`, role marker `# ct-automation
    vanished jobs. Ledger lines are link ends for the power pass (no ring needed). Ring rule for shared
    field structures: `5bd36e5`. Live check pending (expected: 745 power tiles, 29 probe jobs cancelled;
    `thermal_cap_4` links 2 tiles to the bare line). Details: cheatsheet autoplay.md §11d.
-4. `autoplay_roles` + `fluid_plan` (water first, then oil, steam) + conflict tests.
+4. `autoplay_roles` + `fluid_plan` (water first, then oil, steam) + conflict tests. **Done**: `autoplay_roles`
+   (presets incl. `refinery_<fluid>`/`wildlife_<fluid>` sub-roles, home always `farm`), `fluid_plan` (one route
+   per pass, foreign footprints are walls, bridges over other lines, port reservation, `autoplay.port_status`),
+   `blueprint_queue.queue_pipe_route()`, cheatsheet §11e/§11f, `tests/test_autoplay_fluid.py`. Not live-tested.
+   Open: producers inside outposts (Refiner outputs, condenser water) are not terminals yet, so refined
+   exotics only route from common-exotic caps; `autoplay.networks` is never pruned (phase 5b).
 5. `extractor_plan` demand pass, then plan-ahead pass at prio 1.
 5b. `relic_cleanup` (per-layer deconstruction of dead pipe components).
 6. sync flag + docs; TODO.md entry under "Building planner". **Done** (pulled ahead of 4/5): `scripts_sync.py --include-autoplay`

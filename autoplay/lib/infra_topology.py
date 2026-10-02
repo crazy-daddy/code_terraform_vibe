@@ -203,6 +203,42 @@ def footprint_ports(footprint, layer_occ, fluid):
     return out
 
 
+def outpost_positions():
+    """{outpost_id: (x, y)} top-left anchors from outpost_network; None when unreadable (unlike {} = no outposts)."""
+    network = get_component("outpost_network")
+    if network is None:
+        return None
+    try:
+        return {ref.id: (float(ref.x), float(ref.y)) for ref in network.outposts() or []}
+    except Exception as error:
+        swallowed("infra_topology.outpost_positions: outpost_network.outposts", error)
+        return None
+
+
+def home_outpost_id():
+    """Id of the home outpost (outpost_network.home()); None when unreadable."""
+    network = get_component("outpost_network")
+    if network is None:
+        return None
+    try:
+        return network.home().id
+    except Exception as error:
+        swallowed("infra_topology.home_outpost_id: outpost_network.home", error)
+        return None
+
+
+def surveyed_sites():
+    """journal.surveyed_sites("nocturna"); [] when unreadable."""
+    journal = get_component("journal")
+    if journal is None:
+        return []
+    try:
+        return journal.surveyed_sites("nocturna") or []
+    except Exception as error:
+        swallowed("infra_topology.surveyed_sites: journal.surveyed_sites", error)
+        return []
+
+
 def summary(occ):
     """{layer: {label: tile count}} for one summary log line."""
     out = {}
