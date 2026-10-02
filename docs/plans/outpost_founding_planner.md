@@ -226,6 +226,12 @@ Archive (one dict per concern):
    (`WATCH_SLEEP_S`) while proposals wait; kit price read from the Shop catalogue (its `cost` already counts
    owned kits); rejected designations go back to `plan_hosts()` as `"refused"`, so the need tries the next host.
    Cheatsheet §11j, `tests/test_autoplay_outpost_plan.py`.
+   Verified live 2026-10-03 (by hand, no planner run): an operator-typed `OK` in a label and a drag both
+   reach `markers.list()` (same id, new whole-meter x, y); hand-placed markers use ids `pin.<n>`; Shop
+   catalogue `outpost_kit` cost = UI price (800,000 at 8 kits). Still open: site ranking step budget on the
+   real map, note readability. Founding-only entrypoint for that test: `autoplay/outpost_planner_automation.py`
+   (`planner_loop.run_founding()`, no power/pipe/extractor passes; `Pass: founding pass` debug line gives
+   the sim seconds).
 4b. Scout rework: `autoplay.survey_requests` served first by the scout, `wrong_scanner` contacts recorded
    as known biomass, blacklist kept for truly unscannable contacts.
 5. Founding execution: cash consumer `outpost_founding`, kit purchase, blueprint, built detection,
