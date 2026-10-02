@@ -535,15 +535,20 @@ def _fluid_stock(statuses):
             row = entry.get(medium)
             if isinstance(row, list) and len(row) > wc.MEDIUM_REQUIRED and row[wc.MEDIUM_REQUIRED]:
                 wanted[row[wc.MEDIUM_REQUIRED]] = medium
-    out = {}
-    for fluid, medium in wanted.items():
-        total = 0.0
-        for tank, _outpost_id in fluid_routing.discover_network_buildings(wc.TANK_TYPE_IDS[medium], fluid_id=fluid):
+    out = {fluid: 0.0 for fluid in wanted}
+    if not out:
+        return out
+    # One walk per medium, not per fluid: an unlatched tank holds nothing, so
+    # each tank counts only toward the fluid it is latched to.
+    assignments = fluid_routing.get_tank_assignments()
+    for medium in set(wanted.values()):
+        for tank, _outpost_id in fluid_routing.discover_network_buildings(wc.TANK_TYPE_IDS[medium]):
             try:
-                total += float(tank.level() or 0.0)
+                fluid = tank.fluid()
+                if wanted.get(fluid) == medium and fluid_routing.tank_is_eligible_target(tank, fluid, assignments):
+                    out[fluid] += float(tank.level() or 0.0)
             except Exception as error:
                 swallowed("wildlife_planner._fluid_stock: tank.level", error)
-        out[fluid] = total
     return out
 
 

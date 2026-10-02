@@ -347,5 +347,52 @@ class SnapshotTests(harness.StubTestCase):
         self.assertIsNone(self.world.notebook.data.get(wc.PLAN_KEY))
 
 
+class _Tank:
+    def __init__(self, tank_id, fluid, level):
+        self.id, self._fluid, self._level = tank_id, fluid, level
+
+    def fluid(self):
+        return self._fluid
+
+    def level(self):
+        return self._level
+
+
+class FluidStockTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.tanks = {
+            "gas": [_Tank("gas_tank_1", "ammonia", 100.0), _Tank("gas_tank_2", "steam", 50.0),
+                    _Tank("gas_tank_3", "ammonia", 30.0), _Tank("gas_tank_4", "", 0.0)],
+            "liquid": [_Tank("tank_1", "brine", 7.0)],
+        }
+        self.walks = []
+        self._orig = (wp.fluid_routing.discover_network_buildings, wp.fluid_routing.get_tank_assignments)
+
+        def discover(type_ids, resolve=True, fluid_id=None):
+            medium = next(m for m, ids in wc.TANK_TYPE_IDS.items() if tuple(ids) == tuple(type_ids))
+            self.walks.append((medium, fluid_id))
+            return [(t, "outpost_home") for t in self.tanks[medium]]
+
+        wp.fluid_routing.discover_network_buildings = discover
+        wp.fluid_routing.get_tank_assignments = lambda: {"gas_tank_3": wp.fluid_routing.RETIRING_ASSIGNMENT}
+
+    def tearDown(self):
+        wp.fluid_routing.discover_network_buildings, wp.fluid_routing.get_tank_assignments = self._orig
+        super().tearDown()
+
+    def test_one_walk_per_medium_counts_latched_eligible_tanks(self):
+        statuses = {
+            "habitat_1": established("salt_tortoise", gas=["", 0, [], "ammonia", 0], liquid=["", 0, [], "brine", 0]),
+            "habitat_2": established("veil_mantle", gas=["", 0, [], "steam", 0]),
+        }
+        self.assertEqual(wp._fluid_stock(statuses), {"ammonia": 100.0, "steam": 50.0, "brine": 7.0})
+        self.assertEqual(sorted(self.walks), [("gas", None), ("liquid", None)])
+
+    def test_no_required_fluid_walks_nothing(self):
+        self.assertEqual(wp._fluid_stock({"habitat_1": established("salt_tortoise")}), {})
+        self.assertEqual(self.walks, [])
+
+
 if __name__ == "__main__":
     unittest.main()

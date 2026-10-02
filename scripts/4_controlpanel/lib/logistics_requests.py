@@ -46,7 +46,7 @@
 # cargo on the move without counting a planned pickup twice.
 
 from archive import archive
-from storage import warehouse_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
+from storage import warehouse_stock, warehouse_stocks, stacks_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -499,18 +499,16 @@ def outpost_stock(item_ids, outpost):
     totals = {item_id: 0 for item_id in item_ids}
     if not item_ids or outpost is None:
         return totals
-    for item_id in item_ids:
-        totals[item_id] += warehouse_stock(item_id, outpost)
+    for item_id, units in warehouse_stocks(item_ids, outpost).items():
+        totals[item_id] += units
     for depot in local_depots(outpost):
         stock = depot_stock(depot)
         for item_id in item_ids:
             totals[item_id] += stock.get(item_id, 0)
     if getattr(outpost, "is_home", False):
         try:
-            inventory = get_component("inventory")
-            if inventory:
-                for item_id in item_ids:
-                    totals[item_id] += inventory.count(item_id)
+            for item_id, units in stacks_stock(get_component("inventory"), item_ids).items():
+                totals[item_id] += units
         except Exception as error:
             swallowed("logistics_requests.outpost_stock: get_component", error)
         if CROP_AUTOMATOR_ITEM_ID in totals:

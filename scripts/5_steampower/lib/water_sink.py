@@ -68,6 +68,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
         if not outpost or not hasattr(outpost, "buildings"):
             return []
         tanks = []
+        assignments = fluid_routing.get_tank_assignments()
         for type_id in fluid_routing.LIQUID_TANK_TYPE_IDS:
             try:
                 refs = list(outpost.buildings(type_id))
@@ -80,7 +81,7 @@ class WaterAwareWasteSinkController(WasteSinkController):
                 except Exception as error:
                     swallowed("water_sink.WaterAwareWasteSinkController._water_tanks: get_component", error)
                     continue
-                if not fluid_routing.tank_is_eligible_target(tank, WATER_FLUID_ID):
+                if not fluid_routing.tank_is_eligible_target(tank, WATER_FLUID_ID, assignments):
                     continue
                 fill = fluid_routing.fill_pct_of(tank)
                 self.log.trace(f"[{self.name}] water tank '{tank.id}' at {fill*100:.0f}%.")

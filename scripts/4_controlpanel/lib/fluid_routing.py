@@ -75,18 +75,21 @@ def get_tank_assignments():
     }
 
 
-def tank_matches_assignment(building_id, fluid_id):
+def tank_matches_assignment(building_id, fluid_id, assignments=None):
     """True only if building_id is explicitly assigned to exactly fluid_id; False if assigned to a
     different fluid_id OR not assigned at all. Deliberately deny-by-default on no entry -- see the
     module docstring for why "unrestricted until proven otherwise" was rejected. This is the pure
     registry check; it has no way to know a tank is already safely latched to fluid_id (that needs
     the live building object, not just its id) -- callers that have a resolved building should use
     tank_is_eligible_target() below instead, which checks that first and only falls back to this
-    for a tank that isn't already latched to anything."""
-    return get_tank_assignments().get(building_id) == fluid_id
+    for a tank that isn't already latched to anything. assignments: a get_tank_assignments() result
+    the caller already holds, so a loop over many tanks reads the archive once."""
+    if assignments is None:
+        assignments = get_tank_assignments()
+    return assignments.get(building_id) == fluid_id
 
 
-def tank_is_eligible_target(building, fluid_id):
+def tank_is_eligible_target(building, fluid_id, assignments=None):
     """
     Whether a resolved Liquid/Gas Tank building (discover_network_buildings(resolve=True) shape --
     has .fluid()/.id) is safe to treat as a candidate for a NEW fluid_id connection right now.
@@ -103,11 +106,15 @@ def tank_is_eligible_target(building, fluid_id):
 
     A tank assigned RETIRING_ASSIGNMENT is never eligible, latched or not -- checked before the
     latch, since a retiring tank keeps its latch until it has drained to 0.
+
+    assignments: as in tank_matches_assignment().
     """
     b_id = getattr(building, "id", None)
     if not b_id:
         return False
-    if get_tank_assignments().get(b_id) == RETIRING_ASSIGNMENT:
+    if assignments is None:
+        assignments = get_tank_assignments()
+    if assignments.get(b_id) == RETIRING_ASSIGNMENT:
         return False
     current_fluid = None
     if building is not None and hasattr(building, "fluid"):
@@ -118,7 +125,7 @@ def tank_is_eligible_target(building, fluid_id):
             current_fluid = None
     if current_fluid:
         return current_fluid == fluid_id
-    return tank_matches_assignment(b_id, fluid_id)
+    return tank_matches_assignment(b_id, fluid_id, assignments)
 
 
 def safe_is_stalled(building):
@@ -366,6 +373,7 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
 
     pairs = []
     seen_ids = set()
+    assignments = get_tank_assignments() if fluid_id is not None else None
     network = get_component("outpost_network")
     if network and hasattr(network, "outposts"):
         try:
@@ -385,7 +393,7 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
                                 swallowed("fluid_routing.discover_network_buildings: get_component", error)
                                 resolved = building
 
-                        if fluid_id is not None and not tank_is_eligible_target(resolved, fluid_id):
+                        if fluid_id is not None and not tank_is_eligible_target(resolved, fluid_id, assignments):
                             continue
 
                         seen_ids.add(b_id)

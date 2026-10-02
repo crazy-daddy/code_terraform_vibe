@@ -200,6 +200,38 @@ def warehouse_stock(item_id, outpost=None):
     return total
 
 
+def stacks_stock(component, item_ids):
+    """{item_id: units} of item_ids in one store (Warehouse, Inventory, ...): one
+    stacks() read instead of a count() per item; count() when there is no stacks()."""
+    totals = {item_id: 0 for item_id in item_ids}
+    if not component:
+        return totals
+    if not hasattr(component, "stacks"):
+        for item_id in totals:
+            totals[item_id] = component.count(item_id)
+        return totals
+    for stack in component.stacks():
+        if stack.id in totals:
+            totals[stack.id] += stack.count
+    return totals
+
+
+def warehouse_stocks(item_ids, outpost=None):
+    """{item_id: warehouse_stock(item_id, outpost)} for every item, one stacks() read per Warehouse."""
+    totals = {item_id: 0 for item_id in item_ids}
+    if not totals:
+        return totals
+    for building in discover_storage_buildings(outpost):
+        try:
+            stock = stacks_stock(building["component"], totals)
+        except Exception as error:
+            swallowed("storage.warehouse_stocks: stacks_stock", error)
+            continue
+        for item_id, units in stock.items():
+            totals[item_id] += units
+    return totals
+
+
 def _fill_fraction(building):
     component = building["component"]
     try:
