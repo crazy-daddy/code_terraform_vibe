@@ -216,6 +216,12 @@ def fair_share(batch, stock, builders):
 # its two tiles; a deconstruction or a power bridge marks its tiles dirty (a
 # removed piece may leave others on the tile; a bridge job has no axis), and
 # whoever keeps the ledger re-probes dirty tiles.
+#
+# An archive.transaction() updater runs as one callback with the 10,000-step
+# cap (like lib/atomic.py), so updaters only touch the rows of the tiles they
+# change (power_rows_add()/power_rows_remove()) and append to "dirty" with
+# native list membership checks; re-encoding the whole ledger happens outside
+# a transaction (swap_power_ledger()).
 POWER_TILES_KEY = "construction.power_tiles"
 POWER_TILE_M = 10
 POWER_DIRTY_MAX = 400        # dirty tiles kept; beyond this the ledger asks for a full survey instead
@@ -299,6 +305,63 @@ def power_rows_encode(tiles):
     return rows
 
 
+def _row_runs(rows, ty):
+    runs = rows.get(str(ty))
+    return runs if isinstance(runs, list) else []
+
+
+def _runs_add(runs, tx):
+    """Sorted inclusive runs with tx added (new list; runs touching tx are merged into one)."""
+    out = []
+    joined = [tx, tx]
+    placed = False
+    for run in runs:
+        if run[1] < tx - 1:
+            out.append(run)
+        elif run[0] > tx + 1:
+            if not placed:
+                out.append(joined)
+                placed = True
+            out.append(run)
+        else:
+            joined = [min(joined[0], run[0]), max(joined[1], run[1])]
+    if not placed:
+        out.append(joined)
+    return out
+
+
+def _runs_remove(runs, tx):
+    """Sorted inclusive runs with tx removed (new list)."""
+    out = []
+    for run in runs:
+        if run[0] <= tx <= run[1]:
+            if run[0] < tx:
+                out.append([run[0], tx - 1])
+            if tx < run[1]:
+                out.append([tx + 1, run[1]])
+        else:
+            out.append(run)
+    return out
+
+
+def power_rows_add(rows, tiles):
+    """Adds (tx, ty) tiles to a "rows" dict in place, editing only their rows' runs; returns rows."""
+    for tx, ty in tiles:
+        rows[str(ty)] = _runs_add(_row_runs(rows, ty), tx)
+    return rows
+
+
+def power_rows_remove(rows, tiles):
+    """Removes (tx, ty) tiles from a "rows" dict in place, editing only their rows' runs; returns rows."""
+    for tx, ty in tiles:
+        runs = _runs_remove(_row_runs(rows, ty), tx)
+        if runs:
+            rows[str(ty)] = runs
+        else:
+            rows.pop(str(ty), None)
+    return rows
+
+
 def empty_power_ledger():
     return {"surveyed": None, "rows": {}, "dirty": []}
 
@@ -313,17 +376,17 @@ def clean_power_ledger(raw):
     return {
         "surveyed": surveyed if isinstance(surveyed, int) and not isinstance(surveyed, bool) else None,
         "rows": rows if isinstance(rows, dict) else {},
-        "dirty": [d for d in dirty if isinstance(d, list) and len(d) == 2] if isinstance(dirty, list) else [],
+        "dirty": dirty if isinstance(dirty, list) else [],
     }
 
 
 def mark_power_dirty(ledger, tiles):
     """Adds (tx, ty) tiles to the ledger's dirty list; past POWER_DIRTY_MAX the ledger asks for a full survey. Returns the ledger."""
-    known = {(d[0], d[1]) for d in ledger["dirty"]}
+    dirty = ledger["dirty"]
     for tile in tiles:
-        if tile not in known:
-            known.add(tile)
-            ledger["dirty"].append([tile[0], tile[1]])
+        entry = [tile[0], tile[1]]
+        if entry not in dirty:
+            dirty.append(entry)
     if len(ledger["dirty"]) > POWER_DIRTY_MAX:
         ledger["surveyed"] = None
         ledger["dirty"] = []
@@ -334,12 +397,33 @@ def note_power_job(raw, kind, x, y):
     """The ledger after a finished job of `kind` at (x, y); unchanged for kinds that do not touch power lines."""
     ledger = clean_power_ledger(raw)
     if kind == POWER_LINE_KIND:
-        tiles = power_rows_decode(ledger["rows"])
-        tiles.update(power_job_tiles(x, y))
-        ledger["rows"] = power_rows_encode(tiles)
+        power_rows_add(ledger["rows"], power_job_tiles(x, y))
     elif kind == POWER_BRIDGE_KIND:
         tx, ty = _power_tile(x), _power_tile(y)
         mark_power_dirty(ledger, [(tx, ty), (tx - 1, ty), (tx + 1, ty), (tx, ty - 1), (tx, ty + 1)])
     elif kind == DECONSTRUCT_KIND:
         mark_power_dirty(ledger, power_job_tiles(x, y))
     return ledger
+
+
+def swap_power_ledger(store, build, attempts=3):
+    """
+    Replaces the whole ledger with build(current ledger) without a heavy
+    transaction updater: build() runs outside, and the updater only stores its
+    result if the archive value is still the one build() saw (compare and
+    swap). Retries up to `attempts` times when a Pioneer wrote in between.
+    store: lib/archive.py archive. Returns True when stored.
+    """
+    for _ in range(attempts):
+        before = store.get(POWER_TILES_KEY, None)
+        if before is None:
+            before = empty_power_ledger()
+        after = build(clean_power_ledger(before))
+
+        def updater(current):
+            return after if current == before else current
+
+        store.transaction(POWER_TILES_KEY, before, updater)
+        if store.get(POWER_TILES_KEY, None) == after:
+            return True
+    return False

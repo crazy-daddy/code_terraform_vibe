@@ -25,6 +25,7 @@ from swallow import swallowed
 from grid_geom import tile_key, tile_xy
 from construction_plan import POWER_TILES_KEY, HOLD_KEY, DECONSTRUCT_KIND, POWER_LINE_KIND
 from construction_plan import clean_power_ledger, empty_power_ledger, power_rows_decode, power_rows_encode, mark_power_dirty
+from construction_plan import swap_power_ledger
 
 TILE_M = 10
 MAP_MIN_TILE = -90           # world tile range on both axes (the game's 180 x 180 tile planet)
@@ -157,14 +158,12 @@ def run_full(log):
         log.end("locked: mark_deconstruct needs Constructor research; links use footprints only")
         return outcome
 
-    def updater(current):
-        merged = clean_power_ledger(current)
-        added = power_rows_decode(merged["rows"]) - rows_before
-        merged["rows"] = power_rows_encode(found | added)
-        merged["surveyed"] = start_tick
-        return merged
+    def build(current):
+        added = power_rows_decode(current["rows"]) - rows_before
+        return {"surveyed": start_tick, "rows": power_rows_encode(found | added), "dirty": current["dirty"]}
 
-    archive.transaction(POWER_TILES_KEY, empty_power_ledger(), updater)
+    if not swap_power_ledger(archive, build):
+        log.level("warn").print("Power survey: ledger changed during every write attempt; result not stored.")
     log.end(f"{probed} tiles probed, {len(found)} with power, {prober.cancelled} probe job(s) cancelled "
             f"in {(_now_tick() - start_tick) / 10:.0f} s")
     return outcome
@@ -188,19 +187,17 @@ def reprobe_dirty(log):
     finally:
         _clear_hold()
 
-    def updater(current):
-        merged = clean_power_ledger(current)
-        tiles = power_rows_decode(merged["rows"])
+    def build(current):
+        tiles = power_rows_decode(current["rows"])
         for tile, has_power in answers.items():
             if has_power is True:
                 tiles.add(tile)
             elif has_power is False:
                 tiles.discard(tile)
-        merged["rows"] = power_rows_encode(tiles)
-        merged["dirty"] = [d for d in merged["dirty"] if (d[0], d[1]) not in answers]
-        return merged
+        dirty = [d for d in current["dirty"] if (d[0], d[1]) not in answers]
+        return {"surveyed": current["surveyed"], "rows": power_rows_encode(tiles), "dirty": dirty}
 
-    archive.transaction(POWER_TILES_KEY, empty_power_ledger(), updater)
+    swap_power_ledger(archive, build)
     gained = len([a for a in answers.values() if a is True])
     log.debug(f"Power ledger: re-probed {len(answers)} dirty tile(s), {gained} with power.")
     return len(answers)

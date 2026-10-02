@@ -200,3 +200,50 @@ class PioneerLedgerTests(harness.StubTestCase):
         self.assertEqual(PioneerController.read_construction_hold(me, 10), set())
         self.world.notebook.data[cp.HOLD_KEY] = {"by": "t", "tick": 10, "kinds": ["deconstruct"]}
         self.assertEqual(PioneerController.read_construction_hold(me, 20), {"deconstruct"})
+
+
+class LedgerUpdaterBudgetTests(unittest.TestCase):
+    """archive.transaction() updaters run as one callback with the 10,000-step cap: the ones Pioneers and the planner use stay small."""
+
+    def big_ledger(self):
+        # every tile of 180 rows x 180 columns except every 3rd column: worst-case fragmented rows
+        tiles = {(tx, ty) for ty in range(-90, 90) for tx in range(-90, 90) if tx % 3}
+        return {"surveyed": 1, "rows": cp.power_rows_encode(tiles), "dirty": [[i, 0] for i in range(cp.POWER_DIRTY_MAX - 5)]}
+
+    def test_note_power_job_worst(self):
+        from test_construction_plan import ops
+        ledger = self.big_ledger()
+        # horizontal piece joining (-1, 0)/(0, 0): both tiles in the most fragmented row
+        self.assertLess(ops(cp.note_power_job, ledger, cp.POWER_LINE_KIND, 0, 5), cp.ATOMIC_STEP_BUDGET)
+        self.assertLess(ops(cp.note_power_job, ledger, cp.DECONSTRUCT_KIND, 0, 5), cp.ATOMIC_STEP_BUDGET)
+        self.assertLess(ops(cp.note_power_job, ledger, cp.POWER_BRIDGE_KIND, 5, 5), cp.ATOMIC_STEP_BUDGET)
+
+    def test_row_add_remove(self):
+        rows = cp.power_rows_encode({(1, 0), (2, 0), (5, 0)})
+        cp.power_rows_add(rows, [(3, 0), (4, 0), (0, 7)])
+        self.assertEqual(rows["0"], [[1, 5]])
+        cp.power_rows_remove(rows, [(3, 0), (0, 7)])
+        self.assertEqual(rows["0"], [[1, 2], [4, 5]])
+        self.assertNotIn("7", rows)
+
+    def test_swap_power_ledger(self):
+        class Store:
+            def __init__(self):
+                self.data = {}
+                self.interfere = 0
+
+            def get(self, key, default=None):
+                return self.data.get(key, default)
+
+            def transaction(self, key, default, updater):
+                if self.interfere:
+                    self.interfere -= 1
+                    self.data[key] = {"surveyed": None, "rows": {"9": [[1, 1]]}, "dirty": []}
+                self.data[key] = updater(self.data.get(key, default))
+
+        store = Store()
+        self.assertTrue(cp.swap_power_ledger(store, lambda cur: {"surveyed": 5, "rows": cur["rows"], "dirty": []}))
+        self.assertEqual(store.data[cp.POWER_TILES_KEY]["surveyed"], 5)
+        store.interfere = 1  # a Pioneer writes between read and swap: the retry sees its row
+        self.assertTrue(cp.swap_power_ledger(store, lambda cur: {"surveyed": 6, "rows": cur["rows"], "dirty": []}))
+        self.assertEqual(store.data[cp.POWER_TILES_KEY]["rows"], {"9": [[1, 1]]})
