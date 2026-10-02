@@ -424,7 +424,7 @@ class FabricatorController:
             # sweep moves finished goods out to Warehouses too), only the
             # outpost's own Warehouses elsewhere -- a site's stock counts
             # only for its own targets.
-            current = cache.local_stock(recipe.output_item, outpost)
+            current = cache.held_stock(recipe.output_item, outpost)
             in_pipeline = pipeline.get(recipe.output_item, 0)
             missing = max(0, target - current - in_pipeline)
             if missing > 0:

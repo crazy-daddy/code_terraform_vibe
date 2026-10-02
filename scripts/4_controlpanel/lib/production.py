@@ -3,7 +3,7 @@ from archive import archive
 from storage import total_stock, discover_storage_buildings, outpost_is_home
 from outpost_mining import RAW_ORE_ITEM_IDS, HOME_OUTPOST_ID
 from power import DAY_CYCLE_DURATION_SECONDS
-from logistics_requests import active_requests, in_flight, outpost_free_tiers, aboard_units
+from logistics_requests import active_requests, in_flight, outpost_free_tiers, aboard_units, DRONE_DEPOT_TYPE_IDS
 from tree_console import TreeConsole
 from swallow import swallowed
 import fleet_status
@@ -739,7 +739,7 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # field-machine kits (8_planting/lib/harvester_machines.py). "bio_caster" = the
 # Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
 # "fleet_commission" = a drone kit the COMMISSION card queued (lib/drone_commission.py).
-# "plant_terraformer" = the Plant Terraformers' next NEED_CYCLES batches of Fertilizer /
+# "plant_terraformer" = the Plant Terraformers' next NEED_BATCHES batches of Fertilizer /
 # Growth Accelerant (8_planting/lib/plant_terraformer.py). "fuel_assembler" = the
 # Fuel Assemblers' Lead Plates for their next crafts (10_nuclear/lib/fuel_assembler.py).
 STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler")
@@ -1550,7 +1550,7 @@ def get_site_fabricator_targets(site_id, cache=None):
     ship_plan = {}
 
     def local(item_id):
-        return cache.local_stock(item_id, outpost)
+        return cache.held_stock(item_id, outpost)
 
     def supply(item_id, shortfall):
         coming = min(shortfall, flying.get(item_id, 0))
@@ -1603,7 +1603,7 @@ def _site_seed(site_id, cache):
         sites = [s for s in (planned or []) if s in fab_sites] or default_root_sites(consumers.get(item_id), fab_sites)
         share = split_units(remaining, sites, fab_sites).get(site_id, 0)
         if share > 0:
-            seed[item_id] = cache.local_stock(item_id, outpost) + pipeline.get(item_id, 0) + share
+            seed[item_id] = cache.held_stock(item_id, outpost) + pipeline.get(item_id, 0) + share
             log.debug(f"root {item_id} remaining={remaining} sites={sites} -> share={share}, target={seed[item_id]}")
     return seed, fabricator_outputs, outpost
 
@@ -1619,7 +1619,7 @@ def _site_base_targets(site_id, cache):
     else:
         seed, fabricator_outputs, outpost = _site_seed(site_id, cache)
         targets = dict(seed)
-        for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.local_stock(i, outpost)).items():
+        for item_id, count in _cascade_fabricator_output_demand(seed, fabricator_outputs, cache, stock=lambda i: cache.held_stock(i, outpost)).items():
             targets[item_id] = max(targets.get(item_id, 0), count)
     cache._site_base_targets[site_id] = targets
     return targets
@@ -1790,7 +1790,7 @@ def get_fabricator_active_recipe(fabricator=None, cache=None):
         site_id = claim_site_id(fabricator)
         output_item = getattr(recipe, "output_item", None)
         output_count = max(1, getattr(recipe, "output_count", 1))
-        current = cache.local_stock(output_item, getattr(fabricator, "outpost", None))
+        current = cache.held_stock(output_item, getattr(fabricator, "outpost", None))
         in_pipeline = get_fabricator_pipeline(cache, site_id).get(output_item, 0)
         fabricator_id = getattr(fabricator, "id", None)
         log.start(f"get_fabricator_active_recipe({fabricator_id or '?'})", level="debug")
@@ -2183,6 +2183,7 @@ class SourceCache:
         self._fab_sites = None  # fab_site_counts() memo
         self._pipeline_by_site = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
+        self._depot_stock = {}  # {outpost_id: {item_id: units}} in Drone Depot stockpiles, see held_stock()
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
         self._aboard = None  # logistics_requests.aboard_units() snapshot, see network_stock()
         self._blueprint_demand = None  # _cascade_blueprint_demand() memo
@@ -2270,17 +2271,45 @@ class SourceCache:
             self._outpost_stock[outpost_id] = held
         return held.get(item_id, 0)
 
+    def depot_stock(self, item_id, outpost=None):
+        """Units of item_id in the Drone Depot stockpiles at `outpost` (home
+        when None). One .stacks() sweep per outpost per pass."""
+        outpost_id = HOME_OUTPOST_ID if outpost_is_home(outpost) else getattr(outpost, "id", None)
+        held = self._depot_stock.get(outpost_id)
+        if held is None:
+            held = {}
+            for depot in discover_storage_buildings(outpost, DRONE_DEPOT_TYPE_IDS):
+                port = getattr(depot["component"], "output", None)
+                if not port or not hasattr(port, "stacks"):
+                    continue
+                try:
+                    for stack in port.stacks():
+                        stack_item_id = getattr(stack, "id", None)
+                        if stack_item_id:
+                            held[stack_item_id] = held.get(stack_item_id, 0) + getattr(stack, "count", 0)
+                except Exception as error:
+                    swallowed("production.SourceCache.depot_stock: port.stacks", error)
+            self._depot_stock[outpost_id] = held
+        return held.get(item_id, 0)
+
+    def held_stock(self, item_id, outpost=None):
+        """local_stock() plus the outpost's Drone Depot stockpiles: units
+        already made and sitting at `outpost`. For netting demand; a loader
+        uses local_stock(), since take_item() doesn't reach Depots."""
+        return self.local_stock(item_id, outpost) + self.depot_stock(item_id, outpost)
+
     def network_stock(self, item_id):
-        """stock() plus every non-home outpost's local Warehouses (local_stock())
-        plus cargo loaded aboard a hauler (logistics_requests.aboard_units()):
-        units anywhere on the network, moving ones included."""
+        """held_stock() at every outpost (Warehouses, Drone Depots, home
+        Inventory) plus cargo loaded aboard a hauler
+        (logistics_requests.aboard_units()): units anywhere on the network,
+        moving ones included."""
         if self._remote_outposts is None:
             self._remote_outposts = [o for o in _all_outposts() if not outpost_is_home(o)]
         if self._aboard is None:
             self._aboard = aboard_units()
-        total = self.stock(item_id) + self._aboard.get(item_id, 0)
+        total = self.held_stock(item_id) + self._aboard.get(item_id, 0)
         for outpost in self._remote_outposts:
-            total += self.local_stock(item_id, outpost)
+            total += self.held_stock(item_id, outpost)
         return total
 
     def smelter_recipes(self):

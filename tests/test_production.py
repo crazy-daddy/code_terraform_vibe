@@ -2,6 +2,7 @@
 import unittest
 
 from harness import StubTestCase, production, storage
+from game_stubs import Store as storage_stub
 
 
 class DiscoveryTests(StubTestCase):
@@ -159,6 +160,26 @@ class SourceCacheTests(StubTestCase):
         self.assertEqual(cache.local_stock("iron_ore", None), 15)
         self.assertEqual(cache.local_stock("iron_ore", remote), 33)
         self.assertEqual(cache.local_stock("silicon", remote), 2)
+
+    def add_depot(self, depot_id, outpost, items):
+        depot = type("Depot", (), {})()
+        depot.id, depot.type_id, depot.outpost = depot_id, "drone_station_large", outpost
+        depot.output = storage_stub(self.world, depot_id, "", outpost, items=items)
+        self.world.components[depot_id] = depot
+        return depot
+
+    def test_held_and_network_stock_count_drone_depots(self):
+        w = self.world
+        remote = w.add_outpost("outpost_2")
+        w.add_warehouse("wh_home", w.home, {"growth_accelerant": 1})
+        w.add_warehouse("wh_remote", remote, {"growth_accelerant": 10})
+        self.add_depot("depot_home", w.home, {"growth_accelerant": 5})
+        self.add_depot("depot_remote", remote, {"growth_accelerant": 2})
+        cache = production.SourceCache()
+        self.assertEqual(cache.local_stock("growth_accelerant", w.home), 1)
+        self.assertEqual(cache.held_stock("growth_accelerant", w.home), 6)
+        self.assertEqual(cache.held_stock("growth_accelerant", remote), 12)
+        self.assertEqual(cache.network_stock("growth_accelerant"), 18)
 
 
 if __name__ == "__main__":

@@ -82,12 +82,15 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 # (wildlife_reserve()): feed comes before Plants.
 #
 # Fabricator orders (fabricator_orders()): Fertilizer and Growth Accelerant
-# are crafted at home. Every Mk II Terraformer writes the same two orders
+# are crafted at any fab site. Every Mk II Terraformer writes the same two orders
 # for the whole fleet (fleet_size() from `plant.terraformer` telemetry):
-#   - need: NEED_CYCLES batches per machine, a standing upgrade order
+#   - need: NEED_BATCHES batches per machine, a standing upgrade order
 #     (production.set_upgrade_order(), ranked above Earth orders);
-#   - backlog: BACKLOG_HOURS of the fleet's use, a backlog order
+#   - backlog: BACKLOG_BATCHES batches per machine, a backlog order
 #     (production.set_backlog_order(), crafted only in idle Fabricator time).
+# Both net against network stock (production.SourceCache.network_stock(),
+# Drone Depots included), so units at a remote fab site count; the local
+# request above hauls them in.
 # Both are capped by what the rest of the Plants ladder still needs
 # (remaining_forage()), so they shrink to 0 near completion.
 
@@ -128,15 +131,15 @@ FERTILIZER_ITEM_IDS = ("fertilizer_mk3", "fertilizer_mk2", "fertilizer")
 # Capacitor chain costs about 5x Mk II (§1k). The first unlocked one wins.
 FERTILIZER_CRAFT_PREFERENCE = ("fertilizer_mk2", "fertilizer")
 
-# Fabricator need order: batches per running Mk II Terraformer. Six keep
-# 10-20 items per input on hand for a fleet of 2-3, enough for a hauler to
-# move a full load instead of single items.
-NEED_CYCLES = 6
+# Fabricator need order: batches per running Mk II Terraformer (2 machines:
+# 20 Growth Accelerant, 18 Fertilizer Mk II). Fabricators sit at other
+# outposts, so this covers ~30 h of use while a hauler brings a load in.
+NEED_BATCHES = 10
 
-# Fabricator backlog order: hours of the fleet's use, one batch per machine
-# every CYCLE_HOURS.
-BACKLOG_HOURS = 24
-CYCLE_HOURS = 3
+# Fabricator backlog order: the stock kept on the network, batches per
+# machine (2 machines: 200 Growth Accelerant), crafted in idle Fabricator
+# time. Capped by the rest of the ladder, so it ends with the Plants phase.
+BACKLOG_BATCHES = 100
 
 # Plants ladder (plant_terraformer_guide.md): phase -> (km² per Forage, band
 # Forage). Phase 6 is Continental complete.
@@ -149,7 +152,7 @@ CRAFTED_SUPPORT_FIRST_PHASE = {"fertilizer": 4, "growth_accelerant": 5}
 # worth (Mk I full batch: 3 Salt; Mk II: 14 Salt, 27 potency, 1
 # Accelerant; Fertilizer/Accelerant capped by the holder), so several
 # batches are on hand while a hauler brings more in one load.
-SUPPORT_REQUEST_BATCHES = 6
+SUPPORT_REQUEST_BATCHES = 10
 
 # Requests are republished at least this often (well inside
 # logistics_requests.REQUEST_STALE_TICKS = 6000) and at once when a target
@@ -192,8 +195,8 @@ def order_sizes(per_batch, full_batch, machines, forage_left):
     if per_batch <= 0 or full_batch <= 0 or machines <= 0:
         return 0, 0
     left = _ceil(forage_left * per_batch / full_batch)
-    need = min(_ceil(NEED_CYCLES * machines * per_batch), left)
-    backlog = min(_ceil(BACKLOG_HOURS * machines * per_batch / CYCLE_HOURS), left)
+    need = min(_ceil(NEED_BATCHES * machines * per_batch), left)
+    backlog = min(_ceil(BACKLOG_BATCHES * machines * per_batch), left)
     return need, max(need, backlog)
 
 
