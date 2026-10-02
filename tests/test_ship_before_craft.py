@@ -4,7 +4,7 @@ recipe switch in lib/fabricator.py."""
 import unittest
 
 from game_stubs import Recipe, FABRICATOR_RECIPES
-from harness import StubTestCase, production, smelter, fabricator, logistics_requests, site_supply
+from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, logistics_requests, site_supply
 
 
 VALVE = Recipe("craft_pressure_valve", {"iron_ingot": 1, "glass": 1}, "pressure_valve")
@@ -98,6 +98,7 @@ class ShipBeforeCraftTests(StubTestCase):
 class IngotShipTests(StubTestCase):
     def test_big_ingot_surplus_ahead_of_local_ore(self):
         w = self.world
+        disable_ingot_buffer(w)
         remote = w.add_outpost("outpost_2")
         w.inventory.add("iron_ingot", 1000)
         w.add_warehouse("wh_remote", remote, {"iron_ore": 100})

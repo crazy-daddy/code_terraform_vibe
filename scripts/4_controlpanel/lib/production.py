@@ -2024,13 +2024,93 @@ def site_smelter_demands(outpost, cache=None):
     return demands
 
 
-def dock_remaining_requirements():
+# Fab-site ingot buffer: every outpost with a Fabricator keeps each Smelter
+# output a Fabricator recipe takes on hand, so a recipe switch finds its
+# ingots staged instead of waiting on single Smelter crafts. "target" is the
+# buffer tier (local Smelters refill it in idle time, site_supply requests
+# it), "need" the need tier hauled ahead of other sites' buffers. Seeded once
+# per item, then editable: {item_id: {"target": n, "need": n}}.
+INGOT_STOCK_TARGETS_KEY = "production.ingot_stock_targets"
+INGOT_STOCK_TARGET = 2000
+INGOT_STOCK_NEED = 100
+
+
+def _ingot_level(entry, key, default):
+    """entry[key] as a non-negative int (one INGOT_STOCK_TARGETS_KEY entry), else default."""
+    value = entry.get(key) if isinstance(entry, dict) else None
+    if value is None or not isinstance(value, (int, float)) or value < 0:
+        return default
+    return int(value)
+
+
+def ingot_stock_levels(item_ids):
+    """{item_id: (target, need)} from INGOT_STOCK_TARGETS_KEY, seeding the
+    INGOT_STOCK_TARGET/INGOT_STOCK_NEED defaults for any item not stored yet."""
+    stored = archive.get(INGOT_STOCK_TARGETS_KEY, {})
+    stored = stored if isinstance(stored, dict) else {}
+    missing = [i for i in item_ids if not isinstance(stored.get(i), dict)]
+    if missing:
+        def updater(levels):
+            levels = dict(levels) if isinstance(levels, dict) else {}
+            for item_id in missing:
+                if not isinstance(levels.get(item_id), dict):
+                    levels[item_id] = {"target": INGOT_STOCK_TARGET, "need": INGOT_STOCK_NEED}
+            return levels
+        archive.transaction(INGOT_STOCK_TARGETS_KEY, {}, updater)
+        log.debug(f"ingot_stock_levels: seeded defaults for {missing}")
+        stored = archive.get(INGOT_STOCK_TARGETS_KEY, {})
+        stored = stored if isinstance(stored, dict) else {}
+    levels = {}
+    for item_id in item_ids:
+        target = _ingot_level(stored.get(item_id), "target", INGOT_STOCK_TARGET)
+        need = _ingot_level(stored.get(item_id), "need", INGOT_STOCK_NEED)
+        levels[item_id] = (target, min(need, target))
+    return levels
+
+
+def fab_site_ingot_targets(outpost, cache):
+    """{smelter_output: (target, need)} the ingot buffer this outpost keeps:
+    every Smelter output some Fabricator recipe takes as input, {} when the
+    outpost has no Fabricator."""
+    if not discover_fabricator_ids(outpost):
+        return {}
+    smelter_outputs = {getattr(r, "output_item", None) for r in cache.smelter_recipes()}
+    smelter_outputs.discard(None)
+    inputs = set()
+    for recipe in cache.fabricator_recipes():
+        inputs |= set(getattr(recipe, "inputs", {}) or {})
+    items = sorted(smelter_outputs & inputs)
+    return ingot_stock_levels(items) if items else {}
+
+
+def site_ingot_refill(outpost, cache):
+    """{smelter_output: units} this fab site's ingot buffer still lacks:
+    target - local stock - units in flight here. lib/smelter.py works it only
+    when no real demand is sourceable."""
+    targets = fab_site_ingot_targets(outpost, cache)
+    if not targets:
+        return {}
+    flying = in_flight(getattr(outpost, "id", None))
+    refill = {}
+    for item_id, (target, _need) in targets.items():
+        units = target - cache.local_stock(item_id, outpost) - flying.get(item_id, 0)
+        if units > 0:
+            refill[item_id] = units
+    return refill
+
+
+def dock_remaining_requirements(outpost_id=None):
     """{item_id: units} still owed (required - shipped - already loaded into
-    the dock) across every active Supply Dock order. lib/smelter.py subtracts
-    this from raw ore it may refine, so real ingot demand can't eat ore a dock
-    order ships raw."""
+    the dock) across every active Supply Dock order. With `outpost_id`, only
+    orders held by a dock at that outpost (_dock_order_sites(); an order held
+    at two outposts counts at both). lib/smelter.py subtracts its own site's
+    figure from raw ore it may refine, so real ingot demand can't eat ore a
+    dock order ships raw."""
+    sites = _dock_order_sites() if outpost_id is not None else None
     remaining_by_item = {}
-    for remaining_for_order in _dock_order_remaining().values():
+    for order_id, remaining_for_order in _dock_order_remaining().items():
+        if sites is not None and outpost_id not in sites.get(order_id, ()):
+            continue
         for item_id, remaining in remaining_for_order.items():
             _add_demand(remaining_by_item, item_id, remaining)
     return remaining_by_item

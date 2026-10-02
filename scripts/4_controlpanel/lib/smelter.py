@@ -4,7 +4,7 @@
 # control_room_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, craft_prefill_units, dock_remaining_requirements, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
+from production import SourceCache, craft_prefill_units, dock_remaining_requirements, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
 from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
@@ -310,12 +310,21 @@ class SmelterController:
         the outpost's own Warehouses elsewhere)."""
         return cache.local_stock(ore, self.outpost())
 
+    def intake_reason(self, ore, refilling):
+        """Why this Smelter refines `ore`, for the recipe/load log lines."""
+        if refilling:
+            return "the fab-site ingot buffer"
+        return get_raw_material_reason(ore, self.smelter)
+
+    def site_id(self):
+        """Outpost id this Smelter stands at (home when not exposed), as production._dock_order_sites() names it."""
+        return machine_outpost_id(self.smelter) or home_outpost_id()
+
     def available_ore(self, ore, cache, dock_reserved):
-        """Units of `ore` this Smelter may refine: local stock minus, at home,
-        whatever an active Supply Dock order still needs to ship as raw ore
-        (docks are home-only, so remote ore is never owed to one)."""
-        reserved = (dock_reserved or {}).get(ore, 0) if self.at_home() else 0
-        return max(0, self.local_ore(ore, cache) - reserved)
+        """Units of `ore` this Smelter may refine: local stock minus whatever
+        an active Supply Dock order at this outpost still needs to ship as raw
+        ore. `dock_reserved` = dock_remaining_requirements(self.site_id())."""
+        return max(0, self.local_ore(ore, cache) - (dock_reserved or {}).get(ore, 0))
 
     def is_busy(self):
         """True while the Smelter has work in flight: running, or input/output buffered."""
@@ -348,7 +357,7 @@ class SmelterController:
         # Raw ore an active Supply Dock order still ships AS ore -- never
         # refined away, now that real ingot demand can be large enough to
         # consume every unit on hand (see available_ore()).
-        dock_reserved = dock_remaining_requirements()
+        dock_reserved = dock_remaining_requirements(self.site_id())
 
         # Step 2: Determine which recipe/ore to process
         in_buf = self.smelter.get_input_count()
@@ -383,6 +392,21 @@ class SmelterController:
             return self.is_busy()
 
         recipe, ore_to_process = self.select_needed_ore(unlocked_recipes, demands, cache, dock_reserved)
+        # Idle time goes to this fab site's ingot buffer (production.site_ingot_refill()),
+        # only when no real demand is sourceable: a real demand found next step wins
+        # the selection again, so a refill never holds up an order.
+        refilling = False
+        if recipe is None:
+            refill = site_ingot_refill(self.outpost(), cache)
+            if refill:
+                miss_reason = self._select_miss_reason
+                self.log.debug(f"[{self.name}] no real demand ({miss_reason}), trying ingot buffer refill {refill}")
+                recipe, ore_to_process = self.select_needed_ore(unlocked_recipes, refill, cache, dock_reserved)
+                if recipe is None:
+                    self._select_miss_reason = miss_reason
+                else:
+                    refilling = True
+                    demands = refill
 
         # Do not keep refining material that has no downstream demand.
         if recipe is None:
@@ -422,7 +446,7 @@ class SmelterController:
                     # letting it block peers until it goes stale.
                     if current_recipe:
                         self.release_recipe(current_recipe)
-                    reason = get_raw_material_reason(ore_to_process, self.smelter)
+                    reason = self.intake_reason(ore_to_process, refilling)
                     output_item = getattr(recipe, "output_item", "?")
                     self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore_to_process} -> {output_item} for {reason}.")
                     current_recipe = recipe_id
@@ -436,7 +460,7 @@ class SmelterController:
         # that actually hold the ore -- Inventory first (never locks), then
         # Warehouses by most stock, recently-"busy" ones last.
         outcome = "buffer_full"
-        outcome_detail = {"recipe": recipe_id, "ore": ore_to_process}
+        outcome_detail = {"recipe": recipe_id, "ore": ore_to_process, "refill": refilling}
         loaded = False
         if ore_to_process:
             recipe_inputs = getattr(recipe, "inputs", {}) or {}
@@ -491,7 +515,7 @@ class SmelterController:
                 if moved > 0:
                     loaded = True
                     outcome = "took"
-                    reason = get_raw_material_reason(ore_to_process, self.smelter)
+                    reason = self.intake_reason(ore_to_process, refilling)
                     self.log.print(f"[{self.name}] Loaded {moved}x {ore_to_process} (for {reason}).")
                 elif statuses and all(status == "busy" for status in statuses):
                     # Busy only hurts if the buffer can't cover the next craft:
@@ -602,8 +626,8 @@ class SmelterController:
         together once the target is met.
 
         `demands`/`cache`/`dock_reserved` are the step's shared
-        get_smelter_demands() map, SourceCache and dock_remaining_requirements()
-        (each computed on the spot when omitted). Ore an active Supply Dock
+        get_smelter_demands() map, SourceCache and this site's
+        dock_remaining_requirements() (each computed on the spot when omitted). Ore an active Supply Dock
         order still ships raw doesn't count as sourceable. When nothing is
         returned, self._select_miss_reason says why (no_demand / no_ore /
         ore_reserved_for_dock) for the debug narration.
@@ -614,7 +638,7 @@ class SmelterController:
 
         cache = SourceCache() if cache is None else cache
         demands = self.demands(cache) if demands is None else demands
-        dock_reserved = dock_remaining_requirements() if dock_reserved is None else dock_reserved
+        dock_reserved = dock_remaining_requirements(self.site_id()) if dock_reserved is None else dock_reserved
         buffered_ore = set()
         if hasattr(self.smelter, "input") and hasattr(self.smelter.input, "stacks"):
             try:

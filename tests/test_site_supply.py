@@ -2,7 +2,7 @@
 and 5_steampower lib/site_supply.py site requests (E4)."""
 import unittest
 
-from harness import StubTestCase, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
+from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
 from game_stubs import Recipe, FABRICATOR_RECIPES
 
 
@@ -73,6 +73,7 @@ class SiteSupplyTests(StubTestCase):
     def setUp(self):
         super().setUp()
         self.remote = self.world.add_outpost("outpost_2")
+        disable_ingot_buffer(self.world)
 
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)

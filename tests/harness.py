@@ -115,3 +115,11 @@ class StubTestCase(unittest.TestCase):
         """Every console line so far, for failure messages."""
         tree_console.flush_all()
         return self.world.console.text()
+
+
+def disable_ingot_buffer(world):
+    """Sets every stub Smelter output's fab-site ingot buffer to 0
+    (production.INGOT_STOCK_TARGETS_KEY), for tests of the demand-driven
+    ingot flow without the standing buffer."""
+    from game_stubs import SMELTER_RECIPES
+    world.notebook.set(production.INGOT_STOCK_TARGETS_KEY, {r.output_item: {"target": 0, "need": 0} for r in SMELTER_RECIPES})

@@ -20,6 +20,10 @@
 #     Its ship plan (production.get_site_ship_plan(): intermediates spare
 #     elsewhere that it hauls in instead of building) is requested too,
 #     level = local + in flight + to ship, kept while units are in flight.
+#     Ingot buffer (production.fab_site_ingot_targets()): every Smelter
+#     output a Fabricator recipe takes is requested up to its buffer target,
+#     need level at least its need tier, always published so other sites'
+#     haulers leave the buffer alone. Local Smelters refill it in idle time.
 #   - Smelting site (>= 1 Smelter): one ore request per ore it has
 #     an unlocked Smelter recipe for. Buffer tier up to
 #     outpost_mining.ore_stock_target(ore); need tier = local + in-flight ore
@@ -71,7 +75,7 @@
 
 from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
-from production import set_backlog_order, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants
+from production import set_backlog_order, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
 from tree_console import TreeConsole
@@ -202,6 +206,31 @@ def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
         log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
 
 
+def ingot_wants(outpost, cache, wants):
+    """Raises this fab site's wants to its ingot buffer
+    (production.fab_site_ingot_targets()): target at least the buffer target,
+    need level at least the buffer's need tier. Published even with nothing
+    to pull: the request is what keeps other sites' haulers from taking the
+    buffer (outpost_free_tiers() leaves the target to the buffer tier and the
+    need level to the need tier)."""
+    targets = fab_site_ingot_targets(outpost, cache)
+    if not targets:
+        return
+    site_id = getattr(outpost, "id", None)
+    have = outpost_stock(sorted(targets), outpost)
+    for item_id, (target, need) in sorted(targets.items()):
+        current = wants.get(item_id)
+        floor = max(current[2] if current else 0, need)
+        level = max(target, current[0] if current else 0, floor)
+        if level <= 0:
+            continue
+        values = (level, have.get(item_id, 0), floor)
+        if current is not None and len(current) > 3:
+            values = values + (current[3],)
+        wants[item_id] = values
+        log.debug(f"ingot_wants({site_id}): {item_id} local={have.get(item_id, 0)} need level={floor} target={level}")
+
+
 def _stock_table(table, outpost):
     """{item_id: units} a {building type: {item: units}} table asks of this outpost (max over its building types)."""
     out = {}
@@ -304,6 +333,9 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
         if level > 0 and level >= wants.get(ingot, (0,))[0]:
             wants[ingot] = (level, have.get(ingot, 0), level)
         log.debug(f"{ingot} gross={units} local_ingots={local_ingots} local_ore={local_ore} -> shipped first={first}, D={deficit}, free elsewhere={free}, ingots from remote={remote_ingots}, ore short={deficit - (remote_ingots - first) if ore else 0}")
+
+    if fabricator_ids:
+        ingot_wants(outpost, cache, wants)
 
     for ore, output in sorted(ore_outputs.items()):
         local = have.get(ore, 0) + flying.get(ore, 0)

@@ -1,11 +1,11 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims, discover_smelter_ids
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from script_parking import ParkRequester
+from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
 
 # Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
@@ -34,6 +34,12 @@ RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 # small and recipe-scaled. Supply Dock does NOT use either (see lib/supply_dock.py)
 # -- it has no competing sibling for the same order's materials.
 FABRICATOR_LOAD_CHUNK_SIZE = 10
+
+# A load_inputs() take of a Smelter output that finds no stock wakes this
+# outpost's parked Smelters (script_parking.wake_for_visit()) instead of
+# leaving them to their timed re-check. At most once per item per this many
+# ticks, so a starving Fabricator does not wake on every poll.
+SMELTER_WAKE_THROTTLE_TICKS = 100
 
 # ensure_fluid_connections() drives one fluid_routing.FluidInputRouter per
 # recipe fluid port -- the same consumer-side router lib/steam_turbine.py and
@@ -78,6 +84,8 @@ class FabricatorController:
         # recipe_id -> tick of the last claim this Fabricator won and wrote to the archive.
         self._claim_ticks = {}
         self.parker = ParkRequester(self.name, "fabricator")
+        # item_id -> tick of the last wake_local_smelters() pass for it.
+        self._smelter_wake_ticks = {}
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -612,12 +620,33 @@ class FabricatorController:
             # transfer itself reports what actually moved.
             moved = take_item(self.machine.input, item_id, amount, outpost=None if self.at_home() else self.outpost(), cache=cache)
             if moved <= 0:
+                self.wake_local_smelters(item_id, cache)
                 continue
             loaded.append(f"{moved}x {item_id}")
             remaining_capacity -= moved
         if loaded:
             self.log.print(f"[{self.name}] Loaded {', '.join(loaded)} for {recipe.id}.")
         return len(loaded)
+
+    def wake_local_smelters(self, item_id, cache=None):
+        """Wakes the parked Smelters at this outpost when item_id (a Smelter
+        output) found no stock, throttled per item (SMELTER_WAKE_THROTTLE_TICKS).
+        Returns the ids woken."""
+        outpost = self.outpost()
+        if outpost is None:
+            return []
+        cache = SourceCache() if cache is None else cache
+        if item_id not in {getattr(r, "output_item", None) for r in cache.smelter_recipes()}:
+            return []
+        now = self.get_current_tick()
+        last = self._smelter_wake_ticks.get(item_id)
+        if last is not None and 0 <= now - last < SMELTER_WAKE_THROTTLE_TICKS:
+            return []
+        self._smelter_wake_ticks[item_id] = now
+        parked = parked_ids("smelter")
+        woken = [i for i in discover_smelter_ids(outpost) if i in parked and wake_for_visit(i, f"{self.name} has no {item_id}", hold=False)]
+        self.log.debug(f"[{self.name}] no {item_id} in stock: woke parked Smelter(s) {woken or 'none'}")
+        return woken
 
     def eject_excess_inputs(self, recipe, crafts_remaining):
         """
