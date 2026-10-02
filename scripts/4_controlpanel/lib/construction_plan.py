@@ -16,6 +16,15 @@ PEER_BUILDER_ACTIVE_TICKS = 6000  # a same-home Constructor counts toward fair_s
 PEER_INACTIVE_STATES = ("RECALLED", "DECOMMISSION_READY", "UPGRADE_HOLD", "AWAITING_MODULES")
 PRIORITY_KEY = "construction.priority"  # archive {blueprint_id: int}; no entry = DEFAULT_PRIORITY, lower runs first
 DEFAULT_PRIORITY = 0
+# Item a field-extractor construction job consumes, per construction kind
+# (docs/database/equipment_*.md: pumps deploy from the pump item itself, the
+# rest from a *_kit).
+EXTRACTOR_KITS = {
+    "water_pump": "water_pump", "oil_pump": "oil_pump", "thermal_cap": "thermal_cap_kit",
+    "exotic_gas_cap": "exotic_gas_cap_kit", "exotic_spring_tap": "exotic_spring_tap_kit",
+    "mining_drill": "mining_drill_kit", "mining_drill_industrial": "mining_drill_industrial_kit",
+    "mining_drill_heavy": "mining_drill_heavy_kit",
+}
 
 
 def claim_key(job_id):

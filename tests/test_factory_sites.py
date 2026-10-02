@@ -2,6 +2,7 @@
 5_steampower lib/site_plan.py, consumer hauling), the role switch drain (E5:
 stranded ore eviction) and Supply Docks at fab outposts (E7)."""
 import unittest
+from unittest import mock
 
 from harness import StubTestCase, production, fabricator, logistics_requests, site_supply, site_plan, supply_dock
 from game_stubs import Recipe, Store
@@ -104,6 +105,10 @@ class ConsumerHaulingTests(StubTestCase):
     def setUp(self):
         super().setUp()
         self.remote = self.world.add_outpost("outpost_2")
+        # blueprint-material hauling alone; the construction stock has its own tests (test_site_supply.py)
+        patcher = mock.patch.dict(site_supply.CONSTRUCTION_STOCK_TARGETS, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)

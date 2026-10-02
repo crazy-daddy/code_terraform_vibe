@@ -34,6 +34,15 @@
 #     free at another outpost or in flight. SITE_STOCK_CRAFTED items are also
 #     ordered from the Fabricators as a backlog order (idle time only,
 #     requester SITE_STOCK_REQUESTER), sized to the summed targets.
+#   - Construction stock: the Constructor's home (production.construction_site_id())
+#     also requests CONSTRUCTION_STOCK_TARGETS (pipe segments, power line
+#     segments, gas/liquid bridges) and, per extractor kind, one kit per
+#     untapped surveyed fluid site up to CONSTRUCTION_KIT_CAP
+#     (construction_stock_targets()), buffer tier like the stockpiles. The
+#     same items, where a Fabricator can build them, are a backlog order
+#     (requester CONSTRUCTION_STOCK_REQUESTER, idle time only). So work that
+#     waits for stock before it is planned (the infrastructure planner's
+#     low-priority jobs) finds it, and blueprints start with material at hand.
 #   - Home is planned like any other outpost; its only difference is the
 #     Inventory, which outpost_stock() counts as home stock.
 #   - Consumer site: finished root targets (production.fabricator_root_targets()
@@ -75,9 +84,10 @@
 
 from archive import archive
 from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
-from production import set_backlog_order, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
+from production import set_backlog_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, RAW_ORE_ITEM_IDS
+from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
 from swallow import swallowed
 
@@ -123,6 +133,19 @@ SITE_STOCK_NEED = {"refiner": {"tar": 150}}
 # only). Tar is not: it comes from the plastic byproduct and home stock.
 SITE_STOCK_CRAFTED = ("lead_plate",)
 SITE_STOCK_REQUESTER = "site_stock"
+# Construction stock at the Constructor's home (buffer tier + backlog order).
+# No power line bridge: the power network is meant to be one grid. Segments
+# cover a 40-piece low-priority chunk plus its 20 reserve with room to spare.
+CONSTRUCTION_STOCK_TARGETS = {
+    "gas_pipe_segment": 100, "liquid_pipe_segment": 100, "power_line_segment": 100,
+    "gas_pipe_bridge": 5, "liquid_pipe_bridge": 5,
+}
+CONSTRUCTION_KIT_CAP = 5   # extractor kits stocked per kind (one per untapped surveyed site, at most this many)
+CONSTRUCTION_STOCK_REQUESTER = "construction_stock"
+# Surveyed site kind -> extractor construction kind (exotic: by the deposit's medium).
+_SITE_EXTRACTORS = {"water": "water_pump", "oil": "oil_pump", "thermal": "thermal_cap"}
+_EXOTIC_EXTRACTORS = {"gas": "exotic_gas_cap", "liquid": "exotic_spring_tap"}
+_SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id"}
 
 
 def _component(component_id):
@@ -273,27 +296,62 @@ def stock_wants(outpost, targets, outposts, requests, tick, flying, wants, needs
         log.debug(f"stock_wants({getattr(outpost, 'id', None)}): {item_id} local={have.get(item_id, 0)} need level={floor} target={max(target, floor)}")
 
 
-def order_site_stock(outposts, fabricator_outputs):
-    """Backlog order (SITE_STOCK_REQUESTER) for the SITE_STOCK_CRAFTED items a
-    Fabricator can build: the summed stockpile targets of every outpost."""
+def untapped_kits(sites):
+    """{kit item: untapped surveyed fluid sites it fits} (EXTRACTOR_KITS), counting sites with no pump/cap on them."""
+    counts = {}
+    for site in sites:
+        try:
+            kind = site.kind()
+            getter = _SITE_MACHINE_GETTERS.get(kind)
+            if getter is None or getattr(site, getter)():
+                continue
+            structure = _EXOTIC_EXTRACTORS.get(site.medium()) if kind == "exotic" else _SITE_EXTRACTORS[kind]
+        except Exception as error:
+            swallowed("site_supply.untapped_kits: site read", error)
+            continue
+        kit = EXTRACTOR_KITS.get(structure) if structure else None
+        if kit:
+            counts[kit] = counts.get(kit, 0) + 1
+    return counts
+
+
+def construction_stock_targets(cache):
+    """{item_id: target} the Constructor's home keeps: CONSTRUCTION_STOCK_TARGETS plus min(untapped sites, CONSTRUCTION_KIT_CAP) kits per extractor kind."""
+    targets = dict(CONSTRUCTION_STOCK_TARGETS)
+    for kit, count in untapped_kits(cache.surveyed_sites()).items():
+        targets[kit] = min(count, CONSTRUCTION_KIT_CAP)
+    return targets
+
+
+def order_site_stock(outposts, fabricator_outputs, construction=None):
+    """Backlog orders for what a Fabricator can build: SITE_STOCK_CRAFTED
+    items to the summed stockpile targets of every outpost
+    (SITE_STOCK_REQUESTER), and the construction stock (`construction`,
+    construction_stock_targets(); CONSTRUCTION_STOCK_REQUESTER)."""
     totals = {}
     for outpost in outposts:
         for item_id, target in site_stock_targets(outpost).items():
             if item_id in SITE_STOCK_CRAFTED and item_id in fabricator_outputs:
                 totals[item_id] = totals.get(item_id, 0) + target
     set_backlog_order(SITE_STOCK_REQUESTER, totals)
-    log.debug(f"order_site_stock: backlog {totals or 'none'}")
+    build = {item_id: units for item_id, units in sorted((construction or {}).items()) if units > 0 and item_id in fabricator_outputs}
+    set_backlog_order(CONSTRUCTION_STOCK_REQUESTER, build)
+    log.debug(f"order_site_stock: backlog {totals or 'none'}, construction {build or 'none'}")
 
 
-def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None, anywhere=(), urgent=()):
+def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None, anywhere=(), urgent=(), extra_stock=None):
     """{item_id: (target, have, min)} this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
-    nothing). See the module comment."""
+    nothing). extra_stock: more stockpile targets (the construction stock at
+    the Constructor's home). See the module comment."""
     log.start("plan_site", level="debug")
     site_id = getattr(outpost, "id", None)
     flying = in_flight(site_id, tick)
     wants = consumer_wants(outpost, consumers or {}, sources or [], requests, tick, flying, outposts, anywhere, urgent)
     stock = site_stock_targets(outpost)
+    for item_id, units in (extra_stock or {}).items():
+        if units > 0:
+            stock[item_id] = max(stock.get(item_id, 0), units)
     stock_need = site_stock_needs(outpost)
     smelter_ids = discover_smelter_ids(outpost)
     fabricator_ids = discover_fabricator_ids(outpost)
@@ -620,12 +678,15 @@ def publish_site_requests(curr_tick):
     sources = [o for o in outposts if discover_smelter_ids(o) or discover_fabricator_ids(o)]
     anywhere = set(blueprint_required_items(cache))
     urgent = settled_items(anywhere | set(get_upgrade_orders(skip=RECURRING_ORDER_REQUESTERS)), _roots, cache) | set(manual_transit_wants(cache))
+    build_site = construction_site_id()
+    build_stock = construction_stock_targets(cache)
     planned = {}
     for outpost in outposts:
         site_id = getattr(outpost, "id", None)
         if site_id is not None:
-            planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources, anywhere, urgent)
-    order_site_stock(outposts, _outputs)
+            extra = build_stock if site_id == build_site else None
+            planned[site_id] = plan_site(outpost, outposts, requests, cache, curr_tick, consumers, sources, anywhere, urgent, extra)
+    order_site_stock(outposts, _outputs, build_stock)
     # Stranded check against this pass's plan: a site that just lost its
     # Smelters frees its ore for eviction right away.
     _home_wants, evicted = evict_stranded(outposts, planned_requests(requests, planned, curr_tick), curr_tick, consumers, smelting_sites(outposts), evictable_goods(cache))

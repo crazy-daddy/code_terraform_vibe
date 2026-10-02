@@ -1,6 +1,7 @@
 """Stub tests for per-site recipe claims (E2), the global ore stock target (E3)
 and 5_steampower lib/site_supply.py site requests (E4)."""
 import unittest
+from unittest import mock
 
 from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
 from game_stubs import Recipe, FABRICATOR_RECIPES
@@ -74,6 +75,10 @@ class SiteSupplyTests(StubTestCase):
         super().setUp()
         self.remote = self.world.add_outpost("outpost_2")
         disable_ingot_buffer(self.world)
+        # site stock alone; ConstructionStockTests covers the construction stock
+        patcher = mock.patch.dict(site_supply.CONSTRUCTION_STOCK_TARGETS, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)
@@ -203,6 +208,69 @@ class SiteSupplyTests(StubTestCase):
         w.clock.now += site_supply.REPUBLISH_TICKS
         self.publish()
         self.assertEqual(w.notebook.data[logistics_requests.REQUESTS_KEY]["outpost_2"]["iron_ore"]["tick"], w.clock.now)
+
+
+class _Site:
+    def __init__(self, kind, machine="", medium=None):
+        self._kind = kind
+        self._machine = machine
+        self._medium = medium
+
+    def kind(self):
+        return self._kind
+
+    def pump_id(self):
+        return self._machine
+
+    def cap_id(self):
+        return self._machine
+
+    def medium(self):
+        return self._medium
+
+
+class _Journal:
+    def __init__(self, sites):
+        self.sites = sites
+
+    def surveyed_sites(self, planet):
+        return self.sites
+
+
+class ConstructionStockTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.remote = self.world.add_outpost("outpost_2")
+        disable_ingot_buffer(self.world)
+        self.world.services["journal"] = _Journal(
+            [_Site("water")] * 7 + [_Site("water", "wp1"), _Site("thermal"), _Site("exotic", medium="gas"),
+                                    _Site("exotic", "cap9", medium="liquid"), _Site("mineral")])
+
+    def test_untapped_kits_capped(self):
+        targets = site_supply.construction_stock_targets(production.SourceCache())
+        self.assertEqual(targets["water_pump"], site_supply.CONSTRUCTION_KIT_CAP)
+        self.assertEqual(targets["thermal_cap_kit"], 1)
+        self.assertEqual(targets["exotic_gas_cap_kit"], 1)
+        self.assertNotIn("exotic_spring_tap_kit", targets)
+        self.assertNotIn("power_line_bridge", targets)
+        self.assertEqual(targets["liquid_pipe_segment"], site_supply.CONSTRUCTION_STOCK_TARGETS["liquid_pipe_segment"])
+
+    def test_backlog_order_for_craftable_items_only(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + [Recipe("craft_thermal_cap_kit", {"iron_ingot": 2}, "thermal_cap_kit")])
+        site_supply.publish_site_requests(w.clock.now)
+        backlog = production.get_backlog_orders()
+        self.assertEqual(backlog.get("thermal_cap_kit"), 1)
+        self.assertEqual(backlog.get("gas_pipe_segment"), site_supply.CONSTRUCTION_STOCK_TARGETS["gas_pipe_segment"])
+        self.assertNotIn("water_pump", backlog)   # no Fabricator recipe for it here
+
+    def test_constructor_home_requests_the_stock(self):
+        w = self.world
+        w.add_warehouse("wh_remote", self.remote, {"liquid_pipe_segment": 30})
+        site_supply.publish_site_requests(w.clock.now)
+        target = site_supply.CONSTRUCTION_STOCK_TARGETS["liquid_pipe_segment"]
+        self.assertEqual(site_requests(w, "home").get("liquid_pipe_segment"), (target, 0))
+        self.assertNotIn("liquid_pipe_segment", site_requests(w, "outpost_2"))
 
 
 if __name__ == "__main__":
