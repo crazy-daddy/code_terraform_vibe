@@ -17,6 +17,23 @@ import power_survey
 PASS_SLEEP_S = 60   # seconds between passes while work is open
 
 
+def _tick():
+    try:
+        clock = get_component("clock")
+        return clock.tick() if clock else 0
+    except Exception as error:
+        swallowed("planner_loop._tick: clock.tick", error)
+        return 0
+
+
+def _phase(log, started, what):
+    """Debug line naming a finished pass phase and its sim seconds since `started`; returns the current tick."""
+    now = _tick()
+    log.debug(f"Pass: {what} ({(now - started) / 10:.1f} s).")
+    log.flush()
+    return now
+
+
 def _upkeep_ledger(log, survey_locked):
     """Ledger upkeep before the power pass; returns True when the full survey is unavailable (locked)."""
     if not survey_locked and power_survey.ledger()["surveyed"] is None:
@@ -34,15 +51,17 @@ def run_planner():
         reset_all()
         outcome = "error"
         try:
-            topo = Topology().read()
+            mark = _tick()
+            topo = Topology().read(log)
+            mark = _phase(log, mark, f"map read, {len(topo.pipe_rows)} pipes, {len(topo.job_rows)} utility jobs")
             dropped = prune_planned(topo.job_ids, topo.jobs_ok)
-            if dropped:
-                log.debug(f"autoplay.planned: {dropped} finished or cancelled job(s) dropped.")
             vanished = power_survey.track_jobs(topo)
-            if vanished:
-                log.debug(f"Power ledger: {vanished} tile(s) of vanished power jobs marked for re-probe.")
+            mark = _phase(log, mark, f"bookkeeping, {dropped} planned job(s) dropped, {vanished} vanished power tile(s) to re-probe")
             survey_locked = _upkeep_ledger(log, survey_locked)
-            outcome = power.run_pass(topo, power_survey.ledger_tiles())
+            tiles = power_survey.ledger_tiles()
+            mark = _phase(log, mark, f"power ledger ready, {len(tiles)} tile(s)")
+            outcome = power.run_pass(topo, tiles)
+            _phase(log, mark, f"power pass: {outcome}")
         except Exception as error:
             swallowed("planner_loop.run_planner: pass", error)
             log.level("error").print(f"Planner pass failed: {error}")

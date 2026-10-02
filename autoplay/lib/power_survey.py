@@ -29,7 +29,8 @@ from construction_plan import clean_power_ledger, empty_power_ledger, power_rows
 TILE_M = 10
 MAP_MIN_TILE = -90           # world tile range on both axes (the game's 180 x 180 tile planet)
 MAP_MAX_TILE = 89
-SURVEY_CHUNK = 400           # probes between hold refreshes and console flushes
+SURVEY_CHUNK = 400           # probes between hold refreshes
+SURVEY_PROGRESS_EVERY = 2000 # probes between progress lines (debug)
 HOLD_BY = "infra_planner"
 JOBS_KEY = "autoplay.power_jobs"   # {job_id: {"k": kind, "t": [[tx, ty], ...]}} open power jobs seen last pass
 
@@ -125,7 +126,8 @@ def run_full(log):
     rows_before = power_rows_decode(ledger()["rows"])
     found = set()
     probed = 0
-    log.start(f"Power survey: probing {(MAP_MAX_TILE - MAP_MIN_TILE + 1) ** 2} tiles")
+    total = (MAP_MAX_TILE - MAP_MIN_TILE + 1) ** 2
+    log.start(f"Power survey: probing {total} tiles")
     outcome = "done"
     try:
         _set_hold(start_tick)
@@ -138,7 +140,10 @@ def run_full(log):
                     break
                 if probed % SURVEY_CHUNK == 0:
                     _set_hold(_now_tick())
-                    log.trace(f"Power survey: {probed} tiles, {len(found)} with power.")
+                if probed % SURVEY_PROGRESS_EVERY == 0:
+                    elapsed = (_now_tick() - start_tick) / 10
+                    log.debug(f"{probed}/{total} tiles ({probed * 100 // total}%), {len(found)} with power, "
+                              f"{prober.cancelled} probe job(s) cancelled, {elapsed:.0f} s")
                     log.flush()
             if prober.locked:
                 outcome = "locked"
@@ -160,7 +165,8 @@ def run_full(log):
         return merged
 
     archive.transaction(POWER_TILES_KEY, empty_power_ledger(), updater)
-    log.end(f"{probed} tiles probed, {len(found)} with power, {prober.cancelled} probe job(s) cancelled")
+    log.end(f"{probed} tiles probed, {len(found)} with power, {prober.cancelled} probe job(s) cancelled "
+            f"in {(_now_tick() - start_tick) / 10:.0f} s")
     return outcome
 
 

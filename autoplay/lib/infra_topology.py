@@ -34,6 +34,7 @@ LAYERS = ("gas", "liquid", "power")
 GAS_FLUIDS = ("steam", "ammonia", "swamp_gas", "raw_sulfur_gas", "sulfur_gas", "raw_chlorine", "chlorine")
 
 PIPE_CHUNK = 16   # pipes per atomic read slice (worst ~190 operations each, see tests)
+PIPE_PROGRESS_EVERY = 500   # pipes between progress lines (debug) while reading
 JOB_CHUNK = 20    # construction jobs per atomic read slice (worst ~165 operations each)
 
 _JOB_GETTERS = ("pending_constructions", "active_constructions", "paused_constructions")
@@ -205,14 +206,20 @@ class Topology:
         self.jobs_ok = False   # False when a job list could not be read: job_ids is then incomplete
         self.occ = {layer: {} for layer in LAYERS}
 
-    def read(self):
-        """Reads the game state; returns self. Missing APIs leave the matching rows empty."""
+    def read(self, log=None):
+        """Reads the game state; returns self. Missing APIs leave the matching rows empty.
+        log: TreeConsole for a debug progress line every PIPE_PROGRESS_EVERY pipes."""
         try:
             pipes = list_pipes() or []  # type: ignore[name-defined]  # game builtin
         except Exception as error:
             swallowed("infra_topology.Topology.read: list_pipes", error)
             pipes = []
-        self.pipe_rows = run_batched(read_pipe_slice, pipes, PIPE_CHUNK)
+        self.pipe_rows = []
+        for start in range(0, len(pipes), PIPE_PROGRESS_EVERY):
+            self.pipe_rows.extend(run_batched(read_pipe_slice, pipes[start:start + PIPE_PROGRESS_EVERY], PIPE_CHUNK))
+            if log is not None and len(pipes) > PIPE_PROGRESS_EVERY:
+                log.debug(f"Map read: {min(start + PIPE_PROGRESS_EVERY, len(pipes))}/{len(pipes)} pipes.")
+                log.flush()
         jobs = []
         self.jobs_ok = False
         blueprints = get_component("construction_blueprint")

@@ -43,6 +43,7 @@ Tiles are packed into one int (`tile_key()`), neighbour = key ± `1` (y) or ± `
 | :--- | :--- | :--- |
 | `PIPE_CHUNK` | 16 | pipes per atomic read slice (~190 operations each) |
 | `JOB_CHUNK` | 20 | jobs per atomic read slice |
+| `PIPE_PROGRESS_EVERY` | 500 | pipes between map-read progress lines (debug) |
 
 Archive: `autoplay.networks` = `{fluid: [[x1, y1, x2, y2], ...]}` (straight runs, tile centres) the planner laid.
 
@@ -73,7 +74,7 @@ The pass waits while any power-line job is open: completed lines have no list AP
 | `FLOOD_STEP_TILES` | 30 | ledger tiles per atomic `flood_step()` (~3,100 operations worst) |
 | `PASS_SLEEP_S` (`planner_loop.py`) | 60 | seconds between passes while work is open |
 
-Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass; the script ends once the pass reports one placed grid.
+Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): read `Topology`, prune `autoplay.planned`, ledger upkeep (§11d), power pass; each phase ends with a debug `Pass: <phase> (<sim s>)` line; the script ends once the pass reports one placed grid.
 
 ## §11c Blueprint queue (`autoplay/lib/blueprint_queue.py`)
 
@@ -104,6 +105,7 @@ Scripts cannot list completed power lines. Their tiles live in `construction.pow
 
 | Constant | Value | Meaning |
 | :--- | :--- | :--- |
-| `SURVEY_CHUNK` | 400 | probes between hold refreshes / console flushes |
+| `SURVEY_CHUNK` | 400 | probes between hold refreshes |
+| `SURVEY_PROGRESS_EVERY` | 2000 | probes between survey progress lines (debug: count, %, power tiles, cancelled jobs, sim s) |
 | `HOLD_STALE_TICKS` (`construction_plan`) | 600 | a hold older than this no longer counts |
 | `POWER_DIRTY_MAX` (`construction_plan`) | 400 | dirty tiles kept before a full re-survey is requested |
