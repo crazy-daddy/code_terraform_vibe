@@ -116,8 +116,13 @@ def _queue(schedule, targets):
 def _walk(snap, colonies, free, assign, bought, insight):
     """
     Runs the schedule queue. Returns (assign, buy, skipped, waiting) where
-    buy = {habitat_id: slot} and waiting = (step, reason) of the step that
-    stopped the walk, or None.
+    buy = {habitat_id: slot} and waiting = (step, reason) of the first held
+    step, or None.
+
+    A held step keeps its cost reserved. Revivals stop at the first held
+    step; a later Adaptation or Breakthrough still runs from Insight above
+    the reserve, so a population-gated Breakthrough or a busy Habitat holds
+    only its own cost.
     """
     cataloged = snap["cataloged"]
     recipes = snap["recipes"]
@@ -125,6 +130,8 @@ def _walk(snap, colonies, free, assign, bought, insight):
     buy = {}
     skipped = []
     free = list(free)
+    waiting = None
+    reserved = 0.0
     # Adaptations of earlier revive steps not bought yet: still owed.
     for hid, entry in assign.items():
         species = entry.get("species")
@@ -146,6 +153,8 @@ def _walk(snap, colonies, free, assign, bought, insight):
             if not free:
                 skipped.append((step, "no_habitat"))
                 continue
+            if waiting:
+                return assign, buy, skipped, waiting
             cost = ADAPTATION_COST if kind == "revive" else 0
             if insight < cost - 1e-9:
                 return assign, buy, skipped, (step, "insight %.2f < %d" % (insight, cost))
@@ -160,24 +169,29 @@ def _walk(snap, colonies, free, assign, bought, insight):
         if flags.get(slot):
             continue
         hid = colonies.get(s)
+        cost = ADAPTATION_COST if slot == "adaptation" else BREAKTHROUGH_COST
+        held = None
         if hid is None:
             if not free:
                 skipped.append((step, "no_habitat"))
                 continue
-            return assign, buy, skipped, (step, "%s not revived" % s)
-        if buy.get(hid) == slot:
+            held = "%s not revived" % s
+        elif buy.get(hid) == slot:
             continue
-        if slot == "breakthrough" and pops.get(s, 0) < BREAKTHROUGH_POPULATION:
-            return assign, buy, skipped, (step, "%s at %d < %d" % (s, pops.get(s, 0), BREAKTHROUGH_POPULATION))
-        cost = ADAPTATION_COST if slot == "adaptation" else BREAKTHROUGH_COST
-        if insight < cost - 1e-9:
-            return assign, buy, skipped, (step, "insight %.2f < %d" % (insight, cost))
-        if hid in buy:
+        elif slot == "breakthrough" and pops.get(s, 0) < BREAKTHROUGH_POPULATION:
+            held = "%s at %d < %d" % (s, pops.get(s, 0), BREAKTHROUGH_POPULATION)
+        elif insight - reserved < cost - 1e-9:
+            held = "insight %.2f < %d" % (insight - reserved, cost)
+        elif hid in buy:
             # One purchase per Habitat per pass; the next pass queues this one.
-            return assign, buy, skipped, (step, "%s busy buying %s" % (hid, buy[hid]))
+            held = "%s busy buying %s" % (hid, buy[hid])
+        if held:
+            waiting = waiting or (step, held)
+            reserved += cost
+            continue
         buy[hid] = slot
         insight -= cost
-    return assign, buy, skipped, None
+    return assign, buy, skipped, waiting
 
 
 def _mk_ceiling(entry):
@@ -365,8 +379,11 @@ def _form_targets(snap, colonies, use, demand):
     return {f: min(wc.FORM_REQUEST_CAP, n) for f, n in targets.items()}
 
 
-def _wakes_and_alerts(snap, statuses, assign, ration):
+def _wakes_and_alerts(snap, statuses, assign, buy, ration):
     """([habitat ids to wake, with reason], {"no_feed": [...], "capped": [...], "rationed": [...]}).
+
+    Only the source species' Habitat can buy its nodes, so a parked one with a
+    queued purchase is woken whatever it is parked for.
 
     "rationed" lists every Habitat denied a fluid this pass, parked or not."""
     wakes = []
@@ -379,7 +396,9 @@ def _wakes_and_alerts(snap, statuses, assign, ration):
             alerts[reason].append(hid)
         if hid not in parked:
             continue
-        if hid in assign and reason in ("", wc.PARK_EMPTY):
+        if hid in buy:
+            wakes.append((hid, "buy " + buy[hid]))
+        elif hid in assign and reason in ("", wc.PARK_EMPTY):
             wakes.append((hid, "assigned " + assign[hid]["species"]))
         elif reason == wc.PARK_NO_FEED:
             item = entry.get("feed_item") or ""
@@ -405,7 +424,7 @@ def build_plan(snap):
     forage = sum(wc.forage_for(v[2]) for v in demand.values())
     if forage:
         forage += wc.forage_for(FEED_PER_CRAFT)
-    wakes, alerts = _wakes_and_alerts(snap, statuses, assign, ration)
+    wakes, alerts = _wakes_and_alerts(snap, statuses, assign, buy, ration)
     missing_creatures = sorted(s for s in SPECIES if s not in snap["cataloged"])
     missing_recipes = sorted(s for s in SPECIES if snap["recipes"] and wc.recipe_of(s) not in snap["recipes"])
     return {

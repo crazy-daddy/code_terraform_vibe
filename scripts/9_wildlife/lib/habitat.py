@@ -14,7 +14,8 @@
 # Parks itself (breaker off, lib/script_parking.py) when empty and unassigned,
 # without feed anywhere at home, capped at the Mk I ceiling, or rationed with
 # its buffer out of band (an unpowered Habitat neither meters nor bleeds);
-# publishes the reason so the planner can wake it and alert the operator.
+# publishes the reason so the planner can wake it (also for a queued purchase)
+# and alert the operator.
 # State is read live each step, so a restart picks up where it was.
 #
 # Publishes `wildlife.status[habitat_id]` (see docs/cheatsheet/wildlife.md §1l-2).
