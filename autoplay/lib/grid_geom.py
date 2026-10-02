@@ -106,6 +106,36 @@ def extractor_tiles(x, y):
     return _square(tile_index(x - half), tile_index(y - half))
 
 
+def outpost_box(x, y):
+    """(tx0, ty0, tx1, ty1) inclusive tile box of an outpost footprint (top-left anchor)."""
+    tx0 = tile_index(x)
+    ty0 = tile_index(y)
+    return (tx0, ty0, tx0 + FOOTPRINT_TILES - 1, ty0 + FOOTPRINT_TILES - 1)
+
+
+def extractor_box(x, y):
+    """(tx0, ty0, tx1, ty1) inclusive tile box of a field extractor footprint (centre anchor)."""
+    half = FOOTPRINT_TILES * TILE_M / 2
+    return outpost_box(x - half, y - half)
+
+
+def _span_closest(a0, a1, b0, b1):
+    """Closest pair of coordinates of two inclusive ranges; equal values when they overlap."""
+    if a1 < b0:
+        return (a1, b0)
+    if b1 < a0:
+        return (a0, b1)
+    value = a0 if a0 > b0 else b0
+    return (value, value)
+
+
+def box_closest(a, b):
+    """(tiles apart, tile in a, tile in b) for the nearest tiles of two tile boxes."""
+    ax, bx = _span_closest(a[0], a[2], b[0], b[2])
+    ay, by = _span_closest(a[1], a[3], b[1], b[3])
+    return (abs(ax - bx) + abs(ay - by), tile_key(ax, ay), tile_key(bx, by))
+
+
 def manhattan(a, b):
     """Tile distance between two tile_key()s."""
     ax, ay = tile_xy(a)

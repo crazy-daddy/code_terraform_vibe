@@ -47,3 +47,30 @@ Tiles are packed into one int (`tile_key()`), neighbour = key ± `1` (y) or ± `
 Archive: `autoplay.networks` = `{fluid: [[x1, y1, x2, y2], ...]}` (straight runs, tile centres) the planner laid.
 
 Atomic slice costs are measured in `tests/test_autoplay_geom.py` / `tests/test_autoplay_topology.py` against `construction_plan.ATOMIC_STEP_BUDGET`.
+
+## §11b Power pass (`autoplay/lib/power_plan.py`)
+
+Joins every power subnet into one grid. Components = `power_control.grids()`, placed on the map by their members' footprints (`grid_geom.outpost_box()` / `extractor_box()`, inclusive tile boxes):
+
+| Member | Position source |
+| :--- | :--- |
+| Outpost | `outpost_network.outposts()` `.x/.y` (top-left) |
+| Water / oil pump | surveyed `WaterWell`/`OilWell` whose `pump_id()` is the machine |
+| Thermal / exotic cap, spring tap | surveyed `ThermalVent`/`ExoticDeposit` whose `cap_id()` is the machine |
+| Mining drill | `drill.positions` archive (`lib/drill_sites.py`; drills expose no position) |
+
+A grid with no placeable member is skipped (debug log). Links = Kruskal MST over the nearest-tile distance between footprints of different components (`edge_slice()` in atomic batches of `PAIR_CHUNK` box pairs, `pair_segments()`). Each pass queues the shortest missing links as `plan_power_line()` between the two nearest footprint tiles (tile centres); on `blocked`/`invalid_route` the two explicit L elbows are tried (two legs, all-or-nothing: a rejected second leg cancels the first). A link the game rejects, or that creates no job while the grids stay apart, is not retried until the script restarts. A link needs `power_line_segment` ≥ its tile distance in the Inventory.
+
+The pass waits while any power-line job is open: completed lines have no list API, so grids only show the link once it is built.
+
+| Constant | Value | Meaning |
+| :--- | :--- | :--- |
+| `MAX_LINKS_PER_PASS` | 1 | power links queued per pass |
+| `PAIR_CHUNK` | 50 | footprint pairs per atomic edge batch (~3,500 operations worst) |
+| `PASS_SLEEP_S` (`planner_loop.py`) | 60 | seconds between passes while work is open |
+
+Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner.py`): read `Topology`, prune `autoplay.planned`, power pass; the script ends once the pass reports one placed grid.
+
+## §11c Blueprint queue (`autoplay/lib/blueprint_queue.py`)
+
+The planner's only writer of blueprints. Archive `autoplay.planned` = `{blueprint_id: {"k": kind, "f": fluid | "power" | None, "p": prio, "seg": [x1, y1, x2, y2] | None, "site": id | None}}`; entries are dropped once their job is no longer pending/active/paused (skipped when a job list could not be read). Jobs with a prio other than `construction_plan.DEFAULT_PRIORITY` also get a `construction.priority` entry.

@@ -201,6 +201,8 @@ class Topology:
     def __init__(self):
         self.pipe_rows = []
         self.job_rows = []
+        self.job_ids = set()   # every pending/active/paused job id, utility or not
+        self.jobs_ok = False   # False when a job list could not be read: job_ids is then incomplete
         self.occ = {layer: {} for layer in LAYERS}
 
     def read(self):
@@ -212,13 +214,17 @@ class Topology:
             pipes = []
         self.pipe_rows = run_batched(read_pipe_slice, pipes, PIPE_CHUNK)
         jobs = []
+        self.jobs_ok = False
         blueprints = get_component("construction_blueprint")
         if blueprints is not None:
+            self.jobs_ok = True
             for getter in _JOB_GETTERS:
                 try:
                     jobs.extend(getattr(blueprints, getter)() or [])
                 except Exception as error:
                     swallowed(f"infra_topology.Topology.read: {getter}", error)
+                    self.jobs_ok = False
+        self.job_ids = {job.id for job in jobs}
         self.job_rows = run_batched(read_job_slice, jobs, JOB_CHUNK)
         networks = archive.get(NETWORKS_KEY, {})
         labels = planned_labels(networks if isinstance(networks, dict) else {})
