@@ -47,7 +47,7 @@ Decisions taken with the user:
 ## Layout
 ```
 autoplay/
-  infra_planner.py        thin entrypoint (calls planner_loop.run_planner())
+  infra_planner_automation.py  thin entrypoint, Automation role (calls planner_loop.run_planner())
   lib/
     planner_loop.py       run loop: one pass per PASS_SLEEP_S, ends when nothing to do
     autoplay_roles.py     role presets + outpost→fluids resolution
@@ -149,7 +149,7 @@ reader live in the `scripts/` lib (`construction_plan.py`); `autoplay/` only wri
 `devtools/scripts_sync.py` only knows `scripts/<tier>/`. v1: add `autoplay/` as an extra
 source root that deploys only on explicit flag (`--include-autoplay`), so it never ships by
 accident; its libs register via the existing `create-library` path. Script slot = one
-headless machine script (`infra_planner.py`), no per-machine copies (script-count cost).
+headless Automation (`infra_planner_automation.py`, role marker `# ct-automation: infra_planner_automation`), no per-machine copies (script-count cost).
 
 ## Phases
 0. **Probe.** Already confirmed by hand (user, on the map): parallel neighbour lanes stay
@@ -164,15 +164,21 @@ headless machine script (`infra_planner.py`), no per-machine copies (script-coun
    piece count). Record all answers in the cheatsheet.
 1. `grid_geom` + `infra_topology` + tests (pure geometry, occupancy from fake pipes). **Done** (`cd09031`, `f1b87ca`).
 2. Blueprint priority in `construction_plan`/`pioneer` + tests. **Done** (`3cc91bd`).
-3. `power_plan` (join subnets) — lowest risk, first live use. **Done** (`48f8b0d`): `power_plan`, `blueprint_queue` (power only), `planner_loop` + `autoplay/infra_planner.py`, cheatsheet §11b/§11c.
-   Not live-tested yet: needs the phase 6 sync flag to deploy. Open on the first live run: does a line ending on an
+3. `power_plan` (join subnets) — lowest risk, first live use. **Done** (`48f8b0d`): `power_plan`, `blueprint_queue` (power only), `planner_loop` + `autoplay/infra_planner_automation.py`, cheatsheet §11b/§11c.
+   Not live-tested yet (phase 6 flag now in place). Open on the first live run: does a line ending on an
    extractor footprint's edge tile connect (docs say "use the site coordinates")? If not, the pass warns
    "every piece already exists but the grids stay apart" → switch extractor endpoints to the site centre tile.
    Field power structures without a surveyed site (if any) cannot be placed; their grids are skipped and logged.
 4. `autoplay_roles` + `fluid_plan` (water first, then oil, steam) + conflict tests.
 5. `extractor_plan` demand pass, then plan-ahead pass at prio 1.
 5b. `relic_cleanup` (per-layer deconstruction of dead pipe components).
-6. sync flag + docs; TODO.md entry under "Building planner".
+6. sync flag + docs; TODO.md entry under "Building planner". **Done** (pulled ahead of 4/5): `scripts_sync.py --include-autoplay`
+   (`merge_autoplay()`), entrypoint renamed to the Automation role `infra_planner_automation`, docs in
+   `docs/cheatsheet/dev_workflow.md`, TODO.md entry links this plan.
+   **First live test:** `python devtools/scripts_sync.py once --include-autoplay --apply-libs` (registers and applies
+   the 5 autoplay libs), then create an Automation in game; the empty slot takes the planner role (or type
+   `# ct-automation: infra_planner_automation` into it). Watch for the Power link line, the ghost on the map,
+   and the grid count dropping once the Pioneer built it.
 
 ## Probe results (`automation_3.log`, 2026-10-01)
 - **Tiles are 10 m, lanes on tile centres (`…5`).** Every job and every `Pipe` is one

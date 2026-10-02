@@ -1,5 +1,5 @@
 # Pure tile geometry and the utility router for the infrastructure planner
-# (autoplay/infra_planner.py). No game calls, no logging: every function takes
+# (autoplay/infra_planner_automation.py). No game calls, no logging: every function takes
 # plain data, so tests run it in CPython and the planner may run it through
 # lib/atomic.py (run_atomic/run_chunked).
 #

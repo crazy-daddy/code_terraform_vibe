@@ -1,4 +1,4 @@
-# Run loop of the infrastructure planner (autoplay/infra_planner.py): one pass
+# Run loop of the infrastructure planner (autoplay/infra_planner_automation.py): one pass
 # per PASS_SLEEP_S, ending the script once a pass finds nothing left to plan
 # and nothing of its own still open. Restart the script to plan again.
 #

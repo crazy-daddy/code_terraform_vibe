@@ -69,7 +69,7 @@ The pass waits while any power-line job is open: completed lines have no list AP
 | `PAIR_CHUNK` | 50 | footprint pairs per atomic edge batch (~3,500 operations worst) |
 | `PASS_SLEEP_S` (`planner_loop.py`) | 60 | seconds between passes while work is open |
 
-Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner.py`): read `Topology`, prune `autoplay.planned`, power pass; the script ends once the pass reports one placed grid.
+Run loop (`autoplay/lib/planner_loop.py`, entrypoint `autoplay/infra_planner_automation.py`): read `Topology`, prune `autoplay.planned`, power pass; the script ends once the pass reports one placed grid.
 
 ## §11c Blueprint queue (`autoplay/lib/blueprint_queue.py`)
 

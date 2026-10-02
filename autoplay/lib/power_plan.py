@@ -1,4 +1,4 @@
-# Power pass of the infrastructure planner (autoplay/infra_planner.py): joins
+# Power pass of the infrastructure planner (autoplay/infra_planner_automation.py): joins
 # every power subnet into one grid.
 #
 # Components are power_control.grids(). Each is placed on the map by the

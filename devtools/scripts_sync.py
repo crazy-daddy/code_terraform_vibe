@@ -85,6 +85,11 @@ tier and is always included, unchained, alongside whatever the active tier
 resolves. Use it for scripts that are genuinely tech-independent and
 self-contained (no `lib/` imports) - contracts are the motivating case.
 
+`autoplay/` (the infrastructure planner, outside the tier tree) is an extra
+untiered source root deployed only with `--include-autoplay`
+(merge_autoplay()): `autoplay/*.py` join the script index, `autoplay/lib/*.py`
+the lib index. Without the flag nothing there ships.
+
 An empty game file with no match is staged into `scripts/_unmatched/` (never
 used as a source): write the script there, then move it into a category.
 A slot with code and no match is left alone. Filling renumbers the source's
@@ -134,6 +139,7 @@ from watchdog.observers.polling import PollingObserver
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SCRIPTS = REPO / "scripts"
+AUTOPLAY_DIR = REPO / "autoplay"   # extra source root, deployed only with --include-autoplay
 BACKUP_DIR = REPO / "devtools" / ".sync-backups"
 # While this file exists, watch queues changes instead of pushing them, so a
 # multi-file edit lands as one consistent state once the file is removed.
@@ -190,6 +196,7 @@ class Options:
     force_tier: Optional[str] = None
     restart: bool = True
     apply_libs: bool = False
+    include_autoplay: bool = False
     active_tier: str = field(default="", init=False)
     lib_index: dict = field(default_factory=dict, init=False)
     lib_closure: dict = field(default_factory=dict, init=False)
@@ -197,6 +204,10 @@ class Options:
     @property
     def unmatched_dir(self) -> Path:
         return self.scripts_dir / UNMATCHED
+
+    @property
+    def autoplay_dir(self) -> Optional[Path]:
+        return AUTOPLAY_DIR if self.include_autoplay else None
 
 
 def show(path: Path) -> str:
@@ -802,8 +813,24 @@ def resolve_global_category(scripts_dir: Path, category: str):
     return resolve_category(scripts_dir, [""], category)
 
 
-def build_index(scripts_dir: Path, active_tier: str):
-    """(script_index, lib_index, conflicts) for the given active tier.
+def merge_autoplay(autoplay_dir: Path, script_index: dict, lib_index: dict, conflicts: dict) -> None:
+    """Adds autoplay/*.py to script_index and autoplay/lib/*.py to lib_index
+    (untiered, see --include-autoplay). A key scripts/ already resolves stays
+    with scripts/ and is reported as a conflict."""
+    for target, folder in ((script_index, autoplay_dir), (lib_index, autoplay_dir / LIB_CATEGORY)):
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.py")):
+            key = match_key(path.stem)
+            if key in target and target[key] != path:
+                conflicts.setdefault(("AUTOPLAY", key), []).extend([target[key], path])
+            else:
+                target[key] = path
+
+
+def build_index(scripts_dir: Path, active_tier: str, autoplay_dir: Optional[Path] = None):
+    """(script_index, lib_index, conflicts) for the given active tier, plus
+    autoplay/ when autoplay_dir is given (merge_autoplay()).
 
     script_index/lib_index map match_key -> resolved Path. Cross-category
     collisions (two categories both defining, say, "solar") are reported as
@@ -834,6 +861,8 @@ def build_index(scripts_dir: Path, active_tier: str):
                 script_index[key] = path
     lib_index, lib_conflicts = resolve_category(scripts_dir, lib_chain(scripts_dir, active_tier), LIB_CATEGORY)
     conflicts.update(lib_conflicts)
+    if autoplay_dir is not None:
+        merge_autoplay(autoplay_dir, script_index, lib_index, conflicts)
     return script_index, lib_index, conflicts
 
 
@@ -1931,15 +1960,18 @@ NoRestartOpt = typer.Option(False, "--no-restart",
                             help="Push matched slots but don't restart them in game.")
 ApplyLibsOpt = typer.Option(False, "--apply-libs",
                             help="Apply changed lib/ modules in game (restarts every running script importing them).")
+AutoplayOpt = typer.Option(False, "--include-autoplay",
+                           help="Also deploy autoplay/ (infrastructure planner script + autoplay/lib modules).")
 
 
 def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber,
-              force_tier=None, no_restart=False, apply_libs=False) -> Options:
+              force_tier=None, no_restart=False, apply_libs=False, include_autoplay=False) -> Options:
     save = resolve_save(save_dir)
     if not scripts_dir.is_dir():
         err("Not a directory: %s" % scripts_dir)
         raise typer.Exit(2)
-    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, force_tier, not no_restart, apply_libs)
+    opts = Options(save, scripts_dir, strict, dry_run, verbose, not no_renumber, force_tier, not no_restart, apply_libs,
+                   include_autoplay)
     opts.active_tier = resolve_active_tier(scripts_dir, save, force_tier)
     return opts
 
@@ -1947,11 +1979,12 @@ def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber,
 @app.command()
 def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
            strict: bool = StrictOpt, no_renumber: bool = NoRenumberOpt,
-           force_tier: Optional[str] = ForceTierOpt):
+           force_tier: Optional[str] = ForceTierOpt, include_autoplay: bool = AutoplayOpt):
     """Show the resolved tier, the scripts/lib mapping, and what each save script would do."""
-    opts = make_opts(save_dir, scripts_dir, strict, False, False, no_renumber, force_tier)
+    opts = make_opts(save_dir, scripts_dir, strict, False, False, no_renumber, force_tier,
+                     include_autoplay=include_autoplay)
     typer.echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
-    script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier)
+    script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     report_conflicts(conflicts)
 
     typer.echo("\nResolved scripts (%d):" % len(script_index))
@@ -2018,11 +2051,13 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
 def once(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
          strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
          no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
-         no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt):
+         no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
+         include_autoplay: bool = AutoplayOpt):
     """Push every matched save script, restart it in game, and sync lib/."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs)
+    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs,
+                     include_autoplay)
     typer.echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
-    script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier)
+    script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     report_conflicts(conflicts)
     typer.echo("Syncing %s" % opts.save_dir)
     n = sync_all(script_index, lib_index, opts)
@@ -2042,10 +2077,11 @@ def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Optional[Path] = S
 
 @app.command(name="register-libs")
 def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
-                  dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt):
+                  dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt,
+                  include_autoplay: bool = AutoplayOpt):
     """Register every deployed lib/ module the game does not know yet as a game Library (nothing else)."""
-    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier)
-    _, lib_index, _ = build_index(opts.scripts_dir, opts.active_tier)
+    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier, include_autoplay=include_autoplay)
+    _, lib_index, _ = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     registered = registered_library_names(opts.save_dir)
     if registered is None:
         err("Cannot read %s - open this save in the game first." % WORKSPACE_JSON)
@@ -2056,11 +2092,13 @@ def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Script
 
 @app.command(name="apply-libs")
 def apply_libs_cmd(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
-                   dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt):
+                   dry_run: bool = DryOpt, force_tier: Optional[str] = ForceTierOpt,
+                   include_autoplay: bool = AutoplayOpt):
     """Apply every deployed lib/ module the game runs an older copy of (nothing else),
     then restart importers that crashed on it."""
-    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier, apply_libs=True)
-    _, opts.lib_index, _ = build_index(opts.scripts_dir, opts.active_tier)
+    opts = make_opts(save_dir, scripts_dir, False, dry_run, False, False, force_tier, apply_libs=True,
+                     include_autoplay=include_autoplay)
+    _, opts.lib_index, _ = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     opts.lib_closure = lib_dependency_closure(opts.lib_index)
     if read_workspace_context(opts.save_dir) is None:
         err("Cannot read %s - open this save in the game first." % WORKSPACE_JSON)
@@ -2078,7 +2116,7 @@ def apply_libs_cmd(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Scrip
 class Watcher:
     def __init__(self, opts: Options, delay: float = 0.4):
         self.opts, self.delay = opts, delay
-        self.script_index, self.lib_index, self.conflicts = build_index(opts.scripts_dir, opts.active_tier)
+        self.script_index, self.lib_index, self.conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
         report_conflicts(self.conflicts)
         self.pending: dict = {}
         self.repo_due = None
@@ -2116,7 +2154,7 @@ class Watcher:
         # A source edit doesn't change the active tier, but the tier can
         # change on its own as the save progresses, so re-check it too.
         self.opts.active_tier = resolve_active_tier(self.opts.scripts_dir, self.opts.save_dir, self.opts.force_tier)
-        self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, self.opts.active_tier)
+        self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, self.opts.active_tier, self.opts.autoplay_dir)
         report_conflicts(self.conflicts)
         self.sweep()
 
@@ -2137,7 +2175,7 @@ class Watcher:
             if new_tier != self.opts.active_tier:
                 ok("  tier  %s -> %s" % (self.opts.active_tier, new_tier))
                 self.opts.active_tier = new_tier
-                self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, new_tier)
+                self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, new_tier, self.opts.autoplay_dir)
                 report_conflicts(self.conflicts)
                 self.sweep()
             # The game rewrites the workspace file on its own cadence, so an
@@ -2196,13 +2234,16 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
           strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
           no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
           no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
+          include_autoplay: bool = AutoplayOpt,
           poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events.")):
     """Watch the save directory and scripts/, pushing and re-tiering as things change."""
-    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs)
+    opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs,
+                     include_autoplay)
     watcher = Watcher(opts)
 
     typer.echo("Save     %s" % opts.save_dir)
     typer.echo("Scripts  %s (tier %s)" % (opts.scripts_dir, opts.active_tier))
+    typer.echo("Autoplay %s" % ("%s included (--include-autoplay)" % show(AUTOPLAY_DIR) if include_autoplay else "off"))
     typer.echo("Staging  %s for game files with no match" % show(opts.unmatched_dir))
     typer.echo("Push     every matched slot follows scripts/ (in-game edits are overwritten, backups in %s)" % show(BACKUP_DIR))
     typer.echo("Restart  %s" % ("off (--no-restart)" if no_restart else "running and newly filled slots, unless an unapplied lib/ is reached"))
@@ -2214,6 +2255,8 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     observer = (PollingObserver if poll else Observer)()
     observer.schedule(Events(watcher.note_save), str(opts.save_dir), recursive=False)
     observer.schedule(Events(watcher.note_repo), str(opts.scripts_dir), recursive=True)
+    if opts.autoplay_dir is not None and opts.autoplay_dir.is_dir():
+        observer.schedule(Events(watcher.note_repo), str(opts.autoplay_dir), recursive=True)
     observer.start()
     typer.echo("Ready. Ctrl-C to stop.")
     try:

@@ -1,5 +1,5 @@
 # The infrastructure planner's only writer of construction blueprints
-# (autoplay/infra_planner.py). Wraps construction_blueprint.plan_*, records
+# (autoplay/infra_planner_automation.py). Wraps construction_blueprint.plan_*, records
 # what it queued in autoplay.planned and sets construction.priority for jobs
 # that are not normal priority (no entry = construction_plan.DEFAULT_PRIORITY).
 #
