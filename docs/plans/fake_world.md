@@ -54,7 +54,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 
 ## Steps
 
-### - [ ] Step 1: Spec extractor and committed snapshot
+### - [x] Step 1: Spec extractor and committed snapshot
 - **Goal:** turn the decompiled tables into `tests/game_spec.json`.
 - **Read first:** this doc's Sources; `devtools/scripts_sync.py` (style of a devtool, save lookup).
 - **Touch:** new `devtools/extract_game_spec.py`, new `tests/game_spec.json`.
@@ -151,7 +151,27 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - **Verify:** `python -m unittest discover -s tests`.
 
 ## Notes from earlier steps
-_(empty — each step appends here)_
+### Step 1 (2026-10-02)
+- Tool is two files: `devtools/extract_game_spec.py` (wrapper, save check, writes the JSON) and
+  `devtools/extract_game_spec.js` (Node evaluator). The evaluator slices a top-level definition
+  only when an evaluated literal reads it, so helper calls like `B(...)`, `Zk(...)`, `OA(UA)`
+  run their real code; nothing else in the file runs.
+- Result for build `3b1b03e`: 92 components / 791 methods, 186 with `outcomes` (more than
+  the 167 `B(...)` calls because helper-built contracts such as `SonarScanResult` and
+  `TransferResult` resolve too); 69 machines; 99 recipes; storage as expected; 0 unresolved;
+  all 48 save typeIds present.
+- Added a `types` section that the plan did not list: the 171 object types that component calls
+  return (`InputSlot`, `ItemStack`, `NavModule`, `DockSlot`, `PowerGrid`, ...), with the same
+  entry shape. 39 more `outcomes` live there (`InputSlot.connect`, `NavModule.set_target`, ...).
+  Step 2/4 fakes for slots, stacks and modules should check against `types`, not `api`.
+- Entry fields beyond the plan: `signature`, `result_type`, `payload_fields` (extra result
+  fields such as `requested`/`moved`), `property: true` for attributes (`ItemStack.count`),
+  and `contract_kind: "optional"` for 3 methods that return None instead of a status
+  (`power_control.grid`, `crop_automator.cell`, `crop_automator.current_job`).
+- `pioneer.constructor` is a method name that collides with `Object.prototype.constructor`; the
+  evaluator uses prototype-free dicts for that reason.
+- Not in the spec: the `panel.*` API (UI panels). The file has 240 `outcomeContract` fields and
+  the spec 225; the other 15 were not inspected (panel API or repeated registrations).
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).
