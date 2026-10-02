@@ -742,13 +742,14 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # "plant_terraformer" = the Plant Terraformers' next NEED_BATCHES batches of Fertilizer /
 # Growth Accelerant (8_planting/lib/plant_terraformer.py). "fuel_assembler" = the
 # Fuel Assemblers' Lead Plates for their next crafts (10_nuclear/lib/fuel_assembler.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler")
+# "field_amplifier" = the Harvester's Yield Amplifier doses (8_planting/lib/harvester_amplify.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier")
 # Standing requesters whose order is a recurring consumable buffer, not a
 # one-off part a job waits on: their items are never hauled urgently
 # (lib/site_supply.py settled_items()), so a hauler waits for a full load.
 # The Fuel Assemblers' Lead Plates stay urgent (reactor fuel); their outposts
 # keep a stockpile instead (site_supply.SITE_STOCK_TARGETS).
-RECURRING_ORDER_REQUESTERS = ("plant_terraformer",)
+RECURRING_ORDER_REQUESTERS = ("plant_terraformer", "field_amplifier")
 
 # Backlog orders: same {requester_id: {item_id: quantity}} shape as
 # UPGRADE_ORDERS_KEY, but filler work. The quantity is folded into the

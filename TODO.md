@@ -273,7 +273,9 @@ Older multi-outpost-production goals this phase's lettered plan above directly t
   - [ ] Feed batch Forage + Water via Auto Feeders.
   - [ ] Progress through Mk I band (0 to 2,250,000 km²).
   - [ ] Upgrade to Mk II and inject Fertilizer + Growth Accelerant (2,250,000 to 5,000,000 km²).
-  - [ ] Field yield boosters: Yield Amplifier upkeep (one item = whole field +200% for 24 h) is the Forage lever, since the field (~2,600-3,200/h) is short of 3 Mk II Terraformers (6,600/h). Per-cell Fertilizer (Mk II; Mk III only if dosing labour, not the Fabricator, limits) only from idle Fabricator time after the Terraformer backlog: one dose per cell per 8 h of growth is ~10x the Terraformers' Fertilizer draw.
+  - [ ] Field yield boosters: the field (~2,600-3,200/h) is short of 3 Mk II Terraformers (6,600/h).
+    - [x] Yield Amplifier upkeep (one item = whole field +200% for 24 h): `harvester_amplify.py`.
+    - [ ] Per-cell Fertilizer (Mk II; Mk III only if dosing labour, not the Fabricator, limits) only from idle Fabricator time after the Terraformer backlog: one dose per cell per 8 h of growth is ~10x the Terraformers' Fertilizer draw.
   - [ ] Monitor area, batch progress, input buffers, and power draw; pause cleanly when any input is missing.
 
 ---

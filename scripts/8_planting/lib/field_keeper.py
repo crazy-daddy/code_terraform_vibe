@@ -6,10 +6,13 @@
 #   HarvesterPlantingMixin (lib/harvester_planting.py) -- layout, seed demand, plant, harvest
 #   HarvesterCareMixin     (lib/harvester_care.py)     -- light/water/salt, salt request
 #   HarvesterMachinesMixin (lib/harvester_machines.py) -- field-machine kit orders, deploy on reserved cells, remove strays
+#   HarvesterAmplifyMixin  (lib/harvester_amplify.py)  -- field-wide Yield Amplifier: apply, Fabricator order
 #   HarvesterController    (lib/harvesting.py)         -- movement, heat, loose-item sweep
 #
 # Each step re-reads cells() and does the single most urgent task, cheapest
 # route (heat) first within a priority:
+#   A. Yield Amplifier: apply a dose once the last one ran out (no move;
+#      conditions in lib/harvester_amplify.py)
 #   0. full layout: remove a field machine the layout doesn't reserve
 #      (left over from an older layout): it may sit on a layout cell, light
 #      a shade crop or burn salt
@@ -52,7 +55,8 @@ from harvester_paving import HarvesterPavingMixin
 from harvester_planting import HarvesterPlantingMixin, PLANT_STATUSES
 from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
-from storage import total_stock, discover_storage_buildings
+from harvester_amplify import HarvesterAmplifyMixin
+from storage import total_stock, discover_storage_buildings, mark_busy, recently_busy
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
@@ -66,6 +70,7 @@ LOOP_SLEEP_SECONDS = 0.2       # pause between steps
 ACTION_RETRIES = 3             # busy/moving retries per Harvester action
 INVENTORY_FULL_RETRY_TICKS = 3000  # after "inventory_full", skip harvesting this long (~5 min)
 ITEM_SWEEP_MAX_HEAT = 40.0     # loose items only while heat is at most this (keep headroom for crops)
+STAGE_STUCK_WARN_TICKS = 6000  # a Warehouse answering "busy" to staging this long (~10 min) gets one warning
 
 
 def _now_tick():
@@ -90,7 +95,7 @@ def _home_outpost_id():
     return None
 
 
-class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterPlantingMixin, HarvesterCareMixin, HarvesterMachinesMixin, HarvesterController):
+class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterPlantingMixin, HarvesterCareMixin, HarvesterMachinesMixin, HarvesterAmplifyMixin, HarvesterController):
     """Plants, tends and harvests the field layout; falls back to the loose-item sweep."""
 
     def __init__(self, harvester):
@@ -103,6 +108,8 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         self.care_batch = {}
         # Per-step caches (the script has a step budget per tick; see step()).
         self.stock_memo = {}
+        self.stage_busy = False        # last failed stage(): every holder answered "busy"
+        self.busy_since = {}           # {warehouse id: [first "busy" tick, warned]}, cleared on a non-busy answer
         self.step_statuses: "dict | None" = None
         self.step_view: "tuple | None" = None   # (cells, statuses, planted cells) of the current step
         self._rules = None
@@ -151,32 +158,61 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         """
         Pulls item_id from a home Warehouse into Inventory until n are there.
         Seeds and salt are kept in Warehouses so they don't clutter Inventory,
-        but load_seed()/dispense_salt() read Inventory only, so each is staged
-        right before use. The rebalance sweep may move a leftover back later.
+        but load_seed()/dispense_salt()/amplify() read Inventory only, so each
+        is staged right before use. The rebalance sweep may move a leftover
+        back later. Warehouses that just answered "busy" (an Auto Feeder
+        cycle) are tried last. On failure, self.stage_busy is True when every
+        holder answered "busy" (a short wait fixes it); a Warehouse busy for
+        STAGE_STUCK_WARN_TICKS gets one warning.
         """
         self.log.start(f"[{self.name}] stage", level="debug")
+        self.stage_busy = False
         missing = n - self.inventory_count(item_id)
         if missing <= 0:
             self.log.end()
             return True
         self.stock_memo.pop(item_id, None)
+        now = _now_tick()
+        holders = []
         for building in discover_storage_buildings():
-            component = building["component"]
             try:
-                if component.count(item_id) <= 0:
-                    continue
-                res = component.transfer_to("inventory", item_id, missing)
-            except Exception as e:
-                self.log.debug(f"stage '{item_id}' from '{building['id']}' raised: {e}")
+                if building["component"].count(item_id) > 0:
+                    holders.append(building)
+            except Exception as error:
+                swallowed("field_keeper.FieldKeeperController.stage: component.count", error)
+        holders.sort(key=lambda b: 1 if recently_busy(b["id"], now) else 0)
+        answers = []
+        for building in holders:
+            try:
+                res = building["component"].transfer_to("inventory", item_id, missing)
+            except Exception as error:
+                swallowed("field_keeper.FieldKeeperController.stage: component.transfer_to", error)
+                answers.append("error")
                 continue
+            status = getattr(res, "status", "")
+            answers.append(status)
+            self.note_busy(building["id"], status == "busy", now)
+            self.log.debug(f"stage '{item_id}' from '{building['id']}': {status}, moved {getattr(res, 'moved', 0) or 0}.")
             missing -= getattr(res, "moved", 0) or 0
             if missing <= 0:
                 self.log.debug(f"Staged {n}x '{item_id}' into Inventory.")
                 self.log.end()
                 return True
-        self.log.debug(f"Could not stage '{item_id}': {missing} short.")
+        self.stage_busy = bool(answers) and all(a == "busy" for a in answers)
+        self.log.debug(f"Could not stage '{item_id}': {missing} short ({'all holders busy' if self.stage_busy else 'answers ' + str(answers or 'none: no Warehouse holds it')}).")
         self.log.end()
-        return missing <= 0
+        return False
+
+    def note_busy(self, building_id, busy, now):
+        """Tracks how long building_id has answered "busy"; warns once past STAGE_STUCK_WARN_TICKS."""
+        if not busy:
+            self.busy_since.pop(building_id, None)
+            return
+        mark_busy(building_id, now)
+        entry = self.busy_since.setdefault(building_id, [now, False])
+        if not entry[1] and now - entry[0] >= STAGE_STUCK_WARN_TICKS:
+            entry[1] = True
+            self.log.level("warn").print(f"[{self.name}] Warehouse '{building_id}' busy for {self.game_time(now - entry[0])}: Auto Feeder stuck? Staging skips it while it stays busy.")
 
     def act(self, method, *args):
         """
@@ -239,6 +275,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             now[seed_id] = now.get(seed_id, 0) + n
         self.publish_seed_demand(now, rotation, curr_tick, layout, rules)
         kit_order, automators_wanted = self.publish_kit_order(cells)
+        amplifier_order = self.publish_amplifier_order(curr_tick)
 
         kept = self.kept_garden()
         scan = self.row_scan(cells, rules, kept)
@@ -255,6 +292,8 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             "machines_missing": len(self.missing_machines(cells)),
             "kit_order": kit_order,
             "automators_wanted": automators_wanted,
+            "amplifier_order": amplifier_order,
+            "amplifier_h": round(self.amplifier_hours(), 1),
             "last_action": self.last_action,
             "heat": self.heat_model(),
             "tick": curr_tick,
@@ -360,6 +399,10 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
 
         # Something left in the held slot (e.g. after a restart) goes back to Inventory.
         self.store_held_if_any()
+
+        # A. Yield Amplifier: field-wide, so no move; ahead of everything else.
+        if self.amplify_step(curr_tick):
+            return
 
         # 0. Full layout: remove a stray field machine (older layout).
         strays = self.stray_machines()

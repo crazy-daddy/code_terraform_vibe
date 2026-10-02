@@ -309,6 +309,18 @@ TAKE_BUSY_COOLDOWN_TICKS = 20
 _recent_busy = {}  # {source_id: tick of last "busy" rejection}
 
 
+def mark_busy(source_id, tick=None):
+    """Remembers that source_id answered "busy" (see TAKE_BUSY_COOLDOWN_TICKS)."""
+    _recent_busy[source_id] = _now_tick() if tick is None else tick
+
+
+def recently_busy(source_id, now=None):
+    """True if source_id answered "busy" within TAKE_BUSY_COOLDOWN_TICKS."""
+    busy_tick = _recent_busy.get(source_id)
+    now = _now_tick() if now is None else now
+    return busy_tick is not None and now > 0 and now - busy_tick <= TAKE_BUSY_COOLDOWN_TICKS
+
+
 def _now_tick():
     clock = _component("clock")
     if clock and hasattr(clock, "tick"):
@@ -446,11 +458,9 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
     now = _now_tick()
     ranked = []
     for source_id, count in holders:
-        busy_tick = _recent_busy.get(source_id)
-        recently_busy = busy_tick is not None and now > 0 and now - busy_tick <= TAKE_BUSY_COOLDOWN_TICKS
         # 0 clogged automator, 1 Inventory, 2 Warehouse, 3 other automator.
         kind_rank, garden_rank = automator_rank.get(source_id, (1 if source_id == "inventory" else 2, 0))
-        ranked.append(((1 if recently_busy else 0, kind_rank, garden_rank, -count), (source_id, count)))
+        ranked.append(((1 if recently_busy(source_id, now) else 0, kind_rank, garden_rank, -count), (source_id, count)))
     ranked.sort(key=lambda pair: pair[0])
     return [entry for _key, entry in ranked]
 
@@ -514,7 +524,7 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
             current_id = source_id
         moved, status = _take_from_current(port, item_id, remaining)
         if status == "busy":
-            _recent_busy[source_id] = _now_tick()
+            mark_busy(source_id)
         if report is not None:
             report["sources"].append((source_id, status, moved))
         log.debug(f"'{source_id}' -> status={status} moved={moved}/{remaining}")

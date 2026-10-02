@@ -59,7 +59,7 @@
 #     (production.manual_transit_wants()) are always flagged urgent so
 #     completed units haul home immediately. Recurring consumable orders
 #     (production.RECURRING_ORDER_REQUESTERS: Terraformer Fertilizer /
-#     Growth Accelerant) are never urgent; Fuel Assembler Lead Plates stay
+#     Growth Accelerant, the Harvester's Yield Amplifier) are never urgent; Fuel Assembler Lead Plates stay
 #     urgent.
 #
 # Role switch drain: removing a site's Smelters drops its ore request, so its
