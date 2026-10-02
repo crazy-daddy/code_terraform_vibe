@@ -63,11 +63,11 @@ Takes idle machines' scripts out of the running-script count (§1d-1).
 ## 🐞 8. Live Debugging via External IDE
 
 Game exposes real Debug Adapter Protocol (DAP) integration against actual running game interpreter, not simulation: breakpoints, conditions, logpoints, call stacks, locals, watches, hover inspection, Step Over/Into/Out. Setup + full details:
-`C:\Users\Adrian\AppData\Roaming\io.codeterraform.game\external-ide\README.txt`.
+`%APPDATA%\io.codeterraform.game\external-ide\README.txt`.
 
 - **VS Code** (supported path, extension already installed this save): open script, set breakpoint, press **F5**. Idle script starts running; already-running script attaches without restart. **Shift+F5** or closing debug session disconnects but leaves script running in game. Use **Stop Script in Game** to actually stop. Watches/Debug Console **read-only** (can't execute world actions or assign variables). Edited main-script code needs **Run Script in Game** before re-attaching; edited Libraries need re-applying in game.
 - **Any other DAP-capable editor**: launch
-  `node "C:\Users\Adrian\AppData\Roaming\io.codeterraform.game\external-ide\server\debug-adapter.cjs"`
+  `node "%APPDATA%\io.codeterraform.game\external-ide\server\debug-adapter.cjs"`
   (Node.js 20+, stdio transport). `launch` = attach-and-run idle script; `attach` = inspect already-running one. Set `workspace` to this save's scripts directory, `script` to target file.
 - **Non-debug editor tooling** (LSP-only, no execution): `external-ide\server\server.cjs --stdio`. Per-editor docs (neovim/Helix/Sublime) in README. PyCharm needs generic LSP plugin; its own Python checker doesn't know game's owner globals/runtime rules.
 - Console output mirrors to `external-ide\logs\all.log` (plus one file per script). Useful to tail even without debugger.
@@ -153,7 +153,7 @@ Alternative: set a breakpoint in `u` and raise `l` in the Scope pane. This scale
 
 ## 🧬 9. Dev Workflow: Tiered `scripts/` + `devtools/scripts_sync.py`
 
-Repo (`C:\Users\Adrian\Code_Terraform`) = dev root, separate from live save folder (`%APPDATA%\io.codeterraform.game\save_*_scripts`). Source of truth: `scripts/<tier>/<category>/<name>.py`. `devtools/scripts_sync.py` (adapted from `inspirations/vakermit/bin/ct_sync.py`) pushes it into the save folder's numbered script slots and mirrors `lib/`. One direction only: no pull from the game. Full mechanics (push/restart, renumbering, `_unmatched/` staging) in tool's module docstring. This section covers project-specific tiering layer on top.
+Repo (`C:\Users\<user>\Code_Terraform`) = dev root, separate from live save folder (`%APPDATA%\io.codeterraform.game\save_*_scripts`). Source of truth: `scripts/<tier>/<category>/<name>.py`. `devtools/scripts_sync.py` (adapted from `inspirations/vakermit/bin/ct_sync.py`) pushes it into the save folder's numbered script slots and mirrors `lib/`. One direction only: no pull from the game. Full mechanics (push/restart, renumbering, `_unmatched/` staging) in tool's module docstring. This section covers project-specific tiering layer on top.
 
 **Tier list**: not hardcoded. `discover_tiers()`/`tier_number()` in `scripts_sync.py` scan `scripts/` for `<N>_<anything>` dirs, sort by `N` ascending (numeric, so `10_x` after `9_x`, not between `1_x`/`2_x`). Only number matters, rest of name free text. Numbers may skip. Add `scripts/6_derp/` (or `scripts/3_inbetween/` between two existing tiers) with own `.criteria` → picked up automatically, no code change. Dir starting with digit but not plain `<int>_...` (`1N3_DERP`), or two dirs claiming same number (`10_hi`/`10_ho`) → raise `TierNamingError`, no silent guessing. Each tier gated by `.criteria` file at root (absent for `0_cold_boot`, always-active baseline). Current tiers:
 
