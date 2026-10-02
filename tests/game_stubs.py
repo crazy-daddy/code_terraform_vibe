@@ -77,7 +77,8 @@ class Stack:
 
 
 class Recipe:
-    def __init__(self, recipe_id, inputs, output_item, output_count=1, duration_game_hours=0.08, fluid_inputs=None, power_draw=0):
+    def __init__(self, recipe_id, inputs, output_item, output_count=1, duration_game_hours=0.08, fluid_inputs=None, power_draw=0,
+                 fluid_outputs=None, input_fluid=None, output_fluid=None):
         self.id = recipe_id
         self.name = recipe_id
         self.inputs = dict(inputs)
@@ -86,6 +87,9 @@ class Recipe:
         self.duration_game_hours = duration_game_hours
         self.fluid_inputs = dict(fluid_inputs or {})
         self.power_draw = power_draw
+        self.fluid_outputs = dict(fluid_outputs or {})
+        self.input_fluid = input_fluid
+        self.output_fluid = output_fluid
 
     def __repr__(self):
         return f"Recipe({self.id!r})"
@@ -107,6 +111,9 @@ def _recipe_from_spec(entry):
         entry.get("durationGameHours", 0.0),
         entry.get("fluidInputs"),
         entry.get("powerDraw", 0),
+        entry.get("fluidOutputs"),
+        entry.get("inputFluid"),
+        entry.get("outputFluid"),
     )
 
 
@@ -1612,6 +1619,13 @@ class World:
         dock = SupplyDock(self, dock_id, outpost)
         self.components[dock_id] = dock
         return dock
+
+    def add_building[B: Building](self, building_id, outpost, type_id, cls: type[B] = Building) -> B:
+        """A plain Building (or a test's Building subclass `cls`) of any spec type_id."""
+        building = cls(self, building_id, outpost)
+        building.type_id = type_id
+        self.components[building_id] = building
+        return building
 
     def _place(self, component):
         self.components[component.id] = component

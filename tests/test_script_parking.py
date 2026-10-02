@@ -1,63 +1,9 @@
 import unittest
 
 from harness import StubTestCase
+from game_stubs import Building, Result
 import script_parking
 from script_parking import ParkRequester, ScriptParking, PARK_REQUESTS_KEY, PARKED_KEY, WAKE_AFTER_TICKS
-
-
-class _Result:
-    def __init__(self, status="ok"):
-        self.status = status
-
-
-class _PowerControl:
-    def __init__(self):
-        self.powered = {}
-        self.calls = []
-
-    def can_power_off(self, machine_id):
-        return not machine_id.startswith("solar")
-
-    def set_powered(self, machine_id, on):
-        self.calls.append((machine_id, on))
-        self.powered[machine_id] = on
-        return _Result()
-
-    def is_powered(self, machine_id):
-        return self.powered.get(machine_id, True)
-
-
-class _RunControl:
-    def __init__(self, running):
-        self.running = set(running)
-
-    def is_running(self, machine_id):
-        return machine_id in self.running
-
-    def stop(self, machine_id):
-        self.running.discard(machine_id)
-        return _Result()
-
-    def start(self, machine_id):
-        self.running.add(machine_id)
-        return _Result()
-
-
-class _Member:
-    def __init__(self, machine_id, type_id):
-        self.id = machine_id
-        self.type_id = type_id
-
-
-class _Grid:
-    anchor_id = "grid_a"
-
-    def __init__(self, members):
-        self.members = members
-
-
-class _Machine:
-    pass
 
 
 class _FakePower:
@@ -91,17 +37,15 @@ class ParkRequesterTests(StubTestCase):
 class ScriptParkingTests(StubTestCase):
     def setUp(self):
         super().setUp()
-        self.power = _PowerControl()
-        self.run = _RunControl(["solar_1"])
-        for machine_id in ("smelter_1", "supply_dock_1", "oil_generator_1", "solar_1"):
-            self.world.components[machine_id] = _Machine()
-        self.grids = [_Grid([
-            _Member("smelter_1", "smelter"),
-            _Member("supply_dock_1", "supply_dock"),
-            _Member("oil_generator_1", "oil_generator"),
-            _Member("solar_1", "solar_generator"),
-        ])]
-        self.parking = ScriptParking(power=self.power, run_control=self.run)
+        w = self.world
+        self.power, self.run_control = w.power_control, w.run_control
+        self.run_control.running.add("solar_1")
+        machines = {"smelter_1": "smelter", "supply_dock_1": "supply_dock", "oil_generator_1": "oil_generator", "solar_1": "solar_generator"}
+        for machine_id, type_id in machines.items():
+            w.add_building(machine_id, w.home, type_id)
+        self.grid = w.add_grid("grid_a", list(machines))
+        self.grids = [self.grid]
+        self.parking = ScriptParking(power=self.power, run_control=self.run_control)
         self._real_power = script_parking.power
 
     def tearDown(self):
@@ -143,7 +87,6 @@ class ScriptParkingTests(StubTestCase):
     def test_untracked_dark_machine_with_stale_request_is_adopted_and_woken(self):
         self.request("smelter_1", "smelter")
         self.power.powered["smelter_1"] = False  # parked by a pass whose record was lost
-        self.grids[0].members[0].powered = False
         self.world.clock.now += WAKE_AFTER_TICKS["smelter"]
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls, [])
@@ -154,10 +97,8 @@ class ScriptParkingTests(StubTestCase):
 
     def test_dark_machine_without_request_or_shed_is_not_adopted(self):
         self.power.powered["smelter_1"] = False
-        self.grids[0].members[0].powered = False
         self.request("supply_dock_1", "supply_dock")
         self.power.powered["supply_dock_1"] = False
-        self.grids[0].members[1].powered = False
         self.world.notebook.data["power.shedded"] = ["supply_dock_1"]
         self.world.clock.now += script_parking.REQUEST_FRESH_TICKS + 1
         self.parking.step(self.grids, 10.0)
@@ -169,7 +110,7 @@ class ScriptParkingTests(StubTestCase):
 
         def recording(machine_id, on):
             seen.append(machine_id in self.world.notebook.data.get(PARKED_KEY, {}))
-            return set_powered(machine_id, on) if machine_id != "supply_dock_1" else _Result("failed")
+            return set_powered(machine_id, on) if machine_id != "supply_dock_1" else Result("failed")
         self.power.set_powered = recording
         self.request("smelter_1", "smelter")
         self.request("supply_dock_1", "supply_dock")
@@ -224,15 +165,14 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.power.calls[-1], ("smelter_1", True))
 
     def test_oil_pump_wakes_when_its_well_turns_active(self):
-        class _Pump:
+        class _Pump(Building):
             active = False
 
             def well_active(self):
                 return self.active
 
-        pump = _Pump()
-        self.world.components["oil_pump_1"] = pump
-        self.grids[0].members.append(_Member("oil_pump_1", "oil_pump"))
+        pump = self.world.add_building("oil_pump_1", self.world.home, "oil_pump", _Pump)
+        self.grid.machine_ids.append("oil_pump_1")
         self.request("oil_pump_1", "oil_pump")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls, [("oil_pump_1", False)])
@@ -249,16 +189,14 @@ class ScriptParkingTests(StubTestCase):
             def current_phase(self):
                 return self.phase
 
-        class _Cap:
-            def __init__(self):
-                self.site = _Deposit()
+        class _Cap(Building):
+            site = _Deposit()
 
             def deposit(self):
                 return self.site
 
-        cap = _Cap()
-        self.world.components["exotic_gas_cap_1"] = cap
-        self.grids[0].members.append(_Member("exotic_gas_cap_1", "exotic_gas_cap"))
+        cap = self.world.add_building("exotic_gas_cap_1", self.world.home, "exotic_gas_cap", _Cap)
+        self.grid.machine_ids.append("exotic_gas_cap_1")
         self.request("exotic_gas_cap_1", "exotic_cap")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls, [("exotic_gas_cap_1", False)])
@@ -270,28 +208,29 @@ class ScriptParkingTests(StubTestCase):
 
     def test_solar_stopped_at_night_and_started_at_sunrise(self):
         self.parking.step(self.grids, -3.0)
-        self.assertNotIn("solar_1", self.run.running)
+        self.assertNotIn("solar_1", self.run_control.running)
         self.assertEqual(self.world.notebook.data[PARKED_KEY]["solar_1"]["mode"], "stopped")
         self.parking.step(self.grids, 2.0)
-        self.assertIn("solar_1", self.run.running)
+        self.assertIn("solar_1", self.run_control.running)
         self.assertNotIn("solar_1", self.world.notebook.data[PARKED_KEY])
 
     def test_solar_script_stopped_by_the_player_is_not_started(self):
-        self.run.running.clear()
+        self.run_control.running.clear()
         self.parking.step(self.grids, -3.0)
         self.parking.step(self.grids, 2.0)
-        self.assertNotIn("solar_1", self.run.running)
+        self.assertNotIn("solar_1", self.run_control.running)
 
 
 class StationParkingTests(StubTestCase):
     def setUp(self):
         super().setUp()
-        self.power = _PowerControl()
-        self.world.services["power_control"] = self.power
+        w = self.world
+        self.power = w.power_control
         for machine_id in ("charging_station_1", "charging_station_2"):
-            self.world.components[machine_id] = _Machine()
-        self.grids = [_Grid([_Member("charging_station_1", "charging_station"), _Member("charging_station_2", "charging_station")])]
-        self.parking = ScriptParking(power=self.power, run_control=_RunControl([]))
+            w.add_building(machine_id, w.home, "charging_station")
+        self.grid = w.add_grid("grid_a", ["charging_station_1", "charging_station_2"])
+        self.grids = [self.grid]
+        self.parking = ScriptParking(power=self.power, run_control=w.run_control)
 
     def request(self, machine_id):
         requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
@@ -336,8 +275,8 @@ class StationParkingTests(StubTestCase):
         self.assertGreater(self.world.notebook.data[script_parking.HOLDS_KEY]["charging_station_2"], self.world.clock.now)
 
     def test_only_depot_parks_and_a_visit_hold_keeps_it_up(self):
-        self.world.components["drone_station_1"] = _Machine()
-        self.grids[0].members.append(_Member("drone_station_1", "drone_station"))
+        self.world.add_building("drone_station_1", self.world.home, "drone_station")
+        self.grid.machine_ids.append("drone_station_1")
         requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
         requests["drone_station_1"] = {"kind": "drone_depot", "tick": self.world.clock.now}
         self.parking.step(self.grids, 10.0)
@@ -359,8 +298,8 @@ class StationParkingTests(StubTestCase):
 
 class FieldProviderParkingTests(StubTestCase):
     def test_wake_kind_switches_on_every_parked_provider(self):
-        power = _PowerControl()
-        self.world.services["power_control"] = power
+        for type_id in ("grow_lamp", "sprinkler"):
+            self.world.add_building(f"{type_id}_1", self.world.home, type_id)
         self.world.notebook.data[PARKED_KEY] = {
             "grow_lamp_1": {"kind": "field_provider", "mode": "breaker", "since": 0},
             "sprinkler_1": {"kind": "field_provider", "mode": "breaker", "since": 0},
@@ -385,7 +324,7 @@ class FieldProviderParkingTests(StubTestCase):
 
             def set_enabled(self, on):
                 self.enabled = on
-                return _Result()
+                return Result("ok")
 
             def status(self):
                 return "active" if self.enabled else "disabled"

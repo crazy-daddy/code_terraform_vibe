@@ -1,85 +1,27 @@
 import unittest
 
 import harness
+from game_stubs import Building, FluidPort, Result, Slot, spec_recipe
 import refiner
 from archive import archive
 
 
-class _Result:
-    def __init__(self, status="ok"):
-        self.status = status
-        self.message = ""
+class _Refiner(Building):
+    """Refiner: no shared fake yet. Recipes are the spec's; 40 tar loaded."""
+    type_id = "refiner"
+    RECIPES = [spec_recipe(r) for r in ("refine_sulfur_gas", "refine_chlorine", "refine_cryofluid")]
 
-
-class _Recipe:
-    def __init__(self, rid, raw_fluid, refined_fluid, tar, in_port, out_port):
-        self.id = rid
-        self.input_fluid = raw_fluid
-        self.output_fluid = refined_fluid
-        self.inputs = {"tar": tar}
-        self.fluid_inputs = {in_port: 4.0}
-        self.fluid_outputs = {out_port: 4.0}
-        self.tier = 2
-
-
-class _InputSlot:
-    def __init__(self, tar_count=0, capacity=50):
-        self._count = tar_count
-        self._capacity = capacity
-
-    def count(self):
-        return self._count
-
-    def capacity(self):
-        return self._capacity
-
-
-class _FluidPort:
-    def __init__(self, level=0.0, capacity=10.0):
-        self._level = level
-        self._capacity = capacity
-        self.disconnects = 0
-
-    def level(self):
-        return self._level
-
-    def capacity(self):
-        return self._capacity
-
-    def connect(self, target_id):
-        return _Result()
-
-    def disconnect(self):
-        self.disconnects += 1
-        return _Result()
-
-
-class _Outpost:
-    def __init__(self, oid="outpost_1"):
-        self.id = oid
-
-    def buildings(self, type_id):
-        return []
-
-
-class _Refiner:
-    RECIPES = [
-        _Recipe("refine_sulfur_gas", "raw_sulfur_gas", "sulfur_gas", 2, "gas_in", "gas_out"),
-        _Recipe("refine_chlorine", "raw_chlorine", "chlorine", 5, "gas_in", "gas_out"),
-        _Recipe("refine_cryofluid", "raw_cryofluid", "cryofluid", 2, "liquid_in", "liquid_out"),
-    ]
-
-    def __init__(self, recipe=""):
-        self.id = "refiner_1"
-        self.outpost = _Outpost()
+    def __init__(self, world, outpost, recipe=""):
+        super().__init__(world, "refiner_1", outpost)
         self.recipe = recipe
         self.running = False
         self.stalled = False
-        self.gas_in = _FluidPort()
-        self.liquid_in = _FluidPort()
-        self.gas_out = _FluidPort()
-        self.liquid_out = _FluidPort()
-        self.input = _InputSlot(tar_count=40)
+        self.gas_in = FluidPort(world, capacity=10.0)
+        self.liquid_in = FluidPort(world, capacity=10.0)
+        self.gas_out = FluidPort(world, capacity=10.0)
+        self.liquid_out = FluidPort(world, capacity=10.0)
+        self.input_buffer["tar"] = 40
+        self.input = Slot(self, self.input_buffer, 50)
         self.commands_queue = []
         self.calls = []
         self.set_status = "ok"
@@ -94,18 +36,18 @@ class _Refiner:
         self.calls.append(("set_recipe", rid))
         if self.set_status == "ok":
             self.recipe = rid
-        return _Result(self.set_status)
+        return Result(self.set_status)
 
     def clear_recipe(self):
         self.calls.append(("clear_recipe",))
         self.recipe = ""
-        return _Result()
+        return Result("ok")
 
     def purge_input(self):
         self.calls.append(("purge_input",))
         self.gas_in._level = 0.0
         self.liquid_in._level = 0.0
-        return _Result()
+        return Result("ok")
 
     def is_running(self):
         return self.running
@@ -131,7 +73,8 @@ class _Router:
 class RefinerTestCase(harness.StubTestCase):
     def setUp(self):
         super().setUp()
-        self.comp = _Refiner()
+        self.comp = _Refiner(self.world, self.world.add_outpost("outpost_1"))
+        self.world.components["refiner_1"] = self.comp
         self.ctrl = refiner.RefinerController(self.comp)
         self.ctrl.routers = lambda rid, spec: (_Router(), _Router())
         self.ctrl.top_up_tar = lambda: None
@@ -256,10 +199,10 @@ class RefinerTestCase(harness.StubTestCase):
         orig = refiner.take_item
         refiner.take_item = lambda port, item_id, count, outpost=None: taken.append((item_id, count)) or count
         try:
-            self.comp.input._count = refiner.TAR_REFILL_AT + 1
+            self.comp.input_buffer["tar"] = refiner.TAR_REFILL_AT + 1
             ctrl.top_up_tar()
             self.assertEqual(taken, [])
-            self.comp.input._count = 10
+            self.comp.input_buffer["tar"] = 10
             ctrl.top_up_tar()
             self.assertEqual(taken, [("tar", 40)])
         finally:

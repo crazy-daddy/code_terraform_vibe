@@ -263,9 +263,9 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 
 ### Step 5 (in progress)
 - Done: `test_turbine_commit`, `test_fuel_assembler`, `test_habitat`, `test_fleet_commission`,
-  `test_fleet_decommission`, `test_plants_retire` (2026-10-03). Next, by count of private
-  classes named like a `game_stubs` export: `test_script_parking` (4), `test_refiner` (3),
-  then `test_site_supply`, `test_reactor`, `test_mining_drill`, `test_ingot_buffer`,
+  `test_fleet_decommission`, `test_plants_retire`, `test_script_parking`, `test_refiner`
+  (2026-10-03). Next, by count of private classes named like a `game_stubs` export:
+  `test_site_supply`, `test_reactor`, `test_mining_drill`, `test_ingot_buffer`,
   `test_feed_maker`, `test_autoplay_power` (2 each), then the single-class files
   (`test_wildlife_planner`, `test_thermal_cap_parking`, `test_ship_before_craft`,
   `test_harvester_amplify`, `test_drone_weather`, `test_autoplay_survey`,
@@ -324,6 +324,22 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   `run_control.running`, not a `started` log. Don't name a test attribute `self.run`: it
   shadows `TestCase.run` (Pyright flags it). `_Terraformer` / `_Input` / `_Outpost` stay (no
   shared plant terraformer yet).
+- `game_stubs` changes for the fourth batch: `World.add_building(id, outpost, type_id, cls=Building)`
+  places a plain `Building` (or a test's `Building` subclass, typed as that subclass) of any
+  spec type, for machines without their own fake. `Recipe` gains `fluid_outputs`,
+  `input_fluid`, `output_fluid` (`types.Recipe` fields), filled by `spec_recipe()`.
+- `test_script_parking`: shared `PowerControl` / `RunControl` / `add_grid`; machines via
+  `add_building` with real type ids. Grid members' `powered` comes from
+  `power_control.powered`, so the old extra `member.powered = False` lines are gone.
+  `set_powered` answers `not_found` for a machine that is no component, so a test that wakes
+  parked machines must place them (grow lamp, sprinkler). Extra grid members are appended to
+  `grid.machine_ids`. The pump / cap stand-ins are `Building` subclasses; `_FakePower` stays
+  (fakes `lib/power.py`). The spec says `solar_generator` can power off (the old fake said
+  no); no test relies on it.
+- `test_refiner`: recipes are `spec_recipe("refine_*")` (same tar / port numbers as the old
+  synthetic ones); ports are shared `FluidPort(capacity=10.0)` and `Slot` over
+  `input_buffer["tar"]`. `_Refiner(Building)` stays (no shared refiner); `_Router` stays (it
+  fakes our own routing helper).
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).
