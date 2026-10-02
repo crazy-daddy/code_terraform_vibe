@@ -349,6 +349,10 @@ while True:
             except Exception as e:
                 report_error("Outpost sync", e)
 
+            # The sweeps above interleave between_steps() and can span more
+            # than REQUEST_STALE_TICKS, so steps that stamp archive entries
+            # read the clock again instead of the pass's start tick.
+            current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
             try:
                 if biomass_retirement is None and biomass_complete():
                     biomass_retirement = BiomassRetirement(power=power)
@@ -363,6 +367,7 @@ while True:
             except Exception as e:
                 report_error("Fab site plan", e)
 
+            current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
             try:
                 publish_site_requests(current_tick)
             except Exception as e:
@@ -375,6 +380,7 @@ while True:
             except Exception as e:
                 report_error("Home salt request", e)
 
+            current_tick = clock.tick() if clock and hasattr(clock, "tick") else 0
             plants_summary = plants_retire.IDLE_SUMMARY
             try:
                 if plants_retirement is None:
