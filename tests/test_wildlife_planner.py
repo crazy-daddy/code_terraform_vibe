@@ -305,6 +305,14 @@ class WakeAlertTests(harness.StubTestCase):
         plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"]))
         self.assertEqual(plan["wakes"], [("habitat_1", "assigned magmatic_annelid")])
 
+    def test_wakes_parked_habitat_with_queued_purchase(self):
+        statuses = {"habitat_1": established("salt_tortoise", pop=175000, rate=0.0, parked=wc.PARK_CAPPED),
+                    "habitat_2": established("magmatic_annelid", feed_level=0.0, parked=wc.PARK_NO_FEED)}
+        plan = wp.build_plan(snap(habitats=2, statuses=statuses, parked=["habitat_1", "habitat_2"], insight=5.0, populations={"salt_tortoise": 175000},
+                                  schedule=[("break", "salt_tortoise"), ("adapt", "magmatic_annelid")]))
+        self.assertEqual(plan["buy"], {"habitat_1": "breakthrough", "habitat_2": "adaptation"})
+        self.assertEqual(plan["wakes"], [("habitat_1", "buy breakthrough"), ("habitat_2", "buy adaptation")])
+
     def test_idle_summary(self):
         plan = wp.build_plan(snap(habitats=1, statuses={"habitat_1": established("salt_tortoise")}))
         self.assertEqual(wp.summary_line(plan), wp.IDLE_SUMMARY)
