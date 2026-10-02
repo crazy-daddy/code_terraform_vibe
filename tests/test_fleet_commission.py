@@ -4,7 +4,7 @@ Inventory and deployed at the picked outpost."""
 import unittest
 
 from harness import StubTestCase
-from game_stubs import Recipe, Result
+from game_stubs import Commander, Recipe, Shop
 import fleet_commission
 import fleet_status
 import pioneer_commission
@@ -19,87 +19,6 @@ DRONE_RECIPES = [
 ]
 
 
-class Ref:
-    def __init__(self, ref_id, kind):
-        self.id = ref_id
-        self.kind = kind
-
-
-class Fleet:
-    def __init__(self):
-        self.pioneers = []
-        self.drone_refs = []
-
-    def vehicles(self):
-        return [Ref(p, "pioneer") for p in self.pioneers]
-
-    def drones(self):
-        return list(self.drone_refs)
-
-
-class DeployResult(Result):
-    def __init__(self, status="ok", machine_id=None):
-        super().__init__(status)
-        self.machine_id = machine_id
-
-
-class Computer:
-    def __init__(self, world, fleet):
-        self.world = world
-        self.fleet = fleet
-        self.calls = []
-        self.next_status = "ok"
-
-    def deploy(self, item_id, outpost=None):
-        self.calls.append((item_id, outpost))
-        if self.next_status != "ok":
-            return DeployResult(self.next_status)
-        if self.world.inventory.count(item_id) <= 0:
-            return DeployResult("no_kit")
-        self.world.inventory.remove(item_id, 1)
-        if item_id == "pioneer":
-            new_id = f"pioneer_{len(self.fleet.pioneers) + 1}"
-            self.fleet.pioneers.append(new_id)
-        else:
-            new_id = f"drone_{len(self.fleet.drone_refs) + 1}"
-            self.fleet.drone_refs.append(Ref(new_id, item_id))
-        return DeployResult("ok", new_id)
-
-
-class RunControl:
-    def start(self, machine_id):
-        return Result("ok")
-
-
-class CatalogueEntry:
-    def __init__(self, item_id, cost):
-        self.id = item_id
-        self.cost = cost
-
-
-class Shop:
-    def __init__(self, world, items):
-        self.world = world
-        self.items = items
-
-    def get_catalogue(self):
-        return [CatalogueEntry(i, 10) for i in self.items]
-
-    def buy(self, item_id, n):
-        self.world.inventory.add(item_id, n)
-        return Result("ok")
-
-
-class Commander:
-    def get_credits(self):
-        return cash.LEGACY_RESERVE * 10
-
-
-class PoorCommander:
-    def get_credits(self):
-        return 5
-
-
 PIONEER_SHOP = ["pioneer", "nav_module", "drill_module", "battery_holder_small", "cargo_rack_small", "portable_battery", "portable_bin"]
 
 
@@ -107,13 +26,13 @@ class CommissionTestCase(StubTestCase):
     def setUp(self):
         super().setUp()
         w = self.world
-        self.fleet = Fleet()
-        self.computer = Computer(w, self.fleet)
-        w.services.update({
-            "fleet": self.fleet, "computer": self.computer, "run_control": RunControl(),
-            "shop": Shop(w, PIONEER_SHOP), "commander": Commander(),
-        })
+        w.add_outpost("outpost_2")
+        self.computer = w.computer
+        w.services.update({"shop": self.shop(PIONEER_SHOP), "commander": Commander(cash.LEGACY_RESERVE * 10)})
         self.coordinator = fleet_commission.FleetCommissionCoordinator()
+
+    def shop(self, items):
+        return Shop(self.world, {i: 10 for i in items})
 
     def steps(self, n):
         for _ in range(n):
@@ -141,7 +60,7 @@ class PioneerCommissionTests(CommissionTestCase):
     def test_deploys_at_home_and_records_home_base(self):
         job_id = fleet_commission.queue_pioneer("hauler", "outpost_2")
         self.steps(3)  # queued -> buying -> deploying -> attach
-        self.assertEqual(self.computer.calls, [("pioneer", None)], self.debug_log())
+        self.assertEqual(self.computer.calls, [("deploy", "pioneer", None)], self.debug_log())
         job = self.job(job_id)
         self.assertEqual(job["state"], "attach")
         lineage = pioneer_commission.commission_state()["lineage"][job["new_id"]]
@@ -184,7 +103,7 @@ class DroneCommissionTests(CommissionTestCase):
         for item_id, n in order.items():
             self.world.inventory.add(item_id, n)
         self.steps(2)  # crafting -> deploying -> attach
-        self.assertEqual(self.computer.calls, [("drone_medium", "outpost_2")])
+        self.assertEqual(self.computer.calls, [("deploy", "drone_medium", "outpost_2")])
         self.assertNotIn("fleet_commission", self.orders())
         job = self.job(job_id)
         self.assertEqual(job["state"], "attach")
@@ -203,10 +122,10 @@ class DroneCommissionTests(CommissionTestCase):
         self.steps(1)
         for item_id, n in fleet_commission.drone_spec_parts(self.job(job_id)["spec"]).items():
             self.world.inventory.add(item_id, n)
-        self.computer.next_status = "drone_station_full"
+        self.computer.forced_status = "drone_station_full"
         self.steps(3)
         self.assertEqual(self.job(job_id)["state"], "deploying")
-        self.computer.next_status = "missing_drone_station"
+        self.computer.forced_status = "missing_drone_station"
         self.steps(1)
         self.assertEqual(self.job(job_id)["state"], "blocked")
 
@@ -222,7 +141,7 @@ class DroneCommissionTests(CommissionTestCase):
         w = self.world
         w.components.clear()
         w.add_fabricator("fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"])
-        w.services["shop"] = Shop(w, PIONEER_SHOP + ["portable_bio_extractor"])
+        w.services["shop"] = self.shop(PIONEER_SHOP + ["portable_bio_extractor"])
         job_id = fleet_commission.queue_drone("miner")
         self.steps(1)
         spec = self.job(job_id)["spec"]
@@ -238,8 +157,8 @@ class DroneCommissionTests(CommissionTestCase):
         w = self.world
         w.components.clear()
         w.add_fabricator("fabricator_1", w.home, [r for r in DRONE_RECIPES if r.output_item != "portable_bio_extractor"])
-        w.services["shop"] = Shop(w, PIONEER_SHOP + ["portable_bio_extractor"])
-        w.services["commander"] = PoorCommander()
+        w.services["shop"] = self.shop(PIONEER_SHOP + ["portable_bio_extractor"])
+        w.services["commander"] = Commander(5)
         job_id = fleet_commission.queue_drone("miner")
         self.steps(2)
         self.assertEqual(w.inventory.count("portable_bio_extractor"), 0)
@@ -252,7 +171,7 @@ class DroneCommissionTests(CommissionTestCase):
         self.assertTrue(fleet_commission.commission_fast())
         self.steps(1)  # queued -> crafting -> deploying -> attach, script started
         self.assertEqual(self.job(job_id)["state"], "attach", self.debug_log())
-        self.assertEqual(self.computer.calls, [("drone_medium", "outpost_2")])
+        self.assertEqual(self.computer.calls, [("deploy", "drone_medium", "outpost_2")])
         self.assertTrue(fleet_commission.commission_fast())
 
     def test_part_built_remotely_awaits_haul_home(self):

@@ -609,7 +609,8 @@ class ShopItem:
 
 
 class Shop:
-    """`shop`: catalogue prices only; buy() debits the commander."""
+    """`shop`: catalogue prices; buy() debits the commander and puts the
+    purchase in Inventory (all or nothing)."""
 
     def __init__(self, world, prices=None):
         self._world = world
@@ -618,12 +619,16 @@ class Shop:
     def get_catalogue(self):
         return [ShopItem(i, c) for i, c in self.prices.items()]
 
-    def buy(self, item_id, quantity):
+    def buy(self, item_id, quantity=1):
         cost = self.prices.get(item_id, 0) * quantity
         commander = self._world.services["commander"]
         if commander.credits < cost:
             return Result("insufficient_credits")
+        inventory = self._world.inventory
+        if inventory.space_for(item_id) < quantity:
+            return Result("inventory_full")
         commander.credits -= cost
+        inventory.add(item_id, quantity)
         return Result("ok")
 
 
@@ -688,9 +693,22 @@ class Position:
         return iter((self.x, self.y))
 
 
+class FluidConnection:
+    """One link of a FluidPort (connections()): the machine at the other end
+    and the fluid on the link (None while nothing flows)."""
+
+    def __init__(self, machine_id, fluid=None, state="ready", declared_by=""):
+        self.machine_id = machine_id
+        self.machine_name = machine_id
+        self.fluid = fluid
+        self.state = state
+        self.declared_by = declared_by
+
+
 class FluidPort:
     """FluidPort (gas/liquid in or out): a level/capacity buffer and one
-    connection. connect() answers "not_found" for an id that is no component."""
+    connection. connect() answers "not_found" for an id that is no component.
+    `links` (FluidConnection) are what connections() reports while connected."""
 
     def __init__(self, world, level=0.0, capacity=100.0, connected=""):
         self._world = world
@@ -698,6 +716,7 @@ class FluidPort:
         self._capacity = capacity
         self.connected = connected
         self.flow = 0.0
+        self.links = []
         self.connect_log = []
         self.disconnects = 0
 
@@ -717,7 +736,7 @@ class FluidPort:
         return self.connected
 
     def connections(self):
-        return []
+        return list(self.links) if self.connected else []
 
     def connect(self, target):
         self.connect_log.append(target)
@@ -1216,7 +1235,7 @@ class Computer:
     def __init__(self, world):
         self._world = world
         self.calls = []
-        self.forced_status = None
+        self.forced_status: str | None = None
 
     def deploy(self, item_id, outpost=None):
         self.calls.append(("deploy", item_id, outpost))
@@ -1360,7 +1379,7 @@ class Habitat(Building):
         self.required = {"gas": "", "liquid": ""}
         self.next_bands = {"gas": [], "liquid": []}
         self.next_required = {"gas": "", "liquid": ""}
-        self.intake = {"gas": 0.0, "liquid": 0.0}
+        self.intake: dict[str, float | None] = {"gas": None, "liquid": None}  # None: never set
         self.nodes = []
         self.insight = 0.0
         self.calls = []
@@ -1424,12 +1443,14 @@ class Habitat(Building):
         self.fluids[medium] = ""
         return Result("ok")
 
-    def purge_intake(self, port):
+    def purge_intake(self, port=None):
+        """Vents "gas_in", "liquid_in", or both when port is None."""
         self.calls.append(("purge_intake", port))
-        fluid_port = self.gas_in if port == "gas" else self.liquid_in
-        if fluid_port.level() <= 0:
+        ports = [p for name, p in (("gas_in", self.gas_in), ("liquid_in", self.liquid_in)) if port in (None, name)]
+        if all(p.level() <= 0 for p in ports):
             return Result("empty")
-        fluid_port._level = 0.0
+        for fluid_port in ports:
+            fluid_port._level = 0.0
         return Result("ok")
 
     # actions

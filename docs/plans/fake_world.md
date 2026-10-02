@@ -262,7 +262,8 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   components the repo's Pyright config no longer narrows `isinstance` alone there.
 
 ### Step 5 (in progress)
-- Done: `test_turbine_commit`, `test_fuel_assembler` (2026-10-03).
+- Done: `test_turbine_commit`, `test_fuel_assembler`, `test_habitat`, `test_fleet_commission`
+  (2026-10-03). Next: `test_fleet_decommission`, then the rest.
 - `test_turbine_commit`: turbines via `add_turbine` (pass `output=108.0`; the shared default is
   0), source tanks as `gas_tank` with `capacity=100.0` and level 90 (fill 0.9), grids via
   `add_grid(..., stored=1000.0, capacity=1000.0)`, `world.power_control` for switches (a
@@ -279,6 +280,23 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - A shared `Slot` sending into a cask of the wrong material answers `target_full` (moved 0),
   where the private fake said `target_wrong_material`; `lib/fuel_assembler.py` only logs the
   status, so no test depends on it.
+- `game_stubs` changes for the second batch: new `FluidConnection` (`types.FluidConnection`);
+  `FluidPort.links` is what `connections()` returns while connected. Drift fixed:
+  `Habitat.purge_intake(port=None)` takes `"gas_in"` / `"liquid_in"` (it compared against
+  `"gas"`) and vents both on None; `Shop.buy` puts the purchase in Inventory and answers
+  `inventory_full` (docs/components/shop.md). `Habitat.intake` starts at None (never set), so
+  a test asserting an intake of 0.0 proves the controller set it.
+- `test_habitat`: a `habitat()` helper on the test case builds the shared `Habitat` with the
+  old fake's defaults (capacity 175000, headroom 100, "thriving", 2.5 insight, `<s>_a`
+  adaptation / `<s>_b` breakthrough nodes). The shared Habitat's feed item is fixed at
+  creation, so an empty habitat takes `revive=<species>` to set it. "Awaiting insight" is
+  insight 0 instead of a patched `unlock_bonus`. The wrong-feed test checks Inventory and the
+  input buffer (shared `Slot.eject` keeps no log). `_Shop(Shop)` and `_Journal(Journal)` are
+  local subclasses; `_Cash` (fakes `lib/cash.py`) and `_Creature` (no shared type yet) stay.
+- `test_fleet_commission`: shared `Fleet`, `Computer`, `RunControl`, `Shop` (price 10 per
+  item), `Commander(credits)`. `Computer.calls` entries carry the verb (`("deploy", item,
+  outpost)`), `next_status` → `forced_status`, and `deploy` needs the target outpost to exist,
+  so `setUp` adds `outpost_2`.
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).
