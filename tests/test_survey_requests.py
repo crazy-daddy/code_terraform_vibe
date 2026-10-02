@@ -37,6 +37,42 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(sr.known_biomass(None), [])
 
 
+class BlockedTests(unittest.TestCase):
+    TARGETS = {"poi_10_20": {"reason": "too_hard"},
+               "site_s7": {"reason": "tier_too_low"},
+               "poi_1_1": {"reason": "wrong_scanner"},
+               "poi_2_2": {"reason": "research_required", "unlocked_scan_researches": ["research_geological_survey"]},
+               "poi_3_3": {"reason": "research_required", "unlocked_scan_researches": []}}
+
+    def test_blocked_skips_biomass_and_research_stale_entries(self):
+        pois, site_ids = sr.blocked_targets(self.TARGETS, ["research_geological_survey"])
+        self.assertEqual(pois, {(10, 20), (2, 2)})
+        self.assertEqual(site_ids, {"s7"})
+
+    def test_new_scan_research_unblocks_research_required(self):
+        pois, _ = sr.blocked_targets(self.TARGETS, ["research_geological_survey", "research_hydrology_survey"])
+        self.assertEqual(pois, {(10, 20)})
+
+    def test_stuck_contacts_neither_score_nor_ask_for_a_survey(self):
+        pois = [{"x": 100.0, "y": 100.0, "kind": "unknown"}]
+        surveyed = [{"id": "a", "x": 120.0, "y": 100.0, "kind": "mineral", "surveyed": True, "item": "cobalt",
+                     "purity": "rich", "hardness": 1, "fluid": None}]
+        world = {"bounds": (-900.0, 900.0, -900.0, 900.0), "outposts": [], "ghosts": [], "pois": pois,
+                 "sites": surveyed, "range_m": 200.0, "hardness_limit": 5}
+        want_of = {"roles": ["mining"], "ores": ["cobalt"], "biome": None}
+
+        def rate(blocked):
+            ctx = sites_.prepare(dict(world, blocked=blocked), lambda x, y: "frozen")
+            want = sites_.prepare_want(ctx, sites_.wants(want_of, {}))
+            return sites_.score(ctx, 100.0, 120.0, want)
+
+        free = rate(None)
+        stuck = rate(({(100, 100)}, set()))
+        self.assertLess(free["confidence"], 1.0)
+        self.assertEqual(stuck["confidence"], 1.0)
+        self.assertLessEqual(stuck["score"], free["score"])
+
+
 class ArchiveTests(harness.StubTestCase):
     def test_write_only_on_change(self):
         self.assertTrue(sr.write_requests(dict(REQUESTS)))
@@ -44,6 +80,10 @@ class ArchiveTests(harness.StubTestCase):
         self.assertFalse(sr.write_requests(dict(REQUESTS)))
         self.assertTrue(sr.write_requests({}))
         self.assertEqual(sr.read_requests(), {})
+
+    def test_read_blocked_checks_unlocked_scan_research(self):
+        sr.archive.set(sr.UNSUPPORTED_KEY, {"poi_2_2": {"reason": "research_required", "unlocked_scan_researches": []}})
+        self.assertEqual(sr.read_blocked(), ({(2, 2)}, set()))
 
     def test_read_known_biomass_from_the_blacklist(self):
         sr.archive.set(sr.UNSUPPORTED_KEY, {"poi_3_4": {"reason": "wrong_scanner"}})

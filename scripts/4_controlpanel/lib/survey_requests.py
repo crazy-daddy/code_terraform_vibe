@@ -13,8 +13,18 @@
 # "wrong_scanner". Vehicle sonar cannot classify a biomass contact, so such a
 # contact is biomass without a bio-scan. The entries stay in the blacklist for
 # good (vehicle_claims.blacklist_target(), docs/cheatsheet/archive_ipc.md).
+#
+# blocked_targets(): the other blacklist entries, contacts no scout can resolve
+# with what is unlocked now. The founding planner counts them as surveyed as
+# far as it goes, so an area holding only those stops asking for a survey. A
+# "research_required" entry turns stale once a scan research it did not have
+# is unlocked (the scouts retry it then, vehicle_claims.can_attempt_target()),
+# and the area asks again. A "too_hard"/"tier_too_low" entry stays blocked
+# until a scout with a better sonar retries it and clears or rewrites it.
 
 from archive import archive
+from swallow import swallowed
+from vehicle_claims import SCAN_RESEARCH_IDS
 
 REQUESTS_KEY = "autoplay.survey_requests"
 UNSUPPORTED_KEY = "survey.unsupported_targets"
@@ -100,6 +110,62 @@ def known_biomass(targets):
             if coords is not None:
                 out.append(coords)
     return out
+
+
+def target_site_id(key):
+    """Site id of a "site_<id>" target key; None for other keys."""
+    key = str(key)
+    return key[5:] if key.startswith("site_") and len(key) > 5 else None
+
+
+def blocked_targets(targets, scan_research):
+    """
+    ({(x, y) whole meters}, {site id}) of the blacklist entries that still
+    block: every reason but "wrong_scanner"; a "research_required" entry only
+    while every unlocked scan research in `scan_research` was on record.
+    """
+    pois = set()
+    site_ids = set()
+    if not isinstance(targets, dict):
+        return pois, site_ids
+    unlocked = set(scan_research)
+    for key, entry in targets.items():
+        if not isinstance(entry, dict):
+            continue
+        reason = entry.get("reason", entry.get("status"))
+        if reason == "wrong_scanner":
+            continue
+        if reason == "research_required" and not unlocked.issubset(set(entry.get("unlocked_scan_researches") or [])):
+            continue
+        coords = target_coords(key)
+        if coords is not None:
+            pois.add((int(round(coords[0])), int(round(coords[1]))))
+        site_id = target_site_id(key)
+        if site_id is not None:
+            site_ids.add(site_id)
+    return pois, site_ids
+
+
+def unlocked_scan_research():
+    """SCAN_RESEARCH_IDS unlocked now ([] when research is unreadable)."""
+    research = get_component("research")
+    out = []
+    if research is None:
+        return out
+    for rid in SCAN_RESEARCH_IDS:
+        try:
+            if research.is_unlocked(rid):
+                out.append(rid)
+        except Exception as error:
+            swallowed("survey_requests.unlocked_scan_research: research.is_unlocked", error)
+    return out
+
+
+def read_blocked():
+    """blocked_targets() of survey.unsupported_targets (empty sets when unreadable)."""
+    if not archive or not archive.available:
+        return set(), set()
+    return blocked_targets(archive.get(UNSUPPORTED_KEY, {}), unlocked_scan_research())
 
 
 def read_known_biomass():

@@ -237,8 +237,9 @@ Archive (one dict per concern):
    `lib/survey_requests.py`; the founding pass writes one request per open found proposal with `survey`;
    ground and drone scouts sort request-area contacts first. No new key for known biomass: the
    `wrong_scanner` entries in `survey.unsupported_targets` already hold those positions for good, so
-   `outpost_sites.read_world()` reads them there. Open: a proposal whose area holds only unresolvable
-   contacts keeps `survey` (blocks approval) until the scout hardware or research changes.
+   `outpost_sites.read_world()` reads them there. Blacklisted contacts no scout can resolve now are
+   "stuck": they add no guess to score or confidence, so such an area does not hold its proposal in
+   "survey first"; a new scan research turns `research_required` contacts back into guesses.
    Cheatsheet §11j, `tests/test_survey_requests.py`.
 5. Founding execution: cash consumer `outpost_founding`, kit purchase, blueprint, built detection,
    ore reassignment. Verify the Pioneer construction loop carries `outpost_kit` for an outpost job.

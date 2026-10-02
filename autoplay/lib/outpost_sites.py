@@ -39,7 +39,9 @@
 #            outpost (power line and pipe length to the network).
 # confidence = share of the resource terms (ore, fluid, exotic, biosite) from
 # known contacts (surveyed; a fluid its kind tells; a bio-scanned biosite);
-# under MIN_CONFIDENCE the site wants a survey trip first.
+# under MIN_CONFIDENCE the site wants a survey trip first. A contact the scouts
+# cannot resolve now (survey_requests.blocked_targets()) adds no guess, so it
+# never holds a site in "survey first".
 #
 # Search: a CANDIDATE_STEP_M grid over the map, filtered (bounds, clearance,
 # biome lock), scored without margin and room; the best REFINE_TOP are
@@ -57,7 +59,7 @@ from grid_geom import TILE_M
 from autoplay_roles import role_flag, fluids_for
 from outpost_mining import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
-from survey_requests import read_known_biomass
+from survey_requests import read_known_biomass, read_blocked
 
 OUTPOST_CLEARANCE_M = 40   # simworker plan.outpostClearanceM
 POI_CLEARANCE_M = 20       # simworker plan.outpostPoiClearanceM
@@ -174,12 +176,15 @@ def near(buckets, x, y, radius):
 
 # --- contacts and priors ---
 
-def contacts(pois, sites):
+def contacts(pois, sites, blocked=None):
     """
-    Contact rows {"x", "y", "level", "kind", "item", "purity", "hardness", "fluid"}
+    Contact rows {"x", "y", "level", "kind", "item", "purity", "hardness", "fluid", "stuck"}
     from POI rows {"x", "y", "kind"} and site rows (site_rows()); a site wins
-    over the POI at its position.
+    over the POI at its position. blocked = survey_requests.blocked_targets()
+    ({(x, y) whole meters}, {site id}): an unsurveyed contact in it is "stuck"
+    (no scout resolves it with what is unlocked now).
     """
+    pois_blocked, sites_blocked = blocked if blocked else (set(), set())
     out = []
     taken = set()
     for site in sites:
@@ -188,17 +193,20 @@ def contacts(pois, sites):
         fluid = site.get("fluid") if level == 3 else None
         if fluid is None:
             fluid = KIND_FLUID.get(kind)
+        spot = (int(round(site["x"])), int(round(site["y"])))
         out.append({"x": site["x"], "y": site["y"], "level": level, "kind": kind,
                     "item": site.get("item") if level == 3 else None, "purity": site.get("purity"),
-                    "hardness": site.get("hardness"), "fluid": fluid})
-        taken.add((int(round(site["x"])), int(round(site["y"]))))
+                    "hardness": site.get("hardness"), "fluid": fluid,
+                    "stuck": level < 3 and (site.get("id") in sites_blocked or spot in pois_blocked)})
+        taken.add(spot)
     for poi in pois:
-        if (int(round(poi["x"])), int(round(poi["y"]))) in taken:
+        spot = (int(round(poi["x"])), int(round(poi["y"])))
+        if spot in taken:
             continue
         kind = poi.get("kind") or "unknown"
         out.append({"x": float(poi["x"]), "y": float(poi["y"]), "level": 1 if kind == "unknown" else 2,
                     "kind": None if kind == "unknown" else kind, "item": None, "purity": None,
-                    "hardness": None, "fluid": KIND_FLUID.get(kind)})
+                    "hardness": None, "fluid": KIND_FLUID.get(kind), "stuck": spot in pois_blocked})
     return out
 
 
@@ -289,11 +297,12 @@ def prepare(world, biome_at):
     """
     Scoring context from a world snapshot (read_world()):
       {"bounds", "outposts": [{"id", "x", "y", "home", "depot"}], "ghosts": [(x, y)],
-       "pois": [{"x", "y", "kind"}], "sites": site_rows(), "range_m", "hardness_limit"}
+       "pois": [{"x", "y", "kind"}], "sites": site_rows(), "range_m", "hardness_limit",
+       "blocked" (survey_requests.blocked_targets(), optional)}
     biome_at(x, y): the game's nocturna.biome_at (a read, atomic-safe);
     answers are cached per TILE_M tile.
     """
-    rows = contacts(world.get("pois", []), world.get("sites", []))
+    rows = contacts(world.get("pois", []), world.get("sites", []), world.get("blocked"))
     centres = [centre(entry["x"], entry["y"]) for entry in world.get("outposts", [])]
     centres.extend([centre(x, y) for x, y in world.get("ghosts", [])])
     home = [centre(entry["x"], entry["y"]) for entry in world.get("outposts", []) if entry.get("home")]
@@ -360,6 +369,8 @@ def value_rows(rows, ctx, want):
       exotic           (sure, guess) raw exotic deposit not wanted itself
       bio              (known, guess) biosite in the bundle's biome; a contact of
                        known kind biomass (bio-scanned) counts as known
+    A stuck contact (contacts()) adds no guess: it is surveyed as far as the
+    scouts get, so it neither lifts the score nor asks for a survey.
     """
     out = []
     prior = ctx["prior"]
@@ -390,6 +401,11 @@ def value_rows(rows, ctx, want):
         if want["biosites"] and (row["level"] == 1 or row["kind"] == "biomass"):
             if want["biome"] is None or biome(ctx, row["x"], row["y"]) == want["biome"]:
                 bio = (1.0, 0.0) if row["level"] >= 2 else (0.0, p_bio)
+        if row.get("stuck"):
+            ore_guess = 0.0
+            fluid_guess = 0.0
+            exotic = (exotic[0], 0.0)
+            bio = (bio[0], 0.0)
         if ore_sure > 0 or ore_guess > 0 or fluid is not None or fluid_guess > 0 \
                 or exotic[0] + exotic[1] > 0 or bio[0] + bio[1] > 0:
             out.append((row["x"], row["y"], ore, ore_sure, ore_guess, fluid, fluid_guess,
@@ -660,12 +676,12 @@ def log_sites(log, bundle, rows):
 # --- game readers (thin; each returns a safe default when unreadable) ---
 
 def site_rows(sites):
-    """[{"x", "y", "kind", "surveyed", "item", "purity", "hardness", "fluid"}] of journal Site objects."""
+    """[{"id", "x", "y", "kind", "surveyed", "item", "purity", "hardness", "fluid"}] of journal Site objects."""
     rows = []
     for site in sites:
         try:
             kind = site.kind()
-            row = {"x": float(site.x), "y": float(site.y), "kind": kind, "surveyed": bool(site.surveyed),
+            row = {"id": str(site.id), "x": float(site.x), "y": float(site.y), "kind": kind, "surveyed": bool(site.surveyed),
                    "item": None, "purity": None, "hardness": None, "fluid": None}
             if kind == "mineral":
                 row["item"] = site.item_id
@@ -729,6 +745,7 @@ def read_world(outposts, kits, range_m):
             swallowed("outpost_sites.read_world: journal.discovered_sites", error)
     return {"bounds": bounds, "outposts": outposts, "ghosts": read_ghosts(),
             "pois": poi_rows(points, read_known_biomass()), "sites": site_rows(sites), "range_m": range_m,
+            "blocked": read_blocked(),
             "hardness_limit": hardness_limit(kits)}
 
 

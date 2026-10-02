@@ -256,6 +256,7 @@ class BudgetTests(unittest.TestCase):
 
 class _Site:
     def __init__(self, x, y, kind, surveyed, **fields):
+        self.id = f"s{int(x)}_{int(y)}"
         self.x = x
         self.y = y
         self._kind = kind
