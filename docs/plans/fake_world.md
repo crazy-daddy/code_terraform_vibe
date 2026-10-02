@@ -50,6 +50,9 @@ docs/plans/fake_world.md"*. Each step section is self-contained. At the end of a
 2. Append findings to **Notes from earlier steps** (drift found, unresolved fields, surprises).
 3. Run `python -m unittest discover -s tests` and commit (caveman-commit, on main).
 
+Before starting a step, read **Notes from earlier steps**: earlier steps record where the
+result differs from the step text below (e.g. extra spec sections), and the notes win.
+
 Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 6.
 
 ## Steps
@@ -170,8 +173,12 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   (`power_control.grid`, `crop_automator.cell`, `crop_automator.current_job`).
 - `pioneer.constructor` is a method name that collides with `Object.prototype.constructor`; the
   evaluator uses prototype-free dicts for that reason.
-- Not in the spec: the `panel.*` API (UI panels). The file has 240 `outcomeContract` fields and
-  the spec 225; the other 15 were not inspected (panel API or repeated registrations).
+- Not in the spec: the `panel.*` API (UI panels) and the global API functions (`GA` table:
+  `boot()`, `activate_power()`, `activate_sensors()`, `get_game_version()`, ...). Of the file's
+  240 `outcomeContract` occurrences, the spec holds 225; the rest are 3 contracts on those
+  global functions, 3 identical repeated registrations, and 9 code references (validators
+  reading `.outcomeContract`), not contracts. Add a `functions` section from `GA` if a fake ever
+  needs the cold-boot calls.
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).
