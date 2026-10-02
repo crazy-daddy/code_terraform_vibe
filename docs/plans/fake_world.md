@@ -262,8 +262,15 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   components the repo's Pyright config no longer narrows `isinstance` alone there.
 
 ### Step 5 (in progress)
-- Done: `test_turbine_commit`, `test_fuel_assembler`, `test_habitat`, `test_fleet_commission`
-  (2026-10-03). Next: `test_fleet_decommission`, then the rest.
+- Done: `test_turbine_commit`, `test_fuel_assembler`, `test_habitat`, `test_fleet_commission`,
+  `test_fleet_decommission`, `test_plants_retire` (2026-10-03). Next, by count of private
+  classes named like a `game_stubs` export: `test_script_parking` (4), `test_refiner` (3),
+  then `test_site_supply`, `test_reactor`, `test_mining_drill`, `test_ingot_buffer`,
+  `test_feed_maker`, `test_autoplay_power` (2 each), then the single-class files
+  (`test_wildlife_planner`, `test_thermal_cap_parking`, `test_ship_before_craft`,
+  `test_harvester_amplify`, `test_drone_weather`, `test_autoplay_survey`,
+  `test_autoplay_outpost_sites`, `test_autoplay_fluid`). `test_habitat`'s `_Shop` / `_Journal`
+  are subclasses and stay.
 - `test_turbine_commit`: turbines via `add_turbine` (pass `output=108.0`; the shared default is
   0), source tanks as `gas_tank` with `capacity=100.0` and level 90 (fill 0.9), grids via
   `add_grid(..., stored=1000.0, capacity=1000.0)`, `world.power_control` for switches (a
@@ -297,6 +304,26 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   item), `Commander(credits)`. `Computer.calls` entries carry the verb (`("deploy", item,
   outpost)`), `next_status` → `forced_status`, and `deploy` needs the target outpost to exist,
   so `setUp` adds `outpost_2`.
+- `game_stubs` changes for the third batch: `Computer.undeploy` follows
+  docs/components/ship_computer.md: it removes any component with a `type_id` (a `PassiveStore`
+  answers `not_undeployable`), checks `cargo_present` only for a `Cargo`, and returns the kit
+  plus a unit's mounted modules and portables to Inventory. New `Shop.sell(item_id,
+  quantity=1)` (`no_stock`, `not_sellable` from a `not_sellable` set; credits the commander at
+  `prices`; payload `item_id` / `units` / `credits`; `Shop.sold` totals sales). New
+  `Pioneer.uninstall` / `unmount` (Inventory gets the part; `holder_not_empty`,
+  `internal_slot_empty`, `slot_empty`, `inventory_full`). The contract test's
+  `test_pioneer_strip_undeploy_and_sell` covers them.
+- `test_fleet_decommission`: pioneer via `add_pioneer(slots=pioneer_slots())` (`MountSlot`,
+  fresh per test), drone via `add_drone(station="depot_1")` with a `battery_pack` mount, depot
+  via `add_drone_depot`; shared `Fleet` / `Computer` / `RunControl`; `Shop(world, {part: 10})`.
+  Cargo aboard is `cargo.items[...]`, an undocked drone is `station = ""`, a vanished machine is
+  `del world.components[...]`. `StripVehicle` became the shared Pioneer; `StripHost` stays
+  (it hosts the `VehicleClaimsMixin` under test).
+- `test_plants_retire`: shared `Computer` and `RunControl`; `_Terraformer` gains `type_id` and is
+  put in `world.components` so `undeploy` finds it. "Script restarted" is
+  `run_control.running`, not a `started` log. Don't name a test attribute `self.run`: it
+  shadows `TestCase.run` (Pyright flags it). `_Terraformer` / `_Input` / `_Outpost` stay (no
+  shared plant terraformer yet).
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).

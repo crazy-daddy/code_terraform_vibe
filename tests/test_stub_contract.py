@@ -255,6 +255,24 @@ class SharedFakeTests(unittest.TestCase):
         self.assertEqual(computer.undeploy("drone_1").status, "ok")
         self.assertEqual(w.inventory.count("drone_small"), 1)
 
+    def test_pioneer_strip_undeploy_and_sell(self):
+        w = self.world
+        holder = game_stubs.MountSlot(1, "universal", "battery_holder_small", ["portable_battery"])
+        pioneer = w.add_pioneer("pioneer_1", slots=[game_stubs.MountSlot(0, "universal", "nav_module"), holder])
+        self.assertEqual(pioneer.unmount(1).status, "holder_not_empty")
+        self.assertEqual(pioneer.uninstall(1, 0).status, "ok")
+        self.assertEqual(pioneer.uninstall(1, 0).status, "internal_slot_empty")
+        self.assertEqual(pioneer.unmount(1).status, "ok")
+        self.assertEqual(pioneer.unmount(1).status, "slot_empty")
+        self.assertEqual(w.computer.undeploy("pioneer_1").status, "ok")
+        self.assertEqual({i: w.inventory.count(i) for i in ("pioneer", "nav_module", "battery_holder_small", "portable_battery")},
+                         {"pioneer": 1, "nav_module": 1, "battery_holder_small": 1, "portable_battery": 1})
+        shop = game_stubs.Shop(w, {"pioneer": 50}, not_sellable={"nav_module"})
+        sale = shop.sell("pioneer")
+        self.assertEqual((sale.status, sale.units, sale.credits, w.services["commander"].credits), ("ok", 1, 50, 50))
+        self.assertEqual(shop.sell("pioneer").status, "no_stock")
+        self.assertEqual(shop.sell("nav_module").status, "not_sellable")
+
     def test_comms_broadcast_and_queue(self):
         comms = self.world.comms
         comms.publish("power.orders", {"tier": 2}, age_seconds=30.0)

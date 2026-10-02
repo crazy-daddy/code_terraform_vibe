@@ -610,11 +610,14 @@ class ShopItem:
 
 class Shop:
     """`shop`: catalogue prices; buy() debits the commander and puts the
-    purchase in Inventory (all or nothing)."""
+    purchase in Inventory (all or nothing); sell() takes units from Inventory
+    and credits the commander at the same price. `sold` totals the sales."""
 
-    def __init__(self, world, prices=None):
+    def __init__(self, world, prices=None, not_sellable=()):
         self._world = world
         self.prices = dict(prices or {})
+        self.not_sellable = set(not_sellable)
+        self.sold = {}
 
     def get_catalogue(self):
         return [ShopItem(i, c) for i, c in self.prices.items()]
@@ -630,6 +633,18 @@ class Shop:
         commander.credits -= cost
         inventory.add(item_id, quantity)
         return Result("ok")
+
+    def sell(self, item_id, quantity=1):
+        if item_id in self.not_sellable:
+            return Result("not_sellable")
+        inventory = self._world.inventory
+        if inventory.count(item_id) < quantity:
+            return Result("no_stock")
+        inventory.remove(item_id, quantity)
+        credits = self.prices.get(item_id, 0) * quantity
+        self._world.services["commander"].credits += credits
+        self.sold[item_id] = self.sold.get(item_id, 0) + quantity
+        return Result("ok", item_id=item_id, units=quantity, credits=credits)
 
 
 class Console:
@@ -679,6 +694,9 @@ class ConstructionBlueprints:
 
     def pending_constructions(self):
         return list(self.pending)
+
+    def active_constructions(self):
+        return []
 
     def paused_constructions(self):
         return []
@@ -1186,6 +1204,44 @@ class Pioneer(MobileUnit):
         self.battery = VehicleBattery(battery_capacity, battery_wh)
         self.cargo._capacity = cargo_capacity
 
+    def _slot(self, slot_index):
+        return next((s for s in self.slots if s.index == slot_index), None)
+
+    def uninstall(self, slot_index, internal_index):
+        """Self-only: the portable in a container bay goes to Inventory."""
+        slot = self._slot(slot_index)
+        if slot is None:
+            return Result("invalid_slot")
+        if slot.module_id is None:
+            return Result("slot_empty")
+        if not 0 <= internal_index < len(slot.internal_items):
+            return Result("invalid_internal_slot")
+        item_id = slot.internal_items[internal_index]
+        if item_id is None:
+            return Result("internal_slot_empty")
+        if self.world.inventory.space_for(item_id) < 1:
+            return Result("inventory_full")
+        self.world.inventory.add(item_id, 1)
+        slot.internal_items[internal_index] = None
+        slot.internal_count -= 1
+        return Result("ok")
+
+    def unmount(self, slot_index):
+        """Self-only: the module goes to Inventory; its bays must be empty."""
+        slot = self._slot(slot_index)
+        if slot is None:
+            return Result("invalid_slot")
+        if slot.module_id is None:
+            return Result("slot_empty")
+        if any(slot.internal_items):
+            return Result("holder_not_empty")
+        if self.world.inventory.space_for(slot.module_id) < 1:
+            return Result("inventory_full")
+        self.world.inventory.add(slot.module_id, 1)
+        slot.module_id = None
+        slot.internal_items = []
+        return Result("ok")
+
 
 class UnitRef:
     """DroneRef / VehicleRef / MobileUnitRef snapshot of a MobileUnit."""
@@ -1229,7 +1285,8 @@ class Fleet:
 
 class Computer:
     """`computer` (ship computer): deploy() turns an Inventory kit into a
-    Drone (chassis ids) or Pioneer; undeploy() returns the kit to Inventory.
+    Drone (chassis ids) or Pioneer; undeploy() removes any machine and returns
+    its kit (type_id), plus a unit's mounted modules and portables, to Inventory.
     `forced_status` makes every call answer that status instead."""
 
     def __init__(self, world):
@@ -1263,12 +1320,17 @@ class Computer:
         if self.forced_status:
             return Result(self.forced_status)
         unit = self._world.components.get(getattr(machine, "id", machine))
-        if not isinstance(unit, MobileUnit):
+        if unit is None or not getattr(unit, "type_id", ""):
             return Result("not_found")
-        if unit.cargo.count() > 0:
+        if isinstance(unit, PassiveStore):
+            return Result("not_undeployable")
+        if isinstance(getattr(unit, "cargo", None), Cargo) and unit.cargo.count() > 0:
             return Result("cargo_present")
         del self._world.components[unit.id]
-        self._world.inventory.add(unit.type_id, 1)
+        mounts = unit.slots if isinstance(unit, MobileUnit) else []
+        for item_id in [unit.type_id] + [i for s in mounts for i in [s.module_id] + s.internal_items]:
+            if item_id:
+                self._world.inventory.add(item_id, 1)
         return Result("ok")
 
     def decommission(self, outpost):

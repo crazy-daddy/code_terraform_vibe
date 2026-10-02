@@ -56,6 +56,8 @@ class _Input:
 
 
 class _Terraformer:
+    type_id = "plant_terraformer"
+
     def __init__(self, machine_id="plant_terraformer_1", status="running", held=None, phase=5, remaining=3000.0,
                  running=True, progress=0.5, km2_rate=1000.0):
         self.id = machine_id
@@ -164,80 +166,61 @@ class TerraformerFinishTests(StubTestCase):
         self.assertEqual(ctrl.fed, [])
 
 
-class _Computer:
-    def __init__(self, status="ok"):
-        self.status = status
-        self.calls = []
-
-    def undeploy(self, machine_id):
-        self.calls.append(machine_id)
-        return Result(self.status)
-
-
-class _RunControl:
-    def __init__(self, running=()):
-        self.running = set(running)
-        self.started = []
-
-    def is_running(self, machine_id):
-        return machine_id in self.running
-
-    def start(self, machine_id):
-        self.started.append(machine_id)
-        self.running.add(machine_id)
-        return Result("ok")
-
-
 class PlantsRetirementTests(StubTestCase):
     def setUp(self):
         super().setUp()
         self._discover = plants_retire.fluid_routing.discover_network_buildings
         self.machines = []
+        self.computer, self.run_control = self.world.computer, self.world.run_control
         plants_retire.fluid_routing.discover_network_buildings = lambda type_id, resolve=True: [(m, "outpost_home") for m in self.machines]
 
     def tearDown(self):
         plants_retire.fluid_routing.discover_network_buildings = self._discover
         super().tearDown()
 
+    def place(self, *machines):
+        self.machines = list(machines)
+        self.world.components.update({m.id: m for m in machines})
+
+    def retire(self):
+        return plants_retire.PlantsRetirement(self.computer, self.run_control)
+
     def publish(self, statuses):
         self.world.notebook.set(plant_terraformer.STATUS_KEY, {i: {"status": s, "tick": 0} for i, s in statuses.items()})
 
     def test_idle_before_completion(self):
-        self.machines = [_Terraformer()]
+        self.place(_Terraformer())
         self.publish({"plant_terraformer_1": "running"})
-        computer = _Computer()
-        self.assertEqual(plants_retire.PlantsRetirement(computer, _RunControl()).step(0), plants_retire.IDLE_SUMMARY)
-        self.assertEqual(computer.calls, [])
+        self.assertEqual(self.retire().step(0), plants_retire.IDLE_SUMMARY)
+        self.assertEqual(self.computer.calls, [])
 
     def test_empty_complete_machine_undeployed_and_pruned(self):
-        self.machines = [_Terraformer(status="complete")]
+        self.place(_Terraformer(status="complete"))
         self.publish({"plant_terraformer_1": "complete"})
-        computer = _Computer()
-        summary = plants_retire.PlantsRetirement(computer, _RunControl()).step(0)
-        self.assertEqual(computer.calls, ["plant_terraformer_1"])
+        summary = self.retire().step(0)
+        self.assertEqual(self.computer.calls, [("undeploy", "plant_terraformer_1")])
         self.assertIn("undeployed 1", summary)
         self.assertEqual(self.world.notebook.get(plant_terraformer.STATUS_KEY), {})
 
     def test_full_holders_restart_script_instead_of_undeploy(self):
-        self.machines = [_Terraformer(status="complete", held={"forage": 10})]
+        self.place(_Terraformer(status="complete", held={"forage": 10}))
         self.publish({"plant_terraformer_1": "complete"})
-        computer, run = _Computer(), _RunControl()
-        summary = plants_retire.PlantsRetirement(computer, run).step(0)
-        self.assertEqual(computer.calls, [])
-        self.assertEqual(run.started, ["plant_terraformer_1"])
+        summary = self.retire().step(0)
+        self.assertEqual(self.computer.calls, [])
+        self.assertEqual(self.run_control.running, {"plant_terraformer_1"})
         self.assertIn("emptying plant_terraformer_1", summary)
 
     def test_still_running_machine_left_alone_and_refusal_retried(self):
-        self.machines = [_Terraformer(status="complete"), _Terraformer("plant_terraformer_2", status="running")]
+        self.place(_Terraformer(status="complete"), _Terraformer("plant_terraformer_2", status="running"))
         self.publish({"plant_terraformer_1": "complete", "plant_terraformer_2": "running"})
-        computer = _Computer(status="inventory_full")
-        retire = plants_retire.PlantsRetirement(computer, _RunControl())
+        self.computer.forced_status = "inventory_full"
+        retire = self.retire()
         summary = retire.step(0)
-        self.assertEqual(computer.calls, ["plant_terraformer_1"])
+        self.assertEqual(self.computer.calls, [("undeploy", "plant_terraformer_1")])
         self.assertIn("finishing plant_terraformer_2", summary)
-        computer.status = "ok"
+        self.computer.forced_status = None
         retire.step(0)
-        self.assertEqual(computer.calls, ["plant_terraformer_1", "plant_terraformer_1"])
+        self.assertEqual(self.computer.calls, [("undeploy", "plant_terraformer_1")] * 2)
 
 
 if __name__ == "__main__":
