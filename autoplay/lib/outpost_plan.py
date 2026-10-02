@@ -32,6 +32,12 @@
 # An approved designate writes its roles into autoplay.outpost_roles at once
 # (status built). An approved found proposal stays approved; nothing is
 # bought or queued yet.
+#
+# Survey requests (survey_requests.REQUESTS_KEY, rewritten only on change):
+# every open found proposal whose site wants a survey first asks the scouts
+# for its area, centred on the placement square, radius = the widest scoring
+# range of its bundle (BIOSITE_RANGE_M when not known). Its id is the proposal
+# id; it goes once the proposal is approvable, built, rejected or dropped.
 
 from swallow import swallowed
 from archive import archive
@@ -42,6 +48,7 @@ import outpost_sites
 from outpost_needs import URGENCIES, needs, plan_hosts, log_plan
 from outpost_sites import REFINE_TOP, DETAIL_CHUNK, check, score, detail_slice, prepare, prepare_want, wants
 from outpost_sites import rank_sites, log_sites, read_world
+import survey_requests
 
 PROPOSALS_KEY = "autoplay.outpost_proposals"
 MARKER_PREFIX = "autoplay.outpost."
@@ -126,6 +133,21 @@ def pick_site(rows, proposal_id, proposals, tick):
         if not any(_dist(row["x"], row["y"], entry["x"], entry["y"]) < REJECT_RADIUS_M for entry in holds):
             return row
     return None
+
+
+def survey_areas(proposals, radius_of):
+    """
+    {proposal_id: {"x", "y", "radius", "why"}} survey requests of the open
+    found proposals that want a survey; radius_of(entry) = scoring radius.
+    """
+    out = {}
+    for pid, entry in open_entries(proposals):
+        if entry["kind"] != "found" or not entry.get("survey"):
+            continue
+        cx, cy = outpost_sites.centre(entry["x"], entry["y"])
+        out[pid] = {"x": float(cx), "y": float(cy), "radius": float(radius_of(entry)),
+                    "why": f"outpost proposal {pid}: {', '.join(entry['roles'])}"[:120]}
+    return out
 
 
 # --- proposals ---
@@ -478,6 +500,9 @@ class OutpostPlanner:
             self.log.end(f"{len(open_entries(proposals))} open, {calls} marker change(s)")
         if proposals != stored:
             save(proposals)
+        requests = survey_areas(proposals, self._radius)
+        if survey_requests.write_requests(requests):
+            self.log.debug(f"Outposts: survey requests now {sorted(requests)}.")
         if applied:
             return "changed"
         return "waiting" if open_entries(proposals) else "idle"
@@ -532,6 +557,11 @@ class OutpostPlanner:
             bundle = {"roles": entry["roles"], "ores": entry.get("ores", []), "biome": entry.get("lock")}
             self.wants[key] = prepare_want(self.ctx, wants(bundle, autoplay_roles.presets()))
         return self.wants.get(key)
+
+    def _radius(self, entry):
+        """Scoring radius of a found proposal's bundle (BIOSITE_RANGE_M when its want is not prepared)."""
+        want = self.wants.get(entry["id"][2:])
+        return want["radius"] if want else outpost_sites.BIOSITE_RANGE_M
 
     def _recheck_all(self, proposals, full):
         """Placement check of every open found proposal (full pass) or only the dragged ones (watch mode)."""

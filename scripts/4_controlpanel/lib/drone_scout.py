@@ -11,6 +11,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from unsupported_markers import clear_wrong_scanner_marker
+from survey_requests import read_requests, requested_first, request_at
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -25,8 +26,10 @@ class DroneScoutMixin:
     def _scan_candidates(self):
         """
         Every undiscovered POI not already confirmed empty, nearest-first
-        from the drone's current position. journal.has_scanned()/is_empty()
-        are checked (authoritative, shared across every scout) on top of
+        from the drone's current position, those inside an
+        autoplay.survey_requests area (lib/survey_requests.py) first.
+        journal.has_scanned()/is_empty() are checked (authoritative, shared
+        across every scout) on top of
         this drone's own empty-POI cache, so a POI another scout already
         resolved is skipped too, not just ones this drone personally
         scanned.
@@ -65,8 +68,12 @@ class DroneScoutMixin:
             candidates.append((x, y))
 
         candidates.sort(key=lambda c: self._host.distance_between(pos, c))
+        requests = read_requests()
+        candidates = requested_first(candidates, lambda c: c, requests)
+        requested = len([c for c in candidates if request_at(c[0], c[1], requests) is not None])
         self._host.log.debug(
-            f"[{self._host.name}] _scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s) "
+            f"[{self._host.name}] _scan_candidates(): {len(pois)} POI(s) total, {len(candidates)} unscanned candidate(s), "
+            f"{requested} in {len(requests)} survey request area(s) first "
             f"(skipped {skipped_scanned} already-scanned, {skipped_known_empty} journal-empty, {skipped_cached_empty} cache-empty)."
         )
         self._host.log.trace(f"_scan_candidates() exit: {len(candidates)} candidate(s).")

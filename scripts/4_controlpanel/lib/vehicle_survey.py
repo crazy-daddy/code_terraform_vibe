@@ -1,11 +1,13 @@
 # Vehicle mixin: sonar scanning/surveying, POI discovery, and the autonomous
-# survey loop (known POIs first, optional outward spiral fallback). Shared by
+# survey loop (known POIs first, contacts in autoplay.survey_requests areas
+# ahead of the rest, optional outward spiral fallback). Shared by
 # Rover and Pioneer via VehicleController (lib/vehicle.py). Drilling lives in
 # lib/vehicle_mining.py's VehicleMiningMixin.
 
 from archive import archive
 from version_guard import validate_game_version
 import outpost_mining
+from survey_requests import read_requests, requested_first, request_at
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all, reset_all
@@ -338,7 +340,11 @@ class VehicleSurveyMixin:
                     if (s.x, s.y) not in visited
                 ]
                 candidates.sort(key=lambda c: self._host.distance_between(current_pos, c["coords"]))
-                self._host.log.debug(f"[{self._host.name}] survey_known_pois(): {len(candidates)} nearest-first candidate(s) from {current_pos}.")
+                requests = read_requests()
+                candidates = requested_first(candidates, lambda c: c["coords"], requests)
+                requested = len([c for c in candidates if request_at(c["coords"][0], c["coords"][1], requests) is not None])
+                self._host.log.debug(f"[{self._host.name}] survey_known_pois(): {len(candidates)} nearest-first candidate(s) from {current_pos}, "
+                                     f"{requested} in {len(requests)} survey request area(s) first.")
 
                 chosen = None
                 for candidate in candidates:

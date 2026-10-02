@@ -233,7 +233,13 @@ Archive (one dict per concern):
    (`planner_loop.run_founding()`, no power/pipe/extractor passes; `Pass: founding pass` debug line gives
    the sim seconds).
 4b. Scout rework: `autoplay.survey_requests` served first by the scout, `wrong_scanner` contacts recorded
-   as known biomass, blacklist kept for truly unscannable contacts.
+   as known biomass, blacklist kept for truly unscannable contacts. **Code done** (live run pending):
+   `lib/survey_requests.py`; the founding pass writes one request per open found proposal with `survey`;
+   ground and drone scouts sort request-area contacts first. No new key for known biomass: the
+   `wrong_scanner` entries in `survey.unsupported_targets` already hold those positions for good, so
+   `outpost_sites.read_world()` reads them there. Open: a proposal whose area holds only unresolvable
+   contacts keeps `survey` (blocks approval) until the scout hardware or research changes.
+   Cheatsheet §11j, `tests/test_survey_requests.py`.
 5. Founding execution: cash consumer `outpost_founding`, kit purchase, blueprint, built detection,
    ore reassignment. Verify the Pioneer construction loop carries `outpost_kit` for an outpost job.
 6. Cheatsheet §11 (new section: constants, weights, archive keys), TODO.md entry, DESIGN_HISTORY note on the

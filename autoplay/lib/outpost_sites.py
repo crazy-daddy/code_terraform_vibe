@@ -12,7 +12,8 @@
 #
 # Knowledge levels per contact (in-game data only, no world knowledge):
 #   1  nocturna.points_of_interest() contact, kind "unknown"
-#   2  kind known (journal.discovered_sites(), or a scanned POI kind), details None
+#   2  kind known (journal.discovered_sites(), a scanned POI kind, or biomass
+#      from a sonar "wrong_scanner" verdict: survey_requests.known_biomass()), details None
 #   3  journal surveyed site: ore item, purity, hardness, exact fluid
 # Level 1-2 contacts count by expected value. The prior comes from this save's
 # own scans: kind shares over every contact with a known kind, ore and exotic
@@ -56,6 +57,7 @@ from grid_geom import TILE_M
 from autoplay_roles import role_flag, fluids_for
 from outpost_mining import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
+from survey_requests import read_known_biomass
 
 OUTPOST_CLEARANCE_M = 40   # simworker plan.outpostClearanceM
 POI_CLEARANCE_M = 20       # simworker plan.outpostPoiClearanceM
@@ -677,12 +679,21 @@ def site_rows(sites):
     return rows
 
 
-def poi_rows(points):
-    """[{"x", "y", "kind"}] of nocturna.points_of_interest()."""
+def poi_rows(points, biomass=()):
+    """
+    [{"x", "y", "kind"}] of nocturna.points_of_interest(); an "unknown" contact
+    at a `biomass` position (survey_requests.known_biomass(), whole meters
+    rounded) is kind "biomass".
+    """
+    known = set([(int(round(x)), int(round(y))) for x, y in biomass])
     rows = []
     for point in points:
         try:
-            rows.append({"x": float(point.x), "y": float(point.y), "kind": point.kind})
+            x, y = float(point.x), float(point.y)
+            kind = point.kind
+            if kind == "unknown" and (int(round(x)), int(round(y))) in known:
+                kind = "biomass"
+            rows.append({"x": x, "y": y, "kind": kind})
         except Exception as error:
             swallowed("outpost_sites.poi_rows: point read", error)
     return rows
@@ -717,7 +728,7 @@ def read_world(outposts, kits, range_m):
         except Exception as error:
             swallowed("outpost_sites.read_world: journal.discovered_sites", error)
     return {"bounds": bounds, "outposts": outposts, "ghosts": read_ghosts(),
-            "pois": poi_rows(points), "sites": site_rows(sites), "range_m": range_m,
+            "pois": poi_rows(points, read_known_biomass()), "sites": site_rows(sites), "range_m": range_m,
             "hardness_limit": hardness_limit(kits)}
 
 

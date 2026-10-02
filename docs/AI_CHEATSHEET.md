@@ -81,6 +81,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ exclusive biosite claims + scout empty-POI cache + mission persistence | `drone_claims.py` — see §2h |
 | &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering | `drone_cargo.py` |
 | &nbsp;&nbsp;↳ scout role loop (POI bio-scanning) | `drone_scout.py` |
+| Survey request areas scouts serve first (`autoplay.survey_requests`) + sonar `wrong_scanner` contacts as known biomass | `survey_requests.py` — see `docs/cheatsheet/autoplay.md` §11j |
 | &nbsp;&nbsp;↳ miner role loop (biosite extraction) | `drone_mining.py` |
 | &nbsp;&nbsp;↳ floating hauler role loop (drills and Depot outposts → Depots, no home) | `drone_hauler.py` — see §2j |
 | &nbsp;&nbsp;↳ aftermath collector role loop (plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
