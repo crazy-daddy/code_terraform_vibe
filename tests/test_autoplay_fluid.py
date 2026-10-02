@@ -10,32 +10,11 @@ import blueprint_queue as bq
 import infra_topology as topo
 from construction_plan import ATOMIC_STEP_BUDGET
 from test_autoplay_geom import ops
-from test_autoplay_power import Result, Job
+from test_autoplay_power import Result, Job, Site
 
 
 def k(tx, ty):
     return g.tile_key(tx, ty)
-
-
-class Site:
-    def __init__(self, kind, x, y, machine="", fluid=None):
-        self._kind = kind
-        self.x = x
-        self.y = y
-        self._machine = machine
-        self._fluid = fluid
-
-    def kind(self):
-        return self._kind
-
-    def pump_id(self):
-        return self._machine
-
-    def cap_id(self):
-        return self._machine
-
-    def fluid(self):
-        return self._fluid
 
 
 class Journal:
@@ -121,9 +100,9 @@ class RolesTests(harness.StubTestCase):
         presets = {"farm": ["water"], "wildlife": {"in": ["ammonia", "water"]}, "power": {"in": ["steam", "oil"]},
                    "condenser": {"in": ["steam"], "out": ["water"]}}
         got = roles.fluids_for(["power", "wildlife", "farm"], presets)
-        self.assertEqual(got, {"in": ["steam", "oil", "ammonia", "water"], "out": [], "order": ["steam", "oil", "ammonia", "water"]})
+        self.assertEqual(got, {"in": ["steam", "oil", "ammonia", "water"], "out": [], "supply": [], "order": ["steam", "oil", "ammonia", "water"]})
         got = roles.fluids_for(["condenser", "farm"], presets)
-        self.assertEqual(got, {"in": ["steam", "water"], "out": ["water"], "order": ["steam", "water"]})
+        self.assertEqual(got, {"in": ["steam", "water"], "out": ["water"], "supply": [], "order": ["steam", "water"]})
         self.assertEqual(roles.fluids_for(["nope"], presets)["order"], [])
         self.assertEqual(roles.fluids_for(None, presets)["order"], [])
 

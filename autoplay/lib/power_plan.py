@@ -25,11 +25,13 @@
 
 from atomic import run_atomic, run_chunked
 from swallow import swallowed
-from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key
-from blueprint_queue import stock, queue_power_route
-from infra_topology import outpost_positions, surveyed_sites
+from grid_geom import FOOTPRINT_TILES, outpost_box, extractor_box, box_closest, tile_centre, tile_xy, tile_key, capped_l_routes
+from blueprint_queue import stock, queue_power_route, open_planned
+from infra_topology import outpost_positions, surveyed_sites, home_outpost_id
 from construction_plan import DEFAULT_PRIORITY
 from drill_sites import known_positions
+import autoplay_roles
+import supply_tiers
 
 POWER_ITEM = "power_line_segment"
 MAX_LINKS_PER_PASS = 1   # power links (plan_power_line routes) queued per pass
@@ -327,7 +329,34 @@ def _game_reads():
         return None
     outpost_xy = outpost_positions() or {}
     sites = surveyed_sites()
-    return (rows, outpost_xy, site_machines(sites, known_positions()))
+    return (rows, outpost_xy, site_machines(sites, known_positions()), _deferred_machines(sites, outpost_xy))
+
+
+def _deferred_machines(sites, outpost_xy):
+    """Ids of built fluid extractors whose link is plan-ahead (supply_tiers.urgent_producers() leaves them out)."""
+    demand = autoplay_roles.demand(sorted(outpost_xy), autoplay_roles.outpost_roles(), autoplay_roles.presets(), home_outpost_id())
+    rows = supply_tiers.fluid_sites(sites)
+    urgent = supply_tiers.urgent_producers(rows, demand, outpost_xy)
+    return {row["machine"] for row in rows if row["machine"] and row["machine"] not in urgent}
+
+
+def deferred_components(comps, deferred):
+    """Indices of the components whose every member is a plan-ahead extractor (in `deferred`)."""
+    return {index for index, comp in enumerate(comps) if all(name in deferred for _box, _ring, name in comp["boxes"])}
+
+
+def split_links(count, edges, deferred, rejected=()):
+    """
+    (urgent, ahead) links: urgent = spanning_links() over the edges between
+    components not in `deferred`, minus the `rejected` (ci, cj) pairs;
+    ahead = spanning_links() over every edge, only once no urgent link is
+    left (each then touches a deferred component or was rejected).
+    """
+    urgent = spanning_links(count, [e for e in edges if e[1] not in deferred and e[2] not in deferred])
+    urgent = [e for e in urgent if (e[1], e[2]) not in rejected]
+    if urgent:
+        return (urgent, [])
+    return ([], spanning_links(count, edges))
 
 
 def _end_name(member, tile):
@@ -347,34 +376,92 @@ class PowerPlanner:
 
     def run_pass(self, topo, power_tiles=None):
         """
-        "waiting" (power jobs still open, or links blocked by stock), "queued"
-        (a link was planned), "joined" (one placed grid, nothing to do) or
-        "error" (power_control unreadable). power_tiles: tile_key() set of the
-        power-line ledger (power_survey.ledger_tiles()); lines there are link ends too.
+        "waiting" (urgent power jobs still open, links blocked by stock, or a
+        plan-ahead link of ours still open), "queued" (an urgent link was
+        planned), "ahead" (a plan-ahead link chunk was planned), "joined"
+        (nothing urgent left to join) or "error" (power_control unreadable).
+        power_tiles: tile_key() set of the power-line ledger
+        (power_survey.ledger_tiles()); lines there are link ends too.
+        Links to grids made only of plan-ahead extractors
+        (supply_tiers.urgent_producers()) come after every urgent link, at
+        supply_tiers.PLAN_AHEAD_PRIO, one chunk of at most
+        PLAN_AHEAD_MAX_PIECES pieces at a time; open jobs of such a chunk do
+        not hold up urgent links.
         """
-        if any(row["medium"] == "power" for row in topo.job_rows):
-            open_jobs = len([row for row in topo.job_rows if row["medium"] == "power"])
+        ahead_ids = set(open_planned(("power_line",), supply_tiers.PLAN_AHEAD_PRIO))
+        open_jobs = len([row for row in topo.job_rows if row["medium"] == "power" and row["id"] not in ahead_ids])
+        if open_jobs:
             self.log.debug(f"Power: {open_jobs} power-line job(s) still open; waiting for the grids to merge.")
             return "waiting"
         reads = _game_reads()
         if reads is None:
             self.log.debug("Power: power_control unreadable; pass skipped.")
             return "error"
-        rows, outpost_xy, field_xy = reads
+        rows, outpost_xy, field_xy, deferred_machines = reads
         comps, unplaced = components(rows, outpost_xy, field_xy)
         if unplaced:
             self.log.debug(f"Power: {len(unplaced)} grid(s) without a placeable member skipped: {', '.join(unplaced[:5])}")
         if len(comps) < 2:
             self.log.debug(f"Power: {len(rows)} grid(s), {len(comps)} placed; nothing to join.")
             return "joined"
+        deferred = deferred_components(comps, deferred_machines)
         runs, contested = attach_lines(comps, power_tiles or set())
         self.log.debug(f"Power: {len(power_tiles or ())} ledger tile(s) -> {runs} line run(s) as link ends, {contested} contested tile(s) dropped.")
         flat = flat_boxes(comps)
-        links = spanning_links(len(comps), component_edges(flat))
-        self.log.start(f"Power: joining {len(comps)} grids ({len(links)} link(s) missing)")
-        outcome = self._queue_links(comps, flat, links)
+        index = {comp["anchor"]: i for i, comp in enumerate(comps)}
+        rejected = {(min(index[a], index[b]), max(index[a], index[b])) for a, b in self.failed if a in index and b in index}
+        urgent, ahead = split_links(len(comps), component_edges(flat), deferred, rejected)
+        if urgent:
+            self.log.start(f"Power: joining {len(comps)} grids ({len(urgent)} urgent link(s) missing, {len(deferred)} plan-ahead grid(s))")
+            outcome = self._queue_links(comps, flat, urgent)
+            self.log.end(outcome)
+            return "queued" if outcome.startswith("queued") else "waiting"
+        if not ahead:
+            self.log.debug(f"Power: {len(comps)} grid(s) placed, none to join.")
+            return "joined"
+        if ahead_ids:
+            self.log.debug(f"Power: {len(ahead)} plan-ahead link(s) missing; a plan-ahead line of ours is still open.")
+            return "waiting"
+        self.log.start(f"Power: {len(ahead)} plan-ahead link(s) missing")
+        outcome = self._queue_ahead(comps, flat, ahead, deferred)
         self.log.end(outcome)
-        return "queued" if outcome.startswith("queued") else "waiting"
+        return "ahead" if outcome.startswith("queued") else "joined"
+
+    def _queue_ahead(self, comps, flat, links, deferred):
+        """
+        Queues the cheapest plan-ahead link at PLAN_AHEAD_PRIO: whole when it
+        fits PLAN_AHEAD_MAX_PIECES, else the first PLAN_AHEAD_MAX_PIECES pieces
+        of an L from the non-deferred end (the next pass continues from the
+        recorded line). Needs the pieces plus PLAN_AHEAD_RESERVE in stock.
+        """
+        members = [name for comp in comps for _box, _ring, name in comp["boxes"]]
+        have = stock(POWER_ITEM)
+        prio = supply_tiers.PLAN_AHEAD_PRIO
+        for cost, ci, cj, i, j in sorted(links):
+            pair = (comps[ci]["anchor"], comps[cj]["anchor"])
+            if pair in self.failed:
+                continue
+            if ci in deferred and cj not in deferred:
+                i, j = j, i
+            dist, tile_a, tile_b = box_closest(flat[i][1], flat[j][1])
+            names = f"{_end_name(members[i], tile_a)} -> {_end_name(members[j], tile_b)}"
+            pieces = min(cost, supply_tiers.PLAN_AHEAD_MAX_PIECES)
+            if pieces + supply_tiers.PLAN_AHEAD_RESERVE > have:
+                return f"waiting for {POWER_ITEM}: {names} needs {pieces} + {supply_tiers.PLAN_AHEAD_RESERVE} reserve, {have} in stock"
+            if cost <= supply_tiers.PLAN_AHEAD_MAX_PIECES:
+                rings = [(members[k], flat[k][1]) for k in (i, j) if flat[k][2]]
+                if self._queue_link(names, dist, tile_a, tile_b, rings, prio):
+                    return f"queued {names}"
+                self.failed.add(pair)
+                continue
+            for legs in capped_l_routes(tile_a, tile_b, supply_tiers.PLAN_AHEAD_MAX_PIECES):
+                status, ids, message = queue_power_route(legs, prio)
+                if status == "ok" and ids:
+                    self.log.print(f"Power link {names} (plan-ahead chunk, prio {prio}): {pieces} of {dist} tiles, {len(ids)} job(s) queued.")
+                    return f"queued chunk {names}"
+                self.log.debug(f"{names} chunk via {legs}: {status} {message}")
+            self.failed.add(pair)
+        return "no plan-ahead link could be planned"
 
     def _queue_links(self, comps, flat, links):
         """Queues up to MAX_LINKS_PER_PASS links; returns the block's outcome line."""
@@ -408,7 +495,7 @@ class PowerPlanner:
             return f"waiting for {POWER_ITEM} ({have} in stock)"
         return "no link could be planned"
 
-    def _queue_link(self, names, dist, tile_a, tile_b, rings):
+    def _queue_link(self, names, dist, tile_a, tile_b, rings, prio=DEFAULT_PRIORITY):
         """
         True when the link was queued. rings = [(member id, box)] of field
         structures the link ends on that also feed other members: their
@@ -421,8 +508,10 @@ class PowerPlanner:
             return False
         ring_part = [leg for _name, box in rings for leg in ring_legs(box)]
         ring_note = f" + ring around {', '.join([name for name, _box in rings])}" if rings else ""
+        if prio != DEFAULT_PRIORITY:
+            ring_note += f", prio {prio}"
         for legs in link_routes(tile_a, tile_b):
-            status, ids, message = queue_power_route((legs if dist else []) + ring_part, DEFAULT_PRIORITY)
+            status, ids, message = queue_power_route((legs if dist else []) + ring_part, prio)
             if status == "ok" and ids:
                 self.log.print(f"Power link {names}: {dist} tiles{ring_note}, {len(ids)} job(s) queued.")
                 return True

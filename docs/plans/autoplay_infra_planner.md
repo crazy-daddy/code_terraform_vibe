@@ -57,6 +57,7 @@ autoplay/
   lib/
     planner_loop.py       run loop: one pass per PASS_SLEEP_S, ends when nothing to do
     autoplay_roles.py     role presets + outpost→fluids resolution
+    supply_tiers.py       which extractor / pipe / power work is urgent vs plan-ahead (shared rule)
     grid_geom.py          pure: tile snapping, segment↔tile sets, Manhattan/L routes, A* on tiles
     infra_topology.py     reads list_pipes()/pending constructions/power grids → occupancy per layer+fluid
     extractor_plan.py     which sites get which extractor (demand pass, plan-ahead pass)
@@ -124,16 +125,24 @@ New extractors get a spur from their (centre-anchored) footprint to the nearest 
 Power has no fluid identity, so any contact is fine; power bridges are needed only to cross
 a power line that must stay a separate subnet (none in the one-grid goal).
 
-**Extractors.**
-- Demand pass (prio 0): ores with deficit from `lib/production.py` (reuse its deficit API,
-  imported from the deployed lib) → best surveyed `MiningSite` of that item by
-  purity/(distance to grid), hardness ≤ best drill kit in Inventory; wells when a role's
-  fluid has no producer or supply (`flow_rate()` sum) < consumers' rated draw.
-- Plan-ahead pass (prio 1), only when the demand pass queued nothing: remaining untapped
-  water wells within `PLAN_AHEAD_RADIUS_M` of the network, plus their pipe and power spurs.
-- Budget per pass: at most `MAX_NEW_JOBS_PER_PASS` blueprints and only if Inventory holds the
-  kit (structures) / enough segments for the route (`Construction.required_item/count`
-  of the result, cancelled again if stock is short — or pre-checked when item ids are confirmed).
+**Extractors** (decided with the user, 2026-10-02; implemented, see cheatsheet §11g).
+- Long term every extractable site gets an extractor; order = what is needed now or soon,
+  and near the outposts that need it. Example: a power outpost founded next to three steam
+  vents → cap those (nearest first) and pipe them there; a fluid with consumers but no
+  supply jumps the queue; a fluid nobody takes waits.
+- Tiers per fluid site (`supply_tiers`): *now* = nearest site of a consumed fluid with no
+  supply; *soon* = within `NEAR_TILES` of a consumer outpost; *plan-ahead* = consumed but far,
+  then fluids no outpost takes. The same rule marks built producers urgent or plan-ahead, so
+  their pipes and power links get the same priority.
+- Mining drills need no pipes; one drill per ore the Smelters use is enough, on the site of
+  that ore nearest a Smelter outpost (lightest drill that cuts it).
+- **Construction chunks** (user): plan-ahead work must never delay urgent work. Plan-ahead jobs
+  run at prio 1, one chunk at a time, at most `PLAN_AHEAD_MAX_PIECES` pieces per pipe route or
+  power link (longer ones are built in several chunks), only with the items in stock plus
+  `PLAN_AHEAD_RESERVE` (no Fabricator demand, urgent stock untouched), and only when the
+  urgent work of the passes before is done.
+- Supply rates (t/h) are not compared with consumer draw: machine counts per outpost are not
+  known to the planner, and distance + tier already give the order the user wants.
 
 ## Changes outside `autoplay/` (generic blueprint priority)
 Constraints: these changes stand alone — nothing under `scripts/` imports or knows about
@@ -166,10 +175,10 @@ headless Automation (`infra_planner_automation.py`, role marker `# ct-automation
    `gas_pipe_segment`, `liquid_pipe_segment`, `power_line_segment`, `gas_pipe_bridge`,
    `liquid_pipe_bridge`, `power_line_bridge`, `mining_drill[_industrial|_heavy]_kit`
    (all Fabricator-made → shortages go to the existing Fabricator demand path).
-   Probe run done (`automation_3.log`, 2026-10-01) — see **Probe results**. Still open:
-   pump kit ids (no untapped surveyed well existed) and why a straight 60 m pipe yielded
-   only 2 pieces. Both answered by the first live pass (read `required_item`, compare
-   piece count). Record all answers in the cheatsheet.
+   Probe run done (`automation_3.log`, 2026-10-01) — see **Probe results**. Pump kit ids:
+   the pump items themselves (`water_pump`, `oil_pump`; docs/database/equipment_fluids.md),
+   `construction_plan.EXTRACTOR_KITS`. Still open: why a straight 60 m pipe yielded only
+   2 pieces (first live pass compares the piece count). Record answers in the cheatsheet.
 1. `grid_geom` + `infra_topology` + tests (pure geometry, occupancy from fake pipes). **Done** (`cd09031`, `f1b87ca`).
 2. Blueprint priority in `construction_plan`/`pioneer` + tests. **Done** (`3cc91bd`).
 3. `power_plan` (join subnets) — lowest risk, first live use. **Done** (`48f8b0d`): `power_plan`, `blueprint_queue` (power only), `planner_loop` + `autoplay/infra_planner_automation.py`, cheatsheet §11b/§11c.
@@ -190,7 +199,12 @@ headless Automation (`infra_planner_automation.py`, role marker `# ct-automation
    `blueprint_queue.queue_pipe_route()`, cheatsheet §11e/§11f, `tests/test_autoplay_fluid.py`. Not live-tested.
    Role presets carry `"in"`/`"out"` fluids, so outposts produce too (`condenser` steam → water,
    `refinery_<fluid>` raw → refined). Open: `autoplay.networks` is never pruned (phase 5b).
-5. `extractor_plan` demand pass, then plan-ahead pass at prio 1.
+5. `extractor_plan` + `supply_tiers`: urgency tiers, fluid extractors, one drill per Smelter ore,
+   plan-ahead chunks in the fluid and power passes. **Done** (not live-tested). Condensers and
+   tanks are no supply (a water pump beats a condenser). Plan-ahead stock comes from the new
+   construction stock in `site_supply` (segments, gas/liquid bridges, one kit per untapped site,
+   Fabricator idle time). Open on the first live run: whether a structure job's `position` is
+   the site centre (ghost matching uses `MATCH_TILES`).
 5b. `relic_cleanup` (per-layer deconstruction of dead pipe components).
 6. sync flag + docs; TODO.md entry under "Building planner". **Done** (pulled ahead of 4/5): `scripts_sync.py --include-autoplay`
    (`merge_autoplay()`), entrypoint renamed to the Automation role `infra_planner_automation`, docs in

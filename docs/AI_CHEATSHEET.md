@@ -32,7 +32,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |
 | 7 | Control Room panels | [`cheatsheet/panels.md`](cheatsheet/panels.md) |
 | 8, 8a, 9, 10 | Live debugging, sim fast-forward via WebView2 DevTools, tiered `scripts/` + `scripts_sync.py`, offline stub tests (`tests/`) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
-| 11–11f | Autoplay infrastructure planner (`autoplay/`): map tile geometry, footprints, router, utility-layer occupancy, power pass, blueprint queue, power-line ledger, fluid pass, outpost roles | [`cheatsheet/autoplay.md`](cheatsheet/autoplay.md) |
+| 11–11g | Autoplay infrastructure planner (`autoplay/`): map tile geometry, footprints, router, utility-layer occupancy, power pass, blueprint queue, power-line ledger, fluid pass, outpost roles, extractor pass and urgency tiers (plan-ahead chunks) | [`cheatsheet/autoplay.md`](cheatsheet/autoplay.md) |
 
 ## 🗺️ Progression Walkthroughs & Speedrun Guides
 

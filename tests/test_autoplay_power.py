@@ -4,6 +4,7 @@ import unittest
 
 import harness
 import grid_geom as g
+import infra_topology as topo
 import power_plan as pp
 import blueprint_queue as bq
 from construction_plan import ATOMIC_STEP_BUDGET, PRIORITY_KEY
@@ -37,11 +38,19 @@ class Power:
 
 
 class Site:
-    def __init__(self, kind, x, y, machine=""):
+    """Surveyed site fake (WaterWell / OilWell / ThermalVent / ExoticDeposit / MiningSite surface)."""
+
+    def __init__(self, kind, x, y, machine="", fluid=None, rate=None, site_id=None, item=None, hardness=1, purity="standard"):
         self._kind = kind
+        self.id = site_id or f"{kind}_{x}_{y}"
         self.x = x
         self.y = y
         self._machine = machine
+        self._fluid = fluid
+        self._rate = rate
+        self.item_id = item
+        self.hardness = hardness
+        self.purity = purity
 
     def kind(self):
         return self._kind
@@ -51,6 +60,24 @@ class Site:
 
     def cap_id(self):
         return self._machine
+
+    def fluid(self):
+        return self._fluid
+
+    def medium(self):
+        return None if self._fluid is None else topo.fluid_medium(self._fluid)
+
+    def flow_rate(self):
+        return self._rate
+
+    def yield_tier(self):
+        return None
+
+    def base_steam_rate(self):
+        return self._rate
+
+    def base_rate(self):
+        return self._rate
 
 
 class Journal:
@@ -295,15 +322,15 @@ class PowerPassTests(harness.StubTestCase):
         self.assertEqual(self.world.notebook.data.get(PRIORITY_KEY, {}), {})
 
     def test_link_to_shared_field_structure_rings_it(self):
-        self.world.services["journal"] = Journal([Site("water", 220, 20, "wp1"), Site("water", 320, 20, "wp2")])
+        self.world.services["journal"] = Journal([Site("water", 220, 20, "wp1"), Site("water", 290, 20, "wp2")])
         self.world.services["power_control"] = Power([Grid("main", outposts=["home"], machines=["wp1"]),
                                                      Grid("wp2", machines=["wp2"])])
         self.assertEqual(self.run_pass(), "queued")
-        # wp1 box tiles 20..23, wp2 box 30..33: link (23,0)->(30,0), then the four sides of wp1's footprint
-        self.assertEqual(self.blueprints.calls, [(235.0, 5.0, 305.0, 5.0), (205.0, 5.0, 235.0, 5.0),
+        # wp1 box tiles 20..23, wp2 box 27..30: link (23,0)->(27,0), then the four sides of wp1's footprint
+        self.assertEqual(self.blueprints.calls, [(235.0, 5.0, 275.0, 5.0), (205.0, 5.0, 235.0, 5.0),
                                                  (235.0, 5.0, 235.0, 35.0), (235.0, 35.0, 205.0, 35.0),
                                                  (205.0, 35.0, 205.0, 5.0)])
-        self.assertEqual(len(bq.planned()), 7 + pp.RING_PIECES)
+        self.assertEqual(len(bq.planned()), 4 + pp.RING_PIECES)
         self.assertIn("ring around wp1", self.debug_log())
 
     def test_waits_while_power_job_open(self):
@@ -333,9 +360,9 @@ class PowerPassTests(harness.StubTestCase):
     def test_rejected_link_not_retried(self):
         self.blueprints.answers = ["locked"]
         planner = pp.PowerPlanner(self.log)
-        self.assertEqual(self.run_pass(planner), "queued")  # next link (wp1 -> wp2) still queued
+        self.assertEqual(self.run_pass(planner), "waiting")  # the only urgent link (home -> wp1) was rejected
         calls = len(self.blueprints.calls)
-        self.run_pass(planner)
+        self.assertEqual(self.run_pass(planner), "ahead")    # far wp2 is plan-ahead: next pass links it in a chunk
         self.assertNotIn(self.blueprints.calls[0], self.blueprints.calls[calls:])
 
     def test_prune_planned(self):

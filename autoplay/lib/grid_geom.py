@@ -359,3 +359,57 @@ def bridge_tiles(middle, axis):
     if axis == "horizontal":
         return [tile_key(tx - 1, ty), middle, tile_key(tx + 1, ty)]
     return [tile_key(tx, ty - 1), middle, tile_key(tx, ty + 1)]
+
+
+def truncate_steps(steps, max_pieces):
+    """
+    The first part of path_plan() steps that advances at most max_pieces tiles
+    (a bridge advances 2): whole steps while they fit, the overflowing run cut
+    short, a bridge that does not fit dropped. Returns (steps, truncated).
+    """
+    out = []
+    left = max_pieces
+    for step in steps:
+        if step[0] == "bridge":
+            if left < 2:
+                return (out, True)
+            out.append(step)
+            left -= 2
+            continue
+        pieces = run_pieces(step[1], step[2])
+        if pieces <= left:
+            out.append(step)
+            left -= pieces
+            continue
+        if left > 0:
+            out.append(("run", step[1], run_tiles(step[1], step[2])[left]))
+        return (out, True)
+    return (out, False)
+
+
+def capped_l_routes(tile_a, tile_b, max_pieces):
+    """
+    The two L routes from tile_a towards tile_b (x first, then y first), each
+    cut after max_pieces pieces: lists of legs [x1, y1, x2, y2] on tile centres.
+    """
+    ax, ay = tile_xy(tile_a)
+    bx, by = tile_xy(tile_b)
+    routes = []
+    for corner in (tile_key(bx, ay), tile_key(ax, by)):
+        legs = []
+        left = max_pieces
+        start = tile_a
+        for end in (corner, tile_b):
+            pieces = run_pieces(start, end)
+            if pieces == 0 or left == 0:
+                start = end
+                continue
+            stop = end if pieces <= left else run_tiles(start, end)[left]
+            left -= min(pieces, left)
+            sx, sy = tile_centre(start)
+            ex, ey = tile_centre(stop)
+            legs.append([sx, sy, ex, ey])
+            start = end
+        if legs and legs not in routes:
+            routes.append(legs)
+    return routes

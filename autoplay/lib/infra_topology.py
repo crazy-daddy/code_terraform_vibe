@@ -41,6 +41,10 @@ JOB_CHUNK = 20    # construction jobs per atomic read slice (worst ~165 operatio
 
 _JOB_GETTERS = ("pending_constructions", "active_constructions", "paused_constructions")
 
+# Construction kinds of field extractors (point structures on a surveyed site).
+EXTRACTOR_KINDS = ("thermal_cap", "water_pump", "oil_pump", "exotic_gas_cap", "exotic_spring_tap",
+                   "mining_drill", "mining_drill_industrial", "mining_drill_heavy")
+
 
 def fluid_medium(fluid):
     """Pipe medium ("gas" / "liquid") that carries `fluid`."""
@@ -100,6 +104,19 @@ def read_job_slice(jobs):
             continue
         kind = str(getattr(job, "kind", "") or "")
         rows.append({"id": job.id, "kind": kind, "medium": medium, "tiles": job_tiles(pos[0], pos[1])})
+    return rows
+
+
+def read_structure_slice(jobs):
+    """Plain rows {id, kind, x, y} for the extractor jobs of a slice of Construction objects (position = the site)."""
+    rows = []
+    for job in jobs:
+        kind = str(getattr(job, "kind", "") or "")
+        if kind not in EXTRACTOR_KINDS:
+            continue
+        pos = _xy(getattr(job, "position", None))
+        if pos is not None:
+            rows.append({"id": job.id, "kind": kind, "x": pos[0], "y": pos[1]})
     return rows
 
 
@@ -264,6 +281,7 @@ class Topology:
         self.cache = {}        # pipe id -> read_pipe_slice() row
         self.pipe_rows = []
         self.job_rows = []
+        self.structure_rows = []   # read_structure_slice() rows: extractor ghosts
         self.job_ids = set()   # every pending/active/paused job id, utility or not
         self.jobs_ok = False   # False when a job list could not be read: job_ids is then incomplete
         self.occ = {layer: {} for layer in LAYERS}
@@ -323,6 +341,7 @@ class Topology:
                     self.jobs_ok = False
         self.job_ids = {job.id for job in jobs}
         self.job_rows = run_batched(read_job_slice, jobs, JOB_CHUNK)
+        self.structure_rows = run_batched(read_structure_slice, jobs, JOB_CHUNK)
         networks = archive.get(NETWORKS_KEY, {})
         networks = networks if isinstance(networks, dict) else {}
         labels = planned_labels(networks)

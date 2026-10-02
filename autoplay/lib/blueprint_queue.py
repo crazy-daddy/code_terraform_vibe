@@ -14,6 +14,8 @@ from swallow import swallowed
 from construction_plan import PRIORITY_KEY, DEFAULT_PRIORITY
 from grid_geom import tile_centre, run_tiles, bridge_tiles
 from infra_topology import NETWORKS_KEY
+from production import construction_site_id
+from storage import takeable_stock
 
 PLANNED_KEY = "autoplay.planned"
 
@@ -22,15 +24,27 @@ def _blueprints():
     return get_component("construction_blueprint")
 
 
-def stock(item_id):
-    """Count of item_id in the planet inventory, 0 when unreadable."""
-    inventory = get_component("inventory")
-    if inventory is None:
-        return 0
+def _construction_outpost():
+    """OutpostRef where Constructor Pioneers load (production.construction_site_id()); None = home."""
+    network = get_component("outpost_network")
+    if network is None:
+        return None
+    site_id = construction_site_id()
     try:
-        return int(inventory.count(item_id) or 0)
+        for ref in network.outposts() or []:
+            if ref.id == site_id:
+                return ref
     except Exception as error:
-        swallowed("blueprint_queue.stock: inventory.count", error)
+        swallowed("blueprint_queue._construction_outpost: outpost_network.outposts", error)
+    return None
+
+
+def stock(item_id):
+    """Units of item_id a Constructor Pioneer can load at its home (storage.takeable_stock()), 0 when unreadable."""
+    try:
+        return int(takeable_stock(item_id, outpost=_construction_outpost()) or 0)
+    except Exception as error:
+        swallowed("blueprint_queue.stock: takeable_stock", error)
         return 0
 
 
@@ -79,6 +93,8 @@ def cancel(ids):
             return planned
 
         archive.transaction(PLANNED_KEY, {}, updater)
+        if any(blueprint_id in (archive.get(PRIORITY_KEY, {}) or {}) for blueprint_id in cancelled):
+            archive.transaction(PRIORITY_KEY, {}, updater)
     return len(cancelled)
 
 
@@ -212,6 +228,46 @@ def queue_pipe_route(fluid, steps, prio, held):
             _record(step_ids, {"k": kind, "f": fluid, "p": prio, "seg": seg, "site": None}, prio)
     _note_network(fluid, network_runs(steps))
     return ("ok", ids, "")
+
+
+def queue_structure(kind, x, y, prio, site_id, fluid=None):
+    """
+    Plans one extractor (plan_structure(kind, x, y)) on a surveyed site and
+    records it in autoplay.planned with its site id. Returns (status, ids, message).
+    """
+    blueprints = _blueprints()
+    if blueprints is None:
+        return ("no_component", [], "construction_blueprint missing")
+    try:
+        result = blueprints.plan_structure(kind, x, y)
+    except Exception as error:
+        swallowed("blueprint_queue.queue_structure: plan_structure", error)
+        return ("error", [], str(error))
+    status = getattr(result, "status", "error")
+    ids = list(getattr(result, "blueprint_ids", None) or []) if status == "ok" else []
+    if ids:
+        _record(ids, {"k": kind, "f": fluid, "p": prio, "seg": [x, y, x, y], "site": site_id}, prio)
+    return (status, ids, getattr(result, "message", ""))
+
+
+def job_need(blueprint_id):
+    """(required_item, required_count) of an open job, (None, 0) when not found or unreadable."""
+    blueprints = _blueprints()
+    if blueprints is None:
+        return (None, 0)
+    try:
+        for job in blueprints.pending_constructions() or []:
+            if job.id == blueprint_id:
+                return (job.required_item, int(job.required_count or 0))
+    except Exception as error:
+        swallowed("blueprint_queue.job_need: pending_constructions", error)
+    return (None, 0)
+
+
+def open_planned(kinds=None, prio=None):
+    """autoplay.planned entries (blueprint id -> entry) of the given kinds and prio (None = any)."""
+    return {bid: e for bid, e in planned().items()
+            if isinstance(e, dict) and (kinds is None or e.get("k") in kinds) and (prio is None or e.get("p") == prio)}
 
 
 def planned():

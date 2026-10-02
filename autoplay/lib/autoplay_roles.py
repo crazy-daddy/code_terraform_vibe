@@ -11,6 +11,10 @@
 # field sits there. Any other outpost without an entry has no fluid. An
 # outpost's fluids in role order ("in" before "out" per role, duplicates
 # dropped) are its service order when its footprint runs out of ports.
+# An outpost's "supply" = the "out" fluids of its roles that are a source of
+# their own: not BACKUP_ROLES (a Steam Condenser is only a backup for water
+# pumps) and not storage_<fluid> (a tank gives back what it was given).
+# Only supply counts when the planner asks whether a fluid has a producer.
 
 from archive import archive
 from swallow import swallowed
@@ -34,6 +38,7 @@ DEFAULT_ROLE_PRESETS = {
     "wildlife": {"in": ["ammonia", "swamp_gas", "sulfur_gas", "chlorine", "brine", "cryofluid", "quicksilver"]},   # Habitat gas_in / liquid_in
 }
 HOME_ROLES = ["farm"]
+BACKUP_ROLES = ("condenser",)   # roles whose "out" is no supply of its own (storage_<fluid> neither)
 BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 # Every fluid id (docs/database/fluids.md), for the storage_<fluid> sub-roles.
 FLUIDS = ("steam", "water", "oil", "frozen_essence", "coastal_essence", "geothermal_essence", "volcanic_essence",
@@ -78,12 +83,14 @@ def _fluid_list(value):
 
 def fluids_for(roles, role_presets):
     """
-    {"in": [...], "out": [...], "order": [...]} of one outpost's roles (a role
-    name or a list of them), each ordered and de-duplicated; order = every
-    fluid in role order, a role's "in" before its "out". Unknown roles add nothing.
+    {"in": [...], "out": [...], "supply": [...], "order": [...]} of one
+    outpost's roles (a role name or a list of them), each ordered and
+    de-duplicated; supply = the "out" fluids of source roles (is_source_role());
+    order = every fluid in role order, a role's "in" before its "out".
+    Unknown roles add nothing.
     """
     names = [roles] if isinstance(roles, str) else (roles if isinstance(roles, (list, tuple)) else [])
-    out = {"in": [], "out": [], "order": []}
+    out = {"in": [], "out": [], "supply": [], "order": []}
     for name in names:
         preset = role_presets.get(name)
         if isinstance(preset, (list, tuple)):
@@ -96,7 +103,14 @@ def fluids_for(roles, role_presets):
                     out[side].append(fluid)
                 if fluid not in out["order"]:
                     out["order"].append(fluid)
+                if side == "out" and is_source_role(name) and fluid not in out["supply"]:
+                    out["supply"].append(fluid)
     return out
+
+
+def is_source_role(name):
+    """False for BACKUP_ROLES and storage_<fluid> roles: their "out" is no supply of its own."""
+    return name not in BACKUP_ROLES and not name.startswith("storage_")
 
 
 def demand(outpost_ids, roles_map, role_presets, home_id=None):
