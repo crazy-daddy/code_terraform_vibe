@@ -184,7 +184,7 @@ Rules for every fix agent:
 
 A2 and A4 both touch the `production_*` modules. Run A2 first, or merge the two agents.
 
-### Phase A results (commits on main, 2026-10-03, not yet deployed)
+### Phase A results (commits on main, deployed 2026-10-03T14:49 UTC)
 
 | Commit | Item | Change |
 |---|---|---|
@@ -203,7 +203,7 @@ Open points from Phase A:
 
 - `HARVESTER_ID = "harvester_1"` is a fixed id. Replace it if an API or an archive entry ever lists the harvester.
 - Check in the logs how often `demand changed:` wakes fire. Upgrade and backlog orders are republished by their requesters, so an amount that rises and falls would wake Fabricators each time.
-- Measure the effect: run the tools with `--since` set to the deploy time of these commits.
+- Measure the effect: run the tools with `--since 2026-10-03T14:49`.
 
 ### Phase B: static sweep (Haiku, read-only, parallel)
 
@@ -231,7 +231,7 @@ Tool fixes go into Phase A as needed: the `repeat_read_scan.py` block matching f
 
 ## Open items
 
-1. **Next measurement.** Run both tools with `--since` set to the deploy time of the Phase A commits (`e4eec23` to `f582cb9`). Until they are deployed, `--since 2026-10-03T13:40` measures the handler-unification refactors only.
+1. **Next measurement.** Run both tools with `--since 2026-10-03T14:49`. Every commit up to `f89e261` (Phase A and the demand wake) was deployed then.
 2. **Fluid router switching between equally full tanks.** Decided: fix it (Phase A1). With every tank full, thermal_cap and water_pump switch tanks on each call.
    - Each switch prints a `Connected ...` info line (0.1 s of game time per console call) and resets `ticks_since_connect`, so the stall blacklist never kicks in.
    - The fix would be not to switch when no candidate is emptier than the current tank.
