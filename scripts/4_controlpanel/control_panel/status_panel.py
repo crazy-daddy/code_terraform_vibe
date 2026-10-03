@@ -28,6 +28,7 @@ from unsupported_markers import update_unsupported_markers
 from version_guard import version_mismatch, good_version, confirm_new_version
 from swallow import swallowed
 from biomass_retire import retire_state, sell_retired_machines
+from lead_cask import reactor_fuel_alerts
 
 # Must match control_room_automation.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
@@ -104,13 +105,18 @@ while True:
     panel.progress_bar(col3, 66, width * 0.16, 12, used / slots if slots else 0.0, "error" if inventory_full else "accent")
     panel.label(col3, 88, f"{used} / {slots} slots", "muted")
 
+    # (text, level): Reactor fuel first (lead_cask.REACTOR_FUEL_KEY), level picks the dot colour.
     alerts = []
+    try:
+        alerts.extend(reactor_fuel_alerts(clock.tick() if clock else 0))
+    except Exception as e:
+        swallowed("status_panel: reactor_fuel_alerts", e)
     if inventory_full:
-        alerts.append("Inventory full: production and Rover unloading may pause")
+        alerts.append(("Inventory full: production and Rover unloading may pause", "error"))
     if net < 0:
-        alerts.append("Power deficit: monitor battery reserve")
+        alerts.append(("Power deficit: monitor battery reserve", "warn"))
     if not grids:
-        alerts.append("No power grid data available")
+        alerts.append(("No power grid data available", "warn"))
 
     col4 = width * 0.80
     panel.label(col4, 42, "ALERTS", "caption")
@@ -118,10 +124,10 @@ while True:
         panel.status_dot(col4 + 5, 72, 5, "running")
         panel.label(col4 + 18, 78, "all clear", "value")
     else:
-        for index, alert in enumerate(alerts[:4]):
+        for index, (alert, level) in enumerate(alerts[:4]):
             y = 68 + index * 26
-            panel.status_dot(col4 + 5, y, 5, "error" if "full" in alert else "paused")
-            panel.draw_text(col4 + 18, y + 5, alert, 10, "text-secondary", width * 0.18)
+            panel.status_dot(col4 + 5, y, 5, "error" if level == "error" else "paused")
+            panel.draw_text(col4 + 18, y + 5, alert, 10, "error" if level == "error" else "text-secondary", width * 0.18)
 
     # ------------------------------------------------------------------
     # AUTOMATION -- a live view of control_room_automation.py's headless worker (see module

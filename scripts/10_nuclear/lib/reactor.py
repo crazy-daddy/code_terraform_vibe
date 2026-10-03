@@ -31,6 +31,13 @@
 #     Casks (lead_cask.take_from_casks(); hot cargo never crosses outposts),
 #     checked every ROD_CHECK_INTERVAL_TICKS and on "no_fuel". The Fuel
 #     Assembler counts these staged rods in its rod target.
+#   - Fuel alert: each rod check writes this Reactor's entry in
+#     lead_cask.REACTOR_FUEL_KEY (spare rods = staged + local casks, game hours
+#     left = (fuel_level() + spare) x ROD_LIFE_GH / heat). "warn" with no spare
+#     rod, "error" when out of fuel; each start is a warning line and a sticky
+#     notify(), and the Status panel lists it under ALERTS. Written on a level
+#     change and at least every ROD_CHECK_INTERVAL_TICKS; entries of Reactors no
+#     longer on the network are pruned.
 #   - Cooling water: `water_in` kept on a water source by FluidInputRouter
 #     (production.FLUID_SOURCE_TYPE_IDS["water_in"], own outpost first);
 #     starved = status "no_coolant". 0.5-1 t/h.
@@ -89,6 +96,7 @@ FALLBACK_SECONDS_PER_GH = 25.0
 # Supplies.
 ROD_STAGE = 1
 ROD_CHECK_INTERVAL_TICKS = 600
+ROD_LIFE_GH = 72.0
 WATER_STALL_STREAK_BLACKLIST_THRESHOLD = 5
 WATER_RESCAN_INTERVAL_TICKS = 150
 WATER_DISCOVERY_CACHE_INTERVAL_TICKS = 100
@@ -154,6 +162,8 @@ class ReactorController:
         self.last_rod_check = None
         self.rods_warned = False
         self.water_warned = False
+        self.fuel_alert = ""
+        self.fuel_publish_tick = None
         self.reactor_ids = []
         self.reactor_ids_tick = None
         self.reserve_tick = None
@@ -309,17 +319,66 @@ class ReactorController:
         except Exception as error:
             swallowed("reactor.ReactorController.ensure_rods: reactor.input", error)
             return
-        missing = ROD_STAGE - staged
-        if missing <= 0:
-            return
         outpost = getattr(self.reactor, "outpost", None)
-        moved = lead_cask.take_from_casks(port, lead_cask.ROD_ITEM, missing, outpost)
-        if moved > 0:
-            self.rods_warned = False
-            self.log.print(f"[{self.name}] Loaded {moved} Fuel Rod(s) ({staged + moved} staged).")
-        elif not self.rods_warned:
-            self.rods_warned = True
-            self.log.level("warn").print(f"[{self.name}] {staged} Fuel Rod(s) staged and no Lead Cask at '{getattr(outpost, 'id', '?')}' holds any.")
+        casks = lead_cask.casks_at(outpost)
+        missing = ROD_STAGE - staged
+        if missing > 0:
+            moved = lead_cask.take_from_casks(port, lead_cask.ROD_ITEM, missing, outpost, casks)
+            staged += moved
+            if moved > 0:
+                self.rods_warned = False
+                self.log.print(f"[{self.name}] Loaded {moved} Fuel Rod(s) ({staged} staged).")
+            elif not self.rods_warned:
+                self.rods_warned = True
+                self.log.level("warn").print(f"[{self.name}] {staged} Fuel Rod(s) staged and no Lead Cask at '{getattr(outpost, 'id', '?')}' holds any.")
+        self.report_fuel(now, staged + lead_cask.cask_stock(lead_cask.ROD_ITEM, casks=casks), getattr(outpost, "id", None))
+
+    def fuel_state(self, spare):
+        """(level, alert, hours): level "" / "warn" / "error", hours = game hours of fuel left at the current heat."""
+        try:
+            active = float(self.reactor.fuel_level())
+        except Exception as error:
+            swallowed("reactor.ReactorController.fuel_state: reactor.fuel_level", error)
+            active = 0.0
+        heat = max(self.heat or SAFE_HEAT, MIN_HEAT_FOR_GAIN)
+        hours = (active + spare) * ROD_LIFE_GH / heat
+        if self.status == "no_fuel":
+            return "error", "OUT OF FUEL RODS", hours
+        if spare <= 0:
+            return "warn", f"no spare Fuel Rod, ~{hours:.0f} h left", hours
+        return "", "", hours
+
+    def report_fuel(self, now, spare, outpost_id):
+        """Warns and notifies when the fuel level changes; publishes this Reactor's REACTOR_FUEL_KEY entry."""
+        level, alert, hours = self.fuel_state(spare)
+        changed = level != self.fuel_alert
+        if changed:
+            where = f"Fuel Assembler and Lead Casks at '{outpost_id}'"
+            if level == "error":
+                self.log.level("error").print(f"[{self.name}] OUT OF FUEL RODS: no power from this Reactor. Check the {where}.")
+                _notify(f"[Power] Reactor '{self.name}' is OUT OF FUEL RODS: main power lost. Check the {where}.", level="error", duration=0)
+            elif level == "warn":
+                self.log.level("warn").print(f"[{self.name}] No spare Fuel Rod: ~{hours:.0f} game h of fuel left. Check the {where}.")
+                _notify(f"[Power] Reactor '{self.name}' has no spare Fuel Rod: ~{hours:.0f} game h of fuel left. Check the {where}.", level="warn", duration=0)
+            else:
+                self.log.print(f"[{self.name}] Fuel supply restored: {spare} spare Fuel Rod(s).")
+            self.fuel_alert = level
+        if not changed and self.fuel_publish_tick is not None and 0 <= now - self.fuel_publish_tick < ROD_CHECK_INTERVAL_TICKS:
+            return
+        self.fuel_publish_tick = now
+        live = set(self.network_reactors(now))
+        entry = {"outpost": outpost_id, "status": self.status, "spare": spare, "hours": round(hours, 1),
+                 "alert": alert, "level": level, "tick": now}
+
+        def updater(stored):
+            stored = {k: v for k, v in stored.items() if k in live} if isinstance(stored, dict) else {}
+            stored[self.name] = entry
+            return stored
+
+        try:
+            archive.transaction(lead_cask.REACTOR_FUEL_KEY, {}, updater)
+        except Exception as error:
+            swallowed("reactor.ReactorController.report_fuel: archive.transaction", error)
 
     def network_reactors(self, now):
         """Reactor ids network-wide, rediscovered every REACTOR_DISCOVERY_TICKS."""

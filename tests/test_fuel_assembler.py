@@ -220,6 +220,20 @@ class FuelAssemblerTests(_Base):
         self.assertEqual(rod_cask.count("fuel_rod"), 1)
         self.assertEqual(maker.recipe, "")  # the delivered rod meets the reserve
 
+    def test_latched_rod_cask_unlatched_into_stockpile_when_casks_full(self):
+        _Consumer(self.world, "reactor_1", "reactor", self.world.home)
+        _, rod_cask = self.casks(uranium=100)  # the uranium cask is full
+        self.world.notebook.data[lead_cask.ROLES_KEY] = {"lead_cask_2": "fuel_rod"}
+        rod_cask.add("raw_uranium", 5)  # a Depot unload landed in the emptied rod cask
+        maker = _Assembler(self.world, self.world.home, recipe=fa.ROD_RECIPE)
+        maker.output_buffer.update({"fuel_rod": 3})
+        ctrl = fa.FuelAssemblerController(maker)
+        ctrl.step()
+        self.assertEqual(rod_cask.count("raw_uranium"), 0)
+        self.assertEqual(maker.input_buffer.get("raw_uranium", 0), 5)
+        ctrl.step()
+        self.assertEqual(rod_cask.count("fuel_rod"), 3)
+
 
 class RemotePlateOrderTests(_Base):
     def test_no_plate_order_off_home(self):
@@ -261,6 +275,26 @@ class LeadCaskTests(_Base):
         self.assertEqual(lead_cask.take_from_casks(port, "raw_uranium", 4, self.world.home), 4)
         self.assertEqual(rod_cask.count("raw_uranium"), 0)
         self.assertEqual(uranium.count("raw_uranium"), 39)
+
+    def test_dock_leaves_local_consumer_reserve(self):
+        _Consumer(self.world, "reactor_1", "reactor", self.world.home, staged=1)
+        self.casks(rods=4)
+        # reserve 1 + 2 per reactor = 3, one already staged: 2 held in the casks
+        self.assertEqual(lead_cask.rods_for_orders(self.world.home), (2, 2))
+        _Consumer(self.world, "reactor_2", "reactor", self.world.home)
+        self.assertEqual(lead_cask.rods_for_orders(self.world.home), (0, 4))
+
+    def test_reactor_fuel_alerts_errors_first_and_skip_stale(self):
+        entries = {
+            "reactor_1": {"alert": "no spare Fuel Rod, ~40 h left", "level": "warn", "tick": 1000},
+            "reactor_2": {"alert": "OUT OF FUEL RODS", "level": "error", "tick": 1000},
+            "reactor_3": {"alert": "", "level": "", "tick": 1000},
+            "reactor_4": {"alert": "OUT OF FUEL RODS", "level": "error", "tick": 1000 - lead_cask.REACTOR_FUEL_FRESH_TICKS},
+        }
+        self.assertEqual(lead_cask.reactor_fuel_alerts(1000, entries), [
+            ("reactor_2: OUT OF FUEL RODS", "error"),
+            ("reactor_1: no spare Fuel Rod, ~40 h left", "warn"),
+        ])
 
     def test_roles_pruned_for_gone_casks(self):
         self.casks()

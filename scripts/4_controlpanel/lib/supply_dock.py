@@ -759,8 +759,13 @@ class SupplyDockController:
                     continue
 
                 # Hot cargo (Raw Uranium, Fuel Rods) only comes out of this outpost's Lead Casks.
+                # Fuel Rods leave the local Reactors' and Mk IV generators' reserve in the casks.
                 hot = item_id in lead_cask.HOT_ITEMS
-                if hot:
+                if item_id == lead_cask.ROD_ITEM:
+                    avail, held = lead_cask.rods_for_orders(self.outpost())
+                    if held:
+                        self.log.debug(f"[{self.name}] {item_id}: {held} held back for local Reactors / Mk IV generators")
+                elif hot:
                     avail = lead_cask.cask_stock(item_id, self.outpost())
                 else:
                     avail = total_stock(item_id) if cache is None else cache.local_stock(item_id, outpost)

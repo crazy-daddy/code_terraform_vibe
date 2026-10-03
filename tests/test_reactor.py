@@ -5,6 +5,7 @@ import unittest
 import harness
 from game_stubs import Building, Clock, FluidPort, Result, Slot
 import fluid_routing
+import lead_cask
 import reactor as rx
 
 SECONDS_PER_GH = 25.0
@@ -56,6 +57,9 @@ class _SimReactor(Building):
         if self.rod <= 0 and self.input.count() <= 0:
             return "no_fuel"
         return "running"
+
+    def fuel_level(self):
+        return self.rod
 
     def gain(self):
         window = int(self.clock.hours // 12)
@@ -183,6 +187,42 @@ class ReactorTests(harness.StubTestCase):
         controller.ensure_rods(force=True)
         controller.ensure_rods(force=True)
         self.assertEqual(self.debug_log().count("holds any"), 1)
+
+    def fuel_entry(self):
+        return (fluid_routing.archive.get(lead_cask.REACTOR_FUEL_KEY) or {}).get("reactor_1") or {}
+
+    def test_no_spare_rod_warns_and_publishes_alert(self):
+        machine, controller = self.make([1.0], staged=0)
+        machine.rod = 0.5
+        controller.step()
+        entry = self.fuel_entry()
+        self.assertEqual(entry["level"], "warn")
+        self.assertEqual(entry["spare"], 0)
+        self.assertIn("no spare Fuel Rod", entry["alert"])
+        self.assertEqual(len(self.notified), 1)
+        controller.ensure_rods(force=True)
+        self.assertEqual(len(self.notified), 1)  # once per episode
+        self.assertEqual(lead_cask.reactor_fuel_alerts(self.clock.tick()), [("reactor_1: " + entry["alert"], "warn")])
+
+    def test_out_of_fuel_is_an_error_until_rods_return(self):
+        machine, controller = self.make([1.0], staged=0)
+        controller.step()
+        self.assertEqual(self.fuel_entry()["level"], "error")
+        self.assertIn("OUT OF FUEL", self.notified[-1])
+        self.world.add_lead_cask("lead_cask_1", self.world.home, "fuel_rod", 3)
+        controller.status = "running"
+        controller.ensure_rods(force=True)
+        entry = self.fuel_entry()
+        self.assertEqual((entry["level"], entry["spare"]), ("", 3))
+        self.assertEqual(lead_cask.reactor_fuel_alerts(self.clock.tick()), [])
+        self.assertIn("Fuel supply restored", self.debug_log())
+
+    def test_spare_rods_no_alert(self):
+        self.world.add_lead_cask("lead_cask_1", self.world.home, "fuel_rod", 2)
+        _, controller = self.make([1.0], staged=1)
+        controller.step()
+        self.assertEqual(self.fuel_entry()["level"], "")
+        self.assertEqual(self.notified, [])
 
 
     # -- water reservation --

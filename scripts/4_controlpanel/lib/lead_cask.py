@@ -32,6 +32,30 @@ INBOUND_KEY = "lead_cask.inbound"
 # Same expiry as drone_claims.CLAIM_STALE_TICKS.
 INBOUND_STALE_TICKS = 36000
 
+# Local Fuel Rod consumers: Reactors and Mk IV terraformers (Mk IV pack burns
+# rods from `input`). Their reserve is the Fuel Assembler's rod target before
+# dock orders, and the floor Supply Docks leave in the casks (rods_for_orders()):
+# a spare for a newly deployed Reactor, a buffer per Reactor (one rod lasts
+# 72 game h at heat 1.0, one craft takes 6), one per Mk IV generator.
+REACTOR_TYPE_ID = "reactor"
+MK4_TYPE_IDS = ("temp_heater", "pressure_generator", "oxygen_generator")
+MK4_TIER = 4
+ROD_RESERVE = 1
+RODS_PER_REACTOR = 2
+RODS_PER_MK4 = 1
+
+# Raw Uranium kept per outpost in its casks, on top of what Supply Dock orders
+# there still owe (drone_weather.uranium_want()): 25 Fuel Rod crafts, about a
+# week of rods for 3 Reactors at full heat. Drones collect no more past it.
+URANIUM_STOCK_TARGET = 100
+
+# Reactor fuel state (written by 10_nuclear/lib/reactor.py, read by the Status
+# panel): {reactor_id: {"outpost", "status", "spare", "hours", "alert", "level",
+# "tick"}}. `spare` = rods staged + in the outpost's casks, `hours` = game hours
+# of fuel left at the current heat, `alert` = "" when fine.
+REACTOR_FUEL_KEY = "reactor.fuel"
+REACTOR_FUEL_FRESH_TICKS = 1800
+
 
 def home_outpost():
     network = get_component("outpost_network")
@@ -94,6 +118,83 @@ def cask_stock(item_id, outpost=None, casks=None):
     """Units of item_id in the Lead Casks at outpost (None = home)."""
     casks = casks_at(outpost) if casks is None else casks
     return sum(c["count"] for c in casks if c["material"] == item_id)
+
+
+def _components_at(outpost, type_id):
+    if outpost is None or not hasattr(outpost, "buildings"):
+        return []
+    try:
+        refs = outpost.buildings(type_id)
+    except Exception as error:
+        swallowed("lead_cask._components_at: outpost.buildings", error)
+        return []
+    out = []
+    for ref in refs or []:
+        component = get_component(getattr(ref, "id", ""))
+        if component is not None:
+            out.append(component)
+    return out
+
+
+def rod_consumers(outpost):
+    """(reactors, mk4 generators) components at outpost."""
+    mk4 = []
+    for type_id in MK4_TYPE_IDS:
+        for machine in _components_at(outpost, type_id):
+            try:
+                if int(machine.tier()) >= MK4_TIER:
+                    mk4.append(machine)
+            except Exception as error:
+                swallowed("lead_cask.rod_consumers: tier", error)
+    return _components_at(outpost, REACTOR_TYPE_ID), mk4
+
+
+def staged_rods(machines):
+    """Fuel Rods waiting in the machines' input slots."""
+    total = 0
+    for machine in machines:
+        port = getattr(machine, "input", None)
+        if port is None or not hasattr(port, "count"):
+            continue
+        try:
+            total += int(port.count())
+        except Exception as error:
+            swallowed("lead_cask.staged_rods: input.count", error)
+    return total
+
+
+def consumer_rod_reserve(reactors, mk4):
+    """Fuel Rods kept at an outpost for its own Reactors and Mk IV generators."""
+    return ROD_RESERVE + RODS_PER_REACTOR * len(reactors) + RODS_PER_MK4 * len(mk4)
+
+
+def rods_for_orders(outpost, casks=None):
+    """(rods a Supply Dock may take from outpost's casks, rods held back): cask
+    rods above the local consumers' reserve, less the rods already staged in them.
+    None = home."""
+    if outpost is None:
+        outpost = home_outpost()
+    casks = casks_at(outpost) if casks is None else casks
+    reactors, mk4 = rod_consumers(outpost)
+    held = max(0, consumer_rod_reserve(reactors, mk4) - staged_rods(reactors + mk4))
+    stock = cask_stock(ROD_ITEM, casks=casks)
+    return max(0, stock - held), min(stock, held)
+
+
+def reactor_fuel_alerts(tick, entries=None):
+    """[(text, level)] from `reactor.fuel` (REACTOR_FUEL_KEY), "error" first; entries
+    older than REACTOR_FUEL_FRESH_TICKS are left out (their Reactor script stopped)."""
+    entries = archive.get(REACTOR_FUEL_KEY, {}) if entries is None else entries
+    if not isinstance(entries, dict):
+        return []
+    out = []
+    for reactor_id in sorted(entries):
+        e = entries[reactor_id]
+        if not isinstance(e, dict) or not e.get("alert") or not 0 <= tick - e.get("tick", 0) < REACTOR_FUEL_FRESH_TICKS:
+            continue
+        out.append((f"{reactor_id}: {e['alert']}", e.get("level", "warn")))
+    out.sort(key=lambda a: 0 if a[1] == "error" else 1)
+    return out
 
 
 def network_cask_stock(item_id):

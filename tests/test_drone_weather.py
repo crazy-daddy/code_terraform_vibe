@@ -4,6 +4,8 @@ import game_stubs
 from harness import StubTestCase
 from tree_console import TreeConsole
 import drone_weather
+import lead_cask as lead_cask_mod
+import production
 import weather_signals
 
 
@@ -202,6 +204,40 @@ class CollectorTests(StubTestCase):
         first._select_aftermath_target(first._aftermath_candidates(first.aftermath_kinds()))
         self.assertEqual(second._select_aftermath_target(late), (None, None))
         self.assertEqual(second.released, ["aftermath_storm_2", "aftermath_storm_3"])
+
+    def test_uranium_room_in_whole_collect_batches(self):
+        self._uranium_ready()
+        self.world.components["lead_cask_1"].add("raw_uranium", 27)  # 3 units of room left
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
+        self.assertEqual(collector._aftermath_candidates(collector.aftermath_kinds()), [])
+        self.world.components["lead_cask_1"].remove("raw_uranium", 5)  # 8 left: one batch
+        candidates = collector._aftermath_candidates(collector.aftermath_kinds())
+        self.assertEqual({c["limit"] for c in candidates}, {5})
+
+    def test_uranium_capped_at_stock_target(self):
+        self._uranium_ready()
+        self.world.add_lead_cask("lead_cask_2", self.home)  # 130 free, 70 in stock
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
+        candidates = collector._aftermath_candidates(collector.aftermath_kinds())
+        self.assertEqual({c["limit"] for c in candidates}, {lead_cask_mod.URANIUM_STOCK_TARGET - 70})
+        self.world.components["lead_cask_1"].add("raw_uranium", 30)
+        self.assertEqual(collector._aftermath_candidates(collector.aftermath_kinds()), [])
+        orig = production.dock_remaining_requirements
+        production.dock_remaining_requirements = lambda outpost_id=None: {"raw_uranium": 12}
+        try:
+            candidates = collector._aftermath_candidates(collector.aftermath_kinds())
+        finally:
+            production.dock_remaining_requirements = orig
+        self.assertEqual({c["limit"] for c in candidates}, {10})
+
+    def test_partial_grant_rounded_down_to_batches(self):
+        self._uranium_ready()
+        drone_weather.lead_cask.set_inbound("other", "outpost_home", 22, 1000)  # 8 of 30 left
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
+        candidate = {"event_id": "storm_2", "limit": 30}
+        self.assertTrue(collector._reserve_cask_room(candidate))
+        self.assertEqual(candidate["limit"], 5)
+        self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000, exclude="other"), 5)
 
     def test_reserve_inbound_grants_net_of_others_and_prunes_stale(self):
         lead_cask = drone_weather.lead_cask

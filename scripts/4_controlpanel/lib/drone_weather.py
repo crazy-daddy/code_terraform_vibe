@@ -20,7 +20,13 @@
 # by every plated drone homed there, so a drone reserves its share in
 # lead_cask.inbound when it claims the site (reserve_inbound(); the grant is
 # the trip's limit), narrows it to the units collected, and drops it once no
-# uranium is aboard. Storm Glass (thunderstorms, 2-4 units) is ordinary cargo.
+# uranium is aboard. One collect() takes up to COLLECT_BATCH_UNITS, so a
+# uranium trip's limit is whole batches (batch_limit()): less room than one
+# batch launches nothing, else the overshoot stays aboard and the Depot drops
+# it into the next empty cask, the Fuel Rod cask included. Room is also capped
+# by uranium_want(): lead_cask.URANIUM_STOCK_TARGET plus Supply Dock orders at
+# home, less the uranium already in the casks.
+# Storm Glass (thunderstorms, 2-4 units) is ordinary cargo.
 #
 # One drone per site at a time: an exclusive claim in biosite.claims under
 # AFTERMATH_KEY_PREFIX + event_id (drone_claims.py). A site that needs more
@@ -52,6 +58,8 @@ EXPIRY_MARGIN_GH = 1.0
 # "nothing_here" this many times in a row at the exact coordinate, after
 # ready_gh and before any unit came out, marks the site exhausted.
 NOTHING_HERE_LIMIT = 3
+# Most units one collect() moves (docs/guide/weather_system.md).
+COLLECT_BATCH_UNITS = 5
 # "moving"/"busy" retries while the drone settles into its hover.
 SETTLE_RETRIES = 10
 # A hauler takes a Storm Glass site before its next haul job when the site
@@ -132,6 +140,23 @@ def cask_room(outpost, item_id="raw_uranium"):
     return lead_cask.room_for(item_id, outpost)
 
 
+def uranium_want(outpost):
+    """Raw Uranium still wanted in outpost's casks: lead_cask.URANIUM_STOCK_TARGET plus
+    what Supply Dock orders there still owe, minus the cask stock."""
+    from production import dock_remaining_requirements
+    owed = 0
+    try:
+        owed = int(dock_remaining_requirements(getattr(outpost, "id", None)).get(lead_cask.URANIUM_ITEM, 0))
+    except Exception as error:
+        swallowed("drone_weather.uranium_want: dock_remaining_requirements", error)
+    return lead_cask.URANIUM_STOCK_TARGET + owed - lead_cask.cask_stock(lead_cask.URANIUM_ITEM, outpost)
+
+
+def batch_limit(units):
+    """Largest whole number of collect() batches that fits in units."""
+    return max(0, units) // COLLECT_BATCH_UNITS * COLLECT_BATCH_UNITS
+
+
 class DroneWeatherMixin:
     """Aftermath collection, mixed into DroneController: the plated "aftermath" role loop and the hauler's Storm Glass pickup."""
 
@@ -159,10 +184,11 @@ class DroneWeatherMixin:
             if hot_cargo_unlocked():
                 room = cask_room(self._host.home_outpost)
                 promised = lead_cask.inbound_units(home_id, self._host.get_current_tick(), exclude=self._host.name)
-                uranium_room = room - promised
-                self._host.log.trace(f"[{self._host.name}] Lead Cask room at '{home_id}': {room} free, {promised} reserved by other drones.")
+                want = uranium_want(self._host.home_outpost)
+                uranium_room = batch_limit(min(room, want) - promised)
+                self._host.log.trace(f"[{self._host.name}] Lead Cask room at '{home_id}': {room} free, {want} wanted, {promised} reserved by other drones, {uranium_room} in whole batches.")
             if uranium_room <= 0:
-                self._host.log.debug(f"[{self._host.name}] Uranium aftermath(s) known but no unreserved Lead Cask room at '{home_id}' (or {HOT_CARGO_RESEARCH} missing); skipping them.")
+                self._host.log.debug(f"[{self._host.name}] Uranium aftermath(s) known but less than {COLLECT_BATCH_UNITS} unreserved, wanted Lead Cask room at '{home_id}' (or {HOT_CARGO_RESEARCH} missing); skipping them.")
         speed = self._host.flight_speed_m_per_h(self._host.cruise_throttle)
         pos = self._host.position()
         candidates = []
@@ -223,10 +249,17 @@ class DroneWeatherMixin:
         """Reserves the uranium trip's Lead Cask room at home; narrows candidate["limit"] to the grant. False when none is left."""
         home = self._host.home_outpost
         home_id = getattr(home, "id", None)
-        granted = lead_cask.reserve_inbound(self._host.name, home_id, cask_room(home), candidate["limit"], self._host.get_current_tick())
-        if granted <= 0:
-            self._host.log.debug(f"Aftermath {candidate['event_id']}: Lead Cask room at '{home_id}' taken by other drones' reservations; skipping.")
+        tick = self._host.get_current_tick()
+        granted = lead_cask.reserve_inbound(self._host.name, home_id, min(cask_room(home), uranium_want(home)), candidate["limit"], tick)
+        whole = batch_limit(granted)
+        if whole <= 0:
+            if granted > 0:
+                lead_cask.release_inbound(self._host.name)
+            self._host.log.debug(f"Aftermath {candidate['event_id']}: {granted} Lead Cask unit(s) left at '{home_id}' after other drones' reservations, less than one {COLLECT_BATCH_UNITS}-unit collect(); skipping.")
             return False
+        if whole < granted:
+            lead_cask.set_inbound(self._host.name, home_id, whole, tick)
+            granted = whole
         if granted < candidate["limit"]:
             self._host.log.debug(f"Aftermath {candidate['event_id']}: reserved {granted} of {candidate['limit']} Lead Cask unit(s) at '{home_id}'.")
         candidate["limit"] = granted

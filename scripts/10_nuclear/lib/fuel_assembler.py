@@ -2,15 +2,18 @@
 # Two recipes, both 4 Raw Uranium + Lead Plates (docs/components/fuel_assembler.md):
 #   craft_fuel_rod         4 U + 2 plates, 6 game h, 1,800 W  -> Fuel Rod (hot)
 #   craft_nuclear_battery  4 U + 3 plates, 4 game h, 1,200 W  -> Nuclear Battery
-#   - What to make: Fuel Rods first, to a stock of ROD_RESERVE + RODS_PER_REACTOR
-#     per Reactor + RODS_PER_MK4 per Mk IV heater/pressure/O2 generator at this
-#     outpost + rods owed to Supply Dock orders here. Counted in this outpost's
+#   - What to make: Fuel Rods first, to a stock of the local consumers' reserve
+#     (lead_cask.consumer_rod_reserve(): Reactors and Mk IV heater/pressure/O2
+#     generators at this outpost) + rods owed to Supply Dock orders here.
+#     Supply Docks leave that reserve in the casks. Counted in this outpost's
 #     Lead Casks, the consumers' input slots and the output buffer. Nuclear
 #     Batteries next, for manual orders (`fabricator.manual_orders`), Supply
 #     Dock orders and Construction Blueprints, against network stock.
 #   - Lead Casks (lib/lead_cask.py): keeps one cask per outpost in the
 #     "fuel_rod" role (`lead_cask.roles`) and repairs it when a Depot filled
-#     it with uranium. Fuel Rods leave only into that cask; Supply Docks,
+#     it with uranium: into the other casks, else into this assembler's own
+#     stockpile (up to one craft's worth), so the cask unlatches even with
+#     every uranium cask full. Fuel Rods leave only into that cask; Supply Docks,
 #     Reactors and Mk IV generators pull from it themselves.
 #   - Inputs: the input port holds one source at a time. Raw Uranium comes from
 #     the Lead Casks here (lead_cask.take_from_casks()); Lead Plates from
@@ -46,25 +49,18 @@ ROD_ITEM = "fuel_rod"
 BATTERY_ITEM = "nuclear_battery"
 URANIUM_ITEM = "raw_uranium"
 PLATE_ITEM = "lead_plate"
-REACTOR_TYPE_ID = "reactor"
 SUPPLY_DOCK_TYPE_ID = "supply_dock"
-# Terraformers whose Mk IV pack burns Fuel Rods from `input` (1 rod / 240 game h, magazine 4).
-MK4_TYPE_IDS = ("temp_heater", "pressure_generator", "oxygen_generator")
-MK4_TIER = 4
 # Used when list_recipes() is unreadable; the game's own recipe table.
 FALLBACK_RECIPES = {
     ROD_RECIPE: {"output": ROD_ITEM, "inputs": {URANIUM_ITEM: 4, PLATE_ITEM: 2}},
     BATTERY_RECIPE: {"output": BATTERY_ITEM, "inputs": {URANIUM_ITEM: 4, PLATE_ITEM: 3}},
 }
 
-# Fuel Rod stock kept at this outpost: a spare for a newly deployed Reactor,
-# plus a buffer per Reactor (one rod lasts 72 game h at heat 1.0, one craft takes 6),
-# plus one per Mk IV generator (terraforming.Mk4RodFeed keeps one in its magazine).
-ROD_RESERVE = 1
-RODS_PER_REACTOR = 2
-RODS_PER_MK4 = 1
 # Crafts staged in the 40-unit stockpile at once (one craft = 6-7 units).
 STAGED_CRAFTS = 2
+# Raw Uranium the stockpile may hold when taking it out of a latched rod cask
+# (leaves room for the plates of the crafts it feeds).
+UNLATCH_STAGE_UNITS = 24
 # Crafts' worth of Lead Plates requested from the Fabricators ahead of need.
 PLATE_ORDER_CRAFTS = 2
 PLATE_ORDER_REQUESTER = "fuel_assembler"
@@ -161,29 +157,7 @@ class FuelAssemblerController:
 
     def rod_consumers(self):
         """(reactors, mk4 generators) at this outpost."""
-        mk4 = []
-        for type_id in MK4_TYPE_IDS:
-            for machine in self._buildings(type_id):
-                try:
-                    if int(machine.tier()) >= MK4_TIER:
-                        mk4.append(machine)
-                except Exception as error:
-                    swallowed("fuel_assembler.FuelAssemblerController.rod_consumers: tier", error)
-        return self._buildings(REACTOR_TYPE_ID), mk4
-
-    @staticmethod
-    def staged_rods(machines):
-        """Fuel Rods waiting in the machines' input slots."""
-        total = 0
-        for machine in machines:
-            port = getattr(machine, "input", None)
-            if port is None or not hasattr(port, "count"):
-                continue
-            try:
-                total += int(port.count())
-            except Exception as error:
-                swallowed("fuel_assembler.FuelAssemblerController.staged_rods: input.count", error)
-        return total
+        return lead_cask.rod_consumers(self.outpost)
 
     def dock_rods_owed(self):
         """Fuel Rods still owed to the orders of Supply Docks at this outpost."""
@@ -222,8 +196,8 @@ class FuelAssemblerController:
         if ROD_RECIPE in recipes:
             reactors, mk4 = self.rod_consumers()
             docks = self.dock_rods_owed()
-            target = ROD_RESERVE + RODS_PER_REACTOR * len(reactors) + RODS_PER_MK4 * len(mk4) + docks
-            have = lead_cask.cask_stock(ROD_ITEM, casks=casks) + self.staged_rods(reactors + mk4) + buffered.get(ROD_ITEM, 0)
+            target = lead_cask.consumer_rod_reserve(reactors, mk4) + docks
+            have = lead_cask.cask_stock(ROD_ITEM, casks=casks) + lead_cask.staged_rods(reactors + mk4) + buffered.get(ROD_ITEM, 0)
             have += in_progress if current == ROD_RECIPE else 0
             self.log.debug(f"rods: target={target} ({len(reactors)} reactor(s), {len(mk4)} Mk IV, {docks} for docks) have={have}")
             if target > have:
@@ -335,7 +309,26 @@ class FuelAssemblerController:
         moved = lead_cask.repair(self.outpost, casks)
         if moved:
             self.log.print(f"[{self.name}] Moved {moved}x {URANIUM_ITEM} out of the Fuel Rod cask '{rod_cask}'.")
+        self.unlatch_rod_cask(rod_cask, casks)
         return rod_cask
+
+    def unlatch_rod_cask(self, rod_cask, casks):
+        """Takes Raw Uranium that repair() had no room for out of the rod cask into this
+        assembler's stockpile, up to UNLATCH_STAGE_UNITS staged. Otherwise finished rods
+        could never leave the output buffer and the Reactors would run dry."""
+        entry = next((c for c in casks if c["id"] == rod_cask), None)
+        if entry is None or entry["material"] != URANIUM_ITEM or entry["count"] <= 0:
+            return 0
+        room = UNLATCH_STAGE_UNITS - self.stockpile().get(URANIUM_ITEM, 0)
+        if room <= 0:
+            self.log.debug(f"rod cask '{rod_cask}' holds {entry['count']}x {URANIUM_ITEM}, stockpile already holds {UNLATCH_STAGE_UNITS}")
+            return 0
+        if not self._call("get_recipe", "") and not self.switch_to(ROD_RECIPE):
+            return 0
+        moved = lead_cask.take_from_casks(self.machine.input, URANIUM_ITEM, min(room, entry["count"]), casks=[entry])
+        if moved:
+            self.log.print(f"[{self.name}] Staged {moved}x {URANIUM_ITEM} from the Fuel Rod cask '{rod_cask}' (no other cask had room).")
+        return moved
 
     def drain_output(self, rod_cask):
         """Moves finished products out. Returns True when anything moved."""
