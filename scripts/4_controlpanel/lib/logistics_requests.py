@@ -733,7 +733,7 @@ def source_useful(source, need_left, buffer_left, cap):
     return False
 
 
-# Upper-bound cost of one route-planner candidate (drone_hauler._haul_candidate(),
+# Upper-bound cost of one route-planner candidate (drone_haul_plan._haul_candidate(),
 # vehicle_cargo._pull_candidate()) in CPython opcodes, fitted on
 # devtools/step_profile.py worst cases: per source (three stops' usefulness
 # and chain checks) plus per item on the fullest source (sorting and planning

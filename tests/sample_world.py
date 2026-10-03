@@ -157,7 +157,7 @@ def _add_fluids_power_units(sample, spec, rnd, site):
 
 
 def route_scenario(size="medium", seed=3):
-    """(dests, sources) in the shape drone_hauler._plan_haul_job() builds
+    """(dests, sources) in the shape drone_haul_plan._plan_haul_job() builds
     (dest: outpost_id/coords/need/buffer/deficits; source: id/coords/available).
     A Pioneer's _plan_pull_chain() takes the first dest's need/buffer."""
     spec = SIZES[size]

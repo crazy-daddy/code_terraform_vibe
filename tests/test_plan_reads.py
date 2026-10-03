@@ -5,7 +5,7 @@ import unittest
 
 from harness import StubTestCase, logistics_requests
 from tree_console import TreeConsole
-import drone_hauler
+import drone_haul_plan
 
 
 class PlanReadsTests(StubTestCase):
@@ -88,7 +88,7 @@ class _HaulerHost:
 
 
 def _hauler(depots):
-    cls = type("TestHauler", (drone_hauler.DroneHaulerMixin,), {"_host": property(lambda self: self._test_host)})
+    cls = type("TestHauler", (drone_haul_plan.DroneHaulPlanMixin,), {"_host": property(lambda self: self._test_host)})
     obj = cls.__new__(cls)
     setattr(obj, "_test_host", _HaulerHost(depots))
     return obj

@@ -170,11 +170,11 @@ def _with_host(mixin) -> Any:
 
 
 def target_haul(size, scenario=None):
-    """drone_hauler: every (destination, first source) candidate route plus its scoring."""
-    import drone_hauler
+    """drone_haul_plan: every (destination, first source) candidate route plus its scoring."""
+    import drone_haul_plan
     sample_world.build_sample_world(size)
     dests, sources = scenario or sample_world.route_scenario(size)
-    hauler = _with_host(drone_hauler.DroneHaulerMixin)
+    hauler = _with_host(drone_haul_plan.DroneHaulPlanMixin)
     services = [{"coords": (0.0, 0.0)}]
 
     def plan():

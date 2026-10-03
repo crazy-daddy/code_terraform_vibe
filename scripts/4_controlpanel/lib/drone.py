@@ -10,6 +10,7 @@
 #   - drone_claims.py: exclusive biosite claims + scout empty-POI cache + mission persistence
 #   - drone_cargo.py: cargo accounting/load-unload + home-biome filtering
 #   - drone_scout.py / drone_mining.py / drone_hauler.py / drone_weather.py: role loops
+#   - drone_haul_plan.py: hauler job planning (demand, sources, route scoring, stall cooldowns)
 #   - drone_upgrade.py: fleet-upgrade handshake, new-chassis fitting, in-place module upgrades
 #
 # Electric and heli drones: the engine is auto-detected at startup
@@ -24,6 +25,7 @@ from drone_cargo import DroneCargoMixin
 from drone_scout import DroneScoutMixin
 from drone_mining import DroneMiningMixin
 from drone_hauler import DroneHaulerMixin
+from drone_haul_plan import DroneHaulPlanMixin
 from drone_weather import DroneWeatherMixin
 from drone_upgrade import DroneUpgradeMixin, inherited_params
 from tree_console import TreeConsole, flush_all
@@ -39,6 +41,7 @@ class DroneController(
     DroneScoutMixin,
     DroneMiningMixin,
     DroneHaulerMixin,
+    DroneHaulPlanMixin,
     DroneWeatherMixin,
     DroneUpgradeMixin,
 ):

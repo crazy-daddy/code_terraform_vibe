@@ -1,10 +1,10 @@
-"""Route planner helpers shared by drone_hauler.py and vehicle_cargo.py (logistics_requests.source_useful(), route_atomic_ok())."""
+"""Route planner helpers shared by drone_haul_plan.py and vehicle_cargo.py (logistics_requests.source_useful(), route_atomic_ok())."""
 import random
 import unittest
 
 from harness import StubTestCase, logistics_requests
 import sample_world
-import drone_hauler
+import drone_haul_plan
 import vehicle_cargo
 
 
@@ -58,13 +58,13 @@ class RouteAtomicTests(StubTestCase):
 
     def test_atomic_and_direct_candidates_agree(self):
         dests, sources = sample_world.route_scenario("small", seed=4)
-        hauler = _with_host(drone_hauler.DroneHaulerMixin)
+        hauler = _with_host(drone_haul_plan.DroneHaulPlanMixin)
         room = {i: 200 for s in sources for i in s["available"]}
         services = [{"coords": (0.0, 0.0)}]
         rates = hauler._fuel_rates()
         for first in sources:
             direct = hauler._haul_candidate(dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
-            atomic = drone_hauler.run_atomic(hauler._haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
+            atomic = drone_haul_plan.run_atomic(hauler._haul_candidate, dests[0], sources, 400, (0.0, 0.0), first, room, services, rates)
             self.assertEqual(direct, atomic)
 
     def test_pull_chain_checks_are_capped(self):

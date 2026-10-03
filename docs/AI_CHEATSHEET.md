@@ -92,7 +92,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ scout role loop (POI bio-scanning) | `drone_scout.py` |
 | Survey request areas scouts serve first (`autoplay.survey_requests`) + sonar `wrong_scanner` contacts as known biomass | `survey_requests.py` — see `docs/cheatsheet/autoplay.md` §11j |
 | &nbsp;&nbsp;↳ miner role loop (biosite extraction) | `drone_mining.py` |
-| &nbsp;&nbsp;↳ floating hauler role loop (drills and Depot outposts → Depots, no home) | `drone_hauler.py` — see §2j |
+| &nbsp;&nbsp;↳ floating hauler role loop (drills and Depot outposts → Depots, no home): claim, load, deliver, refuel, idle | `drone_hauler.py` `DroneHaulerMixin` — see §2j |
+| &nbsp;&nbsp;↳ floating hauler job planning: demand, sources, route scoring, fuel budget, stall cooldowns | `drone_haul_plan.py` `DroneHaulPlanMixin` — see §2j |
 | &nbsp;&nbsp;↳ aftermath collector role loop (plated drone: Raw Uranium + Storm Glass) and the hauler's Storm Glass pickup | `drone_weather.py` — see §2j-1 |
 | &nbsp;&nbsp;↳ fleet-upgrade handshake, new-chassis fitting, in-place module upgrades (+ shared `fleet.upgrade` state helpers) | `drone_upgrade.py` — see §2k |
 | Fleet hardware upgrade coordinator (Depot + drone chassis swaps), run by the `control_room_automation.py` Automation | `fleet_upgrade.py` — see §2k |
