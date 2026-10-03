@@ -1,6 +1,7 @@
 import unittest
 
 from harness import StubTestCase
+from game_stubs import Clock
 import thermal_cap
 
 
@@ -14,7 +15,7 @@ class _Cap:
         return self.phase_in
 
 
-class _Clock:
+class _Clock(Clock):
     def real_seconds_per_hour(self):
         return 30.0
 

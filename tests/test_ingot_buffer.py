@@ -7,19 +7,6 @@ from harness import StubTestCase, production, smelter, fabricator, logistics_req
 from script_parking import PARKED_KEY
 
 
-class _Result:
-    status = "ok"
-
-
-class _PowerControl:
-    def __init__(self):
-        self.calls = []
-
-    def set_powered(self, machine_id, on):
-        self.calls.append((machine_id, on))
-        return _Result()
-
-
 def site_requests(world, outpost_id):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
     return {item_id: (e["target"], logistics_requests.request_min(e)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
@@ -125,8 +112,7 @@ class IngotWantsTests(StubTestCase):
 class FabricatorWakeTests(StubTestCase):
     def setUp(self):
         super().setUp()
-        self.power = _PowerControl()
-        self.world.services["power_control"] = self.power
+        self.power = self.world.power_control
         self.remote = self.world.add_outpost("outpost_2")
         self.world.add_smelter("smelter_2", self.remote)
         self.world.add_smelter("smelter_1", self.world.home)

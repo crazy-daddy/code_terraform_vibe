@@ -4,16 +4,7 @@ import unittest
 from unittest import mock
 
 from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
-from game_stubs import Recipe, FABRICATOR_RECIPES
-
-
-class _Building:
-    """A plain building with only a type and an outpost (e.g. a Fuel Assembler)."""
-
-    def __init__(self, building_id, type_id, outpost):
-        self.id = building_id
-        self.type_id = type_id
-        self.outpost = outpost
+from game_stubs import Recipe, FABRICATOR_RECIPES, Journal
 
 
 def site_requests(world, outpost_id):
@@ -122,13 +113,13 @@ class SiteSupplyTests(StubTestCase):
     def test_refiner_site_stocks_tar_with_need_floor(self):
         w = self.world
         w.add_warehouse("wh_home", w.home, {"tar": 5000}, capacity=100000)
-        w.components["refiner_1"] = _Building("refiner_1", "refiner", self.remote)
+        w.add_building("refiner_1", self.remote, "refiner")
         self.publish()
         self.assertEqual(site_requests(w, "outpost_2").get("tar"), (site_supply.SITE_STOCK_TARGETS["refiner"]["tar"], site_supply.SITE_STOCK_NEED["refiner"]["tar"]))
 
     def test_fuel_assembler_site_stocks_and_orders_lead_plates(self):
         w = self.world
-        w.components["fuel_assembler_1"] = _Building("fuel_assembler_1", "fuel_assembler", self.remote)
+        w.add_building("fuel_assembler_1", self.remote, "fuel_assembler")
         w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + [Recipe("craft_lead_plate", {"lead_ingot": 2}, "lead_plate")])
         target = site_supply.SITE_STOCK_TARGETS["fuel_assembler"]["lead_plate"]
         self.publish()
@@ -269,7 +260,7 @@ class _Site:
         return self._medium
 
 
-class _Journal:
+class _Journal(Journal):
     def __init__(self, sites):
         self.sites = sites
 

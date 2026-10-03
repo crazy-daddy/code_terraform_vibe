@@ -1,54 +1,28 @@
 import unittest
 
 from harness import StubTestCase
+from game_stubs import Building, Slot
 import mining_drill
 
 
-class _Stack:
-    id = "iron_ore"
-    count = 400
-
-
-class _Port:
-    def count(self):
-        return 400
-
-    def capacity(self):
-        return 500
-
-    def stacks(self):
-        return [_Stack()]
-
-
-class _Drill:
-    id = "mining_drill_heavy_1"
+class _Drill(Building):
     name = "Drill 1"
-    output = _Port()
+
+    def __init__(self, world, drill_id, outpost):
+        super().__init__(world, drill_id, outpost)
+        self.output = Slot(self, self.output_buffer, 500)
 
     def drill_rate(self):
         return 200.0
-
-
-class _Member:
-    id = "mining_drill_heavy_1"
-    type_id = "mining_drill_heavy"
-
-
-class _Grid:
-    members = [_Member()]
-
-
-class _PowerControl:
-    def grids(self):
-        return [_Grid()]
 
 
 class PublishAllDrillsTests(StubTestCase):
     def setUp(self):
         super().setUp()
         mining_drill._CONTROLLERS.clear()
-        self.world.components["power_control"] = _PowerControl()
-        self.world.components["mining_drill_heavy_1"] = _Drill()
+        drill = self.world.add_building("mining_drill_heavy_1", self.world.home, "mining_drill_heavy", _Drill)
+        drill.output_buffer["iron_ore"] = 400
+        self.world.add_grid("mining_drill_heavy_1", ["mining_drill_heavy_1"])
 
     def test_publishes_grid_drills_centrally(self):
         self.assertEqual(mining_drill.publish_all_drills(), 1)
