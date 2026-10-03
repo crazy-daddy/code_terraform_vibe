@@ -207,7 +207,7 @@ class PassiveStore:
     def fill_percent(self):
         return self._used() / self.capacity_units if self.capacity_units else 1.0
 
-    def transfer_to(self, target, item_id, count):
+    def transfer_to(self, target, item_id, count, properties=None, property_match=None):
         if count <= 0:
             return Result("no_op", requested=count)
         store, problem = self._world.local_store(target, self.outpost)
@@ -251,7 +251,7 @@ class Store(PassiveStore):
     def stacks(self):
         return [Stack(item_id, n) for item_id, n in self.items.items() if n > 0]
 
-    def space_for(self, item_id):
+    def space_for(self, item_id, properties=None):
         return self._room_for(item_id)
 
     def materials(self):
@@ -818,7 +818,8 @@ class FluidPort:
 
 
 class Tank(Building):
-    """Gas Tank / Liquid Tank (type_id), capacity from the spec."""
+    """Gas Tank / Liquid Tank (type_id), capacity from the spec; a `liquid_in`
+    FluidPort when the spec has one (Large Liquid Tank)."""
 
     def __init__(self, world, tank_id, outpost, type_id="liquid_tank", fluid="", level=0.0, capacity=None):
         super().__init__(world, tank_id, outpost)
@@ -828,6 +829,9 @@ class Tank(Building):
         self._capacity = default_data(type_id, "capacity", 100) if capacity is None else capacity
         self.inflow = 0.0
         self.outflow = 0.0
+        intake = default_data(type_id, "liquid_in_capacity", None)
+        if intake is not None:
+            self.liquid_in = FluidPort(world, 0.0, intake)
 
     def fluid(self):
         return self._fluid if self._level > 0 else ""
@@ -1339,9 +1343,16 @@ class Fleet:
         return self._units(MobileUnit)
 
 
+# Storage buildings Computer.deploy() places from a kit: Warehouse type -> unit capacity.
+DEPLOYABLE_STORES = {"warehouse": 20000, "large_warehouse": 30000}
+# Tank types Computer.deploy() places from a kit (capacity from the spec).
+DEPLOYABLE_TANKS = ("liquid_tank", "bulk_liquid_reservoir")
+
+
 class Computer:
     """`computer` (ship computer): deploy() turns an Inventory kit into a
-    Drone (chassis ids) or Pioneer; undeploy() removes any machine and returns
+    Drone (chassis ids), Pioneer, Warehouse or Liquid Tank (empty ones undeploy;
+    a loaded one answers cargo_present); undeploy() removes any machine and returns
     its kit (type_id), plus a unit's mounted modules and portables, to Inventory.
     `forced_status` makes every call answer that status instead."""
 
@@ -1357,7 +1368,8 @@ class Computer:
         world = self._world
         if world.inventory.count(item_id) <= 0:
             return Result("no_kit", machine_id=None)
-        if item_id != "pioneer" and machine_spec(item_id).get("instancePrefix") != "drone":
+        building = item_id in DEPLOYABLE_STORES or item_id in DEPLOYABLE_TANKS
+        if item_id != "pioneer" and not building and machine_spec(item_id).get("instancePrefix") != "drone":
             return Result("not_deployable", machine_id=None)
         target = world.outposts.get(getattr(outpost, "id", outpost)) if outpost is not None else world.home
         if target is None:
@@ -1367,6 +1379,10 @@ class Computer:
         new_id = next(f"{prefix}_{n}" for n in range(1, len(world.components) + 2) if f"{prefix}_{n}" not in world.components)
         if item_id == "pioneer":
             world.add_pioneer(new_id, target)
+        elif item_id in DEPLOYABLE_STORES:
+            world.add_warehouse(new_id, target, capacity=DEPLOYABLE_STORES[item_id]).type_id = item_id
+        elif item_id in DEPLOYABLE_TANKS:
+            world.add_tank(new_id, target, type_id=item_id)
         else:
             world.add_drone(new_id, target, kind=item_id)
         return Result("ok", machine_id=new_id)
@@ -1378,9 +1394,16 @@ class Computer:
         unit = self._world.components.get(getattr(machine, "id", machine))
         if unit is None or not getattr(unit, "type_id", ""):
             return Result("not_found")
-        if isinstance(unit, PassiveStore):
+        if isinstance(unit, Store) and unit.type_id in DEPLOYABLE_STORES:
+            if unit.total() > 0:
+                return Result("cargo_present")
+        elif isinstance(unit, Tank) and unit.type_id in DEPLOYABLE_TANKS:
+            if not unit.is_empty():
+                return Result("cargo_present")
+        elif isinstance(unit, PassiveStore):
             return Result("not_undeployable")
-        if isinstance(getattr(unit, "cargo", None), Cargo) and unit.cargo.count() > 0:
+        cargo = getattr(unit, "cargo", None)
+        if isinstance(cargo, Cargo) and cargo.count() > 0:
             return Result("cargo_present")
         del self._world.components[unit.id]
         mounts = unit.slots if isinstance(unit, MobileUnit) else []

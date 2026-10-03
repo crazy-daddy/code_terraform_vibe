@@ -11,13 +11,8 @@
 # The outpost with the most plain Warehouses goes first; there, the two
 # emptiest. A lone leftover Warehouse at an outpost is kept.
 #
-# States (fleet.upgrade["warehouse_swap"], one dict, restart-safe; every pass
-# re-reads it and writes back):
-#   buying    -> buy large_warehouse from the Shop (skipped if one is already
-#                in Inventory); snapshot of the outpost's Large Warehouses so a
-#                restart adopts an already-deployed one instead of deploying twice
-#   deploying -> computer.deploy("large_warehouse", outpost). Going over the
-#                outpost's building count is fine: it only lasts for the drain.
+# Swap states and buy/deploy/sell steps: lib/building_swap_upgrade.py
+# (fleet.upgrade["warehouse_swap"]).
 #   draining  -> greedy drain: each old Warehouse is emptied with back-to-back
 #                transfer_to() calls into the new one, then undeployed in the
 #                same breath and its kit sold. While the drain runs, the old
@@ -27,28 +22,20 @@
 #                every storage caller would have to check. Anything that still
 #                slips in between two transfers is drained on the next pass;
 #                undeploy() refuses ("cargo_present") while anything is left.
-#   blocked   -> deploy/undeploy refused for good; the operator deletes
-#                fleet.upgrade["warehouse_swap"] in the Data Archive Notebook
-#                to retry (a bought kit stays in Inventory and is reused).
 #
 # Why not control_room_automation.py: a Warehouse feeder moves ~2.5 ticks/unit
 # (docs/AI_CHEATSHEET.md §2c), so draining two full Warehouses blocks for tens
 # of game minutes. control_room_automation.py's grid supervision can't wait that long, and
 # Warehouses have no script slot of their own.
 
-from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_enabled, upgrade_phase_reached
-from tree_console import TreeConsole, flush_all
+from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
+from tree_console import flush_all
 from swallow import swallowed
 import cash
-from storage import inventory_count
 
 SMALL_TYPE_ID = "warehouse"
 LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id
-LARGE_RESEARCH_ID = "research_high_bay_warehousing"
-LARGE_PRICE_FALLBACK = 60000           # docs/database/equipment_production.md
 SWAP_RATIO = 2                         # Warehouses retired per Large Warehouse
-
-CASH_CONSUMER = "warehouse_upgrade"    # lib/cash.py consumer id
 # Units per transfer_to() call. A whole 2000-unit slot would block ~8 game
 # minutes with no status update; this keeps the old Warehouse just as busy
 # (calls run back to back) while the loop can still log and notice cargo_present.
@@ -57,152 +44,33 @@ DRAIN_CHUNK_UNITS = 500
 BUSY_RETRY_S = 0.2
 # Drain passes in one step that moved nothing before giving the step back.
 DRAIN_MAX_IDLE_PASSES = 5
-MAX_UNDEPLOY_ATTEMPTS = 5
 # "busy"/"changed" answers in a row on one chunk before that stack is skipped
 # for this pass (keeps a stuck feeder from spinning the loop forever).
 MAX_BUSY_RETRIES = 50
-# undeploy() answers that only mean "not right now": never count toward
-# MAX_UNDEPLOY_ATTEMPTS, and a swap blocked by one of them (older code)
-# resumes by itself. inventory_full = no Inventory room for the returned kit.
-TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full",)
-
-SWAP_KEY = "warehouse_swap"            # section of fleet.upgrade
-STATUS_KEY = "warehouse_status"        # one-line summary, same dict
 
 
-def _shape(text):
-    """text with every digit run collapsed to '#', to compare status lines without their counters."""
-    out = []
-    for c in text:
-        if c.isdigit():
-            if not out or out[-1] != "#":
-                out.append("#")
-        else:
-            out.append(c)
-    return "".join(out)
+class WarehouseUpgrader(BuildingSwapUpgrader):
+    """Warehouse pair -> Large Warehouse swap. One instance, reused across cycles."""
 
-
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("warehouse_upgrade._component: get_component", error)
-        return None
-
-
-class WarehouseUpgrader:
-    """Warehouse pair -> Large Warehouse swap state machine. One instance, reused across cycles."""
-
-    def __init__(self):
-        self.log = TreeConsole(module="warehouse_upgrade")
-
-    # ------------------------------------------------------------ lookups
-
-    def _outposts(self):
-        network = _component("outpost_network")
-        try:
-            return network.outposts() if network else []
-        except Exception as error:
-            swallowed("warehouse_upgrade.WarehouseUpgrader._outposts: network.outposts", error)
-            return []
-
-    def _outpost(self, outpost_id):
-        return next((o for o in self._outposts() if getattr(o, "id", "") == outpost_id), None)
-
-    def _ids_of(self, outpost, type_id):
-        try:
-            return sorted(getattr(ref, "id", "") for ref in outpost.buildings(type_id) if getattr(ref, "id", ""))
-        except Exception as error:
-            swallowed("warehouse_upgrade.WarehouseUpgrader._ids_of: outpost.buildings", error)
-            return []
+    MODULE = "warehouse_upgrade"
+    SMALL_TYPE_ID = SMALL_TYPE_ID
+    LARGE_TYPE_ID = LARGE_TYPE_ID
+    LARGE_RESEARCH_ID = "research_high_bay_warehousing"
+    LARGE_PRICE_FALLBACK = 60000           # docs/database/equipment_production.md
+    CASH_CONSUMER = "warehouse_upgrade"
+    SWAP_KEY = "warehouse_swap"
+    STATUS_KEY = "warehouse_status"
+    SMALL_NAME = "Warehouse"
+    LARGE_NAME = "Large Warehouse"
+    UP_TO_DATE = "warehouses up to date"
 
     def _total(self, building_id):
-        wh = _component(building_id)
+        wh = self._component(building_id)
         try:
             return int(wh.total()) if wh else 0
         except Exception as error:
             swallowed("warehouse_upgrade.WarehouseUpgrader._total: wh.total", error)
             return 0
-
-    def _credits(self):
-        commander = _component("commander")
-        try:
-            return int(commander.get_credits()) if commander else 0
-        except Exception as error:
-            swallowed("warehouse_upgrade.WarehouseUpgrader._credits: commander.get_credits", error)
-            return 0
-
-    def _price(self):
-        shop = _component("shop")
-        try:
-            for entry in shop.get_catalogue() if shop else []:
-                if entry.id == LARGE_TYPE_ID:
-                    return int(entry.cost)
-        except Exception as error:
-            swallowed("warehouse_upgrade.WarehouseUpgrader._price: shop.get_catalogue", error)
-        return LARGE_PRICE_FALLBACK
-
-    def _large_unlocked(self):
-        research = _component("research")
-        try:
-            if research and research.is_unlocked(LARGE_RESEARCH_ID):
-                return True
-        except Exception as error:
-            swallowed("warehouse_upgrade.WarehouseUpgrader._large_unlocked: research.is_unlocked", error)
-        return inventory_count(LARGE_TYPE_ID) > 0
-
-    # ------------------------------------------------------------ state
-
-    def _swap(self):
-        swap = fleet_upgrade_state().get(SWAP_KEY)
-        return swap if isinstance(swap, dict) else None
-
-    def _patch(self, **fields):
-        update_fleet_upgrade(lambda s: s.setdefault(SWAP_KEY, {}).update(fields))
-
-    def _clear(self):
-        update_fleet_upgrade(lambda s: s.pop(SWAP_KEY, None))
-
-    def _set_status(self, text):
-        """Stores the status line; prints it when it changes beyond its numbers (no spam from counters)."""
-        previous = fleet_upgrade_state().get(STATUS_KEY)
-        if previous != text:
-            update_fleet_upgrade(lambda s: s.update({STATUS_KEY: text}))
-            if _shape(previous or "") != _shape(text):
-                self.log.print(f"[warehouse_upgrade] Status: {text}")
-        return text
-
-    # ------------------------------------------------------------ main step
-
-    def step(self):
-        """One pass. May block for a long time while draining. Returns a one-line status."""
-        swap = self._swap()
-        enabled = is_upgrade_enabled()
-
-        if swap and swap.get("state") == "blocked" and swap.get("reason") in TRANSIENT_UNDEPLOY_STATUSES and swap.get("new_id"):
-            reason = swap.get("reason")
-            self._patch(state="draining", attempts=0, reason=None)
-            self.log.print(f"[warehouse_upgrade] Swap was blocked by '{reason}' (transient); resuming the drain.")
-            swap = self._swap()
-
-        if swap and swap.get("state") == "blocked":
-            return self._set_status(f"blocked ({swap.get('reason')}); delete fleet.upgrade['{SWAP_KEY}'] to retry")
-
-        if swap and not enabled and swap.get("state") == "buying" and inventory_count(LARGE_TYPE_ID) <= 0:
-            self._clear()
-            self.log.print("[warehouse_upgrade] Switched off before buying: swap cancelled.")
-            swap = None
-
-        if swap:
-            return self._set_status(self._advance(swap))
-
-        if not enabled:
-            return self._set_status("disabled")
-        if not upgrade_phase_reached():
-            return self._set_status("waiting for mining drills")
-        if not self._large_unlocked():
-            return self._set_status("Large Warehouse not researched")
-        return self._set_status(self._start_next() or "warehouses up to date")
 
     # ------------------------------------------------------------ selection
 
@@ -214,114 +82,30 @@ class WarehouseUpgrader:
             if len(smalls) >= SWAP_RATIO:
                 candidates.append((-len(smalls), getattr(outpost, "id", ""), smalls))
         if not candidates:
-            cash.release(CASH_CONSUMER)
+            cash.release(self.CASH_CONSUMER)
             self.log.end()
             return None
         candidates.sort()
         _, outpost_id, smalls = candidates[0]
         self.log.debug(f"Outposts with >= {SWAP_RATIO} Warehouses: {[(c[1], -c[0]) for c in candidates]}; picked '{outpost_id}'.")
 
-        price = self._price()
         pairs = sum(-c[0] // SWAP_RATIO for c in candidates)
-        if inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=pairs * price, label=f"{pairs} Large Warehouse(s)"):
-            self.log.debug(f"cash manager holds back {price} cr for '{outpost_id}'; waiting.")
-            _ret = f"saving up ({self._credits()}/{price} cr)"
+        if not self._can_buy(outpost_id, pairs):
+            _ret = f"saving up ({self._credits()}/{self._price()} cr)"
             self.log.end()
             return _ret
 
         fills = sorted((self._total(w), w) for w in smalls)
         old_ids = [w for _, w in fills[:SWAP_RATIO]]
         self.log.debug(f"Fill at '{outpost_id}': {fills}; retiring the emptiest {old_ids}.")
-        update_fleet_upgrade(lambda s: s.update({SWAP_KEY: {
-            "state": "buying", "outpost": outpost_id, "old_ids": old_ids,
-            "removed": [], "to_sell": 0, "new_id": None, "attempts": 0,
-        }}))
+        self._begin(outpost_id, old_ids)
         self.log.print(f"[warehouse_upgrade] '{outpost_id}': replacing {old_ids} with one Large Warehouse.")
         self.log.end()
         return f"{outpost_id}: buying Large Warehouse"
 
-    # ------------------------------------------------------------ swap
+    # ------------------------------------------------------------ drain
 
-    def _advance(self, swap):
-        """
-        Runs states back to back until one has to wait. Buy -> deploy -> drain
-        must not pause in between: a freshly deployed, empty Large Warehouse is
-        the least-full store at the outpost, so every other unloader and
-        control_room_automation.py's Inventory rebalance pick it the moment it exists. Only a
-        running drain (its feeder locked by our transfers) keeps them off it.
-        """
-        text = ""
-        for _ in range(4):
-            before = swap.get("state")
-            text = self._advance_once(swap)
-            swap = self._swap()
-            if not swap or swap.get("state") in (before, "blocked"):
-                return text
-            self.log.debug(f"[warehouse_upgrade] '{before}' -> '{swap.get('state')}', continuing without a pause.")
-        return text
-
-    def _advance_once(self, swap):
-        self.log.start("[warehouse_upgrade] _advance_once", level="debug")
-        state = swap.get("state")
-        outpost_id = swap.get("outpost")
-        computer = _component("computer")
-        if not computer or not hasattr(computer, "deploy"):
-            self.log.end()
-            return "no Ship Computer"
-        self.log.debug(f"Swap at '{outpost_id}': state '{state}'.")
-
-        if state == "buying":
-            if inventory_count(LARGE_TYPE_ID) <= 0:
-                shop = _component("shop")
-                price = self._price()
-                if self._credits() < price:
-                    self.log.end()
-                    return f"{outpost_id}: waiting for {price} cr"
-                res = shop.buy(LARGE_TYPE_ID, 1) if shop else None
-                status = getattr(res, "status", "no_shop")
-                if status != "ok":
-                    self.log.debug(f"buy('{LARGE_TYPE_ID}'): {status} - {getattr(res, 'message', '')}")
-                    self.log.end()
-                    return f"{outpost_id}: buy {status}, retrying"
-                cash.spent(CASH_CONSUMER, price)
-                self.log.print(f"[warehouse_upgrade] Bought a Large Warehouse ({price} cr).")
-            outpost = self._outpost(outpost_id)
-            known = self._ids_of(outpost, LARGE_TYPE_ID) if outpost else []
-            self._patch(state="deploying", known=known)
-            self.log.end()
-            return f"{outpost_id}: deploying"
-
-        if state == "deploying":
-            outpost = self._outpost(outpost_id)
-            known = set(swap.get("known") or [])
-            adopted = next((i for i in (self._ids_of(outpost, LARGE_TYPE_ID) if outpost else []) if i not in known), None)
-            if adopted is None:
-                res = computer.deploy(LARGE_TYPE_ID, outpost_id)
-                if res.status != "ok":
-                    if res.status in ("deploy_limit", "duplicate_outpost_machine", "wrong_biome_for_machine", "location_not_found", "not_deployable", "locked"):
-                        self._patch(state="blocked", reason=res.status)
-                        self.log.level("warn").print(f"[warehouse_upgrade] deploy('{LARGE_TYPE_ID}', '{outpost_id}') refused ({res.status}: {res.message}); swap blocked.")
-                        self.log.end()
-                        return f"{outpost_id}: blocked ({res.status})"
-                    if res.status == "no_kit":
-                        self._patch(state="buying")
-                    self.log.end()
-                    return f"{outpost_id}: deploy {res.status}"
-                adopted = res.machine_id
-            self._patch(state="draining", new_id=adopted)
-            self.log.print(f"[warehouse_upgrade] Deployed '{adopted}' at '{outpost_id}'; draining {swap.get('old_ids')}.")
-            self.log.end()
-            return f"{outpost_id}: deployed {adopted}"
-
-        if state == "draining":
-            _ret = self._drain_all(swap, computer)
-            self.log.end()
-            return _ret
-
-        self.log.end()
-        return f"{outpost_id}: unknown state {state!r}"
-
-    def _drain_all(self, swap, computer):
+    def _drain(self, swap, computer):
         outpost_id = swap.get("outpost")
         new_id = swap.get("new_id")
         self._sell_kits()
@@ -352,25 +136,19 @@ class WarehouseUpgrader:
         self.log.start("[warehouse_upgrade] _drain_loop", level="debug")
         idle_passes = 0
         while True:
-            old = _component(old_id)
+            old = self._component(old_id)
             stacks = []
             if old is not None:
                 try:
                     stacks = old.stacks()
-                except Exception as e:
-                    self.log.debug(f"'{old_id}'.stacks() raised {e}; trying undeploy.")
+                except Exception as error:
+                    swallowed("warehouse_upgrade.WarehouseUpgrader._drain_loop: old.stacks", error)
+                    self.log.debug(f"'{old_id}'.stacks() raised {error}; trying undeploy.")
 
             if not stacks:
                 res = computer.undeploy(old_id)
                 if res.status in ("ok", "not_found"):
-                    def mark(s):
-                        swap = s.setdefault(SWAP_KEY, {})
-                        removed = swap.setdefault("removed", [])
-                        if old_id not in removed:
-                            removed.append(old_id)
-                            if res.status == "ok":
-                                swap["to_sell"] = int(swap.get("to_sell") or 0) + 1
-                    update_fleet_upgrade(mark)
+                    self._mark_removed(old_id, res.status)
                     self._sell_kits()
                     self.log.print(f"[warehouse_upgrade] '{old_id}' empty ({moved[0]} unit(s) moved) and undeployed.")
                     self.log.end()
@@ -384,15 +162,9 @@ class WarehouseUpgrader:
                     if idle_passes < DRAIN_MAX_IDLE_PASSES:
                         self.log.debug(f"'{old_id}': something slipped in before undeploy; draining again.")
                         continue
-                attempts = int((self._swap() or {}).get("attempts") or 0) + 1
-                if attempts >= MAX_UNDEPLOY_ATTEMPTS:
-                    self._patch(state="blocked", reason=res.status, attempts=attempts)
-                    self.log.level("warn").print(f"[warehouse_upgrade] undeploy('{old_id}') refused {attempts}x ({res.status}: {res.message}); swap blocked.")
-                    self.log.end()
-                    return f"{outpost_id}: blocked ({res.status})"
-                self._patch(attempts=attempts)
+                _ret = self._refused(f"undeploy('{old_id}')", res, outpost_id)
                 self.log.end()
-                return f"{old_id}: undeploy {res.status}, retrying"
+                return _ret
 
             moved_pass = 0
             for stack in stacks:
@@ -458,7 +230,7 @@ class WarehouseUpgrader:
             others = [i for t in (LARGE_TYPE_ID, SMALL_TYPE_ID) for i in self._ids_of(outpost, t)]
             ordered += [i for i in others if i != new_id and i not in retiring]
         for building_id in ordered:
-            wh = _component(building_id)
+            wh = self._component(building_id)
             try:
                 if wh and wh.space_for(item_id, props) > 0:
                     if building_id != new_id:
@@ -472,15 +244,3 @@ class WarehouseUpgrader:
         self.log.end()
         return None
 
-    def _sell_kits(self):
-        """Sells the Warehouse kits this swap got back from undeploy() (never the operator's spares)."""
-        to_sell = int((self._swap() or {}).get("to_sell") or 0)
-        if to_sell <= 0:
-            return
-        shop = _component("shop")
-        res = shop.sell(SMALL_TYPE_ID, to_sell) if shop else None
-        if res is not None and res.status == "ok":
-            self._patch(to_sell=0)
-            self.log.print(f"[warehouse_upgrade] Sold {to_sell} Warehouse kit(s) for {res.credits} cr.")
-        else:
-            self.log.debug(f"[warehouse_upgrade] sell('{SMALL_TYPE_ID}', {to_sell}): {getattr(res, 'status', 'no_shop')}; retrying next pass.")
