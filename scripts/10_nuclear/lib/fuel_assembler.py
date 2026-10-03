@@ -13,8 +13,10 @@
 #     "fuel_rod" role (`lead_cask.roles`) and repairs it when a Depot filled
 #     it with uranium: into the other casks, else into this assembler's own
 #     stockpile (up to one craft's worth), so the cask unlatches even with
-#     every uranium cask full. Fuel Rods leave only into that cask; Supply Docks,
-#     Reactors and Mk IV generators pull from it themselves.
+#     every uranium cask full. Fuel Rods go straight to a local Supply Dock
+#     order that owes them (past the consumers' reserve), the rest into that
+#     cask; Supply Docks, Reactors and Mk IV generators pull from it themselves.
+#     Nuclear Batteries: local dock order first, then storage-first.
 #   - Inputs: the input port holds one source at a time. Raw Uranium comes from
 #     the Lead Casks here (lead_cask.take_from_casks()); Lead Plates from
 #     Inventory (home) or local Warehouses via storage.take_item(). Stages at
@@ -37,8 +39,8 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed, call_or
-from storage import take_item, takeable_stock, total_stock, drain_port_inventory_first, outpost_is_home, send_stack
-from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_remaining_requirements, set_upgrade_order
+from storage import take_item, takeable_stock, total_stock, drain_port_storage_first, push_to_targets, outpost_is_home, send_stack
+from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, set_upgrade_order
 from script_parking import ParkRequester
 import lead_cask
 import power
@@ -327,6 +329,15 @@ class FuelAssemblerController:
         counts = self.output_counts()
         moved_any = False
         rods = counts.get(ROD_ITEM, 0)
+        if rods > 0:
+            # A local dock order owing rods takes them straight from the output,
+            # past the local Reactors' / Mk IV generators' reserve.
+            free = lead_cask.rods_free_to_ship(self.outpost, rods)
+            targets = [(dock_id, min(owed, free)) for dock_id, owed in dock_owed_at(ROD_ITEM, self.outpost)] if free else []
+            for dock_id, moved in push_to_targets(self.machine.output, ROD_ITEM, rods, targets):
+                moved_any = True
+                rods -= moved
+                self.log.print(f"[{self.name}] Sent {moved}x {ROD_ITEM} to '{dock_id}'.")
         if rods > 0 and rod_cask is None:
             self.log.debug(f"{rods} Fuel Rod(s) waiting for a Fuel Rod cask")
         elif rods > 0:
@@ -336,14 +347,23 @@ class FuelAssemblerController:
                 self.log.print(f"[{self.name}] Sent {moved}x {ROD_ITEM} to '{rod_cask}'.")
             elif status not in ("busy", "exception"):
                 self.log.level("warn").print(f"[{self.name}] Rod output to '{rod_cask}': {status} - {message}")
-        if counts.get(BATTERY_ITEM, 0) > 0:
-            for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=self.outpost):
-                if moved > 0:
-                    moved_any = True
-                    self.log.print(f"[{self.name}] Sent {moved}x {item_id} to {destination}.")
-                    consume_manual_order(item_id, moved, self.outpost)
-                elif status not in ("busy", "no_op"):
-                    self.log.level("warn").print(f"[{self.name}] Output notice: {status} - {message}")
+        batteries = counts.get(BATTERY_ITEM, 0)
+        if batteries > 0:
+            targets = dock_delivery_targets(BATTERY_ITEM, batteries, self.outpost)
+            for dock_id, moved in push_to_targets(self.machine.output, BATTERY_ITEM, batteries, targets):
+                moved_any = True
+                batteries -= moved
+                self.log.print(f"[{self.name}] Sent {moved}x {BATTERY_ITEM} to '{dock_id}'.")
+        if batteries > 0:
+            # Storage-first; Inventory at home only when no Warehouse has room
+            # (or the item is Inventory-only). Rods never reach storage: only a
+            # Lead Cask or a dock takes them.
+            drain_port_storage_first(self.machine.output, outpost=self.outpost, include=lambda item_id: item_id == BATTERY_ITEM)
+            stored = batteries - self.output_counts().get(BATTERY_ITEM, 0)
+            if stored > 0:
+                moved_any = True
+                self.log.print(f"[{self.name}] Sent {stored}x {BATTERY_ITEM} to storage.")
+                consume_manual_order(BATTERY_ITEM, stored, self.outpost)
         return moved_any
 
     def clear_idle_recipe(self):

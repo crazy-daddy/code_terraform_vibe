@@ -731,6 +731,41 @@ def send_stack(port, item_id, count, target):
     return (getattr(res, "moved", 0) or 0), getattr(res, "status", None), getattr(res, "message", "")
 
 
+def push_to_targets(port, item_id, count, targets):
+    """
+    Sends up to `count` units of item_id from `port` (an OutputSlot) straight
+    into consumer machines, skipping the storage hop: `targets` is
+    [(target_id, max_units), ...] in order of preference. A target whose
+    connect() is refused (another outpost, not an item destination) or that
+    takes nothing (busy, full) is skipped for the next. Returns
+    [(target_id, moved), ...] for every target that took units; whatever is
+    left stays in the port for the caller's storage drain.
+    """
+    delivered = []
+    left = count
+    for target, cap in targets:
+        amount = min(left, int(cap))
+        if amount <= 0:
+            continue
+        try:
+            if port.connected_id() != target:
+                status = getattr(port.connect(target), "status", None)
+                if status != "ok":
+                    log.debug(f"push {item_id} -> '{target}': connect {status}")
+                    continue
+        except Exception as error:
+            swallowed("storage.push_to_targets: port.connect", error)
+            continue
+        moved, status, _message = send_stack(port, item_id, amount, target)
+        log.debug(f"push {moved}/{amount} {item_id} -> '{target}' ({status})")
+        if moved > 0:
+            delivered.append((target, moved))
+            left -= moved
+            if left <= 0:
+                break
+    return delivered
+
+
 def _send_to_best_target(port, item_id, count, outpost, allow_partial):
     """Sends one stack to best_unload_target(); a Warehouse that answers "busy"
     (a material endpoint lock, e.g. the one a blend was just taken from) is
@@ -791,16 +826,17 @@ def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False)
     return moved_total
 
 
-def drain_port_storage_first(port, outpost=None):
+def drain_port_storage_first(port, outpost=None, include=None):
     """
     Sends every stack staged in `port` to a local Warehouse
     (drain_port_to_storage()), then whatever no Warehouse took to
     local_port_target() (Inventory at home, the first local Warehouse
     elsewhere). For outputs that should stay out of Inventory unless the
-    Warehouses are full (Seed Supply seeds, Feed Maker feed). Returns total
-    units moved.
+    Warehouses are full (Seed Supply seeds, Feed Maker feed). `include`:
+    optional item_id -> bool filter, as in drain_port_to_storage(). Returns
+    total units moved.
     """
-    moved = drain_port_to_storage(port, outpost=outpost)
+    moved = drain_port_to_storage(port, outpost=outpost, include=include)
     target = local_port_target(outpost)
     if not target or not port or not hasattr(port, "stacks"):
         return moved
@@ -812,7 +848,7 @@ def drain_port_storage_first(port, outpost=None):
     for stack in stacks:
         item_id = getattr(stack, "id", None)
         count = getattr(stack, "count", 0)
-        if item_id and count > 0:
+        if item_id and count > 0 and (include is None or include(item_id)):
             moved += send_stack(port, item_id, count, target)[0]
     return moved
 

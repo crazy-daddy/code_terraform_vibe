@@ -120,3 +120,37 @@ def dock_remaining_requirements(outpost_id=None):
         for item_id, remaining in remaining_for_order.items():
             _add_demand(remaining_by_item, item_id, remaining)
     return remaining_by_item
+
+
+def dock_owed_at(item_id, outpost=None):
+    """[(dock_id, units)] for every Supply Dock at `outpost` (None = home)
+    whose active order still owes item_id: required - shipped - what this
+    outpost's docks on that order already hold. Docks sharing an order each
+    get the order's whole remainder; the dock input takes only what the
+    order still needs, so a second dock is a fallback, not extra demand."""
+    if outpost is None:
+        network = _component("outpost_network")
+        try:
+            outpost = network.home() if network else None
+        except Exception as error:
+            swallowed("production_docks.dock_owed_at: network.home", error)
+            outpost = None
+    if outpost is None:
+        return []
+    rows = []
+    loaded_by_order = {}
+    for dock_id in discover_supply_dock_ids(outpost):
+        dock = _component(dock_id)
+        if dock is None:
+            continue
+        try:
+            order = dock.current_order()
+            required = ((getattr(order, "requires", None) or {}).get(item_id, 0)) if order else 0
+            if required <= 0:
+                continue
+            order_id = getattr(order, "id", None)
+            loaded_by_order[order_id] = loaded_by_order.get(order_id, 0) + dock.count(item_id)
+            rows.append((dock_id, order_id, required - (getattr(order, "shipped", None) or {}).get(item_id, 0)))
+        except Exception as error:
+            swallowed("production_docks.dock_owed_at: dock order read", error)
+    return [(dock_id, owed - loaded_by_order.get(order_id, 0)) for dock_id, order_id, owed in rows if owed - loaded_by_order.get(order_id, 0) > 0]

@@ -332,14 +332,15 @@ class Slot:
             return False
         return sum(1 for n in self.buffer.values() if n > 0) >= cap
 
-    def _resolve(self, target_id):
+    def _resolve(self, target_id, machines=False):
         """(store, problem) for target_id as seen from this machine's outpost;
-        see World.local_store()."""
-        return self.machine.world.local_store(target_id, self.machine.outpost)
+        see World.local_store(). `machines`: an output may also reach another
+        machine's input there (MachineInput)."""
+        return self.machine.world.local_store(target_id, self.machine.outpost, machines)
 
     def connect(self, name):
         self.connect_log.append(name)
-        store, problem = self._resolve(name)
+        store, problem = self._resolve(name, machines=self.buffer is getattr(self.machine, "output_buffer", None))
         if problem == "not_found":
             return Result("not_found")
         if store is None:
@@ -384,7 +385,7 @@ class Slot:
 
     # -- output side --
     def send(self, item_id, count):
-        store, problem = self._resolve(self.connected)
+        store, problem = self._resolve(self.connected, machines=True)
         if problem == "no_connection":
             return Result("no_connection")
         if problem == "not_found":
@@ -409,6 +410,40 @@ class Slot:
             if self.buffer[item_id] <= 0:
                 del self.buffer[item_id]
         return moved
+
+
+class MachineInput:
+    """Another machine's input reached by an OutputSlot (connect/send to a
+    machine id): fills its `input_buffer` up to the input capacity and
+    material slots. A Supply Dock takes only its active order's remaining
+    need (docs/components/supply_dock.md). `busy` mirrors the machine's
+    `input_busy` flag."""
+
+    def __init__(self, building):
+        self.building = building
+        self.busy = getattr(building, "input_busy", False)
+
+    def count(self, item_id):
+        return self.building.input_buffer.get(item_id, 0)
+
+    def add(self, item_id, n):
+        slot = self.building.input
+        room = slot.capacity() - self.building._input_used()
+        if slot._slots_full_for(item_id):
+            room = 0
+        order = getattr(self.building, "order", None) if isinstance(self.building, SupplyDock) else None
+        if isinstance(self.building, SupplyDock):
+            owed = 0
+            if order is not None:
+                owed = order.requires.get(item_id, 0) - order.shipped.get(item_id, 0) - self.count(item_id)
+            room = min(room, max(0, owed))
+        moved = max(0, min(n, room))
+        if moved > 0:
+            self.building.input_buffer[item_id] = self.count(item_id) + moved
+        return moved
+
+    def remove(self, item_id, n):
+        return 0
 
 
 class Building:
@@ -1818,15 +1853,21 @@ class World:
             return self.components[component_id]
         return self.services.get(component_id)
 
-    def local_store(self, target_id, outpost):
+    def local_store(self, target_id, outpost, machines=False):
         """(store, problem) for a port at `outpost` reaching target_id. problem
         is "ok" (store set) or one of "no_connection", "not_found", "not_local",
-        "inventory_not_local"; each port method maps it to its own status."""
+        "inventory_not_local"; each port method maps it to its own status.
+        `machines`: another machine's input counts as a store (an OutputSlot
+        destination, wrapped in MachineInput)."""
         if not target_id:
             return None, "no_connection"
         if target_id == "inventory":
             return (self.inventory, "ok") if outpost is self.home else (None, "inventory_not_local")
         store = self.components.get(target_id)
+        if machines and isinstance(store, Building) and isinstance(getattr(store, "input", None), Slot):
+            if store.outpost is not outpost:
+                return None, "not_local"
+            return MachineInput(store), "ok"
         if store is None or not isinstance(store, PassiveStore):
             return None, "not_found"
         if store.outpost is not outpost:

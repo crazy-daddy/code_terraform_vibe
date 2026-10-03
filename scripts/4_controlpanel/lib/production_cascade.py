@@ -3,7 +3,7 @@
 from storage import total_stock
 from swallow import swallowed
 from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _component, _current_tick, _default_fabricator, _default_smelter
-from production_docks import _dock_order_remaining, _dock_order_sites
+from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache
 from production_orders import get_backlog_orders, get_fabricator_stock_targets, get_manual_orders, get_upgrade_orders, manual_transit_wants
 
@@ -379,6 +379,26 @@ def get_construction_material_reservations(cache=None):
         if reserve > 0:
             reservations[item_id] = reserve
     return reservations
+
+
+def dock_delivery_targets(item_id, count, outpost=None, cache=None):
+    """
+    [(dock_id, units)] a producer at `outpost` may push `count` fresh units of
+    item_id into directly (storage.push_to_targets()): the local Supply Docks
+    whose order still owes it (production_docks.dock_owed_at()). Blueprint
+    demand comes first, as in the docks' own loading
+    (get_construction_material_reservations()): with gross blueprint demand
+    for the item, only stock + count beyond that demand may ship.
+    """
+    targets = dock_owed_at(item_id, outpost)
+    if not targets:
+        return []
+    want = _cascade_blueprint_demand(cache).get(item_id, 0)
+    if want <= 0:
+        return targets
+    free = max(0, _stock_fn(cache)(item_id) + count - want)
+    log.debug(f"dock push {item_id}: blueprint demand {want}, {free} of {count} free to ship")
+    return [(dock_id, min(owed, free)) for dock_id, owed in targets if min(owed, free) > 0]
 
 
 _WARNED_UNKNOWN_MANUAL_ITEMS = set()

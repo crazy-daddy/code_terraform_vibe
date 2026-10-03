@@ -82,7 +82,7 @@ VALUE_TYPES = {
     "HabitatInsight": ["types.HabitatInsight"],
 }
 # Base classes and the world itself: checked through their subclasses, or not API.
-NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore"}
+NOT_API = {"World", "Building", "Machine", "MobileUnit", "PassiveStore", "MachineInput"}
 # Public test-only methods per stub class.
 TEST_HELPERS = {
     "Store": {"add", "remove"},

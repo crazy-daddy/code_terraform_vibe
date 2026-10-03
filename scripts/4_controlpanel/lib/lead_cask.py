@@ -175,10 +175,25 @@ def rods_for_orders(outpost, casks=None):
     if outpost is None:
         outpost = home_outpost()
     casks = casks_at(outpost) if casks is None else casks
-    reactors, mk4 = rod_consumers(outpost)
-    held = max(0, consumer_rod_reserve(reactors, mk4) - staged_rods(reactors + mk4))
+    held = _rods_to_hold(outpost)
     stock = cask_stock(ROD_ITEM, casks=casks)
     return max(0, stock - held), min(stock, held)
+
+
+def _rods_to_hold(outpost):
+    """Rods the local consumers' reserve still wants beyond what they have staged."""
+    reactors, mk4 = rod_consumers(outpost)
+    return max(0, consumer_rod_reserve(reactors, mk4) - staged_rods(reactors + mk4))
+
+
+def rods_free_to_ship(outpost, in_hand, casks=None):
+    """Of `in_hand` fresh Fuel Rods (a Fuel Assembler's output), how many may go
+    straight to a Supply Dock: cask rods + in_hand beyond the local consumers'
+    reserve (the same floor rods_for_orders() leaves the docks). None = home."""
+    if outpost is None:
+        outpost = home_outpost()
+    casks = casks_at(outpost) if casks is None else casks
+    return max(0, min(in_hand, cask_stock(ROD_ITEM, casks=casks) + in_hand - _rods_to_hold(outpost)))
 
 
 def reactor_fuel_alerts(tick, entries=None):

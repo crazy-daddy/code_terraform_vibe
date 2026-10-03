@@ -209,7 +209,7 @@ Two correctness/scaling problems tackled together: every production-demand funct
   - [ ] Validate live (ask before `--apply-libs`): at a smelting outpost with 2+ Warehouses, fewer `busy` on Smelter take/send; each ore and its product end in different Warehouses with one main stack each; home Inventory no longer collects ingots.
   - [ ] Drain old mixed stacks first: `_holder_candidates()` takes from a holder that also holds the partner before a clean holder, so the leftover slot frees sooner.
   - [ ] Extend partners to Fabricator recipe inputs/outputs only if logs show Fabricator take/send blocking each other.
-  - [ ] Storage-first output for Fabricator, Seed Maker and Fuel Assembler (still `drain_port_inventory_first()`).
+  - [x] Storage-first output for Fabricator and Fuel Assembler batteries; Seed Maker stays Inventory-first (planting starts from Inventory).
   - **Shelved**: Warehouse layout by usage frequency (pair most/least-used items per building). Warehouse lock time per unit is fixed (~0.25 s), so layout only reshuffles who waits; and usage shifts heavily whenever a different order is taken. Revisit only if Warehouse lock starvation grows again (Inventory hub shelved too, see above).
 
 Older multi-outpost-production goals this phase's lettered plan above directly targets or will subsume as it's implemented:

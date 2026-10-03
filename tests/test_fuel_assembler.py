@@ -83,7 +83,7 @@ class _Base(harness.StubTestCase):
         self.world.add_grid("grid_a", ["fuel_assembler_1"])
         self.plates = {"lead_plate": 50}
         self.fake_power = _Power()
-        self._orig = (fa.take_item, fa.takeable_stock, fa.drain_port_inventory_first, fa.power)
+        self._orig = (fa.take_item, fa.takeable_stock, fa.drain_port_storage_first, fa.power)
 
         def fake_take(port, item_id, amount, outpost=None, cache=None, report=None):
             moved = min(amount, self.plates.get(item_id, 0))
@@ -93,11 +93,11 @@ class _Base(harness.StubTestCase):
 
         fa.take_item = fake_take
         fa.takeable_stock = lambda item_id, outpost=None: self.plates.get(item_id, 0)
-        fa.drain_port_inventory_first = lambda port, outpost=None: []
+        fa.drain_port_storage_first = lambda port, outpost=None, include=None: 0
         fa.power = self.fake_power
 
     def tearDown(self):
-        fa.take_item, fa.takeable_stock, fa.drain_port_inventory_first, fa.power = self._orig
+        fa.take_item, fa.takeable_stock, fa.drain_port_storage_first, fa.power = self._orig
         super().tearDown()
 
     def casks(self, uranium=40, rods=None):
@@ -208,6 +208,17 @@ class FuelAssemblerTests(_Base):
         fa.FuelAssemblerController(maker).step()
         self.assertEqual(rod_cask.count("fuel_rod"), 2)
         self.assertEqual(uranium.count("fuel_rod"), 0)
+
+    def test_rods_past_reactor_reserve_go_to_local_dock(self):
+        _uranium, rod_cask = self.casks()
+        _Consumer(self.world, "reactor_1", "reactor", self.world.home)  # reserve 1 + 2 = 3
+        dock = self.world.add_supply_dock("supply_dock_1", self.world.home)
+        dock.order = self.world.add_order("order_1", {"fuel_rod": 10})
+        maker = _Assembler(self.world, self.world.home)
+        maker.output_buffer.update({"fuel_rod": 5})
+        fa.FuelAssemblerController(maker).drain_output("lead_cask_2")
+        self.assertEqual(dock.count("fuel_rod"), 2)
+        self.assertEqual(rod_cask.count("fuel_rod"), 3)
 
     def test_misfiled_uranium_moved_out_of_rod_cask(self):
         uranium, rod_cask = self.casks(uranium=30)

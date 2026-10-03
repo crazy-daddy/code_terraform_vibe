@@ -1,7 +1,7 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
 from archive import archive
-from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
+from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -416,23 +416,44 @@ class FabricatorController(RecipeClaimMixin):
         """Returns True when anything left the output buffer."""
         if not hasattr(self.machine, "output"):
             return False
-        # Inventory first, a Warehouse only when Inventory is full or this
-        # Fabricator is off-home -- see storage.drain_port_inventory_first().
-        at_home = self.at_home()
-        drained = False
-        for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=self.outpost()):
-            if moved > 0:
-                drained = True
-                if not at_home:
-                    self.log.print(f"[{self.name}] Sent {moved}x {item_id} to a local Warehouse.")
-                elif destination == "warehouse":
-                    self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
-                else:
-                    self.log.print(f"[{self.name}] Sent {moved}x {item_id} to Inventory.")
-                consume_manual_order(item_id, moved, self.outpost())
-            elif status not in ["busy", "no_op"]:
-                self.log.level("warn").print(f"[{self.name}] Output notice: {status} - {message}")
-        return drained
+        try:
+            staged = {s.id: s.count for s in self.machine.output.stacks() if s.count > 0}
+        except Exception as error:
+            swallowed("fabricator.FabricatorController.drain_output: output.stacks", error)
+            return False
+        if not staged:
+            return False
+        # A local Supply Dock whose order owes the item takes it straight from
+        # the output (no storage hop); the rest goes to a local Warehouse,
+        # Inventory only for Inventory-only items or when no Warehouse has room
+        # (storage.drain_port_storage_first()).
+        sent = []
+        docked = {}
+        for item_id, count in staged.items():
+            targets = dock_delivery_targets(item_id, count, self.outpost())
+            for dock_id, moved in push_to_targets(self.machine.output, item_id, count, targets):
+                sent.append(f"{moved}x {item_id} to '{dock_id}'")
+                docked[item_id] = docked.get(item_id, 0) + moved
+        drain_port_storage_first(self.machine.output, outpost=self.outpost())
+        left = self.output_counts()
+        for item_id, count in staged.items():
+            stored = count - left.get(item_id, 0) - docked.get(item_id, 0)
+            if stored > 0:
+                sent.append(f"{stored}x {item_id} to storage")
+                consume_manual_order(item_id, stored, self.outpost())
+        if sent:
+            self.log.print(f"[{self.name}] Sent {', '.join(sent)}.")
+        elif left:
+            self.log.debug(f"[{self.name}] drain_output: {left} not moved, no local destination has room")
+        return bool(sent)
+
+    def output_counts(self):
+        """{item_id: units} in the output buffer ({} when unreadable)."""
+        try:
+            return {s.id: s.count for s in self.machine.output.stacks() if s.count > 0}
+        except Exception as error:
+            swallowed("fabricator.FabricatorController.output_counts: output.stacks", error)
+            return {}
 
     def drain_byproduct(self):
         """Returns True when anything was moved out of the buffer.
