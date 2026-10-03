@@ -91,6 +91,18 @@ class _Collector(drone_weather.DroneWeatherMixin):
     def flight_speed_m_per_h(self, throttle=1.0):
         return 300.0 * throttle
 
+    def get_battery(self):
+        return (100.0, 100.0, 1.0)
+
+    def energy_needed_to_return_comfortably(self):
+        return 0.0
+
+    def hold_for_launch_charge(self, log):
+        return False
+
+    def energy_unit(self):
+        return "Wh"
+
 
 def _entry(kind="storm_glass", x=150, y=0, ready=10.0, expires=100.0, **extra):
     entry = {"kind": kind, "x": x, "y": y, "units_min": 2, "units_max": 4, "ready_gh": ready, "expires_gh": expires, "decoded_gh": 0.0}
@@ -264,6 +276,20 @@ class CollectorTests(StubTestCase):
         self.assertEqual(collector.intent, "hauling raw_uranium from storm_2 to outpost_home")
         collector._end_trip_intent(_target(), 0)
         self.assertIsNone(collector.intent)
+
+    def test_plated_takes_glass_only_without_uranium_job(self):
+        self._uranium_ready()
+        self._publish({"storm_1": _entry(ready=19.0, x=10), "storm_2": _entry(kind="uranium", ready=19.0, x=150)})
+        log = TreeConsole(module="drone_weather")
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
+        target = collector._next_aftermath_target(log, 0.0)
+        assert target is not None
+        self.assertEqual(target["event_id"], "storm_2")
+        self.world.components["lead_cask_1"].add("raw_uranium", 30)  # casks at stock target
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home, name="drone_2")
+        target = collector._next_aftermath_target(log, 0.0)
+        assert target is not None
+        self.assertEqual(target["event_id"], "storm_1")
 
     def test_not_launched_before_arrival_would_be_ready(self):
         # 150 m at 150 m/h = 1 h away.

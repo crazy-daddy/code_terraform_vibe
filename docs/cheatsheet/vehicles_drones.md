@@ -323,7 +323,7 @@ Drone with Cargo Pods and no bio module. **No home Depot**: each cycle picks the
 
 ### 2j-1. Aftermath Collector (`lib/drone_weather.py` `DroneWeatherMixin`)
 
-Collects storm aftermaths decoded into `weather.aftermaths` (§1m). Role `"aftermath"` = Cargo Pods + **Shield Plating** and no bio module (`detect_role()` checks plating before the hauler fallback). Plated drones take Raw Uranium and Storm Glass; unplated drones (haulers, §2j) take Storm Glass only, never uranium (+40 exposure per batch, scramble at 100).
+Collects storm aftermaths decoded into `weather.aftermaths` (§1m). Role `"aftermath"` = Cargo Pods + **Shield Plating** and no bio module (`detect_role()` checks plating before the hauler fallback). Plated drones take Raw Uranium, and Storm Glass only when no uranium site is claimable (`aftermath_passes()`: uranium pass first, glass pass second; plating costs 1.5× fuel and half the Cargo Pod capacity); unplated drones (haulers, §2j) take Storm Glass only, never uranium (+40 exposure per batch, scramble at 100).
 
 - **Launch timing**: a site is a candidate once `now + travel_h >= ready_gh` (`launch_due()`; travel at `cruise_throttle`), and skipped when arrival + `EXPIRY_MARGIN_GH = 1.0` passes `expires_gh`. Order: soonest expiry, then distance. On site the drone hovers until `ready_gh + READY_MARGIN_GH = 0.1` (`WAITING_AFTERMATH`, polls every `WAIT_POLL_S = 10` s).
 - **Exact coordinate**: `go_to()` snaps the drone to the exact target and `collect()` matches `x`/`y` exactly (simworker `zw()`), so `fly_to(..., precision=0.01)`.

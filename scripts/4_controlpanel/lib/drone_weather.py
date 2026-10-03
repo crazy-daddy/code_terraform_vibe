@@ -26,7 +26,10 @@
 # it into the next empty cask, the Fuel Rod cask included. Room is also capped
 # by uranium_want(): lead_cask.URANIUM_STOCK_TARGET plus Supply Dock orders at
 # home, less the uranium already in the casks.
-# Storm Glass (thunderstorms, 2-4 units) is ordinary cargo.
+# Storm Glass (thunderstorms, 2-4 units) is ordinary cargo. Unplated haulers
+# collect it between haul jobs; a plated drone takes a glass site only when no
+# uranium site is claimable (Lead Cask room, claims, range), since plating
+# costs it 1.5x fuel and half its Cargo Pod capacity.
 #
 # One drone per site at a time: an exclusive claim in biosite.claims under
 # AFTERMATH_KEY_PREFIX + event_id (drone_claims.py). A site that needs more
@@ -166,6 +169,10 @@ class DroneWeatherMixin:
 
     def aftermath_kinds(self):
         return ("uranium", "storm_glass") if self._host.plated else ("storm_glass",)
+
+    def aftermath_passes(self):
+        """Kinds to pick from, one pass each in order: a plated drone takes Storm Glass only after no uranium site is claimable."""
+        return (("uranium",), ("storm_glass",)) if self._host.plated else (("storm_glass",),)
 
     def _aftermath_candidates(self, kinds, urgent_within=None):
         """
@@ -469,19 +476,29 @@ class DroneWeatherMixin:
             flush_all()
             sleep(poll_interval)
             return None
-        candidates = self._aftermath_candidates(self.aftermath_kinds())
-        if not candidates:
+        seen = 0
+        target, budget = None, None
+        for kinds in self.aftermath_passes():
+            candidates = self._aftermath_candidates(kinds)
+            if not candidates:
+                continue
+            if seen == 0 and self._host.hold_for_launch_charge(log):
+                flush_all()
+                sleep(poll_interval)
+                return None
+            seen += len(candidates)
+            target, budget = self._select_aftermath_target(candidates)
+            if target is not None:
+                if self._host.plated and target["kind"] == "storm_glass":
+                    log.debug(f"[{self._host.name}] No claimable uranium site; taking Storm Glass {target['event_id']}.")
+                break
+        if seen == 0:
             self._host.publish_telemetry("IDLE_NO_TARGETS")
             flush_all()
             sleep(IDLE_POLL_S)
             return None
-        if self._host.hold_for_launch_charge(log):
-            flush_all()
-            sleep(poll_interval)
-            return None
-        target, budget = self._select_aftermath_target(candidates)
         if target is None or budget is None:
-            log.debug(f"[{self._host.name}] {len(candidates)} aftermath site(s), none reachable and claimable.")
+            log.debug(f"[{self._host.name}] {seen} aftermath site(s), none reachable and claimable.")
             self._host.publish_telemetry("IDLE_OUT_OF_RANGE")
             _, _, lvl = self._host.get_battery()
             if lvl < 0.98:
