@@ -153,21 +153,32 @@ class FeedMakerController:
     def stockpile(self):
         return dict(self._call("get_stockpile", {}))
 
-    def eject_strays(self, inputs):
-        """Ejects stockpile items `inputs` doesn't use, only when they leave no room for its craft."""
+    def eject_strays(self, inputs, slots_full=False):
+        """Ejects stockpile items `inputs` doesn't use, only when they leave no room for its craft.
+
+        Room is counted in units; the stockpile also caps distinct materials,
+        which no method reports. `slots_full=True` (a take() hit that cap)
+        ejects them regardless of unit room.
+        """
         loaded = self.stockpile()
         room = int(self._call("get_stockpile_capacity", 200)) - int(self._call("get_stockpile_used", 0))
         missing = sum(max(0, qty - loaded.get(item, 0)) for item, qty in inputs.items())
         target = local_port_target(self.outpost)
-        if room >= missing or not target:
+        if (room >= missing and not slots_full) or not target:
             return
+        ejected = []
         for item, count in loaded.items():
             if item in inputs or count <= 0:
                 continue
             try:
-                self.maker.input.eject(target, item, count)
+                result = self.maker.input.eject(target, item, count)
             except Exception as error:
                 swallowed("feed_maker.FeedMakerController.eject_strays: input.eject", error)
+                continue
+            ejected.append(f"{item}:{getattr(result, 'status', '?')}")
+        if ejected:
+            reason = "material slots full" if slots_full else f"room {room} < {missing}"
+            self.log.debug(f"[{self.name}] Ejected strays ({reason}): {', '.join(ejected)}")
 
     def switch_to(self, rid, inputs):
         """True once `rid` is the set recipe; the loaded stockpile carries over."""
@@ -198,7 +209,12 @@ class FeedMakerController:
         # with the Forage and runs during its cooldown.
         moved = 0
         for item, qty in sorted(need.items(), key=lambda kv: kv[1]):
-            moved += take_item(self.maker.input, item, qty, outpost=self.outpost)
+            report = {}
+            moved += take_item(self.maker.input, item, qty, outpost=self.outpost, report=report)
+            if any(status == "slots_full" for _source, status, _moved in report.get("sources", [])):
+                # Leftovers of earlier recipes hold every material slot.
+                self.eject_strays(inputs, slots_full=True)
+                break
         return moved
 
     def drain_output(self):
