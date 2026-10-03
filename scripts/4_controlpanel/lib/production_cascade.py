@@ -5,7 +5,7 @@ from swallow import swallowed
 from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _component, _current_tick, _default_fabricator, _default_smelter
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache
-from production_orders import get_backlog_orders, get_fabricator_stock_targets, get_manual_orders, get_upgrade_orders, manual_transit_wants
+from production_orders import get_backlog_orders, get_fabricator_stock_targets, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
 
 
 # Recipe input table ({output_item: {input_item: qty per output unit}}), built from the
@@ -508,17 +508,21 @@ def fabricator_root_targets(cache=None):
 
     # Fleet upgrade orders (get_upgrade_orders()): same max() fold as manual
     # orders; their lower priority is again choose_recipe()'s job.
+    # Site orders (SITE_ORDER_REQUESTERS) raise the target only: their sites
+    # request the items themselves.
     for item_id, quantity in get_upgrade_orders().items():
         targets[item_id] = max(targets.get(item_id, 0), quantity)
-        home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: fleet upgrade order raises target for {item_id} -> {targets[item_id]}")
+    for item_id, quantity in get_upgrade_orders(skip=SITE_ORDER_REQUESTERS).items():
+        home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
 
     # Backlog orders (get_backlog_orders()): same fold; choose_recipe() ranks
     # the part above every other floor last (tier 5).
     for item_id, quantity in get_backlog_orders().items():
         targets[item_id] = max(targets.get(item_id, 0), quantity)
-        home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: backlog order raises target for {item_id} -> {targets[item_id]}")
+    for item_id, quantity in get_backlog_orders(skip=SITE_ORDER_REQUESTERS).items():
+        home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
 
     order_sites = _dock_order_sites()
     consumers = {}
@@ -554,7 +558,7 @@ def fabricator_root_targets(cache=None):
             log.trace(f"get_fabricator_targets: blueprint cascade raises target for {item_id} -> {targets[item_id]} (cascaded={count})")
 
     # Stock targets and manual/upgrade/backlog orders are consumed at home
-    # (Inventory side). A blueprint's own required_item is consumed where the
+    # (Inventory side), site orders excepted. A blueprint's own required_item is consumed where the
     # Constructor Pioneer loads it (construction_site_id()); the intermediates
     # beneath it are Fabricator inputs, consumed at whichever fab site builds
     # the item, so they are no consumer root.

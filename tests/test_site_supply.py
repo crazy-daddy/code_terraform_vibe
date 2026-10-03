@@ -87,6 +87,7 @@ class SiteSupplyTests(StubTestCase):
         self.assertNotIn("iron_ingot", requests)
         self.assertEqual(requests["iron_ore"], (outpost_mining.ore_stock_target("iron_ore"), 50))
 
+    @mock.patch.dict(site_supply.SITE_STOCK_TARGETS, clear=True)
     def test_fab_only_site_requests_all_of_d_as_ingots(self):
         w = self.world
         w.add_smelter("smelter_1", w.home)
@@ -124,12 +125,21 @@ class SiteSupplyTests(StubTestCase):
         w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + [Recipe("craft_lead_plate", {"lead_ingot": 2}, "lead_plate")])
         target = site_supply.SITE_STOCK_TARGETS["fuel_assembler"]["lead_plate"]
         self.publish()
-        self.assertNotIn("lead_plate", site_requests(w, "outpost_2"))  # none built anywhere yet
-        self.assertEqual(production.get_backlog_orders(), {"lead_plate": target})
-        w.add_warehouse("wh_home", w.home, {"lead_plate": 50}, capacity=100000)
-        w.clock.now += site_supply.REPUBLISH_TICKS
-        self.publish()
+        # requested before any is built: the backlog order crafts it
         self.assertEqual(site_requests(w, "outpost_2").get("lead_plate"), (target, 0))
+        self.assertEqual(production.get_backlog_orders(), {"lead_plate": target})
+
+    def test_refiner_tar_ordered_and_not_pulled_home(self):
+        w = self.world
+        w.add_building("refiner_1", self.remote, "refiner")
+        w.add_fabricator("fabricator_1", w.home, FABRICATOR_RECIPES + [Recipe("craft_tar", {}, "tar")])
+        self.publish()
+        need = site_supply.SITE_STOCK_NEED["refiner"]["tar"]
+        self.assertEqual(site_requests(w, "outpost_2").get("tar"), (site_supply.SITE_STOCK_TARGETS["refiner"]["tar"], need))
+        self.assertEqual(production.get_upgrade_orders().get("tar"), need)
+        self.assertGreaterEqual(production.get_backlog_orders().get("tar", 0), site_supply.SITE_STOCK_TARGETS["refiner"]["tar"])
+        _roots, consumers, _outputs = production.fabricator_root_targets(production.SourceCache())
+        self.assertNotIn(w.home.id, consumers.get("tar", {}))
 
     def test_smelt_and_fab_site_splits_ingots_and_ore(self):
         w = self.world
@@ -232,7 +242,8 @@ class SiteSupplyTests(StubTestCase):
         w.add_warehouse("wh_remote", self.remote)
         self._forage_fab(self.remote)
         self.publish()
-        self.assertNotIn("forage", site_requests(w, "outpost_2"))
+        # only the buffer-tier stockpile, no need-tier pull
+        self.assertEqual(site_requests(w, "outpost_2").get("forage"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["forage"], 0))
 
     def test_fab_site_stocks_forage_buffer(self):
         w = self.world

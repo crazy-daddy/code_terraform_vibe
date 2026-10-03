@@ -89,7 +89,7 @@
 
 from archive import archive
 from logistics_requests import active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
-from production import set_backlog_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
+from production import set_backlog_order, set_upgrade_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
@@ -130,10 +130,13 @@ SITE_STOCK_TARGETS = {"fabricator": {"tar": 2000, "forage": 1000}, "refiner": {"
 # stops without tar, so its outpost asks for 150 (30-75 crafts) at need
 # priority; the rest of the 2,000 stays buffer tier.
 SITE_STOCK_NEED = {"refiner": {"tar": 150}}
-# Stockpile items the Fabricators also craft for (backlog order: idle time
-# only). Tar is not: it comes from the plastic byproduct and home stock.
-SITE_STOCK_CRAFTED = ("lead_plate",)
+# Stockpile items the Fabricators also craft (craft_tar: 5 t Oil -> 2 Tar, on
+# top of the Lubricant/Plastic/Rubber byproduct): the summed targets as a
+# backlog order (idle time only), the summed need levels as an upgrade order.
+# Both are site orders (production.SITE_ORDER_REQUESTERS): home is no consumer.
+SITE_STOCK_CRAFTED = ("lead_plate", "tar")
 SITE_STOCK_REQUESTER = "site_stock"
+SITE_STOCK_NEED_REQUESTER = "site_stock_need"
 # Construction stock at the Constructor's home (buffer tier + backlog order).
 # No power line bridge: the power network is meant to be one grid. Segments
 # cover a 40-piece low-priority chunk plus its 20 reserve with room to spare.
@@ -300,19 +303,16 @@ def site_stock_needs(outpost):
 def stock_wants(outpost, targets, outposts, requests, tick, flying, wants, needs=None):
     """Raises wants to `targets` (site_stock_targets()) as buffer tier, with
     need level max(`needs` (site_stock_needs()), any need level already
-    planned (ship plan)). Only items free at another outpost or already in
-    flight here: nothing to pull, no request."""
+    planned (ship plan)). Requested whether or not any is free elsewhere yet:
+    the request is netted against local stock, and a crafted item
+    (SITE_STOCK_CRAFTED) is on its way from a Fabricator."""
     if not targets:
         return
     needs = needs or {}
-    site_id = getattr(outpost, "id", None)
     item_ids = sorted(targets)
-    spare = free_elsewhere(item_ids, site_id, outposts, requests, tick)
     have = outpost_stock(item_ids, outpost)
     for item_id in item_ids:
         target = targets[item_id]
-        if spare.get(item_id, 0) <= 0 and flying.get(item_id, 0) <= 0 and item_id not in wants:
-            continue
         floor = max(wants[item_id][2] if item_id in wants else 0, needs.get(item_id, 0))
         wants[item_id] = (max(target, floor), have.get(item_id, 0), floor)
         log.debug(f"stock_wants({getattr(outpost, 'id', None)}): {item_id} local={have.get(item_id, 0)} need level={floor} target={max(target, floor)}")
@@ -346,19 +346,24 @@ def construction_stock_targets(cache):
 
 
 def order_site_stock(outposts, fabricator_outputs, construction=None):
-    """Backlog orders for what a Fabricator can build: SITE_STOCK_CRAFTED
-    items to the summed stockpile targets of every outpost
-    (SITE_STOCK_REQUESTER), and the construction stock (`construction`,
-    construction_stock_targets(); CONSTRUCTION_STOCK_REQUESTER)."""
+    """Orders for what a Fabricator can build: SITE_STOCK_CRAFTED items to
+    the summed stockpile targets of every outpost as a backlog order
+    (SITE_STOCK_REQUESTER) and to their summed need levels as an upgrade
+    order (SITE_STOCK_NEED_REQUESTER), and the construction stock
+    (`construction`, construction_stock_targets(); backlog,
+    CONSTRUCTION_STOCK_REQUESTER)."""
     totals = {}
+    needs = {}
     for outpost in outposts:
-        for item_id, target in site_stock_targets(outpost).items():
-            if item_id in SITE_STOCK_CRAFTED and item_id in fabricator_outputs:
-                totals[item_id] = totals.get(item_id, 0) + target
+        for table, out in ((site_stock_targets(outpost), totals), (site_stock_needs(outpost), needs)):
+            for item_id, units in table.items():
+                if item_id in SITE_STOCK_CRAFTED and item_id in fabricator_outputs:
+                    out[item_id] = out.get(item_id, 0) + units
     set_backlog_order(SITE_STOCK_REQUESTER, totals)
+    set_upgrade_order(SITE_STOCK_NEED_REQUESTER, needs)
     build = {item_id: units for item_id, units in sorted((construction or {}).items()) if units > 0 and item_id in fabricator_outputs}
     set_backlog_order(CONSTRUCTION_STOCK_REQUESTER, build)
-    log.debug(f"order_site_stock: backlog {totals or 'none'}, construction {build or 'none'}")
+    log.debug(f"order_site_stock: backlog {totals or 'none'}, need {needs or 'none'}, construction {build or 'none'}")
 
 
 def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None, anywhere=(), urgent=(), extra_stock=None):

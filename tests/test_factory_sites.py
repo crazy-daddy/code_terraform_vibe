@@ -128,10 +128,11 @@ class ConsumerHaulingTests(StubTestCase):
     def setUp(self):
         super().setUp()
         self.remote = self.world.add_outpost("outpost_2")
-        # blueprint-material hauling alone; the construction stock has its own tests (test_site_supply.py)
-        patcher = mock.patch.dict(site_supply.CONSTRUCTION_STOCK_TARGETS, clear=True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # blueprint-material hauling alone; the construction stock and the site stockpiles have their own tests (test_site_supply.py)
+        for table in (site_supply.CONSTRUCTION_STOCK_TARGETS, site_supply.SITE_STOCK_TARGETS):
+            patcher = mock.patch.dict(table, clear=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)

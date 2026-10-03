@@ -195,13 +195,20 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # Growth Accelerant (8_planting/lib/plant_terraformer_demand.py). "fuel_assembler" = the
 # Fuel Assemblers' Lead Plates for their next crafts (10_nuclear/lib/fuel_assembler.py).
 # "field_amplifier" = the Harvester's Yield Amplifier doses (8_planting/lib/harvester_amplify.py).
-STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier")
+# "site_stock_need" = the need tier of the crafted site stockpiles (5_steampower/lib/site_supply.py).
+STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock_need")
 # Standing requesters whose order is a recurring consumable buffer, not a
 # one-off part a job waits on: their items are never hauled urgently
 # (lib/site_supply.py settled_items()), so a hauler waits for a full load.
 # The Fuel Assemblers' Lead Plates stay urgent (reactor fuel); their outposts
 # keep a stockpile instead (site_supply.SITE_STOCK_TARGETS).
-RECURRING_ORDER_REQUESTERS = ("plant_terraformer", "field_amplifier")
+RECURRING_ORDER_REQUESTERS = ("plant_terraformer", "field_amplifier", "site_stock_need")
+# Upgrade/backlog requesters whose items are consumed at the outposts that
+# request them through site supply (5_steampower/lib/site_supply.py
+# SITE_STOCK_TARGETS), not at home: they raise the Fabricator targets but make
+# home no consumer (lib/production_cascade.py fabricator_root_targets()), so
+# home doesn't pull the stockpiles back.
+SITE_ORDER_REQUESTERS = ("site_stock", "site_stock_need")
 
 # Backlog orders: same {requester_id: {item_id: quantity}} shape as
 # UPGRADE_ORDERS_KEY, but filler work. The quantity is folded into the
@@ -217,9 +224,9 @@ def get_upgrade_orders(skip=()):
     return _summed_orders(UPGRADE_ORDERS_KEY, skip)
 
 
-def get_backlog_orders():
-    """{item_id: quantity} summed across every requester's entry in BACKLOG_ORDERS_KEY."""
-    return _summed_orders(BACKLOG_ORDERS_KEY)
+def get_backlog_orders(skip=()):
+    """{item_id: quantity} summed across every requester's entry in BACKLOG_ORDERS_KEY, except the requesters in `skip`."""
+    return _summed_orders(BACKLOG_ORDERS_KEY, skip)
 
 
 def _summed_orders(key, skip=()):
