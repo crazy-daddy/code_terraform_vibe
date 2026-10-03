@@ -67,6 +67,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; **no** shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
 | Smelting | `smelter.py` |
+| &nbsp;&nbsp;↳ per-outpost recipe claims + soft-shed check shared with the Fabricator | `recipe_claims.py` — see §2c |
 | Production planning (demand-driven) | `production.py` — facade re-exporting the `production_*.py` modules below; callers import from it. Module state (memos, TTLs, `log`) is patched/reset in the defining module |
 | &nbsp;&nbsp;↳ craft timing, memoized building discovery, site ids, shared `log` | `production_core.py` |
 | &nbsp;&nbsp;↳ Supply Dock orders, units still owed, consuming sites | `production_docks.py` |

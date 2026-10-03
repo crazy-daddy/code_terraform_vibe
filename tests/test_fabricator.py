@@ -2,6 +2,7 @@
 import unittest
 
 from harness import StubTestCase, fabricator, production
+import recipe_claims
 from game_stubs import Recipe
 
 
@@ -57,7 +58,7 @@ class ClaimRefreshTests(StubTestCase):
         try:
             self.assertTrue(controller.claim_recipe("craft_gas_pipe_segment"))
             self.assertEqual(len(calls), 1)
-            ticks[0] += fabricator.CLAIM_REFRESH_TICKS - 1
+            ticks[0] += recipe_claims.CLAIM_REFRESH_TICKS - 1
             self.assertTrue(controller.claim_recipe("craft_gas_pipe_segment"))
             self.assertEqual(len(calls), 1)
             ticks[0] += 1

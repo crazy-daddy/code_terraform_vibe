@@ -4,26 +4,15 @@
 # control_room_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, craft_prefill_units, dock_remaining_requirements, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id, claim_site_id, site_recipe_claims
+from production import SourceCache, craft_prefill_units, dock_remaining_requirements, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
 from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester
+from recipe_claims import RecipeClaimMixin
 
-# A recipe claim (see claim_recipe()/release_recipe()) is only trusted while
-# this fresh -- if the owning smelter stalls/crashes without releasing it
-# (e.g. script exception, machine destroyed), a later smelter must still be
-# able to pick up that ore rather than waiting forever. Generous margin,
-# same reasoning as CONNECTION_GRACE_TICKS elsewhere: false-negative
-# (missing a real conflict) is cheap, false-positive (blocking a legitimate
-# claim) means an ore nobody's actually processing sits idle.
-SMELTER_RECIPE_CLAIM_STALE_TICKS = 600
-# A claim this smelter won is re-confirmed in the archive only this often;
-# in between, claim_recipe() answers from memory. Well under the stale window.
-CLAIM_REFRESH_TICKS = 100
-# Shape {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}: claims only
-# arbitrate Smelters at the same outpost (production.site_recipe_claims()).
+# Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 
 # Per-call ceiling on ore loading: bounds any single grab (~2.5 s of
@@ -61,7 +50,10 @@ SMELTER_PREFILL_SECONDS = 30
 # outcome "demand_covered_by_peers".
 
 
-class SmelterController:
+class SmelterController(RecipeClaimMixin):
+    RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
+    CLAIM_OWNER_FIELD = "smelter"
+
     """
     Controls an industrial Smelter.
     Refines raw ores (iron_ore, silicon, titanium, etc.) into ingots/materials.
@@ -116,81 +108,8 @@ class SmelterController:
                 swallowed("smelter.SmelterController.get_current_tick: self.clock.tick", error)
         return 0
 
-    def claim_recipe(self, recipe_id):
-        """
-        Claims recipe_id for this smelter at its outpost, or confirms/refreshes
-        an existing claim already held by this smelter. Smelters at different
-        outposts never block each other. Returns False if another smelter
-        holds a still-fresh claim on it (see SMELTER_RECIPE_CLAIM_STALE_TICKS),
-        so select_needed_ore() can move on to a different demanded ore instead
-        of racing another smelter for the same one.
-        """
-        current_tick = self.get_current_tick()
-        last_claim = self._claim_ticks.get(recipe_id)
-        if current_tick and last_claim is not None and 0 <= current_tick - last_claim < CLAIM_REFRESH_TICKS:
-            self.log.debug(f"claim_recipe({recipe_id}): held (confirmed {current_tick - last_claim} ticks ago)")
-            return True
-        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
-
-        site_id = claim_site_id(self.smelter)
-
-        def updater(claims):
-            claims = site_recipe_claims(claims, "smelter")
-            site = claims.setdefault(site_id, {})
-            existing = site.get(recipe_id)
-            if not isinstance(existing, dict):
-                existing = None
-            if existing is not None and existing.get("smelter") != self.name:
-                age = current_tick - existing.get("tick", 0)
-                # current_tick == 0 means the clock wasn't available to
-                # measure real age -- treat that as "still held" (blocking),
-                # not "unknown so allow override", same convention
-                # vehicle_claims.py uses for the same edge case.
-                if current_tick == 0 or age <= SMELTER_RECIPE_CLAIM_STALE_TICKS:
-                    return claims  # still held by someone else, fresh -- leave untouched
-                notes.append(f"claim_recipe({recipe_id}): existing claim by '{existing.get('smelter')}' is stale (age={age} > {SMELTER_RECIPE_CLAIM_STALE_TICKS}), taking over")
-            site[recipe_id] = {"smelter": self.name, "tick": current_tick}
-            return claims
-
-        try:
-            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
-        except Exception:
-            self.log.debug(f"claim_recipe({recipe_id}): archive transaction failed, assuming claim granted")
-            return True  # can't verify; don't block production over an archive hiccup
-        for note in notes:
-            self.log.debug(note)
-
-        claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "smelter")
-        owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("smelter")
-        won = owner == self.name
-        if won:
-            self._claim_ticks[recipe_id] = current_tick
-        else:
-            self._claim_ticks.pop(recipe_id, None)
-        self.log.debug(f"claim_recipe({recipe_id}): {'won' if won else f'held by other smelter {owner!r}'}")
-        return won
-
-    def release_recipe(self, recipe_id):
-        if not recipe_id:
-            return
-        self._claim_ticks.pop(recipe_id, None)
-
-        site_id = claim_site_id(self.smelter)
-
-        def updater(claims):
-            claims = site_recipe_claims(claims, "smelter")
-            site = claims.get(site_id) or {}
-            if (site.get(recipe_id) or {}).get("smelter") == self.name:
-                del site[recipe_id]
-            if not site:
-                claims.pop(site_id, None)
-            return claims
-
-        try:
-            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
-            self.log.debug(f"[{self.name}] release_recipe({recipe_id}): released")
-        except Exception as error:
-            swallowed("smelter.SmelterController.release_recipe: archive.transaction", error)
+    def _claim_machine(self):
+        return self.smelter
 
     def outpost(self):
         """OutpostRef this Smelter is deployed at (None if not exposed = home)."""
@@ -243,22 +162,6 @@ class SmelterController:
             except Exception as error:
                 swallowed("smelter.SmelterController.ensure_connections: self.smelter.output.connect", error)
         self.log.end()
-
-    def is_shedded(self):
-        """
-        True when the Power Guard (lib/power.py's PowerGridManager, via
-        SOFT_SHED_PATTERNS) has marked this Smelter for shedding. Smelter/
-        Fabricator are soft-shed -- Power Guard tracks them in power.shedded
-        but deliberately never calls set_powered() on them (see
-        SOFT_SHED_PATTERNS' comment): a Smelter only draws its recipe's
-        power_draw while actively running a craft, so idle draw is already
-        0 W (see this class's docstring) -- simply not starting/topping-up
-        production already achieves the same power saving a breaker cut
-        would, without needing any external call to undo it once the deficit
-        clears -- clearing power.shedded is all recovery ever needed to do.
-        """
-        shedded = archive.get("power.shedded", [])
-        return isinstance(shedded, list) and self.name in shedded
 
     def drain_output(self):
         """Sends all finished ingots from output buffer to Inventory, or to a

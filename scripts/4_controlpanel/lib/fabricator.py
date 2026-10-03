@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims, discover_smelter_ids
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
@@ -7,24 +7,13 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
-
-# Mirrors lib/smelter.py's SMELTER_RECIPE_CLAIM_STALE_TICKS/RECIPE_CLAIMS_KEY
-# exactly, same reasoning: with several Fabricators, choose_recipe() picking
-# strictly by biggest-shortfall would have every one of them converge on the
-# SAME top-shortfall recipe while other demanded outputs sit untouched. A
-# claim on the recipe id it's about to set lets a Fabricator move on to its
-# next-best sourceable candidate if another Fabricator already holds it.
-FABRICATOR_RECIPE_CLAIM_STALE_TICKS = 600
-# A claim this Fabricator won is only re-written to the archive after this many
-# ticks (well under FABRICATOR_RECIPE_CLAIM_STALE_TICKS); in between claim_recipe()
-# answers from memory without an archive transaction.
-CLAIM_REFRESH_TICKS = 100
+from recipe_claims import RecipeClaimMixin
 
 # run() sleep between steps: short while the machine is running or moved
 # material this step, long when there is nothing to do.
 ACTIVE_POLL_SECONDS = 1.0
 IDLE_POLL_SECONDS = 2.0
-# Shape {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}, per outpost like smelter.recipe_claims.
+# Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "fabricator.recipe_claims"
 
 # load_inputs() caps each take_item() call to this many units, preventing
@@ -60,7 +49,10 @@ FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 FLUID_NEUTRAL_GRACE_STEPS = 5
 
 
-class FabricatorController:
+class FabricatorController(RecipeClaimMixin):
+    RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
+    CLAIM_OWNER_FIELD = "fabricator"
+
     """Selects unlocked pipe/power recipes and feeds them from Inventory or a Warehouse.
 
     Outpost-aware: at home the ports use Inventory + home Warehouses; at any
@@ -95,101 +87,8 @@ class FabricatorController:
                 swallowed("fabricator.FabricatorController.get_current_tick: self.clock.tick", error)
         return 0
 
-    def claim_recipe(self, recipe_id):
-        """Claims recipe_id for this Fabricator, or refreshes its own existing claim. See lib/smelter.py's claim_recipe() -- identical shape/reasoning, separate archive key."""
-        self.log.start(f"[{self.name}] claim_recipe({recipe_id})", level="debug")
-        current_tick = self.get_current_tick()
-        last_claim = self._claim_ticks.get(recipe_id)
-        if current_tick > 0 and last_claim is not None and 0 <= current_tick - last_claim < CLAIM_REFRESH_TICKS:
-            self.log.debug(f"own claim refreshed {current_tick - last_claim} tick(s) ago, skipping archive write")
-            self.log.end()
-            return True
-        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
-
-        site_id = claim_site_id(self.machine)
-
-        def updater(claims):
-            claims = site_recipe_claims(claims, "fabricator")
-            site = claims.setdefault(site_id, {})
-            existing = site.get(recipe_id)
-            if not isinstance(existing, dict):
-                existing = None
-            if existing is not None and existing.get("fabricator") != self.name:
-                age = current_tick - existing.get("tick", 0)
-                if current_tick == 0 or age <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS:
-                    return claims  # still held by someone else, fresh -- leave untouched
-                notes.append(f"[{self.name}] claim_recipe({recipe_id}): existing claim by '{existing.get('fabricator')}' is stale (age={age} > {FABRICATOR_RECIPE_CLAIM_STALE_TICKS}), taking over")
-            site[recipe_id] = {"fabricator": self.name, "tick": current_tick}
-            return claims
-
-        try:
-            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
-        except Exception:
-            self.log.debug("archive transaction failed, assuming claim granted")
-            self.log.end()
-            return True  # can't verify; don't block production over an archive hiccup
-        for note in notes:
-            self.log.debug(note)
-
-        claims = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "fabricator")
-        owner = ((claims.get(site_id) or {}).get(recipe_id) or {}).get("fabricator")
-        won = owner == self.name
-        if won:
-            self._claim_ticks[recipe_id] = current_tick
-        else:
-            self._claim_ticks.pop(recipe_id, None)
-        self.log.debug(f"{'won' if won else f'held by other fabricator {owner!r}'}")
-        self.log.end()
-        return won
-
-    def foreign_claims(self, site_id):
-        """{recipe_id: owner} for every claim at site_id that another Fabricator
-        holds fresh right now, i.e. one claim_recipe() would leave untouched.
-        One archive read for the whole candidate list."""
-        current_tick = self.get_current_tick()
-        site = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "fabricator").get(site_id) or {}
-        return {
-            recipe_id: claim.get("fabricator")
-            for recipe_id, claim in site.items()
-            if claim.get("fabricator") != self.name
-            and (current_tick == 0 or current_tick - claim.get("tick", 0) <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS)
-        }
-
-    def release_recipe(self, recipe_id):
-        if not recipe_id:
-            return
-        self._claim_ticks.pop(recipe_id, None)
-
-        site_id = claim_site_id(self.machine)
-
-        def updater(claims):
-            claims = site_recipe_claims(claims, "fabricator")
-            site = claims.get(site_id) or {}
-            if (site.get(recipe_id) or {}).get("fabricator") == self.name:
-                del site[recipe_id]
-            if not site:
-                claims.pop(site_id, None)
-            return claims
-
-        try:
-            archive.transaction(RECIPE_CLAIMS_KEY, {}, updater)
-            self.log.debug(f"[{self.name}] release_recipe({recipe_id}): released")
-        except Exception as error:
-            swallowed("fabricator.FabricatorController.release_recipe: archive.transaction", error)
-
-    def is_shedded(self):
-        """
-        True when the Power Guard (lib/power.py's PowerGridManager, via
-        SOFT_SHED_PATTERNS) has marked this Fabricator for shedding.
-        Smelter/Fabricator are soft-shed -- tracked in power.shedded but
-        never actually powered off, since a Fabricator only draws power
-        while actively crafting; simply not starting/topping-up production
-        already achieves the same saving a breaker cut would, without an
-        external wake call needed to undo it. See lib/smelter.py's
-        SmelterController.is_shedded() -- identical shape, separate machine.
-        """
-        shedded = archive.get("power.shedded", [])
-        return isinstance(shedded, list) and self.name in shedded
+    def _claim_machine(self):
+        return self.machine
 
     def outpost(self):
         """OutpostRef this Fabricator is deployed at (None if not exposed = home)."""
