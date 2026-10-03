@@ -40,11 +40,13 @@ class _FeedMaker(game_stubs.Machine):
 
 
 class _Logistics:
-    def __init__(self, stock):
-        self.stock = stock
+    def __init__(self, *stocks):
+        self.stocks = stocks
+        self.walks = 0
 
     def outpost_stock(self, items, outpost):
-        return {i: self.stock.get(i, 0) for i in items}
+        self.walks += 1
+        return {i: sum(stock.get(i, 0) for stock in self.stocks) for i in items}
 
 
 class FeedMakerTestCase(harness.StubTestCase):
@@ -53,7 +55,8 @@ class FeedMakerTestCase(harness.StubTestCase):
         self.home = {"forage": 1000, "sea_algae": 10, "snow_moss": 10, "sulfur_moss": 10, "cinder_lichen": 10}
         self.feed_stock = {}
         self.taken = []
-        self._orig = (feed_maker.take_item, feed_maker.total_stock, feed_maker.drain_port_storage_first,
+        self.busy = set()
+        self._orig = (feed_maker.take_item, feed_maker.drain_port_storage_first,
                       feed_maker.local_port_target, feed_maker.logistics_requests)
 
         def fake_take(port, item_id, amount, outpost=None, cache=None, report=None):
@@ -61,18 +64,20 @@ class FeedMakerTestCase(harness.StubTestCase):
                 if report is not None:
                     report["sources"] = [("inventory", "slots_full", 0)]
                 return 0
+            if item_id in self.busy:
+                return 0
             self.taken.append((item_id, amount))
             port.machine.input_buffer[item_id] = port.machine.input_buffer.get(item_id, 0) + amount
             return amount
 
         feed_maker.take_item = fake_take
-        feed_maker.total_stock = lambda item_id, outpost=None: self.feed_stock.get(item_id, 0)
         feed_maker.drain_port_storage_first = lambda port, outpost=None: 0
         feed_maker.local_port_target = lambda outpost=None: "inventory"
-        feed_maker.logistics_requests = _Logistics(self.home)
+        self.logistics = _Logistics(self.home, self.feed_stock)
+        feed_maker.logistics_requests = self.logistics
 
     def tearDown(self):
-        (feed_maker.take_item, feed_maker.total_stock, feed_maker.drain_port_storage_first,
+        (feed_maker.take_item, feed_maker.drain_port_storage_first,
          feed_maker.local_port_target, feed_maker.logistics_requests) = self._orig
         super().tearDown()
 
@@ -163,9 +168,13 @@ class FeedMakerTests(FeedMakerTestCase):
         self.assertEqual(ctrl.step(), feed_maker.IDLE_POLL_S)
         self.assertEqual(self.world.notebook.data[wc.FEED_KEY]["feed_maker_1"]["blocker"], "no_inputs")
 
+    def claim(self, rid, *makers):
+        tick = self.world.clock.tick()
+        self.world.notebook.data[wc.FEED_KEY] = {m: {"recipe": rid, "picked": rid, "tick": tick} for m in makers}
+
     def test_recipe_claimed_by_other_maker_skipped_for_small_deficit(self):
         rid = wc.recipe_of("spire_drake")
-        self.world.notebook.data[wc.FEED_KEY] = {"feed_maker_2": {"recipe": rid, "tick": self.world.clock.tick()}}
+        self.claim(rid, "feed_maker_2")
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
         maker = _FeedMaker(self.world)
         feed_maker.FeedMakerController(maker).step()
@@ -173,6 +182,56 @@ class FeedMakerTests(FeedMakerTestCase):
         self.demand({wc.feed_item_of("spire_drake"): [60, 0, 60]})
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(maker.recipe, rid)
+
+    def test_recipe_set_but_not_picked_is_no_claim(self):
+        rid = wc.recipe_of("spire_drake")
+        self.world.notebook.data[wc.FEED_KEY] = {"feed_maker_2": {"recipe": rid, "picked": None, "tick": self.world.clock.tick()}}
+        self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
+        maker = _FeedMaker(self.world)
+        feed_maker.FeedMakerController(maker).step()
+        self.assertEqual(maker.recipe, rid)
+
+    def test_at_most_two_makers_per_recipe(self):
+        drake, tortoise = wc.recipe_of("spire_drake"), wc.recipe_of("salt_tortoise")
+        self.claim(drake, "feed_maker_2", "feed_maker_3")
+        self.demand({wc.feed_item_of("spire_drake"): [500, 100, 500], wc.feed_item_of("salt_tortoise"): [40, 200, 40]})
+        maker = _FeedMaker(self.world)
+        feed_maker.FeedMakerController(maker).step()
+        self.assertEqual(maker.recipe, tortoise)
+
+    def test_crowd_on_current_recipe_lowest_ids_stay(self):
+        drake, tortoise = wc.recipe_of("spire_drake"), wc.recipe_of("salt_tortoise")
+        self.demand({wc.feed_item_of("spire_drake"): [500, 100, 500], wc.feed_item_of("salt_tortoise"): [40, 200, 40]})
+        self.claim(drake, "feed_maker_2", "feed_maker_3")
+        stays = _FeedMaker(self.world, recipe=drake)
+        feed_maker.FeedMakerController(stays).step()
+        self.assertEqual(stays.recipe, drake)
+        self.claim(drake, "feed_maker_0", "feed_maker_00")
+        leaves = _FeedMaker(self.world, recipe=drake)
+        feed_maker.FeedMakerController(leaves).step()
+        self.assertEqual(leaves.recipe, tortoise)
+
+    def test_forage_held_back_while_a_form_is_missing(self):
+        self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
+        self.busy.add("cinder_lichen")
+        maker = _FeedMaker(self.world)
+        ctrl = feed_maker.FeedMakerController(maker)
+        ctrl.step()
+        self.assertEqual(self.taken, [("sulfur_moss", 1)])
+        self.busy.clear()
+        ctrl.step()
+        self.assertEqual(self.taken, [("sulfur_moss", 1), ("cinder_lichen", 1), ("forage", 100)])
+
+    def test_running_craft_skips_stock_walk(self):
+        self.demand({wc.feed_item_of("spire_drake"): [60, 0, 60]})
+        maker = _FeedMaker(self.world)
+        ctrl = feed_maker.FeedMakerController(maker)
+        ctrl.step()
+        walks = self.logistics.walks
+        maker.running = True
+        self.assertEqual(ctrl.step(), feed_maker.ACTIVE_POLL_S)
+        self.assertEqual(self.logistics.walks, walks)
+        self.assertEqual(self.world.notebook.data[wc.FEED_KEY]["feed_maker_1"]["picked"], wc.recipe_of("spire_drake"))
 
     def test_shed_starts_nothing(self):
         self.world.notebook.data["power.shedded"] = ["feed_maker_1"]

@@ -8,16 +8,21 @@
 #     Warehouses) and its own output bin. Lowest priority class first, then the
 #     largest deficit, among recipes whose inputs are all at home. The set
 #     recipe stays while it is short and no recipe of a better class is; rank
-#     changes inside a class don't switch. A recipe another fresh Feed Maker is
-#     running is left to it unless its deficit is larger than one craft.
+#     changes inside a class don't switch. At most MAX_MAKERS_PER_RECIPE fresh
+#     Feed Makers pick one recipe, and no more than its deficit has crafts;
+#     when too many share one, the lowest ids keep it.
 #   - Switching recipe: waits for the running craft, then set_recipe(), which
 #     takes a loaded stockpile (only a foreign feed in the output bin blocks
 #     it). The loaded Forage stays for the next recipe; items the new recipe
 #     doesn't use are ejected only when they leave no room for its craft.
-#   - Stocks one craft at a time and the next one once the 200-unit stockpile
-#     has room; finished feed goes straight into the local Habitat housing its
-#     species (`wildlife.status`: fresh, unparked, bin below the top-up
-#     target), the rest to a home Warehouse (Inventory fallback).
+#   - Stocks one craft at a time, the forms before the Forage, and takes the
+#     Forage only once every form is in: its landing starts the craft, which
+#     ends during the Forage cooldown. The next one is preloaded once the
+#     stockpile has room. Finished feed goes straight into the local Habitat
+#     housing its species (`wildlife.status`: fresh, unparked, bin below the
+#     top-up target), the rest to a home Warehouse (Inventory fallback).
+#   - While a craft of the picked recipe runs nothing is decided: the stock
+#     walk and the pick run once it has ended.
 #   - Soft-shed (`power.shedded`, lib/power.py): starts no new craft.
 # Never crafts past the target; idle (no deficit or no inputs) -> parked.
 
@@ -25,11 +30,10 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed, call_or
-from storage import take_item, total_stock, drain_port_storage_first, push_to_targets, local_port_target, hit_slot_cap, eject_unneeded
+from storage import take_item, drain_port_storage_first, push_to_targets, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
 import wildlife_common as wc
-from wildlife_data import FEED_PER_CRAFT
 
 ACTIVE_POLL_S = 2.0          # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
 # After a step that moved items: the call returns once its feeder transfer is
@@ -39,6 +43,9 @@ IDLE_POLL_S = 20.0
 RECIPE_REFRESH_TICKS = 1200  # republish unlocked recipes at least this often
 PUBLISH_REFRESH_TICKS = 600  # status rewritten on change, else at least this often
 HABITAT_MAP_REFRESH_TICKS = 3000  # local Habitat ids re-listed at least this often
+# Feed Makers on one recipe at a time: a Habitat bin holds FEED_TOPUP_TARGET
+# (50) feed, two crafts fill it, and more makers only queue on its feeder.
+MAX_MAKERS_PER_RECIPE = 2
 
 
 class FeedMakerController:
@@ -59,6 +66,7 @@ class FeedMakerController:
         self._published_tick = -PUBLISH_REFRESH_TICKS
         self._habitat_ids = None
         self._habitat_ids_tick = 0
+        self._picked = None
 
     def tick(self):
         try:
@@ -88,18 +96,29 @@ class FeedMakerController:
     # ------------------------------------------------------------- demand
 
     def claims(self, curr_tick):
-        """{recipe_id: feed_maker_id} running on other fresh Feed Makers."""
+        """{recipe_id: [feed_maker_id]} picked by other fresh Feed Makers."""
         feed = archive.get(wc.FEED_KEY, {}) or {}
         out = {}
         for other, entry in (feed.items() if isinstance(feed, dict) else []):
-            if other != self.name and wc.fresh(entry, curr_tick) and entry.get("recipe"):
-                out[entry["recipe"]] = other
+            if other != self.name and wc.fresh(entry, curr_tick) and entry.get("picked"):
+                out.setdefault(entry["picked"], []).append(other)
         return out
 
-    def deficits(self, recipes):
-        """{recipe_id: (priority, feed short)} against live home stock and this output bin."""
+    @staticmethod
+    def demand():
+        """The planner's `feed_demand` ({feed_item: [target, priority, short]})."""
         plan = archive.get(wc.PLAN_KEY, {}) or {}
-        demand = (plan.get("feed_demand") or {}) if isinstance(plan, dict) else {}
+        return (plan.get("feed_demand") or {}) if isinstance(plan, dict) else {}
+
+    def home_stock(self, recipes, demand):
+        """{item_id: units} at home of every demanded feed and every recipe input, in one walk."""
+        items = set(demand)
+        for recipe in recipes.values():
+            items.update(recipe["inputs"])
+        return logistics_requests.outpost_stock(sorted(items), self.outpost)
+
+    def deficits(self, recipes, demand, stock):
+        """{recipe_id: (priority, feed short)} against home stock and this output bin."""
         by_output = {r["output"]: rid for rid, r in recipes.items()}
         output = self.output_counts()
         out = {}
@@ -107,7 +126,7 @@ class FeedMakerController:
             rid = by_output.get(item)
             if not rid or not isinstance(row, list) or len(row) < 2:
                 continue
-            short = int(row[0]) - total_stock(item, self.outpost) - output.get(item, 0)
+            short = int(row[0]) - stock.get(item, 0) - output.get(item, 0)
             if short > 0:
                 out[rid] = (int(row[1]), short)
         return out
@@ -126,13 +145,19 @@ class FeedMakerController:
         """Every input for one craft is in the stockpile or at home."""
         return all(loaded.get(item, 0) + stock.get(item, 0) >= qty for item, qty in inputs.items())
 
-    def pick(self, recipes, deficits, loaded, claims):
-        current = self._call("get_recipe", "")
-        items = sorted(set(i for rid in deficits for i in recipes[rid]["inputs"]))
-        stock = logistics_requests.outpost_stock(items, self.outpost) if items else {}
+    def crowded(self, rid, short, claims, current):
+        """True when enough other Feed Makers picked `rid`: MAX_MAKERS_PER_RECIPE,
+        or fewer when the deficit has fewer crafts. On the current recipe only
+        makers with a lower id count, so of a crowd the lowest ids stay."""
+        others = claims.get(rid, [])
+        if rid == current:
+            others = [other for other in others if other < self.name]
+        return len(others) >= min(MAX_MAKERS_PER_RECIPE, wc.crafts_for(short))
+
+    def pick(self, recipes, deficits, loaded, claims, stock, current):
         ready = []
         for rid, (prio, short) in deficits.items():
-            if rid in claims and rid != current and short <= FEED_PER_CRAFT:
+            if self.crowded(rid, short, claims, current):
                 continue
             if self.has_inputs(recipes[rid]["inputs"], loaded, stock):
                 ready.append((prio, -short, 0 if rid == current else 1, rid))
@@ -175,11 +200,10 @@ class FeedMakerController:
             return True
         if self._call("is_running", False) or float(self._call("get_progress", 0.0)) > 0:
             return False
-        self.log.start(f"[{self.name}] Switching recipe '{current or '-'}' -> '{rid}'")
         self.eject_strays(inputs)
         result = self._call("set_recipe", None, rid)
         status = getattr(result, "status", "")
-        self.log.end(status or "no result")
+        self.log.debug(f"[{self.name}] Recipe '{current or '-'}' -> '{rid}': {status or 'no result'}")
         return status == "ok"
 
     def load(self, inputs):
@@ -193,16 +217,24 @@ class FeedMakerController:
                 return 0
             need = dict(inputs)
         # Stock lands when a transfer starts; the feeder then cools down for the
-        # units moved. Forms first, Forage (100 units) last: the craft starts
-        # with the Forage and runs during its cooldown.
+        # units moved. Forms first, Forage (100 units) last and only once every
+        # form is in: the craft starts with the Forage and ends during its
+        # cooldown, which is longer than the craft.
+        order = sorted(need.items(), key=lambda kv: kv[1])
         moved = 0
-        for item, qty in sorted(need.items(), key=lambda kv: kv[1]):
+        missing = False
+        for index, (item, qty) in enumerate(order):
+            if missing and index == len(order) - 1:
+                self.log.debug(f"[{self.name}] {item} held back: a form is still missing.")
+                break
             report = {}
-            moved += take_item(self.maker.input, item, qty, outpost=self.outpost, report=report)
+            got = take_item(self.maker.input, item, qty, outpost=self.outpost, report=report)
+            moved += got
             if hit_slot_cap(report):
                 # Leftovers of earlier recipes hold every material slot.
                 self.eject_strays(inputs, slots_full=True)
                 break
+            missing = missing or got < qty
         return moved
 
     def local_habitat_ids(self, curr_tick):
@@ -251,12 +283,13 @@ class FeedMakerController:
 
     def publish(self, recipes, blocker, curr_tick):
         """Writes `wildlife.feed[id]` when recipe, run state or blocker change, else every PUBLISH_REFRESH_TICKS."""
-        key = (self._call("get_recipe", ""), bool(self._call("is_running", False)), blocker, len(recipes))
+        key = (self._call("get_recipe", ""), self._picked, bool(self._call("is_running", False)), blocker, len(recipes))
         if key == self._published and curr_tick - self._published_tick < PUBLISH_REFRESH_TICKS:
             return
         entry = {
             "recipes": {rid: r["inputs"] for rid, r in recipes.items()},
             "recipe": self._call("get_recipe", ""),
+            "picked": self._picked,
             "running": bool(self._call("is_running", False)),
             "progress": round(float(self._call("get_progress", 0.0)), 3),
             "output": int(self._call("get_output_count", 0)),
@@ -288,15 +321,24 @@ class FeedMakerController:
         curr_tick = self.tick()
         drained = self.drain_output(curr_tick)
         recipes = self.recipes(curr_tick)
-        deficits = self.deficits(recipes)
         running = bool(self._call("is_running", False))
+        current = self._call("get_recipe", "")
         blocker = None
         rid = None
+        deficits = {}
         if self.shed():
             blocker = "shed"
-        elif deficits:
-            rid = self.pick(recipes, deficits, self.stockpile(), self.claims(curr_tick))
-            blocker = None if rid else "no_inputs"
+        elif running and self._picked == current and current in recipes:
+            # Its inputs are in; only a preload of the same recipe can follow.
+            rid = current
+        else:
+            demand = self.demand()
+            stock = self.home_stock(recipes, demand) if demand else {}
+            deficits = self.deficits(recipes, demand, stock)
+            if deficits:
+                rid = self.pick(recipes, deficits, self.stockpile(), self.claims(curr_tick), stock, current)
+                blocker = None if rid else "no_inputs"
+        self._picked = rid
         moved = 0
         if rid and self.switch_to(rid, recipes[rid]["inputs"]):
             moved = self.load(recipes[rid]["inputs"])
