@@ -94,7 +94,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   test, and every other drift found is fixed or listed in the notes with a reason.
 - **Verify:** `python -m unittest discover -s tests -p test_stub_contract.py -v`.
 
-### - [ ] Step 3: Census devtool (optional)
+### - [x] Step 3: Census devtool (optional, dropped)
 - **Goal:** a printed gap list to choose what to stub next.
 - **Read first:** `tests/game_stubs.py`, `tests/game_spec.json`.
 - **Touch:** new `devtools/stub_census.py` (prints only, writes nothing).
@@ -421,7 +421,14 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - `devtools/step_profile.py`'s `raw_demands` target called the removed
   `production.get_raw_material_demands()` (commit 12241b2) and crashed every all-targets run;
   it is now `demands` over `get_material_demands()`. All targets run on "large".
-- Docs point to `devtools/stub_census.py` nowhere: it does not exist (step 3 open).
+- Step 3 dropped (2026-10-03): the guard test covers private fakes, save counts were a
+  one-off read, and a print-only tool rots unseen. Its one lasting use, services our code
+  requests that `game_stubs` does not fake, is `tests/test_service_coverage.py`: it walks
+  `scripts/` and `autoplay/` for literal `get_component("...")` ids (skipping machine and
+  outpost ids like `battery_1` / `outpost_home`) and fails on any service that `World` does
+  not fake and `KNOWN_GAPS` does not list, and on stale `KNOWN_GAPS` entries. Gaps at
+  creation: transmitter, nocturna, research, markers, item_catalog, atmosphere and the
+  sensors (thermometer, plants / pressure / oxygen / biomass).
 - Pyright on new AST code reports `Cannot access attribute ... for class "AST"` after
   `isinstance` checks, as in `test_stub_contract.py` / `test_game_imports.py`: a config issue.
 

@@ -273,3 +273,10 @@ Finished items moved out of [TODO.md](TODO.md), grouped under the same section h
   - [x] Liquid Tanks (≤ 5 of one liquid per outpost) → one Large Liquid Tank (`lib/tank_upgrade.py`, same `warehouse_upgrade_panel.py`; `docs/AI_CHEATSHEET.md` §2k-3): old tanks marked `"retiring"` in `fluid_routing.tank_assignments` so routers skip them, new tank's `liquid_in` drains them, undeploy once empty, sell kits.
   - [x] `scripts_sync.py` registers new lib modules in game itself (`register_new_libraries()` / `register-libs`, the "Import File as Game Library" `create-library` command) -- no more manual Computer -> Library -> + New. Confirmed live.
   - [x] lib/ deploys every new-only module of every tier from `2_libunlock` on (`lib_chain()`); tier-5 `automation_panel.py` copy removed, Mixer gate idles in the one `automation_panel.py`.
+- [x] **Shared fake world from the game spec** (see `docs/plans/fake_world.md`; one step per session):
+  - [x] Step 1: spec extractor + committed `tests/game_spec.json`.
+  - [x] Step 2: stub contract test against the spec (fix `set_order` → `unknown_order`).
+  - [x] Step 3: census devtool dropped; `tests/test_service_coverage.py` guards service gaps instead (2026-10-03).
+  - [x] Step 4: consolidate and extend `tests/game_stubs.py`.
+  - [x] Step 5: migrate tests off private fakes.
+  - [x] Step 6: sample world, no-private-fakes guard, dev_workflow docs.
