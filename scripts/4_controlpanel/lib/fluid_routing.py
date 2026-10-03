@@ -954,13 +954,19 @@ def _target_id(target):
     return target.id
 
 
-class FluidOutputEvent:
-    """Result of FluidOutputRouter.ensure_connection(). .kind is one of "no_port"/"healthy"/"waiting"/"not_found"/"connected"/"exhausted". .target_id/.fill_pct are only meaningful for "connected" (default None/0.0 otherwise)."""
+# A candidate must be emptier than the full current target by more than this fill fraction for the
+# output router to switch to it; equally full tanks never trade places.
+OUTPUT_REBALANCE_MARGIN = 0.02
 
-    def __init__(self, kind, target_id=None, fill_pct=0.0):
+
+class FluidOutputEvent:
+    """Result of FluidOutputRouter.ensure_connection(). .kind is one of "no_port"/"healthy"/"full"/"waiting"/"not_found"/"connected"/"exhausted". "full": the current target is full and no candidate is emptier, so it stays connected. .target_id/.fill_pct/.rebalance are only meaningful for "connected" (default None/0.0/False otherwise); .rebalance is True when a still-usable current target was left for an emptier one (routine, debug-level), False for a first or replacement connection."""
+
+    def __init__(self, kind, target_id=None, fill_pct=0.0, rebalance=False):
         self.kind = kind
         self.target_id = target_id
         self.fill_pct = fill_pct
+        self.rebalance = rebalance
 
 
 class FluidOutputRouter:
@@ -1086,7 +1092,15 @@ class FluidOutputRouter:
 
         self.ticks_since_connect += 1
 
-        if is_stalled and current_id and not self.blacklist.is_blacklisted(current_id, curr_tick) and self.ticks_since_connect >= self.connection_grace_ticks:
+        # A stall on a full target is the tank refusing fluid, not a broken route: no blacklist.
+        stalled_on_full = False
+        if is_stalled and current_id:
+            stalled_current = self._resolve_target(current_id)
+            stalled_on_full = bool(stalled_current) and fill_pct_of(stalled_current) >= self.rebalance_fill_fraction
+        if stalled_on_full:
+            log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' stalled while full, not a route failure")
+
+        if is_stalled and not stalled_on_full and current_id and not self.blacklist.is_blacklisted(current_id, curr_tick) and self.ticks_since_connect >= self.connection_grace_ticks:
             link = None if self.was_healthy else declared_connection(port)
             if getattr(link, "state", None) == "conflict":
                 yield_pipe_conflict(port, self.label, current_id, getattr(link, "fluid", None), curr_tick, self.blacklist)
@@ -1106,15 +1120,19 @@ class FluidOutputRouter:
         # an operator reassigning this exact tank to a different fluid is
         # caught immediately, not only whenever it next happens to stall: one
         # .fill_pct(), one .fluid() and one archive read.
+        stay_fill = None  # fill of a usable but full current target
         if current_id and not self.blacklist.is_blacklisted(current_id, curr_tick):
             current = self._resolve_target(current_id)
-            if (fill_pct_of(current) < self.rebalance_fill_fraction
-                    and (self.fluid_id is None or tank_is_eligible_target(current, self.fluid_id))):
-                if not is_stalled:
-                    self.was_healthy = True
-                _ret = FluidOutputEvent("healthy")
-                log.end()
-                return _ret
+            current_fill = fill_pct_of(current)
+            if self.fluid_id is None or tank_is_eligible_target(current, self.fluid_id):
+                if current_fill < self.rebalance_fill_fraction:
+                    if not is_stalled:
+                        self.was_healthy = True
+                    _ret = FluidOutputEvent("healthy")
+                    log.end()
+                    return _ret
+                if current:
+                    stay_fill = current_fill
 
         all_known_targets = self._discover_targets_cached(curr_tick)
         targets = self.blacklist.filter_reachable(all_known_targets, curr_tick, key=_target_id)
@@ -1131,7 +1149,15 @@ class FluidOutputRouter:
         # several), falling through to the next since not every target is
         # necessarily physically pipe-reachable from this port's location.
         log.debug(f"FluidOutputRouter({self.type_ids}): current='{current_id}' not healthy, rebalancing among {len(targets)} reachable candidate(s) (least-full first)")
-        for target, fill in self._least_full_first([t for t in targets if t.id != current_id]):
+        ranked = self._least_full_first([t for t in targets if t.id != current_id])
+        if stay_fill is not None:
+            ranked = [(t, f) for t, f in ranked if f < stay_fill - OUTPUT_REBALANCE_MARGIN]
+            if not ranked:
+                log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' full ({stay_fill:.2f}), no emptier candidate, staying")
+                _ret = FluidOutputEvent("full")
+                log.end()
+                return _ret
+        for target, fill in ranked:
             try:
                 res = port.connect(target.id)
             except Exception as error:
@@ -1147,7 +1173,7 @@ class FluidOutputRouter:
                 self.was_healthy = False
                 self._connected_id = target.id
                 log.debug(f"FluidOutputRouter({self.type_ids}): connected -> '{target.id}' (fill={fill:.2f})")
-                _ret = FluidOutputEvent("connected", target_id=target.id, fill_pct=fill)
+                _ret = FluidOutputEvent("connected", target_id=target.id, fill_pct=fill, rebalance=stay_fill is not None)
                 log.end()
                 return _ret
             elif res.status != "busy":
@@ -1195,7 +1221,7 @@ def ensure_input_logged(router, port, curr_tick, starved, log, name, port_label,
 def ensure_output_logged(router, port, curr_tick, stalled, log, name, port_label, blacklist_reason, not_found=None):
     """FluidOutputRouter.ensure_connection() with the standard lines: a blacklisted target warns
     "'<id>' <blacklist_reason>. Blacklisting ...", connect notices warn, a new connection info (with
-    fill), healthy trace, waiting debug, not_found debug with `not_found` (None: no line). Returns
+    fill; debug for a rebalance to an emptier tank), healthy and full trace, waiting debug, not_found debug with `not_found` (None: no line). Returns
     the event."""
     def on_blacklisted(target_id):
         log.level("warn").print(f"[{name}] '{target_id}' {blacklist_reason}. Blacklisting and picking a different target.")
@@ -1205,9 +1231,11 @@ def ensure_output_logged(router, port, curr_tick, stalled, log, name, port_label
 
     event = router.ensure_connection(port, curr_tick, stalled, on_blacklisted, on_connect_notice)
     if event.kind == "connected":
-        log.print(f"[{name}] Connected {port_label} -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+        (log.debug if event.rebalance else log.print)(f"[{name}] Connected {port_label} -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
     elif event.kind == "healthy":
         log.trace(f"[{name}] Current {port_label} target still healthy; no rebalance needed this cycle.")
+    elif event.kind == "full":
+        log.trace(f"[{name}] Current {port_label} target full and no emptier tank; staying connected.")
     elif event.kind == "waiting":
         _log_waiting(log, name, port_label, router.blacklist, curr_tick)
     elif event.kind == "not_found" and not_found:

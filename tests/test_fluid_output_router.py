@@ -58,14 +58,37 @@ class FluidOutputRouterCacheTests(StubTestCase):
         event = self.ensure(self.router(), 1000)
         self.assertEqual((event.kind, event.target_id, event.fill_pct), ("connected", "gas_tank_2", 0.3))
 
-    def test_full_current_moves_to_next_in_sorted_order(self):
+    def test_all_full_stays_connected_without_blacklist(self):
+        for n in (1, 2, 3):
+            self.tank(f"gas_tank_{n}", 100)
+        router = self.router()
+        first = self.ensure(router, 1000)
+        self.assertEqual((first.kind, first.target_id, first.rebalance), ("connected", "gas_tank_1", False))
+        for tick in range(1001, 1040):
+            self.assertEqual(self.ensure(router, tick, stalled=True).kind, "full")
+        self.assertEqual(router.blacklist._blacklisted_at, {})
+        self.assertEqual(router._connected_id, "gas_tank_1")
+
+    def test_full_current_switches_to_emptier_tank(self):
         self.tank("gas_tank_1", 100)
         self.tank("gas_tank_2", 100)
-        self.tank("gas_tank_3", 100)
         router = self.router()
         self.assertEqual(self.ensure(router, 1000).target_id, "gas_tank_1")
-        self.assertEqual(self.ensure(router, 1001).target_id, "gas_tank_2")
-        self.assertEqual(self.ensure(router, 1002).target_id, "gas_tank_1")
+        self.tank("gas_tank_3", 40)
+        event = self.ensure(router, 1000 + fluid_routing.NETWORK_WALK_INTERVAL_TICKS, stalled=True)
+        self.assertEqual((event.kind, event.target_id, event.rebalance), ("connected", "gas_tank_3", True))
+        self.assertEqual(router.blacklist._blacklisted_at, {})
+
+    def test_real_stall_still_blacklists(self):
+        self.tank("gas_tank_1", 10)
+        self.tank("gas_tank_2", 50)
+        router = self.router()
+        self.assertEqual(self.ensure(router, 1000).target_id, "gas_tank_1")
+        dropped = []
+        events = [router.ensure_connection(self.port, tick, True, dropped.append) for tick in (1001, 1002)]
+        self.assertEqual([e.kind for e in events], ["healthy", "connected"])
+        self.assertEqual(dropped, ["gas_tank_1"])
+        self.assertEqual((events[1].target_id, events[1].rebalance), ("gas_tank_2", False))
 
     def test_walk_reused_until_interval(self):
         self.tank("gas_tank_1", 100)
@@ -85,7 +108,7 @@ class FluidOutputRouterCacheTests(StubTestCase):
         self.tank("gas_tank_2", 0, fluid="")
         router = self.router()
         self.assertEqual(self.ensure(router, 1000).target_id, "gas_tank_1")
-        self.assertEqual(self.ensure(router, 1001).kind, "exhausted")
+        self.assertEqual(self.ensure(router, 1001).kind, "full")
         self.world.notebook.set(fluid_routing.TANK_ASSIGNMENTS_KEY, {"gas_tank_2": "steam"})
         event = self.ensure(router, 1100)
         self.assertEqual(event.target_id, "gas_tank_2")

@@ -149,7 +149,12 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     across every output router in the script with the same type ids. A newly built tank is seen
     within that window; a cached tank whose `.fluid()`/`fill_pct()` raises or a `connect()`
     answering `"not_found"` drops the walk at once. Rebalance reads each candidate's `fill_pct()`
-    once (least-full first, ties in discovery order). The fast path reads `fill_pct()` before
+    once (least-full first, ties in discovery order). A full current target (`>= rebalance_fill_fraction`) is
+    left only for a candidate emptier by more than `OUTPUT_REBALANCE_MARGIN=0.02`; otherwise the router
+    stays connected and returns `"full"` (no switch, no log). A stall while the current target is full
+    is not a route failure and never blacklists it; a stall on a non-full target still does. A
+    `"connected"` event with `rebalance=True` (usable target left for an emptier one) is logged at
+    debug by the callers, a first/replacement connection at info. The fast path reads `fill_pct()` before
     eligibility, so a full current tank costs no eligibility read. `PerEntryBlacklist` drops an
     entry once it has expired.
 - **Thermal Cap** — keeps `pressure()` off `1.0` overpressure ceiling (hit = *entire* chamber blown to atmosphere — `.is_overpressured()`). Proportional release-valve (`steam_out`,
