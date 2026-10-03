@@ -419,7 +419,7 @@ def main():
     save = args.save or lbt.newest_save()
     paths = lbt.log_files(os.path.join(save, "logs"))
     sec_per_tick = lbt.calibrate(paths)
-    stats, _, _, span = lbt.collect(paths, sec_per_tick, None, args.since)
+    stats, _, _, span, _census = lbt.collect(paths, sec_per_tick, None, args.since)
     if args.exclude:
         pattern = re.compile(args.exclude)
         stats = {k: v for k, v in stats.items() if not pattern.search(k[1])}

@@ -29,8 +29,16 @@ their messages, and use --since <iso time of the deploy> to measure only the
 current code. Block names are grouped with digits replaced by "#", and
 scripts by kind ("drone_23" -> "drone"). Self time is the block minus its
 timed children.
+
+Running scripts: lib/script_census.py logs "scripts running: N ..." every few
+hundred ticks. Each block takes the latest N at or before its start tick;
+med_N is the median of those and med_st the median cost in interpreter steps,
+ticks x floor(50000 / N) (the per-script allowance, docs/cheatsheet/
+dev_workflow.md §1d-1). Steps compare across windows with different N, ticks
+do not. Without census lines both columns show "-".
 """
 import argparse
+import bisect
 import collections
 import glob
 import os
@@ -46,6 +54,9 @@ BRANCH = "┃   "
 START = "┏━ "
 END = "┗━ "
 DAY = 86400
+CENSUS_RE = re.compile(r"scripts running: (\d+) of")
+TOTAL_STEPS_PER_TICK = 50000
+MAX_STEPS_PER_SCRIPT = 1000
 ROTATED_RE = re.compile(r"^(?P<base>.+?)(?:\.(?P<n>\d+))?\.log$")
 
 
@@ -126,6 +137,27 @@ def calibrate(paths):
     return statistics.median(ratios) if ratios else None
 
 
+def allowance(running):
+    """Steps per script per tick with `running` scripts counted (lib/script_census.py)."""
+    if running <= 0:
+        return MAX_STEPS_PER_SCRIPT
+    return max(1, min(MAX_STEPS_PER_SCRIPT, TOTAL_STEPS_PER_TICK // running))
+
+
+class Census:
+    """Running-script count over ticks, from the census lines."""
+
+    def __init__(self, points):
+        points = sorted(points)
+        self.ticks = [tick for tick, _ in points]
+        self.counts = [count for _, count in points]
+
+    def at(self, tick):
+        """Latest count at or before tick, else None."""
+        index = bisect.bisect_right(self.ticks, tick) - 1
+        return self.counts[index] if index >= 0 else None
+
+
 class Block:
     __slots__ = ("key", "tick", "clock", "child_seconds")
 
@@ -143,9 +175,10 @@ def duration(block, tick, clock, sec_per_tick):
 
 
 def collect(paths, sec_per_tick, script_filter, since=None):
-    """{(kind, block key): {"seconds": [...], "self": [...], "scripts": set}}, unclosed count, windows.
-    windows: {script: [first tick, last tick]} for share-of-window."""
-    stats = collections.defaultdict(lambda: {"seconds": [], "self": [], "scripts": set()})
+    """{(kind, block key): {"seconds": [...], "self": [...], "starts": [...], "scripts": set}}, unclosed count,
+    windows, span, Census. windows: {script: [first tick, last tick]} for share-of-window."""
+    stats = collections.defaultdict(lambda: {"seconds": [], "self": [], "starts": [], "scripts": set()})
+    census = []  # (tick, running scripts)
     unclosed = 0
     windows = {}
     span = [None, None]  # first and last iso time read
@@ -162,6 +195,11 @@ def collect(paths, sec_per_tick, script_filter, since=None):
                         iso = line[1:25]
                         span[0] = iso if span[0] is None or iso < span[0] else span[0]
                         span[1] = iso if span[1] is None or iso > span[1] else span[1]
+                    if "scripts running: " in line:
+                        found_census = CENSUS_RE.search(line)
+                        match = LINE_RE.match(line) if found_census else None
+                        if match:
+                            census.append((int(match["tick"]), int(found_census.group(1))))
                     parsed = parse_line(line)
                     if parsed is None:
                         match = LINE_RE.match(line)
@@ -197,11 +235,12 @@ def collect(paths, sec_per_tick, script_filter, since=None):
                     entry = stats[block.key]
                     entry["seconds"].append(seconds)
                     entry["self"].append(max(seconds - block.child_seconds, 0.0))
+                    entry["starts"].append(block.tick)
                     entry["scripts"].add(script)
                     if stack:
                         stack[-1][1].child_seconds += seconds
         unclosed += len(stack)
-    return stats, unclosed, windows, span
+    return stats, unclosed, windows, span, Census(census)
 
 
 def fmt(seconds):
@@ -212,7 +251,31 @@ def fmt(seconds):
     return f"{seconds / 3600:.1f}h"
 
 
-def report(stats, windows, sec_per_tick, top, min_count, sort):
+def fmt_steps(steps):
+    if steps is None:
+        return "-"
+    if steps < 1000:
+        return f"{steps:.0f}"
+    if steps < 1e6:
+        return f"{steps / 1000:.1f}k"
+    return f"{steps / 1e6:.1f}M"
+
+
+def step_costs(entry, sec_per_tick, census):
+    """(median N, [steps per run]) for one block; (None, []) without census or calibration."""
+    if not sec_per_tick or not census.ticks:
+        return None, []
+    counts, steps = [], []
+    for seconds, start in zip(entry["seconds"], entry["starts"]):
+        running = census.at(start)
+        if running is None:
+            continue
+        counts.append(running)
+        steps.append(seconds / sec_per_tick * allowance(running))
+    return (statistics.median(counts) if counts else None), steps
+
+
+def report(stats, windows, sec_per_tick, top, min_count, sort, census=None):
     kind_window = collections.defaultdict(float)  # summed per-instance observed game seconds per kind
     if sec_per_tick:
         for script, (first, last) in windows.items():
@@ -224,23 +287,28 @@ def report(stats, windows, sec_per_tick, top, min_count, sort):
             continue
         total = sum(seconds)
         window = kind_window.get(kind, 0.0)
+        med_n, steps = step_costs(entry, sec_per_tick, census or Census([]))
         rows.append({
             "kind": kind, "block": key, "n": len(seconds), "inst": len(entry["scripts"]),
             "med": statistics.median(seconds), "max": max(seconds),
             "self": statistics.median(entry["self"]), "total": total,
             "share": total / window if window else 0.0,
             "self_total": sum(entry["self"]),
+            "med_n": med_n, "med_st": statistics.median(steps) if steps else None,
+            "steps": sum(steps),
         })
-    order = {"total": "total", "self": "self_total", "median": "med", "max": "max", "share": "share"}[sort]
+    order = {"total": "total", "self": "self_total", "median": "med", "max": "max", "share": "share",
+             "steps": "steps"}[sort]
     rows.sort(key=lambda row: row[order], reverse=True)
     header = (f"{'script':<22} {'block':<52} {'n':>5} {'inst':>4} {'median':>7} {'med_tk':>6} {'max':>7} "
-              f"{'self':>7} {'total':>7} {'share':>6}")
+              f"{'self':>7} {'total':>7} {'share':>6} {'med_N':>5} {'med_st':>7}")
     print(header)
     print("-" * len(header))
     for row in rows[:top]:
         block = row["block"] if len(row["block"]) <= 52 else row["block"][:49] + "..."
         print(f"{row['kind'][:22]:<22} {block:<52} {row['n']:>5} {row['inst']:>4} {fmt(row['med']):>7} "
-              f"{row['med'] / (sec_per_tick or 1):>6.0f} {fmt(row['max']):>7} {fmt(row['self']):>7} {fmt(row['total']):>7} {row['share']:>6.1%}")
+              f"{row['med'] / (sec_per_tick or 1):>6.0f} {fmt(row['max']):>7} {fmt(row['self']):>7} {fmt(row['total']):>7} {row['share']:>6.1%} "
+              f"{row['med_n'] if row['med_n'] is not None else '-':>5} {fmt_steps(row['med_st']):>7}")
 
 
 def main():
@@ -251,7 +319,7 @@ def main():
     parser.add_argument("--min-count", type=int, default=2, help="skip blocks seen fewer times")
     parser.add_argument("--since", help="skip lines logged before this ISO time (e.g. 2026-10-02T20:00)")
     parser.add_argument("--exclude", help="regex; skip blocks whose name matches (e.g. travel/wait blocks)")
-    parser.add_argument("--sort", choices=("total", "self", "median", "max", "share"), default="total")
+    parser.add_argument("--sort", choices=("total", "self", "median", "max", "share", "steps"), default="total")
     args = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -259,14 +327,18 @@ def main():
     save = args.save or newest_save()
     paths = log_files(os.path.join(save, "logs"))
     sec_per_tick = calibrate(paths)
-    stats, unclosed, windows, span = collect(paths, sec_per_tick, args.script, args.since)
+    stats, unclosed, windows, span, census = collect(paths, sec_per_tick, args.script, args.since)
     if args.exclude:
         pattern = re.compile(args.exclude)
         stats = {key: entry for key, entry in stats.items() if not pattern.search(key[1])}
     ratio = f"{sec_per_tick:.2f} game s/tick" if sec_per_tick else "uncalibrated (tick-only blocks skipped)"
     print(f"{save}\n{len(paths)} log groups, {ratio}, {unclosed} unclosed block(s) dropped")
-    print(f"log window {span[0]} .. {span[1]} (UTC)\n")
-    report(stats, windows, sec_per_tick, args.top, args.min_count, args.sort)
+    print(f"log window {span[0]} .. {span[1]} (UTC)")
+    if census.counts:
+        print(f"running scripts: {min(census.counts)}..{max(census.counts)} over {len(census.counts)} census line(s)\n")
+    else:
+        print("running scripts: no census lines (lib/script_census.py), med_N/med_st unknown\n")
+    report(stats, windows, sec_per_tick, args.top, args.min_count, args.sort, census)
 
 
 if __name__ == "__main__":

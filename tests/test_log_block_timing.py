@@ -31,15 +31,28 @@ class LogBlockTimingTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_pairs_nested_and_tick_only_blocks(self):
-        stats, unclosed, _windows, _span = lbt.collect(self.paths, 10.0, None)
+        stats, unclosed, _windows, _span, _census = lbt.collect(self.paths, 10.0, None)
         self.assertEqual(unclosed, 0)
         self.assertEqual(stats[("fabricator", "get_site_fabricator_targets(outpost_#)")]["seconds"], [230.0])
         self.assertEqual(stats[OUTER]["seconds"], [288.0])
         self.assertEqual(stats[OUTER]["self"], [58.0])
         self.assertEqual(stats[("fabricator", "[fabricator_#] Recipe 'a' -> 'b'")]["seconds"], [20.0])
 
+    def test_census_turns_ticks_into_steps(self):
+        with open(os.path.join(self.tmp.name, "automation_1.log"), "w", encoding="utf-8") as handle:
+            handle.write("[2026-10-02T20:13:17.000Z] [debug] [automation_1.py] [tick=90] 03:50:00 "
+                         "script census: scripts running: 100 of 300 machines, allowance 500 steps/tick (+0s)\n")
+        stats, _, _, _, census = lbt.collect(lbt.log_files(self.tmp.name), 10.0, None)
+        self.assertEqual(census.at(100), 100)
+        self.assertIsNone(census.at(89))
+        med_n, steps = lbt.step_costs(stats[("fabricator", "get_site_fabricator_targets(outpost_#)")], 10.0, census)
+        self.assertEqual(med_n, 100)
+        self.assertEqual(steps, [23 * 500])
+        self.assertEqual(lbt.allowance(165), 303)
+        self.assertEqual(lbt.allowance(20), 1000)
+
     def test_since_skips_older_lines(self):
-        stats, _, _, span = lbt.collect(self.paths, 10.0, None, since="2026-10-02T20:13:19")
+        stats, _, _, span, _census = lbt.collect(self.paths, 10.0, None, since="2026-10-02T20:13:19")
         self.assertNotIn(OUTER, stats)
         self.assertEqual(span[0], "2026-10-02T20:13:19.000Z")
 
