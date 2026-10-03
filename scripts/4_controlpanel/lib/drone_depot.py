@@ -81,29 +81,37 @@ def slot_capacity(outpost):
     return WAREHOUSE_SLOT_FALLBACK_UNITS
 
 
-def buffer_target(item_id, outpost):
+def storage_layout(outpost):
+    """[(warehouse_id, [slot, ...]), ...] for `outpost`'s storage buildings: one slots() read each,
+    shareable across buffer_target() calls while nothing is staged in between."""
+    layout = []
+    for building in discover_storage_buildings(outpost):
+        try:
+            layout.append((building["id"], list(building["component"].slots())))
+        except Exception as error:
+            swallowed("drone_depot.storage_layout: building['component'].slots", error)
+    return layout
+
+
+def buffer_target(item_id, outpost, layout=None):
     """
     (warehouse_id, room) to stage item_id into, else (None, 0). A Warehouse
     whose slot already holds item_id wins (tops that one stack up); an
     empty slot is only taken while the Warehouse keeps
     WAREHOUSE_FREE_SLOTS_KEEP further empty slots for ore/cargo unloads.
+    `layout` (storage_layout()) skips the storage walk.
     """
     fallback = (None, 0)
-    for building in discover_storage_buildings(outpost):
-        try:
-            slots = list(building["component"].slots())
-        except Exception as error:
-            swallowed("drone_depot.buffer_target: building['component'].slots", error)
-            continue
+    for warehouse_id, slots in (storage_layout(outpost) if layout is None else layout):
         holding = [s for s in slots if s.item == item_id and not s.properties]
         if holding:
             room = sum(max(0, s.capacity - s.count) for s in holding)
             if room > 0:
-                return (building["id"], room)
+                return (warehouse_id, room)
             continue
         empty = [s for s in slots if not s.item or s.count <= 0]
         if fallback[0] is None and len(empty) > WAREHOUSE_FREE_SLOTS_KEEP:
-            fallback = (building["id"], empty[0].capacity)
+            fallback = (warehouse_id, empty[0].capacity)
     return fallback
 
 
@@ -213,12 +221,15 @@ class DroneDepotController:
         cap = lifeform_buffer_cap(outpost)
         self._log_stage_state("active", f"staging life forms to Warehouse (cap {cap} per form): {forms}.")
         stashes = warehouse_stocks(list(forms), outpost)
+        layout = None  # storage_layout() snapshot; dropped after a send changes the slots
         for item_id, units in forms.items():
             want = min(units, cap - stashes[item_id])
             if want <= 0:
                 self.log.trace(f"stage: '{item_id}' Warehouse buffer full (>= {cap}); leaving {units} in the Depot.")
                 continue
-            target, room = buffer_target(item_id, outpost)
+            if layout is None:
+                layout = storage_layout(outpost)
+            target, room = buffer_target(item_id, outpost, layout)
             if target is None:
                 self.log.debug(f"stage: no Warehouse slot for '{item_id}' (would leave < {WAREHOUSE_FREE_SLOTS_KEEP} free slot(s)); leaving {units} in the Depot.")
                 continue
@@ -232,6 +243,7 @@ class DroneDepotController:
                 continue
             moved = getattr(res, "moved", 0) or 0
             if moved > 0:
+                layout = None
                 self.log.print(f"[{self.name}] Staged {moved}x '{item_id}' -> '{target}' (buffer cap {cap}).")
                 self._wired = False  # output now points at the Warehouse; re-declare the Liquifier link next step
             else:
@@ -455,10 +467,13 @@ class DroneDepotController:
         candidates = {i: u for i, u in stock.items() if i not in staged and self._is_life_form(i)}
         stashes = warehouse_stocks(list(candidates), outpost)
         surplus = {}
+        layout = None
         for item_id, units in candidates.items():
             stash = stashes[item_id]
             needed = logistics_requests.retain_amount(item_id, outpost_id, requests) + deficits.get(item_id, 0)
-            stash_full = stash >= cap or buffer_target(item_id, outpost)[0] is None
+            if stash < cap and layout is None:
+                layout = storage_layout(outpost)
+            stash_full = stash >= cap or buffer_target(item_id, outpost, layout)[0] is None
             if stash_full and stash >= needed:
                 surplus[item_id] = units
             else:
