@@ -2,7 +2,8 @@
 import unittest
 from types import SimpleNamespace as NS
 
-import harness  # noqa: F401  (puts the lib/ folders on sys.path)
+import harness
+from game_stubs import Journal
 import outpost_sites as os_
 import autoplay_roles as roles
 from construction_plan import ATOMIC_STEP_BUDGET
@@ -280,7 +281,7 @@ class _Planet:
         return [NS(x=10, y=20, scanned=False, kind="unknown"), NS(x=300, y=300, scanned=True, kind="biomass")]
 
 
-class _Journal:
+class _Journal(Journal):
     def discovered_sites(self, planet_id):
         return [_Site(100.0, 100.0, "mineral", True, item_id="cobalt", purity="rich", hardness=3),
                 _Site(200.0, 200.0, "exotic", True, fluid="raw_chlorine"),

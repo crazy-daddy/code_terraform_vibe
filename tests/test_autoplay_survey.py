@@ -2,22 +2,17 @@
 import unittest
 
 import harness
+from game_stubs import ConstructionBlueprints, Result
 import construction_plan as cp
 import power_survey as ps
 import grid_geom as g
 
 
-class Result:
-    def __init__(self, status, blueprint_ids=None):
-        self.status = status
-        self.blueprint_ids = blueprint_ids or []
-        self.message = ""
-
-
-class ProbeBlueprints:
+class ProbeBlueprints(ConstructionBlueprints):
     """construction_blueprint fake: mark_deconstruct answers from a {(tx, ty): pieces} map like the game."""
 
     def __init__(self, pieces, locked=False, fail_cancel=()):
+        super().__init__()
         self.pieces = pieces
         self.locked = locked
         self.fail_cancel = set(fail_cancel)
@@ -42,7 +37,7 @@ class ProbeBlueprints:
         self.next_id += 1
         job_id = f"dc{self.next_id}"
         self.jobs.append(job_id)
-        return Result("ok", [job_id])
+        return Result("ok", blueprint_ids=[job_id])
 
     def cancel(self, blueprint_id):
         if blueprint_id in self.fail_cancel:

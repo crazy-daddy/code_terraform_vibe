@@ -1,8 +1,10 @@
 """Tests for autoplay/lib/power_plan.py and blueprint_queue.py: footprint boxes, MST links, power pass against fakes."""
 import builtins
 import unittest
+from typing import Any, cast
 
 import harness
+from game_stubs import Construction, ConstructionBlueprints, Journal as BaseJournal, Position, PowerControl, PowerGrid, Result as BaseResult
 import grid_geom as g
 import infra_topology as topo
 import power_plan as pp
@@ -15,26 +17,31 @@ def k(tx, ty):
     return g.tile_key(tx, ty)
 
 
-class Result:
+class Result(BaseResult):
+    """BlueprintPlanResult: the created ids are the second positional argument."""
+
     def __init__(self, status, blueprint_ids=None, message=""):
-        self.status = status
-        self.blueprint_ids = blueprint_ids or []
-        self.message = message
+        super().__init__(status, message=message, blueprint_ids=blueprint_ids or [])
 
 
-class Grid:
-    def __init__(self, anchor, outposts=(), machines=()):
-        self.anchor_id = anchor
-        self.outpost_ids = list(outposts)
-        self.machine_ids = list(machines)
+class Power(PowerControl):
+    """power_control over a fixed grid list; no world behind it."""
 
-
-class Power:
     def __init__(self, grids):
-        self._grids = grids
+        super().__init__(cast(Any, None))
+        self.grid_list = list(grids)
 
-    def grids(self):
-        return self._grids
+
+class Grid(PowerGrid):
+    """Grid named by its outposts and machine ids; no world behind it."""
+
+    def __init__(self, anchor, outposts=(), machines=()):
+        super().__init__(cast(Any, None), anchor, machines)
+        self._outpost_ids = list(outposts)
+
+    @property
+    def outpost_ids(self):
+        return self._outpost_ids
 
 
 class Site:
@@ -80,23 +87,32 @@ class Site:
         return self._rate
 
 
-class Journal:
+class Journal(BaseJournal):
     def __init__(self, sites):
         self._sites = sites
 
-    def surveyed_sites(self, planet):
+    def surveyed_sites(self, planet_id):
         return self._sites
 
 
-class Blueprints:
+class Blueprints(ConstructionBlueprints):
     """construction_blueprint fake: plan_power_line answers from `answers` in order (default ok), counts pieces."""
 
     def __init__(self, answers=(), jobs=()):
+        super().__init__()
         self.answers = list(answers)
         self.calls = []
         self.cancelled = []
-        self.jobs = list(jobs)
+        self.pending = list(jobs)
         self.next_id = 0
+
+    @property
+    def jobs(self):
+        return self.pending
+
+    @jobs.setter
+    def jobs(self, value):
+        self.pending = value
 
     def plan_power_line(self, x1, y1, x2, y2):
         self.calls.append((x1, y1, x2, y2))
@@ -114,28 +130,14 @@ class Blueprints:
         self.cancelled.append(blueprint_id)
         return Result("ok")
 
-    def pending_constructions(self):
-        return self.jobs
-
-    def active_constructions(self):
-        return []
-
-    def paused_constructions(self):
-        return []
 
 
-class Pos:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-
-class Job:
+class Job(Construction):
     def __init__(self, jid, kind, medium, x, y):
-        self.id = jid
+        super().__init__(jid, "", 0)
         self.kind = kind
         self.medium = medium
-        self.position = Pos(x, y)
+        self.position = Position(x, y)
 
 
 class GeometryTests(unittest.TestCase):
@@ -334,7 +336,7 @@ class PowerPassTests(harness.StubTestCase):
         self.assertIn("ring around wp1", self.debug_log())
 
     def test_waits_while_power_job_open(self):
-        self.blueprints.jobs = [Job("j1", "power_line", "power", 10, 5)]
+        self.blueprints.pending = [Job("j1", "power_line", "power", 10, 5)]
         self.assertEqual(self.run_pass(), "waiting")
         self.assertEqual(self.blueprints.calls, [])
 

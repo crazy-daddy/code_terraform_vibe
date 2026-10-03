@@ -3,6 +3,7 @@ import builtins
 import unittest
 
 import harness
+from game_stubs import ConstructionBlueprints, Journal as BaseJournal
 import grid_geom as g
 import fluid_plan as fp
 import autoplay_roles as roles
@@ -10,31 +11,39 @@ import blueprint_queue as bq
 import infra_topology as topo
 from construction_plan import ATOMIC_STEP_BUDGET
 from test_autoplay_geom import ops
-from test_autoplay_power import Result, Job, Site
+from test_autoplay_power import Job, Result, Site
 
 
 def k(tx, ty):
     return g.tile_key(tx, ty)
 
 
-class Journal:
+class Journal(BaseJournal):
     def __init__(self, sites):
         self._sites = sites
 
-    def surveyed_sites(self, planet):
+    def surveyed_sites(self, planet_id):
         return self._sites
 
 
-class Blueprints:
+class Blueprints(ConstructionBlueprints):
     """construction_blueprint fake: plan_pipe/plan_bridge answer from `answers` in order (default ok)."""
 
     def __init__(self, answers=()):
+        super().__init__()
         self.answers = list(answers)
         self.calls = []
         self.cancelled = []
         self.next_id = 0
         self.short = False
-        self.jobs = []
+
+    @property
+    def jobs(self):
+        return self.pending
+
+    @jobs.setter
+    def jobs(self, value):
+        self.pending = value
 
     def _ids(self, count):
         ids = []
@@ -55,7 +64,7 @@ class Blueprints:
         medium = topo.fluid_medium(medium)
         for i, jid in enumerate(ids):
             mid = (x1 + sx * (i + 0.5) * g.TILE_M, y1 + sy * (i + 0.5) * g.TILE_M)
-            self.jobs.append(Job(jid, "pipe", medium, mid[0], mid[1]))
+            self.pending.append(Job(jid, "pipe", medium, mid[0], mid[1]))
         return Result("ok", ids)
 
     def plan_bridge(self, medium, x, y, axis):
@@ -68,15 +77,6 @@ class Blueprints:
     def cancel(self, blueprint_id):
         self.cancelled.append(blueprint_id)
         return Result("ok")
-
-    def pending_constructions(self):
-        return self.jobs
-
-    def active_constructions(self):
-        return []
-
-    def paused_constructions(self):
-        return []
 
 
 def entry(ins, outs=()):
