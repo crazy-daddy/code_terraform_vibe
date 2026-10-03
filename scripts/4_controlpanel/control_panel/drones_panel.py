@@ -14,7 +14,7 @@
 # the nearest Drone Depot specifically, NOT the nearest drone_service --
 # couple()/uncouple() (module re-equip) both require being docked at a
 # Depot (drone.md), unlike a low-battery return. No Sport Nav equivalent --
-# that's a Pioneer-only upgrade-request mechanism (lib/vehicle_upgrade.py)
+# that's a Pioneer-only upgrade-request mechanism (lib/pioneer_upgrade.py)
 # with no drone counterpart.
 #
 # Fleet upgrade switch + status line (lib/fleet_upgrade.py, run by control_room_automation.py):

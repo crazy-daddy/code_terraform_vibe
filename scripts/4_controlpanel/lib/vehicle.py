@@ -138,10 +138,6 @@ class VehicleController(
         self.log.end()
         return 1
 
-    def get_rover_index(self):
-        """Backward compatibility alias for rover index."""
-        return self.get_vehicle_index()
-
     @staticmethod
     def extract_coords(pos):
         """Safely extracts (x, y) float tuple from tuple/list, dict, or Position object."""

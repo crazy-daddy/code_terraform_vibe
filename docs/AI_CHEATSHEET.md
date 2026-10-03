@@ -62,7 +62,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
 | &nbsp;&nbsp;↳ shared live telemetry dict `fleet.status` (vehicles + drones) | `fleet_status.py` — see §4 |
 | &nbsp;&nbsp;↳ job intent line + demand-root attribution ("hauling X from A to B for supply_dock_1") | `fleet_intent.py` — see §4 |
-| &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `vehicle_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1 |
+| &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `pioneer_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1 |
+| &nbsp;&nbsp;↳ Constructor role: blueprint job selection, claims, restock, build (`run_construction_loop()`, one `construction_pass()` per tick) | `pioneer_construction.py` `PioneerConstructionMixin` — Pioneer-only; pure planning math in `construction_plan.py`; see §2a construction entries |
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; **no** shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
 | Smelting | `smelter.py` |

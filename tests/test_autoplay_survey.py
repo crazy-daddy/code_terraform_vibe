@@ -172,7 +172,7 @@ class SurveyTests(harness.StubTestCase):
 
 
 class PioneerLedgerTests(harness.StubTestCase):
-    """PioneerController's hold reader and power-job recorder, called with a minimal stand-in self."""
+    """PioneerConstructionMixin's hold reader and power-job recorder, called with a minimal stand-in self."""
 
     class FakeSelf:
         name = "pioneer_1"
@@ -180,22 +180,26 @@ class PioneerLedgerTests(harness.StubTestCase):
         def __init__(self):
             self.log = harness.TreeConsole(module="pioneer")
 
+        @property
+        def _host(self):
+            return self
+
     def test_note_finished_power_job(self):
-        from pioneer import PioneerController
+        from pioneer_construction import PioneerConstructionMixin
         me = cast(Any, self.FakeSelf())
-        PioneerController.note_finished_power_job(me, cp.POWER_LINE_KIND, (10.0, -5.0))
-        PioneerController.note_finished_power_job(me, "mining_drill_heavy", (10.0, -5.0))
+        PioneerConstructionMixin.note_finished_power_job(me, cp.POWER_LINE_KIND, (10.0, -5.0))
+        PioneerConstructionMixin.note_finished_power_job(me, "mining_drill_heavy", (10.0, -5.0))
         raw = self.world.notebook.data[cp.POWER_TILES_KEY]
         self.assertEqual(cp.power_rows_decode(raw["rows"]), {(0, -1), (1, -1)})
-        PioneerController.note_finished_power_job(me, cp.DECONSTRUCT_KIND, (10.0, -5.0))
+        PioneerConstructionMixin.note_finished_power_job(me, cp.DECONSTRUCT_KIND, (10.0, -5.0))
         self.assertEqual(len(self.world.notebook.data[cp.POWER_TILES_KEY]["dirty"]), 2)
 
     def test_read_construction_hold(self):
-        from pioneer import PioneerController
+        from pioneer_construction import PioneerConstructionMixin
         me = cast(Any, self.FakeSelf())
-        self.assertEqual(PioneerController.read_construction_hold(me, 10), set())
+        self.assertEqual(PioneerConstructionMixin.read_construction_hold(me, 10), set())
         self.world.notebook.data[cp.HOLD_KEY] = {"by": "t", "tick": 10, "kinds": ["deconstruct"]}
-        self.assertEqual(PioneerController.read_construction_hold(me, 20), {"deconstruct"})
+        self.assertEqual(PioneerConstructionMixin.read_construction_hold(me, 20), {"deconstruct"})
 
 
 class LedgerUpdaterBudgetTests(unittest.TestCase):

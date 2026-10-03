@@ -319,7 +319,7 @@ class FleetDecommissionCoordinator:
                 s.get("lineage", {}).pop(machine_id, None)
             update_fleet_upgrade(drop_upgrade)
         else:
-            from vehicle_upgrade import clear_sport_nav_request
+            from pioneer_upgrade import clear_sport_nav_request
             from pioneer_commission import update_commission
             clear_sport_nav_request(machine_id)
             keys = (RECALL_KEY, MISSION_KEY)

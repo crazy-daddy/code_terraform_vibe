@@ -345,7 +345,7 @@ One budget owner for every Shop purchase. State in one archive dict `cash.budget
   | `pioneer_commission` | `fleet_commission.py` `_buy_missing()` (§2k-2), planned = cost × (1 + queued jobs) | capital |
   | `drone_commission` | `fleet_commission.py` crafting state: drone parts only the Shop sells (`spec["buy"]`, e.g. the miner's Portable Bio Extractor), §2k-2 | capital |
   | `tank_upgrade` | `tank_upgrade.py` (§2k-3) | capital |
-  | `pioneer_upgrade:<pioneer>` | `vehicle_upgrade.py` auto tier upgrades (§2b-1); manual Sport Nav stays a plain affordability check | capital |
+  | `pioneer_upgrade:<pioneer>` | `pioneer_upgrade.py` auto tier upgrades (§2b-1); manual Sport Nav stays a plain affordability check | capital |
 
 - **Decision** (`decide()`, live inside one `archive.transaction()`): `free = balance − other consumers' holds − floor`; deny if `cost > free`. Operating kinds (`OPERATING`) use floor 0 and skip the goal check: reagents come before everything. Capital kinds use the floor, then the **savings goal**: the highest-priority other capital ask ranked above this one that holds nothing yet; deny if `cost + goal cost > free` unless `cost ≤ SMALL_RATIO = 0.10` × goal cost. A grant sets a hold of `cost` for `HOLD_TICKS = 600`; every call refreshes the consumer's ask (dropped after `ASK_STALE_TICKS = 3000`). Only cash on hand is granted, never forecast income.
 - **Priority**: `cash.budget["priority"]`, reordered with the CASH card's ^/v buttons; default `DEFAULT_PRIORITY = [crop_automator, warehouse_upgrade, pioneer_commission, drone_commission, tank_upgrade, pioneer_upgrade]`; a stored list without a newer default kind gets it appended. Unknown kinds rank last.

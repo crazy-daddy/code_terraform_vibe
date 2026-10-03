@@ -22,7 +22,7 @@
 from archive import archive
 from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
-from vehicle_upgrade import is_sport_nav_requested, request_sport_nav
+from pioneer_upgrade import is_sport_nav_requested, request_sport_nav
 from logistics_requests import drone_yield_enabled, set_drone_yield_enabled
 from fleet_decommission import decommission_state, request_decommission, cancel_decommission
 import fleet_status
@@ -259,7 +259,7 @@ while True:
                 if not switch_on and vehicle_id in retiring:
                     cancel_decommission(vehicle_id)  # recall off = back to work
 
-            # Sport Nav is a manual, one-shot request (see lib/vehicle_upgrade.py) --
+            # Sport Nav is a manual, one-shot request (see lib/pioneer_upgrade.py) --
             # the Pioneer's own script mounts it next time it's safely idle at
             # base. Pioneer-only (Rover has no universal slot for it) and only
             # drawn when there's genuine room to the left of the recall switch.

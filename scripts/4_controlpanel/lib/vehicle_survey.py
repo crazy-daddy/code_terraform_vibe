@@ -420,10 +420,10 @@ class VehicleSurveyMixin:
                     continue
 
                 # Pioneer-only auto-upgrade/Sport-Nav-request pass -- see
-                # lib/vehicle_upgrade.py. Self-guarded (only acts once
+                # lib/pioneer_upgrade.py. Self-guarded (only acts once
                 # actually idle at base), and hasattr-gated since this loop is
                 # shared with RoverController, which never mixes in
-                # VehicleUpgradeMixin.
+                # PioneerUpgradeMixin.
                 upgrade_cycle = getattr(self._host, "handle_upgrade_cycle_if_idle", None)
                 if upgrade_cycle is not None:
                     upgrade_cycle()

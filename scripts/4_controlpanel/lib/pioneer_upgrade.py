@@ -71,7 +71,7 @@ def clear_sport_nav_request(vehicle_name):
     archive.transaction(SPORT_NAV_REQUEST_KEY, {}, updater)
 
 
-class VehicleUpgradeMixin:
+class PioneerUpgradeMixin:
     """
     Automatic Pioneer hardware upgrades, mixed into PioneerController only.
     Depends on VehicleNavigationMixin (is_at_base()), VehicleEnergyMixin
@@ -91,7 +91,7 @@ class VehicleUpgradeMixin:
         try:
             return {entry.id: entry.cost for entry in shop.get_catalogue()}
         except Exception as error:
-            swallowed("vehicle_upgrade.VehicleUpgradeMixin._catalogue: shop.get_catalogue", error)
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._catalogue: shop.get_catalogue", error)
             return {}
 
     def _best_unlocked_tier(self, tiers, current_id, catalogue):
@@ -119,7 +119,7 @@ class VehicleUpgradeMixin:
         try:
             return commander.get_credits()
         except Exception as error:
-            swallowed("vehicle_upgrade.VehicleUpgradeMixin._credits: commander.get_credits", error)
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin._credits: commander.get_credits", error)
             return 0
 
     def run_auto_upgrade_cycle(self):
@@ -355,7 +355,7 @@ class VehicleUpgradeMixin:
         try:
             slots = self._host.vehicle.modules()
         except Exception as error:
-            swallowed("vehicle_upgrade.VehicleUpgradeMixin.handle_sport_nav_request_if_active: self._host.vehicle.modules", error)
+            swallowed("pioneer_upgrade.PioneerUpgradeMixin.handle_sport_nav_request_if_active: self._host.vehicle.modules", error)
             slots = []
         free_slot = next((s for s in slots if getattr(s, "module_id", None) is None), None)
         if free_slot is None:

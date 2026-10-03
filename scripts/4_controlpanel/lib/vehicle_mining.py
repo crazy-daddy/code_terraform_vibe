@@ -579,9 +579,9 @@ class VehicleMiningMixin:
                 self._host.log.print(f"[{self._host.name}] Battery at {lvl*100:.0f}%. Recharging to 100% before launch...")
                 self._host.recharge_at_station(target_level=1.0)
             # Pioneer-only auto-upgrade/Sport-Nav-request pass -- see
-            # lib/vehicle_upgrade.py. hasattr-gated since this mixin is
+            # lib/pioneer_upgrade.py. hasattr-gated since this mixin is
             # shared with RoverController, which never mixes in
-            # VehicleUpgradeMixin.
+            # PioneerUpgradeMixin.
             upgrade_cycle = getattr(self._host, "handle_upgrade_cycle_if_idle", None)
             if upgrade_cycle is not None:
                 upgrade_cycle()

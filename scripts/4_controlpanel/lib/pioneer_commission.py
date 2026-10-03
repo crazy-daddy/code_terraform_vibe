@@ -24,7 +24,7 @@
 # A drone's lineage lives in fleet.upgrade instead (lib/drone_upgrade.py).
 
 from archive import archive
-from vehicle_upgrade import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, _BAY_COUNTS
+from pioneer_upgrade import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, _BAY_COUNTS
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all
@@ -92,7 +92,7 @@ def best_part(category, catalogue):
 
 
 def best_fill(portable_tiers, catalogue):
-    """Heavy portable once unlocked, else the base one (same policy as vehicle_upgrade.py)."""
+    """Heavy portable once unlocked, else the base one (same policy as pioneer_upgrade.py)."""
     return portable_tiers[-1] if portable_tiers[-1] in catalogue else portable_tiers[0]
 
 
