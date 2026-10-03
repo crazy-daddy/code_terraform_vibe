@@ -630,6 +630,33 @@ def depot_stock(depot):
     return stock
 
 
+def take_from_depots(port, item_id, amount, outpost):
+    """
+    take()s up to `amount` x `item_id` into `port` (an InputSlot) from the
+    Drone Depots at `outpost`, depot by depot, asking each only for what its
+    stockpile holds. Returns units moved. No retain rules: callers that must
+    hold back requested stock (Essence Liquifier) do their own loop.
+    """
+    moved_total = 0
+    for depot in local_depots(outpost):
+        if moved_total >= amount:
+            break
+        want = min(amount - moved_total, depot_stock(depot).get(item_id, 0))
+        if want <= 0:
+            continue
+        try:
+            if port.connected_id() != depot.id:
+                port.connect(depot.id)
+            res = port.take(item_id, want)
+        except Exception as error:
+            swallowed("logistics_requests.take_from_depots: port.take", error)
+            continue
+        moved = getattr(res, "moved", 0) or 0
+        log.trace(f"take {item_id} x{want} from depot '{depot.id}': {getattr(res, 'status', None)}, moved {moved}.")
+        moved_total += moved
+    return moved_total
+
+
 def outpost_stock(item_ids, outpost):
     """
     {item_id: units} held at `outpost`: its Warehouses + Drone Depots, plus

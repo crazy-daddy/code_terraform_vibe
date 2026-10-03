@@ -187,27 +187,10 @@ class SeedMakerController:
 
     def _load_one(self, item_id):
         """Takes 1 t of item_id into the chamber from local Warehouses/Inventory, else a local Drone Depot."""
-        self.log.start(f"[{self.name}] _load_one", level="debug")
         port = self.maker.input
         if take_item(port, item_id, 1, outpost=self.outpost) >= 1:
-            self.log.end()
             return True
-        for depot in logistics_requests.local_depots(self.outpost):
-            if logistics_requests.depot_stock(depot).get(item_id, 0) < 1:
-                continue
-            try:
-                if port.connected_id() != depot.id:
-                    port.connect(depot.id)
-                res = port.take(item_id, 1)
-            except Exception as e:
-                self.log.debug(f"take('{item_id}') from depot '{depot.id}' raised: {e}")
-                continue
-            if (getattr(res, "moved", 0) or 0) >= 1:
-                self.log.end()
-                return True
-            self.log.debug(f"take('{item_id}') from depot '{depot.id}' -> {getattr(res, 'status', '?')}")
-        self.log.end()
-        return False
+        return logistics_requests.take_from_depots(port, item_id, 1, self.outpost) >= 1
 
     def _eject_chamber(self):
         """Returns whatever sits in the chamber to local storage (never destroys it)."""

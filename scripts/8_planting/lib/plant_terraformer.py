@@ -333,7 +333,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
         moved_total = 0
         # Remote outposts: prefer local Drone Depot directly (brought by drones/pioneers)
         if not self.is_home:
-            moved_total += self._take_from_depots(port, item_id, amount)
+            moved_total += logistics_requests.take_from_depots(port, item_id, amount, self.outpost)
             if moved_total >= amount:
                 return moved_total
 
@@ -345,30 +345,8 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
 
         # Home fallback: Drone Depots
         if moved_total < amount and self.is_home:
-            moved_total += self._take_from_depots(port, item_id, amount - moved_total)
+            moved_total += logistics_requests.take_from_depots(port, item_id, amount - moved_total, self.outpost)
 
-        return moved_total
-
-    def _take_from_depots(self, port, item_id, amount):
-        self.log.start(f"[{self.name}] _take_from_depots", level="debug")
-        moved_total = 0
-        for depot in logistics_requests.local_depots(self.outpost):
-            if moved_total >= amount:
-                break
-            want = min(amount - moved_total, logistics_requests.depot_stock(depot).get(item_id, 0))
-            if want <= 0:
-                continue
-            try:
-                if port.connected_id() != depot.id:
-                    port.connect(depot.id)
-                res = port.take(item_id, want)
-            except Exception as error:
-                self.log.debug(f"take {item_id} from depot '{depot.id}' raised: {error}")
-                continue
-            moved = getattr(res, "moved", 0) or 0
-            self.log.debug(f"take {item_id} x{want} from depot '{depot.id}': {getattr(res, 'status', None)}, moved {moved}.")
-            moved_total += moved
-        self.log.end()
         return moved_total
 
     def start_threshold(self, full_batch):
