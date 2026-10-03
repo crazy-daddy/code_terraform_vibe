@@ -37,6 +37,29 @@ class SiteTargetTests(StubTestCase):
         self.assertEqual(production.get_fabricator_active_recipe(f2)[1], 6)
         self.assertEqual(production.get_fabricator_active_recipe(f1)[1], 0)
 
+    def test_site_targets_shared_while_fresh(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.add_fabricator("fabricator_2", self.remote)
+        only_target(w, "gas_pipe_segment", 10)
+        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["outpost_2"]})
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+        only_target(w, "gas_pipe_segment", 20)
+        # Another script within SITE_TARGETS_FRESH_TICKS reuses the shared result.
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+        # Another script holds the lease: the stale result is used, not computed again.
+        w.clock.now += production.SITE_TARGETS_FRESH_TICKS + 1
+        shared = w.notebook.data[production.SITE_TARGETS_KEY]
+        shared["outpost_2"]["lease"] = w.clock.now - 1
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 10})
+        # Lease expired: recomputed and shared again.
+        w.clock.now += production.SITE_TARGETS_LEASE_TICKS + 1
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {"gas_pipe_segment": 20})
+        self.assertNotIn("lease", w.notebook.data[production.SITE_TARGETS_KEY]["outpost_2"])
+        # A changed site plan is not served from the old result.
+        w.notebook.set(production.SITE_PLAN_KEY, {"gas_pipe_segment": ["home"]})
+        self.assertEqual(production.get_site_fabricator_targets("outpost_2"), {})
+
     def test_home_only_uses_global_targets(self):
         w = self.world
         w.add_fabricator("fabricator_1", w.home)

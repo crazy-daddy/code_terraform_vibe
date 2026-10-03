@@ -1520,7 +1520,7 @@ def root_remaining(item_id, target, cache):
     return max(0, target - cache.network_stock(item_id) - get_fabricator_pipeline(cache).get(item_id, 0))
 
 
-def get_site_fabricator_targets(site_id, cache=None):
+def get_site_fabricator_targets(site_id, cache=None, reuse=True):
     """
     {item_id: target} for the Fabricators at one fab site, in the same
     "keep at least N" shape as get_fabricator_targets(). With Fabricators at
@@ -1537,10 +1537,121 @@ def get_site_fabricator_targets(site_id, cache=None):
     so. Units in flight to the site and units to ship come off its target;
     the units to ship are this site's ship plan (get_site_ship_plan(), which
     lib/site_supply.py publishes as requests). Roots are never shipped here.
+
+    Shared across scripts (SITE_TARGETS_KEY): a result computed by any
+    Fabricator, Smelter or the panel is reused by the others for
+    SITE_TARGETS_FRESH_TICKS; while one script recomputes a stale site
+    (lease), the others keep the stale copy up to SITE_TARGETS_MAX_STALE_TICKS.
+    reuse=False skips the shared copy (computes here, then shares the result).
+    A shared copy computed under a different site plan (SITE_PLAN_KEY) is not used.
     """
     cache = SourceCache() if cache is None else cache
     if site_id in cache._site_targets:
         return dict(cache._site_targets[site_id])
+    now = _current_tick()
+    plan = archive.get(SITE_PLAN_KEY, {}) or {}
+    shared = _shared_site_targets(site_id, now, plan) if reuse else None
+    if shared is None and now and reuse:
+        shared = _lease_site_targets(site_id, now, plan)
+    if shared is not None:
+        cache._site_targets[site_id] = dict(shared.get("targets") or {})
+        cache._site_ship_plan[site_id] = dict(shared.get("ship") or {})
+        return dict(cache._site_targets[site_id])
+    targets = _compute_site_fabricator_targets(site_id, cache)
+    if now:
+        _publish_site_targets(site_id, now, plan, targets, cache._site_ship_plan.get(site_id, {}))
+    return targets
+
+
+# Site targets shared across scripts: {site_id: {"tick": computed at, "plan": SITE_PLAN_KEY then,
+# "targets": {...}, "ship": {...}, "lease": tick a script started recomputing}}.
+SITE_TARGETS_KEY = "production.site_targets"
+# A shared result younger than this is used as is.
+SITE_TARGETS_FRESH_TICKS = 150
+# A lease older than this is taken over (its script died or is slow).
+SITE_TARGETS_LEASE_TICKS = 300
+# While another script holds the lease, a stale result up to this age is used instead of
+# computing it a second time.
+SITE_TARGETS_MAX_STALE_TICKS = 600
+# Entries not refreshed for this long are dropped on the next write.
+SITE_TARGETS_PRUNE_TICKS = 6000
+
+
+def _site_targets_entry(site_id):
+    shared = archive.get(SITE_TARGETS_KEY, {}) or {}
+    entry = shared.get(site_id) if isinstance(shared, dict) else None
+    return entry if isinstance(entry, dict) else None
+
+
+def _usable(entry, plan):
+    return isinstance(entry, dict) and "targets" in entry and entry.get("plan", {}) == plan
+
+
+def _shared_site_targets(site_id, now, plan):
+    """The shared entry for site_id when fresh, or stale while another script recomputes it; else None.
+    Only an entry computed under the same site plan counts."""
+    entry = _site_targets_entry(site_id)
+    if not _usable(entry, plan):
+        return None
+    age = now - entry.get("tick", 0)
+    if age <= SITE_TARGETS_FRESH_TICKS:
+        return entry
+    lease = entry.get("lease")
+    if lease is not None and now - lease <= SITE_TARGETS_LEASE_TICKS and age <= SITE_TARGETS_MAX_STALE_TICKS:
+        return entry
+    return None
+
+
+def _lease_site_targets(site_id, now, plan):
+    """Takes the recompute lease for site_id. Returns the entry to use instead when another
+    script took it first (a stale result inside SITE_TARGETS_MAX_STALE_TICKS), else None."""
+    lost = []
+
+    def updater(shared):
+        shared = shared if isinstance(shared, dict) else {}
+        entry = shared.get(site_id)
+        entry = dict(entry) if isinstance(entry, dict) else {}
+        lease = entry.get("lease")
+        if lease is not None and now - lease <= SITE_TARGETS_LEASE_TICKS and lease != now:
+            lost.append(entry)
+            return shared
+        entry["lease"] = now
+        shared[site_id] = entry
+        return shared
+
+    try:
+        archive.transaction(SITE_TARGETS_KEY, {}, updater)
+    except Exception as error:
+        swallowed("production._lease_site_targets: archive.transaction", error)
+        return None
+    if lost and _usable(lost[0], plan) and now - lost[0].get("tick", 0) <= SITE_TARGETS_MAX_STALE_TICKS:
+        return lost[0]
+    return None
+
+
+def _publish_site_targets(site_id, started, plan, targets, ship_plan):
+    """Stores a computed result for the other scripts, stamped with the tick its computation
+    started, releases the lease and drops entries not refreshed in SITE_TARGETS_PRUNE_TICKS."""
+    entry = {"tick": started, "plan": plan, "targets": dict(targets), "ship": dict(ship_plan or {})}
+
+    def updater(shared):
+        shared = shared if isinstance(shared, dict) else {}
+        shared = {key: value for key, value in shared.items()
+                  if isinstance(value, dict) and started - value.get("tick", value.get("lease", started)) <= SITE_TARGETS_PRUNE_TICKS}
+        current = shared.get(site_id)
+        if isinstance(current, dict) and current.get("tick", 0) > started and "targets" in current:
+            return shared
+        shared[site_id] = entry
+        return shared
+
+    try:
+        archive.transaction(SITE_TARGETS_KEY, {}, updater)
+    except Exception as error:
+        swallowed("production._publish_site_targets: archive.transaction", error)
+
+
+def _compute_site_fabricator_targets(site_id, cache):
+    """get_site_fabricator_targets() computed here, filling cache's site memos."""
     if _single_fab_site(cache):
         targets = get_fabricator_targets(cache)
         cache._site_targets[site_id] = dict(targets)
@@ -1575,9 +1686,13 @@ def get_site_fabricator_targets(site_id, cache=None):
 
 def get_site_ship_plan(site_id, cache=None):
     """{item_id: units} this site should have hauled in rather than build --
-    see get_site_fabricator_targets()."""
+    see get_site_fabricator_targets(). Computed here, not taken from the
+    shared copy: hauls reserved since then must come off at once, or the
+    same units are requested twice."""
     cache = SourceCache() if cache is None else cache
-    get_site_fabricator_targets(site_id, cache)
+    if site_id not in cache._site_ship_plan:
+        cache._site_targets.pop(site_id, None)
+        get_site_fabricator_targets(site_id, cache, reuse=False)
     return dict(cache._site_ship_plan.get(site_id, {}))
 
 
