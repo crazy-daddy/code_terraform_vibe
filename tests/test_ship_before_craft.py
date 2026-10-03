@@ -3,7 +3,7 @@ lib/site_supply.py requests), per-site Smelter demand and the fluid-only
 recipe switch in lib/fabricator.py."""
 import unittest
 
-from game_stubs import Recipe, FABRICATOR_RECIPES
+from game_stubs import FluidPort, Recipe, FABRICATOR_RECIPES
 from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, logistics_requests, site_supply
 
 
@@ -16,21 +16,6 @@ RECIPES = FABRICATOR_RECIPES + [VALVE, COOLANT, TAR]
 def site_requests(world, outpost_id):
     requests = logistics_requests.active_requests(world.clock.now).get(outpost_id, {})
     return {item_id: (e["target"], logistics_requests.request_min(e)) for item_id, e in requests.items() if e.get("by") == site_supply.SITE_SUPPLY_REQUESTER}
-
-
-class FluidPort:
-    def __init__(self, source_id):
-        self.source_id = source_id
-
-    def connected_id(self):
-        return self.source_id
-
-    def connect(self, source_id):
-        self.source_id = source_id
-
-    def disconnect(self):
-        self.source_id = None
-        return type("Result", (), {"status": "ok"})()
 
 
 class ShipBeforeCraftTests(StubTestCase):
@@ -161,9 +146,9 @@ class FluidOnlySwitchTests(StubTestCase):
         f = w.add_fabricator("fabricator_1", w.home, RECIPES)
         f.recipe = "craft_tar"
         f.running = True
-        f.oil_in = FluidPort("oil_pump_1")
+        f.oil_in = FluidPort(w, connected="oil_pump_1")
         fabricator.FabricatorController(f).step()
-        self.assertIsNone(f.oil_in.connected_id())
+        self.assertEqual(f.oil_in.connected_id(), "")
         self.assertNotEqual(f.recipe, "craft_tar")
 
 

@@ -3,6 +3,7 @@ import math
 import unittest
 
 import harness
+from game_stubs import Building, Clock, FluidPort, Result, Slot
 import fluid_routing
 import reactor as rx
 
@@ -10,121 +11,22 @@ SECONDS_PER_GH = 25.0
 TICK_GH = 0.1 / SECONDS_PER_GH
 
 
-class _Result:
-    def __init__(self, status="ok", moved=0):
-        self.status = status
-        self.message = ""
-        self.moved = moved
-
-
-class _SimClock:
-    def __init__(self):
-        self.now = 1000
-        self.hours = 0.0
-
-    def tick(self):
-        return self.now
-
-    def elapsed_game_hours(self):
-        return self.hours
-
+class _SimClock(Clock):
     def real_seconds_per_hour(self):
         return SECONDS_PER_GH
 
 
-class _Cask:
-    type_id = "lead_cask"
-
-    def __init__(self, world, cask_id, outpost, material="", count=0):
-        self.id = cask_id
-        self.outpost = outpost
-        self._material = material
-        self.units = count
-        world.components[cask_id] = self
-
-    def material(self):
-        return self._material if self.units > 0 else ""
-
-    def count(self, item_id):
-        return self.units if item_id == self.material() else 0
-
-    def capacity(self):
-        return 100
-
-
-class _RodInput:
-    def __init__(self, world, staged=0):
-        self.world = world
-        self.staged = staged
-        self.source = ""
-
-    def connected_id(self):
-        return self.source
-
-    def connect(self, source_id):
-        self.source = source_id
-        return _Result()
-
-    def take(self, item_id, count):
-        cask = self.world.components.get(self.source)
-        moved = min(count, cask.count(item_id)) if isinstance(cask, _Cask) else 0
-        if moved:
-            cask.units -= moved
-            self.staged += moved
-        return _Result("ok" if moved else "source_empty", moved)
-
-    def count(self):
-        return self.staged
-
-
-class _Tank:
-    type_id = "liquid_tank"
-
-    def __init__(self, world, tank_id, outpost, level, capacity=100.0):
-        self.id = tank_id
-        self.outpost = outpost
-        self.tons = level
-        self.cap = capacity
-        world.components[tank_id] = self
-
-    def fluid(self):
-        return "water" if self.tons > 0 else ""
-
-    def level(self):
-        return self.tons
-
-    def capacity(self):
-        return self.cap
-
-
-class _WaterPort:
-    def __init__(self, source="tank_a"):
-        self.source = source
-        self.disconnects = 0
-
-    def connected_id(self):
-        return self.source
-
-    def connect(self, source_id):
-        self.source = source_id
-        return _Result()
-
-    def disconnect(self):
-        self.source = ""
-        self.disconnects += 1
-        return _Result()
-
-
-class _SimReactor:
+class _SimReactor(Building):
     """Simworker reactor step (ige) per 0.1 s tick; condition from `conditions[window]`."""
     type_id = "reactor"
 
     def __init__(self, world, clock, outpost, conditions, staged=1):
-        self.id = "reactor_1"
-        self.outpost = outpost
+        super().__init__(world, "reactor_1", outpost)
         self.clock = clock
         self.conditions = conditions
-        self.input = _RodInput(world, staged)
+        self.input = Slot(self, self.input_buffer, 10)
+        if staged:
+            self.input_buffer["fuel_rod"] = staged
         self.water_in = None
         self._heat = 0.0
         self.temp = 20.0
@@ -134,9 +36,18 @@ class _SimReactor:
         self.max_temp = 0.0
         world.components[self.id] = self
 
+    def _use_rod(self):
+        """Consumes one staged rod; False when none is staged."""
+        if self.input.count() <= 0:
+            return False
+        self.input_buffer["fuel_rod"] -= 1
+        if self.input_buffer["fuel_rod"] <= 0:
+            del self.input_buffer["fuel_rod"]
+        return True
+
     def set_heat(self, value):
         self._heat = min(1.0, max(0.0, value))
-        return _Result()
+        return Result()
 
     def heat(self):
         return self._heat
@@ -147,7 +58,7 @@ class _SimReactor:
     def status(self):
         if self.overheated:
             return "overheated"
-        if self.rod <= 0 and self.input.staged <= 0:
+        if self.rod <= 0 and self.input.count() <= 0:
             return "no_fuel"
         return "running"
 
@@ -163,11 +74,11 @@ class _SimReactor:
             self.output = 0.0
             return
         if self.rod <= 0:
-            if self.input.staged <= 0:
+            if self.input.count() <= 0:
                 self.temp = max(0.0, self.temp - 260 * dt)
                 self.output = 0.0
                 return
-            self.input.staged -= 1
+            self._use_rod()
             self.rod = 1.0
         if self._heat <= 0:
             self.temp = max(0.0, self.temp - 260 * dt)
@@ -266,11 +177,11 @@ class ReactorTests(harness.StubTestCase):
         self.assertAlmostEqual(machine.temp, 840, delta=5)
 
     def test_loads_rods_from_local_cask(self):
-        _Cask(self.world, "lead_cask_1", self.world.home, "fuel_rod", 5)
+        self.world.add_lead_cask("lead_cask_1", self.world.home, "fuel_rod", 5)
         machine, controller = self.make([1.0], staged=0)
         controller.step()
-        self.assertEqual(machine.input.staged, rx.ROD_STAGE)
-        self.assertEqual(self.world.components["lead_cask_1"].units, 5 - rx.ROD_STAGE)
+        self.assertEqual(machine.input.count(), rx.ROD_STAGE)
+        self.assertEqual(self.world.components["lead_cask_1"].count("fuel_rod"), 5 - rx.ROD_STAGE)
 
     def test_warns_once_without_rods(self):
         machine, controller = self.make([1.0], staged=0)
@@ -286,19 +197,19 @@ class ReactorTests(harness.StubTestCase):
         return fluid_routing.archive.get(fluid_routing.WATER_RESERVE_KEY)
 
     def test_reserve_holds_below_floor_with_hysteresis(self):
-        tank = _Tank(self.world, "tank_a", self.world.home, 40.0, capacity=200.0)
+        tank = self.world.add_tank("tank_a", self.world.home, "water", 40.0, capacity=200.0)
         _, controller = self.make([1.0])
         entry = self.publish(controller)
         self.assertTrue(entry["hold"])
         self.assertEqual(len(self.notified), 1)
         self.assertEqual(entry["floor_t"], rx.WATER_RESERVE_HOURS * rx.COOLANT_MAX_T_PER_GH)
-        tank.tons = 55.0  # above floor, under the release line
+        tank._level = 55.0  # above floor, under the release line
         self.assertTrue(self.publish(controller)["hold"])
-        tank.tons = 61.0
+        tank._level = 61.0
         self.assertFalse(self.publish(controller)["hold"])
 
     def test_reserve_floor_capped_by_tank_capacity(self):
-        _Tank(self.world, "tank_a", self.world.home, 35.0, capacity=80.0)
+        self.world.add_tank("tank_a", self.world.home, "water", 35.0, capacity=80.0)
         _, controller = self.make([1.0])
         entry = self.publish(controller)
         self.assertEqual(entry["floor_t"], 80.0 * rx.WATER_RESERVE_MAX_FRACTION)
@@ -309,7 +220,7 @@ class ReactorTests(harness.StubTestCase):
         self.assertFalse(self.publish(controller)["hold"])
 
     def test_only_lowest_id_reactor_publishes(self):
-        _Tank(self.world, "tank_a", self.world.home, 10.0)
+        self.world.add_tank("tank_a", self.world.home, "water", 10.0)
         _, controller = self.make([1.0])
         controller.name = "reactor_2"
         controller.reserve_tick = None
@@ -323,10 +234,10 @@ class ReactorTests(harness.StubTestCase):
 
     def test_router_yields_water_port_while_held(self):
         fluid_routing.archive.set(fluid_routing.WATER_RESERVE_KEY, {"hold": True, "tick": self.clock.now})
-        port = _WaterPort()
+        port = FluidPort(self.world, connected="tank_a")
         self.assertEqual(self._router("water").ensure(port, self.clock.now).kind, "reserved")
         self.assertEqual(port.disconnects, 1)
-        other = _WaterPort()
+        other = FluidPort(self.world, connected="tank_a")
         self.assertNotEqual(self._router(None).ensure(other, self.clock.now + 1).kind, "reserved")
         self.assertEqual(other.disconnects, 0)
 
