@@ -58,6 +58,7 @@ import math
 
 import fluid_routing
 import lead_cask
+from hysteresis import HysteresisLatch
 from archive import archive
 from production import discover_fluid_sources
 from version_guard import validate_game_version
@@ -167,7 +168,8 @@ class ReactorController:
         self.reactor_ids = []
         self.reactor_ids_tick = None
         self.reserve_tick = None
-        self.reserve_hold = False
+        # Holds below the floor, releases at WATER_RESERVE_RELEASE_FACTOR x floor (thresholds per update).
+        self.reserve_latch = HysteresisLatch(0.0, 0.0, on_above=False)
         self.router = fluid_routing.FluidInputRouter(
             discover=self._discover_water,
             rescan_interval_ticks=WATER_RESCAN_INTERVAL_TICKS,
@@ -381,14 +383,14 @@ class ReactorController:
             return
         tons = fluid_routing.fluid_reserve_tons("water")
         if tons is None:
-            hold, level, floor = False, 0.0, 0.0
+            flip = self.reserve_latch.update(None)
+            level, floor = 0.0, 0.0
         else:
             level, capacity = tons
             floor = self.water_floor(len(reactors), capacity)
-            line = floor * WATER_RESERVE_RELEASE_FACTOR if self.reserve_hold else floor
-            hold = level < line
-        if hold != self.reserve_hold:
-            self.reserve_hold = hold
+            flip = self.reserve_latch.update(level, floor, floor * WATER_RESERVE_RELEASE_FACTOR)
+        hold = self.reserve_latch.active
+        if flip:
             if hold:
                 self.log.level("warn").print(f"[{self.name}] Water reserve ON: tanks {level:.0f} t < {floor:.0f} t floor; only Reactors draw water.")
                 _notify(f"[Power] Water reserved for {len(reactors)} Reactor(s): tanks at {level:.0f} t.")

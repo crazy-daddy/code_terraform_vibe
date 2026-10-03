@@ -9,6 +9,7 @@ from swallow import swallowed
 from production import discover_fluid_sources
 import fluid_routing
 import lead_cask
+from hysteresis import HysteresisLatch
 import power
 
 # Mk III fluid feed (docs/components/heat_generator.md, pressure_generator.md,
@@ -79,7 +80,8 @@ class Mk3FluidFeed:
         self.steam_guard = steam_guard
         self.clock = get_component("clock")
         self.power = get_component("power_control") if steam_guard else None
-        self.guard_open = True
+        # Active = guard closed (steam_in released to the turbines); an unreadable pool opens it.
+        self.guard = HysteresisLatch(STEAM_POOL_STOP_FRACTION, STEAM_POOL_START_FRACTION, on_above=False)
         self.last_check_tick = None
         self.last_degraded = None
         self.router = fluid_routing.FluidInputRouter(
@@ -136,20 +138,20 @@ class Mk3FluidFeed:
             return None
         return now["steam_t"] / now["steam_cap"]
 
+    @property
+    def guard_open(self):
+        return not self.guard.active
+
     def _update_guard(self, port):
         self.log.start(f"[{self.name}] _update_guard", level="debug")
         fraction = self._steam_pool_fraction()
+        flip = self.guard.update(fraction)
         if fraction is None:
             self.log.debug("No measurable steam pool on this grid; steam guard stays open.")
-            self.guard_open = True
-            self.log.end()
-            return
-        if self.guard_open and fraction < STEAM_POOL_STOP_FRACTION:
-            self.guard_open = False
+        elif flip == "on":
             self.log.print(f"[{self.name}] Grid steam pool {fraction*100:.0f}% < {STEAM_POOL_STOP_FRACTION*100:.0f}% -- releasing steam_in to the turbines, running as Mk II.")
             self._disconnect(port)
-        elif not self.guard_open and fraction >= STEAM_POOL_START_FRACTION:
-            self.guard_open = True
+        elif flip == "off":
             self.log.print(f"[{self.name}] Grid steam pool back to {fraction*100:.0f}% (>= {STEAM_POOL_START_FRACTION*100:.0f}%) -- reconnecting steam_in.")
         else:
             self.log.debug(f"Steam pool {fraction*100:.0f}%, guard {'open' if self.guard_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")

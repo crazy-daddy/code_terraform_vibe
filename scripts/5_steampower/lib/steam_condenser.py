@@ -1,5 +1,6 @@
 import fluid_routing
 import power
+from hysteresis import HysteresisLatch
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -90,8 +91,10 @@ class SteamCondenserController:
         self.clock = get_component("clock")
         self.power = get_component("power_control")
         self.log = TreeConsole(module="steam_condenser")
-        self.steam_gate_open = True
-        self.water_gate_open = True
+        # Active = gate closed. An unreadable steam pool opens the steam gate; no reachable water
+        # tank keeps the water gate as it is.
+        self.steam_gate = HysteresisLatch(STEAM_POOL_STOP_FRACTION, STEAM_POOL_START_FRACTION, on_above=False)
+        self.water_gate = HysteresisLatch(WATER_POOL_STOP_FRACTION, WATER_POOL_START_FRACTION, unknown=None)
         self._last_reason = None
         self._steam_router = fluid_routing.FluidInputRouter(
             discover=self._discover_steam_sources,
@@ -183,19 +186,23 @@ class SteamCondenserController:
         self.log.trace(f"[{self.name}] Grid steam pool {now['steam_t']:.0f}/{now['steam_cap']:.0f} t over {now['tanks']} tank(s).")
         return now["steam_t"] / now["steam_cap"]
 
+    @property
+    def steam_gate_open(self):
+        return not self.steam_gate.active
+
+    @property
+    def water_gate_open(self):
+        return not self.water_gate.active
+
     def update_steam_gate(self):
         self.log.start(f"[{self.name}] update_steam_gate", level="debug")
         fraction = self.steam_pool_fraction()
+        flip = self.steam_gate.update(fraction)
         if fraction is None:
             self.log.debug("No measurable steam pool on this grid; steam gate stays open.")
-            self.steam_gate_open = True
-            self.log.end()
-            return
-        if self.steam_gate_open and fraction < STEAM_POOL_STOP_FRACTION:
-            self.steam_gate_open = False
+        elif flip == "on":
             self.log.print(f"[{self.name}] Grid steam pool {fraction*100:.0f}% < {STEAM_POOL_STOP_FRACTION*100:.0f}% -- pausing condensation to keep the dormancy buffer for the turbines.")
-        elif not self.steam_gate_open and fraction >= STEAM_POOL_START_FRACTION:
-            self.steam_gate_open = True
+        elif flip == "off":
             self.log.print(f"[{self.name}] Grid steam pool back to {fraction*100:.0f}% (>= {STEAM_POOL_START_FRACTION*100:.0f}%) -- resuming condensation.")
         else:
             self.log.trace(f"Steam pool {fraction*100:.0f}%, gate {'open' if self.steam_gate_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
@@ -204,15 +211,12 @@ class SteamCondenserController:
     def update_water_gate(self):
         self.log.start(f"[{self.name}] update_water_gate", level="debug")
         fill = self.water_pool_fraction()
+        flip = self.water_gate.update(fill)
         if fill is None:
             self.log.debug(f"No reachable water tank; water gate stays {'open' if self.water_gate_open else 'closed'}.")
-            self.log.end()
-            return
-        if self.water_gate_open and fill >= WATER_POOL_STOP_FRACTION:
-            self.water_gate_open = False
+        elif flip == "on":
             self.log.print(f"[{self.name}] Water tanks {fill*100:.0f}% full (>= {WATER_POOL_STOP_FRACTION*100:.0f}%) -- pausing condensation.")
-        elif not self.water_gate_open and fill < WATER_POOL_START_FRACTION:
-            self.water_gate_open = True
+        elif flip == "off":
             self.log.print(f"[{self.name}] Water tanks down to {fill*100:.0f}% (< {WATER_POOL_START_FRACTION*100:.0f}%) -- resuming condensation.")
         else:
             self.log.trace(f"Water pool {fill*100:.0f}%, gate {'open' if self.water_gate_open else 'closed'} (stop >= {WATER_POOL_STOP_FRACTION*100:.0f}%, start < {WATER_POOL_START_FRACTION*100:.0f}%).")

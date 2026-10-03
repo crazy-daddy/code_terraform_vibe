@@ -1,5 +1,6 @@
 import fluid_routing
 import power
+from hysteresis import HysteresisLatch
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -117,7 +118,7 @@ class OilGeneratorController:
         self.power = get_component("power_control")
         self.log = TreeConsole(module="oil_generator")
         self.burning = False
-        self.surplus = False
+        self.surplus_latch = HysteresisLatch(OIL_SURPLUS_START_FRACTION, OIL_SURPLUS_STOP_FRACTION)
         self.oil_fill = None
         self.oil_fill_tick = None
         self.oil_tons = None         # (level t, capacity t) at oil_fill_tick
@@ -227,22 +228,24 @@ class OilGeneratorController:
             self.oil_inflow_tph += OIL_INFLOW_EMA_ALPHA * (sample - self.oil_inflow_tph)
         self.log.debug(f"[{self.name}] Oil inflow sample {sample:.1f} t/h (tanks {prev[0]:.0f} -> {tons[0]:.0f} t over {hours:.2f} h, burn {oil_burn_tph:.1f} t/h), EMA {self.oil_inflow_tph:.1f} t/h.")
 
+    @property
+    def surplus(self):
+        return self.surplus_latch.active
+
+    @surplus.setter
+    def surplus(self, on):
+        self.surplus_latch.active = on
+
     def update_surplus(self, oil):
         """Surplus hysteresis: on at OIL_SURPLUS_START_FRACTION, off below OIL_SURPLUS_STOP_FRACTION or with no oil tank."""
-        if oil is None:
-            on = False
-        elif self.surplus:
-            on = oil >= OIL_SURPLUS_STOP_FRACTION
-        else:
-            on = oil >= OIL_SURPLUS_START_FRACTION
-        if on != self.surplus:
-            self.surplus = on
+        flip = self.surplus_latch.update(oil)
+        if flip:
             oil_str = f"{oil*100:.0f}%" if oil is not None else "n/a"
-            if on:
+            if flip == "on":
                 self.log.print(f"[{self.name}] Oil surplus base load ON -- oil tanks {oil_str} (>= {OIL_SURPLUS_START_FRACTION*100:.0f}%).")
             else:
                 self.log.print(f"[{self.name}] Oil surplus base load OFF -- oil tanks {oil_str} (stop below {OIL_SURPLUS_STOP_FRACTION*100:.0f}%).")
-        return on
+        return self.surplus
 
     def surplus_throttle(self, grid, battery, count):
         """Throttle that burns the gross oil inflow plus a correction toward OIL_SURPLUS_TARGET_FRACTION,
