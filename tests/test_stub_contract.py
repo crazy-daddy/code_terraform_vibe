@@ -35,6 +35,7 @@ COMPONENTS = {
     "Console": ["api.console"],
     "OutpostNetwork": ["api.outpost_network"],
     "Journal": ["api.journal"],
+    "WildlifeSensor": ["api.wildlife_sensor"],
     "ConstructionBlueprints": ["api.construction_blueprint"],
     "Slot": ["types.InputSlot", "types.OutputSlot"],
     "OutpostRef": ["types.OutpostRef"],

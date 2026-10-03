@@ -53,6 +53,10 @@ BREAKTHROUGH_POPULATION = 10000
 # Global caps on stacked bonuses (`xG`). feed_multiplier_floor = 1 - 0.75.
 BONUS_CAPS = {"speed": 1.5, "brood": 0.35, "momentum": 0.3, "rate_ceiling": 0.5, "band_tolerance": 0.5, "feed_multiplier_floor": 0.25}
 
+# Wildlife population at which the game marks the Wildlife pillar complete
+# (achievement `wildlife_teeming`); a completed pillar adds no more Terraform Index.
+WILDLIFE_COMPLETE_POPULATION = 5000000
+
 # Wildlife-total research gates (simworker research table).
 EXOTIC_HUSBANDRY_WILDLIFE = 1000
 FEED_MAKER_MK2_WILDLIFE = 250000

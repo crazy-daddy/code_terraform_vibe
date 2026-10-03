@@ -27,6 +27,9 @@
 #      at home (requester REQUESTER_ID), wakes, notify() on alert changes.
 #      Returns a one-line summary for the AUTOMATION card.
 #
+#   With the sensor at WILDLIFE_COMPLETE_POPULATION the pass is skipped (see
+#   plan_if_due): requests withdrawn, an empty plan published, COMPLETE_SUMMARY.
+#
 # Parking of finished colonies (undeploy at the Mk I ceiling, rehouse) is not
 # done: with no free Habitat a revive step can never run and is skipped.
 
@@ -35,7 +38,7 @@ from swallow import swallowed
 from tree_console import TreeConsole
 import logistics_requests
 from script_parking import wake_for_visit, wake_kind, parked_ids
-from wildlife_data import SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H
+from wildlife_data import SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H, WILDLIFE_COMPLETE_POPULATION
 from wildlife_model import schedule_for, breeding_rate, breakthrough_effects, adaptation_effects
 from atomic import run_atomic, run_batched
 import fluid_routing
@@ -45,13 +48,14 @@ from storage import inventory_count
 PLAN_TICK_INTERVAL = 250            # one game hour
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
 IDLE_SUMMARY = "wildlife idle"
+COMPLETE_SUMMARY = "Wildlife complete"
 MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/step_profile.py wildlife_ration)
 TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/level() read in _fluid_stock() (~20 steps each)
 
 log = TreeConsole(module="wildlife_planner")
 
 # Module state between passes (the Control Room Automation imports this once).
-state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "progress": None}
+state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "progress": None, "complete": False}
 
 
 # ---------------------------------------------------------------- pure core
@@ -756,10 +760,45 @@ def plan(clock):
     return state["summary"]
 
 
+def _population():
+    """Wildlife sensor reading, or None when the sensor is missing or fails."""
+    try:
+        sensor = get_component("wildlife_sensor")
+        return sensor.get_value() if sensor else None
+    except Exception as error:
+        swallowed("wildlife_planner._population: wildlife_sensor.get_value", error)
+        return None
+
+
+def _complete(now):
+    """Wildlife pillar complete: withdraw the life-form requests and publish an empty plan.
+
+    An empty plan assigns no revival, buys nothing and demands no feed or Forage,
+    so Habitats park once empty or out of feed and Feed Makers idle."""
+    log.print(f"[WILDLIFE] Population reached {WILDLIFE_COMPLETE_POPULATION}: Wildlife pillar complete, planner stops.")
+    logistics_requests.clear_requests(REQUESTER_ID)
+    state["alerts"] = None
+    empty = {"assign": {}, "buy": {}, "feed_demand": {}, "forage_reserve": 0, "form_targets": {}, "fluid_ration": {}, "fluid_supply": {},
+             "progress": {"waiting": None, "skipped": [], "colonies": 0, "habitats": 0}, "alerts": {}, "complete": True, "tick": now}
+    if not archive.transaction(wc.PLAN_KEY, {}, lambda _old: empty):
+        log.level("warn").print(f"{wc.PLAN_KEY} write rejected; completed plan not published.")
+
+
 def plan_if_due(clock):
-    """Every PLAN_TICK_INTERVAL: one pass. Returns the last summary."""
+    """Every PLAN_TICK_INTERVAL: one pass. Returns the last summary.
+
+    Once the sensor reads WILDLIFE_COMPLETE_POPULATION the pass (and the
+    sensor read) is skipped for the rest of the run: populations never decay."""
     now = _now(clock)
+    if state["complete"]:
+        return state["summary"]
     if state["tick"] and now - state["tick"] < PLAN_TICK_INTERVAL:
         return state["summary"]
     state["tick"] = now
+    population = _population()
+    if isinstance(population, (int, float)) and population >= WILDLIFE_COMPLETE_POPULATION:
+        state["complete"] = True
+        state["summary"] = COMPLETE_SUMMARY
+        _complete(now)
+        return COMPLETE_SUMMARY
     return plan(clock)

@@ -1,6 +1,8 @@
 import unittest
 
 import harness
+import logistics_requests
+import tree_console
 import wildlife_common as wc
 import wildlife_planner as wp
 from wildlife_data import SPECIES, BONUS_TREES, FEED_PER_CRAFT, FORAGE_PER_CRAFT
@@ -365,6 +367,54 @@ class SnapshotTests(harness.StubTestCase):
     def test_no_habitat_is_a_noop(self):
         self.assertEqual(wp.plan(self.world.components.get("clock")), wp.IDLE_SUMMARY)
         self.assertIsNone(self.world.notebook.data.get(wc.PLAN_KEY))
+
+
+class CompletionTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        wp.state.update({"tick": 0, "summary": wp.IDLE_SUMMARY, "complete": False, "requests": None, "request_tick": 0})
+        self.clock = self.world.components.get("clock") or self.world.services["clock"]
+        self.world.add_habitat("habitat_1", self.world.home)
+
+    def pass_at(self, tick):
+        self.world.clock.now = tick
+        return wp.plan_if_due(self.clock)
+
+    def test_complete_skips_plan_and_publishes_empty_plan(self):
+        self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
+        logistics_requests.set_requests("home", wp.REQUESTER_ID, {"crystal": (10, 0)}, 1)
+        logistics_requests.set_requests("home", "seed_maker", {"seed": (5, 0)}, 1)
+        self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY)
+        plan = self.world.notebook.data[wc.PLAN_KEY]
+        self.assertEqual((plan["assign"], plan["buy"], plan["feed_demand"], plan["forage_reserve"], plan["form_targets"]), ({}, {}, {}, 0, {}))
+        self.assertTrue(plan["complete"])
+        self.assertEqual(list(logistics_requests.active_requests(1000).get("home", {})), ["seed"])
+
+    def test_logs_once_and_stops_reading_sensor(self):
+        sensor = self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION + 1)
+        self.pass_at(1000)
+        sensor.broken = True
+        self.assertEqual(self.pass_at(1000 + wp.PLAN_TICK_INTERVAL), wp.COMPLETE_SUMMARY)
+        self.assertEqual(self.pass_at(1000 + 5 * wp.PLAN_TICK_INTERVAL), wp.COMPLETE_SUMMARY)
+        tree_console.flush_all()
+        self.assertEqual(self.world.console.text().count("Wildlife pillar complete"), 1)
+
+    def test_below_threshold_plans(self):
+        self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION - 1)
+        self.pass_at(1000)
+        self.assertFalse(wp.state["complete"])
+        self.assertNotIn("complete", self.world.notebook.data.get(wc.PLAN_KEY) or {})
+
+    def test_failing_sensor_keeps_planning(self):
+        self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION).broken = True
+        self.pass_at(1000)
+        self.assertFalse(wp.state["complete"])
+        self.assertIn("assign", self.world.notebook.data.get(wc.PLAN_KEY) or {})
+
+    def test_missing_sensor_keeps_planning(self):
+        del self.world.services["wildlife_sensor"]
+        self.pass_at(1000)
+        self.assertFalse(wp.state["complete"])
 
 
 class FluidStockTests(harness.StubTestCase):

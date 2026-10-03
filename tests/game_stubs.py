@@ -729,6 +729,19 @@ class Journal:
         return list(self.creatures)
 
 
+class WildlifeSensor:
+    """get_value() returns the test-set population; `broken` makes it raise."""
+
+    def __init__(self, population=0):
+        self.population = population
+        self.broken = False
+
+    def get_value(self):
+        if self.broken:
+            raise RuntimeError("wildlife_sensor unpowered")
+        return self.population
+
+
 class Construction:
     def __init__(self, job_id, required_item, required_count):
         self.id = job_id
@@ -1696,6 +1709,7 @@ class World:
             "orders": Orders(),
             "commander": Commander(),
             "construction_blueprint": ConstructionBlueprints(),
+            "wildlife_sensor": WildlifeSensor(),
         }
         self.services["shop"] = Shop(self)
         self.power_control = PowerControl(self)
@@ -1778,6 +1792,11 @@ class World:
 
     def add_habitat(self, habitat_id, outpost, species="", target="", feed_item="", established=False):
         return self._place(Habitat(self, habitat_id, outpost, species, target, feed_item, established))
+
+    def add_wildlife_sensor(self, population=0):
+        sensor = self.services["wildlife_sensor"]
+        sensor.population = population
+        return sensor
 
     def add_blueprint(self, job_id, required_item, required_count=1):
         job = Construction(job_id, required_item, required_count)
