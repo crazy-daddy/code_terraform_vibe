@@ -454,7 +454,8 @@ class PowerGridManager:
         self._track_day(grid, now, grid_id_str)
         # Turbines first: running more of them is the answer before shedding any load.
         try:
-            self.turbine_status = self.turbines.step(grid, grid_id_str)
+            steam_fraction = now["steam_t"] / now["steam_cap"] if now["steam_cap"] > 0 else None
+            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction)
         except Exception as error:
             swallowed("power.PowerGridManager.supervise_grid: self.turbines.step", error)
         self._guard(now, grid_machines, grid_id_str)

@@ -108,8 +108,8 @@ MAX_WAKE_AFTER_TICKS = 6000
 
 # Oil Generators on a grid whose lower of battery / combined reserve fraction falls
 # below this are woken at once (their script starts burning at
-# oil_generator.OIL_START_RESERVE_FRACTION = 0.15, so this leaves time to react).
-OIL_WAKE_RESERVE_FRACTION = 0.25
+# oil_generator.OIL_START_RESERVE_FRACTION = 0.30, so this leaves time to react).
+OIL_WAKE_RESERVE_FRACTION = 0.40
 # Oil Generators are woken (and not parked) while the network-wide oil tank fill is at or
 # above this: their script runs them as base load from oil_generator.OIL_SURPLUS_START_FRACTION
 # (same value; this tier-4 module cannot import the tier-5 one).

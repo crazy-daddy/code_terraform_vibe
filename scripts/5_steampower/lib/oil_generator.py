@@ -57,8 +57,8 @@ OIL_GENERATOR_RATED_W = 700.0
 # Guard's tier-1 EMERGENCY_SHED_FRACTIONS[0] (0.10) so oil can catch the grid
 # before loads get shed; stop sits above its EMERGENCY_RESTORE_FRACTION
 # (0.25) so shed loads are back on before oil burning ends.
-OIL_START_RESERVE_FRACTION = 0.15
-OIL_STOP_RESERVE_FRACTION = 0.30
+OIL_START_RESERVE_FRACTION = 0.30
+OIL_STOP_RESERVE_FRACTION = 0.70
 
 # Cover the deficit with a little margin (grid readings lag one power tick),
 # and never idle along below this throttle once burning -- a trickle wouldn't

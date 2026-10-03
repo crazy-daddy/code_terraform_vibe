@@ -24,6 +24,17 @@ class NeedTests(unittest.TestCase):
         self.assertEqual(target, 20)
         self.assertIn("all turbines", reason)
 
+    def test_all_on_latch_overrides_battery(self):
+        target, _, _ = turbine_commit.turbine_needed(100.0, 0.0, 600.0, 1000.0, 20, all_on=True)
+        self.assertEqual(target, 20)
+        target, _, _ = turbine_commit.turbine_needed(100.0, 0.0, 400.0, 1000.0, 20, all_on=False)
+        self.assertEqual(target, 4 + 2)  # (100 + 600 / 2 h) / 108 -> 4
+
+    def test_steam_surplus_ignores_other_generation(self):
+        target, _, reason = turbine_commit.turbine_needed(1000.0, 800.0, 1000.0, 1000.0, 20, surplus=True)
+        self.assertEqual(target, 10 + 2)
+        self.assertIn("steam surplus", reason)
+
 
 class StepTests(StubTestCase):
     def setUp(self):
@@ -93,6 +104,30 @@ class StepTests(StubTestCase):
         self.add("turbine_c", buffer=2, stalled=True)
         turbine_commit.TurbineCommitment(self.power).step(self.grid(ids, consumed=300.0, generated=108.0), "grid_a")
         self.assertTrue(all(self.power.is_powered(t) for t in ids))
+
+    def test_all_on_holds_until_release_fraction(self):
+        ids = [f"turbine_{i}" for i in range(6)]
+        for t in ids:
+            self.add(t, buffer=80, source="tank_full")
+        commit = turbine_commit.TurbineCommitment(self.power)
+        grid = self.world.add_grid("grid_a", ids, consumed=100.0, generated=600.0, stored=400.0, capacity=1000.0)
+        commit.step(grid, "grid_a")
+        self.assertTrue(commit.all_on.active)
+        grid._stored = 650.0  # above the 50% start line, below the 70% release
+        commit.step(grid, "grid_a")
+        self.assertTrue(commit.all_on.active)
+        self.assertTrue(all(self.power.is_powered(t) for t in ids))
+        grid._stored = 700.0
+        commit.step(grid, "grid_a")
+        self.assertFalse(commit.all_on.active)
+
+    def test_steam_surplus_latch(self):
+        self.add("turbine_a", buffer=80, source="tank_full")
+        commit = turbine_commit.TurbineCommitment(self.power)
+        grid = self.grid(["turbine_a"], consumed=50.0, generated=108.0)
+        for fraction, expected in ((0.95, False), (0.98, True), (0.91, True), (0.89, False), (None, False)):
+            commit.step(grid, "grid_a", fraction)
+            self.assertEqual(commit.surplus.active, expected, fraction)
 
 
 class TurbineEasingTests(StubTestCase):

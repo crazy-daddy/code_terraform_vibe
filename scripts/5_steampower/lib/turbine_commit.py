@@ -14,13 +14,24 @@
 # turbine that runs dry is swapped for the best parked one.
 #
 # Needed turbines = ceil((consumption - other generation + battery top-up) / 108 W), plus
-# TURBINE_SPARE_FRACTION of the managed turbines (at least one). Below
-# TURBINE_EMERGENCY_BATTERY_FRACTION battery everything runs (before the Oil Generators
-# start at their 15% line). Turbines switched off by anything else than this module are
-# left alone.
+# TURBINE_SPARE_FRACTION of the managed turbines (at least one). Turbines switched off by
+# anything else than this module are left alone.
+#
+# Two latches (lib/hysteresis.py), like the Oil Generator's:
+#   - All on: below TURBINE_EMERGENCY_BATTERY_FRACTION battery every managed turbine runs
+#     (ahead of the Oil Generators' last-resort line), until the battery is back at
+#     TURBINE_EMERGENCY_RELEASE_FRACTION.
+#   - Steam surplus base load: from TURBINE_SURPLUS_START_FRACTION of the grid's steam pool
+#     (power.measure_grid()) until it drops below TURBINE_SURPLUS_STOP_FRACTION, the
+#     turbines cover the whole consumption (other generation is not subtracted), so Caps
+#     don't vent steam through their relief valves while solar or oil carry the grid. It
+#     starts above the Steam Condenser's steam gate (condenses from 0.95), so the Condenser
+#     takes the surplus first.
+# The latch state lives in the grid manager's memory; a control room restart starts both off.
 
 from archive import archive
 from script_parking import PARKED_KEY
+from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
 from swallow import swallowed
 
@@ -37,8 +48,12 @@ TURBINE_FULL_W = 108.0  # docs/components/steam_turbine.md: 108 W from 90 t/h at
 # turbines (scales with base size), at least TURBINE_MIN_SPARE.
 TURBINE_SPARE_FRACTION = 0.10
 TURBINE_MIN_SPARE = 1
-# Battery fraction below which every managed turbine runs.
+# Battery fraction below which every managed turbine runs, and the one that releases it.
 TURBINE_EMERGENCY_BATTERY_FRACTION = 0.50
+TURBINE_EMERGENCY_RELEASE_FRACTION = 0.70
+# Steam pool fraction that starts the surplus base load, and the one that stops it.
+TURBINE_SURPLUS_START_FRACTION = 0.98
+TURBINE_SURPLUS_STOP_FRACTION = 0.90
 # Battery below this adds a top-up to the need: the missing Wh over TOPUP_HOURS game hours.
 TURBINE_TOPUP_BELOW_FRACTION = 0.98
 TOPUP_HOURS = 2.0
@@ -66,22 +81,30 @@ def _ceil(x):
     return int(-(-x // 1))
 
 
-def turbine_needed(consumed_w, other_w, bat_wh, bat_cap, managed):
+def turbine_needed(consumed_w, other_w, bat_wh, bat_cap, managed, all_on=None, surplus=False):
     """
     (needed, spare, reason) turbines for one grid. `other_w` = generation not from turbines.
+    all_on: the all-on latch (None: battery below TURBINE_EMERGENCY_BATTERY_FRACTION, no
+    hysteresis). surplus: the steam surplus latch; other generation is then not subtracted.
     Pure; see the module comment for the rule.
     """
     spare = max(TURBINE_MIN_SPARE, _ceil(managed * TURBINE_SPARE_FRACTION)) if managed else 0
     bat_frac = bat_wh / bat_cap if bat_cap > 0 else 1.0
-    if bat_cap > 0 and bat_frac < TURBINE_EMERGENCY_BATTERY_FRACTION:
-        return managed, spare, f"battery {bat_frac * 100:.0f}% < {TURBINE_EMERGENCY_BATTERY_FRACTION * 100:.0f}%: all turbines"
+    if all_on is None:
+        all_on = bat_cap > 0 and bat_frac < TURBINE_EMERGENCY_BATTERY_FRACTION
+    if all_on:
+        return managed, spare, (f"battery {bat_frac * 100:.0f}% (all on below {TURBINE_EMERGENCY_BATTERY_FRACTION * 100:.0f}% "
+                                f"until {TURBINE_EMERGENCY_RELEASE_FRACTION * 100:.0f}%): all turbines")
+    if surplus:
+        other_w = 0.0
     need_w = max(0.0, consumed_w - other_w)
     topup_w = 0.0
     if bat_cap > 0 and bat_frac < TURBINE_TOPUP_BELOW_FRACTION:
         topup_w = (bat_cap - bat_wh) / TOPUP_HOURS
     needed = _ceil((need_w + topup_w) / TURBINE_FULL_W)
     return min(managed, needed + spare), spare, (
-        f"con {consumed_w:.0f} W - other {other_w:.0f} W + top-up {topup_w:.0f} W -> {needed} + {spare} spare")
+        f"con {consumed_w:.0f} W - other {other_w:.0f} W + top-up {topup_w:.0f} W -> {needed} + {spare} spare"
+        + (" (steam surplus: other generation not subtracted)" if surplus else ""))
 
 
 def rank_turbines(infos, running_bonus=True):
@@ -102,6 +125,8 @@ class TurbineCommitment:
         self.power = power or get_component("power_control")
         self.woken_at = {}  # {turbine_id: tick} woken here, for TURBINE_MIN_ON_TICKS
         self.turbine_ids = []  # this grid's turbines at the last step(), for release_all()
+        self.all_on = HysteresisLatch(TURBINE_EMERGENCY_BATTERY_FRACTION, TURBINE_EMERGENCY_RELEASE_FRACTION, on_above=False)
+        self.surplus = HysteresisLatch(TURBINE_SURPLUS_START_FRACTION, TURBINE_SURPLUS_STOP_FRACTION)
 
     # ------------------------------------------------------------------ reads
 
@@ -160,8 +185,25 @@ class TurbineCommitment:
 
     # ------------------------------------------------------------------ step
 
-    def step(self, grid, grid_id_str):
-        """One pass for `grid` (a power_control grid snapshot). Returns a short status string."""
+    def _update_latches(self, bat_wh, bat_cap, steam_fraction, grid_id_str):
+        """Feeds the all-on (battery) and steam surplus latches; logs each flip."""
+        bat_frac = bat_wh / bat_cap if bat_cap > 0 else None
+        flip = self.all_on.update(bat_frac)
+        if flip == "on":
+            log.print(f"[TURBINES] '{grid_id_str}': battery {bat_frac * 100:.0f}% < {TURBINE_EMERGENCY_BATTERY_FRACTION * 100:.0f}% -- all turbines on until {TURBINE_EMERGENCY_RELEASE_FRACTION * 100:.0f}%.")
+        elif flip == "off":
+            shown = f"{bat_frac * 100:.0f}%" if bat_frac is not None else "n/a"
+            log.print(f"[TURBINES] '{grid_id_str}': battery {shown} -- all-on released, back to commitment.")
+        flip = self.surplus.update(steam_fraction)
+        if flip == "on":
+            log.print(f"[TURBINES] '{grid_id_str}': steam pool {steam_fraction * 100:.0f}% >= {TURBINE_SURPLUS_START_FRACTION * 100:.0f}% -- steam surplus base load ON.")
+        elif flip == "off":
+            shown = f"{steam_fraction * 100:.0f}%" if steam_fraction is not None else "n/a"
+            log.print(f"[TURBINES] '{grid_id_str}': steam pool {shown} (stop below {TURBINE_SURPLUS_STOP_FRACTION * 100:.0f}%) -- steam surplus base load OFF.")
+
+    def step(self, grid, grid_id_str, steam_fraction=None):
+        """One pass for `grid` (a power_control grid snapshot). steam_fraction: the grid's steam
+        pool fill (power.measure_grid()), None without a steam tank. Returns a short status string."""
         turbine_ids = sorted(m.id for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == TURBINE_TYPE_ID)
         self.turbine_ids = turbine_ids
         if not turbine_ids:
@@ -185,7 +227,9 @@ class TurbineCommitment:
         other_w = max(0.0, (getattr(grid, "generated", 0.0) or 0.0) - turbine_w)
         bat_wh = (getattr(grid, "stored", 0.0) or 0.0) + (getattr(grid, "reserve_stored", 0.0) or 0.0)
         bat_cap = (getattr(grid, "capacity", 0.0) or 0.0) + (getattr(grid, "reserve_capacity", 0.0) or 0.0)
-        target, spare, reason = turbine_needed(getattr(grid, "consumed", 0.0) or 0.0, other_w, bat_wh, bat_cap, len(infos))
+        self._update_latches(bat_wh, bat_cap, steam_fraction, grid_id_str)
+        target, spare, reason = turbine_needed(getattr(grid, "consumed", 0.0) or 0.0, other_w, bat_wh, bat_cap, len(infos),
+                                               all_on=self.all_on.active, surplus=self.surplus.active)
 
         ranked = rank_turbines(infos)
         capable = [t for t in ranked if infos[t]["capable"]]
