@@ -267,6 +267,59 @@ def warehouse_stocks(item_ids, outpost=None):
     return totals
 
 
+# Smelter recipes as {ore: product} (docs/database/recipes_smelter.md). An ore
+# and its product are "partners": a Smelter takes the one and sends the other
+# at the same time, and a Warehouse handles one material operation at a time,
+# so the two in one Warehouse answer each other's transfers with "busy".
+# best_unload_target() keeps them in separate Warehouses where it can.
+SMELT_PARTNERS = {
+    "iron_ore": "iron_ingot",
+    "silicon": "glass",
+    "titanium": "titanium_ingot",
+    "cobalt": "cobalt_ingot",
+    "lead_ore": "lead_ingot",
+    "rare_earth": "rare_earth_core",
+    "neutronium": "neutronium_bar",
+}
+# Assumed transfer volume, hottest first (harder ore is mined and used less).
+# A product shares its ore's heat; an item not listed has heat 0.
+ORE_HEAT_ORDER = ["iron_ore", "silicon", "titanium", "cobalt", "lead_ore", "rare_earth", "neutronium"]
+
+_partners = {}
+for _ore, _product in SMELT_PARTNERS.items():
+    _partners[_ore] = {_product}
+    _partners[_product] = {_ore}
+_heat = {}
+for _rank, _ore in enumerate(ORE_HEAT_ORDER):
+    _heat[_ore] = len(ORE_HEAT_ORDER) - _rank
+    _heat[SMELT_PARTNERS[_ore]] = len(ORE_HEAT_ORDER) - _rank
+
+
+def recipe_partners(item_id):
+    """Items that should not share a Warehouse with item_id (empty set if none)."""
+    return _partners.get(item_id, set())
+
+
+def item_heat(item_id):
+    """Assumed transfer volume of item_id (ORE_HEAT_ORDER), 0 when not listed."""
+    return _heat.get(item_id, 0)
+
+
+def _materials(component, item_id):
+    """Item ids the Warehouse holds. Falls back to a count(item_id) probe
+    (holder or not, no neighbours) when materials() is missing or raises."""
+    try:
+        if hasattr(component, "materials"):
+            return set(component.materials())
+    except Exception as error:
+        swallowed("storage._materials: component.materials", error)
+    try:
+        return {item_id} if component.count(item_id) > 0 else set()
+    except Exception as error:
+        swallowed("storage._materials: component.count", error)
+        return set()
+
+
 def _fill_fraction(building):
     component = building["component"]
     try:
@@ -296,16 +349,19 @@ def _inventory_first(item_id, min_amount, outpost):
 def best_unload_target(item_id, min_amount=1, outpost=None, exclude=()):
     """
     Destination id string for offloading item_id, else None if there is nowhere
-    local to put it. Among every discovered Warehouse with space_for(item_id) >=
-    min_amount, prefers one that already holds item_id (count(item_id) > 0) --
-    consolidating onto an existing stack -- and only falls back to ranking every
-    candidate by least-full when none already stocks it. Ranking purely by
-    fill_percent (the old behavior) ignores which Warehouse already has the item, so
-    alternating "least full" picks across separate deliveries could spread
-    the same item across every Warehouse at the outpost one partial stack
-    at a time (e.g. a 100-unit reagent target ending up as 50 in one
-    Warehouse and 50 in another, each a needless partial stack) even though
-    a single Warehouse had room for the full amount the whole time.
+    local to put it. Ranks every discovered Warehouse with space_for(item_id) >=
+    min_amount by what it holds (materials()), never by recent "busy" answers:
+      1. no recipe partner of item_id (recipe_partners()) inside, already
+         holding item_id -- consolidates onto the existing stack;
+      2. no partner inside, not holding item_id -- opens a new stack; this
+         beats 3, so an item stuck next to its partner splits off once and
+         then rank 1 sends every later delivery to the new stack;
+      3. a partner inside (clash = item_heat(item) x item_heat(partner)),
+         holding item_id first;
+    then, for an item with heat, the Warehouse whose other contents are
+    coldest, then least full. One Warehouse, or no partner-free one with room,
+    gives the same pick as plain consolidation. Least-full alone would
+    spread one item across every Warehouse one partial stack at a time.
 
     Only falls back to the literal "inventory" id when `outpost` resolves to the
     home outpost -- "inventory" only exists/connects there. Found live: a remote
@@ -329,8 +385,9 @@ def best_unload_target(item_id, min_amount=1, outpost=None, exclude=()):
         log.debug("Inventory-only item with room in Inventory -> 'inventory'")
         log.end()
         return "inventory"
-    holders = []
-    others = []
+    partners = recipe_partners(item_id)
+    heat = item_heat(item_id)
+    ranked = []
     for building in discover_storage_buildings(outpost):
         component = building["component"]
         if not component or not hasattr(component, "space_for") or building["id"] in exclude:
@@ -342,15 +399,12 @@ def best_unload_target(item_id, min_amount=1, outpost=None, exclude=()):
             continue
         if space < min_amount:
             continue
-        try:
-            already_holds = component.count(item_id) > 0
-        except Exception as error:
-            swallowed("storage.best_unload_target: component.count", error)
-            already_holds = False
-        (holders if already_holds else others).append(building)
+        held = _materials(component, item_id)
+        clash = sum([heat * item_heat(partner) for partner in held & partners])
+        neighbours = sum([item_heat(other) for other in held if other != item_id]) if heat else 0
+        ranked.append(((clash, item_id not in held, neighbours, _fill_fraction(building)), building))
 
-    pool = holders if holders else others
-    if not pool:
+    if not ranked:
         resolved = outpost if outpost is not None else _home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
         fallback = "inventory" if is_home and not exclude else None
@@ -358,12 +412,9 @@ def best_unload_target(item_id, min_amount=1, outpost=None, exclude=()):
         log.end()
         return fallback
 
-    pool.sort(key=_fill_fraction)
-    winner = pool[0]
-    if holders:
-        log.debug(f"{len(holders)} Warehouse(s) already hold this item, picked '{winner['id']}' (fill={_fill_fraction(winner):.2f}) to consolidate onto")
-    else:
-        log.debug(f"no Warehouse already holds this item, picked least-full '{winner['id']}' (fill={_fill_fraction(winner):.2f}) among {len(others)} candidate(s)")
+    ranked.sort(key=lambda pair: pair[0])
+    key, winner = ranked[0]
+    log.debug(f"picked '{winner['id']}' of {len(ranked)}: {'new stack' if key[1] else 'consolidate'}, clash={key[0]}, neighbour heat={key[2]}, fill={key[3]:.2f}")
     log.end()
     return winner["id"]
 

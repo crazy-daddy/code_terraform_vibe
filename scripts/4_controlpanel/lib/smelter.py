@@ -5,7 +5,7 @@
 # docs/AI_CHEATSHEET.md.
 from archive import archive
 from production import SourceCache, craft_prefill_units, dock_remaining_requirements, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
-from storage import take_item, drain_port_inventory_first, best_unload_target, local_port_target, outpost_is_home
+from storage import take_item, drain_port_storage_first, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -164,27 +164,22 @@ class SmelterController(RecipeClaimMixin):
         self.log.end()
 
     def drain_output(self):
-        """Sends all finished ingots from output buffer to Inventory, or to a
-        Warehouse when Inventory is full or the Smelter is off-home
-        (storage.drain_port_inventory_first())."""
-        if not hasattr(self.smelter, "output"):
+        """Sends all finished ingots from the output buffer to a local
+        Warehouse (storage.best_unload_target(), which keeps an ore and its
+        ingot apart), and only what no Warehouse takes to Inventory at home
+        (storage.drain_port_storage_first())."""
+        if not hasattr(self.smelter, "output") or self.smelter.get_output_count() <= 0:
             return 0
-
-        total = 0
-        if self.smelter.get_output_count() > 0:
-            at_home = self.at_home()
-            sent = []
-            for item_id, moved, destination, status, message in drain_port_inventory_first(self.smelter.output, outpost=self.outpost()):
-                if moved > 0:
-                    total += moved
-                    if at_home and destination == "warehouse":
-                        self.log.level("warn").print(f"[{self.name}] Inventory full -- sent {moved}x {item_id} to a Warehouse instead.")
-                    else:
-                        sent.append(f"{moved}x {item_id}")
-                else:
-                    self.log.debug(f"[{self.name}] drain_output: {item_id} not moved ({status} - {message})")
-            if sent:
-                self.log.print(f"[{self.name}] Sent {', '.join(sent)} to {'Inventory' if at_home else 'a local Warehouse'}.")
+        try:
+            items = [stack.id for stack in self.smelter.output.stacks()]
+        except Exception as error:
+            swallowed("smelter.SmelterController.drain_output: self.smelter.output.stacks", error)
+            items = []
+        total = drain_port_storage_first(self.smelter.output, outpost=self.outpost())
+        if total > 0:
+            self.log.print(f"[{self.name}] Sent {total}x {', '.join(items)} to storage.")
+        else:
+            self.log.debug(f"[{self.name}] drain_output: {', '.join(items)} not moved, no local storage has room")
         return total
 
     def log_outcome(self, reason, **detail):
@@ -481,13 +476,13 @@ class SmelterController(RecipeClaimMixin):
         return False
 
     def recover_input(self):
-        """Return staged material to Inventory (home) or a local Warehouse
-        with room (elsewhere) before clearing a stale recipe."""
+        """Return staged material to a local Warehouse with room
+        (storage.best_unload_target(); Inventory at home when none has room)
+        before clearing a stale recipe."""
         if not hasattr(self.smelter, "input"):
             return False
-        at_home = self.at_home()
         for stack in self.smelter.input.stacks():
-            destination = "inventory" if at_home else best_unload_target(stack.id, 1, outpost=self.outpost())
+            destination = best_unload_target(stack.id, 1, outpost=self.outpost())
             if destination is None:
                 self.log.level("warn").print(f"[{self.name}] No local Warehouse has room for {stack.count}x {stack.id}; left in the input buffer.")
                 continue
