@@ -32,9 +32,6 @@ from swallow import swallowed
 # no feeding, its input bin is ejected to local storage so undeploy() can
 # take it, and control_room_automation.py switches its breaker off once the bin is empty.
 
-# typeIds, not the "Drone Depot" display name; one per Depot size -- see lib/drone_energy.py
-DRONE_DEPOT_TYPE_IDS = ("drone_station", "drone_station_medium", "drone_station_large")
-
 # Only take() once the input bin has at least this much room. take() blocks
 # for time proportional to units moved, so topping up one sample at a time
 # every cycle would spend most of the loop waiting on tiny transfers.
@@ -128,43 +125,6 @@ class EssenceLiquifierController:
             swallowed("essence_liquifier.EssenceLiquifierController.sample_biome: self.nocturna.life_form_biome", error)
             return None
 
-    def _local_depots(self):
-        """Resolved same-outpost Drone Depots. InputSlot sources must share the outpost, so remote ones are useless."""
-        outpost = getattr(self.liquifier, "outpost", None)
-        if not outpost or not hasattr(outpost, "buildings"):
-            return []
-        refs = []
-        for type_id in DRONE_DEPOT_TYPE_IDS:
-            try:
-                refs.extend(outpost.buildings(type_id))
-            except Exception as error:
-                swallowed("essence_liquifier.EssenceLiquifierController._local_depots: refs.extend", error)
-                continue
-        depots = []
-        for ref in refs:
-            try:
-                depot = get_component(ref.id)
-            except Exception as error:
-                swallowed("essence_liquifier.EssenceLiquifierController._local_depots: get_component", error)
-                depot = None
-            if depot:
-                depots.append(depot)
-        return depots
-
-    def _depot_stock(self, depot):
-        """{item_id: units} of the Depot's shared stockpile, summed across property-distinct stacks."""
-        stock = {}
-        port = getattr(depot, "output", None)
-        if not port or not hasattr(port, "stacks"):
-            return stock
-        try:
-            for stack in port.stacks():
-                stock[stack.id] = stock.get(stack.id, 0) + stack.count
-        except Exception as error:
-            swallowed("essence_liquifier.EssenceLiquifierController._depot_stock: port.stacks", error)
-            return {}
-        return stock
-
     def _loaded_item_ids(self):
         try:
             return {stack.id for stack in self.liquifier.input.stacks() if stack.count > 0}
@@ -188,7 +148,7 @@ class EssenceLiquifierController:
             self.log.end()
             return
 
-        depots = self._local_depots()
+        depots = logistics_requests.local_depots(getattr(self.liquifier, "outpost", None))
         if not depots:
             self.log.debug("feed: no Drone Depot at this outpost; nothing to take from.")
             self.log.end()
@@ -200,7 +160,7 @@ class EssenceLiquifierController:
         outpost = getattr(self.liquifier, "outpost", None)
         outpost_id = getattr(outpost, "id", None)
         for depot in depots:
-            stock = self._depot_stock(depot)
+            stock = logistics_requests.depot_stock(depot)
             native = []
             for item_id, units in stock.items():
                 if units <= 0:
@@ -395,7 +355,7 @@ class EssenceLiquifierController:
         for item_id, count in stacks:
             target = best_unload_target(item_id, 1, outpost=outpost)
             if target is None:
-                depots = self._local_depots()
+                depots = logistics_requests.local_depots(outpost)
                 target = depots[0].id if depots else None
             if target is None:
                 self.log.level("warn").print(f"[{self.name}] retired: no local store has room for {count}x '{item_id}'; retrying.")
