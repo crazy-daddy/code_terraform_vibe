@@ -30,27 +30,9 @@ Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the li
 
 ## 🧹 Handler Unification (2026-10-03)
 
-Plan: [docs/plans/handler_unification.md](docs/plans/handler_unification.md). Merge cloned methods into shared handlers, like the bio_* load merge. One cluster per session, in this order:
+Plan (done): [docs/plans/done/handler_unification.md](docs/plans/done/handler_unification.md); finished clusters are in [TODO_done.md](TODO_done.md).
 
-- [x] **R: request publishing**: move `site_supply._publish`/`_unchanged` into `logistics_requests.publish_requests()`, then migrate the 7 hand-rolled publishers (outpost_reagents, seed_maker, seed_supply, plant_terraformer_demand, wildlife_planner, pump_salt, bio_volcanic).
-- [x] **F: fluid glue around the routers**:
-  - [x] `discover_fluid_sources()` / `viable_fluid_source_pairs()` in `production_fluids` (~12 copies).
-  - [x] `fluid_routing.port_starved()` (5 copies).
-  - [x] Shared router event logging (`ensure_input_logged` / `ensure_output_logged`).
-  - [x] `hysteresis.HysteresisLatch` for the heater steam guard, condenser gates, oil surplus and reactor water reserve.
-- [x] **I: item load/drain**:
-  - [x] Drop essence_liquifier's `local_depots`/`depot_stock` copies.
-  - [x] `storage.inventory_count()` (8 copies + field_keeper).
-  - [x] Hand-rolled drains (seed_maker, seed_supply, feed_maker, bio, fuel_assembler rods) via `drain_port_storage_first` / `send_stack`.
-  - [x] `logistics_requests.take_from_depots()`.
-  - [x] `swallow.call_or()` (4 `_call` copies).
-  - [ ] Optional, deferred: `drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
-- [ ] **C: clone pairs**:
-  - [ ] tank/warehouse_upgrade base class.
-  - [ ] drone/vehicle mission store.
-  - [ ] fabricator/smelter recipe claims.
-  - [ ] charging/drone_service base.
-  - [ ] Small exact duplicates.
+- [ ] Optional, deferred: `storage.drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
 
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 

@@ -13,6 +13,29 @@ Finished items moved out of [TODO.md](TODO.md), grouped under the same section h
 - [x] **`relaunch_lib_dependents()` is misnamed** — per the finding above it reports, it doesn't relaunch. Rename it (and its `sync_all()`/`Watcher` call sites) to something like `warn_stale_lib_dependents()` next time that area gets touched.
 - [x] **Panel source files named by role, paired to save slots by marker.** `scripts/4_controlpanel/control_panel/` holds `status_panel.py`, `vehicles_panel.py`, `production_panel.py`, `automation_panel.py`, `drones_panel.py`, `warehouse_upgrade_panel.py`, each starting with `# ct-panel: <role>`. `devtools/scripts_sync.py` (`ROLE_MATCHED`, `role_for_slot()`) pairs a live `panel_N.py` slot by the marker, a header-line match, or (empty slot) the one unpaired role. See `docs/cheatsheet/dev_workflow.md` §9.
 
+## 🧹 Handler Unification (2026-10-03)
+
+Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unification.md). Merge cloned methods into shared handlers, like the bio_* load merge.
+
+- [x] **R: request publishing**: move `site_supply._publish`/`_unchanged` into `logistics_requests.publish_requests()`, then migrate the 7 hand-rolled publishers (outpost_reagents, seed_maker, seed_supply, plant_terraformer_demand, wildlife_planner, pump_salt, bio_volcanic).
+- [x] **F: fluid glue around the routers**:
+  - [x] `discover_fluid_sources()` / `viable_fluid_source_pairs()` in `production_fluids` (~12 copies).
+  - [x] `fluid_routing.port_starved()` (5 copies).
+  - [x] Shared router event logging (`ensure_input_logged` / `ensure_output_logged`).
+  - [x] `hysteresis.HysteresisLatch` for the heater steam guard, condenser gates, oil surplus and reactor water reserve.
+- [x] **I: item load/drain** (optional `drain_and_report` stays in TODO.md):
+  - [x] Drop essence_liquifier's `local_depots`/`depot_stock` copies.
+  - [x] `storage.inventory_count()` (8 copies + field_keeper).
+  - [x] Hand-rolled drains (seed_maker, seed_supply, feed_maker, bio, fuel_assembler rods) via `drain_port_storage_first` / `send_stack`.
+  - [x] `logistics_requests.take_from_depots()`.
+  - [x] `swallow.call_or()` (4 `_call` copies).
+- [x] **C: clone pairs**:
+  - [x] tank/warehouse_upgrade base class: `lib/building_swap_upgrade.py` `BuildingSwapUpgrader` (gate, buy, deploy/adopt, refusal counting, kit sale); the stubs now deploy/undeploy Warehouses and Liquid Tanks.
+  - [x] drone/vehicle mission store: `lib/fleet_claims_common.py` (recall flags, missions with legacy-key migration, claim race/refresh/release/expiry).
+  - [x] fabricator/smelter recipe claims: `lib/recipe_claims.py` `RecipeClaimMixin` (claim/release/foreign_claims/is_shedded). The two `run()` loops stay: 12 lines each with different poll arguments.
+  - [x] charging/drone_service base: `lib/station_controller.py` `StationController` (arbitration, power gate, step/run); unused `is_nearest_station_to()` dropped.
+  - [x] Small exact duplicates: `drone_energy._nearest()`, `archive.set_entry_pruned()`, `script_parking.set_powered()`/`start_script()`, `fleet_status.wrap_text()`, `VehicleController.extract_coords()` via `construction_plan.coords_of()`.
+
 ## 🧭 Phase 1: Early Automation & Industrial Bootstrapping
 
 - [x] Boot system, activate power grid & sensors (`boot.py`, `planet_power.py`, `planet_sensors.py`).
