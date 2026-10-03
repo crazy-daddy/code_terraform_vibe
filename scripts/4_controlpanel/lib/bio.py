@@ -8,7 +8,8 @@
 # The one biome-specific step -- Coastal glow-tinting, Volcanic forge-casting, Deep
 # QC conditioning, Geothermal gene-splicing, or nothing at all for Frozen -- lives in
 # its own bio_coastal.py/bio_volcanic.py/bio_deep.py/bio_geothermal.py module, each
-# importing the shared helpers below. This module never imports any of them (see
+# subclassing bio_processor.py's BioProcessorController and importing the shared
+# helpers below. This module never imports any of them (see
 # local_biome_processor()'s docstring for why that would be circular); only each
 # biome's thin entrypoint script imports its own controller directly.
 from archive import archive

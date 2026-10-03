@@ -1,6 +1,6 @@
 # Deep biome processor: Bio Conditioner QC automation.
-# See docs/components/bio_conditioner.md. Imports its shared pipeline helpers from
-# bio.py -- see that module's own header comment for why the split exists.
+# See docs/components/bio_conditioner.md. Sample loading, heartbeat and run loop come
+# from bio_processor.py's BioProcessorController.
 #
 # The rulebook below is not documented by the in-game API (only vague combo hints
 # like "brightness reads glow"). It was recovered from the decompiled game client
@@ -10,10 +10,8 @@
 # (every observed green/red light matched these predicates). See
 # docs/AI_CHEATSHEET.md#1g for the rule summary and provenance note.
 from archive import archive
-from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
-from storage import best_unload_target, drain_port_to_storage
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED
+from tree_console import flush_all
 from swallow import swallowed
 
 # Bounded history length for bio.conditioner_observations, per the Data Archive
@@ -45,7 +43,7 @@ CONDITIONER_RULEBOOK = {
 }
 
 
-class BioConditionerController:
+class BioConditionerController(BioProcessorController):
     """
     Loads a raw local Deep sample the pipeline needs and drives its 5-stage QC run
     to completion automatically: each stage's quizzed property is looked up in
@@ -53,151 +51,23 @@ class BioConditionerController:
     accordingly. Every decision and its outcome is still recorded to
     archive["bio.conditioner_observations"] for auditing.
     """
-    def __init__(self, machine):
-        self.machine = machine
-        self.name = getattr(machine, "id", "bio_conditioner")
-        self.comms = get_component("comms")
-        self.log = TreeConsole(module="bio_deep")
+    DEFAULT_NAME = "bio_conditioner"
+    MODULE = "bio_deep"
+    DISPLAY_NAME = "Bio Conditioner"
+    ONLINE_SUFFIX = " -- automated QC via recovered rulebook"
+    LOADED_SUFFIX = ", QC run started."  # load() also starts a fresh 5-stage run
+    FINISHED_LABEL = "already-conditioned"
 
-    def _find_local_order(self, orders, snapshot, fragment_id=None):
-        """Delegates to bio.py's _focus_local_order() -- shared with
-        BioCollectorController's own harvest preference, mirroring
-        BioLuminizerController's _find_coastal_order()."""
-        my_biome = get_my_biome(self.machine)
-        return _focus_local_order(orders, snapshot, my_biome, fragment_id)
+    def _chamber_empty(self):
+        return self.machine.fragment() is None
 
-    def _notify_heartbeat(self):
-        """Broadcasts once every step() cycle regardless of outcome -- see
-        BioLabController._wait_for_processor()'s docstring for why this must be
-        unconditional, not just fired when a run resolves."""
-        if not self.comms:
-            return
-        try:
-            self.comms.broadcast("biome_processor_heartbeat", {"chamber_empty": self.machine.fragment() is None})
-        except Exception as error:
-            swallowed("bio_deep.BioConditionerController._notify_heartbeat: self.comms.broadcast", error)
-
-    def _find_raw_stack(self, fragment_id, outpost):
-        for source_id, component in _local_sources(outpost):
-            if not component or not hasattr(component, "stacks"):
-                continue
-            try:
-                stacks = component.stacks()
-            except Exception as error:
-                swallowed("bio_deep.BioConditionerController._find_raw_stack: component.stacks", error)
-                continue
-            for stack in stacks:
-                if getattr(stack, "id", None) != fragment_id:
-                    continue
-                count = getattr(stack, "count", 0)
-                if count <= 0:
-                    continue
-                properties = getattr(stack, "properties", None)
-                if properties and properties.get("conditioned"):
-                    # Already-conditioned samples carry {'conditioned': True} in
-                    # .properties (confirmed live) -- never treat one as raw QC
-                    # input, it belongs to the Exchange for delivery.
-                    continue
-                return source_id, properties, count
-        return None
-
-    def _load_next_sample(self, orders, snapshot):
-        self.log.start(f"[{self.name}] _load_next_sample", level="debug")
-        outpost = self.machine.outpost
-        self.log.trace("entry")
-
-        staged_stacks = []
-        if hasattr(self.machine.input, "stacks"):
-            try:
-                staged_stacks = self.machine.input.stacks()
-            except Exception as error:
-                swallowed("bio_deep.BioConditionerController._load_next_sample: self.machine.input.stacks", error)
-                staged_stacks = []
-
-        raw_candidate = None
-        for stack in staged_stacks:
-            staged_id = getattr(stack, "id", None)
-            count = getattr(stack, "count", 0)
-            if not staged_id or count <= 0:
-                continue
-            properties = getattr(stack, "properties", None)
-            if properties and properties.get("conditioned"):
-                # Already-conditioned (confirmed live: {'conditioned': True}) --
-                # never reload it into the chamber, recover it to storage for the
-                # Exchange to pick up instead. Mirrors the Luminizer's equivalent
-                # already-tinted-sample fix.
-                try:
-                    destination = best_unload_target(staged_id, count, outpost=outpost)
-                    self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                    self.log.debug(f"Recovered already-conditioned {staged_id} to '{destination}'.")
-                except Exception as error:
-                    swallowed("bio_deep.BioConditionerController._load_next_sample: best_unload_target", error)
-                continue
-            if raw_candidate is None:
-                raw_candidate = (staged_id, properties)
-
-        if raw_candidate:
-            staged_id, properties = raw_candidate
-            order = self._find_local_order(orders, snapshot, staged_id)
-            remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
-            self.log.debug(f"Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
-            if order and remaining > 0:
-                # load() both pulls the sample into the chamber AND starts a fresh
-                # 5-stage run, per docs/components/bio_conditioner.md.
-                load_res = self.machine.load(staged_id, properties, "exact")
-                if load_res.status == "ok":
-                    self.log.print(f"[{self.name}] Loaded {staged_id}, QC run started.")
-                else:
-                    self.log.debug(f"load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-                self.log.end()
-                return
-            try:
-                count = self.machine.input.count()
-                destination = best_unload_target(staged_id, count, outpost=outpost)
-                self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.log.debug(f"Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
-            except Exception as error:
-                swallowed("bio_deep.BioConditionerController._load_next_sample: self.machine.input.count", error)
-            self.log.end()
-            return
-
-        if staged_stacks:
-            self.log.trace(f"exit, {len(staged_stacks)} stack(s) already staged (non-raw) -- nothing to do this cycle.")
-            self.log.end()
-            return
-
-        order = self._find_local_order(orders, snapshot)
-        if not order:
-            self.log.trace("exit, no local order to focus on.")
-            self.log.end()
-            return
-
-        for fragment_id in (order.requires or {}).keys():
-            remaining = _order_fragment_remaining(order, fragment_id, snapshot)
-            if remaining <= 0:
-                self.log.debug(f"{order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
-                continue
-            found = self._find_raw_stack(fragment_id, outpost)
-            if not found:
-                self.log.debug(f"{order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
-                continue
-            source_id, properties, count = found
-            self.log.debug(f"Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
-            if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
-                self.machine.input.connect(source_id)
-            take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
-            if take_res.status != "ok":
-                self.log.debug(f"take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
-                continue
-            load_res = self.machine.load(fragment_id, properties, "exact")
-            if load_res.status == "ok":
-                self.log.print(f"[{self.name}] Loaded {fragment_id}, QC run started.")
-            else:
-                self.log.debug(f"load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-            self.log.end()
-            return
-        self.log.trace(f"exit, no fragment of {order.id} both needed and locally available as raw stock.")
-        self.log.end()
+    def _classify_stack(self, stack, orders):
+        """Conditioned samples carry {'conditioned': True} (confirmed live) and belong
+        to the Exchange for delivery, never back in the chamber."""
+        properties = getattr(stack, "properties", None)
+        if properties and properties.get("conditioned"):
+            return STACK_FINISHED, properties
+        return STACK_RAW, properties
 
     def _record_observation(self, fragment_id, stage, prop_name, prop_value, decision, outcome):
         entry = {
@@ -257,20 +127,7 @@ class BioConditionerController:
         self.log.end(f"[{self.name}] Stage {stage} {decision}ed -> {action_res.status}")
 
     def step(self):
-        self._notify_heartbeat()
-        drain_port_to_storage(self.machine.output, self.machine.outpost)
-
-        outpost = self.machine.outpost
-        exchange = local_sibling(outpost, "bio_exchange")
-
-        orders = []
-        if exchange:
-            try:
-                orders = exchange.orders()
-            except Exception as error:
-                swallowed("bio_deep.BioConditionerController.step: exchange.orders", error)
-                orders = []
-        snapshot = _local_stock_snapshot(outpost)
+        _, _, orders, snapshot = self._begin_step()
         self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, is_running={self.machine.is_running()}")
 
         if self.machine.is_running():
@@ -283,17 +140,8 @@ class BioConditionerController:
             # ever calling load()/accept()/reject() blind.
             self.log.debug(f"[{self.name}] Fragment present with no active run -- ejecting.")
             self.machine.eject()
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         self._load_next_sample(orders, snapshot)
-        flush_all()
-        sleep(0.5)
-
-    def run(self):
-        self.log.print(f"Bio Conditioner ({self.name}) online via Shared Library -- automated QC via recovered rulebook.")
-        validate_game_version()
-        while True:
-            reset_all()
-            self.step()
+        self._idle()

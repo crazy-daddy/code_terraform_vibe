@@ -1,28 +1,27 @@
 # Coastal biome processor: Bio Luminizer glow-tinting.
 # See docs/components/bio_luminizer.md and docs/AI_CHEATSHEET.md Sec 1e for the
-# lamp-mix solve this drives. Imports its shared pipeline helpers from bio.py --
-# see that module's own header comment for why the split exists and why bio.py
-# never imports back from here.
-from bio import get_my_biome, local_sibling, is_order_incomplete, is_local_order, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
-from storage import best_unload_target, drain_port_to_storage
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
+# lamp-mix solve this drives. Sample loading, heartbeat and run loop come from
+# bio_processor.py's BioProcessorController.
+from bio import get_my_biome, is_order_incomplete, is_local_order
+from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED
+from tree_console import flush_all
 
 
-class BioLuminizerController:
+class BioLuminizerController(BioProcessorController):
     """
     Tints a raw Coastal sample's glow to match the local Bio Exchange's active order
     (BioOrder.target_glow) via a 3x3 lamp-mix solve (docs/components/bio_luminizer.md),
     then infuses it for delivery. A sample whose fragment doesn't need tinting (no
     active Coastal order requiring it) is passed through unchanged via discard().
     """
+    DEFAULT_NAME = "bio_luminizer"
+    MODULE = "bio_coastal"
+    DISPLAY_NAME = "Bio Luminizer"
+    FINISHED_LABEL = "already-tinted"
+
     def __init__(self, machine):
-        self.machine = machine
-        self.name = getattr(machine, "id", "bio_luminizer")
-        self.comms = get_component("comms")
+        BioProcessorController.__init__(self, machine)
         self._lamp_matrix = None  # (red_sig, green_sig, blue_sig) -- fixed hardware, read once
-        self.log = TreeConsole(module="bio_coastal")
 
     def _lamp_matrix_cols(self):
         if self._lamp_matrix is None:
@@ -33,56 +32,16 @@ class BioLuminizerController:
                 self._lamp_matrix = (red, green, blue)
         return self._lamp_matrix
 
-    def _find_coastal_order(self, orders, snapshot, fragment_id=None):
-        """
-        Finds an incomplete, local, glow-requiring order -- optionally one that
-        specifically requires fragment_id. Deliberately NOT
-        exchange.active_order(): that's a single shared, mutable pointer
-        BioExchangeController.sweep_and_deliver() freely reassigns to whatever
-        order it's currently delivering ANY matching sample to (Coastal or
-        not) as part of its own aggressive multi-order sweep. Reading it here
-        would make the Luminizer's tint target flap to whatever unrelated
-        order the Exchange's sweep last happened to select, not the Coastal
-        order that actually needs this fragment.
-
-        Takes an already-fetched `orders` list -- step() fetches
-        exchange.orders() exactly once per cycle and threads it through every
-        helper below, instead of each one fetching its own fresh ~80-order
-        copy (measured live: that pattern cost ~20s/cycle in
-        BioCollectorController before the same fix was applied there -- see
-        bio.py's _focus_local_order() docstring).
-
-        Delegates to bio.py's _focus_local_order() -- shared with
-        BioCollectorController's own harvest preference so both controllers
-        concentrate on the SAME order at the same time, rather than the
-        Collector gathering for orders the Luminizer isn't even working on
-        yet. See _focus_local_order()'s docstring for the full "prefer
-        stock we already have" reasoning. This prevents deadlock where an
-        untouched fragment stays staged in the Luminizer's latched input
-        while a different order was selected -- self.input holds one item id
-        at a time until load()/flush() clears it.
-        """
-        my_biome = get_my_biome(self.machine)
-        return _focus_local_order(orders, snapshot, my_biome, fragment_id)
-
-    def _fragment_remaining(self, order, fragment_id, snapshot):
-        """Units of fragment_id this order still needs, net of what's already
-        correctly tinted for it. Delegates to bio.py's _order_fragment_remaining()
-        -- shared with _focus_local_order()'s own "does this order still genuinely
-        need this fragment" check."""
-        return _order_fragment_remaining(order, fragment_id, snapshot)
-
     def _active_target_for(self, orders, snapshot, fragment_id):
-        order = self._find_coastal_order(orders, snapshot, fragment_id)
+        order = self._find_local_order(orders, snapshot, fragment_id)
         if not order:
             return None
         return getattr(order, "target_glow", None)
 
     def _order_matching_glow(self, orders, fragment_id, glow):
         """Incomplete local order requiring fragment_id whose target_glow exactly
-        equals `glow`, or None. Used to tell "already correctly tinted, just
-        needs delivering" apart from "still raw, needs (re-)tinting". Takes an
-        already-fetched `orders` list -- see _find_coastal_order()'s docstring."""
+        equals `glow`, or None. Tells "already correctly tinted, just needs
+        delivering" apart from "still raw, needs (re-)tinting"."""
         if not glow:
             return None
         my_biome = get_my_biome(self.machine)
@@ -98,173 +57,14 @@ class BioLuminizerController:
                 return order
         return None
 
-    def _find_raw_stack(self, orders, fragment_id, outpost):
-        """
-        (source_id, properties, count) for the first locally-staged
-        fragment_id stack that is NOT already correctly tinted for some
-        current local order -- i.e. genuinely raw and safe to pull in for
-        tinting. Never returns an already-finished stack (one whose glow
-        exactly matches a live order's target_glow): that one just needs
-        delivering, not re-tinting, and storage.take_item()'s property-blind
-        take() could otherwise grab it by chance instead of raw material.
-        Takes an already-fetched `orders` list -- see _find_coastal_order()'s
-        docstring.
-        """
-        for source_id, component in _local_sources(outpost):
-            if not component or not hasattr(component, "stacks"):
-                continue
-            try:
-                stacks = component.stacks()
-            except Exception as error:
-                swallowed("bio_coastal.BioLuminizerController._find_raw_stack: component.stacks", error)
-                continue
-            for stack in stacks:
-                if getattr(stack, "id", None) != fragment_id:
-                    continue
-                count = getattr(stack, "count", 0)
-                if count <= 0:
-                    continue
-                properties = getattr(stack, "properties", None) or {}
-                glow = properties.get("glow")
-                if glow and self._order_matching_glow(orders, fragment_id, glow):
-                    continue  # already correctly tinted -- leave it for delivery
-                return source_id, properties, count
-        return None
-
-    def _notify_heartbeat(self):
-        """
-        Broadcasts once every step() cycle, regardless of what that cycle
-        did. BioLabController waits on this generic channel (via
-        comms.wait_broadcast()) instead of busy-polling with sleep() while it
-        holds off pulling its next specimen from the Collector / draining its
-        own output -- see BioLabController._wait_for_processor()'s docstring.
-        Every biome processor controller broadcasts the same channel, so the
-        Lab doesn't need to know which one (if any) is actually deployed.
-
-        Deliberately unconditional, not just "fired after a successful
-        load()": wait_broadcast() only satisfies on a broadcast published
-        AFTER the call, so a signal that only fired on a successful load
-        would never fire again once the Luminizer drained its last item with
-        nothing staged behind it to load next -- including right at startup,
-        before this Luminizer has ever loaded anything at all -- leaving a
-        waiting Lab stuck forever even though the Luminizer had, in fact,
-        gone idle. Firing every cycle instead means the Lab always wakes up
-        again within one Luminizer step(), whatever state it's actually in.
-        """
-        if not self.comms:
-            return
-        try:
-            self.comms.broadcast("biome_processor_heartbeat", {"chamber_empty": self.machine.chamber is None})
-        except Exception as error:
-            swallowed("bio_coastal.BioLuminizerController._notify_heartbeat: self.comms.broadcast", error)
-
-    def _load_next_sample(self, orders, snapshot):
-        self.log.start(f"[{self.name}] _load_next_sample", level="debug")
-        outpost = self.machine.outpost
-        self.log.trace("entry")
-
-        # self.input latches to whatever's already staged (e.g. left over
-        # from an earlier interrupted cycle) until load()/flush() clears it.
-        # Each staged stack is either already correctly tinted (a previous
-        # infuse() succeeded, but it never got drained out before something
-        # else got staged alongside it) -- in which case it doesn't belong in
-        # the chamber again, it just needs ejecting to storage so the
-        # Exchange can find and deliver it -- or genuinely raw, in which case
-        # it's the next thing to load. Found live: loading an
-        # already-correctly-glowing staged sample back into the chamber
-        # leaves the Luminizer unable to do anything useful with it (it's
-        # already at target, there's nothing left to solve for).
-        staged_stacks = []
-        if hasattr(self.machine.input, "stacks"):
-            try:
-                staged_stacks = self.machine.input.stacks()
-            except Exception as error:
-                swallowed("bio_coastal.BioLuminizerController._load_next_sample: self.machine.input.stacks", error)
-                staged_stacks = []
-
-        raw_candidate = None
-        for stack in staged_stacks:
-            staged_id = getattr(stack, "id", None)
-            count = getattr(stack, "count", 0)
-            if not staged_id or count <= 0:
-                continue
-            properties = getattr(stack, "properties", None) or {}
-            glow = properties.get("glow")
-
-            if glow and self._order_matching_glow(orders, staged_id, glow):
-                try:
-                    destination = best_unload_target(staged_id, count, outpost=outpost)
-                    self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                    self.log.print(f"[{self.name}] Ejected already-tinted {staged_id} (glow {glow}) to '{destination}' for delivery.")
-                except Exception as error:
-                    swallowed("bio_coastal.BioLuminizerController._load_next_sample: best_unload_target", error)
-                continue
-
-            if raw_candidate is None:
-                raw_candidate = (staged_id, properties)
-
-        if raw_candidate:
-            staged_id, properties = raw_candidate
-            order = self._find_coastal_order(orders, snapshot, staged_id)
-            remaining = self._fragment_remaining(order, staged_id, snapshot) if order else 0
-            self.log.debug(f"Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
-            if order and remaining > 0:
-                load_res = self.machine.load(staged_id, properties, "exact")
-                if load_res.status == "ok":
-                    self.log.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
-                else:
-                    self.log.debug(f"load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-                self.log.end()
-                return
-            # No current local order needs it any more -- recover it to
-            # storage instead of leaving input stuck on dead material forever.
-            try:
-                count = self.machine.input.count()
-                destination = best_unload_target(staged_id, count, outpost=outpost)
-                self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.log.debug(f"Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
-            except Exception as error:
-                swallowed("bio_coastal.BioLuminizerController._load_next_sample: self.machine.input.count", error)
-            self.log.end()
-            return
-
-        if staged_stacks:
-            self.log.trace(f"exit, {len(staged_stacks)} stack(s) already-tinted and ejected above.")
-            self.log.end()
-            return  # everything staged this cycle was already-tinted and just got ejected above
-
-        order = self._find_coastal_order(orders, snapshot)
-        if not order:
-            self.log.trace("exit, no local coastal order to focus on.")
-            self.log.end()
-            return
-
-        for fragment_id in (order.requires or {}).keys():
-            remaining = self._fragment_remaining(order, fragment_id, snapshot)
-            if remaining <= 0:
-                self.log.debug(f"{order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
-                continue
-            found = self._find_raw_stack(orders, fragment_id, outpost)
-            if not found:
-                self.log.debug(f"{order.id} still needs {remaining}x {fragment_id}, but no raw (untinted) stack found locally.")
-                continue
-            source_id, properties, count = found
-            self.log.debug(f"Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
-            if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
-                self.machine.input.connect(source_id)
-            take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
-            if take_res.status != "ok":
-                self.log.debug(f"take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
-                continue
-            load_res = self.machine.load(fragment_id, properties, "exact")
-            if load_res.status == "ok":
-                self.log.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
-            else:
-                self.log.debug(f"load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-            self.log.end()
-            return
-        self.log.trace(f"exit, no fragment of {order.id} both needed and locally available as raw stock.")
-        self.log.end()
+    def _classify_stack(self, stack, orders):
+        """A stack whose glow already matches a live order's target_glow is finished:
+        it needs delivering, not re-tinting (loading it back leaves nothing to solve)."""
+        properties = getattr(stack, "properties", None) or {}
+        glow = properties.get("glow")
+        if glow and self._order_matching_glow(orders, getattr(stack, "id", None), glow):
+            return STACK_FINISHED, properties
+        return STACK_RAW, properties
 
     def _try_lamps(self, r, g, b, target):
         self.log.start(f"[{self.name}] _try_lamps", level="debug")
@@ -351,31 +151,13 @@ class BioLuminizerController:
         return "failed (no exact lamp match)"
 
     def step(self):
-        self._notify_heartbeat()
-        drain_port_to_storage(self.machine.output, self.machine.outpost)
-
-        outpost = self.machine.outpost
-        exchange = local_sibling(outpost, "bio_exchange")
-
-        # Fetch exchange.orders() and walk local storage exactly ONCE per
-        # step(), not once per fragment -- see BioCollectorController.step()
-        # for the perf history (~20s/cycle re-fetching orders(), then ~8s
-        # re-walking storage per fragment even after caching orders() alone).
-        orders = []
-        if exchange:
-            try:
-                orders = exchange.orders()
-            except Exception as error:
-                swallowed("bio_coastal.BioLuminizerController.step: exchange.orders", error)
-                orders = []
-        snapshot = _local_stock_snapshot(outpost)
-        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, chamber_empty={self.machine.chamber is None}")
-
+        _, _, orders, snapshot = self._begin_step()
         chamber = self.machine.chamber
+        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, chamber_empty={chamber is None}")
+
         if chamber is None:
             self._load_next_sample(orders, snapshot)
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         target = self._active_target_for(orders, snapshot, chamber.fragment_id)
@@ -383,21 +165,12 @@ class BioLuminizerController:
             # No glow requirement for this fragment right now -- pass through unchanged.
             self.log.debug(f"[{self.name}] No local order requires {chamber.fragment_id} tinted right now -- discarding unchanged.")
             self.machine.discard()
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         self.log.debug(f"[{self.name}] {chamber.fragment_id} target_glow={target} -- solving lamp mix.")
         self._solve_and_apply(target)
-
-    def run(self):
-        self.log.print(f"Bio Luminizer ({self.name}) online via Shared Library.")
-        validate_game_version()
-        while True:
-            reset_all()
-            self.step()
-            flush_all()
-            sleep(0.5)
+        self._idle()
 
 
 def _solve_3x3(matrix, b):

@@ -70,7 +70,7 @@ local biome processor fully idle (chamber/input/output empty — `_processor_is_
 
 ### 1g. Multi-Biome Bio Pipeline (`lib/bio.py` shared + `lib/bio_coastal.py`/`lib/bio_volcanic.py`/`lib/bio_deep.py`/`lib/bio_geothermal.py`)
 
-Collector→Lab→(transform)→Exchange pipeline biome-agnostic in `lib/bio.py`; only transform step differs per biome, each own module (see §0 module map). `get_my_biome()` always reads `machine.outpost.biome` live, never hardcoded. `local_biome_processor(outpost)` probes which of `BIOME_PROCESSOR_TYPE_IDS = ["bio_luminizer", "bio_caster",
+Collector→Lab→(transform)→Exchange pipeline biome-agnostic in `lib/bio.py`; only transform step differs per biome, each own module subclassing `lib/bio_processor.py` `BioProcessorController` (shared sample loading, heartbeat, run loop; see §0 module map). `get_my_biome()` always reads `machine.outpost.biome` live, never hardcoded. `local_biome_processor(outpost)` probes which of `BIOME_PROCESSOR_TYPE_IDS = ["bio_luminizer", "bio_caster",
 "bio_conditioner", "dna_sequencer"]` deployed there; returns `(None, None)` for Frozen (no transform step) or outpost without processor yet.
 
 - **Generic idle-gate**: `_processor_is_idle(processor, processor_type)` dispatches on `processor_type`. `bio_luminizer`/`dna_sequencer` expose `.chamber`; `bio_caster`/`bio_conditioner` expose `.fragment()`.

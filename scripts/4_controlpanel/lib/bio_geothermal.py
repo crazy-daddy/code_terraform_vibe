@@ -1,14 +1,11 @@
 # Geothermal biome processor: DNA Sequencer gene-splicing.
-# See docs/components/dna_sequencer.md. Imports its shared pipeline helpers from
-# bio.py -- see that module's own header comment for why the split exists.
-from bio import get_my_biome, local_sibling, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining
-from storage import best_unload_target, drain_port_to_storage
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+# See docs/components/dna_sequencer.md. Sample loading, heartbeat and run loop come
+# from bio_processor.py's BioProcessorController.
+from bio_processor import BioProcessorController
 from swallow import swallowed
 
 
-class DnaSequencerController:
+class DnaSequencerController(BioProcessorController):
     """
     Splices a raw Geothermal sample's genes to match the local Bio Exchange's active
     order (BioOrder.required_genes[fragment_id]), docs/components/dna_sequencer.md.
@@ -17,11 +14,12 @@ class DnaSequencerController:
     docs -- an already-spliced chamber fragment is never spliced again, just left to
     flow to output/delivery.
     """
+    DEFAULT_NAME = "dna_sequencer"
+    MODULE = "bio_geothermal"
+    DISPLAY_NAME = "DNA Sequencer"
+
     def __init__(self, machine):
-        self.machine = machine
-        self.name = getattr(machine, "id", "dna_sequencer")
-        self.comms = get_component("comms")
-        self.log = TreeConsole(module="bio_geothermal")
+        BioProcessorController.__init__(self, machine)
         self._gene_catalog = None  # fixed hardware, read once
 
     def _known_genes(self):
@@ -33,24 +31,6 @@ class DnaSequencerController:
                 self._gene_catalog = set()
         return self._gene_catalog
 
-    def _find_local_order(self, orders, snapshot, fragment_id=None):
-        """Delegates to bio.py's _focus_local_order() -- shared with
-        BioCollectorController's own harvest preference, mirroring
-        BioLuminizerController's _find_coastal_order()."""
-        my_biome = get_my_biome(self.machine)
-        return _focus_local_order(orders, snapshot, my_biome, fragment_id)
-
-    def _notify_heartbeat(self):
-        """Broadcasts once every step() cycle regardless of outcome -- see
-        BioLabController._wait_for_processor()'s docstring for why this must be
-        unconditional, not just fired on a successful load."""
-        if not self.comms:
-            return
-        try:
-            self.comms.broadcast("biome_processor_heartbeat", {"chamber_empty": self.machine.chamber is None})
-        except Exception as error:
-            swallowed("bio_geothermal.DnaSequencerController._notify_heartbeat: self.comms.broadcast", error)
-
     def _target_genes_for(self, orders, snapshot, fragment_id):
         order = self._find_local_order(orders, snapshot, fragment_id)
         if not order:
@@ -58,131 +38,14 @@ class DnaSequencerController:
         required_genes = getattr(order, "required_genes", None) or {}
         return required_genes.get(fragment_id)
 
-    def _find_raw_stack(self, fragment_id, outpost):
-        for source_id, component in _local_sources(outpost):
-            if not component or not hasattr(component, "stacks"):
-                continue
-            try:
-                stacks = component.stacks()
-            except Exception as error:
-                swallowed("bio_geothermal.DnaSequencerController._find_raw_stack: component.stacks", error)
-                continue
-            for stack in stacks:
-                if getattr(stack, "id", None) != fragment_id:
-                    continue
-                count = getattr(stack, "count", 0)
-                if count <= 0:
-                    continue
-                properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
-                return source_id, properties, count
-        return None
-
-    def _load_next_sample(self, orders, snapshot):
-        self.log.start(f"[{self.name}] _load_next_sample", level="debug")
-        outpost = self.machine.outpost
-        self.log.trace("entry")
-
-        staged_stacks = []
-        if hasattr(self.machine.input, "stacks"):
-            try:
-                staged_stacks = self.machine.input.stacks()
-            except Exception as error:
-                swallowed("bio_geothermal.DnaSequencerController._load_next_sample: self.machine.input.stacks", error)
-                staged_stacks = []
-
-        raw_candidate = None
-        for stack in staged_stacks:
-            staged_id = getattr(stack, "id", None)
-            count = getattr(stack, "count", 0)
-            if not staged_id or count <= 0:
-                continue
-            properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
-            if raw_candidate is None:
-                raw_candidate = (staged_id, properties)
-
-        if raw_candidate:
-            staged_id, properties = raw_candidate
-            order = self._find_local_order(orders, snapshot, staged_id)
-            remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
-            self.log.debug(f"Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
-            if order and remaining > 0:
-                load_res = self.machine.load(staged_id, properties, "exact")
-                if load_res.status == "ok":
-                    self.log.print(f"[{self.name}] Loaded already-staged {staged_id} into chamber.")
-                else:
-                    self.log.debug(f"load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-                self.log.end()
-                return
-            try:
-                count = self.machine.input.count()
-                destination = best_unload_target(staged_id, count, outpost=outpost)
-                self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.log.debug(f"Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
-            except Exception as error:
-                swallowed("bio_geothermal.DnaSequencerController._load_next_sample: self.machine.input.count", error)
-            self.log.end()
-            return
-
-        if staged_stacks:
-            self.log.trace(f"exit, {len(staged_stacks)} stack(s) already staged -- nothing to do this cycle.")
-            self.log.end()
-            return
-
-        order = self._find_local_order(orders, snapshot)
-        if not order:
-            self.log.trace("exit, no local order to focus on.")
-            self.log.end()
-            return
-
-        for fragment_id in (order.requires or {}).keys():
-            remaining = _order_fragment_remaining(order, fragment_id, snapshot)
-            if remaining <= 0:
-                self.log.debug(f"{order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
-                continue
-            found = self._find_raw_stack(fragment_id, outpost)
-            if not found:
-                self.log.debug(f"{order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
-                continue
-            source_id, properties, count = found
-            self.log.debug(f"Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
-            if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
-                self.machine.input.connect(source_id)
-            take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
-            if take_res.status != "ok":
-                self.log.debug(f"take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
-                continue
-            load_res = self.machine.load(fragment_id, properties, "exact")
-            if load_res.status == "ok":
-                self.log.print(f"[{self.name}] Loaded {fragment_id} into chamber.")
-            else:
-                self.log.debug(f"load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-            self.log.end()
-            return
-        self.log.trace(f"exit, no fragment of {order.id} both needed and locally available as raw stock.")
-        self.log.end()
-
     def step(self):
-        self._notify_heartbeat()
-        drain_port_to_storage(self.machine.output, self.machine.outpost)
-
-        outpost = self.machine.outpost
-        exchange = local_sibling(outpost, "bio_exchange")
-
-        orders = []
-        if exchange:
-            try:
-                orders = exchange.orders()
-            except Exception as error:
-                swallowed("bio_geothermal.DnaSequencerController.step: exchange.orders", error)
-                orders = []
-        snapshot = _local_stock_snapshot(outpost)
-        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, chamber_empty={self.machine.chamber is None}")
-
+        _, _, orders, snapshot = self._begin_step()
         chamber = self.machine.chamber
+        self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, chamber_empty={chamber is None}")
+
         if chamber is None:
             self._load_next_sample(orders, snapshot)
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         if chamber.spliced:
@@ -190,8 +53,7 @@ class DnaSequencerController:
             # docs/components/dna_sequencer.md, so just let it flow to delivery.
             self.log.debug(f"[{self.name}] {chamber.fragment_id} already spliced -- discarding to flow toward delivery.")
             self.machine.discard()
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         target_genes = self._target_genes_for(orders, snapshot, chamber.fragment_id)
@@ -199,8 +61,7 @@ class DnaSequencerController:
             # No local order needs this fragment spliced right now -- pass through unchanged.
             self.log.debug(f"[{self.name}] No local order requires {chamber.fragment_id} spliced right now -- discarding unchanged.")
             self.machine.discard()
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         known = self._known_genes()
@@ -209,8 +70,7 @@ class DnaSequencerController:
         if unknown:
             self.log.debug(f"[{self.name}] Target genes {target_genes} include unrecognized ids {unknown} -- discarding rather than risk splice().")
             self.machine.discard()
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         splice_res = self.machine.splice(target_genes)
@@ -220,12 +80,4 @@ class DnaSequencerController:
             self.log.print(f"[{self.name}] WARNING: splice({target_genes}) on {chamber.fragment_id} destroyed the target.", channel="")
         elif splice_res.status != "busy":
             self.log.debug(f"[{self.name}] splice() -> {splice_res.status}: {splice_res.message}")
-        flush_all()
-        sleep(0.5)
-
-    def run(self):
-        self.log.print(f"DNA Sequencer ({self.name}) online via Shared Library.")
-        validate_game_version()
-        while True:
-            reset_all()
-            self.step()
+        self._idle()

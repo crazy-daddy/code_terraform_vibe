@@ -1,6 +1,6 @@
 # Volcanic biome processor: Bio Caster forge-casting.
-# See docs/components/bio_caster.md. Imports its shared pipeline helpers from
-# bio.py -- see that module's own header comment for why the split exists.
+# See docs/components/bio_caster.md. Sample loading, heartbeat and run loop come
+# from bio_processor.py's BioProcessorController.
 #
 # LIVE-VERIFICATION NOTE: the docs describe self.input as accepting both the raw
 # sample and fabricated materials via take(...), and materials() reads back
@@ -13,13 +13,12 @@
 # deployed and a first recipe attempted -- flip on debug() console output to see
 # required_materials() vs materials() vs what's staged in self.input if a cast()
 # unexpectedly returns "wrong_materials".
-from bio import get_my_biome, local_sibling, is_local_order, is_order_incomplete, _local_sources, _local_stock_snapshot, _focus_local_order, _order_fragment_remaining, processor_fragment_preference
-from storage import take_item, best_unload_target, drain_port_to_storage
+from bio import get_my_biome, is_local_order, is_order_incomplete, _order_fragment_remaining, processor_fragment_preference
+from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED, STACK_IGNORE
+from storage import take_item, best_unload_target
 from production import set_upgrade_order, fabricator_unlocked_outputs, FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, SECONDS_PER_GAME_HOUR
 import logistics_requests
 import fluid_routing
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 
 # Crucible temperature control (_drive_temperature): proportional toward the
@@ -58,7 +57,7 @@ FLUID_NEUTRAL_GRACE_STEPS = 5
 CASTER_FLUID_PORTS = ("steam_in", "water_in")
 
 
-class BioCasterController:
+class BioCasterController(BioProcessorController):
     """
     Forges a raw Volcanic sample into its recipe's fragment: drives crucible
     temperature into required_range() while required_materials() are staged, then
@@ -67,11 +66,14 @@ class BioCasterController:
     unchanged via eject() -- bio_caster has no discard(); eject() is the documented
     non-destructive pass-through, safe before any cast() is attempted.
     """
+    DEFAULT_NAME = "bio_caster"
+    MODULE = "bio_volcanic"
+    DISPLAY_NAME = "Bio Caster"
+    LOADED_SUFFIX = " into crucible."
+    FINISHED_LABEL = "forged"
+
     def __init__(self, machine):
-        self.machine = machine
-        self.name = getattr(machine, "id", "bio_caster")
-        self.comms = get_component("comms")
-        self.log = TreeConsole(module="bio_volcanic")
+        BioProcessorController.__init__(self, machine)
         self.recipe_cache = {}
         self.last_publish_tick = None
         self.published_demand = None
@@ -80,154 +82,41 @@ class BioCasterController:
         self.last_drive_tick = None
         self.step_seconds = CASTER_STEP_SECONDS_DEFAULT
 
-    def _find_local_order(self, orders, snapshot, fragment_id=None):
-        """Delegates to bio.py's _focus_local_order() -- shared with
-        BioCollectorController's own harvest preference so both concentrate on the
-        same order at the same time, mirroring BioLuminizerController's
-        _find_coastal_order()."""
-        my_biome = get_my_biome(self.machine)
-        return _focus_local_order(orders, snapshot, my_biome, fragment_id)
+    def _chamber_empty(self):
+        return self.machine.fragment() is None
 
-    def _notify_heartbeat(self):
-        """Broadcasts once every step() cycle regardless of outcome -- see
-        BioLabController._wait_for_processor()'s docstring for why this must be
-        unconditional, not just fired on a successful load."""
-        if not self.comms:
-            return
-        try:
-            self.comms.broadcast("biome_processor_heartbeat", {"chamber_empty": self.machine.fragment() is None})
-        except Exception as error:
-            swallowed("bio_volcanic.BioCasterController._notify_heartbeat: self.comms.broadcast", error)
+    def _classify_stack(self, stack, orders):
+        """A stack with no caster recipe is a staged fabricated material. A recipe
+        fragment with any property carries the forged marker: finished output, not a
+        raw sample load() accepts."""
+        if self.machine.find_recipe(getattr(stack, "id", None)) is None:
+            return STACK_IGNORE, None
+        properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
+        if properties:
+            return STACK_FINISHED, properties
+        return STACK_RAW, None
 
-    def _find_raw_stack(self, fragment_id, outpost):
-        for source_id, component in _local_sources(outpost):
-            if not component or not hasattr(component, "stacks"):
-                continue
-            try:
-                stacks = component.stacks()
-            except Exception as error:
-                swallowed("bio_volcanic.BioCasterController._find_raw_stack: component.stacks", error)
-                continue
-            for stack in stacks:
-                if getattr(stack, "id", None) != fragment_id:
-                    continue
-                count = getattr(stack, "count", 0)
-                if count <= 0:
-                    continue
-                if getattr(stack, "properties", None):
-                    continue  # forged marker: finished output, not a raw sample load() accepts
-                return source_id, None, count  # None + "exact" = propertyless only
-        return None
+    def _candidate_fragments(self, order):
+        ranked = processor_fragment_preference(self.machine, "bio_caster", (order.requires or {}).keys())
+        return [fragment_id for fragment_id in ranked if self.machine.find_recipe(fragment_id) is not None]
 
-    def _load_next_sample(self, orders, snapshot):
-        self.log.start(f"[{self.name}] _load_next_sample", level="debug")
-        outpost = self.machine.outpost
-        self.log.trace("entry")
+    def _load(self, fragment_id, properties):
+        set_res = self.machine.set_recipe(fragment_id)
+        if set_res.status != "ok":
+            self.log.debug(f"set_recipe({fragment_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
+            return None
+        return self.machine.load(fragment_id, properties, "exact")
 
-        staged_stacks = []
-        if hasattr(self.machine.input, "stacks"):
-            try:
-                staged_stacks = self.machine.input.stacks()
-            except Exception as error:
-                swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.stacks", error)
-                staged_stacks = []
+    def _eject_finished(self, staged_id, count, properties, outpost):
+        """Forged stacks go back to storage one per cycle."""
+        BioProcessorController._eject_finished(self, staged_id, count, properties, outpost)
+        return True
 
-        raw_candidate = None
-        for stack in staged_stacks:
-            staged_id = getattr(stack, "id", None)
-            count = getattr(stack, "count", 0)
-            if not staged_id or count <= 0:
-                continue
-            if self.machine.find_recipe(staged_id) is None:
-                self.log.debug(f"Staged {staged_id} has no matching recipe -- treating as a fabricated material, not a raw fragment.")
-                continue  # a staged fabricated material, not a forgeable raw fragment
-            properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
-            if properties:
-                # Forged marker: load() only takes raw samples, so return it to storage.
-                try:
-                    destination = best_unload_target(staged_id, count, outpost=outpost)
-                    eject_res = self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                    self.log.debug(f"Staged {staged_id} {properties} is forged, not raw -- eject {count} to '{destination}' -> {getattr(eject_res, 'status', None)}.")
-                except Exception as error:
-                    swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.eject forged", error)
-                self.log.end()
-                return
-            if raw_candidate is None:
-                raw_candidate = (staged_id, properties)
-
-        if raw_candidate:
-            staged_id, properties = raw_candidate
-            order = self._find_local_order(orders, snapshot, staged_id)
-            remaining = _order_fragment_remaining(order, staged_id, snapshot) if order else 0
-            self.log.trace(f"Staged raw candidate {staged_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining}")
-            if order and remaining > 0:
-                set_res = self.machine.set_recipe(staged_id)
-                if set_res.status == "ok":
-                    load_res = self.machine.load(staged_id, properties, "exact")
-                    if load_res.status == "ok":
-                        self.log.print(f"[{self.name}] Loaded {staged_id} into crucible.")
-                    else:
-                        self.log.debug(f"load({staged_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-                else:
-                    self.log.debug(f"set_recipe({staged_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
-                self.log.end()
-                return
-            try:
-                count = self.machine.input.count()
-                destination = best_unload_target(staged_id, count, outpost=outpost)
-                self.machine.input.eject(destination, staged_id, count, properties, "exact")
-                self.log.debug(f"Recovered stale staged {staged_id} to '{destination}' (no longer needed).")
-            except Exception as error:
-                swallowed("bio_volcanic.BioCasterController._load_next_sample: self.machine.input.count", error)
-            self.log.end()
-            return
-
-        if staged_stacks:
-            # Only fabricated materials left with an empty chamber: return them. The Lab
-            # hands over the next sample only once self.input is empty
-            # (bio._processor_is_idle()), so leftovers here block the pipeline.
-            self._return_staged_surplus({}, "chamber empty")
-            self.log.end()
-            return
-
-        order = self._find_local_order(orders, snapshot)
-        if not order:
-            self.log.trace("exit, no local order to focus on.")
-            self.log.end()
-            return
-
-        for fragment_id in processor_fragment_preference(self.machine, "bio_caster", (order.requires or {}).keys()):
-            if self.machine.find_recipe(fragment_id) is None:
-                continue  # not a Bio Caster recipe -- some other biome's fragment
-            remaining = _order_fragment_remaining(order, fragment_id, snapshot)
-            if remaining <= 0:
-                self.log.trace(f"{order.id} fragment {fragment_id}: remaining={remaining} -- already covered, skipping.")
-                continue
-            found = self._find_raw_stack(fragment_id, outpost)
-            if not found:
-                self.log.trace(f"{order.id} still needs {remaining}x {fragment_id}, but no raw stack found locally.")
-                continue
-            source_id, properties, count = found
-            self.log.debug(f"Pulling raw {fragment_id} (remaining={remaining}, found {count} at '{source_id}') for {order.id}.")
-            if hasattr(self.machine.input, "connected_id") and self.machine.input.connected_id() != source_id:
-                self.machine.input.connect(source_id)
-            take_res = self.machine.input.take(fragment_id, 1, properties, "exact")
-            if take_res.status != "ok":
-                self.log.debug(f"take({fragment_id}) from '{source_id}' -> {take_res.status}: {getattr(take_res, 'message', '')}")
-                continue
-            set_res = self.machine.set_recipe(fragment_id)
-            if set_res.status != "ok":
-                self.log.debug(f"set_recipe({fragment_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
-                continue
-            load_res = self.machine.load(fragment_id, properties, "exact")
-            if load_res.status == "ok":
-                self.log.print(f"[{self.name}] Loaded {fragment_id} into crucible.")
-            else:
-                self.log.debug(f"load({fragment_id}) -> {load_res.status}: {getattr(load_res, 'message', '')}")
-            self.log.end()
-            return
-        self.log.trace(f"exit, no fragment of {order.id} both needed and locally available as raw stock.")
-        self.log.end()
+    def _on_only_nonraw_staged(self, staged_stacks):
+        # Only fabricated materials left with an empty chamber: return them. The Lab
+        # hands over the next sample only once self.input is empty
+        # (bio._processor_is_idle()), so leftovers here block the pipeline.
+        self._return_staged_surplus({}, "chamber empty")
 
     def _load_materials(self, required_materials, outpost):
         """Stages the first still-short fabricated material into self.input from
@@ -322,15 +211,6 @@ class BioCasterController:
             materials = None
         self.recipe_cache[fragment_id] = materials
         return materials
-
-    def _port_stacks(self, port, where):
-        if not hasattr(port, "stacks"):
-            return []
-        try:
-            return port.stacks() or []
-        except Exception as error:
-            swallowed(where, error)
-            return []
 
     def _aggregate_material_demand(self, orders, snapshot):
         """
@@ -613,21 +493,8 @@ class BioCasterController:
         )
 
     def step(self):
-        self._notify_heartbeat()
-        drain_port_to_storage(self.machine.output, self.machine.outpost)
         self._ensure_fluid_inputs()
-
-        outpost = self.machine.outpost
-        exchange = local_sibling(outpost, "bio_exchange")
-
-        orders = []
-        if exchange:
-            try:
-                orders = exchange.orders()
-            except Exception as error:
-                swallowed("bio_volcanic.BioCasterController.step: exchange.orders", error)
-                orders = []
-        snapshot = _local_stock_snapshot(outpost)
+        outpost, exchange, orders, snapshot = self._begin_step()
         if exchange:
             self._publish_material_demand(orders, snapshot)
         self.log.trace(f"[{self.name}] step: entry, {len(orders)} order(s) fetched, fragment_loaded={self.machine.fragment() is not None}")
@@ -636,8 +503,7 @@ class BioCasterController:
         if fragment_id is None:
             self._set_knobs(0, 0)
             self._load_next_sample(orders, snapshot)
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         order = self._find_local_order(orders, snapshot, fragment_id)
@@ -646,8 +512,7 @@ class BioCasterController:
             # Nothing local needs this fragment forged right now -- pass through unchanged.
             self.log.debug(f"[{self.name}] {fragment_id}: focus_order={getattr(order, 'id', None)} remaining_needed={remaining} -- nothing needs it forged, ejecting unchanged.")
             self.machine.eject()
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         required_range = self.machine.required_range()
@@ -655,14 +520,12 @@ class BioCasterController:
         if not required_range:
             self.log.debug(f"[{self.name}] No recipe selected despite a loaded fragment -- ejecting.")
             self.machine.eject()
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         if self._return_staged_surplus(required_materials, f"surplus for {fragment_id}"):
             self._drive_temperature(required_range)
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         materials_ready = all(
@@ -673,8 +536,7 @@ class BioCasterController:
         self._drive_temperature(required_range)
         if not materials_ready:
             self._load_materials(required_materials, outpost)
-            flush_all()
-            sleep(0.5)
+            self._idle()
             return
 
         temp = self.machine.temperature()
@@ -688,12 +550,4 @@ class BioCasterController:
                 self.log.debug(f"[{self.name}] cast() -> {cast_res.status}: {cast_res.message}")
         else:
             self.log.trace(f"[{self.name}] temperature={temp:.1f}C outside target [{low:.1f},{high:.1f}] -- holding cast(), still driving toward range.")
-        flush_all()
-        sleep(0.5)
-
-    def run(self):
-        self.log.print(f"Bio Caster ({self.name}) online via Shared Library.")
-        validate_game_version()
-        while True:
-            reset_all()
-            self.step()
+        self._idle()
