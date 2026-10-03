@@ -108,6 +108,9 @@ WAKE_BACKOFF_MAX_TICKS = {
 # A park filed this soon after a re-check wake means the machine woke, found no work and idled again
 # (its request is re-filed on its first idle step, parked on the next 50-tick pass).
 FRUITLESS_REPARK_TICKS = 150
+# Kinds woken when the demand they work from rises (ScriptParking._demand_wakes()). A Fabricator
+# woken this way wakes the Smelters it lacks ingots from itself (fabricator.wake_local_smelters()).
+DEMAND_WAKE_KINDS = ("fabricator", "smelter")
 # Station kinds: never park the last awake one of a type (see the module docstring).
 STATION_KINDS = ("charging_station", "drone_service_station")
 # How long a visit wake holds a station awake (ticks). Covers the trip there;
@@ -329,6 +332,43 @@ def set_powered(power, machine_id, on, log):
         log.debug(f"set_powered({machine_id}, {on}) -> {status}")
     return status == "ok"
 
+def _demand_signature(dock_plan):
+    """
+    {(kind, source key, item): amount} of the archive demand Fabricators and Smelters work from (archive
+    reads only): manual / upgrade / backlog orders, Fabricator stock targets and the site plan (kind
+    "fabricator"), ingot stock targets ("smelter"), and the order ids in the dock plan (both kinds: the
+    order's items are not read here, so either may be needed). The computed site targets are left out
+    on purpose: they shrink as stock arrives.
+    """
+    from production_orders import MANUAL_ORDERS_KEY, UPGRADE_ORDERS_KEY, BACKLOG_ORDERS_KEY, FABRICATOR_STOCK_TARGETS_KEY
+    from production_demand import INGOT_STOCK_TARGETS_KEY
+    from production_sites import SITE_PLAN_KEY
+
+    def stored(key):
+        value = archive.get(key, {})
+        return value if isinstance(value, dict) else {}
+
+    def positive(amount):
+        return isinstance(amount, (int, float)) and amount > 0
+
+    signature = {}
+    for key in (MANUAL_ORDERS_KEY, FABRICATOR_STOCK_TARGETS_KEY):
+        signature.update({("fabricator", key, item): amount for item, amount in stored(key).items() if positive(amount)})
+    for key in (UPGRADE_ORDERS_KEY, BACKLOG_ORDERS_KEY):
+        for items in stored(key).values():
+            for item, amount in (items.items() if isinstance(items, dict) else ()):
+                if positive(amount):
+                    signature[("fabricator", key, item)] = signature.get(("fabricator", key, item), 0) + amount
+    for root, sites in stored(SITE_PLAN_KEY).items():
+        signature.update({("fabricator", SITE_PLAN_KEY, f"{root} at {site}"): 1 for site in (sites if isinstance(sites, list) else ())})
+    ingots = stored(INGOT_STOCK_TARGETS_KEY)
+    signature.update({("smelter", INGOT_STOCK_TARGETS_KEY, item): entry["target"] for item, entry in ingots.items() if isinstance(entry, dict) and positive(entry.get("target"))})
+    for order_id in set((dock_plan or {}).values()) - {None}:
+        for kind in DEMAND_WAKE_KINDS:
+            signature[(kind, "dock_plan", f"dock order {order_id}")] = 1
+    return signature
+
+
 class ParkRequester:
     """
     Machine-side half: call `update(idle)` once per step. After PARK_AFTER_IDLE_STEPS
@@ -403,6 +443,8 @@ class ScriptParking:
         self._rechecks = {}
         # {grid anchor id: (tick, low)}: _low_reserve_grids() verdicts, reused for RESERVE_CACHE_TICKS.
         self._reserve_cache = {}
+        # {(kind, source key, item): amount} of the last pass's demand (_demand_signature()); None before the first pass.
+        self._demand = None
 
     def step(self, grids, elevation, dock_plan=None):
         """
@@ -425,6 +467,7 @@ class ScriptParking:
         log.start("script parking", level="debug")
         low_grids = self._low_reserve_grids(grids, parked, requests, members)
         oil_surplus = self._oil_surplus(parked, requests)
+        demand_wakes = self._demand_wakes(dock_plan)
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
@@ -442,7 +485,7 @@ class ScriptParking:
                 del parked[machine_id]
                 changed = True
                 continue
-            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan, oil_surplus)
+            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan, oil_surplus, demand_wakes)
             if reason and self._set_powered(machine_id, True):
                 log.debug(f"woke {machine_id} ({reason})")
                 woken[machine_id] = entry.get("since", now)
@@ -464,6 +507,8 @@ class ScriptParking:
                 continue
             if kind == "supply_dock" and (dock_plan or {}).get(machine_id):
                 continue
+            if kind in demand_wakes:
+                continue  # demand rose this pass: stay up one more pass to see it
             if kind == "oil_generator" and (oil_surplus or members[machine_id][0] in low_grids):
                 continue  # reserve already low or oil in surplus: stay ready instead of parking and waking again
             if kind in STATION_KINDS:
@@ -570,8 +615,28 @@ class ScriptParking:
         self._rechecks[machine_id] = (woke, streak)
         return min(WAKE_AFTER_TICKS[kind] << streak, cap)
 
-    def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan, oil_surplus=False):
+    def _demand_wakes(self, dock_plan):
+        """{kind: item} of the DEMAND_WAKE_KINDS whose demand rose since the previous pass (the first pass only records it)."""
+        try:
+            signature = _demand_signature(dock_plan)
+        except Exception as error:
+            swallowed("script_parking.ScriptParking._demand_wakes: _demand_signature", error)
+            return {}
+        previous, self._demand = self._demand, signature
+        if previous is None:
+            return {}
+        wakes = {}
+        for key, amount in signature.items():
+            if key[0] not in wakes and amount > previous.get(key, 0):
+                wakes[key[0]] = key[2]
+        if wakes:
+            log.debug(f"demand rose: {wakes}")
+        return wakes
+
+    def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan, oil_surplus=False, demand_wakes=None):
         kind = entry.get("kind")
+        if demand_wakes and kind in demand_wakes:
+            return f"demand changed: {demand_wakes[kind]}"
         if now - entry.get("since", now) >= entry.get("wake_after", WAKE_AFTER_TICKS.get(kind, 600)):
             return "re-check due"
         if kind == "supply_dock" and (dock_plan or {}).get(machine_id):

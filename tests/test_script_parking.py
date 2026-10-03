@@ -259,6 +259,88 @@ class ScriptParkingTests(StubTestCase):
         self.assertNotIn("solar_1", self.run_control.running)
 
 
+class DemandWakeTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.power = w.power_control
+        machines = {"fabricator_1": "fabricator", "smelter_1": "smelter"}
+        for machine_id, type_id in machines.items():
+            w.add_building(machine_id, w.home, type_id)
+        self.grids = [w.add_grid("grid_a", list(machines))]
+        self.parking = ScriptParking(power=self.power, run_control=w.run_control)
+        self.data = w.notebook.data
+        self.data[PARK_REQUESTS_KEY] = {m: {"kind": t, "tick": w.clock.now} for m, t in machines.items()}
+        self.parking.step(self.grids, 10.0, {})  # records the first signature and parks both
+        self.assertEqual(sorted(self.data[PARKED_KEY]), ["fabricator_1", "smelter_1"])
+        self.power.calls.clear()
+
+    def step(self, dock_plan=None):
+        self.world.clock.now += 50
+        self.parking.step(self.grids, 10.0, dock_plan or {})
+
+    def test_new_manual_order_wakes_only_the_fabricator(self):
+        self.data["fabricator.manual_orders"] = {"drone_small": 2}
+        self.step()
+        self.assertEqual(self.power.calls, [("fabricator_1", True)])
+
+    def test_rising_amount_wakes_and_a_decrease_does_not(self):
+        self.data["fabricator.stock_targets"] = {"gear": 10}
+        self.step()
+        self.power.calls.clear()
+        self.data[PARK_REQUESTS_KEY]["fabricator_1"] = {"kind": "fabricator", "tick": self.world.clock.now}
+        self.step()
+        self.assertEqual(self.power.calls, [("fabricator_1", False)])
+        self.data["fabricator.stock_targets"] = {"gear": 5}
+        self.step()
+        self.assertEqual(self.power.calls[1:], [])
+        self.data["fabricator.stock_targets"] = {"gear": 6}
+        self.step()
+        self.assertEqual(self.power.calls[-1], ("fabricator_1", True))
+
+    def test_unchanged_demand_wakes_nothing(self):
+        self.data["fabricator.manual_orders"] = {"drone_small": 2}
+        self.data["production.ingot_stock_targets"] = {"iron_ingot": {"target": 100, "need": 10}}
+        self.step({"supply_dock_1": "order_7"})
+        self.assertEqual(len(self.power.calls), 2)
+        self.power.calls.clear()
+        self.data[PARK_REQUESTS_KEY] = {m: {"kind": m.split("_")[0], "tick": self.world.clock.now} for m in ("fabricator_1", "smelter_1")}
+        self.step({"supply_dock_1": "order_7"})
+        self.assertEqual(sorted(self.power.calls), [("fabricator_1", False), ("smelter_1", False)])
+        self.power.calls.clear()
+        self.step({"supply_dock_1": "order_7"})
+        self.step({"supply_dock_1": "order_7"})
+        self.assertEqual(self.power.calls, [])
+
+    def test_new_dock_order_wakes_the_smelter(self):
+        self.step({"supply_dock_1": "order_7"})
+        self.assertIn(("smelter_1", True), self.power.calls)
+
+    def test_ingot_target_wakes_only_the_smelter(self):
+        self.data["production.ingot_stock_targets"] = {"iron_ingot": {"target": 100, "need": 10}}
+        self.step()
+        self.assertEqual(self.power.calls, [("smelter_1", True)])
+
+    def test_demand_decrease_wakes_nothing(self):
+        self.data["fabricator.manual_orders"] = {"drone_small": 2}
+        self.step()
+        self.power.calls.clear()
+        self.data["fabricator.manual_orders"] = {}
+        self.step()
+        self.assertEqual(self.power.calls, [])
+
+    def test_demand_wake_resets_the_recheck_backoff(self):
+        self.parking._rechecks["smelter_1"] = (self.world.clock.now, 2)
+        self.data["production.ingot_stock_targets"] = {"iron_ingot": {"target": 100, "need": 10}}
+        self.step()
+        self.assertEqual(self.power.calls, [("smelter_1", True)])
+        self.assertNotIn("smelter_1", self.parking._rechecks)
+        self.world.clock.now += 50
+        self.data[PARK_REQUESTS_KEY]["smelter_1"] = {"kind": "smelter", "tick": self.world.clock.now}
+        self.parking.step(self.grids, 10.0, {})
+        self.assertNotIn("wake_after", self.data[PARKED_KEY]["smelter_1"])
+
+
 class StationParkingTests(StubTestCase):
     def setUp(self):
         super().setUp()
