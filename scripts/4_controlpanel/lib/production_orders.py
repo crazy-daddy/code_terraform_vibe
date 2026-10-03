@@ -192,7 +192,7 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
 # "fleet_commission" = a drone kit the COMMISSION card queued (lib/drone_commission.py).
 # "plant_terraformer" = the Plant Terraformers' next NEED_BATCHES batches of Fertilizer /
-# Growth Accelerant (8_planting/lib/plant_terraformer.py). "fuel_assembler" = the
+# Growth Accelerant (8_planting/lib/plant_terraformer_demand.py). "fuel_assembler" = the
 # Fuel Assemblers' Lead Plates for their next crafts (10_nuclear/lib/fuel_assembler.py).
 # "field_amplifier" = the Harvester's Yield Amplifier doses (8_planting/lib/harvester_amplify.py).
 STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier")

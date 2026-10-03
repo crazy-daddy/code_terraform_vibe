@@ -6,6 +6,7 @@ from harness import StubTestCase, fabricator, production
 from game_stubs import FABRICATOR_RECIPES, Recipe
 
 import plant_terraformer
+import plant_terraformer_demand
 
 
 FERTILIZER_RECIPES = [
@@ -34,13 +35,13 @@ class OrderSizeTests(unittest.TestCase):
         self.assertEqual(plant_terraformer.remaining_forage(6, 0, 4), 0)
 
     def test_mk2_fleet_of_three(self):
-        need, backlog = plant_terraformer.order_sizes(27 / 30.0, 6600, 3, 5750000)
+        need, backlog = plant_terraformer_demand.order_sizes(27 / 30.0, 6600, 3, 5750000)
         self.assertEqual((need, backlog), (27, 270))
 
     def test_capped_by_remaining_ladder(self):
         # 6,600 Forage left: one batch, 0.9 Mk II items.
-        self.assertEqual(plant_terraformer.order_sizes(27 / 30.0, 6600, 3, 6600), (1, 1))
-        self.assertEqual(plant_terraformer.order_sizes(27 / 30.0, 6600, 3, 0), (0, 0))
+        self.assertEqual(plant_terraformer_demand.order_sizes(27 / 30.0, 6600, 3, 6600), (1, 1))
+        self.assertEqual(plant_terraformer_demand.order_sizes(27 / 30.0, 6600, 3, 0), (0, 0))
 
 
 class ControllerOrderTests(StubTestCase):

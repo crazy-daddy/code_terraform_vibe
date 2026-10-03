@@ -2,7 +2,7 @@ from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
 import fluid_routing
-from plant_terraformer import STATUS_KEY, STATUS_STALE_TICKS
+from plant_terraformer_common import STATUS_KEY, STATUS_STALE_TICKS
 
 # Plants completion: undeploy the Plant Terraformers (Control Room
 # Automation, every storage pass). At 5,000,000 km² every Terraformer reads
@@ -11,8 +11,8 @@ from plant_terraformer import STATUS_KEY, STATUS_STALE_TICKS
 #
 # Emptying is self-only (input.eject()), so each Terraformer's own script
 # ejects its holders to local storage and then ends
-# (lib/plant_terraformer.py). This pass, once any `plant.terraformer` entry
-# reads "complete":
+# (lib/plant_terraformer.py; keys in lib/plant_terraformer_common.py). This
+# pass, once any `plant.terraformer` entry reads "complete":
 #   - a Terraformer not yet "complete" (batch still running) is left alone;
 #   - a complete one with items in its holders gets its script started again
 #     if it is not running, so it ejects them;

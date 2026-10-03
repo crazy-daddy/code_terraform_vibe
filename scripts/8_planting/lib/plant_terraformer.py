@@ -3,9 +3,10 @@ from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from storage import take_item, best_unload_target
-import fluid_routing
 import logistics_requests
-from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricator_unlocked_outputs, set_upgrade_order, set_backlog_order
+from plant_terraformer_common import STATUS_KEY, STATUS_STALE_TICKS, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, PLANTS_BANDS, ceil_int, remaining_forage
+from plant_terraformer_water import PlantTerraformerWaterMixin
+from plant_terraformer_demand import PlantTerraformerDemandMixin
 
 # Plant Terraformer: the only machine that turns harvested Forage into
 # permanent Plants km² (docs/components/plant_terraformer.md,
@@ -46,53 +47,24 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 #
 # Material ladder (cumulative, required_inputs()): forage -> + water
 # (500k km²) -> + salt (1.25M) -> + fertilizer potency, Mk II (2.25M) ->
-# + growth_accelerant (3.5M). Water comes through water_in (one
-# FluidInputRouter, same as the Fabricator's), items through
-# storage.take_item() from Inventory (home) and local Warehouses.
+# + growth_accelerant (3.5M). Water comes through water_in
+# (lib/plant_terraformer_water.py), items through storage.take_item() from
+# Inventory (home) and local Warehouses.
 #
-# Demand advertisement (lib/logistics_requests.py, requester
-# "plant_terraformer"): every material the phase needs is published as a
-# LOCAL STOCK target -- the next batch staged in this outpost's Warehouses /
-# Drone Depots, on top of what sits in the holders. That's the shape every
-# hauler already reads: the Pioneer pull hauler and the floating drone
-# hauler plan from outpost_deficits() (target - Warehouses - Depots -
-# in-flight pickups), miner drones from network_deficits(). Drone freight
-# lands in the Depot; drone_depot.py drains non-life-form items into a
-# Warehouse, and the loader also takes straight from a local Depot.
+# Demand (logistics.requests local stock targets) and the fleet's Fabricator
+# orders for Fertilizer / Growth Accelerant: lib/plant_terraformer_demand.py.
+#
 # Loader order (_take()): away from home, local Drone Depots first, then
 # Warehouses. At home, storage.take_item() -- for Forage that is clogged
 # Crop Automators first, then Inventory, Warehouses, then the other
 # automators (garden ones first within each; Forage stays in their output,
 # no drain to storage) -- then Drone Depots. Home Forage stock (local_stock()) counts
 # the automator outputs too.
-#   - Forage: one full batch, only away from home -- the field's Harvester
-#     delivers to home Inventory, so home is a SOURCE of Forage, not a sink.
-#   - Salt / Growth Accelerant: SUPPORT_REQUEST_BATCHES batches' worth.
-#   - Fertilizer: requested as the tier the Fabricator crafts
-#     (craft_fertilizer_item()), counted in that tier's potency units across
-#     all tiers.
-#   logistics.requests holds one entry per item per outpost; an item another
-#   requester (e.g. the field Harvester's salt) already owns here is left
-#   alone -- its target keeps the outpost stocked, and the Terraformer draws
-#   from the same stock.
 # Source side: an item this outpost doesn't request itself (home Forage) is
 # only consumed above what other outposts request (remote_retain()), so a
 # home Terraformer can't eat the batch a hauler is coming for. At home it
 # also leaves the Wildlife planner's Forage reserve for the Feed Makers
 # (wildlife_reserve()): feed comes before Plants.
-#
-# Fabricator orders (fabricator_orders()): Fertilizer and Growth Accelerant
-# are crafted at any fab site. Every Mk II Terraformer writes the same two orders
-# for the whole fleet (fleet_size() from `plant.terraformer` telemetry):
-#   - need: NEED_BATCHES batches per machine, a standing upgrade order
-#     (production.set_upgrade_order(), ranked above Earth orders);
-#   - backlog: BACKLOG_BATCHES batches per machine, a backlog order
-#     (production.set_backlog_order(), crafted only in idle Fabricator time).
-# Both net against network stock (production.SourceCache.network_stock(),
-# Drone Depots included), so units at a remote fab site count; the local
-# request above hauls them in.
-# Both are capped by what the rest of the Plants ladder still needs
-# (remaining_forage()), so they shrink to 0 near completion.
 #
 # Finish line (forage_to_go()): every machine publishes the km² its running
 # batch adds (batch_km2); the Forage still to load fleet-wide is the rest of
@@ -103,14 +75,8 @@ from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, fabricat
 # At "complete" the script ejects its holders to local storage and ends; the
 # Control Room Automation undeploys the empty machine (lib/plants_retire.py).
 
-STATUS_KEY = "plant.terraformer"
-REQUESTER_ID = "plant_terraformer"
 # Wildlife planner output; its forage_reserve is left for the Feed Makers.
 WILDLIFE_PLAN_KEY = "wildlife.plan"
-
-# 10 ticks/s -> 1 h. Entries of Terraformers that stopped publishing are
-# pruned by the next publish (one shared dict, CLAUDE.md rule 7).
-STATUS_STALE_TICKS = 36000
 
 # A cycle is 3 game-hours; loading a full Mk I batch takes ~19 s (Fast
 # Feeders: ~9 s). Polling every 10 s loses nothing.
@@ -128,56 +94,6 @@ MIN_START_FORAGE = 100
 # Forage one Salt item treats (plant_terraformer_guide: 1 Salt per 500).
 SALT_FORAGE_PER_ITEM = 500
 
-# Growth Accelerant / each Fertilizer tier: onboard holder cap. The Salt
-# holder fits a full batch's need (Mk II: 14).
-SUPPORT_HOLDER_CAP = 10
-
-# Fertilizer item ids, best potency first (fertilizer_potency(): 50/30/10).
-FERTILIZER_ITEM_IDS = ("fertilizer_mk3", "fertilizer_mk2", "fertilizer")
-
-# Fertilizer tier the Fabricator is asked for, cheapest first: per potency,
-# Mk II needs less Fabricator time and Tar than Mk I, and Mk III's Neutron
-# Capacitor chain costs about 5x Mk II (§1k). The first unlocked one wins.
-FERTILIZER_CRAFT_PREFERENCE = ("fertilizer_mk2", "fertilizer")
-
-# Fabricator need order: batches per running Mk II Terraformer (2 machines:
-# 20 Growth Accelerant, 18 Fertilizer Mk II). Fabricators sit at other
-# outposts, so this covers ~30 h of use while a hauler brings a load in.
-NEED_BATCHES = 10
-
-# Fabricator backlog order: the stock kept on the network, batches per
-# machine (2 machines: 200 Growth Accelerant), crafted in idle Fabricator
-# time. Capped by the rest of the ladder, so it ends with the Plants phase.
-BACKLOG_BATCHES = 100
-
-# Plants ladder (plant_terraformer_guide.md): phase -> (km² per Forage, band
-# Forage). Phase 6 is Continental complete.
-PLANTS_BANDS = {1: (20.0, 25000), 2: (5.0, 150000), 3: (5.0 / 3, 600000), 4: (1.0, 1250000), 5: (1.0 / 3, 4500000)}
-
-# First phase each Fabricator-crafted input is needed in (cumulative after).
-CRAFTED_SUPPORT_FIRST_PHASE = {"fertilizer": 4, "growth_accelerant": 5}
-
-# Salt / Growth Accelerant / Fertilizer staged at the outpost, in batches'
-# worth (Mk I full batch: 3 Salt; Mk II: 14 Salt, 27 potency, 1
-# Accelerant; Fertilizer/Accelerant capped by the holder), so several
-# batches are on hand while a hauler brings more in one load.
-SUPPORT_REQUEST_BATCHES = 10
-
-# Requests are republished at least this often (well inside
-# logistics_requests.REQUEST_STALE_TICKS = 6000) and at once when a target
-# changes; 10 ticks/s -> 1 min.
-REQUEST_REFRESH_TICKS = 600
-
-# Water input routing, same values as the Fabricator's water_in router
-# (lib/fabricator.py).
-FLUID_STALL_STREAK_BLACKLIST_THRESHOLD = 5
-FLUID_RESCAN_INTERVAL_TICKS = 150
-FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
-FLUID_NEUTRAL_GRACE_STEPS = 5
-
-# Statuses where the machine can't use power at all: switched off.
-STOP_STATUSES = ("complete", "needs_mk2")
-
 # Game-hours per cycle; km2_rate() spreads the running batch over it.
 CYCLE_H = 3.0
 
@@ -185,17 +101,6 @@ CYCLE_H = 3.0
 # while its telemetry is this fresh (10 ticks/s -> 1 min, 6 polls): a
 # stopped script pauses its batch.
 COMMIT_FRESH_TICKS = 600
-
-
-def remaining_forage(phase, remaining_km2, from_phase=1):
-    """Forage still to convert from phase `from_phase` on: the rest of the current band plus every later band."""
-    total = 0.0
-    if phase in PLANTS_BANDS and phase >= from_phase:
-        total += max(remaining_km2, 0.0) / PLANTS_BANDS[phase][0]
-    for band_phase, (_, band_forage) in PLANTS_BANDS.items():
-        if band_phase > phase and band_phase >= from_phase:
-            total += band_forage
-    return total
 
 
 def forage_to_go(phase, remaining_km2, committed_km2):
@@ -210,26 +115,7 @@ def forage_to_go(phase, remaining_km2, committed_km2):
     return max(remaining_forage(phase, remaining_km2) - committed_km2 / PLANTS_BANDS[phase][0], 0.0)
 
 
-def _ceil(value):
-    whole = int(value)
-    return whole + 1 if value > whole else whole
-
-
-def order_sizes(per_batch, full_batch, machines, forage_left):
-    """
-    (need, backlog) item counts for one crafted input. per_batch = items per
-    full batch of full_batch Forage (fractional for Fertilizer potency).
-    Both are capped by forage_left; backlog is never below need.
-    """
-    if per_batch <= 0 or full_batch <= 0 or machines <= 0:
-        return 0, 0
-    left = _ceil(forage_left * per_batch / full_batch)
-    need = min(_ceil(NEED_BATCHES * machines * per_batch), left)
-    backlog = min(_ceil(BACKLOG_BATCHES * machines * per_batch), left)
-    return need, max(need, backlog)
-
-
-class PlantTerraformerController:
+class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDemandMixin):
     """Keeps one Plant Terraformer fed with Forage, Water and support items and runs it in full-ish batches."""
 
     def __init__(self, machine):
@@ -243,14 +129,8 @@ class PlantTerraformerController:
         self._last_status = None
         self._last_phase = None
         self._last_blocker = None
-        self._water_router = None
-        self._published_targets = None
-        self._published_tick = None
-        self._published_orders = None
-        self._order_detail = []
-        self._foreign_owners = {}
-        self._craft_fertilizer = None
-        self._craft_fertilizer_tick = 0
+        self._init_water()
+        self._init_demand()
         self._finishing = False
         self._eject_warned = set()
         self._resume_pending = self._was_running()
@@ -343,7 +223,7 @@ class PlantTerraformerController:
         full = int(reqs.get("forage", 0) or 0)
         if to_go is None or full <= 0:
             return reqs
-        need = _ceil(to_go)
+        need = ceil_int(to_go)
         if need >= full:
             return reqs
         capped = dict(reqs)
@@ -355,7 +235,7 @@ class PlantTerraformerController:
         """Batches' worth of support items to request: SUPPORT_REQUEST_BATCHES, fewer when the ladder ends sooner."""
         if to_go is None or full_batch <= 0:
             return SUPPORT_REQUEST_BATCHES
-        return max(min(SUPPORT_REQUEST_BATCHES, _ceil(to_go / full_batch)), 1)
+        return max(min(SUPPORT_REQUEST_BATCHES, ceil_int(to_go / full_batch)), 1)
 
     def report_finishing(self, finishing, to_go, committed_km2):
         if finishing == self._finishing:
@@ -496,16 +376,6 @@ class PlantTerraformerController:
         if full_batch <= 0:
             return MIN_START_FORAGE
         return max(min(full_batch, max(MIN_START_FORAGE, int(full_batch * START_BATCH_FRACTION))), 1)
-
-    def water_level(self):
-        port = getattr(self.machine, "water_in", None)
-        if not port or not hasattr(port, "level"):
-            return 0.0
-        try:
-            return float(port.level() or 0.0)
-        except Exception as error:
-            swallowed("plant_terraformer.PlantTerraformerController.water_level: port.level", error)
-            return 0.0
 
     def support_limits(self, reqs, required, held):
         """
@@ -653,206 +523,6 @@ class PlantTerraformerController:
             moved["forage"] = self.load_forage(forage, held, in_flight, requests, min(limits.values()) if limits else forage)
         return {k: v for k, v in moved.items() if v}
 
-    # --------------------------------------------------------------- water
-
-    def _discover_water_sources(self):
-        self.log.start(f"[{self.name}] _discover_water_sources", level="debug")
-        type_ids = FLUID_SOURCE_TYPE_IDS["water_in"]
-        pairs = []
-        network = get_component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    o_id = getattr(outpost, "id", None)
-                    for type_id in type_ids:
-                        for building in outpost.buildings(type_id):
-                            b_id = getattr(building, "id", None)
-                            if b_id and fluid_building_is_viable("water_in", type_id, building):
-                                pairs.append((b_id, o_id))
-            except Exception as error:
-                self.log.debug(f"water source discovery failed: {error}")
-        ids = fluid_routing.rank_own_outpost_first(pairs, self.outpost_id)
-        self.log.debug(f"water_in: sources (own outpost first): {ids}.")
-        self.log.end()
-        return ids
-
-    @staticmethod
-    def _port_starved(port):
-        """flow_rate() == 0 with room left -- a full port also reads 0, not a stall."""
-        try:
-            level = port.level() if hasattr(port, "level") else 0
-            capacity = port.capacity() if hasattr(port, "capacity") else 0
-            flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
-            return flow == 0 and (not capacity or level < capacity)
-        except Exception as error:
-            swallowed("plant_terraformer.PlantTerraformerController._port_starved: port.level", error)
-            return False
-
-    def ensure_water(self, curr_tick):
-        port = getattr(self.machine, "water_in", None)
-        if not port:
-            return
-        if self._water_router is None:
-            self._water_router = fluid_routing.FluidInputRouter(
-                discover=self._discover_water_sources,
-                rescan_interval_ticks=FLUID_RESCAN_INTERVAL_TICKS,
-                discovery_cache_interval_ticks=FLUID_DISCOVERY_CACHE_INTERVAL_TICKS,
-                stall_streak_threshold=FLUID_STALL_STREAK_BLACKLIST_THRESHOLD,
-                neutral_grace_steps=FLUID_NEUTRAL_GRACE_STEPS,
-                label=f"{self.name}.water_in",
-                reserve_fluid="water",
-            )
-
-        def on_dropped(source_id, reason):
-            self.log.level("warn").print(f"[{self.name}] Dropping water source '{source_id}': {reason}. Picking another.")
-
-        def on_connect_notice(source_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] water_in connect notice for '{source_id}': {status} - {message}")
-
-        event = self._water_router.ensure(port, curr_tick, self._port_starved(port), on_dropped, on_connect_notice)
-        if event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected water_in -> '{event.source_id}'.")
-        elif event.kind == "not_found":
-            self.log.debug(f"[{self.name}] no water source on the network.")
-
-    # ------------------------------------------------------------ requests
-
-    def demand_targets(self, reqs, required, batches=SUPPORT_REQUEST_BATCHES):
-        """{item_id: local stock target} for the next batch and `batches` batches of support items, before ownership checks."""
-        targets = {}
-        if not self.is_home and reqs.get("forage"):
-            targets["forage"] = int(reqs["forage"])
-        if "salt" in required and reqs.get("salt"):
-            targets["salt"] = int(reqs["salt"]) * batches
-        if reqs.get("fertilizer_potency"):
-            item_id = self.craft_fertilizer_item()
-            per_batch = -(-int(reqs["fertilizer_potency"]) // max(self._potency(item_id), 1))
-            targets[item_id] = min(per_batch, SUPPORT_HOLDER_CAP) * batches
-        if "growth_accelerant" in required and reqs.get("growth_accelerant"):
-            targets["growth_accelerant"] = min(int(reqs["growth_accelerant"]), SUPPORT_HOLDER_CAP) * batches
-        return targets
-
-    def _have(self, item_id):
-        """Published "have": local stock; Fertilizer in item_id's potency units over all tiers."""
-        if item_id not in FERTILIZER_ITEM_IDS:
-            return self.local_stock(item_id)
-        unit = max(self._potency(item_id), 1)
-        return sum(self.local_stock(i) * self._potency(i) for i in FERTILIZER_ITEM_IDS) // unit
-
-    def publish_requests(self, reqs, required, requests, curr_tick, batches=SUPPORT_REQUEST_BATCHES):
-        """Advertises this Terraformer's demand in logistics.requests (see module header)."""
-        if not self.outpost_id:
-            return
-        here = requests.get(self.outpost_id) or {}
-        targets = {}
-        foreign = {}
-        for item_id, target in self.demand_targets(reqs, required, batches).items():
-            entry = here.get(item_id) or {}
-            owner = entry.get("by") if isinstance(entry, dict) else None
-            if owner in (None, REQUESTER_ID):
-                targets[item_id] = target
-            else:
-                foreign[item_id] = owner
-        if foreign != self._foreign_owners:
-            for item_id, owner in foreign.items():
-                self.log.debug(f"[{self.name}] {item_id} already requested here by '{owner}'; not overriding.")
-            self._foreign_owners = foreign
-
-        due = (
-            targets != self._published_targets
-            or self._published_tick is None
-            or curr_tick < self._published_tick
-            or curr_tick - self._published_tick >= REQUEST_REFRESH_TICKS
-        )
-        if not due:
-            return
-        wants = {item_id: (target, self._have(item_id)) for item_id, target in targets.items()}
-        logistics_requests.set_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick)
-        if targets != self._published_targets:
-            if targets:
-                self.log.print(f"[{self.name}] Advertising demand at {self.outpost_id}: {wants}.")
-            elif self._published_targets:
-                self.log.print(f"[{self.name}] Demand withdrawn at {self.outpost_id}.")
-        self._published_targets = targets
-        self._published_tick = curr_tick
-
-    # -------------------------------------------------- Fabricator orders
-
-    def craft_fertilizer_item(self, curr_tick=None):
-        """First FERTILIZER_CRAFT_PREFERENCE item the Fabricator has unlocked; curr_tick re-reads it every REQUEST_REFRESH_TICKS."""
-        due = self._craft_fertilizer is None or (
-            curr_tick is not None
-            and (curr_tick < self._craft_fertilizer_tick or curr_tick - self._craft_fertilizer_tick >= REQUEST_REFRESH_TICKS)
-        )
-        if due:
-            unlocked = fabricator_unlocked_outputs()
-            item_id = next((i for i in FERTILIZER_CRAFT_PREFERENCE if i in unlocked), FERTILIZER_CRAFT_PREFERENCE[-1])
-            if item_id != self._craft_fertilizer:
-                self.log.debug(f"[{self.name}] Fertilizer to craft: {item_id} (unlocked: {sorted(i for i in unlocked if i in FERTILIZER_ITEM_IDS)}).")
-            self._craft_fertilizer = item_id
-            self._craft_fertilizer_tick = curr_tick or 0
-        return self._craft_fertilizer
-
-    def fleet_size(self, curr_tick):
-        """Mk II Terraformers on the ladder: fresh, non-stopped `plant.terraformer` entries plus this one."""
-        status = archive.get(STATUS_KEY, {})
-        count = 1
-        if not isinstance(status, dict):
-            return count
-        for machine_id, entry in status.items():
-            if machine_id == self.name or not isinstance(entry, dict):
-                continue
-            if curr_tick - entry.get("tick", 0) >= STATUS_STALE_TICKS or entry.get("status") in STOP_STATUSES:
-                continue
-            if int(entry.get("tier", 1) or 1) >= 2:
-                count += 1
-        return count
-
-    def fabricator_orders(self, reqs, required, phase, remaining, machines, to_go=None):
-        """
-        ({item_id: need}, {item_id: backlog}) for the Fabricator-crafted inputs
-        this phase needs (see module header); to_go (forage_to_go()) caps the
-        Forage left.
-        """
-        need, backlog = {}, {}
-        self._order_detail = []
-        full = int(reqs.get("forage", 0) or 0)
-        if full <= 0:
-            return need, backlog
-        crafted = []
-        if reqs.get("fertilizer_potency"):
-            item_id = self.craft_fertilizer_item()
-            per_batch = int(reqs["fertilizer_potency"]) / float(max(self._potency(item_id), 1))
-            crafted.append((item_id, per_batch, CRAFTED_SUPPORT_FIRST_PHASE["fertilizer"]))
-        if "growth_accelerant" in required and reqs.get("growth_accelerant"):
-            crafted.append(("growth_accelerant", float(reqs["growth_accelerant"]), CRAFTED_SUPPORT_FIRST_PHASE["growth_accelerant"]))
-        for item_id, per_batch, first_phase in crafted:
-            forage_left = remaining_forage(phase, remaining, first_phase)
-            if to_go is not None:
-                forage_left = min(forage_left, to_go)
-            n, b = order_sizes(per_batch, full, machines, forage_left)
-            self._order_detail.append(f"[{self.name}] {item_id}: {per_batch:.2f}/batch x {machines} machine(s), {forage_left:,.0f} Forage left -> need {n}, backlog {b}.")
-            if n > 0:
-                need[item_id] = n
-            if b > 0:
-                backlog[item_id] = b
-        return need, backlog
-
-    def publish_fabricator_orders(self, need, backlog):
-        """Writes both orders (production skips unchanged writes); info line and fabricator_orders()' sizing trail when they change."""
-        orders = (need, backlog)
-        if orders == self._published_orders:
-            return
-        for line in self._order_detail:
-            self.log.debug(line)
-        set_upgrade_order(REQUESTER_ID, need)
-        set_backlog_order(REQUESTER_ID, backlog)
-        if need or backlog:
-            self.log.print(f"[{self.name}] Fabricator orders: need {need}, backlog {backlog}.")
-        elif self._published_orders:
-            self.log.print(f"[{self.name}] Fabricator orders withdrawn.")
-        self._published_orders = orders
-
     # ------------------------------------------------------------- control
 
     def set_enabled(self, enabled, reason):
@@ -971,9 +641,7 @@ class PlantTerraformerController:
             self.publish_requests(reqs, required, requests, curr_tick, batches)
             self.publish_fabricator_orders(*self.fabricator_orders(reqs, required, phase, remaining, self.fleet_size(curr_tick), to_go))
         else:
-            if self._published_targets is None or self._published_targets:
-                logistics_requests.clear_requests(REQUESTER_ID, self.outpost_id)
-                self._published_targets = {}
+            self.withdraw_requests()
             # A Mk I machine ("needs_mk2") leaves the Mk II fleet's orders alone.
             if status == "complete" or finishing:
                 self.publish_fabricator_orders({}, {})
