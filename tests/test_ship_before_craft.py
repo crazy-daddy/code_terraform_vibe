@@ -31,6 +31,27 @@ class ShipBeforeCraftTests(StubTestCase):
     def publish(self):
         return site_supply.publish_site_requests(self.world.clock.now)
 
+    def test_spare_elsewhere_shared_cache_matches_fresh_cache(self):
+        w = self.world
+        third = w.add_outpost("outpost_3")
+        w.add_fabricator("fabricator_3", third, RECIPES)
+        w.inventory.add("tar", 40)
+        w.add_warehouse("wh_remote", self.remote, {"tar": 7})
+        w.add_warehouse("wh_third", third, {"tar": 5})
+        shared = production.SourceCache()
+        for site in ("outpost_2", "outpost_3", "home", "outpost_2"):
+            fresh = production.site_spare_elsewhere("tar", site, production.SourceCache())
+            self.assertEqual(production.site_spare_elsewhere("tar", site, shared), fresh)
+
+    def test_network_stock_memo_matches_fresh_reads(self):
+        w = self.world
+        w.inventory.add("tar", 3)
+        w.add_warehouse("wh_remote", self.remote, {"tar": 7})
+        cache = production.SourceCache()
+        first = cache.network_stock("tar")
+        self.assertEqual(first, production.SourceCache().network_stock("tar"))
+        self.assertEqual(cache.network_stock("tar"), first)
+
     def test_big_surplus_ships_instead_of_crafting(self):
         w = self.world
         w.inventory.add("tar", 1000)

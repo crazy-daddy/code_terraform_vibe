@@ -475,12 +475,15 @@ def site_spare_elsewhere(item_id, site_id, cache):
         other_id = getattr(outpost, "id", None)
         if other_id is None or other_id == site_id:
             continue
-        for_need, _for_buffer = outpost_free_tiers(outpost, [item_id], cache._requests)
-        free = for_need.get(item_id, 0)
-        if free > 0 and other_id in fab_sites:
-            keep = min(cache.local_stock(item_id, outpost), _site_base_targets(other_id, cache).get(item_id, 0))
-            free -= keep
-        total += max(0, int(free))
+        contribution_key = f"{other_id}|{item_id}"
+        if contribution_key not in cache._spare_contribution:
+            for_need, _for_buffer = outpost_free_tiers(outpost, [item_id], cache._requests)
+            free = for_need.get(item_id, 0)
+            if free > 0 and other_id in fab_sites:
+                keep = min(cache.local_stock(item_id, outpost), _site_base_targets(other_id, cache).get(item_id, 0))
+                free -= keep
+            cache._spare_contribution[contribution_key] = max(0, int(free))
+        total += cache._spare_contribution[contribution_key]
     cache._spare_elsewhere[key] = total
     return total
 

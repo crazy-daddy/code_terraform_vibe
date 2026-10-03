@@ -46,6 +46,8 @@ class SourceCache:
         self._site_base_targets = {}  # {site_id: _site_base_targets()} memo
         self._site_ship_plan = {}  # {site_id: {item_id: units}}, filled by get_site_fabricator_targets()
         self._spare_elsewhere = {}  # {"site_id|item_id": units}, site_spare_elsewhere() memo
+        self._spare_contribution = {}  # {"outpost_id|item_id": units}, one outpost's share of site_spare_elsewhere()
+        self._network_stock = {}  # {item_id: units}, network_stock() memo
         self._site_machines = {}  # {"outpost_id|kind": bool}, _site_has_machine() memo
         self._requests = None  # logistics_requests.active_requests() snapshot
         self._fab_sites = None  # fab_site_counts() memo
@@ -177,7 +179,9 @@ class SourceCache:
         """held_stock() at every outpost (Warehouses, Drone Depots, home
         Inventory) plus cargo loaded aboard a hauler
         (logistics_requests.aboard_units()): units anywhere on the network,
-        moving ones included."""
+        moving ones included. Memoized per item for the pass."""
+        if item_id in self._network_stock:
+            return self._network_stock[item_id]
         if self._remote_outposts is None:
             self._remote_outposts = [o for o in _all_outposts() if not outpost_is_home(o)]
         if self._aboard is None:
@@ -185,6 +189,7 @@ class SourceCache:
         total = self.held_stock(item_id) + self._aboard.get(item_id, 0)
         for outpost in self._remote_outposts:
             total += self.held_stock(item_id, outpost)
+        self._network_stock[item_id] = total
         return total
 
     def smelter_recipes(self):
