@@ -64,6 +64,9 @@ DRONE_YIELD_KEY = "logistics.drone_yield"
 # (10 ticks/s -> 10 minutes). Longer than the slowest requester's publish
 # gap (the field Harvester republishes between care tours, ~5 minutes).
 REQUEST_STALE_TICKS = 6000
+# publish_requests() rewrites entries that still match the wants once they are
+# this old, so they stay fresh and their "have" doesn't lag much further.
+REPUBLISH_TICKS = REQUEST_STALE_TICKS // 2
 
 def haul_rank(units, need_units, meters, overhead_m, urgent_units=0.0):
     """
@@ -201,6 +204,72 @@ def clear_requests(requester, outpost_id=None):
 
     archive.transaction(REQUESTS_KEY, {}, updater)
     log.debug(f"clear_requests({requester!r}, outpost_id={outpost_id!r}).")
+
+
+# Foreign owners publish_requests() last logged, {(outpost_id, requester): {item_id: owner}}.
+_foreign_logged = {}
+
+
+def _want_min(values):
+    """Need-tier level set_requests() stores for one wants tuple, as request_min() reads it back."""
+    target = values[0]
+    floor = values[2] if len(values) > 2 else None
+    return target if floor is None or floor >= target else max(0, floor)
+
+
+def _unchanged(existing, wants, tick, buyable):
+    """True when the published entries match wants and are young enough to skip a republish."""
+    if set(existing) != set(wants):
+        return False
+    for item_id, values in wants.items():
+        entry = existing[item_id]
+        if entry.get("target") != values[0] or request_min(entry) != _want_min(values):
+            return False
+        if bool(entry.get("urgent")) != (len(values) > 3 and bool(values[3])):
+            return False
+        if bool(entry.get("buy")) != buyable:
+            return False
+        if not 0 <= tick - entry.get("tick", 0) < REPUBLISH_TICKS:
+            return False
+    return True
+
+
+def publish_requests(outpost_id, requester, wants, curr_tick=None, requests=None, buyable=False, skip_foreign=True, have_of=None):
+    """
+    set_requests() unless the entries `requester` already published at
+    `outpost_id` match `wants` (target, min, urgent, buy; "have" is not
+    compared) and are younger than REPUBLISH_TICKS. Empty wants withdraws
+    them. `requests` is an active_requests() snapshot (read when None).
+    skip_foreign drops items another requester owns there, so two
+    requesters never take one item from each other. have_of(item_id), when
+    given, replaces each "have" on a write only, for a requester whose
+    stock read is a live walk. True when written.
+    """
+    tick = curr_tick if curr_tick is not None else _now_tick()
+    if requests is None:
+        requests = active_requests(tick)
+    here = requests.get(outpost_id) or {}
+    if skip_foreign:
+        foreign = {}
+        for item_id in wants:
+            entry = here.get(item_id)
+            owner = entry.get("by") if isinstance(entry, dict) else None
+            if owner not in (None, requester):
+                foreign[item_id] = owner
+        if foreign != _foreign_logged.get((outpost_id, requester), {}):
+            _foreign_logged[(outpost_id, requester)] = foreign
+            if foreign:
+                log.debug(f"publish_requests({outpost_id!r}, {requester!r}): left to their owners {foreign}.")
+        if foreign:
+            wants = {i: v for i, v in wants.items() if i not in foreign}
+    existing = {i: e for i, e in here.items() if isinstance(e, dict) and e.get("by") == requester}
+    if (not wants and not existing) or _unchanged(existing, wants, tick, buyable):
+        log.trace(f"publish_requests({outpost_id!r}, {requester!r}): unchanged, {len(wants)} item(s)")
+        return False
+    if have_of is not None:
+        wants = {i: (v[0], have_of(i)) + tuple(v[2:]) for i, v in wants.items()}
+    set_requests(outpost_id, requester, wants, tick, buyable)
+    return True
 
 
 def active_requests(curr_tick=None):

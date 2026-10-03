@@ -305,9 +305,9 @@ class BioCasterController(BioProcessorController):
         need, urgent = self._aggregate_material_demand(orders, snapshot)
         totals, _ = snapshot
         try:
+            wants = {}
             if not need:
                 set_upgrade_order(REQUESTER_ID, {})
-                logistics_requests.clear_requests(REQUESTER_ID, outpost_id)
             else:
                 flying = logistics_requests.in_flight(outpost_id, tick)
                 buildable = fabricator_unlocked_outputs()
@@ -325,7 +325,7 @@ class BioCasterController(BioProcessorController):
                     )
                 set_upgrade_order(REQUESTER_ID, floor)
                 wants = {m: (q, totals.get(m, 0), urgent.get(m, 0)) for m, q in need.items()}
-                logistics_requests.set_requests(outpost_id, REQUESTER_ID, wants, tick)
+            logistics_requests.publish_requests(outpost_id, REQUESTER_ID, wants, tick)
         except Exception as error:
             swallowed("bio_volcanic.BioCasterController._publish_material_demand: publish", error)
             return

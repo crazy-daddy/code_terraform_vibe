@@ -43,7 +43,6 @@ import wildlife_common as wc
 
 PLAN_TICK_INTERVAL = 250            # one game hour
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
-REQUEST_REFRESH_TICKS = 1200        # republish at least this often (REQUEST_STALE_TICKS = 6000)
 IDLE_SUMMARY = "wildlife idle"
 MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/step_profile.py wildlife_ration)
 TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/level() read in _fluid_stock() (~20 steps each)
@@ -51,7 +50,7 @@ TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/l
 log = TreeConsole(module="wildlife_planner")
 
 # Module state between passes (the Control Room Automation imports this once).
-state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "requests": None, "request_tick": 0, "progress": None}
+state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "progress": None}
 
 
 # ---------------------------------------------------------------- pure core
@@ -669,34 +668,15 @@ def snapshot(now):
 
 
 def _publish_requests(snap: dict, plan: dict, now):
-    """Life-form requests at home for the Feed Makers, skipping forms another requester owns there."""
-    home = snap.get("home")
-    home_id = getattr(home, "id", None)
+    """Life-form requests at home for the Feed Makers; forms another requester owns there are left to it."""
+    home_id = getattr(snap.get("home"), "id", None)
     if not home_id:
         return
-    requests = logistics_requests.active_requests(now) or {}
-    owners = {}
-    owned = requests.get(home_id) or {}
-    for item, entry in owned.items():
-        if isinstance(entry, dict):
-            owners[item] = entry.get("by")
     form_stock = snap.get("form_stock") or {}
-    wants = {}
-    for form, target in plan["form_targets"].items():
-        if owners.get(form) not in (None, REQUESTER_ID):
-            continue
-        wants[form] = (target, form_stock.get(form, 0))
-    targets = {f: w[0] for f, w in wants.items()}
-    if targets == state["requests"] and now - state["request_tick"] < REQUEST_REFRESH_TICKS:
-        return
-    state["requests"] = targets
-    state["request_tick"] = now
-    if wants:
-        logistics_requests.set_requests(home_id, REQUESTER_ID, wants, now)
-    else:
-        logistics_requests.clear_requests(REQUESTER_ID, home_id)
-    short = sorted(f for f, w in wants.items() if w[1] < w[0])
-    log.debug(f"life-form requests: {len(wants)} form(s), {len(short)} below target: {short}")
+    wants = {form: (target, form_stock.get(form, 0)) for form, target in plan["form_targets"].items()}
+    if logistics_requests.publish_requests(home_id, REQUESTER_ID, wants, now):
+        short = sorted(f for f, w in wants.items() if w[1] < w[0])
+        log.debug(f"life-form requests: {len(wants)} form(s), {len(short)} below target: {short}")
 
 
 def _write(plan):

@@ -31,7 +31,7 @@ OUTPOST_REAGENT_STOCK_TARGETS_KEY = "outposts.reagent_stock_targets"
 
 # logistics.requests requester id for remote Bio Lab reagents.
 REQUESTER_ID = "bio_reagents"
-# Republish interval (ticks); well below logistics_requests.REQUEST_STALE_TICKS.
+# Recompute interval (ticks) for the reagent wants; publish_requests() decides the write.
 REAGENT_REQUEST_REFRESH_TICKS = 600
 
 _last_publish_tick = {}
@@ -99,10 +99,10 @@ def reagent_stock_target_for(outpost_id, item_id):
 def publish_reagent_requests(outpost, curr_tick=None, force=False):
     """
     Publishes this remote outpost's reagent stock targets as pull requests
-    (logistics_requests.set_requests(), requester REQUESTER_ID, whole target
-    as need tier, flagged buyable), so a Pioneer pull hauler homed here fetches
-    them, buying at the Shop on home pickup. Throttled to one write per
-    REAGENT_REQUEST_REFRESH_TICKS per outpost unless force. "have" =
+    (logistics_requests.publish_requests(), requester REQUESTER_ID, whole
+    target as need tier, flagged buyable), so a Pioneer pull hauler homed here
+    fetches them, buying at the Shop on home pickup. Recomputed at most once
+    per REAGENT_REQUEST_REFRESH_TICKS per outpost unless force. "have" =
     logistics_requests.outpost_stock() (Warehouses + Drone Depots), the stock
     a remote Lab can load from. No-op for the home outpost: a home Lab buys
     its own reagents just in time.
@@ -119,10 +119,7 @@ def publish_reagent_requests(outpost, curr_tick=None, force=False):
     have = logistics_requests.outpost_stock(reagents, outpost)
     wants = {item_id: (reagent_stock_target_for(outpost_id, item_id), have.get(item_id, 0)) for item_id in reagents}
     wants = {item_id: pair for item_id, pair in wants.items() if pair[0] > 0}
-    if wants:
-        logistics_requests.set_requests(outpost_id, REQUESTER_ID, wants, tick, buyable=True)
-    else:
-        logistics_requests.clear_requests(REQUESTER_ID, outpost_id)
+    logistics_requests.publish_requests(outpost_id, REQUESTER_ID, wants, tick, buyable=True)
     short = sorted(item_id for item_id, (target, got) in wants.items() if got < target)
     log.debug(f"publish_reagent_requests({outpost_id}): {len(wants)} reagent(s), below target: {short}")
     return True

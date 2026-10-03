@@ -171,11 +171,9 @@ class SeedSupplyController(SeedMakerController):
             for form, n in part.items():
                 need[form] = need.get(form, 0) + n
         wants = {f: (min(SEED_SUPPLY_STASH_T, n), stock.get(f, 0)) for f, n in need.items() if n > 0}
+        # Seed forms take an item from other requesters (the Feed Makers yield it).
         if self.outpost_id:
-            if wants:
-                logistics_requests.set_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick)
-            else:
-                logistics_requests.clear_requests(REQUESTER_ID)
+            logistics_requests.publish_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick, skip_foreign=False)
         short = sorted(f for f, pair in wants.items() if pair[1] < pair[0])
         self.log.debug(f"supply requests: {len(wants)} form(s), {len(short)} below target: {short}")
         self.log.end()

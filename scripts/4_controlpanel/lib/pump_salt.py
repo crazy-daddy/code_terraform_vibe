@@ -45,9 +45,6 @@ SALT_KEEP_FREE = 4000
 SALT_BANDS = ((1250000, 2250000, 5.0 / 3.0), (2250000, 3500000, 1.0), (3500000, 5000000, 1.0 / 3.0))
 SALT_FORAGE_PER_ITEM = 500
 TERRAFORMER_MK2_BATCH = 6600
-# Republish at least this often (well inside logistics_requests.REQUEST_STALE_TICKS
-# = 6000) and at once when the target changes.
-SALT_REQUEST_REFRESH_TICKS = 1200
 
 _cache = {"tick": None, "pumps": {}}
 
@@ -153,15 +150,12 @@ def plants_km2():
         return None
 
 
-# Last published target and tick (-1 = not yet published by this script run).
-_published = {"target": -1, "tick": -1}
-
-
 def publish_home_salt_request(home, curr_tick=None):
     """
-    Publishes home's salt request (see module header); returns its target, or
-    None when there is no home. Republished on a target change or every
-    SALT_REQUEST_REFRESH_TICKS.
+    Publishes home's salt request (see module header) through
+    logistics_requests.publish_requests(); returns its target, or None when
+    there is no home. It overrides any other requester's salt entry at home:
+    this target already covers the Terraformers' salt.
     """
     home_id = getattr(home, "id", None)
     if not home_id:
@@ -172,15 +166,6 @@ def publish_home_salt_request(home, curr_tick=None):
     have = total_stock(SALT_ITEM_ID, home)
     room = max(0, _free_warehouse_units(home) - SALT_KEEP_FREE)
     target = max(SALT_FIELD_UNITS, min(SALT_FIELD_UNITS + finish, have + room))
-    due = (
-        target != _published["target"]
-        or tick < _published["tick"]
-        or tick - _published["tick"] >= SALT_REQUEST_REFRESH_TICKS
-    )
-    if due:
-        logistics_requests.set_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (target, have, SALT_FIELD_UNITS)}, tick)
-        if target != _published["target"]:
-            log.debug(f"home salt request: plants {km2} km^2, Terraformers still need {finish}, have {have}, room {room} -> target {target} (min {SALT_FIELD_UNITS}).")
-        _published["target"] = target
-        _published["tick"] = tick
+    if logistics_requests.publish_requests(home_id, SALT_REQUESTER_ID, {SALT_ITEM_ID: (target, have, SALT_FIELD_UNITS)}, tick, skip_foreign=False):
+        log.debug(f"home salt request: plants {km2} km^2, Terraformers still need {finish}, have {have}, room {room} -> target {target} (min {SALT_FIELD_UNITS}).")
     return target

@@ -60,9 +60,7 @@ BACKLOG_BATCHES = 100
 # First phase each Fabricator-crafted input is needed in (cumulative after).
 CRAFTED_SUPPORT_FIRST_PHASE = {"fertilizer": 4, "growth_accelerant": 5}
 
-# Requests are republished at least this often (well inside
-# logistics_requests.REQUEST_STALE_TICKS = 6000) and at once when a target
-# changes; 10 ticks/s -> 1 min.
+# craft_fertilizer_item() re-reads the Fabricator's unlocks this often; 10 ticks/s -> 1 min.
 REQUEST_REFRESH_TICKS = 600
 
 
@@ -88,10 +86,8 @@ class PlantTerraformerDemandMixin:
 
     def _init_demand(self):
         self._published_targets = None
-        self._published_tick = None
         self._published_orders = None
         self._order_detail = []
-        self._foreign_owners = {}
         self._craft_fertilizer = None
         self._craft_fertilizer_tick = 0
 
@@ -122,42 +118,19 @@ class PlantTerraformerDemandMixin:
         return sum(host.local_stock(i) * host._potency(i) for i in FERTILIZER_ITEM_IDS) // unit
 
     def publish_requests(self, reqs, required, requests, curr_tick, batches=SUPPORT_REQUEST_BATCHES):
-        """Advertises this Terraformer's demand in logistics.requests (see module header)."""
+        """Advertises this Terraformer's demand in logistics.requests (see module header); items another requester owns here are left to it."""
         host = self._host
         if not host.outpost_id:
             return
-        here = requests.get(host.outpost_id) or {}
-        targets = {}
-        foreign = {}
-        for item_id, target in self.demand_targets(reqs, required, batches).items():
-            entry = here.get(item_id) or {}
-            owner = entry.get("by") if isinstance(entry, dict) else None
-            if owner in (None, REQUESTER_ID):
-                targets[item_id] = target
-            else:
-                foreign[item_id] = owner
-        if foreign != self._foreign_owners:
-            for item_id, owner in foreign.items():
-                host.log.debug(f"[{host.name}] {item_id} already requested here by '{owner}'; not overriding.")
-            self._foreign_owners = foreign
-
-        due = (
-            targets != self._published_targets
-            or self._published_tick is None
-            or curr_tick < self._published_tick
-            or curr_tick - self._published_tick >= REQUEST_REFRESH_TICKS
-        )
-        if not due:
-            return
-        wants = {item_id: (target, self._have(item_id)) for item_id, target in targets.items()}
-        logistics_requests.set_requests(host.outpost_id, REQUESTER_ID, wants, curr_tick)
-        if targets != self._published_targets:
+        targets = self.demand_targets(reqs, required, batches)
+        wants = {item_id: (target, 0) for item_id, target in targets.items()}
+        written = logistics_requests.publish_requests(host.outpost_id, REQUESTER_ID, wants, curr_tick, requests, have_of=self._have)
+        if written and targets != self._published_targets:
             if targets:
-                host.log.print(f"[{host.name}] Advertising demand at {host.outpost_id}: {wants}.")
+                host.log.print(f"[{host.name}] Advertising demand at {host.outpost_id}: {targets}.")
             elif self._published_targets:
                 host.log.print(f"[{host.name}] Demand withdrawn at {host.outpost_id}.")
         self._published_targets = targets
-        self._published_tick = curr_tick
 
     def withdraw_requests(self):
         """Clears this Terraformer's logistics.requests entries (once per withdrawal)."""

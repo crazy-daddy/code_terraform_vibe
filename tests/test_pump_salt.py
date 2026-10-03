@@ -30,10 +30,6 @@ class SaltToFinishTests(unittest.TestCase):
 
 
 class HomeSaltRequestTests(StubTestCase):
-    def setUp(self):
-        super().setUp()
-        pump_salt._published.update({"target": -1, "tick": -1})
-
     def request(self):
         return logistics_requests.active_requests(0)[self.world.home.id]["salt"]
 

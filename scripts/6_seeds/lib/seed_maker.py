@@ -42,8 +42,8 @@ SEED_SPECIES_TOTAL = 15          # docs/types/biosphere.md SeedRecipe.seed_id po
 MAX_RECIPES_PER_FORM = 4         # generator cap per life form (see module docstring)
 SEED_STASH_TARGET_T = 60         # per-form stock requested at the Seed Maker outpost (capped by open triples left)
 SEED_CLAIM_STALE_TICKS = 3000    # ~5 min; a claim older than this is free again
-REQUEST_REFRESH_TICKS = 1200     # recompute + republish requests at most this often (~2 min);
-                                 # must stay well below logistics_requests.REQUEST_STALE_TICKS
+REQUEST_REFRESH_TICKS = 1200     # recompute requests at most this often (~2 min); plus
+                                 # logistics_requests.REPUBLISH_TICKS it must stay below REQUEST_STALE_TICKS
 IDLE_POLL_SECONDS = 10.0         # nothing to try / waiting for material
 DONE_POLL_SECONDS = 120.0        # all species found
 
@@ -316,13 +316,19 @@ class SeedMakerController:
         self._last_request_tick = curr_tick
         counts, total = self._open_combo_counts(saturated, curr_tick)
         wants = {f: (min(SEED_STASH_TARGET_T, n), stock.get(f, 0)) for f, n in counts.items() if n > 0}
+        # Seed forms take an item from other requesters (the Feed Makers yield it).
         if self.outpost_id:
-            logistics_requests.set_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick)
+            logistics_requests.publish_requests(self.outpost_id, REQUESTER_ID, wants, curr_tick, skip_foreign=False)
         short = sorted(f for f, pair in wants.items() if pair[1] < pair[0])
         missing = sum(max(0, t - h) for t, h in wants.values())
         self.log.debug(f"[{self.name}] requests: {len(wants)} form(s) still in open triples ({total} open), {len(short)} below target ({missing} t missing): {short}")
         self._last_open_total = total
         return total
+
+    def _clear_requests(self):
+        """Withdraws this outpost's REQUESTER_ID requests."""
+        if self.outpost_id:
+            logistics_requests.clear_requests(REQUESTER_ID, self.outpost_id)
 
     def _publish_status(self, state, recipes, saturated, open_total):
         tried_count = sum(1 for v in self._tried.values() if v is True)
@@ -448,7 +454,7 @@ class SeedMakerController:
             self._mark_tried(known)
 
         if len(recipes) >= SEED_SPECIES_TOTAL:
-            logistics_requests.clear_requests(REQUESTER_ID)
+            self._clear_requests()
             self._publish_status("done", recipes, saturated, 0)
             self.log.print(f"[{self.name}] All {SEED_SPECIES_TOTAL} seed recipes known; sweep finished.")
             return DONE_POLL_SECONDS
@@ -461,7 +467,7 @@ class SeedMakerController:
             if open_total is None:
                 open_total = self._publish_requests(saturated, stock, curr_tick, force=True)
             if open_total == 0:
-                logistics_requests.clear_requests(REQUESTER_ID)
+                self._clear_requests()
                 self._publish_status("exhausted", recipes, saturated, 0)
                 self.log.level("warn").print(f"[{self.name}] Every viable triple tried with only {len(recipes)}/{SEED_SPECIES_TOTAL} recipes found.")
                 return DONE_POLL_SECONDS

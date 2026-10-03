@@ -88,7 +88,7 @@
 # EVICT_HOLD_ITEM_IDS.
 
 from archive import archive
-from logistics_requests import active_requests, set_requests, in_flight, outpost_stock, outpost_free_tiers, request_min, local_depots, depot_stock, REQUEST_STALE_TICKS
+from logistics_requests import active_requests, publish_requests, in_flight, outpost_stock, outpost_free_tiers, local_depots, depot_stock, REQUEST_STALE_TICKS, REPUBLISH_TICKS
 from production import set_backlog_order, construction_site_id, discover_building_ids, discover_smelter_ids, discover_fabricator_ids, smelter_ores, fab_site_gross_need, fabricator_root_targets, blueprint_required_items, get_fabricator_pipeline, root_remaining, get_site_ship_plan, ship_units, get_upgrade_orders, RECURRING_ORDER_REQUESTERS, SourceCache, manual_transit_wants, fab_site_ingot_targets
 from storage import outpost_is_home, discover_storage_buildings, must_stay_in_inventory
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
@@ -99,11 +99,6 @@ from swallow import swallowed
 log = TreeConsole(module="site_supply")
 
 SITE_SUPPLY_REQUESTER = "site_supply"
-
-# An unchanged request is republished once it is this old, well inside
-# logistics_requests.REQUEST_STALE_TICKS, instead of every pass (one archive
-# write per site per storage tick otherwise).
-REPUBLISH_TICKS = REQUEST_STALE_TICKS // 2
 
 # Role switch drain: {outpost_id: {ore: first tick seen stranded}}, pruned to
 # what is stranded now.
@@ -458,32 +453,6 @@ def settled_items(item_ids, roots, cache):
     return settled
 
 
-def _unchanged(existing, wants, tick):
-    """True when the published entries match wants and are young enough to skip a republish."""
-    if set(existing) != set(wants):
-        return False
-    for item_id, values in wants.items():
-        target, floor = values[0], values[2]
-        entry = existing[item_id]
-        if entry.get("target") != target or request_min(entry) != min(floor, target):
-            return False
-        if bool(entry.get("urgent")) != (len(values) > 3 and bool(values[3])):
-            return False
-        if tick - entry.get("tick", 0) >= REPUBLISH_TICKS:
-            return False
-    return True
-
-
-def _publish(site_id, requester, wants, requests, tick):
-    """set_requests() unless the published entries already match; True when written."""
-    existing = {i: e for i, e in requests.get(site_id, {}).items() if e.get("by") == requester}
-    if (not wants and not existing) or _unchanged(existing, wants, tick):
-        log.trace(f"_publish({site_id}, {requester}): unchanged, {len(wants)} item(s)")
-        return False
-    set_requests(site_id, requester, wants, tick)
-    return True
-
-
 def planned_requests(requests, planned, tick):
     """requests with each site's SITE_SUPPLY_REQUESTER entries replaced by
     this pass's plan ({site_id: wants}), as set_requests() would write them."""
@@ -677,7 +646,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
                 level = have.get(item_id, 0) + flying.get(item_id, 0) + home_free.get(item_id, 0)
                 wants[item_id] = (level, have.get(item_id, 0), level)
                 log.debug(f"evict_stranded: {item_id} stranded at {sorted(ripe[item_id])}, free={home_free.get(item_id, 0)} in flight={flying.get(item_id, 0)} -> home level {level}")
-    if _publish(home_id, EVICT_REQUESTER, wants, requests, tick):
+    if publish_requests(home_id, EVICT_REQUESTER, wants, tick, requests, skip_foreign=False):
         if wants:
             described = ", ".join(item_id + " from " + "/".join(sorted(ripe[item_id])) for item_id in sorted(wants))
             log.print(f"Evicting stranded stock to home: {described}.")
@@ -738,7 +707,7 @@ def publish_site_requests(curr_tick):
             add_evicted(outpost, wants, evicted[site_id], curr_tick)
         if wants or any(e.get("by") == SITE_SUPPLY_REQUESTER for e in requests.get(site_id, {}).values()):
             published[site_id] = wants
-        if not _publish(site_id, SITE_SUPPLY_REQUESTER, wants, requests, curr_tick):
+        if not publish_requests(site_id, SITE_SUPPLY_REQUESTER, wants, curr_tick, requests, skip_foreign=False):
             continue
         if wants:
             notes.append(f"Site supply at '{site_id}': {', '.join(f'{i} {wants[i][0]}' for i in sorted(wants))}.")

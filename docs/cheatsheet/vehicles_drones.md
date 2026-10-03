@@ -267,7 +267,7 @@ Every hauler-role Pioneer (no constructor/sonar/drill mounted, §2b) runs `run_p
 
 ### 2g. Remote Bio Lab Reagent Resupply (`lib/outpost_reagents.py`, `lib/bio.py`)
 
-A home Bio Lab buys missing reagents just in time. A remote Lab can't (no Shop delivery off-home), so `BioLabController.step()` at a non-home outpost calls `outpost_reagents.publish_reagent_requests(outpost)` (errors `swallowed()`): one `logistics_requests.set_requests(outpost_id, "bio_reagents", {item: (target, have)}, buyable=True)` per `REAGENT_REQUEST_REFRESH_TICKS = 600` per outpost (whole target = need tier; `have` = `logistics_requests.outpost_stock()`, Warehouses + Drone Depots). The Pioneer hauler homed there fetches free stock first and buys the rest (`_shop_source()`, §2i).
+A home Bio Lab buys missing reagents just in time. A remote Lab can't (no Shop delivery off-home), so `BioLabController.step()` at a non-home outpost calls `outpost_reagents.publish_reagent_requests(outpost)` (errors `swallowed()`): `logistics_requests.publish_requests(outpost_id, "bio_reagents", {item: (target, have)}, buyable=True)`, recomputed every `REAGENT_REQUEST_REFRESH_TICKS = 600` per outpost (whole target = need tier; `have` = `logistics_requests.outpost_stock()`, Warehouses + Drone Depots). The Pioneer hauler homed there fetches free stock first and buys the rest (`_shop_source()`, §2i).
 
 **`outpost_reagents.py`** mirrors `outpost_mining.py` seed-once-then-editable convention (`assigned_reagents_for(outpost_id)`, `reagent_stock_target_for(outpost_id, item_id)`), but per-reagent, not one flat constant (reagent prices span 1cr to 1,000cr):
 
