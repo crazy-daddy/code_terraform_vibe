@@ -41,6 +41,7 @@ from fleet_decommission import decommission_state
 from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole
 from swallow import swallowed
+from script_parking import start_script
 from storage import inventory_count
 
 # Worst -> best, kit id -> the Depot typeId it deploys (lib/drone_energy.py).
@@ -125,18 +126,6 @@ class FleetUpgradeCoordinator:
         except Exception as error:
             swallowed("fleet_upgrade.FleetUpgradeCoordinator._drones: fleet.drones", error)
             return {}
-
-    def _start_script(self, machine_id):
-        """run_control.start(), treating already_running as success. Returns the status."""
-        run = _component("run_control")
-        if not run:
-            return "no_run_control"
-        try:
-            res = run.start(machine_id)
-        except Exception as e:
-            swallowed("fleet_upgrade.FleetUpgradeCoordinator._start_script: run.start", e)
-            return f"error: {e}"
-        return "ok" if res.status in ("ok", "already_running") else res.status
 
     def _stop_script(self, machine_id):
         run = _component("run_control")
@@ -340,7 +329,7 @@ class FleetUpgradeCoordinator:
                 self._patch("depots", old_id, state="draining")
                 self.log.end()
                 return f"{old_id}: {new_id} running"
-            started = self._start_script(new_id)
+            started = start_script(new_id)
             if started != "ok":
                 self.log.end()
                 return f"{old_id}: waiting for a script on {new_id} (run scripts_sync or paste drone_station.py)"
@@ -367,7 +356,7 @@ class FleetUpgradeCoordinator:
             res = computer.undeploy(old_id)
             if res.status not in ("ok", "not_found"):
                 attempts = int(entry.get("attempts", 0)) + 1
-                self._start_script(old_id)  # keep draining meanwhile
+                start_script(old_id)  # keep draining meanwhile
                 if attempts >= MAX_UNDEPLOY_ATTEMPTS:
                     self._patch("depots", old_id, state="blocked", reason=res.status)
                     update_fleet_upgrade(lambda s: s.get("retiring_depots", []).remove(old_id) if old_id in s.get("retiring_depots", []) else None)
@@ -465,7 +454,7 @@ class FleetUpgradeCoordinator:
                 self._patch("drones", old_id, state="fitting")
                 self.log.end()
                 return f"{old_id}: {new_id} running"
-            started = self._start_script(new_id)
+            started = start_script(new_id)
             if started != "ok":
                 self.log.end()
                 return f"{old_id}: waiting for a script on {new_id} (run scripts_sync or paste drone.py)"
@@ -517,7 +506,7 @@ class FleetUpgradeCoordinator:
                 attempts = int(entry.get("attempts", 0)) + 1
                 if attempts >= MAX_UNDEPLOY_ATTEMPTS:
                     self._patch("drones", old_id, state="blocked", reason=res.status)
-                    self._start_script(old_id)
+                    start_script(old_id)
                     self.log.level("warn").print(f"[fleet_upgrade] Drone '{old_id}': undeploy refused {attempts}x ({res.status}: {res.message}); swap blocked, drone back to work.")
                     return f"{old_id}: blocked ({res.status})"
                 self._patch("drones", old_id, attempts=attempts)

@@ -122,24 +122,8 @@ class MiningDrillController:
         self.log.end()
 
     def publish_telemetry(self, entry, curr_tick):
-        # The updater must stay pure (docs/components/data_archive.md): a log
-        # call inside it gets the whole transaction rejected, so collect and
-        # log after.
         pruned = []
-
-        def updater(status):
-            if not isinstance(status, dict):
-                status = {}
-            for drill_id in list(status.keys()):
-                other = status[drill_id]
-                if drill_id != self.name and (not isinstance(other, dict) or curr_tick - other.get("tick", 0) >= STATUS_STALE_TICKS):
-                    pruned.append(drill_id)
-                    del status[drill_id]
-            status[self.name] = entry
-            return status
-
-        del pruned[:]
-        if not archive.transaction(STATUS_KEY, {}, updater):
+        if not archive.set_entry_pruned(STATUS_KEY, self.name, entry, curr_tick, STATUS_STALE_TICKS, pruned):
             self.log.level("warn").print(f"[{self.name}] {STATUS_KEY} write rejected; telemetry not published this cycle.")
             return
         for other_id in pruned:

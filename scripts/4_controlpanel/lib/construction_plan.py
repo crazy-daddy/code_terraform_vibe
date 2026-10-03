@@ -40,7 +40,7 @@ def claim_free(claim, me, tick, stale_ticks):
 
 
 def coords_of(pos):
-    """(x, y) floats from a tuple/list, dict or Position object, None if unreadable (VehicleController.extract_coords())."""
+    """(x, y) floats from a tuple/list, dict or Position object, None if unreadable. Also VehicleController.extract_coords()."""
     if pos is None:
         return None
     if isinstance(pos, (tuple, list)) and len(pos) >= 2:

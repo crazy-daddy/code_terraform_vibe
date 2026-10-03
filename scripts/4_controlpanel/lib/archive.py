@@ -124,6 +124,26 @@ class ArchiveClient:
             return entries
         return self.transaction(key, {}, updater)
 
+    def set_entry_pruned(self, key, entry_id, value, tick, stale_ticks, pruned):
+        """
+        Atomically sets key[entry_id] = value and drops every other entry that is
+        not a dict or whose "tick" is stale_ticks or more behind tick. pruned
+        (a list) receives the dropped ids; log them after this returns, since a
+        log call inside the updater gets the transaction rejected.
+        """
+        def updater(entries):
+            del pruned[:]
+            if not isinstance(entries, dict):
+                entries = {}
+            for other_id in list(entries.keys()):
+                other = entries[other_id]
+                if other_id != entry_id and (not isinstance(other, dict) or tick - other.get("tick", 0) >= stale_ticks):
+                    pruned.append(other_id)
+                    del entries[other_id]
+            entries[entry_id] = value
+            return entries
+        return self.transaction(key, {}, updater)
+
     def pop_entry(self, key, entry_id):
         """Atomically removes key[entry_id] (no-op if absent)."""
         def updater(entries):

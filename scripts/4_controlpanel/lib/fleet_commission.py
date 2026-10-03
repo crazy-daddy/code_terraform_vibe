@@ -65,6 +65,7 @@ from outpost_mining import HOME_OUTPOST_ID
 import cash
 from tree_console import TreeConsole
 from swallow import swallowed
+from script_parking import start_script
 from storage import inventory_count
 
 # lib/cash.py consumer ids, one per job kind.
@@ -237,18 +238,6 @@ class FleetCommissionCoordinator:
         except Exception as error:
             swallowed("fleet_commission.FleetCommissionCoordinator._drones: fleet.drones", error)
             return None
-
-    def _start_script(self, machine_id):
-        """run_control.start(), treating already_running as success. Returns the status."""
-        run = _component("run_control")
-        if not run:
-            return "no_run_control"
-        try:
-            res = run.start(machine_id)
-        except Exception as e:
-            swallowed("fleet_commission.FleetCommissionCoordinator._start_script: run.start", e)
-            return f"error: {e}"
-        return "ok" if res.status in ("ok", "already_running") else res.status
 
     def _patch(self, job_id, **fields):
         def mutate(state):
@@ -435,7 +424,7 @@ class FleetCommissionCoordinator:
                 self._patch(job_id, state="fitting")
                 self.log.end()
                 return f"{label}: {new_id} running"
-            if self._start_script(new_id) != "ok":
+            if start_script(new_id) != "ok":
                 self.log.end()
                 return f"{label}: waiting for a script on {new_id} (run scripts_sync)"
             self.log.end()
@@ -570,7 +559,7 @@ class FleetCommissionCoordinator:
                 self._patch(job_id, state="fitting")
                 self.log.end()
                 return f"{label}: {new_id} running"
-            if self._start_script(new_id) != "ok":
+            if start_script(new_id) != "ok":
                 self.log.end()
                 return f"{label}: waiting for a script on {new_id} (run scripts_sync)"
             self.log.end()

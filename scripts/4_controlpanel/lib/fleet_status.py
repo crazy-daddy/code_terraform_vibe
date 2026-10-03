@@ -31,6 +31,36 @@ FLEET_STATUS_MIN_INTERVAL_TICKS = 50
 # cleared on them.
 IDLE_STATES = ("IDLE", "IDLE_AT_OUTPOST", "IDLE_AT_BASE", "READY_AT_OUTPOST", "RECALLED", "AWAITING_MODULES", "SURVEY_COMPLETE", "UPGRADE_HOLD")
 
+# Intent column (fleet.status[id]["intent"], lib/fleet_intent.py): what the
+# job is and whom it serves. Word-wrapped onto up to INTENT_LINES lines of
+# the room left of the right-hand controls, at INTENT_CHAR_PX per character
+# (font size 10); the last line is cut with "..".
+INTENT_CHAR_PX = 6
+INTENT_LINES = 2
+INTENT_LINE_PX = 13
+
+
+def wrap_text(text, width_px, max_lines=INTENT_LINES):
+    """text word-wrapped to width_px at INTENT_CHAR_PX per character, at most
+    max_lines lines; an overlong last line or word is cut with ".."."""
+    chars = int(width_px // INTENT_CHAR_PX)
+    if chars <= 2:
+        return []
+    lines, line = [], ""
+    for word in text.split(" "):
+        candidate = f"{line} {word}" if line else word
+        if len(candidate) <= chars or not line:
+            line = candidate
+            continue
+        lines.append(line)
+        line = word
+    if line:
+        lines.append(line)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1][:chars - 2] + ".."
+    return [l if len(l) <= chars else l[:chars - 2] + ".." for l in lines]
+
 # name -> (payload without "tick", tick last written). Per script process.
 _last_published = {}
 

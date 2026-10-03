@@ -40,6 +40,7 @@ from vehicle_claims import set_vehicle_recalled
 from drone_claims import set_drone_recalled
 from tree_console import TreeConsole
 from swallow import swallowed
+from script_parking import start_script
 from storage import inventory_count
 
 DECOMMISSION_KEY = "fleet.decommission"
@@ -180,14 +181,6 @@ class FleetDecommissionCoordinator:
         except Exception as error:
             swallowed("fleet_decommission.FleetDecommissionCoordinator._stop_script: run_control", error)
 
-    def _start_script(self, machine_id):
-        run = _component("run_control")
-        try:
-            if run:
-                run.start(machine_id)
-        except Exception as error:
-            swallowed("fleet_decommission.FleetDecommissionCoordinator._start_script: run_control", error)
-
     def _patch(self, machine_id, **fields):
         def mutate(s):
             entry = s.get(machine_id)
@@ -245,7 +238,7 @@ class FleetDecommissionCoordinator:
         res = computer.undeploy(machine_id)
         if res.status != "ok":
             attempts = int(entry.get("attempts", 0)) + (0 if res.status in RETRY_STATUSES else 1)
-            self._start_script(machine_id)
+            start_script(machine_id)
             if attempts >= MAX_UNDEPLOY_ATTEMPTS:
                 self._patch(machine_id, state="blocked", attempts=attempts, reason=res.status)
                 _set_recalled(machine_id, kind, False)

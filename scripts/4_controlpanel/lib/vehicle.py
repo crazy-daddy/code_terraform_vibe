@@ -24,6 +24,7 @@ from vehicle_cargo import VehicleCargoMixin
 from vehicle_survey import VehicleSurveyMixin
 from vehicle_mining import VehicleMiningMixin
 from outpost_mining import HOME_OUTPOST_ID
+from construction_plan import coords_of
 
 
 class VehicleController(
@@ -140,18 +141,8 @@ class VehicleController(
 
     @staticmethod
     def extract_coords(pos):
-        """Safely extracts (x, y) float tuple from tuple/list, dict, or Position object."""
-        if pos is None:
-            return None
-        if isinstance(pos, (tuple, list)) and len(pos) >= 2:
-            return (float(pos[0]), float(pos[1]))
-        if isinstance(pos, dict) and "x" in pos and "y" in pos:
-            return (float(pos["x"]), float(pos["y"]))
-        x = getattr(pos, "x", None)
-        y = getattr(pos, "y", None)
-        if x is not None and y is not None:
-            return (float(x), float(y))
-        return None
+        """(x, y) floats from a tuple/list, dict or Position object, None if unreadable."""
+        return coords_of(pos)
 
     def get_current_tick(self):
         """Fetches current simulation tick from clock component if available."""

@@ -30,7 +30,7 @@
 # The latch state lives in the grid manager's memory; a control room restart starts both off.
 
 from archive import archive
-from script_parking import PARKED_KEY
+from script_parking import PARKED_KEY, set_powered
 from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -277,17 +277,7 @@ class TurbineCommitment:
     # ------------------------------------------------------------------ writes
 
     def _set_powered(self, turbine_id, on):
-        if self.power is None:
-            return False
-        try:
-            result = self.power.set_powered(turbine_id, on)
-        except Exception as error:
-            swallowed("turbine_commit._set_powered: power.set_powered", error)
-            return False
-        status = getattr(result, "status", "")
-        if status != "ok":
-            log.debug(f"set_powered({turbine_id}, {on}) -> {status}")
-        return status == "ok"
+        return set_powered(self.power, turbine_id, on, log)
 
     @staticmethod
     def _heartbeat(grid_id_str, now):

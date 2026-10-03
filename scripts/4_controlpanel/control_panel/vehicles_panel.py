@@ -33,40 +33,15 @@ import fleet_status
 # the row's own role/home column already makes via its "home_x + 90 < controls_x" check.
 SPORT_NAV_BTN_MIN_WIDTH = 1100
 
-# Intent column (fleet.status[id]["intent"], lib/fleet_intent.py): what the
-# job is and whom it serves. Word-wrapped onto up to INTENT_LINES lines of
-# the room left of the right-hand controls, at INTENT_CHAR_PX per character
-# (font size 10); the last line is cut with "..".
-INTENT_CHAR_PX = 6
-INTENT_LINES = 2
-INTENT_LINE_PX = 13
+# Intent column: fleet_status.wrap_text(), INTENT_LINE_PX apart.
+INTENT_LINE_PX = fleet_status.INTENT_LINE_PX
 
 RETIRE_BTN_W = 64
 RETIRE_BTN_GAP = 8
 
 
-def wrap_text(text, width_px, max_lines=INTENT_LINES):
-    chars = int(width_px // INTENT_CHAR_PX)
-    if chars <= 2:
-        return []
-    lines, line = [], ""
-    for word in text.split(" "):
-        candidate = f"{line} {word}" if line else word
-        if len(candidate) <= chars or not line:
-            line = candidate
-            continue
-        lines.append(line)
-        line = word
-    if line:
-        lines.append(line)
-    if len(lines) > max_lines:
-        lines = lines[:max_lines]
-        lines[-1] = lines[-1][:chars - 2] + ".."
-    return [l if len(l) <= chars else l[:chars - 2] + ".." for l in lines]
-
-
 def draw_intent(x, y, text, width_px):
-    for index, line in enumerate(wrap_text(text, width_px)):
+    for index, line in enumerate(fleet_status.wrap_text(text, width_px)):
         panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
 
 
@@ -80,7 +55,7 @@ def outpost_names():
 
 def draw_assignment(x, y, status, names, width_px):
     """Role and home outpost (fleet.status "role"/"home") on two lines; blank until the script publishes them."""
-    chars = max(0, int(width_px // INTENT_CHAR_PX))
+    chars = max(0, int(width_px // fleet_status.INTENT_CHAR_PX))
     role = status.get("role")
     home = status.get("home")
     if role:

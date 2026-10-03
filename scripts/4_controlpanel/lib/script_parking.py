@@ -279,6 +279,39 @@ def _held(machine_id, now):
     return isinstance(holds, dict) and holds.get(machine_id, 0) > now
 
 
+def start_script(machine_id):
+    """run_control.start(machine_id), treating already_running as success.
+    Returns "ok", the refusal status, "no_run_control" or "error: <exception>"."""
+    try:
+        run = get_component("run_control")
+    except Exception as error:
+        swallowed("script_parking.start_script: get_component", error)
+        run = None
+    if not run:
+        return "no_run_control"
+    try:
+        res = run.start(machine_id)
+    except Exception as error:
+        swallowed("script_parking.start_script: run.start", error)
+        return f"error: {error}"
+    return "ok" if res.status in ("ok", "already_running") else res.status
+
+
+def set_powered(power, machine_id, on, log):
+    """power_control.set_powered(machine_id, on); True on "ok". A refusal is
+    logged at debug on log, an exception goes to swallowed()."""
+    if power is None:
+        return False
+    try:
+        result = power.set_powered(machine_id, on)
+    except Exception as error:
+        swallowed("script_parking.set_powered: power.set_powered", error)
+        return False
+    status = getattr(result, "status", "")
+    if status != "ok":
+        log.debug(f"set_powered({machine_id}, {on}) -> {status}")
+    return status == "ok"
+
 class ParkRequester:
     """
     Machine-side half: call `update(idle)` once per step. After PARK_AFTER_IDLE_STEPS
@@ -728,17 +761,7 @@ class ScriptParking:
             return False
 
     def _set_powered(self, machine_id, on):
-        if self.power is None:
-            return False
-        try:
-            result = self.power.set_powered(machine_id, on)
-        except Exception as error:
-            swallowed("script_parking._set_powered: power.set_powered", error)
-            return False
-        status = getattr(result, "status", "")
-        if status != "ok":
-            log.debug(f"set_powered({machine_id}, {on}) -> {status}")
-        return status == "ok"
+        return set_powered(self.power, machine_id, on, log)
 
     def _is_running(self, machine_id):
         if self.run_control is None:

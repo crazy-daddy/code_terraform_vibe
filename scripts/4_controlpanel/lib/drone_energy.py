@@ -449,45 +449,30 @@ class DroneEnergyMixin:
     def get_all_drone_depots(self):
         return discover_drone_depots()
 
-    def get_nearest_drone_service(self, from_coords=None):
-        """
-        Returns (coords, station_info_dict) for the nearest drone_service_station
-        -- this drone's power "home". Falls back to (0.0, 0.0)/{} when none is
-        deployed yet, EXCEPT it prefers self.home_coords if already resolved
-        (getattr default avoids an AttributeError during DroneController.__init__,
-        before self.home_coords is assigned).
-        """
-        self._host.log.start(f"[{self._host.name}] get_nearest_drone_service", level="debug")
+    def _nearest(self, label, candidates, from_coords):
+        """(coords, info) of the candidate nearest to from_coords (default: own position);
+        self.home_coords (else (0.0, 0.0)) with an empty id when there is none. The
+        getattr default covers DroneController.__init__, before home_coords is set."""
+        self._host.log.start(f"[{self._host.name}] nearest {label}", level="debug")
         ref_coords = from_coords if from_coords is not None else self._host.position()
-        stations = self.get_all_drone_services()
-        if not stations:
+        if not candidates:
             fallback = getattr(self, "home_coords", (0.0, 0.0))
-            self._host.log.trace(f"no drone_service_station deployed yet; falling back to home_coords {fallback}.")
+            self._host.log.trace(f"no {label} deployed yet; falling back to home_coords {fallback}.")
             self._host.log.end()
             return fallback, {"id": "", "coords": fallback}
-        best = min(stations, key=lambda st: self._host.distance_between(ref_coords, st["coords"]))
-        self._host.log.trace(f"{len(stations)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
+        best = min(candidates, key=lambda c: self._host.distance_between(ref_coords, c["coords"]))
+        self._host.log.trace(f"{len(candidates)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
         self._host.log.end()
         return best["coords"], best
 
+    def get_nearest_drone_service(self, from_coords=None):
+        """(coords, station_info) of the nearest drone_service_station -- this drone's power "home"."""
+        return self._nearest("drone_service_station", self.get_all_drone_services(), from_coords)
+
     def get_nearest_drone_depot(self, from_coords=None):
-        """
-        Returns (coords, depot_info_dict) for the nearest drone_depot -- this
-        drone's cargo "home", a DISTINCT endpoint from get_nearest_drone_service()
-        (see module docstring). Same fallback shape as get_nearest_drone_service().
-        """
-        self._host.log.start(f"[{self._host.name}] get_nearest_drone_depot", level="debug")
-        ref_coords = from_coords if from_coords is not None else self._host.position()
-        depots = self.get_all_drone_depots()
-        if not depots:
-            fallback = getattr(self, "home_coords", (0.0, 0.0))
-            self._host.log.trace(f"no drone_depot deployed yet; falling back to home_coords {fallback}.")
-            self._host.log.end()
-            return fallback, {"id": "", "coords": fallback}
-        best = min(depots, key=lambda d: self._host.distance_between(ref_coords, d["coords"]))
-        self._host.log.trace(f"{len(depots)} candidate(s) from {ref_coords}, nearest '{best.get('id')}' at {best['coords']} ({self._host.distance_between(ref_coords, best['coords']):.1f}m).")
-        self._host.log.end()
-        return best["coords"], best
+        """(coords, depot_info) of the nearest drone_depot -- this drone's cargo "home", a DISTINCT
+        endpoint from get_nearest_drone_service() (see module docstring)."""
+        return self._nearest("drone_depot", self.get_all_drone_depots(), from_coords)
 
     def resolve_home_depot(self, home_depot=None):
         """
