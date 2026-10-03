@@ -23,7 +23,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from storage import take_item, total_stock, drain_port_to_storage, local_port_target, hit_slot_cap, eject_unneeded
+from storage import take_item, total_stock, drain_port_storage_first, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
 import wildlife_common as wc
@@ -212,21 +212,9 @@ class FeedMakerController:
         """Empties the output bin to a home Warehouse (Inventory fallback); True when it held feed."""
         if int(self._call("get_output_count", 0)) <= 0:
             return False
-        try:
-            moved = drain_port_to_storage(self.maker.output, outpost=self.outpost)
-            if moved:
-                self.log.debug(f"[{self.name}] {moved} feed to a Warehouse.")
-        except Exception as error:
-            swallowed("feed_maker.FeedMakerController.drain_output: drain_port_to_storage", error)
-        target = local_port_target(self.outpost)
-        if int(self._call("get_output_count", 0)) <= 0 or not target:
-            return True
-        try:
-            self.maker.output.connect(target)
-            for item, count in self.output_counts().items():
-                self.maker.output.send(item, count)
-        except Exception as error:
-            swallowed("feed_maker.FeedMakerController.drain_output: output.send", error)
+        moved = drain_port_storage_first(self.maker.output, outpost=self.outpost)
+        if moved:
+            self.log.debug(f"[{self.name}] {moved} feed to storage.")
         return True
 
     # ---------------------------------------------------------------- loop

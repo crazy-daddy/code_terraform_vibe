@@ -28,7 +28,7 @@
 # demand-aware miner drones act on.
 
 from archive import archive
-from storage import take_item, drain_port_to_storage, best_unload_target
+from storage import take_item, drain_port_inventory_first, best_unload_target
 import logistics_requests
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -222,39 +222,24 @@ class SeedMakerController:
             except Exception as e:
                 self.log.level("warn").print(f"[{self.name}] eject '{item_id}' failed: {e}")
 
+    def _output_count(self):
+        """Seeds waiting in the output bin, None when unreadable."""
+        try:
+            return int(self.maker.get_output_count())
+        except Exception as error:
+            swallowed("seed_maker.SeedMakerController._output_count: self.maker.get_output_count", error)
+            return None
+
     def _drain_output(self):
-        """Sends a waiting seed to home Inventory (where planting starts), else to local storage."""
-        self.log.start(f"[{self.name}] _drain_output", level="debug")
-        try:
-            if self.maker.get_output_count() <= 0:
-                self.log.end()
-                return True
-        except Exception as error:
-            swallowed("seed_maker.SeedMakerController._drain_output: self.maker.get_output_count", error)
-            self.log.end()
+        """Sends a waiting seed to home Inventory (where planting starts), else to local storage. True once the output bin is empty."""
+        if not self._output_count():
             return True
-        port = self.maker.output
-        try:
-            for stack in port.stacks():
-                if port.connected_id() != "inventory":
-                    port.connect("inventory")
-                res = port.send(stack.id, stack.count)
-                if getattr(res, "status", "") in ("ok", "partial"):
-                    self.log.print(f"[{self.name}] Seed '{stack.id}' sent to Inventory.")
-                else:
-                    self.log.debug(f"send '{stack.id}' to Inventory -> {getattr(res, 'status', '?')}; trying local storage.")
-                    drain_port_to_storage(port, outpost=self.outpost)
-        except Exception as e:
-            self.log.debug(f"output drain raised: {e}")
-        try:
-            _ret = self.maker.get_output_count() <= 0
-            self.log.end()
-            return _ret
-        except Exception as error:
-            swallowed("seed_maker.SeedMakerController._drain_output: self.maker.get_output_count #2", error)
-            self.log.end()
-            return False
-        self.log.end()
+        for item_id, moved, destination, status, message in drain_port_inventory_first(self.maker.output, outpost=self.outpost):
+            if moved > 0:
+                self.log.print(f"[{self.name}] Seed '{item_id}' sent to {destination}.")
+            else:
+                self.log.debug(f"[{self.name}] Seed '{item_id}' not drained: {status} {message}")
+        return self._output_count() == 0
 
     # ---------------------------------------------------------- planning
 

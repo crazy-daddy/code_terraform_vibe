@@ -13,7 +13,7 @@
 # local_biome_processor()'s docstring for why that would be circular); only each
 # biome's thin entrypoint script imports its own controller directly.
 from archive import archive
-from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target
+from storage import take_item, warehouse_stock, total_stock, drain_port_to_storage, discover_storage_buildings, best_unload_target, send_stack
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -912,21 +912,19 @@ class BioLabController:
                 if target is None:
                     self.log.debug(f"[{self.name}] No local storage has room for {stack.count}x {stack.id} -- leaving staged, retrying next cycle.")
                     return False  # no local storage has room -- leave staged, retry next cycle
-                if hasattr(self.machine.output, "connected_id") and self.machine.output.connected_id() != target:
-                    self.machine.output.connect(target)
-                res_send = self.machine.output.send(stack.id, stack.count)
-                if res_send.status == "ok":
-                    self.log.print(f"[{self.name}] Sent {res_send.moved}x {stack.id} to '{target}'.")
+                moved, status, message = send_stack(self.machine.output, stack.id, stack.count, target)
+                if status == "ok":
+                    self.log.print(f"[{self.name}] Sent {moved}x {stack.id} to '{target}'.")
                     self.inventory_full_notified = False
-                elif res_send.status == "busy":
+                elif status == "busy":
                     flush_all()
                     sleep(0.2)
                     return False
-                elif res_send.status in ["target_full", "slots_full", "inventory_full"]:
+                elif status in ["target_full", "slots_full", "inventory_full"]:
                     self.handle_storage_full()
                     return False
                 else:
-                    self.log.level("warn").print(f"[{self.name}] Output notice: {res_send.status} - {res_send.message}")
+                    self.log.level("warn").print(f"[{self.name}] Output notice: {status} - {message}")
                     flush_all()
                     sleep(0.5)
                     return False

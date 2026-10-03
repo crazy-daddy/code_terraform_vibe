@@ -657,6 +657,22 @@ def _take_from_current(port, item_id, remaining):
     return (getattr(res, "moved", 0) or 0), getattr(res, "status", None)
 
 
+def send_stack(port, item_id, count, target):
+    """
+    Points `port` (an OutputSlot) at `target` unless already connected there,
+    then send(item_id, count). Returns (moved, status, message); a raising
+    connect/send gives (0, "exception", error text).
+    """
+    try:
+        if not hasattr(port, "connected_id") or port.connected_id() != target:
+            port.connect(target)
+        res = port.send(item_id, count)
+    except Exception as error:
+        swallowed("storage.send_stack: port.send", error)
+        return 0, "exception", str(error)
+    return (getattr(res, "moved", 0) or 0), getattr(res, "status", None), getattr(res, "message", "")
+
+
 def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False):
     """
     Sends every stack currently staged in `port` (a machine output/byproduct slot
@@ -696,21 +712,35 @@ def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False)
         target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost)
         if target is None:
             continue  # no local storage has room -- leave it staged, try again next cycle
-        if hasattr(port, "connected_id") and port.connected_id() != target:
-            try:
-                port.connect(target)
-            except Exception as error:
-                swallowed("storage.drain_port_to_storage: port.connect", error)
-                continue
-
-        try:
-            res = port.send(item_id, count)
-        except Exception as error:
-            swallowed("storage.drain_port_to_storage: port.send", error)
-            continue
-        moved_total += getattr(res, "moved", 0) or 0
+        moved_total += send_stack(port, item_id, count, target)[0]
 
     return moved_total
+
+
+def drain_port_storage_first(port, outpost=None):
+    """
+    Sends every stack staged in `port` to a local Warehouse
+    (drain_port_to_storage()), then whatever no Warehouse took to
+    local_port_target() (Inventory at home, the first local Warehouse
+    elsewhere). For outputs that should stay out of Inventory unless the
+    Warehouses are full (Seed Supply seeds, Feed Maker feed). Returns total
+    units moved.
+    """
+    moved = drain_port_to_storage(port, outpost=outpost)
+    target = local_port_target(outpost)
+    if not target or not port or not hasattr(port, "stacks"):
+        return moved
+    try:
+        stacks = port.stacks()
+    except Exception as error:
+        swallowed("storage.drain_port_storage_first: port.stacks", error)
+        return moved
+    for stack in stacks:
+        item_id = getattr(stack, "id", None)
+        count = getattr(stack, "count", 0)
+        if item_id and count > 0:
+            moved += send_stack(port, item_id, count, target)[0]
+    return moved
 
 
 # OutputSlot.send() rejections that mean "Inventory has no room for this"
@@ -766,27 +796,18 @@ def drain_port_inventory_first(port, outpost=None):
         count = getattr(stack, "count", 0)
         if not item_id or count <= 0:
             continue
-        try:
-            if not hasattr(port, "connected_id") or port.connected_id() != "inventory":
-                port.connect("inventory")
-            res = port.send(item_id, count)
-        except Exception as error:
-            swallowed("storage.drain_port_inventory_first: port.connected_id", error)
-            results.append((item_id, 0, "inventory", "exception", str(error)))
-            continue
-        status = getattr(res, "status", None)
-        moved = getattr(res, "moved", 0) or 0
+        moved, status, message = send_stack(port, item_id, count, "inventory")
         if moved > 0:
-            results.append((item_id, moved, "inventory", status, getattr(res, "message", "")))
+            results.append((item_id, moved, "inventory", status, message))
         if status not in INVENTORY_FULL_STATUSES:
             if moved <= 0:
-                results.append((item_id, 0, "inventory", status, getattr(res, "message", "")))
+                results.append((item_id, 0, "inventory", status, message))
             continue
         fallback = drain_port_to_storage(port, outpost=outpost, include=lambda i, wanted=item_id: i == wanted, allow_partial=True)
         if fallback > 0:
             results.append((item_id, fallback, "warehouse", "ok", ""))
         elif moved <= 0:
-            results.append((item_id, 0, "inventory", status, getattr(res, "message", "")))
+            results.append((item_id, 0, "inventory", status, message))
     return results
 
 

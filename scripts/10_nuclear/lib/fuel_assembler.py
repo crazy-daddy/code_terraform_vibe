@@ -37,7 +37,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from storage import take_item, takeable_stock, total_stock, drain_port_inventory_first, outpost_is_home
+from storage import take_item, takeable_stock, total_stock, drain_port_inventory_first, outpost_is_home, send_stack
 from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_remaining_requirements, set_upgrade_order
 from script_parking import ParkRequester
 import lead_cask
@@ -338,19 +338,12 @@ class FuelAssemblerController:
         if rods > 0 and rod_cask is None:
             self.log.debug(f"{rods} Fuel Rod(s) waiting for a Fuel Rod cask")
         elif rods > 0:
-            try:
-                port = self.machine.output
-                if port.connected_id() != rod_cask:
-                    port.connect(rod_cask)
-                result = port.send(ROD_ITEM, rods)
-                moved = getattr(result, "moved", 0) or 0
-                if moved > 0:
-                    moved_any = True
-                    self.log.print(f"[{self.name}] Sent {moved}x {ROD_ITEM} to '{rod_cask}'.")
-                elif getattr(result, "status", "") != "busy":
-                    self.log.level("warn").print(f"[{self.name}] Rod output to '{rod_cask}': {getattr(result, 'status', '?')} - {getattr(result, 'message', '')}")
-            except Exception as error:
-                swallowed("fuel_assembler.FuelAssemblerController.drain_output: output.send", error)
+            moved, status, message = send_stack(self.machine.output, ROD_ITEM, rods, rod_cask)
+            if moved > 0:
+                moved_any = True
+                self.log.print(f"[{self.name}] Sent {moved}x {ROD_ITEM} to '{rod_cask}'.")
+            elif status not in ("busy", "exception"):
+                self.log.level("warn").print(f"[{self.name}] Rod output to '{rod_cask}': {status} - {message}")
         if counts.get(BATTERY_ITEM, 0) > 0:
             for item_id, moved, destination, status, message in drain_port_inventory_first(self.machine.output, outpost=self.outpost):
                 if moved > 0:

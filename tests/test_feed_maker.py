@@ -53,7 +53,7 @@ class FeedMakerTestCase(harness.StubTestCase):
         self.home = {"forage": 1000, "sea_algae": 10, "snow_moss": 10, "sulfur_moss": 10, "cinder_lichen": 10}
         self.feed_stock = {}
         self.taken = []
-        self._orig = (feed_maker.take_item, feed_maker.total_stock, feed_maker.drain_port_to_storage,
+        self._orig = (feed_maker.take_item, feed_maker.total_stock, feed_maker.drain_port_storage_first,
                       feed_maker.local_port_target, feed_maker.logistics_requests)
 
         def fake_take(port, item_id, amount, outpost=None, cache=None, report=None):
@@ -67,12 +67,12 @@ class FeedMakerTestCase(harness.StubTestCase):
 
         feed_maker.take_item = fake_take
         feed_maker.total_stock = lambda item_id, outpost=None: self.feed_stock.get(item_id, 0)
-        feed_maker.drain_port_to_storage = lambda port, outpost=None, include=None, allow_partial=False: 0
+        feed_maker.drain_port_storage_first = lambda port, outpost=None: 0
         feed_maker.local_port_target = lambda outpost=None: "inventory"
         feed_maker.logistics_requests = _Logistics(self.home)
 
     def tearDown(self):
-        (feed_maker.take_item, feed_maker.total_stock, feed_maker.drain_port_to_storage,
+        (feed_maker.take_item, feed_maker.total_stock, feed_maker.drain_port_storage_first,
          feed_maker.local_port_target, feed_maker.logistics_requests) = self._orig
         super().tearDown()
 

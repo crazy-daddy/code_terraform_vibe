@@ -20,7 +20,7 @@ from archive import archive
 import logistics_requests
 from seed_maker import SeedMakerController, STATUS_KEY, REQUESTER_ID, REQUEST_REFRESH_TICKS
 from seed_maker import IDLE_POLL_SECONDS, combo_key, _now_tick
-from storage import total_stock, drain_port_to_storage
+from storage import total_stock, drain_port_storage_first
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
 from script_parking import ParkRequester, wake_kind
@@ -113,17 +113,14 @@ class SeedSupplyController(SeedMakerController):
         Override: finished seeds go to a home Warehouse, not Inventory. The
         Harvester stages one into Inventory right before load_seed()
         (lib/field_keeper.py), so the 15 seed stacks don't clutter Inventory.
-        Falls back to stage A's Inventory send if no Warehouse has room.
+        Falls back to Inventory if no Warehouse has room.
         """
-        try:
-            if self.maker.get_output_count() <= 0:
-                return True
-            moved = drain_port_to_storage(self.maker.output, outpost=self.outpost)
-            if moved:
-                self.log.print(f"[{self.name}] {moved} seed(s) sent to a Warehouse.")
-        except Exception as e:
-            self.log.debug(f"[{self.name}] output drain to Warehouse raised: {e}")
-        return SeedMakerController._drain_output(self)
+        if not self._output_count():
+            return True
+        moved = drain_port_storage_first(self.maker.output, outpost=self.outpost)
+        if moved:
+            self.log.print(f"[{self.name}] {moved} seed(s) sent to storage.")
+        return self._output_count() == 0
 
     def _deficits(self, now):
         """{seed_id: seeds still to make} = demand - seeds in Inventory and home Warehouses."""
