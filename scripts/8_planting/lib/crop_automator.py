@@ -20,9 +20,15 @@
 #      `output_full` -> wait until a consumer pulls (see 7); QUIET_BLOCKERS
 #      are normal states, logged at debug only
 #   5. harvest every mature layout crop it owns (status "mature" or
-#      growth >= 1.0), except garden crops (field_layout.kept_crop()): they
+#      growth >= 1.0) the output has room for, except garden crops (field_layout.kept_crop()): they
 #      are planted once and never harvested, since a mature crop still
 #      counts toward the species multiplier. A garden automator only plants.
+#      Output room: a harvest that finds the output short keeps what fits
+#      and discards the rest (result "partial"), so harvests are only queued
+#      while free output space covers one learned harvest yield each
+#      (harvest_budget(); yield = largest recent harvest, HARVEST_YIELD_*).
+#      Queued harvests beyond that budget are canceled (trim_harvests());
+#      the cell stays mature until room frees up.
 #   6. plant every open layout cell it owns, once the machines beside the
 #      cell give every care service the species needs (Crop Automators only
 #      apply Fertilizer / Growth Accelerant: light, water and salt must come
@@ -32,18 +38,21 @@
 #      home Warehouses (storage.take_item()) instead of one per job. The
 #      Harvester's plant.seed_demand covers the automated cells, so the Seed
 #      Maker makes them.
-#   7. Forage stays in its output (up to 50,000 units): no drain to
+#   7. Forage stays in its output (up to OUTPUT_CAP units): no drain to
 #      Warehouses, so auto-loaders stay free. A clogged automator is
 #      accepted over clogged Warehouses. Consumers (the Plant Terraformer via
 #      storage.take_item()) take it from there directly, clogged automators
-#      first (storage.crop_automator_forage())
+#      first (storage.crop_automator_forage()). An automator parked with
+#      mature crops waiting for room is woken by take_item() only once the
+#      pull leaves room for one harvest (storage.crop_automator_wake_free()).
 # Nothing is queued while the Power Guard has shed it (`power.shedded`) or
 # while the layout is still the starter one. Loose items on its cells are
 # swept by the Harvester (a plant job needs an empty cell).
 #
 # Telemetry: `plant.automators` = {machine_id: {"sector", "status", "queue",
-# "cells", "mature", "open", "waiting_machines", "forage", "garden", "tick"}}
-# (one shared dict, stale entries pruned). "forage" = Forage in the output;
+# "cells", "mature", "open", "waiting_machines", "forage", "harvest_yield",
+# "garden", "tick"}} (one shared dict, stale entries pruned). "forage" =
+# Forage in the output; "harvest_yield" = the learned Forage per harvest;
 # "garden" = the automator sits in the diversity garden (columns
 # 1..field_layout.garden_cols(fill)), read by storage.crop_automator_forage().
 # An automator the full layout doesn't reserve (left over from an older
@@ -76,6 +85,9 @@ SEED_DEMAND_FALLBACK_TICKS = 3000  # Harvester's plant.seed_demand older than th
 # placed, result inbox full -- consume_results() empties it): debug only.
 QUIET_BLOCKERS = ("no_power", "not_placed", "results_full")
 SEED_PULL_BATCH = 10               # batch-load seeds into input to avoid per-job storage transfers
+OUTPUT_CAP = 50000                 # output buffer (docs/components/crop_automator.md)
+HARVEST_YIELD_DEFAULT = 1000       # Forage per harvest until one is seen (Crowncap ~900 with the Yield Amplifier)
+HARVEST_YIELD_DECAY = 0.95         # per harvest seen: estimate = max(this harvest, estimate x decay)
 
 
 def _position(ref):
@@ -102,6 +114,7 @@ class CropAutomatorController:
         self._automators = None
         self._mine = None
         self._ready = {}                   # {(sector, species): services_ready}
+        self._harvest_yield = HARVEST_YIELD_DEFAULT  # learned Forage per harvest (learn_yield())
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -229,6 +242,8 @@ class CropAutomatorController:
             consumed += 1
             action = getattr(res, "action", None)
             sector = getattr(res, "sector", None)
+            if action == "harvest" and status in ("ok", "partial"):
+                self.learn_yield((getattr(res, "collected", 0) or 0) + (getattr(res, "discarded", 0) or 0))
             if status == "ok":
                 collected = getattr(res, "collected", 0) or 0
                 self.log.debug(f"{action} {sector} ok{' +' + str(collected) + ' Forage' if collected else ''}.")
@@ -241,8 +256,26 @@ class CropAutomatorController:
         self.log.end()
         return consumed
 
+    def learn_yield(self, harvested):
+        """Feeds one harvest's Forage (kept + discarded) into the yield estimate."""
+        if harvested <= 0:
+            return
+        estimate = max(int(harvested), int(self._harvest_yield * HARVEST_YIELD_DECAY))
+        if estimate != self._harvest_yield:
+            self.log.trace(f"[{self.name}] Harvest yield estimate {self._harvest_yield} -> {estimate} Forage.")
+        self._harvest_yield = estimate
+
+    def harvest_budget(self):
+        """(harvests the free output space holds at the learned yield, free units)."""
+        free = OUTPUT_CAP - self.output_forage()
+        return max(0, free // max(1, self._harvest_yield)), free
+
     def queued_jobs_info(self):
-        """Returns (queued_sectors: set, committed_seeds: dict[seed_id, int], blocked_job: CropJob | None)."""
+        """
+        Returns (queued_sectors: set, committed_seeds: dict[seed_id, int],
+        blocked_job: CropJob | None, harvests: list[CropJob]); harvests in
+        FIFO order, the active job first.
+        """
         sectors = set()
         committed = {}
         blocked = None
@@ -250,12 +283,13 @@ class CropAutomatorController:
             jobs = list(self.machine.get_queue() or [])
             current = self.machine.current_job()
             if current is not None:
-                jobs.append(current)
+                jobs.insert(0, current)
                 if getattr(current, "state", None) == "blocked" or getattr(current, "blocker", None):
                     blocked = current
         except Exception as error:
             swallowed("crop_automator.CropAutomatorController.queued_jobs_info: self.machine.get_queue", error)
-            return None, {}, None
+            return None, {}, None, []
+        harvests = [job for job in jobs if getattr(job, "action", None) == "harvest"]
         for job in jobs:
             s = getattr(job, "sector", None)
             if s:
@@ -264,7 +298,35 @@ class CropAutomatorController:
                 item_id = getattr(job, "item_id", None)
                 if item_id:
                     committed[item_id] = committed.get(item_id, 0) + 1
-        return sectors, committed, blocked
+        return sectors, committed, blocked, harvests
+
+    def trim_harvests(self, harvests, budget, queued):
+        """
+        Cancels queued harvests (FIFO) beyond `budget`, so none runs into a
+        full output and discards Forage. A harvest already working is left
+        to finish. Canceled
+        sectors leave `queued`. Returns (harvests still queued, canceled jobs).
+        """
+        kept = 0
+        canceled = []
+        for job in harvests:
+            running = getattr(job, "state", None) == "working" and not getattr(job, "blocker", None)
+            job_id = getattr(job, "id", None)
+            if kept < budget or running or job_id is None:
+                kept += 1
+                continue
+            res = self.machine.cancel_job(job_id)
+            sector = getattr(job, "sector", None)
+            if getattr(res, "status", None) == "ok":
+                queued.discard(sector)
+                canceled.append(job)
+            else:
+                kept += 1
+                self.log.debug(f"[{self.name}] cancel_job({job_id}) for harvest {sector} -> {getattr(res, 'status', '?')}.")
+        if canceled:
+            self.log.debug(f"[{self.name}] Output room for {budget} harvest(s): canceled {len(canceled)} queued harvest(s) "
+                           f"{[getattr(job, 'sector', '?') for job in canceled]}.")
+        return kept, canceled
 
     def seed_stock_in_port(self, seed_id):
         """Physical seeds of seed_id currently inside the machine input port."""
@@ -383,16 +445,17 @@ class CropAutomatorController:
         rules = field_layout.rules_from_published(archive.get(RECIPES_KEY, {}))
         deployed, automators, mine = self._field_view(curr_tick, layout_cells, reserved)
         self.refresh_seed_demand_if_stale(curr_tick, layout, rules, automators)
-        queued, committed_seeds, blocked_job = self.queued_jobs_info()
+        queued, committed_seeds, blocked_job, harvests = self.queued_jobs_info()
         if queued is None:
             return True
-        # Head job waiting only for its Forage to be pulled: nothing this script can
-        # do; storage.take_item() wakes a parked automator before pulling.
-        clog_wait = blocked_job is not None and getattr(blocked_job, "blocker", None) == "output_full"
+        budget, free = self.harvest_budget()
+        harvests_queued, canceled = self.trim_harvests(harvests, budget, queued)
+        harvest_room = max(0, budget - harvests_queued)
+        if blocked_job is not None and blocked_job in canceled:
+            blocked_job = None
         if blocked_job is not None:
             busy = True
             self.unblock_queue(blocked_job, curr_tick)
-        submitted = False
         try:
             queue_count = self.machine.queue_count()
             room = QUEUE_LIMIT - queue_count
@@ -433,14 +496,16 @@ class CropAutomatorController:
                 else:
                     waiting.append(sector)
         self.log.debug(f"[{self.name}] owns {len(mine)} cell(s): {len(mature)} mature, {len(open_cells)} open, "
-                       f"{len(waiting)} waiting for machines, queue room {room}.")
+                       f"{len(waiting)} waiting for machines, queue room {room}, output free {free} "
+                       f"= room for {harvest_room} more harvest(s) at {self._harvest_yield} Forage each.")
 
         for sector in mature:
-            if room <= 0:
+            if room <= 0 or harvest_room <= 0:
                 break
             if self.submit("harvest", sector):
                 room -= 1
-                busy = submitted = True
+                harvest_room -= 1
+                busy = True
         for sector in open_cells:
             if room <= 0:
                 break
@@ -460,11 +525,14 @@ class CropAutomatorController:
                 continue
             if self.submit("plant", sector, seed_id):
                 room -= 1
-                busy = submitted = True
+                busy = True
                 committed_seeds[seed_id] = committed_seeds.get(seed_id, 0) + 1
-        self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
+        full = " (output full)" if mature and harvest_room <= 0 else ""
+        self._note_state(f"{len(mine)} cell(s), {len(mature)} to harvest{full}, {len(open_cells)} to plant, {len(waiting)} waiting for machines")
         self.publish(curr_tick, mine, mature, open_cells, waiting)
-        self.parkable = not busy or (clog_wait and not consumed and not submitted)
+        # Mature crops waiting for output room are no work: it parks, and
+        # storage.take_item() wakes it once a pull leaves room for a harvest.
+        self.parkable = not busy
         return busy
 
     def _note_state(self, text):
@@ -484,7 +552,7 @@ class CropAutomatorController:
             status, queue = "?", None
         entry = {"sector": self.sector, "status": status, "queue": queue, "cells": len(mine),
                  "mature": len(mature), "open": len(open_cells), "waiting_machines": len(waiting),
-                 "forage": self.output_forage(), "garden": self.in_garden(), "tick": curr_tick}
+                 "forage": self.output_forage(), "harvest_yield": self._harvest_yield, "garden": self.in_garden(), "tick": curr_tick}
 
         def updater(state):
             if not isinstance(state, dict):

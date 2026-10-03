@@ -53,11 +53,13 @@ COMPONENTS = {
     "VehicleBattery": ["types.Battery"],
     "DroneBattery": ["types.DroneBattery"],
     "DroneDepot": ["api.drone_station"],
+    "CropAutomator": ["api.crop_automator"],
     "Habitat": ["api.habitat"],
 }
 VALUE_TYPES = {
     "Result": ["types.ActionResult", "types.TransferResult"],
     "Stack": ["types.ItemStack"],
+    "CropJob": ["types.CropJob"],
     "Recipe": ["types.Recipe"],
     "BuildingRef": ["types.BuildingRef"],
     "OutpostRef": ["types.OutpostRef"],

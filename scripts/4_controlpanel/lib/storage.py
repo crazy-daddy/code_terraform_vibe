@@ -389,14 +389,23 @@ def _now_tick():
 # Crop Automators (home Harvesting field, tier 8_planting) keep their Forage
 # in their output instead of draining it to Warehouses, so Forage consumers
 # take it from there (lib/crop_automator.py). A full output pauses the
-# automator's harvests (a partial harvest discards the rest), so clogged ones
-# are drained before anything else, and diversity-garden ones before the
-# fill: the garden carries the field's variety bonus.
+# automator's harvests (it queues one only while the output has room for
+# it), so clogged ones are drained before anything else, and diversity-garden
+# ones before the fill: the garden carries the field's variety bonus.
 CROP_AUTOMATOR_TYPE_ID = "crop_automator"
 CROP_AUTOMATOR_ITEM_ID = "forage"
 CROP_AUTOMATOR_OUTPUT_CAP = 50000     # output buffer (docs/components/crop_automator.md)
 CROP_AUTOMATOR_CLOG_FRACTION = 0.9    # at/above this fill (or status "output_full") it counts as clogged
-CROP_AUTOMATOR_STATUS_KEY = "plant.automators"  # lib/crop_automator.py telemetry; "garden" flag read here
+CROP_AUTOMATOR_STATUS_KEY = "plant.automators"  # lib/crop_automator.py telemetry; "garden", "harvest_yield" read here
+CROP_AUTOMATOR_WAKE_FREE_MIN = 1000   # a pull wakes a parked automator only if it leaves at least this much room (or its harvest_yield, if larger)
+
+
+def crop_automator_wake_free(automator_id):
+    """Free output units a parked Crop Automator needs before a wake is worth it: one harvest."""
+    telemetry = archive.get(CROP_AUTOMATOR_STATUS_KEY, {})
+    entry = telemetry.get(automator_id, {}) if isinstance(telemetry, dict) else {}
+    harvest_yield = entry.get("harvest_yield") if isinstance(entry, dict) else None
+    return max(CROP_AUTOMATOR_WAKE_FREE_MIN, harvest_yield or 0)
 
 
 def crop_automator_forage(outpost=None):
@@ -558,13 +567,16 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     remaining = amount
     log.start(f"take_item({item_id})", level="debug")
     automators = set()
-    for source_id, _held in _holder_candidates(item_id, outpost, cache, automators):
+    for source_id, held in _holder_candidates(item_id, outpost, cache, automators):
         if remaining <= 0:
             break
         if source_id in automators:
             # A Crop Automator parked on a full output (lib/script_parking.py) is
-            # switched on before we pull, so its waiting harvest runs on.
-            wake_for_visit(source_id, "Forage pulled", hold=False)
+            # switched on once this pull leaves room for one harvest; a smaller
+            # pull would only wake it to find no room.
+            free_after = CROP_AUTOMATOR_OUTPUT_CAP - (held - min(held, remaining))
+            if free_after >= crop_automator_wake_free(source_id):
+                wake_for_visit(source_id, "Forage pulled", hold=False)
         if source_id != current_id:
             try:
                 res = port.connect(source_id)

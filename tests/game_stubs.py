@@ -1418,6 +1418,53 @@ class DroneDepot(Building):
         return self._input_used()
 
 
+class CropJob:
+    """Crop Automator current_job() / get_queue() entry."""
+
+    def __init__(self, job_id, action, sector, state="queued", blocker=None, item_id=None):
+        self.id = job_id
+        self.action = action
+        self.sector = sector
+        self.state = state
+        self.blocker = blocker
+        self.item_id = item_id
+        self.progress = 0.0
+
+
+class CropAutomator(Building):
+    """Crop Automator: `jobs` is the FIFO (jobs[0] = current_job()); output
+    holds Forage up to 50,000."""
+    type_id = "crop_automator"
+
+    def __init__(self, world, machine_id, outpost, sector="C7"):
+        super().__init__(world, machine_id, outpost)
+        self.sector = sector
+        self.input = Slot(self, self.input_buffer, 400)
+        self.output = Slot(self, self.output_buffer, 50000)
+        self.jobs = []
+        self.canceled = []
+
+    def position(self):
+        return self.sector
+
+    def current_job(self):
+        return self.jobs[0] if self.jobs else None
+
+    def get_queue(self):
+        return list(self.jobs[1:])
+
+    def queue_count(self):
+        return len(self.jobs)
+
+    def cancel_job(self, job_id):
+        job = next((j for j in self.jobs if j.id == job_id), None)
+        if job is None:
+            return Result("not_found")
+        self.jobs.remove(job)
+        self.canceled.append(job_id)
+        return Result("ok")
+
+
 class HabitatBonusNode:
     def __init__(self, node_id, slot, source_species, insight_cost=1.0, purchased=False):
         self.id = node_id
