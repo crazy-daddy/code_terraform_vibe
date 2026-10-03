@@ -196,10 +196,13 @@ A2 and A4 both touch the `production_*` modules. Run A2 first, or merge the two 
 | `060d84f` | A7 | `compact()` runs every `COMPACT_TICK_INTERVAL` (6000 ticks, one game day). Rebalance and reclaim already ran at home only. |
 | `87f125e` | A3, A8 | Every Fabricator and Smelter wake was a timed `re-check due` (462 of 462), so a machine that parks again within `FRUITLESS_REPARK_TICKS` (150) of such a wake gets its next re-check doubled, up to `WAKE_BACKOFF_MAX_TICKS` (Fabricator and Smelter 1200, crop_automator and supply_dock 1800). The worst-case delay before an idle Fabricator sees new work grows from 300 to 1200 ticks. The low-reserve verdict per grid is cached for `RESERVE_CACHE_TICKS` (150), and tank ids come from the member rows already read. |
 | `f582cb9` | A1 | The output router leaves a full tank only for one emptier by more than `OUTPUT_REBALANCE_MARGIN` (0.02). Otherwise it returns `full` and stays connected. A stall on a full tank does not blacklist it. A routine rebalance logs at debug in `ensure_output_logged`. |
+| `fb50c80` | A8 | The parking pass wakes parked Fabricators and Smelters when their demand rises. It compares a signature built from archive reads only: manual, upgrade and backlog orders, Fabricator stock targets and the site plan wake Fabricators; ingot stock targets wake Smelters; a new order id in the dock plan wakes both. A demand wake resets the re-check backoff, so the 1200-tick cap only applies while demand is unchanged. It wakes the whole kind, not only the machines that can make the item. |
+| `9066282` | A6 | The panel and automation probe reaches 40 ids past the highest one found. |
 
 Open points from Phase A:
 
 - `HARVESTER_ID = "harvester_1"` is a fixed id. Replace it if an API or an archive entry ever lists the harvester.
+- Check in the logs how often `demand changed:` wakes fire. Upgrade and backlog orders are republished by their requesters, so an amount that rises and falls would wake Fabricators each time.
 - Measure the effect: run the tools with `--since` set to the deploy time of these commits.
 
 ### Phase B: static sweep (Haiku, read-only, parallel)
