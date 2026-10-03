@@ -127,6 +127,33 @@ class ForeignClaimTests(StubTestCase):
         self.assertEqual(w.notebook.data[fabricator.RECIPE_CLAIMS_KEY]["home"]["craft_gas_pipe_segment"]["fabricator"], "fabricator_2")
 
 
+class StickyRecipeTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        w.inventory.add("iron_ingot", 100)
+        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"gas_pipe_segment": 10, "liquid_pipe_segment": 40})
+        self.machine = w.add_fabricator("fabricator_1", w.home)
+        self.controller = fabricator.FabricatorController(self.machine)
+
+    def test_same_tier_keeps_current_recipe(self):
+        self.machine.recipe = "craft_gas_pipe_segment"
+        self.assertEqual(self.controller.choose_recipe().id, "craft_gas_pipe_segment")
+
+    def test_no_current_recipe_takes_biggest_shortfall(self):
+        self.assertEqual(self.controller.choose_recipe().id, "craft_liquid_pipe_segment")
+
+    def test_better_tier_preempts(self):
+        self.machine.recipe = "craft_gas_pipe_segment"
+        self.world.notebook.set(production.MANUAL_ORDERS_KEY, {"steel_plate": 2})
+        self.assertEqual(self.controller.choose_recipe().id, "craft_steel_plate")
+
+    def test_met_recipe_is_left(self):
+        self.machine.recipe = "craft_gas_pipe_segment"
+        self.world.inventory.add("gas_pipe_segment", 10)
+        self.assertEqual(self.controller.choose_recipe().id, "craft_liquid_pipe_segment")
+
+
 class RemoteFabricatorTests(StubTestCase):
     def setUp(self):
         super().setUp()

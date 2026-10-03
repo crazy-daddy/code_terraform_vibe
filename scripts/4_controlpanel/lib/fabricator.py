@@ -352,6 +352,12 @@ class FabricatorController(RecipeClaimMixin):
                 return 3
             return 4
         candidates.sort(key=lambda pair: (_priority_tier(pair[1]), -pair[0]))
+        # Sticky recipe: the current recipe stays while it is still short and
+        # no recipe of a better tier is; a bigger shortfall in the same tier
+        # doesn't switch. A switch ejects the staged inputs back to storage
+        # (eject_excess_inputs()) and loads new ones: two feeder trips per unit.
+        current_id = self.machine.get_recipe() if hasattr(self.machine, "get_recipe") else None
+        current = next((r for _missing, r in candidates if getattr(r, "id", None) == current_id), None) if current_id else None
         blocked = []
         sourceable = []
         held_by_others = self.foreign_claims(site_id) if candidates else {}
@@ -370,6 +376,11 @@ class FabricatorController(RecipeClaimMixin):
             if recipe_id in held_by_others and recipe_id not in self._claim_ticks:
                 self.log.debug(f"'{recipe_id}' already claimed by {held_by_others[recipe_id]!r}, trying next candidate")
                 continue
+            sticky = current is not None and recipe is not current and _priority_tier(current) == _priority_tier(recipe)
+            if sticky and self.recipe_unsourceable_reason(current, cache) is None and self.claim_recipe(current_id):
+                self.log.debug(f"keeping '{current_id}' over '{recipe_id}' (same tier, still short)")
+                self.log.end()
+                return current
             if self.claim_recipe(recipe_id):
                 output_item = getattr(recipe, "output_item", None)
                 tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall", "backlog order")[_priority_tier(recipe)]
@@ -395,12 +406,11 @@ class FabricatorController(RecipeClaimMixin):
         # Only join while there are more crafts left than Fabricators already
         # on it: the split rounds UP, so every joiner builds at least one craft.
         # Without this check, a 1-craft order gets one craft per joiner.
-        current_recipe_id = self.machine.get_recipe() if hasattr(self.machine, "get_recipe") else None
         for missing, recipe in sourceable:
             recipe_id = getattr(recipe, "id", "?")
             crafts_needed = -(-missing // max(1, getattr(recipe, "output_count", 1)))  # ceil division
             workers = get_fabricator_worker_count(recipe_id, site_id)
-            if current_recipe_id == recipe_id:
+            if current_id == recipe_id:
                 workers -= 1  # don't count ourselves as a peer
             if crafts_needed <= workers:
                 self.log.debug(f"not joining '{recipe_id}' -- {crafts_needed} craft(s) left, {workers} Fabricator(s) already on it")
