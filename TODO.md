@@ -34,9 +34,9 @@ Plan: [docs/plans/handler_unification.md](docs/plans/handler_unification.md). Me
 
 - [x] **R: request publishing**: move `site_supply._publish`/`_unchanged` into `logistics_requests.publish_requests()`, then migrate the 7 hand-rolled publishers (outpost_reagents, seed_maker, seed_supply, plant_terraformer_demand, wildlife_planner, pump_salt, bio_volcanic).
 - [ ] **F: fluid glue around the routers**:
-  - [ ] `discover_fluid_sources()` / `viable_fluid_source_pairs()` in `production_fluids` (~12 copies).
-  - [ ] `fluid_routing.port_starved()` (5 copies).
-  - [ ] Shared router event logging (`ensure_input_logged` / `ensure_output_logged`).
+  - [x] `discover_fluid_sources()` / `viable_fluid_source_pairs()` in `production_fluids` (~12 copies).
+  - [x] `fluid_routing.port_starved()` (5 copies).
+  - [x] Shared router event logging (`ensure_input_logged` / `ensure_output_logged`).
   - [ ] Optional: `HysteresisGate` for the steam guard and condenser gates.
 - [ ] **I: item load/drain**:
   - [ ] Drop essence_liquifier's `local_depots`/`depot_stock` copies.
