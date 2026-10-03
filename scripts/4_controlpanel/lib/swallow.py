@@ -90,3 +90,18 @@ def swallowed(where, error):
         # Logging must never turn a recovered error into a crash; nothing
         # left to report it with.
         pass
+
+
+def call_or(where, obj, method, default, *args):
+    """obj.<method>(*args), or `default` when obj lacks the method, the call
+    raises (logged via swallowed() as "<where>: <method>") or it returns
+    None. For controllers polling a machine's optional getters."""
+    fn = getattr(obj, method, None)
+    if fn is None:
+        return default
+    try:
+        value = fn(*args)
+    except Exception as error:
+        swallowed(f"{where}: {method}", error)
+        return default
+    return default if value is None else value

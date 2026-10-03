@@ -36,7 +36,7 @@
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
+from swallow import swallowed, call_or
 from storage import take_item, takeable_stock, total_stock, drain_port_inventory_first, outpost_is_home, send_stack
 from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_remaining_requirements, set_upgrade_order
 from script_parking import ParkRequester
@@ -97,15 +97,7 @@ class FuelAssemblerController:
             return 0
 
     def _call(self, method, default, *args):
-        fn = getattr(self.machine, method, None)
-        if fn is None:
-            return default
-        try:
-            value = fn(*args)
-        except Exception as error:
-            swallowed(f"fuel_assembler.FuelAssemblerController._call: {method}", error)
-            return default
-        return default if value is None else value
+        return call_or("fuel_assembler.FuelAssemblerController._call", self.machine, method, default, *args)
 
     def at_home(self):
         return outpost_is_home(self.outpost)

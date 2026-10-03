@@ -234,6 +234,7 @@ except Exception as error:
 - `where` = `"module.Class.function: call"`. Append ` #2`, ` #3` when one function has several sites calling the same thing. It is the dedupe key, so keep it unique per site.
 - Every caught error → one **debug** line. Identical consecutive errors at one site are logged once, so a per-tick handler can't flood the log.
 - "Code bug" types (`TypeError`, `AttributeError`, `NameError`, `KeyError`, `IndexError`, `ZeroDivisionError`) → also one **warn** per site per script run, visible without debug output on. Exception: `AttributeError` on `NoneType`, which is how a missing component (a `None` from `get_component()`) usually surfaces.
+- `call_or(where, obj, method, default, *args)`: `obj.<method>(*args)`, else `default` when the method is missing, raises (swallowed as `"<where>: <method>"`) or returns `None`. Machine controllers wrap it in a one-line `_call(method, default, *args)` (Fuel Assembler, Feed Maker, Habitat, Refiner).
 - Why: a broad except can't tell "game said no" from "our code is wrong" (e.g. a `TypeError` from a wrong API signature silently reads as "empty").
 - **Allowed to stay silent** (with a comment saying why):
   - inside an `archive.transaction()` updater: any log call there rejects the transaction;

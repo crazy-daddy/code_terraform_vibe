@@ -22,7 +22,7 @@
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
+from swallow import swallowed, call_or
 from storage import take_item, total_stock, drain_port_storage_first, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
@@ -63,15 +63,7 @@ class FeedMakerController:
             return 0
 
     def _call(self, method, default, *args):
-        fn = getattr(self.maker, method, None)
-        if fn is None:
-            return default
-        try:
-            value = fn(*args)
-        except Exception as error:
-            swallowed(f"feed_maker.FeedMakerController._call: {method}", error)
-            return default
-        return default if value is None else value
+        return call_or("feed_maker.FeedMakerController._call", self.maker, method, default, *args)
 
     # ------------------------------------------------------------ recipes
 

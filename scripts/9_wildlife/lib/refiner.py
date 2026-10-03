@@ -38,7 +38,7 @@
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
-from swallow import swallowed
+from swallow import swallowed, call_or
 from storage import take_item
 from script_parking import ParkRequester
 import fluid_routing
@@ -170,15 +170,7 @@ class RefinerController:
             return 0
 
     def _call(self, method, default, *args):
-        fn = getattr(self.refiner, method, None)
-        if fn is None:
-            return default
-        try:
-            value = fn(*args)
-        except Exception as error:
-            swallowed(f"refiner.RefinerController._call: {method}", error)
-            return default
-        return default if value is None else value
+        return call_or("refiner.RefinerController._call", self.refiner, method, default, *args)
 
     def _port(self, name):
         return getattr(self.refiner, name, None)
