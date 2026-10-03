@@ -38,13 +38,13 @@ Plan: [docs/plans/handler_unification.md](docs/plans/handler_unification.md). Me
   - [x] `fluid_routing.port_starved()` (5 copies).
   - [x] Shared router event logging (`ensure_input_logged` / `ensure_output_logged`).
   - [x] `hysteresis.HysteresisLatch` for the heater steam guard, condenser gates, oil surplus and reactor water reserve.
-- [ ] **I: item load/drain**:
-  - [ ] Drop essence_liquifier's `local_depots`/`depot_stock` copies.
-  - [ ] `storage.inventory_count()` (8 copies).
-  - [ ] Hand-rolled drains (seed_maker, seed_supply, feed_maker, bio, fuel_assembler rods) via `drain_port_storage_first` / `send_stack`.
-  - [ ] `logistics_requests.take_from_depots()`.
-  - [ ] `swallow.call_or()` (4 `_call` copies).
-  - [ ] Optional: `drain_and_report`.
+- [x] **I: item load/drain**:
+  - [x] Drop essence_liquifier's `local_depots`/`depot_stock` copies.
+  - [x] `storage.inventory_count()` (8 copies + field_keeper).
+  - [x] Hand-rolled drains (seed_maker, seed_supply, feed_maker, bio, fuel_assembler rods) via `drain_port_storage_first` / `send_stack`.
+  - [x] `logistics_requests.take_from_depots()`.
+  - [x] `swallow.call_or()` (4 `_call` copies).
+  - [ ] Optional, deferred: `drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
 - [ ] **C: clone pairs**:
   - [ ] tank/warehouse_upgrade base class.
   - [ ] drone/vehicle mission store.
