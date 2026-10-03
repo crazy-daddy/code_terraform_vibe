@@ -988,9 +988,12 @@ def get_manual_order_blocking_items(fabricator_outputs, orders=None, cache=None)
     is provably stuck without them first.
     """
     log.start("get_manual_order_blocking_items", level="debug")
-    manual_items = get_manual_orders() if orders is None else orders
-    frontier = {item_id: qty for item_id, qty in manual_items.items() if item_id in fabricator_outputs}
     stock = _stock_fn(cache)
+    if orders is None:
+        # Manual orders count units still to build (see get_fabricator_targets()), not a floor.
+        frontier = {item_id: stock(item_id) + qty for item_id, qty in get_manual_orders().items() if item_id in fabricator_outputs}
+    else:
+        frontier = {item_id: qty for item_id, qty in orders.items() if item_id in fabricator_outputs}
     blocking = set()
     depth = 0
     while frontier and depth < 6:  # same generous bound as the sibling cascades
@@ -1255,8 +1258,10 @@ def fabricator_root_targets(cache=None):
         if output_item:
             fabricator_outputs.add(output_item)
 
-    # Manual build orders (get_manual_orders()) max()'d in like every other source below -- they
-    # don't add to a standing target, they just guarantee at least this many exist. Priority over
+    # Manual build orders (get_manual_orders()) count units still to BUILD: consume_manual_order()
+    # counts them down as units leave a Fabricator, so stock already built never satisfies the
+    # rest. The order folds in as network stock + remaining (max()'d like every other source
+    # below), which root_remaining() nets back down to remaining - pipeline. Priority over
     # other demanded recipes (build these first regardless of shortfall size) is handled separately
     # in lib/fabricator.py's choose_recipe(), which needs get_manual_orders() itself, not just the
     # folded-in quantity, to tell which candidates to jump ahead.
@@ -1270,8 +1275,9 @@ def fabricator_root_targets(cache=None):
     # the default Fabricator's currently unlocked recipes, so this can false-positive for an item
     # only a different Fabricator (or a not-yet-unlocked recipe) can build -- it's a heads-up, not
     # proof the order is unfulfillable.
+    manual_cache = cache if cache is not None else SourceCache()
     for item_id, quantity in get_manual_orders().items():
-        targets[item_id] = max(targets.get(item_id, 0), quantity)
+        targets[item_id] = max(targets.get(item_id, 0), manual_cache.network_stock(item_id) + quantity)
         home_wants[item_id] = max(home_wants.get(item_id, 0), quantity)
         log.trace(f"get_fabricator_targets: manual order raises target for {item_id} -> {targets[item_id]}")
         if fabricator_outputs and item_id not in fabricator_outputs and item_id not in FUEL_ASSEMBLER_OUTPUTS and item_id not in _WARNED_UNKNOWN_MANUAL_ITEMS:

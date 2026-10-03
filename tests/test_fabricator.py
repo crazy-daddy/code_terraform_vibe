@@ -29,6 +29,13 @@ class HomeFabricatorTests(StubTestCase):
         self.assertEqual(w.inventory.count("steel_plate"), 2)
         self.assertEqual(production.get_manual_orders(), {"steel_plate": 3})
 
+    def test_manual_order_builds_remaining_on_top_of_stock(self):
+        w = self.world
+        w.add_fabricator("fabricator_1", w.home)
+        w.inventory.add("steel_plate", 9)
+        w.notebook.set(production.MANUAL_ORDERS_KEY, {"steel_plate": 7})
+        self.assertEqual(production.get_fabricator_targets().get("steel_plate"), 16)
+
     def test_eject_excess_to_home_storage(self):
         w = self.world
         f = w.add_fabricator("fabricator_1", w.home)
