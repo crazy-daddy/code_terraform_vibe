@@ -15,7 +15,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 1 | Terraforming formula table | this file |
 | 1a, 1a-0, 1a-1 | Brownout load-shedding, steam-aware Power Guard, grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1b, 1c, 1c-1, 1c-2, 1c-3, 1c-4 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine, Reactor heat control | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
-| 1d, 1d-1 | Tick-cost profiling, script cost model (cost scales with running-script count) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
+| 1d, 1d-1, 1d-2, 1d-3 | Tick-cost profiling, script cost model (cost scales with running-script count), script parking, machine activity (retire candidates) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1l | Wildlife game data: revival, stages, per-species fluids, bands, Insight, traits; revival/Insight schedule (§1l-1); Wildlife automation: planner, Habitat, Feed Maker (§1l-2) | [`cheatsheet/wildlife.md`](cheatsheet/wildlife.md) |
@@ -144,6 +144,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` (tier 5) — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
 | Script parking (idle machines' breakers off, solar scripts stopped at night; `ParkRequester` machine side, `ScriptParking` in `control_room_automation.py`) | `script_parking.py` — see dev_workflow.md §1d-2 |
 | Script census (counts running scripts every `CENSUS_TICK_INTERVAL = 300` ticks, logs `scripts running: N of M machines, allowance A steps/tick` for `devtools/log_block_timing.py`; called from `control_room_automation.py` `park_if_due()`) | `script_census.py` — see dev_workflow.md §1d-1 |
+| Machine activity (per-machine and per-group active/waiting/idle/running/parked/off time shares and `retire` candidates, archive `machine.activity`; sampled from each census snapshot by `control_room_automation.py`) | `machine_activity.py` — see dev_workflow.md §1d-3 |
 
 Root executable scripts (`solar_1.py`, `rover_1.py`, `control_room_automation.py`, etc.) stay thin entrypoints: import + run controller from `lib/`. No own copies of tier lists, thresholds, budgeting formulas.
 

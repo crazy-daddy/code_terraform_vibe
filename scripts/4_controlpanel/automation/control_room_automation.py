@@ -80,6 +80,7 @@ import wildlife_planner
 from fluid_routing import active_pipe_conflicts
 from script_parking import ScriptParking
 from script_census import census_if_due
+import machine_activity
 from tree_console import flush_all, reset_all
 
 OUTPOST_KNOWN_IDS_KEY = "outposts.known_ids"
@@ -229,7 +230,8 @@ def supervise_grids_if_due(clock, power):
 
 def park_if_due(clock, power):
     """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (parks idle machines, wakes due or triggered ones),
-    then the running-script census when due (script_census.census_if_due())."""
+    then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
+    machine activity sample (lib/machine_activity.py)."""
     global last_parking_tick, parking
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
     if last_parking_tick != 0 and now - last_parking_tick < PARKING_TICK_INTERVAL:
@@ -247,9 +249,15 @@ def park_if_due(clock, power):
     except Exception as e:
         report_error("Script parking", e)
     try:
-        census_if_due(now)
+        taken = census_if_due(now)
     except Exception as e:
         report_error("Script census", e)
+        taken = None
+    if taken is not None:
+        try:
+            machine_activity.record(taken, now)
+        except Exception as e:
+            report_error("Machine activity", e)
 
 
 def between_steps(clock):
