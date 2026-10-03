@@ -266,6 +266,19 @@ def active_pipe_conflicts(curr_tick):
     return [f"{label} x {entry.get('source')}" for label, entry in sorted(live.items())]
 
 
+def port_starved(port):
+    """Input FluidPort reads flow_rate() == 0 with room left -- a full port also reads 0, not a stall.
+    The is_starved signal for a FluidInputRouter on a machine without is_stalled()."""
+    try:
+        level = port.level() if hasattr(port, "level") else 0
+        capacity = port.capacity() if hasattr(port, "capacity") else 0
+        flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
+        return flow == 0 and (not capacity or level < capacity)
+    except Exception as error:
+        swallowed("fluid_routing.port_starved: port.level", error)
+        return False
+
+
 def fill_pct_of(building):
     """fill_pct() of an already-resolved building object, or 1.0 ("full, deprioritize") if unreadable/missing."""
     if not building or not hasattr(building, "fill_pct"):

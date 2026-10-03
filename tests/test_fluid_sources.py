@@ -1,8 +1,9 @@
-"""Stub tests for the shared fluid-source discovery: production.discover_fluid_sources() and
-fluid_routing.discover_ranked()."""
+"""Stub tests for the shared fluid-input glue: production.discover_fluid_sources(),
+fluid_routing.discover_ranked() and fluid_routing.port_starved()."""
 import unittest
 
 from harness import StubTestCase, production, fluid_routing
+from game_stubs import FluidPort
 
 
 class DiscoverFluidSourcesTests(StubTestCase):
@@ -37,6 +38,19 @@ class DiscoverRankedTests(StubTestCase):
         self.world.add_building("oil_pump_1", self.world.home, "oil_pump")
         tiers = (("liquid_tank", "oil"), ("oil_pump", None))
         self.assertEqual(fluid_routing.discover_ranked(tiers, "home"), ["oil_near", "oil_far", "oil_pump_1"])
+
+
+class PortStarvedTests(StubTestCase):
+    def test_no_flow_with_room_is_starved(self):
+        self.assertTrue(fluid_routing.port_starved(FluidPort(self.world, level=10)))
+
+    def test_full_port_is_not_starved(self):
+        self.assertFalse(fluid_routing.port_starved(FluidPort(self.world, level=100)))
+
+    def test_flowing_port_is_not_starved(self):
+        port = FluidPort(self.world, level=10)
+        port.flow = 0.5
+        self.assertFalse(fluid_routing.port_starved(port))
 
 
 if __name__ == "__main__":

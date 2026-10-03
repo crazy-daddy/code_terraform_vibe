@@ -344,18 +344,6 @@ class BioCasterController(BioProcessorController):
         return ids
 
     @staticmethod
-    def _port_starved(port):
-        """flow_rate() == 0 with room left -- a full port also reads 0, not a stall."""
-        try:
-            level = port.level() if hasattr(port, "level") else 0
-            capacity = port.capacity() if hasattr(port, "capacity") else 0
-            flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
-            return flow == 0 and (not capacity or level < capacity)
-        except Exception as error:
-            swallowed("bio_volcanic.BioCasterController._port_starved: port.level", error)
-            return False
-
-    @staticmethod
     def _port_level(port):
         try:
             return port.level() if port and hasattr(port, "level") else 0
@@ -390,7 +378,7 @@ class BioCasterController(BioProcessorController):
             def on_connect_notice(source_id, status, message, key=fluid_key):
                 self.log.level("warn").print(f"[{self.name}] {key} connect notice for '{source_id}': {status} - {message}")
 
-            event = router.ensure(port, curr_tick, self._port_starved(port), on_dropped, on_connect_notice)
+            event = router.ensure(port, curr_tick, fluid_routing.port_starved(port), on_dropped, on_connect_notice)
             if event.kind == "connected":
                 self.log.print(f"[{self.name}] Connected {fluid_key} -> '{event.source_id}'.")
             elif event.kind == "not_found":

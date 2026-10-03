@@ -63,18 +63,6 @@ def _current_tick(clock):
     return 0
 
 
-def _port_starved(port):
-    """flow_rate() == 0 with room left -- a full port also reads 0, not a stall."""
-    try:
-        level = port.level() if hasattr(port, "level") else 0
-        capacity = port.capacity() if hasattr(port, "capacity") else 0
-        flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
-        return flow == 0 and (not capacity or level < capacity)
-    except Exception as error:
-        swallowed("terraforming._port_starved: port.level", error)
-        return False
-
-
 class Mk3FluidFeed:
     """
     Keeps one Mk III input port (steam_in or water_in) on a reachable source,
@@ -218,7 +206,7 @@ class Mk3FluidFeed:
         def on_connect_notice(source_id, status, message):
             self.log.level("warn").print(f"[{self.name}] {self.fluid_key} connect notice for '{source_id}': {status} - {message}")
 
-        event = self.router.ensure(port, curr_tick, _port_starved(port), on_dropped, on_connect_notice)
+        event = self.router.ensure(port, curr_tick, fluid_routing.port_starved(port), on_dropped, on_connect_notice)
         if event.kind == "connected":
             self.log.print(f"[{self.name}] Connected {self.fluid_key} -> '{event.source_id}'.")
         elif event.kind == "not_found":

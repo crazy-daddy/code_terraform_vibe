@@ -47,18 +47,6 @@ class PlantTerraformerWaterMixin:
         host.log.end()
         return ids
 
-    @staticmethod
-    def _port_starved(port):
-        """flow_rate() == 0 with room left -- a full port also reads 0, not a stall."""
-        try:
-            level = port.level() if hasattr(port, "level") else 0
-            capacity = port.capacity() if hasattr(port, "capacity") else 0
-            flow = port.flow_rate() if hasattr(port, "flow_rate") else 0
-            return flow == 0 and (not capacity or level < capacity)
-        except Exception as error:
-            swallowed("plant_terraformer_water.PlantTerraformerWaterMixin._port_starved: port.level", error)
-            return False
-
     def ensure_water(self, curr_tick):
         host = self._host
         port = getattr(host.machine, "water_in", None)
@@ -81,7 +69,7 @@ class PlantTerraformerWaterMixin:
         def on_connect_notice(source_id, status, message):
             host.log.level("warn").print(f"[{host.name}] water_in connect notice for '{source_id}': {status} - {message}")
 
-        event = self._water_router.ensure(port, curr_tick, self._port_starved(port), on_dropped, on_connect_notice)
+        event = self._water_router.ensure(port, curr_tick, fluid_routing.port_starved(port), on_dropped, on_connect_notice)
         if event.kind == "connected":
             host.log.print(f"[{host.name}] Connected water_in -> '{event.source_id}'.")
         elif event.kind == "not_found":
