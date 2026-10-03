@@ -454,10 +454,11 @@ def _now_tick():
 
 # Crop Automators (home Harvesting field, tier 8_planting) keep their Forage
 # in their output instead of draining it to Warehouses, so Forage consumers
-# take it from there (lib/crop_automator.py). A full output pauses the
-# automator's harvests (it queues one only while the output has room for
-# it), so clogged ones are drained before anything else, and diversity-garden
-# ones before the fill: the garden carries the field's variety bonus.
+# take it from there (lib/crop_automator.py). Forage in Inventory or a
+# Warehouse drains first: it only takes slots there. Among the automators,
+# clogged ones go first (a full output pauses harvests; the automator queues
+# one only while the output has room for it), and diversity-garden ones
+# before the fill: the garden carries the field's variety bonus.
 CROP_AUTOMATOR_TYPE_ID = "crop_automator"
 CROP_AUTOMATOR_ITEM_ID = "forage"
 CROP_AUTOMATOR_OUTPUT_CAP = 50000     # output buffer (docs/components/crop_automator.md)
@@ -535,14 +536,15 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
     """
     [(source_id, units)] for every storage endpoint holding item_id, in the
     order take_item() should try them:
-      0. Forage only: clogged Crop Automators (garden first), before
-         anything else -- a full output stalls their harvests.
       1. Inventory (home only) -- it has no Auto Feeder of its own and never
          locks, so it's the one source that can't be "busy".
       2. Warehouses holding the item, most units first.
-      3. Forage only: the other Crop Automators, garden first, then most
-         Forage (Warehouse Forage drains first, keeping auto-loaders free).
-      4. ...with any endpoint that answered "busy" within
+      3. Forage only: clogged Crop Automators (a full output stalls their
+         harvests), garden first, then most Forage. Forage in Inventory and
+         Warehouses drains before any automator: it only takes slots there.
+      4. Forage only: the other Crop Automators, garden first, then most
+         Forage.
+      5. ...with any endpoint that answered "busy" within
          TAKE_BUSY_COOLDOWN_TICKS moved to the end (stable, so the order
          above is kept within each group).
     Endpoints holding 0 are left out entirely -- the old blind
@@ -555,13 +557,13 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
     is_home = outpost is None or bool(resolved and getattr(resolved, "is_home", False))
 
     holders = []
-    # {automator_id: rank within the sort: 0 = clogged, 3 = normal}, plus
+    # {automator_id: rank within the sort: 3 = clogged, 4 = normal}, plus
     # garden order; stored per id so nothing depends on the id's spelling.
     automator_rank = {}
     if item_id == CROP_AUTOMATOR_ITEM_ID and is_home:
         for ca_id, count, clogged, garden in crop_automator_forage(resolved):
             holders.append((ca_id, count))
-            automator_rank[ca_id] = (0 if clogged else 3, 0 if garden else 1)
+            automator_rank[ca_id] = (3 if clogged else 4, 0 if garden else 1)
             if automators is not None:
                 automators.add(ca_id)
     if cache is not None and outpost is None and hasattr(cache, "building_stock"):
@@ -592,7 +594,7 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
     now = _now_tick()
     ranked = []
     for source_id, count in holders:
-        # 0 clogged automator, 1 Inventory, 2 Warehouse, 3 other automator.
+        # 1 Inventory, 2 Warehouse, 3 clogged automator, 4 other automator.
         kind_rank, garden_rank = automator_rank.get(source_id, (1 if source_id == "inventory" else 2, 0))
         ranked.append(((1 if recently_busy(source_id, now) else 0, kind_rank, garden_rank, -count), (source_id, count)))
     ranked.sort(key=lambda pair: pair[0])
@@ -610,8 +612,8 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     input port exposing .connect(id)/.connected_id()/.take(item_id, count)).
     Only endpoints that actually hold the item are tried, in
     _holder_candidates() order (Inventory first, then Warehouses by most
-    stock, recently-"busy" ones last; Forage adds Crop Automators, clogged
-    ones before everything, the rest after Warehouses), reconnecting between them since a
+    stock, recently-"busy" ones last; Forage adds Crop Automators after
+    Warehouses, clogged ones first), reconnecting between them since a
     port holds one source at a time (same single-source constraint as
     FluidPort, see lib/thermal_cap.py). Stops once `amount` is met or every
     holder has been tried. Returns total units actually moved.

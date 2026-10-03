@@ -41,8 +41,9 @@
 #   7. Forage stays in its output (up to OUTPUT_CAP units): no drain to
 #      Warehouses, so auto-loaders stay free. A clogged automator is
 #      accepted over clogged Warehouses. Consumers (the Plant Terraformer via
-#      storage.take_item()) take it from there directly, clogged automators
-#      first (storage.crop_automator_forage()). An automator parked with
+#      storage.take_item()) take it from there directly, after any Forage in
+#      Inventory or Warehouses, clogged automators first
+#      (storage.crop_automator_forage()). An automator parked with
 #      mature crops waiting for room is woken by take_item() only once the
 #      pull leaves room for one harvest (storage.crop_automator_wake_free()).
 # Nothing is queued while the Power Guard has shed it (`power.shedded`) or

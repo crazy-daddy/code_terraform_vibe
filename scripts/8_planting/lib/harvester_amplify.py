@@ -12,7 +12,7 @@
 #      AMPLIFY_MIN_GROWING_FRACTION of the planted cells are growing, and
 #      no majority of the deployed Crop Automators is clogged
 #      (storage.crop_automator_forage(): output full, so extra Forage is
-#      discarded; Forage consumers drain clogged ones first). Skip reasons
+#      discarded; consumers drain clogged ones first among automators). Skip reasons
 #      are logged once per change of reason. A failed apply skips it for
 #      AMPLIFY_RETRY_TICKS, or AMPLIFY_BUSY_RETRY_TICKS when the dose could
 #      not be staged only because every Warehouse holding one was "busy".

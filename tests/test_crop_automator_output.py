@@ -82,6 +82,15 @@ class WakeOnPullTests(StubTestCase):
         self.assertTrue(self.pull(OUTPUT_CAP, 2700, harvest_yield=2700))
 
 
+class ForageDrainOrderTests(StubTestCase):
+    def test_inventory_and_warehouses_drain_before_any_automator(self):
+        automators = [("ca_clogged", OUTPUT_CAP, True, False), ("ca_garden", 100, False, True), ("ca_fill", 5000, False, False)]
+        cache = mock.Mock(building_stock=lambda _item_id: [("inventory", 5), ("wh_small", 10), ("wh_big", 2000)])
+        with mock.patch.object(storage, "crop_automator_forage", lambda outpost=None: automators):
+            order = [source for source, _units in storage._holder_candidates("forage", cache=cache)]
+        self.assertEqual(order, ["inventory", "wh_big", "wh_small", "ca_clogged", "ca_garden", "ca_fill"])
+
+
 class _Port:
     def connect(self, _source_id):
         return mock.Mock(status="not_local")
