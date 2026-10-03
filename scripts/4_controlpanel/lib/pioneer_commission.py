@@ -28,6 +28,7 @@ from pioneer_upgrade import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARG
 from swallow import swallowed
 from typing import TYPE_CHECKING
 from tree_console import flush_all
+from storage import inventory_count
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -177,14 +178,6 @@ class PioneerFittingMixin:
             swallowed("pioneer_commission.PioneerFittingMixin._slots: vehicle.modules", error)
             return []
 
-    def _inventory_count(self, item_id):
-        inventory = get_component("inventory")
-        try:
-            return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception as error:
-            swallowed("pioneer_commission.PioneerFittingMixin._inventory_count: inventory.count", error)
-            return 0
-
     def _wait_for(self, check):
         """Polls check() until True (mount/install are service orders; completion timing unconfirmed)."""
         for _ in range(FIT_POLL_TRIES):
@@ -212,7 +205,7 @@ class PioneerFittingMixin:
         for item in spec.get("modules") or []:
             if mounted.get(item, 0) >= wanted[item]:
                 continue
-            if self._inventory_count(item) <= 0:
+            if inventory_count(item) <= 0:
                 missing[item] = missing.get(item, 0) + 1
                 mounted[item] = mounted.get(item, 0) + 1  # counted once per missing unit
                 continue
@@ -247,7 +240,7 @@ class PioneerFittingMixin:
             for bay, installed in enumerate(slot.internal_items or []):
                 if installed is not None or not fill:
                     continue
-                if self._inventory_count(fill) <= 0:
+                if inventory_count(fill) <= 0:
                     missing[fill] = missing.get(fill, 0) + 1
                     continue
                 index = slot.index

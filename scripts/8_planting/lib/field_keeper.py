@@ -56,7 +56,7 @@ from harvester_planting import HarvesterPlantingMixin, PLANT_STATUSES
 from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
 from harvester_amplify import HarvesterAmplifyMixin
-from storage import total_stock, discover_storage_buildings, mark_busy, recently_busy
+from storage import total_stock, discover_storage_buildings, mark_busy, recently_busy, inventory_count
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
@@ -133,14 +133,7 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
     # -------------------------------------------------------------- helpers
 
     def inventory_count(self, item_id):
-        inventory = get_component("inventory")
-        if not inventory:
-            return 0
-        try:
-            return int(inventory.count(item_id))
-        except Exception as error:
-            swallowed("field_keeper.FieldKeeperController.inventory_count: inventory.count", error)
-            return 0
+        return inventory_count(item_id)
 
     def stock_count(self, item_id):
         """

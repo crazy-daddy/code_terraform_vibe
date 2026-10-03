@@ -65,6 +65,7 @@ from outpost_mining import HOME_OUTPOST_ID
 import cash
 from tree_console import TreeConsole
 from swallow import swallowed
+from storage import inventory_count
 
 # lib/cash.py consumer ids, one per job kind.
 CASH_CONSUMERS = {"pioneer": "pioneer_commission", "drone": "drone_commission"}
@@ -180,14 +181,6 @@ class FleetCommissionCoordinator:
             swallowed("fleet_commission.FleetCommissionCoordinator._credits: commander.get_credits", error)
             return 0
 
-    def _inventory_count(self, item_id):
-        inventory = _component("inventory")
-        try:
-            return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception as error:
-            swallowed("fleet_commission.FleetCommissionCoordinator._inventory_count: inventory.count", error)
-            return 0
-
     def _kit_wait_text(self, job_id, label, short):
         """
         Status for a drone kit not yet all in Inventory: parts still to craft
@@ -199,7 +192,7 @@ class FleetCommissionCoordinator:
         cache = SourceCache()
         built = {}
         for item_id, n in short.items():
-            elsewhere = cache.network_stock(item_id) - self._inventory_count(item_id)
+            elsewhere = cache.network_stock(item_id) - inventory_count(item_id)
             if elsewhere > 0:
                 built[item_id] = min(n, elsewhere)
         crafting = {i: n - built.get(i, 0) for i, n in short.items() if n - built.get(i, 0) > 0}
@@ -279,7 +272,7 @@ class FleetCommissionCoordinator:
         once the cash manager grants the whole cost. Returns None once everything is in
         Inventory, else a short waiting reason.
         """
-        needed = {item: n - self._inventory_count(item) for item, n in parts.items()}
+        needed = {item: n - inventory_count(item) for item, n in parts.items()}
         needed = {item: n for item, n in needed.items() if n > 0}
         if not needed:
             return None
@@ -496,7 +489,7 @@ class FleetCommissionCoordinator:
         self.log.debug(f"{label}: state '{state}'.")
 
         if state == "queued":
-            spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), self._inventory_count, set(self._catalogue()))
+            spec, reason = build_drone_spec(role, fabricator_unlocked_outputs(), inventory_count, set(self._catalogue()))
             if spec is None:
                 _ret = self._block(job, reason)
                 self.log.end()
@@ -515,7 +508,7 @@ class FleetCommissionCoordinator:
                 self.log.end()
                 return waiting
             parts = drone_spec_parts(spec)
-            short = {item: n - self._inventory_count(item) for item, n in parts.items() if self._inventory_count(item) < n}
+            short = {item: n - inventory_count(item) for item, n in parts.items() if inventory_count(item) < n}
             if short:
                 _ret = self._kit_wait_text(job_id, label, short)
                 self.log.end()

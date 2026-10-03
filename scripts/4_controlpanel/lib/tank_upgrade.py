@@ -41,6 +41,7 @@ from warehouse_upgrade import TRANSIENT_UNDEPLOY_STATUSES
 import cash
 from tree_console import TreeConsole
 from swallow import swallowed
+from storage import inventory_count
 
 SMALL_TYPE_ID = "liquid_tank"
 LARGE_TYPE_ID = "bulk_liquid_reservoir"   # also the Shop/Inventory kit id
@@ -108,14 +109,6 @@ class TankUpgrader:
             swallowed("tank_upgrade.TankUpgrader._ids_of: outpost.buildings", error)
             return []
 
-    def _inventory_count(self, item_id):
-        inventory = _component("inventory")
-        try:
-            return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception as error:
-            swallowed("tank_upgrade.TankUpgrader._inventory_count: inventory.count", error)
-            return 0
-
     def _credits(self):
         commander = _component("commander")
         try:
@@ -141,7 +134,7 @@ class TankUpgrader:
                 return True
         except Exception as error:
             swallowed("tank_upgrade.TankUpgrader._large_unlocked: research.is_unlocked", error)
-        return self._inventory_count(LARGE_TYPE_ID) > 0
+        return inventory_count(LARGE_TYPE_ID) > 0
 
     # ------------------------------------------------------------ state
 
@@ -196,7 +189,7 @@ class TankUpgrader:
         if swap and swap.get("state") == "blocked":
             return self._set_status(f"blocked ({swap.get('reason')}); delete fleet.upgrade['{SWAP_KEY}'] to retry")
 
-        if swap and not enabled and swap.get("state") == "buying" and self._inventory_count(LARGE_TYPE_ID) <= 0:
+        if swap and not enabled and swap.get("state") == "buying" and inventory_count(LARGE_TYPE_ID) <= 0:
             self._clear()
             self.log.print("[tank_upgrade] Switched off before buying: swap cancelled.")
             swap = None
@@ -248,7 +241,7 @@ class TankUpgrader:
 
         price = self._price()
         swaps = sum(-(-g[0] // SWAP_RATIO) for g in groups)
-        if self._inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=swaps * price, label=f"{swaps} Large Liquid Tank(s)"):
+        if inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=swaps * price, label=f"{swaps} Large Liquid Tank(s)"):
             self.log.debug(f"cash manager holds back {price} cr for '{outpost_id}' {liquid}; waiting.")
             _ret = f"saving up ({self._credits()}/{price} cr)"
             self.log.end()
@@ -289,7 +282,7 @@ class TankUpgrader:
         self.log.debug(f"Swap at '{outpost_id}': state '{state}'.")
 
         if state == "buying":
-            if self._inventory_count(LARGE_TYPE_ID) <= 0:
+            if inventory_count(LARGE_TYPE_ID) <= 0:
                 shop = _component("shop")
                 price = self._price()
                 if self._credits() < price:

@@ -19,6 +19,7 @@
 from archive import archive
 from swallow import swallowed
 from typing import TYPE_CHECKING
+from storage import inventory_count
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -187,16 +188,6 @@ class DroneUpgradeMixin:
 
     # ------------------------------------------------------------ lookups
 
-    def _inventory_count(self, item_id):
-        inventory = get_component("inventory")
-        if not inventory or not hasattr(inventory, "count"):
-            return 0
-        try:
-            return int(inventory.count(item_id) or 0)
-        except Exception as error:
-            swallowed("drone_upgrade.DroneUpgradeMixin._inventory_count: inventory.count", error)
-            return 0
-
     def _chassis_kind(self):
         """This drone's chassis (DroneRef.kind), or None if unreadable."""
         fleet = get_component("fleet")
@@ -229,14 +220,14 @@ class DroneUpgradeMixin:
 
     def _best_in_inventory(self, ladder):
         for item_id in reversed(ladder):
-            if self._inventory_count(item_id) > 0:
+            if inventory_count(item_id) > 0:
                 return item_id
         return None
 
     def _best_obtainable(self, ladder, unlocked):
         """Highest tier the Fabricator can build or Inventory already holds."""
         for item_id in reversed(ladder):
-            if item_id in unlocked or self._inventory_count(item_id) > 0:
+            if item_id in unlocked or inventory_count(item_id) > 0:
                 return item_id
         return None
 
@@ -465,7 +456,7 @@ class DroneUpgradeMixin:
             best = self._best_obtainable(ladder, unlocked)
             if not best or ladder.index(best) <= ladder.index(current):
                 continue
-            if self._inventory_count(best) <= 0:
+            if inventory_count(best) <= 0:
                 wanted[best] = wanted.get(best, 0) + 1
                 continue
             if self._uncouple(index) != "ok":

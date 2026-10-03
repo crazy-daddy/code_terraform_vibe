@@ -41,6 +41,7 @@ from fleet_decommission import decommission_state
 from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole
 from swallow import swallowed
+from storage import inventory_count
 
 # Worst -> best, kit id -> the Depot typeId it deploys (lib/drone_energy.py).
 DEPOT_KIT_TIERS = ["drone_station_kit", "drone_station_kit_medium", "drone_station_kit_large"]
@@ -87,17 +88,9 @@ class FleetUpgradeCoordinator:
 
     # ------------------------------------------------------------ lookups
 
-    def _inventory_count(self, item_id):
-        inventory = _component("inventory")
-        try:
-            return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception as error:
-            swallowed("fleet_upgrade.FleetUpgradeCoordinator._inventory_count: inventory.count", error)
-            return 0
-
     def _unlocked(self, ladder, unlocked_outputs):
         """Items of ladder the Fabricator can build or Inventory holds."""
-        return [i for i in ladder if i in unlocked_outputs or self._inventory_count(i) > 0]
+        return [i for i in ladder if i in unlocked_outputs or inventory_count(i) > 0]
 
     def _depots(self):
         """[{id, name, type_id, outpost_id}] for every Drone Depot of every size."""
@@ -305,7 +298,7 @@ class FleetUpgradeCoordinator:
         self.log.debug(f"Depot '{old_id}': state '{state}'.")
 
         if state == "ordered":
-            if self._inventory_count(kit) <= 0:
+            if inventory_count(kit) <= 0:
                 set_upgrade_order(REQUESTER, {kit: 1})
                 self.log.end()
                 return f"{old_id}: waiting for {kit}"
@@ -431,7 +424,7 @@ class FleetUpgradeCoordinator:
                 self._drop("drones", old_id)
                 self.log.end()
                 return f"{old_id}: gone, swap dropped"
-            if self._inventory_count(kind) <= 0:
+            if inventory_count(kind) <= 0:
                 set_upgrade_order(REQUESTER, {kind: 1})
                 self.log.end()
                 return f"{old_id}: waiting for {kind}"

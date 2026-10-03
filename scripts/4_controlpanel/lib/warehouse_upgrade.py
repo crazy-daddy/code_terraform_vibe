@@ -40,6 +40,7 @@ from drone_upgrade import fleet_upgrade_state, update_fleet_upgrade, is_upgrade_
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 import cash
+from storage import inventory_count
 
 SMALL_TYPE_ID = "warehouse"
 LARGE_TYPE_ID = "large_warehouse"      # also the Shop/Inventory kit id
@@ -123,14 +124,6 @@ class WarehouseUpgrader:
             swallowed("warehouse_upgrade.WarehouseUpgrader._total: wh.total", error)
             return 0
 
-    def _inventory_count(self, item_id):
-        inventory = _component("inventory")
-        try:
-            return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception as error:
-            swallowed("warehouse_upgrade.WarehouseUpgrader._inventory_count: inventory.count", error)
-            return 0
-
     def _credits(self):
         commander = _component("commander")
         try:
@@ -156,7 +149,7 @@ class WarehouseUpgrader:
                 return True
         except Exception as error:
             swallowed("warehouse_upgrade.WarehouseUpgrader._large_unlocked: research.is_unlocked", error)
-        return self._inventory_count(LARGE_TYPE_ID) > 0
+        return inventory_count(LARGE_TYPE_ID) > 0
 
     # ------------------------------------------------------------ state
 
@@ -195,7 +188,7 @@ class WarehouseUpgrader:
         if swap and swap.get("state") == "blocked":
             return self._set_status(f"blocked ({swap.get('reason')}); delete fleet.upgrade['{SWAP_KEY}'] to retry")
 
-        if swap and not enabled and swap.get("state") == "buying" and self._inventory_count(LARGE_TYPE_ID) <= 0:
+        if swap and not enabled and swap.get("state") == "buying" and inventory_count(LARGE_TYPE_ID) <= 0:
             self._clear()
             self.log.print("[warehouse_upgrade] Switched off before buying: swap cancelled.")
             swap = None
@@ -230,7 +223,7 @@ class WarehouseUpgrader:
 
         price = self._price()
         pairs = sum(-c[0] // SWAP_RATIO for c in candidates)
-        if self._inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=pairs * price, label=f"{pairs} Large Warehouse(s)"):
+        if inventory_count(LARGE_TYPE_ID) <= 0 and not cash.can_spend(CASH_CONSUMER, price, planned=pairs * price, label=f"{pairs} Large Warehouse(s)"):
             self.log.debug(f"cash manager holds back {price} cr for '{outpost_id}'; waiting.")
             _ret = f"saving up ({self._credits()}/{price} cr)"
             self.log.end()
@@ -278,7 +271,7 @@ class WarehouseUpgrader:
         self.log.debug(f"Swap at '{outpost_id}': state '{state}'.")
 
         if state == "buying":
-            if self._inventory_count(LARGE_TYPE_ID) <= 0:
+            if inventory_count(LARGE_TYPE_ID) <= 0:
                 shop = _component("shop")
                 price = self._price()
                 if self._credits() < price:

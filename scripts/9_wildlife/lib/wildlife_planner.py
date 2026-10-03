@@ -40,6 +40,7 @@ from wildlife_model import schedule_for, breeding_rate, breakthrough_effects, ad
 from atomic import run_atomic, run_batched
 import fluid_routing
 import wildlife_common as wc
+from storage import inventory_count
 
 PLAN_TICK_INTERVAL = 250            # one game hour
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
@@ -551,15 +552,6 @@ def _insight(statuses, now):
     return value
 
 
-def _inventory_count(item_id):
-    inventory = get_component("inventory")
-    try:
-        return int(inventory.count(item_id)) if inventory else 0
-    except Exception as error:
-        swallowed("wildlife_planner._inventory_count: inventory.count", error)
-        return 0
-
-
 def _fluid_stock(statuses):
     """{fluid: tons in every tank eligible for it}, for each fluid a Habitat band (or pre-fill) needs."""
     wanted = {}
@@ -662,7 +654,7 @@ def snapshot(now):
         "feed_stock": {i: stock.get(i, 0) for i in feed_items},
         "form_stock": {f: stock.get(f, 0) for f in forms},
         "populations": populations,
-        "mk2_packs": _inventory_count(wc.MK2_PACK_ITEM_ID),
+        "mk2_packs": inventory_count(wc.MK2_PACK_ITEM_ID),
         "home": home,
     }
 

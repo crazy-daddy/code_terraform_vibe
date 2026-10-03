@@ -181,6 +181,18 @@ def total_stock(item_id, outpost=None):
     return total
 
 
+def inventory_count(item_id):
+    """inventory.count(item_id): units in home Inventory only, 0 if unreadable."""
+    inventory = _component("inventory")
+    if not inventory or not hasattr(inventory, "count"):
+        return 0
+    try:
+        return int(inventory.count(item_id) or 0)
+    except Exception as error:
+        swallowed("storage.inventory_count: inventory.count", error)
+        return 0
+
+
 def warehouse_stock(item_id, outpost=None):
     """
     Sum of warehouse.count(item_id) across every discovered Warehouse at `outpost` --

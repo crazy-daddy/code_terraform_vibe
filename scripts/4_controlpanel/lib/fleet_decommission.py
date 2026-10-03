@@ -40,6 +40,7 @@ from vehicle_claims import set_vehicle_recalled
 from drone_claims import set_drone_recalled
 from tree_console import TreeConsole
 from swallow import swallowed
+from storage import inventory_count
 
 DECOMMISSION_KEY = "fleet.decommission"
 PIONEER_KIT_ID = "pioneer"
@@ -171,14 +172,6 @@ class FleetDecommissionCoordinator:
                     parts[item_id] = parts.get(item_id, 0) + 1
         return parts
 
-    def _inventory_count(self, item_id):
-        inventory = _component("inventory")
-        try:
-            return int(inventory.count(item_id) or 0) if inventory else 0
-        except Exception as error:
-            swallowed("fleet_decommission.FleetDecommissionCoordinator._inventory_count: inventory.count", error)
-            return 0
-
     def _stop_script(self, machine_id):
         run = _component("run_control")
         try:
@@ -247,7 +240,7 @@ class FleetDecommissionCoordinator:
             return f"{machine_id} not docked"
 
         parts = self._pioneer_parts(machine_id) if kind == "pioneer" else {}
-        before = {item_id: self._inventory_count(item_id) for item_id in parts}
+        before = {item_id: inventory_count(item_id) for item_id in parts}
         self._stop_script(machine_id)
         res = computer.undeploy(machine_id)
         if res.status != "ok":
@@ -278,7 +271,7 @@ class FleetDecommissionCoordinator:
         credits = 0
         unsold = []
         for item_id, count in parts.items():
-            units = min(count, self._inventory_count(item_id) - before.get(item_id, 0))
+            units = min(count, inventory_count(item_id) - before.get(item_id, 0))
             if units <= 0:
                 continue
             try:
