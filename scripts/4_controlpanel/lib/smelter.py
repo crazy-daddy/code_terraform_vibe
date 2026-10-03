@@ -98,7 +98,6 @@ class SmelterController:
         self.name = getattr(smelter, "id", "smelter_1")
         self.target_ore = target_ore
         self.inventory = get_component("inventory")
-        self.power = get_component("power_control")
         self.clock = get_component("clock")
 
         self.connected_in = False
@@ -385,9 +384,6 @@ class SmelterController:
                     self.log.end(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
                 else:
                     self.log.end(f"[{self.name}] Locked recipe '{current_recipe}' not cleared ({clear_res.status}).")
-                # Breaker cycling disabled: power_draw only applies while a
-                # recipe is running (see docs), so idle draw is already 0 W.
-                # self.power_down_if_idle()
             self.log_outcome("recipe_switch", recipe=current_recipe)
             return self.is_busy()
 
@@ -417,9 +413,6 @@ class SmelterController:
                     # power_draw only applies while a recipe is actively running,
                     # so clearing it here is state hygiene, not a power saving.
                     self.log.print(f"[{self.name}] Recipe cleared (no demand): every refined output is already at its stock target or order requirement.")
-            # Breaker cycling disabled: power_draw only applies while a
-            # recipe is running (see docs), so idle draw is already 0 W.
-            # self.power_down_if_idle()
             self.log_outcome("output_blocked" if output_blocked else self._select_miss_reason, demand=demands)
             return self.is_busy()
 
@@ -557,20 +550,6 @@ class SmelterController:
                     self.log.print(f"[{self.name}] No ore to smelt. Recipe cleared.")
         return bool(is_active)
 
-                # Breaker cycling disabled: idle draw is already 0 W per docs
-                # (Recipe.power_draw applies only while running), so switching
-                # the breaker off saves nothing and would need an external
-                # wake call to undo -- deliberately not automated, see
-                # lib/vehicle_cargo.py's module docstring.
-                # if self.power and hasattr(self.power, "set_powered"):
-                #     try:
-                #         if self.power.can_power_off(self.name) and self.power.is_powered(self.name):
-                #             print(f"[{self.name}] Powering OFF smelter breaker while idle. Rover/grid will wake on ore delivery.")
-                #             self.power.set_powered(self.name, False)
-                #             return
-                #     except Exception:
-                #         pass
-
     def recover_input(self):
         """Return staged material to Inventory (home) or a local Warehouse
         with room (elsewhere) before clearing a stale recipe."""
@@ -586,20 +565,6 @@ class SmelterController:
             if result.status in ["ok", "partial"]:
                 self.log.print(f"[{self.name}] Recovered {result.moved}x {stack.id} from stale recipe input to '{destination}'.")
         return self.smelter.get_input_count() == 0
-
-    def power_down_if_idle(self):
-        """Power off an idle Smelter after demand has been cleared. Currently
-        unused/disabled: per docs, power_draw only applies while a recipe is
-        actively running, so idle draw is already 0 W without this."""
-        if self.smelter.is_running() or self.smelter.get_input_count() > 0 or self.smelter.get_output_count() > 0:
-            return
-        if self.power and hasattr(self.power, "set_powered"):
-            try:
-                if self.power.can_power_off(self.name) and self.power.is_powered(self.name):
-                    self.log.print(f"[{self.name}] Powering OFF smelter breaker while idle.")
-                    self.power.set_powered(self.name, False)
-            except Exception as error:
-                swallowed("smelter.SmelterController.power_down_if_idle: self.power.can_power_off", error)
 
     def select_needed_ore(self, unlocked_recipes=None, demands=None, cache=None, dock_reserved=None):
         """Logs the decision trail as one debug block around _select_needed_ore()."""
