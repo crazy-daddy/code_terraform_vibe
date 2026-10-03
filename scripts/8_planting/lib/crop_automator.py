@@ -60,7 +60,7 @@
 
 from archive import archive
 import field_layout
-from storage import take_item
+from storage import take_item, hit_slot_cap, eject_unneeded
 from seed_supply import seed_buffer
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -339,6 +339,25 @@ class CropAutomatorController:
             swallowed("crop_automator.CropAutomatorController.seed_stock_in_port: port.stacks", error)
             return 0
 
+    def eject_unused_seeds(self, mine, layout_cells, rules):
+        """Ejects seeds no owned cell plants to Inventory, freeing material slots; other inputs (Fertilizer) stay."""
+        port = getattr(self.machine, "input", None)
+        if not port:
+            return
+        keep = set()
+        for sector in mine:
+            species = layout_cells.get(sector)
+            if species:
+                keep.add((rules.get(species) or {}).get("seed_id") or "seed_" + species)
+        try:
+            keep.update(st.id for st in port.stacks() if not st.id.startswith("seed_"))
+        except Exception as error:
+            swallowed("crop_automator.CropAutomatorController.eject_unused_seeds: port.stacks", error)
+            return
+        ejected = eject_unneeded(port, keep, "inventory")
+        if ejected:
+            self.log.print(f"[{self.name}] Input material slots full: ejected unused seeds {', '.join(ejected)}.")
+
     def unblock_queue(self, blocked_job, curr_tick):
         """Resolves or cancels a blocked FIFO head job so the executor doesn't freeze."""
         if blocked_job is None:
@@ -517,10 +536,13 @@ class CropAutomatorController:
             if available < 1:
                 port = getattr(self.machine, "input", None)
                 if port:
-                    pulled = take_item(port, seed_id, SEED_PULL_BATCH)
+                    report = {}
+                    pulled = take_item(port, seed_id, SEED_PULL_BATCH, report=report)
                     if pulled:
                         self.log.debug(f"[{self.name}] Batch-loaded {pulled}x {seed_id}.")
                         available += pulled
+                    elif hit_slot_cap(report):
+                        self.eject_unused_seeds(mine, layout_cells, rules)
             if available < 1:
                 continue
             if self.submit("plant", sector, seed_id):

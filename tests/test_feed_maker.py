@@ -14,9 +14,9 @@ class _FeedMaker(game_stubs.Machine):
     """Feed Maker: a recipe machine with a stockpile; logs recipe calls."""
     type_id = "feed_maker"
 
-    def __init__(self, world, recipe="", running=False, stock_pile=None, material_slots=None):
+    def __init__(self, world, recipe="", running=False, stock_pile=None):
         super().__init__(world, "feed_maker_1", world.home, [_recipe("salt_tortoise", ["sea_algae", "snow_moss"]), _recipe("spire_drake", ["sulfur_moss", "cinder_lichen"])])
-        self.input = game_stubs.Slot(self, self.input_buffer, 200, material_slots)
+        self.input = game_stubs.Slot(self, self.input_buffer, 200)
         self.output = game_stubs.Slot(self, self.output_buffer, 50)
         self.recipe = recipe
         self.running = running
@@ -128,8 +128,8 @@ class FeedMakerTests(FeedMakerTestCase):
 
     def test_slots_full_ejects_strays_despite_room(self):
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        strays = {"sea_algae": 1, "snow_moss": 1, "lava_algae": 1}
-        maker = _FeedMaker(self.world, recipe=wc.recipe_of("spire_drake"), stock_pile=dict(strays, forage=100), material_slots=4)
+        strays = {f"stray_{i}": 1 for i in range(game_stubs.MATERIAL_SLOTS["feed_maker"] - 1)}
+        maker = _FeedMaker(self.world, recipe=wc.recipe_of("spire_drake"), stock_pile=dict(strays, forage=100))
         ctrl = feed_maker.FeedMakerController(maker)
         ctrl.step()
         self.assertEqual(self.taken, [])

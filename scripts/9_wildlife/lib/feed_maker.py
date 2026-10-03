@@ -23,7 +23,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from storage import take_item, total_stock, drain_port_to_storage, local_port_target
+from storage import take_item, total_stock, drain_port_to_storage, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
 import wildlife_common as wc
@@ -156,9 +156,9 @@ class FeedMakerController:
     def eject_strays(self, inputs, slots_full=False):
         """Ejects stockpile items `inputs` doesn't use, only when they leave no room for its craft.
 
-        Room is counted in units; the stockpile also caps distinct materials,
-        which no method reports. `slots_full=True` (a take() hit that cap)
-        ejects them regardless of unit room.
+        Room is counted in units; `slots_full=True` (a take() hit the
+        stockpile's material-slot cap, storage.hit_slot_cap()) ejects them
+        regardless of unit room.
         """
         loaded = self.stockpile()
         room = int(self._call("get_stockpile_capacity", 200)) - int(self._call("get_stockpile_used", 0))
@@ -166,16 +166,7 @@ class FeedMakerController:
         target = local_port_target(self.outpost)
         if (room >= missing and not slots_full) or not target:
             return
-        ejected = []
-        for item, count in loaded.items():
-            if item in inputs or count <= 0:
-                continue
-            try:
-                result = self.maker.input.eject(target, item, count)
-            except Exception as error:
-                swallowed("feed_maker.FeedMakerController.eject_strays: input.eject", error)
-                continue
-            ejected.append(f"{item}:{getattr(result, 'status', '?')}")
+        ejected = eject_unneeded(self.maker.input, inputs, target)
         if ejected:
             reason = "material slots full" if slots_full else f"room {room} < {missing}"
             self.log.debug(f"[{self.name}] Ejected strays ({reason}): {', '.join(ejected)}")
@@ -211,7 +202,7 @@ class FeedMakerController:
         for item, qty in sorted(need.items(), key=lambda kv: kv[1]):
             report = {}
             moved += take_item(self.maker.input, item, qty, outpost=self.outpost, report=report)
-            if any(status == "slots_full" for _source, status, _moved in report.get("sources", [])):
+            if hit_slot_cap(report):
                 # Leftovers of earlier recipes hold every material slot.
                 self.eject_strays(inputs, slots_full=True)
                 break

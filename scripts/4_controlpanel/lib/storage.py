@@ -602,6 +602,34 @@ def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
     return moved_total
 
 
+def hit_slot_cap(report):
+    """True when a take_item() `report` holds a "slots_full": the port has unit
+    room but no free material slot. Multi-material stockpiles cap distinct
+    materials per machine type, and no method reports that cap."""
+    return any(status == "slots_full" for _source, status, _moved in (report or {}).get("sources", []))
+
+
+def eject_unneeded(port, keep, target):
+    """Ejects every stack in `port` whose item is not in `keep` to `target`,
+    freeing its material slot. Returns ["item:status", ...] for the log."""
+    out = []
+    try:
+        stacks = list(port.stacks())
+    except Exception as error:
+        swallowed("storage.eject_unneeded: port.stacks", error)
+        return out
+    for stack in stacks:
+        if stack.id in keep or stack.count <= 0:
+            continue
+        try:
+            result = port.eject(target, stack.id, stack.count)
+        except Exception as error:
+            swallowed("storage.eject_unneeded: port.eject", error)
+            continue
+        out.append(f"{stack.id}:{getattr(result, 'status', '?')}")
+    return out
+
+
 def _take_from_current(port, item_id, remaining):
     """take(item_id, remaining) off whatever port is currently connected to.
     Returns (units actually moved, status) -- (0, "exception") if the call

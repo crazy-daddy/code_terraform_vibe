@@ -279,11 +279,22 @@ class LeadCask(PassiveStore):
         return super()._room_for(item_id)
 
 
+# Distinct materials a machine's input stockpile holds at once, per type
+# (simworker `defaultItemStackSlots`); take() of a new material past it
+# answers "slots_full" even with unit room left.
+MATERIAL_SLOTS = {
+    "fabricator": 8, "feed_maker": 8, "crop_automator": 8, "garbage_disposal": 10,
+    "plant_terraformer": 6, "habitat": 5, "bio_lab": 4, "bio_caster": 4,
+    "fuel_assembler": 3, "seed_maker": 3,
+    "drone_station": 3, "drone_station_med": 4, "drone_station_lrg": 6,
+}
+
+
 class Slot:
     """InputSlot / OutputSlot on a machine. `buffer` is the machine-side
     {item: units} dict the slot fills (input) or drains (output).
-    `material_slots`: cap on distinct materials in a multi-material
-    stockpile (take() of a new one past it -> "slots_full"); None = no cap."""
+    `material_slots`: cap on distinct materials; defaults to the machine
+    type's MATERIAL_SLOTS for its input buffer, else no cap."""
 
     def __init__(self, machine, buffer, capacity, material_slots=None):
         self.machine = machine
@@ -311,9 +322,12 @@ class Slot:
 
     def _slots_full_for(self, item_id):
         """True when item_id is a new material and every material slot is taken."""
-        if self.material_slots is None or self.buffer.get(item_id, 0) > 0:
+        cap = self.material_slots
+        if cap is None and self.buffer is getattr(self.machine, "input_buffer", None):
+            cap = MATERIAL_SLOTS.get(getattr(self.machine, "type_id", ""))
+        if cap is None or self.buffer.get(item_id, 0) > 0:
             return False
-        return sum(1 for n in self.buffer.values() if n > 0) >= self.material_slots
+        return sum(1 for n in self.buffer.values() if n > 0) >= cap
 
     def _resolve(self, target_id):
         """(store, problem) for target_id as seen from this machine's outpost;
