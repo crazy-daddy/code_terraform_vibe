@@ -34,6 +34,10 @@
 #  per-sample costs and this becomes a true margin calculation.
 # =============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import bio_exchange as self
+
 STORE = "inventory"    # freight endpoint; at a remote outpost use a local bin
 IDLE_SLEEP = 0.5       # waiting on the Lab to extract something deliverable
 BUSY_SLEEP = 0.25      # a delivery is already mid-flight

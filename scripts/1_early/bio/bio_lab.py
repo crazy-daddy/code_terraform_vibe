@@ -34,6 +34,10 @@
 #  turn rather than all staged at once.
 # =============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import bio_lab as self
+
 STORE = "inventory"    # freight endpoint; at a remote outpost use a local bin
 REAGENT_BUFFER = 5     # spare units to keep beyond the recipe's need
 CREDIT_FLOOR = 200     # never spend below this on optional buffer stock

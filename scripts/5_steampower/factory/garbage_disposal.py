@@ -3,6 +3,10 @@
 # between drains the processor is switched off. The processor only destroys
 # while this script runs.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import garbage_disposal as self
+
 from water_sink import WaterAwareWasteSinkController
 
 controller = WaterAwareWasteSinkController(self)

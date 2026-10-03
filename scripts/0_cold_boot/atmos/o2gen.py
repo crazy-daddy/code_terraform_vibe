@@ -1,6 +1,10 @@
 # Self-contained early Oxygen Generator controller (no lib/ imports)
 # Sets intake to ambient CO2 / 10 and dumps waste inside the clean window [50, 60]
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import o2gen as self
+
 atm = get_component("atmosphere")
 
 while True:

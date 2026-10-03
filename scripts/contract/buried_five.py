@@ -1,6 +1,10 @@
 # Buried Five Contract Solver
 # Collapses layered five-fold wrapped tokens into original transmission using the recovered Analyzer.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import buried_five as self
+
 c = self.contract
 print(f"Contract: {c.name} ({c.id}), Reward: {c.reward} credits")
 

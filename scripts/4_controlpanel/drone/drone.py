@@ -1,3 +1,7 @@
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import drone as self
+
 from drone import DroneController
 
 # Home: an outpost id (any free Drone Depot there, picked per trip) or a

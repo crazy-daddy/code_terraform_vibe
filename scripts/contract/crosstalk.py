@@ -1,3 +1,7 @@
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import crosstalk as self
+
 def real_bits(signal, min_length):
     half = min_length // 2
     bits = []

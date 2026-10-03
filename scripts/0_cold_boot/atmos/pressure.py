@@ -1,6 +1,10 @@
 # Self-contained early Pressure Generator controller (no lib/ imports)
 # Hits the resonance window (next_window_low <= gauge <= next_window_high) for +25% efficiency
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import pressure as self
+
 synced = False
 last_g = -1.0
 

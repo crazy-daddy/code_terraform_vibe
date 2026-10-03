@@ -4,6 +4,10 @@
 # (0 = position/address mode, 1 = immediate mode), read left-to-right for
 # param 1, param 2. Write destinations are always direct addresses.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import cold_boot as self
+
 c = self.contract
 program = c.program
 memory = list(program)  # the VM writes back into memory as it runs

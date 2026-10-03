@@ -1,6 +1,10 @@
 # Sealed Vault Contract Solver
 # Explores the maze grid from (0, 0) to (size - 1, size - 1) via DFS.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import sealed_vault as self
+
 c = self.contract
 vault = c.vault
 size = vault.size

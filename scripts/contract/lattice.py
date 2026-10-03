@@ -3,6 +3,10 @@
 # The board is padded with a wall ring so neighbours are plain index offsets, and neighbour
 # counts use native slice/count calls: the game interpreter is slow, so op count matters.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import lattice as self
+
 UNKNOWN = 0
 CLEAR = 1
 NODE = 2

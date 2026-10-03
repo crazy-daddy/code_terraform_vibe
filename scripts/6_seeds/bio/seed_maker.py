@@ -3,6 +3,10 @@
 # Stage B, once all are known: make seeds on demand for the field
 # (lib/seed_supply.py).
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import seed_maker as self
+
 from seed_maker import SeedMakerController, SEED_SPECIES_TOTAL
 from seed_supply import SeedSupplyController
 

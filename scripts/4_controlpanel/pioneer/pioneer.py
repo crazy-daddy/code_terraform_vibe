@@ -1,4 +1,9 @@
 # Pioneer Automation Script (Unified)
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import pioneer as self
+
 from pioneer import PioneerController
 
 HOME_BASE = "${HOME_BASE:None}"

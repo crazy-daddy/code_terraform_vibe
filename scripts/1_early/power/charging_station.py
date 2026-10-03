@@ -16,6 +16,10 @@
 #  mission at a time; the lowest vehicle goes first.
 # =============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import charging_station as self
+
 TARGET_LEVEL = 1.0         # charge docked vehicles to full
 RESCUE_BELOW = 0.05        # dispatch the drone for any vehicle under this
 POLL = 5

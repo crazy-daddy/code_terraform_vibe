@@ -3,6 +3,10 @@
 # "Current unstable repair reading as an integer. If the value is odd, add 1; if it is even, use it unchanged."
 # After computing corrected_value, call self.stabilize(corrected_value).
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import pressure_sensor as self
+
 raw_val = self.get_value()
 print(f"Raw pressure sensor reading: {raw_val}")
 

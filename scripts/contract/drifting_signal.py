@@ -1,3 +1,7 @@
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import drifting_signal as self
+
 device = self.contract.device
 text = device.slabs
 transmitter = get_component("transmitter")

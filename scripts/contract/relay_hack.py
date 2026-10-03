@@ -1,4 +1,9 @@
 # Relay Hack Contract Solver
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import relay_hack as self
+
 c = self.contract
 print(f"Contract: {c.name} ({c.id}), Reward: {c.reward}")
 

@@ -4,6 +4,10 @@
 # Message characters are read left to right, top to bottom (row reading order).
 # Assembles message string and transmits to Earth.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import data_tablet as self
+
 c = self.contract
 tablet = c.tablet
 rows = tablet.rows

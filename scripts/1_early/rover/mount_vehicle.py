@@ -3,6 +3,10 @@
 # then fills any container module's internal bays (Battery Holder -> Portable Battery)
 # from Inventory too.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import mount_vehicle as self
+
 print(f"[mount] Vehicle {self.id} starting module mounting sequence...")
 
 # Target modules to mount by vehicle type

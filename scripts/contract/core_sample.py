@@ -1,6 +1,10 @@
 # Core Sample Contract Solver
 # Reconstructs damaged data cores (None = destroyed byte) from the format rules, submits each, then transmits the token.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import core_sample as self
+
 MARK = 42
 
 

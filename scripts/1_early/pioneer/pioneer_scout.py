@@ -26,6 +26,10 @@
 #  Pioneer has no Drill Module mounted.
 # =============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import pioneer as self
+
 CRUISE = 0.6               # throttle; lower = more meters per Wh
 ARRIVE_M = 2                # "close enough" — brake happens after this
 RESERVE_WH = 20             # keep this much after the estimated trip home

@@ -3,6 +3,10 @@
 # no research gating, no shop/computer access - just keeps this panel's
 # tilt optimal so it doesn't need the shared_library-tier SolarController yet.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import solar as self
+
 clock = get_component("clock")
 
 while True:

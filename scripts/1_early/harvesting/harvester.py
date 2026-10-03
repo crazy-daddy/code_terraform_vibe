@@ -31,6 +31,10 @@
 #      which would flip modes too early and blunt the credit rush while it still matters.
 # ==============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import harvester as self
+
 SCANNER_ID    = "scanner_1"
 HEAT_MAX      = 100
 HEAT_SAFETY   = 3       # Never plan a hop that exceeds 97 heat

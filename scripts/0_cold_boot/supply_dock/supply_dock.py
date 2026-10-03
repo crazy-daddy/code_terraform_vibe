@@ -8,6 +8,10 @@
 # the moment Supply Logistics unlocks, instead of waiting for lib/.
 # =============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import supply_dock as self
+
 STORE = "inventory"
 LOAD_CHUNK = 10   # units per take() call, keeps a single cycle cheap
 IDLE_SLEEP = 3.0

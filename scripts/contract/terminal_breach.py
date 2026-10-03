@@ -14,6 +14,10 @@
 #        No need to test remaining digits for index i!
 # 5. Transmit the cracked 15-digit code list to Earth.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import terminal_breach as self
+
 c = self.contract
 terminal = c.terminal
 length = terminal.length

@@ -1,3 +1,7 @@
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import three_echoes as self
+
 broadcast = self.contract.broadcast
 print(broadcast.freq_a)
 print(broadcast.freq_b)

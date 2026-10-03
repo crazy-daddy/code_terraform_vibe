@@ -4,6 +4,11 @@
 # Recipe-selection concept & channel contract adapted with attribution from:
 # vakermit (https://github.com/vakermit/code-terraform-scripts)
 # =============================================================================
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import smelter as self
+
 def ceil(val):
     ival = int(val)
     return ival + (1 if val > ival else 0)

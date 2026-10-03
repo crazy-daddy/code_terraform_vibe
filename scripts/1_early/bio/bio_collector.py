@@ -34,6 +34,10 @@
 #  dot so the catalog keeps growing for orders you have not activated yet.
 # =============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import bio_collector as self
+
 BOOTSTRAP_UNKNOWNS = 10   # unknown dots to sample before targeting begins
 EXPLORE_EVERY = 5         # after that, every Nth trip is still an unknown dot
 

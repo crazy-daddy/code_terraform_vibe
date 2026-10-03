@@ -9,6 +9,10 @@
 #   - Purchases kits and modules via shop.buy() and liquidates via shop.sell()
 # ==============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import solar as self
+
 clock = get_component("clock")
 home = get_component("outpost_home")
 research = get_component("research")

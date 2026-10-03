@@ -1,4 +1,9 @@
 # Xenogenetics Survey Contract Solver
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import xenogenetics as self
+
 c = self.contract
 
 # 1. Store known Earth sequences in a set for O(1) membership check

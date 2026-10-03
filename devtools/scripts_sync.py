@@ -137,6 +137,8 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
+import self_typing
+
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SCRIPTS = REPO / "scripts"
 AUTOPLAY_DIR = REPO / "autoplay"   # extra source root, deployed only with --include-autoplay
@@ -167,8 +169,10 @@ RESTART_RETRY_DELAYS_S = (0.5, 1.0, 2.0)
 ROLE_MATCHED = {"panel", "automation"}
 ROLE_SCAN_LINES = 15                # how far into a file the role marker may sit
 
-# The game owns these; never write to them.
-RESERVED = {"user_stubs.py"}
+# Never treated as script slots. user_stubs.py is player-owned; only
+# sync_user_stubs() writes it, and only its generated typed-`self` block.
+USER_STUBS = "user_stubs.py"
+RESERVED = {USER_STUBS}
 # The game's __builtins__.pyi redeclares these as plain bool functions, which hides
 # typeshed's versions and with them Pyright's isinstance/callable narrowing.
 # write_resolved_stubs drops them from the resolved copy only.
@@ -1885,7 +1889,7 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
     materialized = materialize_missing_slots(opts)
     changed_lib_keys = sync_lib(lib_index, opts)
     register_new_libraries(lib_index, opts)
-    written = materialized + len(changed_lib_keys)
+    written = materialized + len(changed_lib_keys) + sync_user_stubs(opts)
     for path in sorted(opts.save_dir.glob("*.py")):
         if sync_file(path, script_index, opts, quiet_skips=not opts.verbose):
             written += 1
@@ -1919,7 +1923,47 @@ def write_resolved_stubs(save_dir: Path) -> None:
     if builtins_stub.is_file():
         text = builtins_stub.read_text(encoding="utf-8")
         builtins_stub.write_text(NARROWING_BUILTIN_DEF.sub("", text), encoding="utf-8", newline="")
+    merged = merged_user_stubs(save_dir)
+    if merged is not None:
+        (dest_dir / USER_STUBS).write_text(merged, encoding="utf-8", newline="\n")
     ok("Resolved stubs: %d file(s) -> %s" % (copied, show(dest_dir)))
+
+
+def merged_user_stubs(save_dir: Path) -> Optional[str]:
+    """The save's user_stubs.py with its typed-`self` block regenerated (see
+    devtools/self_typing.py), or None when the game's language server or
+    __builtins__.pyi is missing."""
+    server = self_typing.server_path(save_dir)
+    builtins_stub = save_dir / "__builtins__.pyi"
+    if not server.is_file() or not builtins_stub.is_file():
+        warn("typed self not generated: missing %s" % (server if not server.is_file() else builtins_stub))
+        return None
+    block, unresolved = self_typing.build_self_types(server.read_text(encoding="utf-8"),
+                                                     builtins_stub.read_text(encoding="utf-8"))
+    for prefix in unresolved:
+        warn("typed self: no stub class for script prefix %r" % prefix)
+    existing_path = save_dir / USER_STUBS
+    existing = existing_path.read_text(encoding="utf-8") if existing_path.is_file() else ""
+    return self_typing.merge_block(existing, block)
+
+
+def sync_user_stubs(opts: Options) -> bool:
+    """Write the regenerated typed-`self` block into the save's user_stubs.py.
+    The file is player-owned (the game never overwrites it); text outside the
+    block is kept."""
+    merged = merged_user_stubs(opts.save_dir)
+    path = opts.save_dir / USER_STUBS
+    if merged is None or (path.is_file() and path.read_text(encoding="utf-8") == merged):
+        return False
+    if opts.dry_run:
+        typer.echo("  would update %s" % USER_STUBS)
+        return True
+    if path.is_file():
+        backup(path)
+    if not write_atomic(path, merged):
+        return False
+    ok("  stubs  %s typed-self block updated" % USER_STUBS)
+    return True
 
 
 def write_resolved_preview(scripts_dir: Path, active_tier: str, save_dir: Path) -> None:

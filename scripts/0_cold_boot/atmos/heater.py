@@ -1,6 +1,10 @@
 # Self-contained early Heat Generator controller (no lib/ imports)
 # Discovers daily optimal power level (1-10) with dynamic night-battery protection
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import heater as self
+
 clock = get_component("clock")
 battery = get_component("battery_1")
 

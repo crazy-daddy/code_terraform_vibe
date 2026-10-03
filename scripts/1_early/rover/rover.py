@@ -32,6 +32,10 @@
 #  the trip plus a reserve. A hard floor on battery level backs that up.
 # =============================================================================
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import rover as self
+
 PLANET_ID = "nocturna"
 STORE = "inventory"        # unload target at home
 

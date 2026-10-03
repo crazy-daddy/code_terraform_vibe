@@ -2,6 +2,10 @@
 # Probes the alien loom with known markers to determine braid permutation,
 # un-weaves the 42-character record into two threads, and transmits the message to Earth.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import the_loom as self
+
 c = self.contract
 print(f"Contract: {c.name} ({c.id}), Reward: {c.reward} credits")
 
