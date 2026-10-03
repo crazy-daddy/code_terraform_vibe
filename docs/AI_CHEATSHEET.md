@@ -78,7 +78,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ material/Smelter demand, fab-site ingot buffer, Smelter peers, raw-ore reasons | `production_demand.py` |
 | Supply Dock logistics | `supply_dock.py` |
 | Biology, shared pipeline (collector/lab/exchange + biome-processor discovery) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
-| &nbsp;&nbsp;↳ biome processor base (sample loading, Lab heartbeat, per-step order/stock fetch, run loop) | `bio_processor.py` (`BioProcessorController`) — subclassed by the four below; hooks `_classify_stack()` (raw/finished/ignore), `_candidate_fragments()`, `_load()`, `_eject_finished()`, `_chamber_empty()` |
+| &nbsp;&nbsp;↳ biome processor base (sample loading, Lab heartbeat, per-step order/stock fetch, run loop) | `bio_processor.py` (`BioProcessorController`) — subclassed by the four below; hooks `_classify_stack()` (raw/finished/ignore), `_candidate_fragments()`, `_load()`, `_on_only_nonraw_staged()`, `_chamber_empty()`; at most one `self.input` take/eject per cycle, then `STAGE_SETTLE_TICKS = 20` ticks before the next (see §1g) |
 | &nbsp;&nbsp;↳ Coastal biome processor (glow-tint) | `bio_coastal.py` (`BioLuminizerController`) — see §1e/§1g |
 | &nbsp;&nbsp;↳ Volcanic biome processor (forge-cast) | `bio_volcanic.py` (`BioCasterController`) — see §1g |
 | &nbsp;&nbsp;↳ Geothermal biome processor (gene-splice) | `bio_geothermal.py` (`DnaSequencerController`) — see §1g |

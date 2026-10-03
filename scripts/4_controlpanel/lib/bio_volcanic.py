@@ -13,7 +13,7 @@
 # deployed and a first recipe attempted -- flip on debug() console output to see
 # required_materials() vs materials() vs what's staged in self.input if a cast()
 # unexpectedly returns "wrong_materials".
-from bio import get_my_biome, is_local_order, is_order_incomplete, _order_fragment_remaining, processor_fragment_preference
+from bio import get_my_biome, is_local_order, is_order_incomplete, _order_fragment_remaining
 from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED, STACK_IGNORE
 from storage import take_item, best_unload_target
 from production import set_upgrade_order, fabricator_unlocked_outputs, FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, SECONDS_PER_GAME_HOUR
@@ -43,9 +43,6 @@ CLOCK_TICKS_PER_SECOND = 10.0
 REQUESTER_ID = "bio_caster"
 # Minimum clock ticks between two material-demand publishes (10 ticks/s -> 60 s).
 MATERIAL_PUBLISH_INTERVAL_TICKS = 600
-# Clock ticks to wait after a take()/eject() on self.input before reading its counts
-# again (a take of 6 units lands over ~8 ticks; the step loop runs every ~5 ticks).
-STAGE_SETTLE_TICKS = 20
 
 # steam_in/water_in source routing (fluid_routing.FluidInputRouter), same values as
 # the Plant Terraformer's water router.
@@ -66,7 +63,7 @@ class BioCasterController(BioProcessorController):
     unchanged via eject() -- bio_caster has no discard(); eject() is the documented
     non-destructive pass-through, safe before any cast() is attempted.
     """
-    DEFAULT_NAME = "bio_caster"
+    TYPE_ID = "bio_caster"
     MODULE = "bio_volcanic"
     DISPLAY_NAME = "Bio Caster"
     LOADED_SUFFIX = " into crucible."
@@ -78,7 +75,6 @@ class BioCasterController(BioProcessorController):
         self.last_publish_tick = None
         self.published_demand = None
         self.fluid_routers = {}
-        self.last_stage_tick = None
         self.last_drive_tick = None
         self.step_seconds = CASTER_STEP_SECONDS_DEFAULT
 
@@ -91,13 +87,13 @@ class BioCasterController(BioProcessorController):
         raw sample load() accepts."""
         if self.machine.find_recipe(getattr(stack, "id", None)) is None:
             return STACK_IGNORE, None
-        properties = getattr(stack, "properties", None) or None  # None + "exact" = propertyless only; {} matches nothing
+        properties = self._stack_properties(stack)
         if properties:
             return STACK_FINISHED, properties
         return STACK_RAW, None
 
     def _candidate_fragments(self, order):
-        ranked = processor_fragment_preference(self.machine, "bio_caster", (order.requires or {}).keys())
+        ranked = BioProcessorController._candidate_fragments(self, order)
         return [fragment_id for fragment_id in ranked if self.machine.find_recipe(fragment_id) is not None]
 
     def _load(self, fragment_id, properties):
@@ -106,11 +102,6 @@ class BioCasterController(BioProcessorController):
             self.log.debug(f"set_recipe({fragment_id}) -> {set_res.status}: {getattr(set_res, 'message', '')}")
             return None
         return self.machine.load(fragment_id, properties, "exact")
-
-    def _eject_finished(self, staged_id, count, properties, outpost):
-        """Forged stacks go back to storage one per cycle."""
-        BioProcessorController._eject_finished(self, staged_id, count, properties, outpost)
-        return True
 
     def _on_only_nonraw_staged(self, staged_stacks):
         # Only fabricated materials left with an empty chamber: return them. The Lab
@@ -145,22 +136,6 @@ class BioCasterController(BioProcessorController):
             self.log.end()
             return
         self.log.end()
-
-    def _tick(self):
-        clock = get_component("clock")
-        return clock.tick() if clock else 0
-
-    def _staging_settling(self):
-        """True within STAGE_SETTLE_TICKS of the last take()/eject() on self.input:
-        a transfer lands over several ticks, so counts read before it lands would
-        stage or return the same units twice."""
-        if self.last_stage_tick is None:
-            return False
-        elapsed = self._tick() - self.last_stage_tick
-        if elapsed < STAGE_SETTLE_TICKS:
-            self.log.trace(f"[{self.name}] Input transfer settling ({elapsed}/{STAGE_SETTLE_TICKS} ticks).")
-            return True
-        return False
 
     def _return_staged_surplus(self, required_materials, reason):
         """Ejects staged fabricated materials beyond required_materials back to local

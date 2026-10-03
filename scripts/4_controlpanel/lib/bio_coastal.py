@@ -14,7 +14,7 @@ class BioLuminizerController(BioProcessorController):
     then infuses it for delivery. A sample whose fragment doesn't need tinting (no
     active Coastal order requiring it) is passed through unchanged via discard().
     """
-    DEFAULT_NAME = "bio_luminizer"
+    TYPE_ID = "bio_luminizer"
     MODULE = "bio_coastal"
     DISPLAY_NAME = "Bio Luminizer"
     FINISHED_LABEL = "already-tinted"
@@ -60,8 +60,8 @@ class BioLuminizerController(BioProcessorController):
     def _classify_stack(self, stack, orders):
         """A stack whose glow already matches a live order's target_glow is finished:
         it needs delivering, not re-tinting (loading it back leaves nothing to solve)."""
-        properties = getattr(stack, "properties", None) or {}
-        glow = properties.get("glow")
+        properties = self._stack_properties(stack)
+        glow = (properties or {}).get("glow")
         if glow and self._order_matching_glow(orders, getattr(stack, "id", None), glow):
             return STACK_FINISHED, properties
         return STACK_RAW, properties

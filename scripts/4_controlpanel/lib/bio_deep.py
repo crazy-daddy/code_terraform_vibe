@@ -51,7 +51,7 @@ class BioConditionerController(BioProcessorController):
     accordingly. Every decision and its outcome is still recorded to
     archive["bio.conditioner_observations"] for auditing.
     """
-    DEFAULT_NAME = "bio_conditioner"
+    TYPE_ID = "bio_conditioner"
     MODULE = "bio_deep"
     DISPLAY_NAME = "Bio Conditioner"
     ONLINE_SUFFIX = " -- automated QC via recovered rulebook"
@@ -64,7 +64,7 @@ class BioConditionerController(BioProcessorController):
     def _classify_stack(self, stack, orders):
         """Conditioned samples carry {'conditioned': True} (confirmed live) and belong
         to the Exchange for delivery, never back in the chamber."""
-        properties = getattr(stack, "properties", None)
+        properties = self._stack_properties(stack)
         if properties and properties.get("conditioned"):
             return STACK_FINISHED, properties
         return STACK_RAW, properties

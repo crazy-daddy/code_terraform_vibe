@@ -14,7 +14,7 @@ class DnaSequencerController(BioProcessorController):
     docs -- an already-spliced chamber fragment is never spliced again, just left to
     flow to output/delivery.
     """
-    DEFAULT_NAME = "dna_sequencer"
+    TYPE_ID = "dna_sequencer"
     MODULE = "bio_geothermal"
     DISPLAY_NAME = "DNA Sequencer"
 
