@@ -18,6 +18,7 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md).
 | DRONE FLEET | `drones_panel.py` | cruise-throttle slider + drone roster + fleet auto-upgrade switch/status (§2k) + per-row recall switch and retire button (§2k-4) |
 | COMMISSION (new Pioneers and drones) | `fleet_commission_panel.py` | Pioneer role buttons + HOME_BASE picker, drone role buttons + deploy-outpost picker (outposts with a Drone Depot), job queue with cancel (§2k-2); `2 x 2` |
 | CASH (budget) | `cash_panel.py` | balance/floor/income/reagent burn/order pipeline + one row per consumer kind with next cost, planned total, ETA and ^/v priority buttons (§2l); `2 x 2` |
+| MACHINE ACTIVITY | `activity_panel.py` | `machine.activity` (dev_workflow.md §1d-3): one row per group, most `retire` first (members, stacked class-share bar, spare mean, retire pill); click a row (`panel.clicks()` hit-test, `panel.mouse()` hover highlight) for one row per machine (last-sample class dot, outpost/home, own share bar, spare %), `back` returns. Re-reads the archive every `READ_EVERY_TICKS = 50` ticks, machine names every `LABEL_EVERY_TICKS = 600` while a group is open; `2 x 2` |
 | Automation calculator | `control_room_automation.py` (Automation) | draws nothing; see above |
 | Warehouse upgrade worker | `warehouse_upgrade_automation.py` (Automation) | runs `lib/warehouse_upgrade.py` (§2k-1) then `lib/tank_upgrade.py` (§2k-3) each pass; the Warehouse drain blocks for long, so kept out of `control_room_automation.py` |
 

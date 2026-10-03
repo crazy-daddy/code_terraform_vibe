@@ -35,7 +35,7 @@ HALF_LIFE_TICKS so they describe the recent past:
                     "c": {class: decayed machine-samples}, "spare": [decayed samples with k spare members],
                     "share": {class: % of machine time}, "spare_mean": avg spare members,
                     "retire": spare members in SPARE_QUANTILE of samples}},
- "machines": {id: {"g": group, "c": {class: decayed samples}}}}
+ "machines": {id: {"g": group, "c": {class: decayed samples}, "l": class in the last sample}}}
 "Spare" = SPARE_CLASSES (waiting, idle, parked, off). "retire" is the number of
 members the group could lose and still have had every busy member it used in
 SPARE_QUANTILE of the samples. See docs/cheatsheet/dev_workflow.md §1d-3.
@@ -128,7 +128,7 @@ def _accumulate(rows, machines, previous, factor, signal_groups):
                 if value >= MIN_WEIGHT:
                     counts[key] = round(value, 3)
         counts[cls] = round(counts.get(cls, 0) + 1, 3)
-        machines[machine_id] = {"g": group, "c": counts}
+        machines[machine_id] = {"g": group, "c": counts, "l": cls}
         out.append((group, cls))
     return out
 
@@ -235,3 +235,24 @@ def _log_summary_if_due(state, now):
 def get():
     """The ACTIVITY_KEY value ({} before the first sample)."""
     return _read_dict(ACTIVITY_KEY)
+
+
+def group_rows(state):
+    """[(group, entry)] of an ACTIVITY_KEY value, most retire first, then most spare_mean, then name."""
+    groups = state.get("groups") or {}
+    rows = [(g, e) for g, e in groups.items() if isinstance(e, dict)]
+    return sorted(rows, key=lambda r: (-(r[1].get("retire") or 0), -(r[1].get("spare_mean") or 0), r[0]))
+
+
+def machine_rows(state, group):
+    """[(id, {class: % of its samples}, last class, spare %)] of `group`'s machines, most spare time first."""
+    rows = []
+    for machine_id, entry in (state.get("machines") or {}).items():
+        if not isinstance(entry, dict) or entry.get("g") != group:
+            continue
+        counts = entry.get("c") or {}
+        total = sum(counts.values()) or 1
+        share = {k: round(100.0 * v / total, 1) for k, v in counts.items()}
+        spare = round(sum(share.get(k, 0) for k in SPARE_CLASSES), 1)
+        rows.append((machine_id, share, entry.get("l"), spare))
+    return sorted(rows, key=lambda r: (-r[3], r[0]))

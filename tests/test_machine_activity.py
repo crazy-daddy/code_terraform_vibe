@@ -3,7 +3,7 @@ import unittest
 from harness import StubTestCase
 from archive import archive
 import machine_activity
-from machine_activity import ACTIVITY_KEY, HALF_LIFE_TICKS, fleet_class, record, spare_quantile
+from machine_activity import ACTIVITY_KEY, HALF_LIFE_TICKS, fleet_class, group_rows, machine_rows, record, spare_quantile
 from script_census import snapshot
 from fleet_status import FLEET_STATUS_KEY
 from script_parking import PARKED_KEY, PARK_REQUESTS_KEY
@@ -101,6 +101,24 @@ class MachineActivityTests(StubTestCase):
         self.assertEqual(spare_quantile([]), 0)
         self.assertEqual(spare_quantile([1, 0, 9]), 2)
         self.assertEqual(spare_quantile([2, 0, 8]), 0)
+
+    def test_group_rows_most_retire_first(self):
+        for tick in (1000, 1300, 1600):
+            state = record(snapshot(), tick)
+        groups = [group for group, _ in group_rows(state)]
+        self.assertEqual(groups[0], "drone:miner")
+        self.assertEqual(set(groups), set(state["groups"]))
+
+    def test_machine_rows_most_spare_first(self):
+        record(snapshot(), 1000)
+        self.set_fleet({"drone_1": "OUTBOUND", "drone_2": "OUTBOUND", "drone_3": "WAITING_DEPOT_SPACE"})
+        state = record(snapshot(), 1300)
+        rows = machine_rows(state, "drone:miner")
+        self.assertEqual([r[0] for r in rows], ["drone_3", "drone_2", "drone_1"])
+        self.assertEqual(rows[0][3], 100.0)
+        self.assertEqual(rows[1][1], {"idle": 50.0, "active": 50.0})
+        self.assertEqual(rows[1][2], "active")
+        self.assertEqual(machine_rows(state, "no_such_group"), [])
 
 
 if __name__ == "__main__":
