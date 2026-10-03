@@ -192,9 +192,10 @@ def _read_dict(key):
 
 
 def record(snapshot, now):
-    """Adds one sample from a script_census.snapshot() (rows, running ids) taken at tick `now`;
+    """Adds one sample from a script_census.snapshot() taken at tick `now` (machine rows and
+    running machine ids; its panel/automation ids are not machines and are ignored);
     returns the new ACTIVITY_KEY value."""
-    rows, running = snapshot
+    rows, running = snapshot[0], snapshot[1]
     state = _read_dict(ACTIVITY_KEY)
     last_tick = state.get("tick")
     elapsed = now - last_tick if isinstance(last_tick, (int, float)) else 0

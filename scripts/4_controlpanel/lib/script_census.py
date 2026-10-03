@@ -1,16 +1,26 @@
 """
-Script census: how many machine scripts count toward the game's step split.
+Script census: how many scripts count toward the game's step split.
 
 Above 50 running scripts the game gives every running or sleeping script
 floor(50000 / N) interpreter steps per tick (docs/cheatsheet/dev_workflow.md
 §1d-1), so a block's cost in ticks depends on N at the time it ran.
-`census_if_due()` counts `run_control.is_running()` over every machine id
-(outpost buildings, Harvesting-field machines, vehicles and drones) every
-CENSUS_TICK_INTERVAL ticks and logs one debug line, "scripts running: N of M
-machines, allowance A steps/tick", which devtools/log_block_timing.py reads to
-turn block ticks into steps. is_running() reads True while a script runs or
-sleeps and False when paused (breaker), stopped, completed or errored: the
-same set the game counts in N. The same snapshot feeds lib/machine_activity.py.
+`census_if_due()` counts `run_control.is_running()` every CENSUS_TICK_INTERVAL
+ticks over every machine id and logs one debug line, "scripts running: N of M
+machines (...), allowance A steps/tick", which devtools/log_block_timing.py
+reads to turn block ticks into steps. is_running() reads True while a script
+runs or sleeps and False when paused (breaker), stopped, completed or errored:
+the same set the game counts in N.
+
+Machines (machine_refs()): outpost buildings, Harvesting-field machines, the
+mobile Harvester, vehicles and drones, plus the extractors at points of
+interest (POI_TYPE_IDS), which outpost.buildings() omits and which are found
+as power_control grid members. Panel and automation scripts (ui_script_ids())
+count toward N only: no API lists them, so panel_1..panel_K and
+automation_1..automation_K are probed (K = max(fixed probe limit, highest id
+found + PROBE_AHEAD)). Scripts on sensors and the planet (boot, uplink, ...)
+are not listed and not counted, so N is a lower bound. The machine rows and
+running machine ids feed lib/machine_activity.py; panel/automation ids stay
+out of them.
 """
 
 from tree_console import TreeConsole
@@ -21,13 +31,22 @@ log = TreeConsole(module="script_census")
 
 # Ticks between two counts.
 CENSUS_TICK_INTERVAL = 300
-# Machine ids per atomic is_running() batch (a few steps each).
+# Ids per atomic is_running() batch (a few steps each).
 CENSUS_CHUNK = 100
 # Game scheduler constants (§1d-1): total steps per tick shared by all scripts, cap per script.
 TOTAL_STEPS_PER_TICK = 50000
 MAX_STEPS_PER_SCRIPT = 1000
+# Extractors at points of interest: not in outpost.buildings(), found as power grid members.
+POI_TYPE_IDS = ("thermal_cap", "water_pump", "exotic_gas_cap", "exotic_spring_tap", "oil_pump")
+# Id of the single mobile Harvester.
+HARVESTER_ID = "harvester_1"
+# Panel/automation id probes: always up to these numbers, or PROBE_AHEAD past the highest one found.
+PANEL_PROBE_LIMIT = 40
+AUTOMATION_PROBE_LIMIT = 10
+PROBE_AHEAD = 10
 
 last_census_tick = None
+highest_found = {"panel": 0, "automation": 0}
 
 
 def allowance(running):
@@ -35,6 +54,44 @@ def allowance(running):
     if running <= 0:
         return MAX_STEPS_PER_SCRIPT
     return max(1, min(MAX_STEPS_PER_SCRIPT, TOTAL_STEPS_PER_TICK // running))
+
+
+def _poi_rows():
+    """Rows of the POI extractors, from power_control grid members."""
+    power = get_component("power_control")
+    try:
+        grids = list(power.grids()) if power else []
+    except Exception as error:
+        swallowed("script_census._poi_rows: power.grids", error)
+        return []
+    rows = []
+    for grid in grids:
+        for member in getattr(grid, "members", None) or []:
+            if getattr(member, "type_id", "") in POI_TYPE_IDS:
+                rows.append((getattr(member, "id", ""), member.type_id, getattr(member, "name", ""), False))
+    return rows
+
+
+def _harvester_rows():
+    """Row of the mobile Harvester (not in harvesting_machines()). Its id is fixed and not
+    listed by any API; an unknown id reads not running."""
+    return [(HARVESTER_ID, "harvester", "", False)]
+
+
+def ui_script_ids():
+    """Candidate ids of panel and automation scripts (probed; most do not exist)."""
+    ids = []
+    for prefix, limit in (("panel", PANEL_PROBE_LIMIT), ("automation", AUTOMATION_PROBE_LIMIT)):
+        top = max(limit, highest_found[prefix] + PROBE_AHEAD)
+        ids.extend(f"{prefix}_{n}" for n in range(1, top + 1))
+    return ids
+
+
+def _note_found(ids):
+    for prefix in highest_found:
+        numbers = [int(i[len(prefix) + 1:]) for i in ids if i.startswith(prefix + "_") and i[len(prefix) + 1:].isdigit()]
+        if numbers:
+            highest_found[prefix] = max(highest_found[prefix], max(numbers))
 
 
 def machine_refs():
@@ -60,6 +117,8 @@ def machine_refs():
             rows.extend((getattr(ref, "id", ""), getattr(ref, "kind", ""), getattr(ref, "name", ""), True) for ref in fleet.mobile_units())
     except Exception as error:
         swallowed("script_census.machine_refs: fleet.mobile_units", error)
+    rows.extend(_poi_rows())
+    rows.extend(_harvester_rows())
     seen = set()
     unique = []
     for row in rows:
@@ -79,27 +138,32 @@ def _running_rows(ids, run):
 
 
 def snapshot():
-    """(machine_refs() rows, set of ids whose script runs or sleeps), or None without run_control."""
+    """(machine_refs() rows, set of machine ids whose script runs or sleeps, set of running
+    panel/automation ids), or None without run_control."""
     run = get_component("run_control")
     if not run:
         return None
     rows = machine_refs()
     ids = [row[0] for row in rows]
+    probes = [i for i in ui_script_ids() if i not in set(ids)]
     try:
-        running = run_batched(_running_rows, ids, CENSUS_CHUNK, run)
+        running = run_batched(_running_rows, ids + probes, CENSUS_CHUNK, run)
     except Exception as error:
         swallowed("script_census.snapshot: atomic is_running", error)
-        running = _running_rows(ids, run)
-    return rows, set(running)
+        running = _running_rows(ids + probes, run)
+    probe_set = set(probes)
+    ui = {i for i in running if i in probe_set}
+    _note_found(ui)
+    return rows, set(running) - ui, ui
 
 
 def count_running():
-    """(running scripts, machine ids checked), or None without run_control."""
+    """(running scripts incl. panels/automations, machine ids checked), or None without run_control."""
     taken = snapshot()
     if taken is None:
         return None
-    rows, running = taken
-    return len(running), len(rows)
+    rows, running, ui = taken
+    return len(running) + len(ui), len(rows)
 
 
 def census_if_due(now):
@@ -112,8 +176,9 @@ def census_if_due(now):
     taken = snapshot()
     if taken is None:
         return None
-    rows, running = taken
+    rows, running, ui = taken
+    total = len(running) + len(ui)
     log.start("script census", level="debug")
-    log.debug(f"scripts running: {len(running)} of {len(rows)} machines, allowance {allowance(len(running))} steps/tick")
+    log.debug(f"scripts running: {total} of {len(rows)} machines (incl. {len(ui)} panel/automation scripts; sensor and planet scripts not counted), allowance {allowance(total)} steps/tick")
     log.end()
     return taken
