@@ -215,7 +215,7 @@ Open points from Phase A:
 The harvester, the panels and the automation scripts always run and cannot be parked. Habitats and drones are busy. The work here is the POI extractors:
 
 1. Park an extractor while every tank it feeds is full and its buffer holds, and wake it when a target tank drops below a fill threshold. This applies to water pumps, exotic gas caps and spring taps. The parking pass reads the tank fills it needs.
-2. Once the Wildlife pillar is complete (A9), stop the Habitat scripts.
+2. Habitats after the Wildlife pillar is complete: retiring them (releasing the colonies into the wild) is planned separately, outside this perf plan.
 3. Write the build advice into a new section of this file: the scripts per unit of output for each machine kind (for example oil generators against turbines, or fewer but larger extractors), and the scripts each consolidation would remove. The advice feeds the autoplay decision engine later.
 
 ### Phase D: measure
