@@ -45,7 +45,7 @@ adding private fakes.
 
 ## How to run this plan
 One step per fresh session (`/clear` between steps). Prompt: *"Do step N of
-docs/plans/fake_world.md"*. Each step section is self-contained. At the end of a step:
+docs/plans/done/fake_world.md"*. Each step section is self-contained. At the end of a step:
 1. Check off its box here and the matching sub-item in `TODO.md` (Phase 7).
 2. Append findings to **Notes from earlier steps** (drift found, unresolved fields, surprises).
 3. Run `python -m unittest discover -s tests` and commit (caveman-commit, on main).
