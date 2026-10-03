@@ -56,7 +56,8 @@ class ScriptCensusTests(StubTestCase):
         self.world.run_control.running.add("panel_40")
         snapshot()
         self.assertEqual(script_census.highest_found["panel"], 40)
-        self.assertIn("panel_50", script_census.ui_script_ids())
+        self.assertIn("panel_80", script_census.ui_script_ids())
+        self.assertNotIn("panel_81", script_census.ui_script_ids())
 
     def test_machine_activity_ignores_panels_and_tracks_extractors(self):
         w = self.world

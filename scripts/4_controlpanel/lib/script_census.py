@@ -43,7 +43,7 @@ HARVESTER_ID = "harvester_1"
 # Panel/automation id probes: always up to these numbers, or PROBE_AHEAD past the highest one found.
 PANEL_PROBE_LIMIT = 40
 AUTOMATION_PROBE_LIMIT = 10
-PROBE_AHEAD = 10
+PROBE_AHEAD = 40
 
 last_census_tick = None
 highest_found = {"panel": 0, "automation": 0}
