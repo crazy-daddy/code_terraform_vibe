@@ -14,8 +14,8 @@ The game is CPU-bound. Host CPU sits at about 30–40% (likely two cores at full
 ## Method
 
 1. Find candidates with both tools, run on logs from after the last deploy (`--since <ISO UTC deploy time>`):
-   - `python devtools/log_block_timing.py --since <T> --sort steps --top 30 --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item"`
-   - `python devtools/repeat_read_scan.py --since <T> --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item|move |returning|delivering|build '" --blocks 12 --per-block 4 --top 15`
+   - `python devtools/log_block_timing.py --since <T> --sort steps --top 40 --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item|move |returning|delivering|pull trip|haul job"`
+   - `python devtools/repeat_read_scan.py --since <T> --exclude "(?i)fly|leg|drive|extract|mining|recharg|unload|_load|care tour|stockpile run|construction|take_item|move |returning|delivering|pull trip|haul job|build '" --blocks 12 --per-block 4 --top 15`
    - Each run takes about 30 s, mostly log parsing.
 2. Before reworking a block, run `git log` on its code. Compare against the figures in earlier perf commit messages and do not redo old work.
 3. Cut repeated work first: one snapshot per pass, memo per cache, shared results across instances. Consider atomic execution only after that, for read-only, non-logging code that needs lower latency.
@@ -65,14 +65,153 @@ Notes on the baseline:
 | `590955b` | Drone haul plan: `logistics_requests.PlanReads` reads requests, pickups and per-outpost stock once per plan. Before, outposts in both roles had their stock walked twice, and requests and pickups were read per outpost, drill and destination. Pioneer `_pull_sources` shares requests and reservations the same way. Planning now uses the same pickups snapshot that `claim_pickups` trims against, so a mid-plan reservation is no longer subtracted twice. |
 | `5543ec2` | Fluid output router: the network walk is cached per script for `NETWORK_WALK_INTERVAL_TICKS = 600`, with an immediate new walk on a tank error or a `not_found` from connect. Each tank's fill is read once for the rebalance sort. A full current tank costs no archive read. Expired blacklist entries are pruned. |
 
+## Measurement 2 (after the fixes)
+
+Window 2026-10-03T05:16 to 13:40 UTC, about 8.4 h. The refactors from `8c2d0f5` to `8da0839` (handler unification) were deployed during this window, so a few blocks changed code mid-window.
+
+Census:
+
+- 383 `scripts running:` lines, no `swallowed` line from the census.
+- Running scripts ranged from 66 to 109 of 206 machines. Hourly averages were 81–87, so the allowance was about 530–600 steps per tick.
+- The `med_N` of most blocks is 94–96. Blocks run more often in the busy windows, so their median N is above the hourly average.
+- Running scripts per machine kind are already in the archive (`machine.activity`, `lib/machine_activity.py`), and the latest control panel shows them on the MACHINE ACTIVITY card.
+- **The census undercounts N.** `script_census.machine_refs()` lists `outpost.buildings()`, `outpost.harvesting_machines()` and `fleet.mobile_units()`. Extractors at points of interest are in none of these lists, and neither are the harvester or the panel and automation scripts. The save at tick 9,906,070 had 121 running scripts, while the census lines around that time said 83–94. True N was therefore about 25–30 higher than logged, and the allowance about 410 steps per tick, not 530. The `med_N` and `med_st` figures above are too high in N and too high in steps by the same factor.
+
+Running scripts per machine kind, from the save at tick 9,906,070 (status `running`; 35 more were `paused` by script parking):
+
+| Kind | Running / built | In `machine.activity` |
+|---|---|---|
+| drone_large | 17 / 17 | yes |
+| habitat | 13 / 16 | yes |
+| exotic_gas_cap | 9 / 9 | no |
+| panel and automation scripts | 9 | no |
+| drone_station_large | 7 / 7 | yes |
+| water_pump | 6 / 6 | no |
+| exotic_spring_tap | 6 / 6 | no |
+| smelter | 6 / 7 | yes |
+| thermal_cap | 5 / 5 | no |
+| drone_service_station | 5 / 7 | yes |
+| oil_generator | 5 / 5 | yes |
+| oil_pump | 4 / 5 | no |
+| pioneer, fabricator, feed_maker | 4 each | yes |
+| temp_heater, oxygen_generator, pressure_generator | 3 each | yes |
+| 9 other kinds | 1 each | harvester: no |
+
+The 30 POI extractors (gas caps, spring taps, water pumps, thermal caps, oil pumps) are a quarter of N, and none of them can park. The 7 panel scripts are another 6%. The turbines in the log file list no longer exist in this save.
+
+Results, compared with the baseline. The baseline has no N, so only ticks can be compared. At the same tick cost, a block at N≈95 costs fewer steps than at a lower N.
+
+| Script kind | Block | Baseline runs / med ticks | Now runs / med ticks / med steps | Share now | Verdict |
+|---|---|---|---|---|---|
+| fabricator | `get_fabricator_active_recipe` | 3,416 / 78 | 569 / 2 / 1.1k | 1.1% | Fixed |
+| fabricator | `get_site_fabricator_targets` | 3,241 / 76 | 245 / 142 / 80.4k | 1.4% | Runs 13× less often. One recompute is expensive (see below) |
+| smelter | `get_site_fabricator_targets` | 1,225 / 80 | 97 / 150 / 79.5k | 0.8% | Same as the fabricator |
+| fabricator | `_cascade_fabricator_output_demand` | 2,142 / 29 | 234 / 117 / 53.8k | 1.2% | Now runs only inside a recompute. It is about 2/3 of a recompute's cost |
+| fabricator | `choose_recipe` | 3,552 / 27 | 1,212 / 7 / 3.7k | 0.4% | Fixed |
+| drone | `_plan_haul_job` | 2,237 / 82 | 2,297 / 68 / 34.3k | 4.4% | About 17% fewer ticks, at an N that is probably higher. Still the top drone block |
+| thermal_cap | `ensure_connection` | 21,268 / 3 | 25,737 / 3 / 1.4k | 8.0% | Unchanged. Open item 2 |
+| water_pump | `ensure_connection` | 21,131 / 3 | 26,875 / 2 / 1.1k | 3.8% | Unchanged in count. Open item 2 |
+| exotic_gas_cap | `ensure_connection` | 21,230 / 2 | 20,573 / 2 / 1.1k | 3.1% (was 6.0%) | Cheaper per call |
+| exotic_spring_tap | `ensure_connection` | 12,454 / 2 | 12,890 / 2 / 1.2k | 2.7% (was 4.5%) | Cheaper per call |
+| refiner | `ensure_connection` | 8,998 / 5 | not in the top 40 | — | Fixed |
+| seed_maker | `Crafting 'seed_crowncap'` | 1,988 / 34 | 1,440 / 31 / 13.2k | 13.8% (was 27.3%) | Not worked on. Includes waits |
+| automation | `script parking` | 1,307 / 26 | 1,015 / 31 / 18.4k | 18.6% | Not worked on. Largest automation block |
+| supply_dock | `desired_order_id` | 143 / 77 | 361 / 10 / 5.3k | 0.9% | Much cheaper, probably through the sourceability memo in `7e19507` |
+| automation | `plan_dock_assignments` | 111 / 50 | not in the top 40 | — | Cheaper |
+| pioneer | `_pull_sources` | 1,954 / 7 | 1,956 / 7 / 3.8k | 1.4% | Unchanged |
+
+New in the top 40, or larger than before:
+
+| Script kind | Block | Runs / med ticks / med steps | Share | Static hit |
+|---|---|---|---|---|
+| automation | `[storage] Rebalancing Inventory` | 87 / 68 / 34.4k | 4.0% | not matched |
+| automation | `plan_site` | 272 / 38 / 22.0k | 4.3% | `fab_site_gross_need` calls `get_fabricator_active_recipe` per Fabricator. `plan_site` calls `ship_units` per ingot |
+| automation | `[WILDLIFE] plan` | 425 / 16 / 9.3k | 3.9% | not matched |
+| drone_station_lrg | `stage_life_forms` | 3,441 / 3 / 1.8k | 0.9% | `buffer_target(item_id, outpost)` per life form, and each call walks the outpost's storage buildings |
+| smelter | `get_smelter_demands` | 831 / 11 / 5.9k | 0.7% | `cache.network_stock` in two loops (`production_demand.py` lines 155 and 186). Was 8 ticks |
+| drone_station_lrg | `Making stockpile room` | 197 / 30 / 16.1k | 0.3% | not matched |
+
+Cost of one site-target recompute: the `supply(item_id, shortfall)` call per frontier item in `production_cascade.py:148` is the top static hit. `site_spare_elsewhere` calls `_site_base_targets` for every other outpost (`production_sites.py:481`), so each site's recompute rebuilds the base targets of all sites.
+
+Follow-up checks on 2026-10-03:
+
+- **`med_st` overstates blocks that wait.** It is median ticks × allowance. A block marked `[waits]` spends most of its ticks suspended in world calls (`take_item`, `transfer_to`), not running steps.
+- **seed_maker crafting is mostly waiting.** One craft loads three blend items with `take_item` (about one game minute each), then calls `combine()`. The script uses few steps. One real defect: the finished seed is sent to the Warehouse the blend was just taken from. That Warehouse is still busy, so `drain_port_storage_first` falls back to Inventory ("Seed 'seed_crowncap' sent to Inventory"). The rebalance sweep then moves the seed to a Warehouse again.
+- **Storage rebalancing:**
+  - `warehouse.compact()` works on one Warehouse's own slots (decompiled `compact` calls `Wme(Fe)` on that building only). The docstring of `consolidate_cross_warehouse_stock` says it works across buildings; that is wrong.
+  - `compact()` returns `already_compact` at once when nothing would move, so an idle call only costs the call. No `Compacted` line appeared in the window: it moved nothing in 8.4 h.
+  - Most rebalance moves are small: newly made feed and seeds that producers put into Inventory although a Warehouse already holds the item. Fixing the producers' output routing cuts most of the sweep's work.
+- **Park and wake churn.** Parks in the window: fabricator 2,735, smelter 1,784, crop_automator 865, supply_dock 839, drone_service_station 264, charging_station 220, refiner 206, oil_pump 199, thermal_cap 68. That is about 33 parks per Fabricator per hour. Each wake restarts the script, which repeats its discovery and startup reads.
+- **Extractors and parking.** Oil pumps and thermal caps already park while dormant. Exotic caps park only when the dormant phase leaves at least `EXOTIC_PARK_MIN_TICKS` (600) of parked time, and none did in the window. Water pumps have no dormant phase. No extractor parks while its targets are full.
+- **Wildlife.** The game marks the Wildlife pillar complete at a population of 5,000,000 (`wildlife_sensor.get_value()`; achievement `wildlife_teeming` in the decompiled code), and established populations never decay. After that, the planner has nothing left to reach. The 13 running Habitat scripts are then also candidates to stop, which would lower N by 13.
+
+Tool notes:
+
+- The harvester `Move X -> Y` and pioneer `Delivering`, `Returning` and `Pull trip` blocks are travel. The exclude patterns under Method now leave them out.
+- `repeat_read_scan.py` matched the drone `_plan_haul_job` block to `field_keeper.act`. The block moved into a mixin in `b2ddddc`, and the scanner found the wrong function. Fix the matching before relying on that row.
+- `log_block_timing.py` dropped 1,840 unclosed blocks. Most of them are probably blocks cut off at log rotation or by a script restart, but this was not checked.
+
+## Sweep 3 plan
+
+Decided on 2026-10-03:
+
+- Fix the fluid router behaviour (open item 2).
+- Find work in the logs and through a static sweep of every `lib/` module.
+- Haiku agents scan and Sonnet agents fix. Each fix is made in a worktree, reviewed, and cherry-picked onto main.
+- Reduce N: fix the census coverage, find more parkable kinds and write build advice. The per-kind numbers come from `machine.activity`, shown on the control panel's MACHINE ACTIVITY card.
+
+Rules for every fix agent:
+
+- Work in a worktree (`isolation: worktree`), so the sync watcher does not deploy half-finished edits.
+- Edit the highest tier that defines the module (`scripts/<tier>/lib/x.py`).
+- Run `git log` on the code first and do not redo earlier perf work.
+- Run `pytest` and Pyright before committing. Write the commit message with the `caveman-commit` skill.
+- Keep the AGENTS.md rules: no stdlib imports, `swallowed()` in every recovering `except Exception`, balanced `log.start()`/`log.end()`, and constant changes documented in `docs/cheatsheet/`.
+
+### Phase A: log-driven fixes (Sonnet, one worktree each, parallel)
+
+| # | Fix | Files |
+|---|---|---|
+| A1 | Fluid router: switch only to a strictly emptier tank, and do not count a stall caused by a full tank. Log the switch at debug, not info. Add tests with the shared fakes. | `fluid_routing.py` |
+| A2 | Site-target recompute: compute each outpost's `_site_base_targets` once per recompute and pass it to `site_spare_elsewhere`. Reduce the `supply()` calls per frontier item in the cascade. | `production_sites.py`, `production_cascade.py` |
+| A3 | `script parking`: measure each grid once per pass in `_low_reserve_grids`, or reuse the grid supervisor's last measurement from the archive. | `script_parking.py`, `control_room_automation.py` |
+| A4 | Small hoists: `stage_life_forms` walks storage once per call, `get_smelter_demands` reads `network_stock` once per item, and `get_material_demands` reads the active recipes once. | `drone_depot.py`, `production_demand.py` |
+| A5 | Output routing: a drain does not pick a Warehouse that is busy from this script's own `take_item`, and it retries before it falls back to Inventory. Check the feed_maker and other producers whose output the rebalance sweep moves. | `storage.py`, `seed_supply.py`, `feed_maker.py` |
+| A6 | Census coverage: add the POI extractors, the harvester, and the panel and automation scripts to the census count, so N is right. The harvester, panels and automation always run; count them, but do not park them. | `script_census.py`, `machine_activity.py` |
+| A7 | Storage sweep, semi-retired: rebalance only at the home outpost (Inventory to Warehouses and back), and call `compact()` about once per game day. Fix the `consolidate_cross_warehouse_stock` docstring. | `storage.py`, `control_room_automation.py` |
+| A8 | Park churn: find why Fabricators and Smelters park and wake about 33 times per hour, and add hysteresis to the wake (or the park) decision. | `script_parking.py`, `fabricator.py`, `smelter.py` |
+| A9 | Wildlife planner: stop planning once `wildlife_sensor.get_value()` reaches 5,000,000. The decompiled game marks the Wildlife pillar complete there, and established populations never decay. | `wildlife_planner.py` |
+
+A2 and A4 both touch the `production_*` modules. Run A2 first, or merge the two agents.
+
+### Phase B: static sweep (Haiku, read-only, parallel)
+
+- Split the 131 `lib/` modules into about 10 batches by concern: fluids, power, production, logistics, drones, vehicles, pioneers, bio and planting, wildlife, and the rest.
+- Each agent gets the `repeat_read_scan.py` output for its modules and the Method rules above.
+- Each agent reports at most 5 candidates. A candidate states the file and line, the repeated read, the loop it sits in, an estimated cost per pass, and a proposed fix. Agents do not edit files.
+- I rank the candidates by calls per hour × cost per call, and drop the ones that are already fixed or that sit in travel blocks.
+- The top candidates go to Sonnet fix agents, the same way as Phase A.
+
+### Phase C: fewer running scripts
+
+The harvester, the panels and the automation scripts always run and cannot be parked. Habitats and drones are busy. The work here is the POI extractors:
+
+1. Park an extractor while every tank it feeds is full and its buffer holds, and wake it when a target tank drops below a fill threshold. This applies to water pumps, exotic gas caps and spring taps. The parking pass reads the tank fills it needs.
+2. Once the Wildlife pillar is complete (A9), stop the Habitat scripts.
+3. Write the build advice into a new section of this file: the scripts per unit of output for each machine kind (for example oil generators against turbines, or fewer but larger extractors), and the scripts each consolidation would remove. The advice feeds the autoplay decision engine later.
+
+### Phase D: measure
+
+- After all fixes are deployed, run the tools again with the deploy time as `--since`.
+- Add a Measurement 3 section, and record the next `--since` time.
+- Then start the atomic pass (open item 7).
+
+Tool fixes go into Phase A as needed: the `repeat_read_scan.py` block matching for mixin methods, and a check of the 1,840 dropped unclosed blocks.
+
 ## Open items
 
-1. **Measure the fixes.**
-   - Run both tools with `--since 2026-10-03T05:16 --sort steps`, after the watcher has deployed and a few hours of logs exist.
-   - Compare against the baseline above, in steps where possible. The baseline has no census, so convert its ticks with a census N from the same time of day if one is available.
-   - Check that `scripts running:` lines appear in the automation log. If `run_control.is_running()` is not allowed inside an atomic callback, the census falls back to a direct loop and logs a `swallowed` line each time.
-   - Check that `med_N` explains the rise in tick costs.
-2. **Decision pending (user): fluid router switching between equally full tanks.** With every tank full, thermal_cap and water_pump switch tanks on each call.
+1. **Next measurement.** Run both tools with `--since 2026-10-03T13:40`. Every commit up to `83aa9c6` was deployed by then.
+2. **Fluid router switching between equally full tanks.** Decided: fix it (Phase A1). With every tank full, thermal_cap and water_pump switch tanks on each call.
    - Each switch prints a `Connected ...` info line (0.1 s of game time per console call) and resets `ticks_since_connect`, so the stall blacklist never kicks in.
    - The fix would be not to switch when no candidate is emptier than the current tank.
    - The stall rule must then ignore a stall caused by a full tank. Otherwise it blacklists full tanks with "no Gas Pipe route" warnings.
@@ -80,15 +219,17 @@ Notes on the baseline:
 3. **Drone haul plan, sharing across drones.** Share the source-side stock across the 5 drones through one archive key, such as `logistics.plan_reads` = `{tick, stock: {outpost_id: {item: units}}}`, reused for about 50 ticks with a live-read fallback. Keep destination deficits live, or a drone over-serves a destination that was just unloaded. Measure the effect of `590955b` first.
 4. **Drone haul plan, skip when nothing changed.** Hash requests, pickups and drill status, and skip re-planning on an idle tick when the hash is unchanged.
 5. **Pioneer `run_pull_loop`.** Build one `PlanReads` from `seen` and pass it to `_pull_deficits_tiered`, `fair_buffer_caps`, `urgent_items` (called twice) and `buyable_deficits`. That saves about 4 requests reads per cycle. Low priority: Pioneers are semi-retired.
-6. **Not yet examined:**
-   - **seed_maker crafting:** 34 ticks median, 27% of its time. Static hits are `_drain_output` → `drain_port_to_storage` per stack, and `_craft` → `_eject_chamber` / `_load_one` per blend item. The block includes waits.
-   - **automation `script parking`:** 26 ticks every 50-tick pass, 17% of the automation script. Earlier work: `ae539d0` (awake stations built once, batched member reads).
-   - **supply_dock `desired_order_id`** (77 ticks) and **automation `plan_dock_assignments`** (50 ticks). Earlier work: `fccfaba`, `e75d6f3`, `894eb6a`. Static hits are `pick_best_order` → `can_fulfill_order` per weekly order and `_dock_affinity` per candidate.
-   - **smelter `get_smelter_demands`:** 8 ticks; `cache.network_stock` is called in two loops (production.py, around lines 1933 and 1964). Small.
+6. **Not yet examined** (figures from Measurement 2):
+   - **automation `script parking`:** 31 ticks (18.4k steps) per 50-tick pass, 18.6% of the automation script. Static hit: `_low_reserve_grids` calls `grid_power.measure_grid` per grid. Earlier work: `ae539d0` (awake stations built once, batched member reads).
+   - **seed_maker crafting:** 31 ticks, 13.8% of its time. Static hits are `_craft` → `_eject_chamber` / `_load_one` per blend item, and `best_unload_target` per stack. The block includes waits.
+   - **Site-target recompute:** 80k steps per run. See the recompute note under Measurement 2.
+   - **automation `plan_site`, `[storage] Rebalancing Inventory` and `[WILDLIFE] plan`:** together about 12% of the automation script.
+   - **drone_station_lrg `stage_life_forms`:** hoist `buffer_target`'s storage walk out of the per-form loop.
+   - **smelter `get_smelter_demands`:** 11 ticks; `cache.network_stock` is called in two loops (`production_demand.py` lines 155 and 186). Small.
    - **Static-only top hits** (no timed block):
      - `control_room_automation.supervise_grids_if_due` (`supervise_grid` per grid)
      - `mining_drill.publish_all_drills` (`controller.step()` per drill)
-     - `production.get_material_demands` / `fab_site_gross_need` (`get_fabricator_active_recipe` per Fabricator; the shared site targets should already cut this)
+     - `production_demand.get_material_demands` (`get_fabricator_active_recipe` per Fabricator)
      - `fleet_intent.haul_root` (`demand_root` per item)
 7. **Atomic pass (later, separately).** Once the repeated work is cut, list the remaining pure-read blocks that need lower latency. Add a static test that guards atomic callbacks: no `log.*`, archive writes, `sleep` or state-changing calls inside code reached from `run_atomic`/`run_batched`/`run_chunked`. `repeat_read_scan.py` already marks functions reachable from these runners as `atomic`.
-8. **Fewer running scripts** is the whole-base lever for steps per tick (§1d-1). With census data, look at which windows run at the highest N, and check whether more machine kinds can park.
+8. **Fewer running scripts** is the whole-base lever for steps per tick (§1d-1). The save had 121 running scripts at the end of Measurement 2. See Phase C.
