@@ -1,68 +1,42 @@
 import unittest
 
+import game_stubs
 import harness
 import feed_maker
 import wildlife_common as wc
 
 
-class _Result:
-    def __init__(self, status="ok"):
-        self.status = status
-        self.message = ""
+def _recipe(species, forms):
+    return game_stubs.Recipe(wc.recipe_of(species), dict({"forage": 100}, **{f: 1 for f in forms}), wc.feed_item_of(species))
 
 
-class _Recipe:
-    def __init__(self, species, forms):
-        self.id = wc.recipe_of(species)
-        self.output_item = wc.feed_item_of(species)
-        self.inputs = dict({"forage": 100}, **{f: 1 for f in forms})
+class _FeedMaker(game_stubs.Machine):
+    """Feed Maker: a recipe machine with a stockpile; logs recipe calls."""
+    type_id = "feed_maker"
 
-
-class _Input:
-    def __init__(self, maker):
-        self.maker = maker
-
-    def eject(self, destination, item_id, count):
-        self.maker.calls.append(("eject", item_id, count))
-        self.maker.stock_pile[item_id] = self.maker.stock_pile.get(item_id, 0) - count
-
-
-class _Output:
-    def stacks(self):
-        return []
-
-
-class _FeedMaker:
-    def __init__(self, recipe="", running=False, stock_pile=None):
-        self.id = "feed_maker_1"
-        self.outpost = type("O", (), {"id": "outpost_home", "is_home": True})()
-        self.input = _Input(self)
-        self.output = _Output()
+    def __init__(self, world, recipe="", running=False, stock_pile=None):
+        super().__init__(world, "feed_maker_1", world.home, [_recipe("salt_tortoise", ["sea_algae", "snow_moss"]), _recipe("spire_drake", ["sulfur_moss", "cinder_lichen"])])
+        self.input = game_stubs.Slot(self, self.input_buffer, 200)
+        self.output = game_stubs.Slot(self, self.output_buffer, 50)
         self.recipe = recipe
         self.running = running
-        self.stock_pile = dict(stock_pile or {})
+        self.input_buffer.update(stock_pile or {})
         self.calls = []
 
-    def list_recipes(self):
-        return [_Recipe("salt_tortoise", ["sea_algae", "snow_moss"]), _Recipe("spire_drake", ["sulfur_moss", "cinder_lichen"])]
-
-    def get_recipe(self): return self.recipe
-    def is_running(self): return self.running
     def get_progress(self): return 0.0
     def get_output_count(self): return 0
-    def get_stockpile(self): return {k: v for k, v in self.stock_pile.items() if v > 0}
+    def get_stockpile(self): return {k: v for k, v in self.input_buffer.items() if v > 0}
     def get_stockpile_capacity(self): return 200
     def get_stockpile_used(self): return sum(self.get_stockpile().values())
     def tier(self): return 1
 
     def clear_recipe(self):
         self.calls.append(("clear_recipe",))
-        return _Result()
+        return super().clear_recipe()
 
-    def set_recipe(self, rid):
-        self.calls.append(("set_recipe", rid))
-        self.recipe = rid
-        return _Result()
+    def set_recipe(self, recipe_or_id):
+        self.calls.append(("set_recipe", getattr(recipe_or_id, "id", recipe_or_id)))
+        return super().set_recipe(recipe_or_id)
 
 
 class _Logistics:
@@ -84,7 +58,7 @@ class FeedMakerTestCase(harness.StubTestCase):
 
         def fake_take(port, item_id, amount, outpost=None, cache=None, report=None):
             self.taken.append((item_id, amount))
-            port.maker.stock_pile[item_id] = port.maker.stock_pile.get(item_id, 0) + amount
+            port.machine.input_buffer[item_id] = port.machine.input_buffer.get(item_id, 0) + amount
             return amount
 
         feed_maker.take_item = fake_take
@@ -104,7 +78,7 @@ class FeedMakerTestCase(harness.StubTestCase):
 
 class FeedMakerTests(FeedMakerTestCase):
     def test_idle_without_demand(self):
-        maker = _FeedMaker()
+        maker = _FeedMaker(self.world)
         ctrl = feed_maker.FeedMakerController(maker)
         self.assertEqual(ctrl.step(), feed_maker.IDLE_POLL_S)
         self.assertNotIn(("set_recipe", wc.recipe_of("salt_tortoise")), maker.calls)
@@ -115,7 +89,7 @@ class FeedMakerTests(FeedMakerTestCase):
         item = wc.feed_item_of("salt_tortoise")
         self.demand({item: [40, 200, 40]})
         self.feed_stock[item] = 40
-        maker = _FeedMaker()
+        maker = _FeedMaker(self.world)
         ctrl = feed_maker.FeedMakerController(maker)
         self.assertEqual(ctrl.step(), feed_maker.IDLE_POLL_S)
         self.feed_stock[item] = 10
@@ -127,31 +101,31 @@ class FeedMakerTests(FeedMakerTestCase):
 
     def test_priority_class_beats_bigger_deficit(self):
         self.demand({wc.feed_item_of("salt_tortoise"): [500, 200, 500], wc.feed_item_of("spire_drake"): [5, 0, 5]})
-        maker = _FeedMaker()
+        maker = _FeedMaker(self.world)
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(maker.recipe, wc.recipe_of("spire_drake"))
 
     def test_switch_keeps_loaded_forage(self):
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker(recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 100, "sea_algae": 1})
+        maker = _FeedMaker(self.world, recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 100, "sea_algae": 1})
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(maker.recipe, wc.recipe_of("spire_drake"))
-        self.assertNotIn("eject", [c[0] for c in maker.calls])
+        self.assertEqual(self.world.inventory.items, {})
         self.assertNotIn("clear_recipe", [c[0] for c in maker.calls])
         self.assertNotIn(("forage", 100), self.taken)
-        self.assertEqual(maker.stock_pile["forage"], 100)
+        self.assertEqual(maker.input_buffer["forage"], 100)
 
     def test_switch_ejects_strays_only_without_room(self):
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker(recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 50, "sea_algae": 140})
+        maker = _FeedMaker(self.world, recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 50, "sea_algae": 140})
         feed_maker.FeedMakerController(maker).step()
-        self.assertIn(("eject", "sea_algae", 140), maker.calls)
-        self.assertNotIn("forage", [c[1] for c in maker.calls if c[0] == "eject"])
+        self.assertEqual(self.world.inventory.count("sea_algae"), 140)
+        self.assertEqual(self.world.inventory.count("forage"), 0)
 
     def test_current_recipe_kept_within_class(self):
         tortoise, drake = wc.recipe_of("salt_tortoise"), wc.recipe_of("spire_drake")
         self.demand({wc.feed_item_of("salt_tortoise"): [40, 105, 40], wc.feed_item_of("spire_drake"): [200, 101, 200]})
-        maker = _FeedMaker(recipe=tortoise)
+        maker = _FeedMaker(self.world, recipe=tortoise)
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(maker.recipe, tortoise)
         self.demand({wc.feed_item_of("salt_tortoise"): [40, 105, 40], wc.feed_item_of("spire_drake"): [200, 1, 200]})
@@ -160,14 +134,14 @@ class FeedMakerTests(FeedMakerTestCase):
 
     def test_running_craft_finishes_before_switch(self):
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker(recipe=wc.recipe_of("salt_tortoise"), running=True)
+        maker = _FeedMaker(self.world, recipe=wc.recipe_of("salt_tortoise"), running=True)
         self.assertEqual(feed_maker.FeedMakerController(maker).step(), feed_maker.ACTIVE_POLL_S)
         self.assertEqual(maker.recipe, wc.recipe_of("salt_tortoise"))
 
     def test_missing_inputs_blocks(self):
         self.home["sulfur_moss"] = 0
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker()
+        maker = _FeedMaker(self.world)
         ctrl = feed_maker.FeedMakerController(maker)
         self.assertEqual(ctrl.step(), feed_maker.IDLE_POLL_S)
         self.assertEqual(self.world.notebook.data[wc.FEED_KEY]["feed_maker_1"]["blocker"], "no_inputs")
@@ -176,7 +150,7 @@ class FeedMakerTests(FeedMakerTestCase):
         rid = wc.recipe_of("spire_drake")
         self.world.notebook.data[wc.FEED_KEY] = {"feed_maker_2": {"recipe": rid, "tick": self.world.clock.tick()}}
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker()
+        maker = _FeedMaker(self.world)
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(maker.recipe, "")
         self.demand({wc.feed_item_of("spire_drake"): [60, 0, 60]})
@@ -186,7 +160,7 @@ class FeedMakerTests(FeedMakerTestCase):
     def test_shed_starts_nothing(self):
         self.world.notebook.data["power.shedded"] = ["feed_maker_1"]
         self.demand({wc.feed_item_of("spire_drake"): [20, 0, 20]})
-        maker = _FeedMaker()
+        maker = _FeedMaker(self.world)
         feed_maker.FeedMakerController(maker).step()
         self.assertEqual(maker.recipe, "")
         self.assertEqual(self.taken, [])

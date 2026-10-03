@@ -1,7 +1,7 @@
 """Stub tests for the Harvester's Yield Amplifier (8_planting/lib/harvester_amplify.py)."""
 import unittest
-from types import SimpleNamespace
 
+import game_stubs
 from harness import StubTestCase
 
 import field_keeper
@@ -37,7 +37,7 @@ class _Harvester:
         self.calls += 1
         if self.status == "ok":
             self.remaining += 24.0
-        return SimpleNamespace(status=self.status, message="")
+        return game_stubs.Result(self.status)
 
 
 class _Keeper(HarvesterAmplifyMixin):
@@ -162,19 +162,19 @@ class AmplifyTests(StubTestCase):
         self.assertIn(AMPLIFIER_REQUESTER, production.RECURRING_ORDER_REQUESTERS)
 
 
-class _Store:
-    def __init__(self, held, answer):
+class _Store(game_stubs.Store):
+    """Warehouse whose transfer_to() answers a fixed status and counts calls."""
+
+    def __init__(self, world, held, answer):
+        super().__init__(world, "wh", "warehouse", world.home, items={AMPLIFIER_ITEM_ID: held} if held else None)
         self.held = held
         self.answer = answer
         self.calls = 0
 
-    def count(self, item_id):
-        return self.held
-
     def transfer_to(self, target, item_id, count):
         self.calls += 1
         moved = min(count, self.held) if self.answer == "ok" else 0
-        return SimpleNamespace(status=self.answer, moved=moved, requested=count)
+        return game_stubs.Result(self.answer, moved, requested=count)
 
 
 class _ConsoleLog(_Log):
@@ -216,17 +216,17 @@ class StageTests(StubTestCase):
         self.keeper = keeper
 
     def test_all_busy_flags_stage_busy(self):
-        self.stores = [("wh_1", _Store(2, "busy")), ("wh_2", _Store(1, "busy"))]
+        self.stores = [("wh_1", _Store(self.world, 2, "busy")), ("wh_2", _Store(self.world, 1, "busy"))]
         self.assertFalse(self.keeper.stage(AMPLIFIER_ITEM_ID))
         self.assertTrue(self.keeper.stage_busy)
 
     def test_busy_one_falls_through(self):
-        self.stores = [("wh_1", _Store(5, "busy")), ("wh_2", _Store(1, "ok"))]
+        self.stores = [("wh_1", _Store(self.world, 5, "busy")), ("wh_2", _Store(self.world, 1, "ok"))]
         self.assertTrue(self.keeper.stage(AMPLIFIER_ITEM_ID))
         self.assertFalse(self.keeper.stage_busy)
 
     def test_recently_busy_tried_last(self):
-        busy, free = _Store(5, "busy"), _Store(1, "ok")
+        busy, free = _Store(self.world, 5, "busy"), _Store(self.world, 1, "ok")
         self.stores = [("wh_1", busy), ("wh_2", free)]
         self.keeper.stage(AMPLIFIER_ITEM_ID)
         self.tick += 1
@@ -235,12 +235,12 @@ class StageTests(StubTestCase):
         self.assertEqual(free.calls, 2)
 
     def test_empty_is_not_busy(self):
-        self.stores = [("wh_1", _Store(0, "busy"))]
+        self.stores = [("wh_1", _Store(self.world, 0, "busy"))]
         self.assertFalse(self.keeper.stage(AMPLIFIER_ITEM_ID))
         self.assertFalse(self.keeper.stage_busy)
 
     def test_stuck_warehouse_warns_once(self):
-        store = _Store(1, "busy")
+        store = _Store(self.world, 1, "busy")
         self.stores = [("wh_1", store)]
         self.keeper.stage(AMPLIFIER_ITEM_ID)
         self.assertEqual(self.console.warnings, [])

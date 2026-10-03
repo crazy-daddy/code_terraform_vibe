@@ -1,50 +1,30 @@
 import unittest
 
+import game_stubs
 from harness import StubTestCase
 from tree_console import TreeConsole
 import drone_weather
 import weather_signals
 
 
-class _Collect:
-    def __init__(self, status, collected=0, item_id="storm_glass"):
-        self.status = status
-        self.collected = collected
-        self.item_id = item_id
-        self.message = ""
+def _collect(status, collected=0, item_id="storm_glass"):
+    return game_stubs.Result(status, collected=collected, item_id=item_id)
 
 
-class _Drone:
-    def __init__(self, results):
+class _Drone(game_stubs.Drone):
+    """Drone whose collect() answers a scripted list of results."""
+
+    def __init__(self, world, results):
+        super().__init__(world, "drone_1", world.home)
         self.results = list(results)
         self.calls = 0
 
     def collect(self):
         self.calls += 1
-        return self.results.pop(0) if self.results else _Collect("nothing_here")
+        return self.results.pop(0) if self.results else _collect("nothing_here")
 
     def exposure(self):
         return 0.0
-
-
-class _Cask:
-    type_id = "lead_cask"
-
-    def __init__(self, cask_id, outpost, material="", count=0, capacity=100):
-        self.id = cask_id
-        self.outpost = outpost
-        self._material = material
-        self._count = count
-        self._capacity = capacity
-
-    def material(self):
-        return self._material
-
-    def capacity(self):
-        return self._capacity
-
-    def count(self, item_id):
-        return self._count if item_id == self._material else 0
 
 
 class _Collector(drone_weather.DroneWeatherMixin):
@@ -151,7 +131,7 @@ class CollectorTests(StubTestCase):
 
     def test_glass_collected_until_exhausted(self):
         self._publish({"storm_1": _entry()})
-        drone = _Drone([_Collect("moving"), _Collect("ok", 3), _Collect("nothing_here")])
+        drone = _Drone(self.world, [_collect("moving"), _collect("ok", 3), _collect("nothing_here")])
         units, outcome = _Collector(drone)._collect_at_site(_target())
         self.assertEqual((units, outcome), (3, "site exhausted"))
         entry = drone_weather.aftermath_entries()["storm_1"]
@@ -159,7 +139,7 @@ class CollectorTests(StubTestCase):
 
     def test_repeated_nothing_here_marks_exhausted(self):
         self._publish({"storm_1": _entry()})
-        drone = _Drone([])
+        drone = _Drone(self.world, [])
         units, _outcome = _Collector(drone)._collect_at_site(_target())
         self.assertEqual(units, 0)
         self.assertEqual(drone.calls, drone_weather.NOTHING_HERE_LIMIT)
@@ -167,7 +147,7 @@ class CollectorTests(StubTestCase):
 
     def test_uranium_stops_at_cask_room(self):
         self._publish({"storm_2": _entry(kind="uranium")})
-        drone = _Drone([_Collect("ok", 5, "raw_uranium")] * 4)
+        drone = _Drone(self.world, [_collect("ok", 5, "raw_uranium")] * 4)
         units, outcome = _Collector(drone)._collect_at_site(_target("storm_2", "uranium", limit=10))
         self.assertEqual(units, 10)
         self.assertIn("Lead Cask", outcome)
@@ -175,15 +155,15 @@ class CollectorTests(StubTestCase):
 
     def test_unplated_never_targets_uranium(self):
         self._publish({"storm_2": _entry(kind="uranium", ready=19.0), "storm_1": _entry(ready=19.0)})
-        collector = _Collector(_Drone([]), plated=False, home_outpost=self.home)
+        collector = _Collector(_Drone(self.world, []), plated=False, home_outpost=self.home)
         self.assertEqual([c["event_id"] for c in collector._aftermath_candidates(collector.aftermath_kinds())], ["storm_1"])
 
     def test_uranium_needs_cask_room_and_research(self):
         self._publish({"storm_2": _entry(kind="uranium", ready=19.0)})
-        collector = _Collector(_Drone([]), home_outpost=self.home)
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
         self.assertEqual(collector._aftermath_candidates(collector.aftermath_kinds()), [])
-        self.world.components["lead_cask_1"] = _Cask("lead_cask_1", self.home, material="raw_uranium", count=70)
-        self.world.components["lead_cask_2"] = _Cask("lead_cask_2", self.home, material="fuel_rod", count=10)
+        self.world.add_lead_cask("lead_cask_1", self.home, material="raw_uranium", count=70)
+        self.world.add_lead_cask("lead_cask_2", self.home, material="fuel_rod", count=10)
         self.assertEqual(drone_weather.cask_room(self.home), 30)
         self.assertEqual(collector._aftermath_candidates(collector.aftermath_kinds()), [])
 
@@ -201,23 +181,23 @@ class CollectorTests(StubTestCase):
                 return research_id == drone_weather.HOT_CARGO_RESEARCH
 
         self.world.components["research"] = _Research()
-        self.world.components["lead_cask_1"] = _Cask("lead_cask_1", self.home, material="raw_uranium", count=70)
+        self.world.add_lead_cask("lead_cask_1", self.home, material="raw_uranium", count=70)
         self._publish({"storm_2": _entry(kind="uranium", ready=19.0), "storm_3": _entry(kind="uranium", ready=19.0, x=0, y=150)})
 
     def test_second_drone_sees_room_reserved_by_first(self):
         self._uranium_ready()
-        first = _Collector(_Drone([]), home_outpost=self.home)
+        first = _Collector(_Drone(self.world, []), home_outpost=self.home)
         target, _budget = first._select_aftermath_target(first._aftermath_candidates(first.aftermath_kinds()))
         self.assertEqual((target["event_id"], target["limit"]), ("storm_2", 30))
         self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000), 30)
-        second = _Collector(_Drone([]), home_outpost=self.home, name="drone_2")
+        second = _Collector(_Drone(self.world, []), home_outpost=self.home, name="drone_2")
         self.assertEqual(second._aftermath_candidates(second.aftermath_kinds()), [])
 
     def test_reservation_race_releases_claim(self):
         # Both drones built their candidate lists before either reserved.
         self._uranium_ready()
-        first = _Collector(_Drone([]), home_outpost=self.home)
-        second = _Collector(_Drone([]), home_outpost=self.home, name="drone_2")
+        first = _Collector(_Drone(self.world, []), home_outpost=self.home)
+        second = _Collector(_Drone(self.world, []), home_outpost=self.home, name="drone_2")
         late = second._aftermath_candidates(second.aftermath_kinds())
         first._select_aftermath_target(first._aftermath_candidates(first.aftermath_kinds()))
         self.assertEqual(second._select_aftermath_target(late), (None, None))
@@ -233,7 +213,7 @@ class CollectorTests(StubTestCase):
         self.assertEqual(sorted(drone_weather.archive.get(lead_cask.INBOUND_KEY, {})), ["a", "b", "d"])
 
     def test_sync_tracks_uranium_aboard(self):
-        collector = _Collector(_Drone([]), home_outpost=self.home)
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
         collector.aboard = {"raw_uranium": 12}
         collector._sync_cask_reservation()
         self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000), 12)
@@ -242,7 +222,7 @@ class CollectorTests(StubTestCase):
         self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000), 0)
 
     def test_trip_end_intent(self):
-        collector = _Collector(_Drone([]), home_outpost=self.home)
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
         collector._end_trip_intent(_target("storm_2", "uranium"), 12)
         self.assertEqual(collector.intent, "hauling raw_uranium from storm_2 to outpost_home")
         collector._end_trip_intent(_target(), 0)
@@ -251,7 +231,7 @@ class CollectorTests(StubTestCase):
     def test_not_launched_before_arrival_would_be_ready(self):
         # 150 m at 150 m/h = 1 h away.
         self._publish({"storm_1": _entry(ready=22.0)})
-        collector = _Collector(_Drone([]), home_outpost=self.home)
+        collector = _Collector(_Drone(self.world, []), home_outpost=self.home)
         self.assertEqual(collector._aftermath_candidates(("storm_glass",)), [])
         self.world.clock.hours = 21.0
         self.assertEqual(len(collector._aftermath_candidates(("storm_glass",))), 1)
