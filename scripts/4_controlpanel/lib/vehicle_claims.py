@@ -7,6 +7,7 @@ from archive import archive
 from typing import TYPE_CHECKING
 from unsupported_markers import MARKER_PREFIX
 from swallow import swallowed
+import fleet_claims_common as common
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -45,24 +46,16 @@ def is_vehicle_recalled(vehicle_name):
     Module-level so non-vehicle scripts (e.g. vehicles_panel.py's Fleet card) can
     read a vehicle's recall flag without instantiating a VehicleController.
     """
-    recalls = archive.get(RECALL_KEY, {}) or {}
-    if not isinstance(recalls, dict):
-        return False
-    return bool(recalls.get(vehicle_name, False))
+    return common.is_flagged(RECALL_KEY, vehicle_name)
 
 
 def set_vehicle_recalled(vehicle_name, recalled):
     """Sets or clears vehicle_name's recall flag in the shared RECALL_KEY dict."""
-    def updater(recalls):
-        if not isinstance(recalls, dict):
-            recalls = {}
-        if recalled:
-            recalls[vehicle_name] = True
-        else:
-            recalls.pop(vehicle_name, None)
-        return recalls
+    common.set_flagged(RECALL_KEY, vehicle_name, recalled)
 
-    archive.transaction(RECALL_KEY, {}, updater)
+
+def _claim_owner(claim):
+    return claim.get("rover", claim.get("vehicle"))
 
 
 class VehicleClaimsMixin:
@@ -86,36 +79,14 @@ class VehicleClaimsMixin:
         """
         if not self.current_target_key:
             return
-        archive.set_entry(MISSION_KEY, self._host.name, {
-            "target_key": self.current_target_key,
-            "target": target,
-            "kind": kind,
-            "tick": self._host.get_current_tick(),
-        })
+        common.save_mission(MISSION_KEY, self._host.name, self.current_target_key, kind, target, self._host.get_current_tick())
 
     def clear_mission(self):
-        # Plain read first: a transaction always writes back, and this runs
-        # on every claim release, mostly with no mission stored.
-        if archive.get_entry(MISSION_KEY, self._host.name) is not None:
-            archive.pop_entry(MISSION_KEY, self._host.name)
+        common.clear_mission(MISSION_KEY, self._host.name)
 
     def _read_mission(self) -> "dict | None":
-        """This vehicle's stored mission record, moving a pre-consolidation
-        vehicle.mission:<name> key into the shared dict on first read."""
-        name = self._host.name
-        record = archive.get_entry(MISSION_KEY, name)
-        if record is not None:
-            return record if isinstance(record, dict) else None
-        legacy_key = f"{LEGACY_MISSION_KEY_PREFIX}{name}"
-        record = archive.get(legacy_key, None)
-        if record is None:
-            return None
-        archive.delete(legacy_key)
-        if not isinstance(record, dict):
-            return None
-        archive.set_entry(MISSION_KEY, name, record)
-        self._host.log.debug(f"[{name}] load_mission: migrated legacy '{legacy_key}' into {MISSION_KEY}.")
-        return record
+        """This vehicle's stored mission record (legacy vehicle.mission:<name> keys move in on first read)."""
+        return common.read_mission(MISSION_KEY, LEGACY_MISSION_KEY_PREFIX, self._host.name, self._host.log)
 
     def load_mission(self):
         """
@@ -130,7 +101,7 @@ class VehicleClaimsMixin:
 
         target_key = record["target_key"]
         claim = self.get_claims().get(target_key)
-        if not claim or (claim.get("vehicle") != self._host.name and claim.get("rover") != self._host.name):
+        if not claim or not self._owns(claim):
             self.clear_mission()
             return None
 
@@ -256,59 +227,31 @@ class VehicleClaimsMixin:
         Atomically claims a destination/site in Data Archive so peer vehicles skip it.
         Returns True if claim successfully acquired, False otherwise.
         """
-        self._host.log.start(f"[{self._host.name}] claim_target('{target_key}')", level="debug")
-        claimed = [False]
-        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
+        name = self._host.name
+        self._host.log.start(f"[{name}] claim_target('{target_key}')", level="debug")
         curr_tick = self._host.get_current_tick()
-
-        def updater(claims):
-            if not isinstance(claims, dict):
-                claims = {}
-
-            existing = claims.get(target_key)
-            if existing:
-                claim_owner = existing.get("rover", existing.get("vehicle"))
-                claim_tick = existing.get("tick", 0)
-                claim_age = curr_tick - claim_tick
-
-                if claim_owner != self._host.name:
-                    if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                        notes.append(f"[{self._host.name}] claim_target('{target_key}'): lost -- held by '{claim_owner}', age={claim_age} ticks (< CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}, curr_tick={curr_tick}).")
-                        claimed[0] = False
-                        return claims
-                    notes.append(f"[{self._host.name}] claim_target('{target_key}'): stale claim from '{claim_owner}' (age={claim_age} ticks >= CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS}) -- taking over.")
-
-            claims[target_key] = {
-                "rover": self._host.name,
-                "vehicle": self._host.name,
-                "type": target_info.get("type", "unknown"),
-                "coords": target_info.get("coords", (0, 0)),
-                "name": target_info.get("name", target_key),
-                "tick": curr_tick
-            }
-            claimed[0] = True
-            return claims
-
-        if not archive.transaction(SURVEY_CLAIMS_KEY, {}, updater):
-            claimed[0] = False
-            notes.append(f"[{self._host.name}] claim_target('{target_key}'): {SURVEY_CLAIMS_KEY} write rejected.")
+        record = {
+            "rover": name,
+            "vehicle": name,
+            "type": target_info.get("type", "unknown"),
+            "coords": target_info.get("coords", (0, 0)),
+            "name": target_info.get("name", target_key),
+            "tick": curr_tick,
+        }
+        notes = []
+        won = common.try_claim(SURVEY_CLAIMS_KEY, target_key, name, _claim_owner, record, curr_tick, self.CLAIM_STALE_TICKS, notes)
         for note in notes:
             self._host.log.debug(note)
-        self._host.log.debug(f"{'won' if claimed[0] else 'lost'} the race.")
+        self._host.log.debug(f"{'won' if won else 'lost'} the race.")
         self._host.log.end()
-        return claimed[0]
+        return won
+
+    def _owns(self, claim):
+        return claim.get("rover") == self._host.name or claim.get("vehicle") == self._host.name
 
     def refresh_claim(self, target_key):
         """Renews heartbeat timestamp on an active target claim."""
-        curr_tick = self._host.get_current_tick()
-
-        def updater(claims):
-            if isinstance(claims, dict) and target_key in claims:
-                if claims[target_key].get("rover") == self._host.name or claims[target_key].get("vehicle") == self._host.name:
-                    claims[target_key]["tick"] = curr_tick
-            return claims
-
-        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
+        common.refresh_claim(SURVEY_CLAIMS_KEY, target_key, self._owns, self._host.get_current_tick())
 
     def cleanup_stale_claims(self):
         """Removes expired fleet claims before selecting a new mission."""
@@ -318,51 +261,16 @@ class VehicleClaimsMixin:
             self._host.log.debug(f"skipped, curr_tick={curr_tick} (clock not ready yet).")
             self._host.log.end()
             return
-
-        expired = [0]
-
-        def updater(claims):
-            if not isinstance(claims, dict):
-                return {}
-            active = {}
-            for key, claim in claims.items():
-                if not isinstance(claim, dict):
-                    continue
-                claim_tick = claim.get("tick", 0)
-                if curr_tick - claim_tick < self.CLAIM_STALE_TICKS:
-                    active[key] = claim
-                else:
-                    expired[0] += 1
-            return active
-
-        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
-        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
-        if expired[0]:
-            self._host.log.debug(f"removed {expired[0]} claim(s) older than CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS} at curr_tick={curr_tick}.")
+        expired = sum(common.drop_stale_claims(key, curr_tick, self.CLAIM_STALE_TICKS) for key in (SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY))
+        if expired:
+            self._host.log.debug(f"removed {expired} claim(s) older than CLAIM_STALE_TICKS={self.CLAIM_STALE_TICKS} at curr_tick={curr_tick}.")
         self._host.log.end()
 
     def release_target_claim(self, target_key=None):
         """Releases claim on target_key or releases all claims owned by this vehicle."""
-        released = [[]]
-
-        def updater(claims):
-            if not isinstance(claims, dict):
-                return {}
-            if target_key:
-                if target_key in claims and (claims[target_key].get("rover") == self._host.name or claims[target_key].get("vehicle") == self._host.name):
-                    del claims[target_key]
-                    released[0].append(target_key)
-            else:
-                keys_to_remove = [k for k, v in claims.items() if isinstance(v, dict) and (v.get("rover") == self._host.name or v.get("vehicle") == self._host.name)]
-                for k in keys_to_remove:
-                    del claims[k]
-                released[0].extend(keys_to_remove)
-            return claims
-
-        archive.transaction(SURVEY_CLAIMS_KEY, {}, updater)
-        archive.transaction(LEGACY_ROVER_CLAIMS_KEY, {}, updater)
-        if released[0]:
-            self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): released {released[0]}.")
+        released = [k for key in (SURVEY_CLAIMS_KEY, LEGACY_ROVER_CLAIMS_KEY) for k in common.release_claims(key, target_key, self._owns)]
+        if released:
+            self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): released {released}.")
         else:
             self._host.log.debug(f"[{self._host.name}] release_target_claim({target_key!r}): nothing to release (not owned or not found).")
         if target_key == self.current_target_key or target_key is None:

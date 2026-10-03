@@ -89,6 +89,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ go_to()/go_to_station()/go_to_drill() wrappers, arrival polling | `drone_navigation.py` |
 | &nbsp;&nbsp;↳ engine auto-detect (electric/heli), linear per-meter trip budgeting, drone_service/drone_depot discovery | `drone_energy.py` — see §2h |
 | &nbsp;&nbsp;↳ exclusive biosite claims + scout empty-POI cache + mission persistence | `drone_claims.py` — see §2h |
+| &nbsp;&nbsp;↳ archive helpers shared with `vehicle_claims.py`: claim race/heartbeat/release/stale drop, mission store with legacy-key migration, recall flags | `fleet_claims_common.py` |
 | &nbsp;&nbsp;↳ cargo accounting/load-unload + home-biome filtering | `drone_cargo.py` |
 | &nbsp;&nbsp;↳ scout role loop (POI bio-scanning) | `drone_scout.py` |
 | Survey request areas scouts serve first (`autoplay.survey_requests`) + sonar `wrong_scanner` contacts as known biomass | `survey_requests.py` — see `docs/cheatsheet/autoplay.md` §11j |

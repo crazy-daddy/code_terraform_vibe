@@ -10,6 +10,7 @@
 
 from archive import archive
 from typing import TYPE_CHECKING
+import fleet_claims_common as common
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -34,24 +35,12 @@ DRONE_RECALL_KEY = "drone.recall"
 def is_drone_recalled(drone_name):
     """Module-level so non-drone scripts (e.g. drones_panel.py's DRONE FLEET card) can
     read a drone's recall flag without instantiating a DroneController."""
-    recalls = archive.get(DRONE_RECALL_KEY, {}) or {}
-    if not isinstance(recalls, dict):
-        return False
-    return bool(recalls.get(drone_name, False))
+    return common.is_flagged(DRONE_RECALL_KEY, drone_name)
 
 
 def set_drone_recalled(drone_name, recalled):
     """Sets or clears drone_name's recall flag in the shared DRONE_RECALL_KEY dict."""
-    def updater(recalls):
-        if not isinstance(recalls, dict):
-            recalls = {}
-        if recalled:
-            recalls[drone_name] = True
-        else:
-            recalls.pop(drone_name, None)
-        return recalls
-
-    archive.transaction(DRONE_RECALL_KEY, {}, updater)
+    common.set_flagged(DRONE_RECALL_KEY, drone_name, recalled)
 
 # Bounded fixed-size cache per CLAUDE.md rule 7 -- 35 permanent biosites total
 # (7 per biome x 5 biomes, docs/guide/biosphere_biomass_tier.md) means the
@@ -62,6 +51,10 @@ SCOUTED_EMPTY_POI_MAX_ENTRIES = 2000
 # Same expiry window as VehicleClaimsMixin.CLAIM_STALE_TICKS, so an abandoned
 # claim (crash, drone rescued away mid-mission) ages out on the same schedule.
 CLAIM_STALE_TICKS = 36000
+
+
+def _claim_owner(claim):
+    return claim.get("drone")
 
 
 def biosite_key(x, y):
@@ -96,36 +89,14 @@ class DroneClaimsMixin:
         """
         if not self.current_target_key:
             return
-        archive.set_entry(MISSION_KEY, self._host.name, {
-            "target_key": self.current_target_key,
-            "target": target,
-            "kind": kind,
-            "tick": self._host.get_current_tick(),
-        })
+        common.save_mission(MISSION_KEY, self._host.name, self.current_target_key, kind, target, self._host.get_current_tick())
 
     def clear_mission(self):
-        # Plain read first: a transaction always writes back, and this runs
-        # on every claim release, mostly with no mission stored.
-        if archive.get_entry(MISSION_KEY, self._host.name) is not None:
-            archive.pop_entry(MISSION_KEY, self._host.name)
+        common.clear_mission(MISSION_KEY, self._host.name)
 
     def _read_mission(self) -> "dict | None":
-        """This drone's stored mission record, moving a pre-consolidation
-        drone.mission:<name> key into the shared dict on first read."""
-        name = self._host.name
-        record = archive.get_entry(MISSION_KEY, name)
-        if record is not None:
-            return record if isinstance(record, dict) else None
-        legacy_key = f"{LEGACY_MISSION_KEY_PREFIX}{name}"
-        record = archive.get(legacy_key, None)
-        if record is None:
-            return None
-        archive.delete(legacy_key)
-        if not isinstance(record, dict):
-            return None
-        archive.set_entry(MISSION_KEY, name, record)
-        self._host.log.debug(f"[{name}] load_mission: migrated legacy '{legacy_key}' into {MISSION_KEY}.")
-        return record
+        """This drone's stored mission record (legacy drone.mission:<name> keys move in on first read)."""
+        return common.read_mission(MISSION_KEY, LEGACY_MISSION_KEY_PREFIX, self._host.name, self._host.log)
 
     def load_mission(self):
         """
@@ -249,75 +220,32 @@ class DroneClaimsMixin:
         only one drone may extract a given biosite at a time (see module
         docstring). Returns True if claim successfully acquired.
         """
-        claimed = [False]
-        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
+        name = self._host.name
         curr_tick = self._host.get_current_tick()
-
-        def updater(claims):
-            if not isinstance(claims, dict):
-                claims = {}
-            existing = claims.get(target_key)
-            if existing:
-                claim_owner = existing.get("drone")
-                claim_age = curr_tick - existing.get("tick", 0)
-                if claim_owner != self._host.name:
-                    if curr_tick == 0 or claim_age < self.CLAIM_STALE_TICKS:
-                        claimed[0] = False
-                        notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): lost -- held by '{claim_owner}' (age={claim_age} ticks < stale threshold {self.CLAIM_STALE_TICKS}).")
-                        return claims
-                    notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): existing claim by '{claim_owner}' is stale (age={claim_age} ticks >= {self.CLAIM_STALE_TICKS}); taking over.")
-            claims[target_key] = {
-                "drone": self._host.name,
-                "coords": target_info.get("coords", (0, 0)),
-                "name": target_info.get("name", target_key),
-                "tick": curr_tick,
-            }
-            claimed[0] = True
-            notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): won at tick {curr_tick}.")
-            return claims
-
-        if not archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater):
-            claimed[0] = False
-            notes.append(f"[{self._host.name}] claim_biosite('{target_key}'): {BIOSITE_CLAIMS_KEY} write rejected; treating as lost.")
+        record = {
+            "drone": name,
+            "coords": target_info.get("coords", (0, 0)),
+            "name": target_info.get("name", target_key),
+            "tick": curr_tick,
+        }
+        notes = []
+        won = common.try_claim(BIOSITE_CLAIMS_KEY, target_key, name, _claim_owner, record, curr_tick, self.CLAIM_STALE_TICKS, notes)
         for note in notes:
             self._host.log.debug(note)
-        return claimed[0]
+        self._host.log.debug(f"[{name}] claim_biosite('{target_key}'): {'won' if won else 'lost'} at tick {curr_tick}.")
+        return won
+
+    def _owns(self, claim):
+        return claim.get("drone") == self._host.name
 
     def refresh_biosite_claim(self, target_key):
         """Renews heartbeat timestamp on an active biosite claim."""
-        curr_tick = self._host.get_current_tick()
-
-        def updater(claims):
-            if isinstance(claims, dict) and target_key in claims:
-                if claims[target_key].get("drone") == self._host.name:
-                    claims[target_key]["tick"] = curr_tick
-            return claims
-
-        archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
+        common.refresh_claim(BIOSITE_CLAIMS_KEY, target_key, self._owns, self._host.get_current_tick())
 
     def release_biosite_claim(self, target_key=None):
         """Releases claim on target_key, or every claim owned by this drone."""
-        notes = []  # logged after the transaction: a log call inside the updater gets it rejected
-
-        def updater(claims):
-            if not isinstance(claims, dict):
-                return {}
-            if target_key:
-                if target_key in claims and claims[target_key].get("drone") == self._host.name:
-                    del claims[target_key]
-                    notes.append(f"[{self._host.name}] release_biosite_claim('{target_key}'): released.")
-                else:
-                    notes.append(f"[{self._host.name}] release_biosite_claim('{target_key}'): not owned by this drone; no-op.")
-            else:
-                keys_to_remove = [k for k, v in claims.items() if isinstance(v, dict) and v.get("drone") == self._host.name]
-                for k in keys_to_remove:
-                    del claims[k]
-                notes.append(f"[{self._host.name}] release_biosite_claim(all): released {len(keys_to_remove)} claim(s): {keys_to_remove}.")
-            return claims
-
-        archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
-        for note in notes:
-            self._host.log.debug(note)
+        released = common.release_claims(BIOSITE_CLAIMS_KEY, target_key, self._owns)
+        self._host.log.debug(f"[{self._host.name}] release_biosite_claim({target_key!r}): released {released or 'nothing (not owned or not found)'}.")
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
@@ -328,25 +256,9 @@ class DroneClaimsMixin:
         curr_tick = self._host.get_current_tick()
         if curr_tick <= 0:
             return
-
-        removed_count = [0]
-
-        def updater(claims):
-            if not isinstance(claims, dict):
-                return {}
-            active = {}
-            for key, claim in claims.items():
-                if not isinstance(claim, dict):
-                    continue
-                if curr_tick - claim.get("tick", 0) < self.CLAIM_STALE_TICKS:
-                    active[key] = claim
-                else:
-                    removed_count[0] += 1
-            return active
-
-        archive.transaction(BIOSITE_CLAIMS_KEY, {}, updater)
-        if removed_count[0]:
-            self._host.log.debug(f"[{self._host.name}] cleanup_stale_biosite_claims: removed {removed_count[0]} stale claim(s) at tick {curr_tick}.")
+        removed = common.drop_stale_claims(BIOSITE_CLAIMS_KEY, curr_tick, self.CLAIM_STALE_TICKS)
+        if removed:
+            self._host.log.debug(f"[{self._host.name}] cleanup_stale_biosite_claims: removed {removed} stale claim(s) at tick {curr_tick}.")
 
     def get_biosite_claims(self):
         """Returns the fleet-wide biosite claims dict {target_key: {"drone", "coords", "name", "tick"}}."""
