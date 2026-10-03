@@ -28,7 +28,7 @@ RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
 
 # Per-call ceiling on ore loading: bounds any single grab (~2.5 s of
 # Warehouse feeder lock). Fair sharing of contested ore is enforced by
-# step()'s fair-share cap (available ore + peers' buffers, split across
+# load_ore()'s fair-share cap (available ore + peers' buffers, split across
 # every Smelter on the recipe) together with recipe-scaled prefill cap.
 SMELTER_LOAD_CHUNK_SIZE = 10
 
@@ -45,7 +45,7 @@ IDLE_POLL_SECONDS = 2.0
 # capacity (SMELTER_LOAD_CHUNK_SIZE per poll) is far above consumption
 # (~0.5 ore/s for a 0.08 h recipe), so buffer size was not the bottleneck.
 # Fairness between Smelters sharing a scarce ore is handled by the fair-share
-# cap in step(), not by keeping this small.
+# cap in load_ore(), not by keeping this small.
 SMELTER_PREFILL_SECONDS = 30
 
 # Each step's outcome is narrated via debug() (log_outcome()) -- "busy_all_sources"
@@ -359,99 +359,130 @@ class SmelterController:
         dock_reserved = dock_remaining_requirements(self.site_id())
 
         # Step 2: Determine which recipe/ore to process
-        in_buf = self.smelter.get_input_count()
         current_recipe = self.smelter.get_recipe()
+        unlocked_recipes = self.unlocked_recipes()
 
+        # A recipe can remain selected after its blueprint is no longer
+        # available. Recover its staged input before clearing the stale state.
+        if current_recipe and current_recipe not in unlocked_recipes:
+            self.clear_locked_recipe(current_recipe)
+            self.log_outcome("recipe_switch", recipe=current_recipe)
+            return self.is_busy()
+
+        recipe, ore_to_process, refilling, demands = self.select_recipe(unlocked_recipes, demands, cache, dock_reserved)
+
+        # Do not keep refining material that has no downstream demand.
+        if recipe is None:
+            self.clear_unneeded_recipe(current_recipe)
+            self.log_outcome("output_blocked" if output_blocked else self._select_miss_reason, demand=demands)
+            return self.is_busy()
+
+        recipe_set = False
+        if current_recipe != getattr(recipe, "id", ""):
+            recipe_set = self.switch_recipe(recipe, ore_to_process, current_recipe, refilling)
+            if not recipe_set:
+                return self.is_busy()
+
+        # Step 3: Top up the input buffer.
+        loaded = self.load_ore(recipe, ore_to_process, demands, cache, dock_reserved, refilling, output_blocked)
+
+        # Step 4: Check idle condition
+        return self.settle_idle(unlocked_recipes, demands, cache, dock_reserved, loaded or recipe_set)
+
+    def unlocked_recipes(self):
+        """{recipe_id: recipe} for every recipe this Smelter can run ({} on error)."""
         try:
-            unlocked_recipes = {
+            return {
                 getattr(recipe, "id", ""): recipe
                 for recipe in self.smelter.list_recipes()
                 if getattr(recipe, "id", "")
             }
         except Exception as error:
-            swallowed("smelter.SmelterController.step: self.smelter.list_recipes", error)
-            unlocked_recipes = {}
+            swallowed("smelter.SmelterController.unlocked_recipes: self.smelter.list_recipes", error)
+            return {}
 
-        # A recipe can remain selected after its blueprint is no longer
-        # available. Recover its staged input before clearing the stale state.
-        if current_recipe and current_recipe not in unlocked_recipes:
-            if not self.smelter.is_running():
-                self.log.start(f"[{self.name}] Clearing locked recipe '{current_recipe}'")
-                self.recover_input()
-                clear_res = self.smelter.clear_recipe()
-                if clear_res.status == "ok":
-                    self.release_recipe(current_recipe)
-                    self.log.end(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
-                else:
-                    self.log.end(f"[{self.name}] Locked recipe '{current_recipe}' not cleared ({clear_res.status}).")
-            self.log_outcome("recipe_switch", recipe=current_recipe)
-            return self.is_busy()
+    def clear_locked_recipe(self, current_recipe):
+        """Recovers the staged input of a recipe whose blueprint is no longer
+        unlocked, then clears it. A running craft is left to finish first."""
+        if self.smelter.is_running():
+            return
+        self.log.start(f"[{self.name}] Clearing locked recipe '{current_recipe}'")
+        self.recover_input()
+        clear_res = self.smelter.clear_recipe()
+        if clear_res.status == "ok":
+            self.release_recipe(current_recipe)
+            self.log.end(f"[{self.name}] Cleared locked recipe '{current_recipe}'.")
+        else:
+            self.log.end(f"[{self.name}] Locked recipe '{current_recipe}' not cleared ({clear_res.status}).")
 
-        recipe, ore_to_process = self.select_needed_ore(unlocked_recipes, demands, cache, dock_reserved)
-        # Idle time goes to this fab site's ingot buffer (production.site_ingot_refill()),
-        # only when no real demand is sourceable: a real demand found next step wins
-        # the selection again, so a refill never holds up an order.
-        refilling = False
+    def select_recipe(self, unlocked_recipes, demands, cache, dock_reserved):
+        """Picks (recipe, ore, refilling, demands) for this step. Idle time goes
+        to this fab site's ingot buffer (production.site_ingot_refill()), only
+        when no real demand is sourceable: a real demand found next step wins
+        the selection again, so a refill never holds up an order. `demands` in
+        the result is the map the choice was made against (the refill map when
+        refilling). recipe is None when nothing is worth refining."""
+        recipe, ore = self.select_needed_ore(unlocked_recipes, demands, cache, dock_reserved)
+        if recipe is not None:
+            return recipe, ore, False, demands
+        refill = site_ingot_refill(self.outpost(), cache)
+        if not refill:
+            return None, None, False, demands
+        miss_reason = self._select_miss_reason
+        self.log.debug(f"[{self.name}] no real demand ({miss_reason}), trying ingot buffer refill {refill}")
+        recipe, ore = self.select_needed_ore(unlocked_recipes, refill, cache, dock_reserved)
         if recipe is None:
-            refill = site_ingot_refill(self.outpost(), cache)
-            if refill:
-                miss_reason = self._select_miss_reason
-                self.log.debug(f"[{self.name}] no real demand ({miss_reason}), trying ingot buffer refill {refill}")
-                recipe, ore_to_process = self.select_needed_ore(unlocked_recipes, refill, cache, dock_reserved)
-                if recipe is None:
-                    self._select_miss_reason = miss_reason
-                else:
-                    refilling = True
-                    demands = refill
+            self._select_miss_reason = miss_reason
+            return None, None, False, demands
+        return recipe, ore, True, refill
 
-        # Do not keep refining material that has no downstream demand.
-        if recipe is None:
-            if current_recipe and not self.smelter.is_running() and self.smelter.get_input_count() == 0:
-                clear_res = self.smelter.clear_recipe()
-                if clear_res.status == "ok":
-                    self.release_recipe(current_recipe)
-                    # power_draw only applies while a recipe is actively running,
-                    # so clearing it here is state hygiene, not a power saving.
-                    self.log.print(f"[{self.name}] Recipe cleared (no demand): every refined output is already at its stock target or order requirement.")
-            self.log_outcome("output_blocked" if output_blocked else self._select_miss_reason, demand=demands)
-            return self.is_busy()
+    def clear_unneeded_recipe(self, current_recipe):
+        """Clears a recipe with no downstream demand once its craft and staged
+        input are done. power_draw only applies while a recipe is actively
+        running, so this is state hygiene, not a power saving."""
+        if not current_recipe or self.smelter.is_running() or self.smelter.get_input_count() != 0:
+            return
+        clear_res = self.smelter.clear_recipe()
+        if clear_res.status == "ok":
+            self.release_recipe(current_recipe)
+            self.log.print(f"[{self.name}] Recipe cleared (no demand): every refined output is already at its stock target or order requirement.")
 
+    def switch_recipe(self, recipe, ore, current_recipe, refilling):
+        """Switches the Smelter from current_recipe to recipe. Waits (returns
+        False) while a craft is running or foreign input can't be recovered
+        yet. Returns True once the new recipe is set."""
         recipe_id = getattr(recipe, "id", "")
-        recipe_set = False
-        if current_recipe != recipe_id:
-            if self.smelter.is_running():
+        if self.smelter.is_running():
+            self.log_outcome("recipe_switch", recipe=recipe_id)
+            return False
+        recipe_inputs = set((getattr(recipe, "inputs", {}) or {}).keys())
+        buffered_items = {getattr(stack, "id", "") for stack in self.smelter.input.stacks()}
+        if buffered_items - recipe_inputs:
+            self.recover_input()
+            if self.smelter.get_input_count() > 0:
                 self.log_outcome("recipe_switch", recipe=recipe_id)
-                return True
-            else:
-                recipe_inputs = set((getattr(recipe, "inputs", {}) or {}).keys())
-                buffered_items = {
-                    getattr(stack, "id", "")
-                    for stack in self.smelter.input.stacks()
-                }
-                if buffered_items - recipe_inputs:
-                    self.recover_input()
-                    if self.smelter.get_input_count() > 0:
-                        self.log_outcome("recipe_switch", recipe=recipe_id)
-                        return True
-                set_res = self.smelter.set_recipe(recipe_id)
-                if set_res.status == "ok":
-                    # Hand the old recipe's claim back right away instead of
-                    # letting it block peers until it goes stale.
-                    if current_recipe:
-                        self.release_recipe(current_recipe)
-                    reason = self.intake_reason(ore_to_process, refilling)
-                    output_item = getattr(recipe, "output_item", "?")
-                    self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore_to_process} -> {output_item} for {reason}.")
-                    current_recipe = recipe_id
-                    recipe_set = True
-                    in_buf = self.smelter.get_input_count()
-                else:
-                    self.log_outcome("recipe_switch", recipe=recipe_id)
-                    return self.is_busy()
+                return False
+        set_res = self.smelter.set_recipe(recipe_id)
+        if set_res.status != "ok":
+            self.log_outcome("recipe_switch", recipe=recipe_id)
+            return False
+        # Hand the old recipe's claim back right away instead of letting it
+        # block peers until it goes stale.
+        if current_recipe:
+            self.release_recipe(current_recipe)
+        reason = self.intake_reason(ore, refilling)
+        output_item = getattr(recipe, "output_item", "?")
+        self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore} -> {output_item} for {reason}.")
+        return True
 
-        # Step 3: Top up the input buffer. take_item() tries only endpoints
-        # that actually hold the ore -- Inventory first (never locks), then
-        # Warehouses by most stock, recently-"busy" ones last.
+    def load_ore(self, recipe, ore_to_process, demands, cache, dock_reserved, refilling, output_blocked):
+        """Tops up the input buffer with ore_to_process, capped by hardware,
+        chunk size, demand share, prefill and fair share. take_item() tries
+        only endpoints that actually hold the ore -- Inventory first (never
+        locks), then Warehouses by most stock, recently-"busy" ones last.
+        Logs the step's outcome; returns True when ore was loaded."""
+        recipe_id = getattr(recipe, "id", "")
+        in_buf = self.smelter.get_input_count()
         outcome = "buffer_full"
         outcome_detail = {"recipe": recipe_id, "ore": ore_to_process, "refill": refilling}
         loaded = False
@@ -525,30 +556,26 @@ class SmelterController:
         if output_blocked:
             outcome = "output_blocked"
         self.log_outcome(outcome, **outcome_detail)
+        return loaded
 
-        # Step 4: Check idle condition & power management
-        in_buf = self.smelter.get_input_count()
-        out_buf = self.smelter.get_output_count()
-        is_active = self.smelter.is_running() or in_buf > 0 or out_buf > 0 or loaded or recipe_set
-
-        if not is_active:
-            # Check if any demanded ore is pending (Inventory or a Warehouse)
-            has_pending_ore = False
-            for ore, pending_recipe_id in self.RECIPE_MAP.items():
-                pending_recipe = unlocked_recipes.get(pending_recipe_id)
-                if pending_recipe is None:
-                    continue
-                if demands.get(getattr(pending_recipe, "output_item", None), 0) > 0 and self.available_ore(ore, cache, dock_reserved) > 0:
-                    has_pending_ore = True
-                    break
-
-            if not has_pending_ore:
-                # Completely idle! power_draw only applies while a recipe is
-                # running, so clearing it is cleanup, not what cuts the draw.
-                if self.smelter.get_recipe() != "":
-                    self.smelter.clear_recipe()
-                    self.log.print(f"[{self.name}] No ore to smelt. Recipe cleared.")
-        return bool(is_active)
+    def settle_idle(self, unlocked_recipes, demands, cache, dock_reserved, changed):
+        """Returns whether the Smelter is active (is_busy(), or `changed` =
+        ore/recipe was just loaded/set). A fully idle Smelter with no demanded
+        ore pending in reachable storage clears its recipe -- power_draw only
+        applies while a recipe is running, so this is cleanup, not what cuts
+        the draw."""
+        if changed or self.is_busy():
+            return True
+        for ore, pending_recipe_id in self.RECIPE_MAP.items():
+            pending_recipe = unlocked_recipes.get(pending_recipe_id)
+            if pending_recipe is None:
+                continue
+            if demands.get(getattr(pending_recipe, "output_item", None), 0) > 0 and self.available_ore(ore, cache, dock_reserved) > 0:
+                return False
+        if self.smelter.get_recipe() != "":
+            self.smelter.clear_recipe()
+            self.log.print(f"[{self.name}] No ore to smelt. Recipe cleared.")
+        return False
 
     def recover_input(self):
         """Return staged material to Inventory (home) or a local Warehouse
@@ -586,7 +613,7 @@ class SmelterController:
         large order), joins the first one anyway rather than sitting
         completely idle: get_smelter_demands() nets against total stock
         (which includes what every other smelter has already produced), and
-        step()'s demand-share + fair-share caps split the intake, so several
+        load_ore()'s demand-share + fair-share caps split the intake, so several
         smelters pulling the same ore in parallel self-throttle down to 0
         together once the target is met.
 
