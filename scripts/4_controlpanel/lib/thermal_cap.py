@@ -263,7 +263,7 @@ class ThermalCapController:
         """Sleep before the next poll (see CAP_WAKE_FRACTION); learns the fastest rise from successive reads."""
         tick = self.get_current_tick()
         rise = 0.0
-        if self.last_pressure is not None and tick > self.last_pressure_tick:
+        if self.last_pressure is not None and self.last_pressure_tick is not None and tick > self.last_pressure_tick:
             rise = (pressure - self.last_pressure) / (tick - self.last_pressure_tick)
         # A rise only counts as a rate once the interval before it rose too: the first
         # rising interval after dormancy may have been active for only part of its length.

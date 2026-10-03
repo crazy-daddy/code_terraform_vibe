@@ -146,9 +146,10 @@ class FluidOnlySwitchTests(StubTestCase):
         f = w.add_fabricator("fabricator_1", w.home, RECIPES)
         f.recipe = "craft_tar"
         f.running = True
-        f.oil_in = FluidPort(w, connected="oil_pump_1")
+        oil_in = FluidPort(w, connected="oil_pump_1")
+        setattr(f, "oil_in", oil_in)
         fabricator.FabricatorController(f).step()
-        self.assertEqual(f.oil_in.connected_id(), "")
+        self.assertEqual(oil_in.connected_id(), "")
         self.assertNotEqual(f.recipe, "craft_tar")
 
 

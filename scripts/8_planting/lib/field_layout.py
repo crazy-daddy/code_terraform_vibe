@@ -606,16 +606,16 @@ def snake(sectors):
     return sorted(sectors, key=key)
 
 
-_WORK_ORDER_MEMO = [None, None]   # [inputs key, groups] of the last work_order() call
+_WORK_ORDER_MEMO = {}   # {"key": inputs key, "groups": groups} of the last work_order() call
 
 
 def work_order(cells, reserved, fill=None):
     """Memoised on the sectors of cells / reserved and the garden width; the returned groups are shared and read-only."""
     key = (tuple(sorted(cells)), tuple(sorted(reserved.items())), garden_cols(fill))
-    if _WORK_ORDER_MEMO[0] != key:
-        _WORK_ORDER_MEMO[1] = _compute_work_order(cells, reserved, fill)
-        _WORK_ORDER_MEMO[0] = key
-    return _WORK_ORDER_MEMO[1]
+    if _WORK_ORDER_MEMO.get("key") != key:
+        _WORK_ORDER_MEMO["groups"] = _compute_work_order(cells, reserved, fill)
+        _WORK_ORDER_MEMO["key"] = key
+    return _WORK_ORDER_MEMO["groups"]
 
 
 def _compute_work_order(cells, reserved, fill=None):

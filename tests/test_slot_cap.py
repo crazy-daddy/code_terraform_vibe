@@ -6,16 +6,23 @@ take_item() report and storage.eject_unneeded() frees slots; the Feed Maker
 and Crop Automator recover with them."""
 import unittest
 
-from game_stubs import MATERIAL_SLOTS, CropAutomator, Slot
+from game_stubs import MATERIAL_SLOTS, Building, CropAutomator, Slot
 from harness import StubTestCase, storage
 
 from crop_automator import CropAutomatorController
 
 
+class StockpileBuilding(Building):
+    """Plain Building with a roomy input stockpile, so only the material-slot cap limits it."""
+
+    def __init__(self, world, building_id, outpost):
+        super().__init__(world, building_id, outpost)
+        self.input = Slot(self, self.input_buffer, 100000)
+
+
 class SlotCapTests(StubTestCase):
     def machine(self, type_id, held):
-        building = self.world.add_building(f"{type_id}_1", self.world.home, type_id)
-        building.input = Slot(building, building.input_buffer, 100000)
+        building = self.world.add_building(f"{type_id}_1", self.world.home, type_id, StockpileBuilding)
         building.input_buffer.update(held)
         return building
 

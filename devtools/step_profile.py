@@ -20,6 +20,7 @@ import collections
 import os
 import sys
 import types
+from typing import Any
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tests"))
@@ -161,7 +162,7 @@ class _RouteHost:
         return 5.0
 
 
-def _with_host(mixin):
+def _with_host(mixin) -> Any:
     cls = type(f"Profile{mixin.__name__}", (mixin,), {"_host": property(lambda self: self._profile_host)})
     obj = cls.__new__(cls)
     obj._profile_host = _RouteHost()

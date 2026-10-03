@@ -2,7 +2,6 @@
 import unittest
 
 from harness import StubTestCase, production, storage, supply_dock
-from game_stubs import Store as storage_stub
 
 
 class DiscoveryTests(StubTestCase):
@@ -162,10 +161,8 @@ class SourceCacheTests(StubTestCase):
         self.assertEqual(cache.local_stock("silicon", remote), 2)
 
     def add_depot(self, depot_id, outpost, items):
-        depot = type("Depot", (), {})()
-        depot.id, depot.type_id, depot.outpost = depot_id, "drone_station_large", outpost
-        depot.output = storage_stub(self.world, depot_id, "", outpost, items=items)
-        self.world.components[depot_id] = depot
+        depot = self.world.add_drone_depot(depot_id, outpost, "drone_station_large")
+        depot.output_buffer.update(items)
         return depot
 
     def test_held_and_network_stock_count_drone_depots(self):

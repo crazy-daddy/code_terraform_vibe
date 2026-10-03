@@ -51,7 +51,7 @@ class Result:
     """ActionResult / TransferResult; `payload` adds the extra result fields
     (machine_id, message_id, packet, count, ...)."""
 
-    def __init__(self, status="ok", moved=0, message="", **payload):
+    def __init__(self, status="ok", moved: float = 0, message="", **payload):
         self.status = status
         self.moved = moved
         self.message = message
@@ -155,6 +155,8 @@ class OutpostRef:
         self.id = outpost_id
         self.name = outpost_id
         self.is_home = is_home
+        self.x = 0.0
+        self.y = 0.0
 
     def buildings(self, type_id=None):
         return [
@@ -286,7 +288,7 @@ MATERIAL_SLOTS = {
     "fabricator": 8, "feed_maker": 8, "crop_automator": 8, "garbage_disposal": 10,
     "plant_terraformer": 6, "habitat": 5, "bio_lab": 4, "bio_caster": 4,
     "fuel_assembler": 3, "seed_maker": 3,
-    "drone_station": 3, "drone_station_med": 4, "drone_station_lrg": 6,
+    "drone_station": 3, "drone_station_medium": 4, "drone_station_large": 6,
 }
 
 

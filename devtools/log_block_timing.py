@@ -41,6 +41,7 @@ import argparse
 import bisect
 import collections
 import glob
+import io
 import os
 import re
 import statistics
@@ -181,7 +182,7 @@ def collect(paths, sec_per_tick, script_filter, since=None):
     census = []  # (tick, running scripts)
     unclosed = 0
     windows = {}
-    span = [None, None]  # first and last iso time read
+    span: list[str | None] = [None, None]  # first and last iso time read
     for base, files in paths.items():
         if script_filter and script_filter not in base:
             continue
@@ -198,7 +199,7 @@ def collect(paths, sec_per_tick, script_filter, since=None):
                     if "scripts running: " in line:
                         found_census = CENSUS_RE.search(line)
                         match = LINE_RE.match(line) if found_census else None
-                        if match:
+                        if match and found_census:
                             census.append((int(match["tick"]), int(found_census.group(1))))
                     parsed = parse_line(line)
                     if parsed is None:
@@ -321,7 +322,7 @@ def main():
     parser.add_argument("--exclude", help="regex; skip blocks whose name matches (e.g. travel/wait blocks)")
     parser.add_argument("--sort", choices=("total", "self", "median", "max", "share", "steps"), default="total")
     args = parser.parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
+    if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8")
 
     save = args.save or newest_save()

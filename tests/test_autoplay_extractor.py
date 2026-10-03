@@ -167,10 +167,10 @@ class PassCase(harness.StubTestCase):
         self.world.services["construction_blueprint"] = self.blueprints
         self.world.home.x = 0.0
         self.world.home.y = 0.0
-        builtins.list_pipes = lambda: []
+        setattr(builtins, "list_pipes", lambda: [])
 
     def tearDown(self):
-        del builtins.list_pipes
+        delattr(builtins, "list_pipes")
         super().tearDown()
 
     def outpost(self, oid, x, y=0.0):

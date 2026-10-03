@@ -1,12 +1,14 @@
 {
   "pythonVersion": "3.12",
+  "venvPath": ".",
+  "venv": ".venv",
   "exclude": [
     "tools", "inspirations", "**/node_modules", "**/__pycache__", "**/.*", ".venv"
   ],
   "executionEnvironments": [
     {
       "root": "devtools",
-      "extraPaths": [".pyright-resolved/lib"]
+      "extraPaths": [".pyright-resolved/lib", "tests"]
     },
     {
       "root": "tests",
@@ -16,6 +18,7 @@
         "scripts/5_steampower/lib",
         "scripts/9_wildlife/lib",
         "autoplay/lib",
+        "devtools",
         ".pyright-resolved/stubs"
       ]
     },

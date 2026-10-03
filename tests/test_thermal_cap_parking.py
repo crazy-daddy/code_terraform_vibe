@@ -1,4 +1,5 @@
 import unittest
+from typing import Any, cast
 
 from harness import StubTestCase
 from game_stubs import Clock
@@ -19,7 +20,7 @@ def _controller(cap, phase="dormant", pressure=0.0, max_rise=0.0):
     ctl = thermal_cap.ThermalCapController.__new__(thermal_cap.ThermalCapController)
     ctl.cap = cap
     ctl.name = cap.id
-    ctl.clock = Clock(30.0)
+    ctl.clock = cast(Any, Clock(30.0))
     ctl.last_phase = phase
     ctl.last_pressure = pressure
     ctl.max_rise_per_tick = max_rise

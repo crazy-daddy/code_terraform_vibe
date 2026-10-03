@@ -62,9 +62,11 @@ class SurplusHysteresisTests(harness.StubTestCase):
         c = self.controller()
         c.oil_tons, c.oil_fill_tick = (500.0, 1000.0), 0
         c.update_inflow((498.0, 1000.0), 4.0, oil_generator.TICKS_PER_GAME_HOUR)
+        assert c.oil_inflow_tph is not None
         self.assertAlmostEqual(c.oil_inflow_tph, 2.0)
         c.oil_tons, c.oil_fill_tick = (498.0, 1000.0), oil_generator.TICKS_PER_GAME_HOUR
         c.update_inflow((508.0, 1000.0), 0.0, 2 * oil_generator.TICKS_PER_GAME_HOUR)
+        assert c.oil_inflow_tph is not None
         self.assertAlmostEqual(c.oil_inflow_tph, 2.0 + oil_generator.OIL_INFLOW_EMA_ALPHA * 8.0)
 
     def test_capacity_change_skips_inflow_sample(self):

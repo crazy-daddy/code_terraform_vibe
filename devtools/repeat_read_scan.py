@@ -32,6 +32,7 @@ deploy of the current code (see log_block_timing.py).
 import argparse
 import ast
 import collections
+import io
 import os
 import re
 import sys
@@ -130,7 +131,7 @@ def template_regex(arg):
     elif isinstance(arg, ast.JoinedStr):
         parts = []
         for value in arg.values:
-            if isinstance(value, ast.Constant):
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
                 parts.append(re.escape(re.sub(r"\d+", "#", value.value)))
             else:
                 parts.append(".+?")
@@ -152,12 +153,13 @@ class Scanner(ast.NodeVisitor):
         for stmt in self.func.node.body:
             self.visit(stmt)
 
-    def visit_FunctionDef(self, node):
+    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef):
         nested = Function(self.func.rel, self.func.cls, node)
         self.out.append(nested)
         Scanner(nested, self.out).run()
 
-    visit_AsyncFunctionDef = visit_FunctionDef
+    def visit_AsyncFunctionDef(self, node):
+        self.visit_FunctionDef(node)
 
     def _loop(self, bound, iter_text, body_nodes):
         assigned = set(bound)
@@ -206,7 +208,11 @@ class Scanner(ast.NodeVisitor):
     def visit_ListComp(self, node):
         self._comprehension(node, [node.elt])
 
-    visit_SetComp = visit_GeneratorExp = visit_ListComp
+    def visit_SetComp(self, node):
+        self._comprehension(node, [node.elt])
+
+    def visit_GeneratorExp(self, node):
+        self._comprehension(node, [node.elt])
 
     def visit_DictComp(self, node):
         self._comprehension(node, [node.key, node.value])
@@ -263,9 +269,10 @@ def scan(files):
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         functions.append(Function(rel, node.name, item))
         # module-level script code: one pseudo-function for the top-level statements
-        top = ast.FunctionDef(name="<module>", args=None, body=[
+        no_args = ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[])
+        top = ast.FunctionDef(name="<module>", args=no_args, body=[
             n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        ], decorator_list=[], lineno=1)
+        ], decorator_list=[], returns=None, type_params=[], lineno=1)
         functions.append(Function(rel, None, top))
     nested = []
     for func in list(functions):
@@ -403,7 +410,7 @@ def main():
     parser.add_argument("--per-block", type=int, default=6, help="hits shown per block")
     parser.add_argument("--top", type=int, default=30, help="static hits outside timed blocks")
     args = parser.parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
+    if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8")
 
     files = tier_files()

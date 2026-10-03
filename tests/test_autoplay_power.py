@@ -294,10 +294,10 @@ class PowerPassTests(harness.StubTestCase):
         self.world.inventory.add(pp.POWER_ITEM, 1000)
         self.world.home.x = 0.0
         self.world.home.y = 0.0
-        builtins.list_pipes = lambda: []
+        setattr(builtins, "list_pipes", lambda: [])
 
     def tearDown(self):
-        del builtins.list_pipes
+        delattr(builtins, "list_pipes")
         super().tearDown()
 
     def run_pass(self, planner=None):

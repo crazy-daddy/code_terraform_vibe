@@ -1,3 +1,5 @@
+# In-game script: the game injects `panel`, which devtools/ Pyright does not see.
+# pyright: reportUndefinedVariable=false
 # Minimal repro (fixed in game v0.1.29, kept as a regression check): a suspended generator disconnected a panel script from its card.
 #
 # Paste into an empty Custom Panel, set MODE, run. Use a fresh card per run (or

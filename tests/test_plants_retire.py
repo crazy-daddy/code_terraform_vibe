@@ -111,14 +111,27 @@ class _Terraformer:
         return {"fertilizer_mk3": 50, "fertilizer_mk2": 30, "fertilizer": 10}[item_id]
 
 
+class _FeedRecordingController(plant_terraformer.PlantTerraformerController):
+    """Records each feed() call instead of loading, with no water to manage."""
+
+    def __init__(self, machine):
+        super().__init__(machine)
+        self.fed = []
+
+    def feed(self, *args, **kwargs):
+        self.fed.append(args)
+        return {}
+
+    def ensure_water(self, *args, **kwargs):
+        return None
+
+    def water_level(self):
+        return 0.0
+
+
 class TerraformerFinishTests(StubTestCase):
     def controller(self, machine):
-        ctrl = plant_terraformer.PlantTerraformerController(machine)
-        ctrl.fed = []
-        ctrl.feed = lambda *args: ctrl.fed.append(args) or {}
-        ctrl.ensure_water = lambda tick: None
-        ctrl.water_level = lambda: 0.0
-        return ctrl
+        return _FeedRecordingController(machine)
 
     def test_running_batch_reaching_the_end_stops_loading(self):
         # 1,000 km²/h x 3 h x half left = 1,500 km² still to come; another
@@ -129,7 +142,7 @@ class TerraformerFinishTests(StubTestCase):
         machine = _Terraformer()
         ctrl = self.controller(machine)
         published = []
-        ctrl.publish_fabricator_orders = lambda need, backlog: published.append((need, backlog))
+        ctrl.publish_fabricator_orders = lambda need, backlog, **kwargs: published.append((need, backlog))
         self.assertFalse(ctrl.step())
         self.assertEqual(ctrl.fed, [])
         self.assertEqual(published, [({}, {})])
@@ -138,8 +151,8 @@ class TerraformerFinishTests(StubTestCase):
     def test_short_of_the_end_keeps_loading(self):
         machine = _Terraformer(remaining=30000.0)
         ctrl = self.controller(machine)
-        ctrl.publish_requests = lambda *args: None
-        ctrl.publish_fabricator_orders = lambda *args: None
+        ctrl.publish_requests = lambda *args, **kwargs: None
+        ctrl.publish_fabricator_orders = lambda *args, **kwargs: None
         ctrl.step()
         self.assertEqual(len(ctrl.fed), 1)
         # 30,000 - 1,500 km² left = 85,500 Forage: a full batch.
@@ -150,8 +163,8 @@ class TerraformerFinishTests(StubTestCase):
             "plant_terraformer_2": {"status": "running", "in_flight": True, "batch_km2": 3000.0, "progress": 0.5, "tick": -10000},
         })
         ctrl = self.controller(_Terraformer())
-        ctrl.publish_requests = lambda *args: None
-        ctrl.publish_fabricator_orders = lambda *args: None
+        ctrl.publish_requests = lambda *args, **kwargs: None
+        ctrl.publish_fabricator_orders = lambda *args, **kwargs: None
         ctrl.step()
         # 3,000 - 1,500 km² left = 4,500 Forage: next batch capped.
         self.assertEqual(ctrl.fed[0][0]["forage"], 4500)

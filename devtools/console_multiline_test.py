@@ -1,3 +1,5 @@
+# In-game script: the game injects get_component()/sleep(), which devtools/ Pyright does not see.
+# pyright: reportUndefinedVariable=false
 # Console multi-line and limit probe: a few lines of output on channel "bench", no game side effects.
 # Checks (1) how a "\n" inside one console.print renders, (2) what one multi-line print costs in simulation
 # time, (3) the string and collection limits, read from the OverflowError messages, and (4) whether

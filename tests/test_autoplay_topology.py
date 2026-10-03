@@ -128,9 +128,6 @@ class PortTests(unittest.TestCase):
         self.assertIn(path[-1][0], ports["free"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CountingPipe(FakePipe):
     """FakePipe counting contents() reads (one per full row read)."""
@@ -146,13 +143,13 @@ class IncrementalReadTests(harness.StubTestCase):
         super().setUp()
         import builtins
         self.pipes = [CountingPipe(f"p{i}", "liquid", 5, 5 + 10 * i, 5, 15 + 10 * i, contents="water") for i in range(5)]
-        builtins.list_pipes = lambda: list(self.pipes)
+        setattr(builtins, "list_pipes", lambda: list(self.pipes))
         self.world.services["construction_blueprint"] = None
         CountingPipe.reads = 0
 
     def tearDown(self):
         import builtins
-        del builtins.list_pipes
+        delattr(builtins, "list_pipes")
         super().tearDown()
 
     def test_only_new_pipes_read_and_removed_dropped(self):
@@ -197,3 +194,7 @@ class AtomicBudgetTests(unittest.TestCase):
         known = {f"p{i}": None for i in range(5000)}
         fresh = [FakePipe(f"n{i}", "liquid", 5, 5, 5, 15) for i in range(topo.ID_CHUNK)]
         self.assertLess(ops(topo.new_pipe_slice, fresh, known), ATOMIC_STEP_BUDGET)
+
+
+if __name__ == "__main__":
+    unittest.main()

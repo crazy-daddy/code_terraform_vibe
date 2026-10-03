@@ -227,7 +227,7 @@ swallow.set_flush_hook(flush_all)
 class TreeConsole:
     def __init__(
         self,
-        console: "Console | None" = None,
+        console=None,  # the game Console, or any object with print(text, **kwargs)
         default_level: str = "info",
         module: str = "",
         buffered: bool = True,

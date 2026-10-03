@@ -107,9 +107,6 @@ class BacklogTierTests(StubTestCase):
         self.assertEqual(self.choose(), "steel_plate")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class _Outpost:
     def __init__(self, outpost_id, is_home):
@@ -168,16 +165,39 @@ class _FeedTerraformer(_HomeTerraformer):
         return {"fertilizer_mk3": 50, "fertilizer_mk2": 30, "fertilizer": 10}[item_id]
 
 
+class _IdleFeedTerraformer(_FeedTerraformer):
+    """Between batches: no Forage loaded yet, in the Growth Accelerant phase."""
+
+    def status(self):
+        return "no_forage"
+
+    def phase(self):
+        return 5
+
+    def required_inputs(self):
+        return ACCEL_REQUIRED
+
+    def batch_requirements(self):
+        return ACCEL_REQS
+
+
+class _LoadRecordingController(plant_terraformer.PlantTerraformerController):
+    """Records each item_id _take() moves, in order."""
+
+    def __init__(self, machine):
+        super().__init__(machine)
+        self.loads = []
+
+
 class FeedOrderTests(StubTestCase):
     """A batch ending mid-load must not find a startable partial set in the holders."""
 
-    def controller(self, held, stock, transfer_cap=None):
-        machine = _FeedTerraformer(held)
-        ctrl = plant_terraformer.PlantTerraformerController(machine)
+    def controller(self, held, stock, transfer_cap=None, cls=_FeedTerraformer):
+        machine = cls(held)
+        ctrl = _LoadRecordingController(machine)
         ctrl.onboard = lambda: dict(machine.held)
         ctrl.water_level = lambda: 330.0
         ctrl.available = lambda item_id, requests: stock.get(item_id, 0)
-        ctrl.loads = []
 
         def take(item_id, amount, requests):
             moved = max(min(amount, stock.get(item_id, 0), transfer_cap or amount), 0)
@@ -211,17 +231,18 @@ class FeedOrderTests(StubTestCase):
 
     def test_idle_step_disables_before_loading(self):
         stock = {"forage": 200, "salt": 50, "fertilizer_mk2": 5, "growth_accelerant": 5}
-        ctrl, machine = self.controller({"salt": 14, "fertilizer_mk2": 1, "growth_accelerant": 1}, stock)
-        machine.status = lambda: "no_forage"
-        machine.phase = lambda: 5
-        machine.required_inputs = lambda: ACCEL_REQUIRED
-        machine.batch_requirements = lambda: ACCEL_REQS
+        ctrl, machine = self.controller({"salt": 14, "fertilizer_mk2": 1, "growth_accelerant": 1}, stock,
+                                        cls=_IdleFeedTerraformer)
         enabled_at_load = []
         feed = ctrl.feed
-        ctrl.feed = lambda *args: enabled_at_load.append(machine.enabled) or feed(*args)
-        ctrl.publish_requests = lambda *args: None
-        ctrl.publish_fabricator_orders = lambda *args: None
-        ctrl.ensure_water = lambda tick: None
+        ctrl.feed = lambda *args, **kwargs: enabled_at_load.append(machine.enabled) or feed(*args, **kwargs)
+        ctrl.publish_requests = lambda *args, **kwargs: None
+        ctrl.publish_fabricator_orders = lambda *args, **kwargs: None
+        ctrl.ensure_water = lambda *args, **kwargs: None
         ctrl.step()
         self.assertEqual(enabled_at_load, [False])
         self.assertFalse(machine.enabled)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -138,7 +138,9 @@ class ReactorTests(harness.StubTestCase):
     def test_steady_state_formula(self):
         decay = math.exp(-rx.LAG_PER_GH * 0.1)
         t1 = 900 + (300 - 900) * decay
-        self.assertAlmostEqual(rx.steady_state(300, t1, 0.1), 900, places=6)
+        steady = rx.steady_state(300, t1, 0.1)
+        assert steady is not None
+        self.assertAlmostEqual(steady, 900, places=6)
         self.assertIsNone(rx.steady_state(300, t1, rx.MIN_SAMPLE_GH / 2))
 
     def test_safe_heat_holds_below_target_at_max_gain(self):
@@ -150,6 +152,7 @@ class ReactorTests(harness.StubTestCase):
         mean = self.run_hours(machine, controller, 3)
         self.assertLess(abs(machine.temp - rx.TARGET_C), 10, self.debug_log())
         self.assertGreater(mean, 4700)
+        assert controller.gain is not None
         self.assertAlmostEqual(controller.gain, 1200, delta=15)
 
     def test_condition_changes_never_overheat(self):

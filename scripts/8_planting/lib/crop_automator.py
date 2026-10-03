@@ -111,8 +111,8 @@ class CropAutomatorController:
         self._deployed = None              # cached deployed_machines()
         self._deployed_tick = None
         self._deployed_sig = None
-        self._automators = None
-        self._mine = None
+        self._automators = []
+        self._mine = []
         self._ready = {}                   # {(sector, species): services_ready}
         self._harvest_yield = HARVEST_YIELD_DEFAULT  # learned Forage per harvest (learn_yield())
 

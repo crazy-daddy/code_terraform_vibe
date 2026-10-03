@@ -32,10 +32,11 @@ def own_calls(stmt):
         node = stack.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
             continue
-        if is_log_call(node, "start"):
-            calls.append((node.lineno, 1))
-        elif is_log_call(node, "end"):
-            calls.append((node.lineno, -1))
+        if isinstance(node, ast.Call):
+            if is_log_call(node, "start"):
+                calls.append((node.lineno, 1))
+            elif is_log_call(node, "end"):
+                calls.append((node.lineno, -1))
         stack.extend(ast.iter_child_nodes(node))
     return sorted(calls)
 

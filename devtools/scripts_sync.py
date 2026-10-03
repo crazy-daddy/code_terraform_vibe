@@ -169,6 +169,10 @@ ROLE_SCAN_LINES = 15                # how far into a file the role marker may si
 
 # The game owns these; never write to them.
 RESERVED = {"user_stubs.py"}
+# The game's __builtins__.pyi redeclares these as plain bool functions, which hides
+# typeshed's versions and with them Pyright's isinstance/callable narrowing.
+# write_resolved_stubs drops them from the resolved copy only.
+NARROWING_BUILTIN_DEF = re.compile(r"^def (isinstance|issubclass|callable)\(.*?\n    \.\.\.\n", re.M | re.S)
 SKIP_DIRS = {"lib"}
 SKIP_SUFFIXES = (".codeterraform-write.bak",)
 SKIP_PATTERNS = (re.compile(r"\.codeterraform-retired-"),)
@@ -566,7 +570,7 @@ def _apply_tier_high_water(save_dir: Path, tiers: list, active: str) -> str:
     scripts/ is ignored."""
     store = _tier_high_water_store()
     mark = store.get(save_dir.name)
-    if mark in tiers and tiers.index(mark) > tiers.index(active):
+    if isinstance(mark, str) and mark in tiers and tiers.index(mark) > tiers.index(active):
         reported = (save_dir.name, active, mark)
         if reported in _TIER_HIGH_WATER_REPORTED:
             return mark
@@ -1911,6 +1915,10 @@ def write_resolved_stubs(save_dir: Path) -> None:
         if source.is_file():
             shutil.copyfile(source, dest_dir / source.name)
             copied += 1
+    builtins_stub = dest_dir / "__builtins__.pyi"
+    if builtins_stub.is_file():
+        text = builtins_stub.read_text(encoding="utf-8")
+        builtins_stub.write_text(NARROWING_BUILTIN_DEF.sub("", text), encoding="utf-8", newline="")
     ok("Resolved stubs: %d file(s) -> %s" % (copied, show(dest_dir)))
 
 

@@ -190,6 +190,7 @@ class CollectorTests(StubTestCase):
         self._uranium_ready()
         first = _Collector(_Drone(self.world, []), home_outpost=self.home)
         target, _budget = first._select_aftermath_target(first._aftermath_candidates(first.aftermath_kinds()))
+        assert target is not None
         self.assertEqual((target["event_id"], target["limit"]), ("storm_2", 30))
         self.assertEqual(drone_weather.lead_cask.inbound_units("outpost_home", 1000), 30)
         second = _Collector(_Drone(self.world, []), home_outpost=self.home, name="drone_2")

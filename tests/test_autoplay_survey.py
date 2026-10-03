@@ -1,5 +1,7 @@
 """Tests for the power-line ledger: construction_plan helpers, autoplay/lib/power_survey.py, Pioneer hold."""
 import unittest
+from typing import Any, cast
+from unittest import mock
 
 import harness
 from game_stubs import ConstructionBlueprints, Notebook, Result
@@ -21,7 +23,7 @@ class ProbeBlueprints(ConstructionBlueprints):
         self.calls = 0
         self.next_id = 0
         self.hold_seen = []
-        self.notebook = None
+        self.notebook: Notebook | None = None
 
     def mark_deconstruct(self, x, y, layer="auto", target_id=""):
         self.calls += 1
@@ -95,13 +97,18 @@ class SurveyTests(harness.StubTestCase):
         self.world.services["construction_blueprint"] = self.blueprints
         self.ledger_raw = lambda: self.world.notebook.data.get(cp.POWER_TILES_KEY)
 
+    def ledger(self):
+        raw = self.ledger_raw()
+        assert raw is not None
+        return raw
+
     def test_full_survey_finds_line_and_cancels_probe_jobs(self):
         self.assertEqual(ps.run_full(self.log), "done")
         self.assertEqual(self.blueprints.calls, (ps.MAP_MAX_TILE - ps.MAP_MIN_TILE + 1) ** 2)
-        self.assertEqual(cp.power_rows_decode(self.ledger_raw()["rows"]), set(self.pieces))
+        self.assertEqual(cp.power_rows_decode(self.ledger()["rows"]), set(self.pieces))
         self.assertEqual(self.blueprints.jobs, [])
         self.assertEqual(len(self.blueprints.cancelled), 2)
-        self.assertIsNotNone(self.ledger_raw()["surveyed"])
+        self.assertIsNotNone(self.ledger()["surveyed"])
         self.assertTrue(all(h and h["kinds"] == ["deconstruct"] for h in self.blueprints.hold_seen))
         self.assertNotIn(cp.HOLD_KEY, self.world.notebook.data)
         self.assertEqual(ps.ledger_tiles(), {g.tile_key(tx, ty) for tx, ty in self.pieces})
@@ -118,9 +125,9 @@ class SurveyTests(harness.StubTestCase):
 
         self.blueprints.mark_deconstruct = probe
         ps.run_full(self.log)
-        tiles = cp.power_rows_decode(self.ledger_raw()["rows"])
+        tiles = cp.power_rows_decode(self.ledger()["rows"])
         self.assertTrue({(0, -81), (1, -81)} <= tiles)
-        self.assertEqual(self.ledger_raw()["dirty"], [[9, 9]])
+        self.assertEqual(self.ledger()["dirty"], [[9, 9]])
 
     def test_locked_aborts_without_ledger(self):
         self.blueprints.locked = True
@@ -133,13 +140,10 @@ class SurveyTests(harness.StubTestCase):
         def boom(_self):
             raise RuntimeError("walk aborted")
 
-        original = ps.Prober.retry_leftover
-        ps.Prober.retry_leftover = boom
         try:
-            with self.assertRaises(RuntimeError):
+            with mock.patch.object(ps.Prober, "retry_leftover", boom), self.assertRaises(RuntimeError):
                 ps.run_full(self.log)
         finally:
-            ps.Prober.retry_leftover = original
             harness.tree_console.reset_all()
         self.assertNotIn(cp.HOLD_KEY, self.world.notebook.data)
 
@@ -152,7 +156,7 @@ class SurveyTests(harness.StubTestCase):
         self.world.notebook.data[cp.POWER_TILES_KEY] = {
             "surveyed": 1, "rows": cp.power_rows_encode({(7, 7)}), "dirty": [[7, 7], [3, 0]]}
         self.assertEqual(ps.reprobe_dirty(self.log), 2)
-        ledger = self.ledger_raw()
+        ledger = self.ledger()
         self.assertEqual(cp.power_rows_decode(ledger["rows"]), {(3, 0)})
         self.assertEqual(ledger["dirty"], [])
         self.assertNotIn(cp.HOLD_KEY, self.world.notebook.data)
@@ -166,9 +170,6 @@ class SurveyTests(harness.StubTestCase):
         self.assertEqual(sorted(out), [(0, 0), (1, 0), (5, 5), (6, 5)])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class PioneerLedgerTests(harness.StubTestCase):
     """PioneerController's hold reader and power-job recorder, called with a minimal stand-in self."""
@@ -181,7 +182,7 @@ class PioneerLedgerTests(harness.StubTestCase):
 
     def test_note_finished_power_job(self):
         from pioneer import PioneerController
-        me = self.FakeSelf()
+        me = cast(Any, self.FakeSelf())
         PioneerController.note_finished_power_job(me, cp.POWER_LINE_KIND, (10.0, -5.0))
         PioneerController.note_finished_power_job(me, "mining_drill_heavy", (10.0, -5.0))
         raw = self.world.notebook.data[cp.POWER_TILES_KEY]
@@ -191,7 +192,7 @@ class PioneerLedgerTests(harness.StubTestCase):
 
     def test_read_construction_hold(self):
         from pioneer import PioneerController
-        me = self.FakeSelf()
+        me = cast(Any, self.FakeSelf())
         self.assertEqual(PioneerController.read_construction_hold(me, 10), set())
         self.world.notebook.data[cp.HOLD_KEY] = {"by": "t", "tick": 10, "kinds": ["deconstruct"]}
         self.assertEqual(PioneerController.read_construction_hold(me, 20), {"deconstruct"})
@@ -241,3 +242,7 @@ class LedgerUpdaterBudgetTests(unittest.TestCase):
         store.interfere = 1  # a Pioneer writes between read and swap: the retry sees its row
         self.assertTrue(cp.swap_power_ledger(store, lambda cur: {"surveyed": 6, "rows": cur["rows"], "dirty": []}))
         self.assertEqual(store.data[cp.POWER_TILES_KEY]["rows"], {"9": [[1, 1]]})
+
+
+if __name__ == "__main__":
+    unittest.main()

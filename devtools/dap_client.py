@@ -92,6 +92,9 @@ class DapClient:
             stderr=subprocess.PIPE,
             bufsize=0,
         )
+        stdin, stdout, stderr = self.proc.stdin, self.proc.stdout, self.proc.stderr
+        assert stdin and stdout and stderr  # all three are PIPE
+        self.stdin, self.stdout, self.stderr = stdin, stdout, stderr
         self.seq = 0
         self.inbox = queue.Queue()
         self._stop = False
@@ -101,11 +104,11 @@ class DapClient:
         self._stderr_reader.start()
 
     def _stderr_loop(self):
-        for line in iter(self.proc.stderr.readline, b""):
+        for line in iter(self.stderr.readline, b""):
             sys.stderr.write("[adapter stderr] " + line.decode(errors="replace"))
 
     def _read_loop(self):
-        f = self.proc.stdout
+        f = self.stdout
         while not self._stop:
             line = f.readline()
             if not line:
@@ -133,8 +136,8 @@ class DapClient:
         msg.update(extra)
         body = json.dumps(msg).encode("utf-8")
         header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
-        self.proc.stdin.write(header + body)
-        self.proc.stdin.flush()
+        self.stdin.write(header + body)
+        self.stdin.flush()
         return msg["seq"]
 
     def request(self, command, arguments=None, timeout=10):
@@ -175,7 +178,7 @@ class DapClient:
         """Terminates the adapter process. Per the adapter's own capabilities (supportTerminateDebuggee: false), this never stops the game script itself -- only detaches, same as VS Code's Shift+F5. Use 'disconnect' first for a clean handshake; close() is the final cleanup either way."""
         self._stop = True
         try:
-            self.proc.stdin.close()
+            self.stdin.close()
         except Exception:
             pass
         self.proc.terminate()

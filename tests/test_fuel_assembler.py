@@ -251,6 +251,7 @@ class LeadCaskTests(_Base):
         self.world.add_lead_cask("lead_cask_1", self.world.home, "raw_uranium", 10)
         cask_id, note = lead_cask.ensure_rod_cask(self.world.home)
         self.assertIsNone(cask_id)
+        assert note is not None
         self.assertIn("own cask", note)
 
     def test_rod_cask_prefers_rods_then_empty_then_least_uranium(self):

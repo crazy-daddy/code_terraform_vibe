@@ -1,5 +1,6 @@
 """lib/turbine_commit.py: how many Steam Turbines a grid runs, and which."""
 import unittest
+from typing import Any, cast
 
 from harness import StubTestCase
 import turbine_commit
@@ -100,11 +101,11 @@ class TurbineEasingTests(StubTestCase):
 
         grid = self.world.add_grid("grid_a", [], consumed=1400.0, generated=2000.0, stored=10900.0, capacity=11000.0)
         controller = steam_turbine.SteamTurbineController.__new__(steam_turbine.SteamTurbineController)
-        controller.name, controller.clock, controller._eased = "turbine_1", self.world.clock, False
+        controller.name, controller.clock, controller._eased = "turbine_1", cast(Any, self.world.clock), False
         controller.log = steam_turbine.TreeConsole(module="steam_turbine")
         controller.buffer_fraction = lambda: 1.0
         controller.is_night = lambda: False
-        controller.get_grid = lambda: grid
+        controller.get_grid = lambda: cast(Any, grid)
         self.assertEqual(controller.choose_throttle(), steam_turbine.THROTTLE_DEMAND_MET)
         self.world.notebook.data[steam_turbine.COMMIT_HEARTBEAT_KEY] = {"grid_a": self.world.clock.now}
         self.assertEqual(controller.choose_throttle(), 1.0)

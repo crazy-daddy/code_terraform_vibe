@@ -130,7 +130,7 @@ class TurbineCommitment:
     def _info(self, turbine_id):
         """{"capable", "buffer", "source_fill", "powered", "output"} for one turbine, or None."""
         turbine = get_component(turbine_id)
-        if turbine is None:
+        if turbine is None or self.power is None:
             return None
         try:
             powered = bool(self.power.is_powered(turbine_id))
@@ -233,6 +233,8 @@ class TurbineCommitment:
     # ------------------------------------------------------------------ writes
 
     def _set_powered(self, turbine_id, on):
+        if self.power is None:
+            return False
         try:
             result = self.power.set_powered(turbine_id, on)
         except Exception as error:

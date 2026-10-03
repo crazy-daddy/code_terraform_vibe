@@ -81,10 +81,9 @@ def is_empty(path: Path) -> bool:
     body = tree.body
     if not body:
         return True
-    if len(body) == 1 and isinstance(body[0], ast.Expr) and isinstance(
-        getattr(body[0], "value", None), (ast.Constant,)
-    ):
-        return isinstance(body[0].value.value, str)
+    first = body[0] if len(body) == 1 else None
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+        return isinstance(first.value.value, str)
     return False
 
 

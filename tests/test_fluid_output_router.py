@@ -40,7 +40,7 @@ class FluidOutputRouterCacheTests(StubTestCase):
         self.world.clock.now = 1000
         builtins.notify = lambda text, **kw: None  # type: ignore[attr-defined]
 
-    def tank(self, tank_id, level, fluid="steam", cls=Tank):
+    def tank[T: Tank](self, tank_id, level, fluid="steam", cls: type[T] = Tank) -> T:
         return self.world._place(cls(self.world, tank_id, self.world.home, "gas_tank", fluid, level, 100))
 
     def router(self):

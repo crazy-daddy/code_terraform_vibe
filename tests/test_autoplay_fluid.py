@@ -285,10 +285,10 @@ class FluidPassTests(harness.StubTestCase):
         self.world.home.x = 0.0
         self.world.home.y = 0.0
         self.world.inventory.add("liquid_pipe_segment", 1000)
-        builtins.list_pipes = lambda: []
+        setattr(builtins, "list_pipes", lambda: [])
 
     def tearDown(self):
-        del builtins.list_pipes
+        delattr(builtins, "list_pipes")
         super().tearDown()
 
     def run_pass(self, planner=None):

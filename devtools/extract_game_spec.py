@@ -94,7 +94,7 @@ def summary(spec: dict) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--no-save", action="store_true", help="skip the live-save typeId check")
     args = parser.parse_args()

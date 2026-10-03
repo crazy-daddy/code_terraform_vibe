@@ -1,3 +1,5 @@
+# In-game script: the game injects get_component()/sleep(), which devtools/ Pyright does not see.
+# pyright: reportUndefinedVariable=false
 # Interpreter benchmark: pure local computation, no game side effects.
 # Run in a control_panel script slot: the Playground aborts long runs. Results and reading: docs/BENCHMARK.md.
 # range(n) materialises a list (item limit applies), so each case runs a small fixed chunk per call

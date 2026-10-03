@@ -291,6 +291,7 @@ class ReaderTests(harness.StubTestCase):
         self.world.components["nocturna"] = _Planet()
         self.world.components["journal"] = Journal(discovered=DISCOVERED)
         snap = os_.read_world([HOME], {"mining_drill_kit", "mining_drill_industrial_kit"}, 200.0)
+        assert snap is not None
         self.assertEqual(snap["bounds"], (-900.0, 900.0, -900.0, 900.0))
         self.assertEqual(snap["hardness_limit"], 3)
         self.assertEqual([p["kind"] for p in snap["pois"]], ["unknown", "biomass"])

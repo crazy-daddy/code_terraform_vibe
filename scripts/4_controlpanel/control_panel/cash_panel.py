@@ -93,7 +93,7 @@ while True:
     max_rows = max(0, int((height - top - 24) // ROW_H))
     for index, (kind, cost, planned, eta, held, count) in enumerate(kind_rows(state)[:max_rows]):
         y = top + 12 + index * ROW_H
-        name = CONSUMER_LABELS.get(kind, kind) + (f" x{count}" if count > 1 else "")
+        name = str(CONSUMER_LABELS.get(kind, kind)) + (f" x{count}" if count > 1 else "")
         if count == 0:
             panel.pill(24, y + 2, "IDLE", "text-muted")
         elif held:

@@ -1,4 +1,5 @@
 import unittest
+from typing import Any, cast
 
 from harness import StubTestCase
 import exotic_cap
@@ -80,7 +81,7 @@ class ExoticCapTests(StubTestCase):
     def test_valve_stays_open_while_dormant(self):
         cap = _GasCap(_Deposit(phase="dormant"))
         ctl = exotic_cap.ExoticCapController(cap)
-        ctl._router.ensure_connection = lambda *args: _Event()
+        ctl._router.ensure_connection = lambda *args, **kwargs: cast(Any, _Event())
         ctl.step()
         self.assertEqual(cap.throttles, [1.0])
 

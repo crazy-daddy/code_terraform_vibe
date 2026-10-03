@@ -1597,7 +1597,7 @@ def _shared_site_targets(site_id, now, plan):
     """The shared entry for site_id when fresh, or stale while another script recomputes it; else None.
     Only an entry computed under the same site plan counts."""
     entry = _site_targets_entry(site_id)
-    if not _usable(entry, plan):
+    if entry is None or not _usable(entry, plan):
         return None
     age = now - entry.get("tick", 0)
     if age <= SITE_TARGETS_FRESH_TICKS:
@@ -1615,8 +1615,8 @@ def _lease_site_targets(site_id, now, plan):
 
     def updater(shared):
         shared = shared if isinstance(shared, dict) else {}
-        entry = shared.get(site_id)
-        entry = dict(entry) if isinstance(entry, dict) else {}
+        current = shared.get(site_id)
+        entry = dict(current) if isinstance(current, dict) else {}
         lease = entry.get("lease")
         if lease is not None and now - lease <= SITE_TARGETS_LEASE_TICKS and lease != now:
             lost.append(entry)
