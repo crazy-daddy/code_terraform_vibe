@@ -111,5 +111,5 @@ brownout), restart with the game, 50 per save. See
       markers. Deleted panels keep their `.py` file; `unassigned_slot()` skips them.
 - [x] Run `once --apply-libs` (18 libs pending, mostly comment renames) so both automations
       start.
-- [ ] Watch one brownout: grid supervision keeps running.
+- [x] Watch one brownout: grid supervision keeps running.
 - Running-script count is unchanged by the move (an automation is still a running script).
