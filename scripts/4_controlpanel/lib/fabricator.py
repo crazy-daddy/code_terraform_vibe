@@ -142,6 +142,19 @@ class FabricatorController:
         self.log.end()
         return won
 
+    def foreign_claims(self, site_id):
+        """{recipe_id: owner} for every claim at site_id that another Fabricator
+        holds fresh right now, i.e. one claim_recipe() would leave untouched.
+        One archive read for the whole candidate list."""
+        current_tick = self.get_current_tick()
+        site = site_recipe_claims(archive.get(RECIPE_CLAIMS_KEY, {}), "fabricator").get(site_id) or {}
+        return {
+            recipe_id: claim.get("fabricator")
+            for recipe_id, claim in site.items()
+            if claim.get("fabricator") != self.name
+            and (current_tick == 0 or current_tick - claim.get("tick", 0) <= FABRICATOR_RECIPE_CLAIM_STALE_TICKS)
+        }
+
     def release_recipe(self, recipe_id):
         if not recipe_id:
             return
@@ -430,7 +443,8 @@ class FabricatorController:
             if missing > 0:
                 candidates.append((missing, recipe))
                 have_by_item[recipe.output_item] = current + in_pipeline
-                self.log.debug(f"candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
+                if self.log.verbose:
+                    self.log.trace(f"candidate {recipe.output_item} target={target} current={current} in_pipeline={in_pipeline} -> missing={missing}")
 
         # Six priority tiers, biggest shortfall first within each:
         #   0. An item a manual order transitively needs as an INPUT (e.g.
@@ -478,6 +492,7 @@ class FabricatorController:
         candidates.sort(key=lambda pair: (_priority_tier(pair[1]), -pair[0]))
         blocked = []
         sourceable = []
+        held_by_others = self.foreign_claims(site_id) if candidates else {}
         for missing, recipe in candidates:
             reason = self.recipe_unsourceable_reason(recipe, cache)
             if reason is not None:
@@ -486,6 +501,13 @@ class FabricatorController:
                 continue
             sourceable.append((missing, recipe))
             recipe_id = getattr(recipe, "id", "")
+            # A fresh claim another Fabricator held at the start of this pass
+            # would make claim_recipe() refuse anyway; skip its transaction.
+            # A claim this Fabricator renewed recently still goes through
+            # claim_recipe(), which keeps it without reading the archive.
+            if recipe_id in held_by_others and recipe_id not in self._claim_ticks:
+                self.log.debug(f"'{recipe_id}' already claimed by {held_by_others[recipe_id]!r}, trying next candidate")
+                continue
             if self.claim_recipe(recipe_id):
                 output_item = getattr(recipe, "output_item", None)
                 tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall", "backlog order")[_priority_tier(recipe)]

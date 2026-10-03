@@ -513,11 +513,13 @@ def can_source_fluid(fluid_key, cache=None):
     that matters; the outpost.buildings() scan this does is a real game call
     per fluid_key, otherwise repeated once per recipe that needs it.
     """
+    # Memo hit returns before any logging: callers re-ask the same key once
+    # per recipe/input, and an empty debug block costs more than the lookup.
+    if cache is not None:
+        known = cache._fluid_results.get(fluid_key)
+        if known is not None:
+            return known
     log.start(f"can_source_fluid({fluid_key})", level="debug")
-    if cache is not None and fluid_key in cache._fluid_results:
-        log.trace(f"cache hit -> {cache._fluid_results[fluid_key]}")
-        log.end()
-        return cache._fluid_results[fluid_key]
 
     type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key)
     if not type_ids:
@@ -2406,14 +2408,19 @@ def can_source_item(item_id, cache=None):
     Pass a shared `cache` (SourceCache) when checking several items/recipes/
     orders in one pass -- see SourceCache's docstring for why that matters.
     """
+    # Memo hit returns before any logging: choose_recipe() and the dock
+    # planner re-ask shared inputs once per recipe/order, and an empty debug
+    # block costs more than the lookup.
+    if cache is None:
+        cache = SourceCache()
+    else:
+        known = cache._item_results.get(item_id)
+        if known is not None:
+            return known
     log.start(f"can_source_item({item_id})", level="debug")
-    cache = SourceCache() if cache is None else cache
-    if item_id in cache._item_results:
-        log.trace(f"cache hit -> {cache._item_results[item_id]}")
-        log.end()
-        return cache._item_results[item_id]
     if cache.stock(item_id) > 0 or (item_id in lead_cask.HOT_ITEMS and cache.cask_stock(item_id) > 0):
-        log.trace(f"already in stock ({cache.stock(item_id)}, casks {cache.cask_stock(item_id) if item_id in lead_cask.HOT_ITEMS else 0}) -> sourceable")
+        if log.verbose:
+            log.trace(f"already in stock ({cache.stock(item_id)}, casks {cache.cask_stock(item_id) if item_id in lead_cask.HOT_ITEMS else 0}) -> sourceable")
         cache._item_results[item_id] = True
         log.end()
         return True

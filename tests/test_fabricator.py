@@ -2,6 +2,7 @@
 import unittest
 
 from harness import StubTestCase, fabricator, production
+from game_stubs import Recipe
 
 
 def run_steps(controller, n):
@@ -59,6 +60,63 @@ class ClaimRefreshTests(StubTestCase):
             self.assertNotIn("craft_gas_pipe_segment", controller._claim_ticks)
         finally:
             fabricator.archive.transaction = real
+
+
+class SourceMemoTests(StubTestCase):
+    """can_source_item()/can_source_fluid() answer a repeat from the SourceCache memo without logging."""
+
+    def _counting_log_start(self):
+        calls = []
+        real = production.log.start
+        production.log.start = lambda *a, **k: (calls.append(a[0] if a else ""), real(*a, **k))[1]
+        self.addCleanup(setattr, production.log, "start", real)
+        return calls
+
+    def test_repeat_item_and_fluid_checks_hit_memo_silently(self):
+        self.world.inventory.add("iron_ingot", 5)
+        cache = production.SourceCache()
+        self.assertTrue(production.can_source_item("iron_ingot", cache))
+        self.assertTrue(production.can_source_fluid("unmodelled_fluid", cache))
+        calls = self._counting_log_start()
+        for _ in range(3):
+            self.assertTrue(production.can_source_item("iron_ingot", cache))
+            self.assertTrue(production.can_source_fluid("unmodelled_fluid", cache))
+        self.assertEqual(calls, [])
+
+    def test_recipe_cycle_resolves_same_as_before(self):
+        # a <- b <- a: neither has stock or a mineral site, so both stay unsourceable,
+        # and the memoized answers match a fresh top-level check.
+        cache = production.SourceCache()
+        cache._sourcing_index = {
+            "cyc_a": [Recipe("make_a", {"cyc_b": 1}, "cyc_a")],
+            "cyc_b": [Recipe("make_b", {"cyc_a": 1}, "cyc_b")],
+        }
+        self.assertFalse(production.can_source_item("cyc_a", cache))
+        self.assertFalse(production.can_source_item("cyc_b", cache))
+        self.assertEqual(cache._item_stack, set())
+        self.world.inventory.add("cyc_b", 1)
+        fresh = production.SourceCache()
+        fresh._sourcing_index = cache._sourcing_index
+        self.assertTrue(production.can_source_item("cyc_a", fresh))
+        self.assertTrue(production.can_source_item("cyc_a", fresh))
+
+
+class ForeignClaimTests(StubTestCase):
+    def test_choose_recipe_skips_claim_held_by_peer(self):
+        w = self.world
+        w.inventory.add("iron_ingot", 100)
+        a = fabricator.FabricatorController(w.add_fabricator("fabricator_1", w.home))
+        b = fabricator.FabricatorController(w.add_fabricator("fabricator_2", w.home))
+        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"gas_pipe_segment": 10})
+        self.assertTrue(b.claim_recipe("craft_gas_pipe_segment"))
+        self.assertEqual(a.foreign_claims("home"), {"craft_gas_pipe_segment": "fabricator_2"})
+        self.assertEqual(b.foreign_claims("home"), {})
+        tried = []
+        real = a.claim_recipe
+        a.claim_recipe = lambda recipe_id: (tried.append(recipe_id), real(recipe_id))[1]
+        a.choose_recipe()
+        self.assertNotIn("craft_gas_pipe_segment", tried)
+        self.assertEqual(w.notebook.data[fabricator.RECIPE_CLAIMS_KEY]["home"]["craft_gas_pipe_segment"]["fabricator"], "fabricator_2")
 
 
 class RemoteFabricatorTests(StubTestCase):
