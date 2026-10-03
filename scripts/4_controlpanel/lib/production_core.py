@@ -179,6 +179,29 @@ def claim_site_id(machine):
     return machine_outpost_id(machine) or HOME_OUTPOST_ID
 
 
+# {fabricator_id: {"site": outpost_id, "wants": {item_id: units}, "tick": n}}:
+# input units each Fabricator's load_inputs() is still short of (up to its
+# prefill window), so a local Smelter can push output straight into it.
+# Written by the Fabricator when its wanted items change or a want shrinks
+# (a delivery or its own take), else every WANTS_REFRESH_TICKS while it wants
+# anything; readers skip entries older than WANTS_STALE_TICKS.
+FABRICATOR_WANTS_KEY = "fabricator.wants"
+WANTS_REFRESH_TICKS = 300
+WANTS_STALE_TICKS = 900
+
+
+def fabricator_wants_for(item_id, site_id, now=None):
+    """[(fabricator_id, units, entry tick)] for fresh FABRICATOR_WANTS_KEY
+    entries at site_id wanting item_id, largest want first."""
+    wants = archive.get(FABRICATOR_WANTS_KEY, {})
+    if not isinstance(wants, dict):
+        return []
+    now = _current_tick() if now is None else now
+    rows = [(fab_id, int((entry.get("wants") or {}).get(item_id, 0)), entry.get("tick") or 0) for fab_id, entry in wants.items()
+            if isinstance(entry, dict) and entry.get("site") == site_id and 0 <= now - (entry.get("tick") or 0) < WANTS_STALE_TICKS]
+    return sorted([row for row in rows if row[1] > 0], key=lambda row: -row[1])
+
+
 def site_recipe_claims(claims, owner_field):
     """
     Copy of a stored recipe-claims dict in its per-site shape

@@ -14,7 +14,7 @@
 #
 # Module state (memos, TTL constants, `log`) lives in the defining module:
 # patch or reset it there, not through this facade.
-from production_core import AFTERMATHS_KEY, claim_site_id, construction_site_id, craft_prefill_units, craft_seconds, discover_building_ids, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, DISCOVERY_TTL_TICKS, FABRICATOR_TYPE_ID, FUEL_ASSEMBLER_OUTPUTS, FUEL_ASSEMBLER_TYPE_ID, home_outpost_id, INPUT_PREFILL_SECONDS, log, machine_outpost_id, SECONDS_PER_GAME_HOUR, site_recipe_claims, smelter_ores, SMELTER_TYPE_ID, SUPPLY_DOCK_TYPE_ID
+from production_core import AFTERMATHS_KEY, claim_site_id, FABRICATOR_WANTS_KEY, fabricator_wants_for, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, construction_site_id, craft_prefill_units, craft_seconds, discover_building_ids, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, DISCOVERY_TTL_TICKS, FABRICATOR_TYPE_ID, FUEL_ASSEMBLER_OUTPUTS, FUEL_ASSEMBLER_TYPE_ID, home_outpost_id, INPUT_PREFILL_SECONDS, log, machine_outpost_id, SECONDS_PER_GAME_HOUR, site_recipe_claims, smelter_ores, SMELTER_TYPE_ID, SUPPLY_DOCK_TYPE_ID
 from production_docks import dock_owed_at, dock_remaining_requirements, find_dock_order_requiring, _all_dock_orders, _dock_order_remaining
 from production_fluids import BUFFER_FLUID_TYPE_IDS, can_source_fluid, discover_fluid_sources, fluid_building_is_viable, FLUID_LATCH_IDS, FLUID_SOURCE_TYPE_IDS
 from production_source import can_fulfill_order, can_source_item, SourceCache

@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
 from version_guard import validate_game_version
@@ -78,6 +78,10 @@ class FabricatorController(RecipeClaimMixin):
         self.parker = ParkRequester(self.name, "fabricator")
         # item_id -> tick of the last wake_local_smelters() pass for it.
         self._smelter_wake_ticks = {}
+        # Inputs still short after this step's load_inputs() (FABRICATOR_WANTS_KEY).
+        self._wants = {}
+        self._wants_published = None
+        self._wants_tick = 0
 
     def get_current_tick(self):
         if self.clock and hasattr(self.clock, "tick"):
@@ -534,6 +538,9 @@ class FabricatorController(RecipeClaimMixin):
             # The step-wide cache's stock snapshot only picks the holders to try; the
             # transfer itself reports what actually moved.
             moved = take_item(self.machine.input, item_id, amount, outpost=None if self.at_home() else self.outpost(), cache=cache)
+            want = min(required * crafts_remaining, prefill_cap) - staged - max(0, moved)
+            if want > 0:
+                self._wants[item_id] = want
             if moved <= 0:
                 self.wake_local_smelters(item_id, cache)
                 continue
@@ -624,6 +631,40 @@ class FabricatorController(RecipeClaimMixin):
     def step(self):
         """One poll. Returns True when the machine is active (it moved material,
         changed its recipe, or is running), so run() can poll faster."""
+        self._wants = {}
+        active = self._step()
+        self.publish_wants()
+        return active
+
+    def publish_wants(self):
+        """Writes this step's input wants to FABRICATOR_WANTS_KEY when the
+        wanted items change or a want shrinks (so a Smelter doesn't push the
+        same units twice), else every WANTS_REFRESH_TICKS while non-empty; an
+        empty want removes the entry."""
+        now = self.get_current_tick()
+        published = self._wants_published
+        unchanged = published is not None and set(self._wants) == set(published) and all(self._wants[i] >= published[i] for i in self._wants)
+        if unchanged and (not self._wants or now - self._wants_tick < WANTS_REFRESH_TICKS):
+            return
+        wants = dict(self._wants)
+        site_id = claim_site_id(self.machine)
+
+        def updater(stored):
+            stored = dict(stored) if isinstance(stored, dict) else {}
+            for fab_id in [f for f, e in stored.items() if not isinstance(e, dict) or now - (e.get("tick") or 0) >= WANTS_STALE_TICKS]:
+                del stored[fab_id]
+            if wants:
+                stored[self.name] = {"site": site_id, "wants": wants, "tick": now}
+            else:
+                stored.pop(self.name, None)
+            return stored
+
+        if archive.transaction(FABRICATOR_WANTS_KEY, {}, updater):
+            self._wants_published = wants
+            self._wants_tick = now
+            self.log.debug(f"[{self.name}] wants {wants or 'nothing'}")
+
+    def _step(self):
         self.ensure_connection()
         worked = self.drain_output()
         worked = self.drain_byproduct() or worked

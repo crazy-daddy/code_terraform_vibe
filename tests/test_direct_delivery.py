@@ -2,7 +2,7 @@
 pushing output straight into a local consumer (Supply Dock) before storage."""
 import unittest
 
-from harness import StubTestCase, fabricator
+from harness import StubTestCase, fabricator, production, smelter
 import storage
 
 
@@ -81,6 +81,84 @@ class FabricatorDockDrainTests(StubTestCase):
         fabricator.FabricatorController(f).drain_output()
         self.assertEqual(dock.count("steel_plate"), 2)  # 2 stock + 5 new - 5 for the blueprint
         self.assertEqual(warehouse.count("steel_plate"), 5)
+
+
+class FabricatorWantsTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"steel_plate": 30})
+        self.fab = w.add_fabricator("fabricator_1", w.home)
+        self.controller = fabricator.FabricatorController(self.fab)
+
+    def wants(self):
+        return (self.world.notebook.data.get(production.FABRICATOR_WANTS_KEY) or {}).get("fabricator_1")
+
+    def test_publishes_short_input_up_to_prefill(self):
+        self.world.inventory.add("iron_ingot", 2)
+        self.controller.step()  # sets the recipe
+        self.controller.step()  # takes the 2 in stock, wants the rest of its prefill window
+        cap = production.craft_prefill_units(self.fab.find_recipe("craft_steel_plate"), "iron_ingot")
+        self.assertEqual(self.fab.input_buffer.get("iron_ingot"), 2)
+        self.assertEqual(self.wants()["wants"], {"iron_ingot": cap - 2})
+        self.assertEqual(self.wants()["site"], "home")
+
+    def test_entry_removed_once_nothing_is_short(self):
+        self.world.inventory.add("iron_ingot", 2)
+        self.controller.step()
+        self.controller.step()
+        self.assertIsNotNone(self.wants())
+        self.world.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {})
+        self.controller.step()
+        self.assertIsNone(self.wants())
+
+
+class SmelterToFabricatorTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.warehouse = w.add_warehouse("warehouse_1", w.home)
+        self.fab = w.add_fabricator("fabricator_1", w.home)
+        self.smelter = w.add_smelter("smelter_1", w.home)
+        self.controller = smelter.SmelterController(self.smelter)
+
+    def want(self, units, site="home", tick=None):
+        tick = self.world.services["clock"].now if tick is None else tick
+        self.world.notebook.set(production.FABRICATOR_WANTS_KEY, {"fabricator_1": {"site": site, "wants": {"iron_ingot": units}, "tick": tick}})
+
+    def test_fabricator_want_filled_before_storage(self):
+        self.want(6)
+        self.smelter.output_buffer["iron_ingot"] = 10
+        self.assertEqual(self.controller.drain_output(), 10)
+        self.assertEqual(self.fab.input_buffer.get("iron_ingot"), 6)
+        self.assertEqual(self.warehouse.count("iron_ingot"), 4)
+
+    def test_same_want_not_pushed_twice(self):
+        self.want(6)
+        self.smelter.output_buffer["iron_ingot"] = 4
+        self.controller.drain_output()
+        self.smelter.output_buffer["iron_ingot"] = 4
+        self.controller.drain_output()
+        self.assertEqual(self.fab.input_buffer.get("iron_ingot"), 6)
+        self.assertEqual(self.warehouse.count("iron_ingot"), 2)
+
+    def test_stale_or_other_site_want_ignored(self):
+        self.want(6, tick=self.world.services["clock"].now - production.WANTS_STALE_TICKS)
+        self.smelter.output_buffer["iron_ingot"] = 3
+        self.controller.drain_output()
+        self.want(6, site="outpost_2")
+        self.smelter.output_buffer["iron_ingot"] = 3
+        self.controller.drain_output()
+        self.assertEqual(self.fab.input_buffer.get("iron_ingot", 0), 0)
+        self.assertEqual(self.warehouse.count("iron_ingot"), 6)
+
+    def test_dock_after_fabricator(self):
+        self.want(2)
+        dock = self.world.add_supply_dock("supply_dock_1", self.world.home)
+        dock.order = self.world.add_order("order_1", {"iron_ingot": 3})
+        self.smelter.output_buffer["iron_ingot"] = 10
+        self.controller.drain_output()
+        self.assertEqual((self.fab.input_buffer.get("iron_ingot"), dock.count("iron_ingot"), self.warehouse.count("iron_ingot")), (2, 3, 5))
 
 
 if __name__ == "__main__":

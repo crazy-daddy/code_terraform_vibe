@@ -4,8 +4,8 @@
 # control_room_automation.py, not by individual Smelter instances -- see
 # docs/AI_CHEATSHEET.md.
 from archive import archive
-from production import SourceCache, craft_prefill_units, dock_remaining_requirements, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
-from storage import take_item, drain_port_storage_first, best_unload_target, local_port_target, outpost_is_home
+from production import SourceCache, claim_site_id, craft_prefill_units, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
+from storage import take_item, drain_port_storage_first, push_to_targets, best_unload_target, local_port_target, outpost_is_home
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -89,6 +89,9 @@ class SmelterController(RecipeClaimMixin):
         self.smelter = smelter
         self.name = getattr(smelter, "id", "smelter_1")
         self.target_ore = target_ore
+        # {(fabricator_id, item_id): (want entry tick, units pushed against it)}
+        self._pushed = {}
+        self._want_ticks = {}
         self.inventory = get_component("inventory")
         self.clock = get_component("clock")
 
@@ -163,23 +166,55 @@ class SmelterController(RecipeClaimMixin):
                 swallowed("smelter.SmelterController.ensure_connections: self.smelter.output.connect", error)
         self.log.end()
 
+    def fabricator_targets(self, item_id, site_id):
+        """[(fabricator_id, units)] for local Fabricators short of item_id, less
+        what this Smelter already pushed against the same published want."""
+        targets = []
+        self._want_ticks = {}
+        for fab_id, units, tick in fabricator_wants_for(item_id, site_id):
+            self._want_ticks[fab_id] = tick
+            pushed_tick, pushed = self._pushed.get((fab_id, item_id), (None, 0))
+            left = units - (pushed if pushed_tick == tick else 0)
+            if left > 0:
+                targets.append((fab_id, left))
+        return targets
+
     def drain_output(self):
-        """Sends all finished ingots from the output buffer to a local
-        Warehouse (storage.best_unload_target(), which keeps an ore and its
-        ingot apart), and only what no Warehouse takes to Inventory at home
-        (storage.drain_port_storage_first())."""
+        """Sends finished ingots straight into a local Fabricator still short
+        of them (production.fabricator_wants_for()), then a local Supply Dock
+        whose order owes them (production.dock_delivery_targets()), then a
+        local Warehouse (storage.best_unload_target(), which keeps an ore and
+        its ingot apart), and only what no Warehouse takes to Inventory at
+        home (storage.drain_port_storage_first()). Returns units moved."""
         if not hasattr(self.smelter, "output") or self.smelter.get_output_count() <= 0:
             return 0
         try:
-            items = [stack.id for stack in self.smelter.output.stacks()]
+            staged = {stack.id: stack.count for stack in self.smelter.output.stacks() if stack.count > 0}
         except Exception as error:
             swallowed("smelter.SmelterController.drain_output: self.smelter.output.stacks", error)
-            items = []
-        total = drain_port_storage_first(self.smelter.output, outpost=self.outpost())
-        if total > 0:
-            self.log.print(f"[{self.name}] Sent {total}x {', '.join(items)} to storage.")
+            staged = {}
+        site_id = claim_site_id(self.smelter)
+        sent = []
+        total = 0
+        for item_id, count in staged.items():
+            delivered = push_to_targets(self.smelter.output, item_id, count, self.fabricator_targets(item_id, site_id))
+            for target, moved in delivered:
+                tick, pushed = self._pushed.get((target, item_id), (None, 0))
+                self._pushed[(target, item_id)] = (self._want_ticks.get(target), (pushed if tick == self._want_ticks.get(target) else 0) + moved)
+            left = count - sum([moved for _target, moved in delivered])
+            if left > 0:
+                delivered += push_to_targets(self.smelter.output, item_id, left, dock_delivery_targets(item_id, left, self.outpost()))
+            for target, moved in delivered:
+                sent.append(f"{moved}x {item_id} to '{target}'")
+                total += moved
+        stored = drain_port_storage_first(self.smelter.output, outpost=self.outpost())
+        if stored > 0:
+            sent.append(f"{stored}x {', '.join(staged)} to storage")
+            total += stored
+        if sent:
+            self.log.print(f"[{self.name}] Sent {', '.join(sent)}.")
         else:
-            self.log.debug(f"[{self.name}] drain_output: {', '.join(items)} not moved, no local storage has room")
+            self.log.debug(f"[{self.name}] drain_output: {', '.join(staged)} not moved, no local destination has room")
         return total
 
     def log_outcome(self, reason, **detail):
