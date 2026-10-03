@@ -103,21 +103,28 @@ class DroneHaulerMixin:
             swallowed("drone_hauler.DroneHaulerMixin._outposts_by_id: network.outposts", error)
             return {}
 
-    def _haul_destinations(self, curr_tick):
+    def _depot_layout(self):
+        """({outpost_id: OutpostRef}, {outpost_id: [depot dicts]}): the network's outposts and its Drone Depots by outpost."""
+        depots_by_outpost = {}
+        for depot in self._host.get_all_drone_depots():
+            depots_by_outpost.setdefault(depot.get("outpost_id"), []).append(depot)
+        return self._outposts_by_id(), depots_by_outpost
+
+    def _haul_destinations(self, curr_tick, reads=None, layout=None):
         """
         Outposts with a Drone Depot and something missing, as dicts
         {"outpost", "outpost_id", "coords", "depots", "need", "buffer",
         "deficits"} (deficits = need + buffer). Destinations on stall
-        cooldown are left out.
+        cooldown are left out. `reads` (logistics_requests.PlanReads) and
+        `layout` (_depot_layout()) are the plan's shared reads.
         """
         self._host.log.start(f"[{self._host.name}] _haul_destinations", level="debug")
-        outposts = self._outposts_by_id()
-        depots_by_outpost = {}
-        for depot in self._host.get_all_drone_depots():
-            depots_by_outpost.setdefault(depot.get("outpost_id"), []).append(depot)
+        if reads is None:
+            reads = logistics_requests.PlanReads(curr_tick)
+        outposts, depots_by_outpost = layout if layout is not None else self._depot_layout()
 
         dests = []
-        requests = logistics_requests.active_requests(curr_tick)
+        requests = reads.requests
         for outpost_id, depots in depots_by_outpost.items():
             outpost = outposts.get(outpost_id)
             if outpost is None:
@@ -125,14 +132,14 @@ class DroneHaulerMixin:
             if self._cooling("dest", outpost_id, curr_tick):
                 self._host.log.debug(f"haul: '{outpost_id}' on stall cooldown; not a destination this cycle.")
                 continue
-            need, buffer = logistics_requests.outpost_deficits_tiered(outpost, curr_tick, live=True)
+            need, buffer = logistics_requests.outpost_deficits_tiered(outpost, curr_tick, live=True, reads=reads)
             need = {i: u for i, u in need.items() if u > 0}
             buffer = {i: u for i, u in buffer.items() if u > 0}
             if need or buffer:
                 urgent = {i for i, e in requests.get(outpost_id, {}).items() if e.get("urgent") and i in need}
                 dests.append({"outpost": outpost, "outpost_id": outpost_id, "coords": depots[0]["coords"], "depots": depots,
                               "need": need, "buffer": buffer, "deficits": self._sum_tiers(need, buffer), "urgent": urgent})
-        self._warn_if_home_has_no_depot(outposts, depots_by_outpost, curr_tick)
+        self._warn_if_home_has_no_depot(outposts, depots_by_outpost, curr_tick, reads)
         self._host.log.debug(f"[{self._host.name}] haul: destinations with demand: " + (", ".join(f"{d['outpost_id']}=need {d['need']} buffer {d['buffer']}" for d in dests) or "none"))
         self._host.log.end()
         return dests
@@ -144,7 +151,7 @@ class DroneHaulerMixin:
             total[item_id] = total.get(item_id, 0) + units
         return total
 
-    def _warn_if_home_has_no_depot(self, outposts, depots_by_outpost, curr_tick):
+    def _warn_if_home_has_no_depot(self, outposts, depots_by_outpost, curr_tick, reads=None):
         """
         An outpost is only a haul destination if it owns a Drone Depot. A
         depot next to base but inside another outpost doesn't count, so home's
@@ -154,7 +161,7 @@ class DroneHaulerMixin:
         home = next((o for o in outposts.values() if getattr(o, "is_home", False)), None)
         if home is None or home.id in depots_by_outpost:
             return
-        need, buffer = logistics_requests.outpost_deficits_tiered(home, curr_tick, live=False)
+        need, buffer = logistics_requests.outpost_deficits_tiered(home, curr_tick, live=False, reads=reads)
         wanted = self._sum_tiers(need, buffer)
         if not wanted:
             return
@@ -163,14 +170,17 @@ class DroneHaulerMixin:
             self._home_no_depot_warned = True
         self._host.log.debug(f"[{self._host.name}] haul: '{home.id}' skipped as destination (no Drone Depot) despite requests {wanted}.")
 
-    def _drill_sources(self, items, curr_tick):
-        """Advertised drills holding any of `items` with a known position, net of other haulers' reservations."""
+    def _drill_sources(self, items, curr_tick, reads=None):
+        """Advertised drills holding any of `items` with a known position, net of other haulers' reservations (from `reads` when given)."""
         positions = drill_sites.known_positions()
         if not hasattr(self, "_unlocated_drills_warned"):
             self._unlocated_drills_warned = set()
         sources = []
         for drill_id, entry in drill_sites.advertised_drills(curr_tick).items():
-            taken = logistics_requests.reserved_from(drill_id, curr_tick, exclude_vehicle=self._host.name)
+            if reads is not None:
+                taken = reads.reserved_from(drill_id, self._host.name)
+            else:
+                taken = logistics_requests.reserved_from(drill_id, curr_tick, exclude_vehicle=self._host.name)
             available = {}
             for item_id, units in (entry.get("items") or {}).items():
                 free = int(units - taken.get(item_id, 0))
@@ -188,31 +198,31 @@ class DroneHaulerMixin:
         self._host.log.debug(f"[{self._host.name}] haul: {len(sources)} drill(s) hold wanted items: " + ", ".join(f"{s['id']}={s['available']}" for s in sources))
         return sources
 
-    def _outpost_sources(self, items, curr_tick):
+    def _outpost_sources(self, items, curr_tick, reads=None, layout=None):
         """
         Drone Depot outposts holding free stock of `items` (Warehouses,
         Depot stockpiles, Inventory at home -- logistics_requests.
         outpost_free_tiers(include_depots=True)), net of other haulers'
         reservations. "available" is what another outpost's need may take,
         "available_buffer" what a buffer top-up may take. Outposts on stall
-        cooldown are left out.
+        cooldown are left out. `reads` and `layout` as in _haul_destinations().
         """
         self._host.log.start(f"[{self._host.name}] _outpost_sources", level="debug")
-        outposts = self._outposts_by_id()
-        depots_by_outpost = {}
-        for depot in self._host.get_all_drone_depots():
-            if depot.get("outpost_id"):
-                depots_by_outpost.setdefault(depot["outpost_id"], []).append(depot)
-        requests = logistics_requests.active_requests(curr_tick)
+        if reads is None:
+            reads = logistics_requests.PlanReads(curr_tick)
+        outposts, depots_by_outpost = layout if layout is not None else self._depot_layout()
+        item_ids = list(items)
         sources = []
         for outpost_id, depots in depots_by_outpost.items():
+            if not outpost_id:
+                continue
             outpost = outposts.get(outpost_id)
             if outpost is None:
                 continue
             if self._cooling("source", outpost_id, curr_tick):
                 self._host.log.debug(f"haul: outpost '{outpost_id}' on stall cooldown; not a source this cycle.")
                 continue
-            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, list(items), requests, curr_tick, exclude_vehicle=self._host.name, include_depots=True)
+            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, item_ids, None, curr_tick, exclude_vehicle=self._host.name, include_depots=True, reads=reads)
             if for_need:
                 sources.append({"kind": "outpost", "id": outpost_id, "coords": depots[0]["coords"], "available": for_need,
                                 "available_buffer": for_buffer, "depots": depots, "outpost": outpost})
@@ -308,7 +318,7 @@ class DroneHaulerMixin:
                 planned[item_id] = planned.get(item_id, 0) + n
         return sum(min(n, dest["need"].get(i, 0)) for i, n in planned.items())
 
-    def _cap_buffers(self, dests, sources, curr_tick):
+    def _cap_buffers(self, dests, sources, curr_tick, reads=None):
         """Caps each destination's buffer tier at its fair share of what the other sources hold (fair_buffer_caps())."""
         for dest in dests:
             if not dest["buffer"]:
@@ -320,7 +330,7 @@ class DroneHaulerMixin:
                 for item_id, units in s.get("available_buffer", s["available"]).items():
                     if item_id in dest["buffer"]:
                         supply[item_id] = supply.get(item_id, 0) + units
-            caps = logistics_requests.fair_buffer_caps(dest["outpost_id"], dest["buffer"], supply, curr_tick)
+            caps = logistics_requests.fair_buffer_caps(dest["outpost_id"], dest["buffer"], supply, curr_tick, reads=reads)
             dest["buffer"] = {i: u for i, u in caps.items() if u > 0}
             dest["deficits"] = self._sum_tiers(dest["need"], dest["buffer"])
 
@@ -393,18 +403,21 @@ class DroneHaulerMixin:
         """
         self._host.log.start(f"[{self._host.name}] _plan_haul_job", level="debug")
         seen = logistics_requests.pickups_snapshot()  # before any demand/stock read; see claim_pickups()
-        dests = self._haul_destinations(curr_tick)
+        # Requests, pickups (planned against `seen`) and each outpost's stock, read once for the whole plan.
+        reads = logistics_requests.PlanReads(curr_tick, seen)
+        layout = self._depot_layout()
+        dests = self._haul_destinations(curr_tick, reads, layout)
         if not dests:
             self._host.log.end()
             return None
         items = set()
         for dest in dests:
             items.update(dest["deficits"].keys())
-        sources = self._drill_sources(items, curr_tick) + self._outpost_sources(items, curr_tick)
+        sources = self._drill_sources(items, curr_tick, reads) + self._outpost_sources(items, curr_tick, reads, layout)
         if not sources:
             self._host.log.end()
             return None
-        self._cap_buffers(dests, sources, curr_tick)
+        self._cap_buffers(dests, sources, curr_tick, reads)
 
         try:
             capacity = self._host.drone.cargo.capacity() - self._host.drone.cargo.count()

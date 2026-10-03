@@ -193,11 +193,13 @@ class VehicleCargoMixin:
         Water Pumps holding byproduct salt (lib/pump_salt.py) are added when
         salt is wanted, home pumps included. With the FLEET card's drone
         yield switch on, sources drone haulers can serve are dropped
-        (logistics_requests.drone_served_source()).
+        (logistics_requests.drone_served_source()). Requests and other
+        haulers' reservations are read once for every source
+        (logistics_requests.PlanReads).
         """
         self._host.log.start(f"[{self._host.name}] _pull_sources", level="debug")
         home_id = getattr(self._host.home_outpost, "id", None)
-        requests = logistics_requests.active_requests(curr_tick)
+        reads = logistics_requests.PlanReads(curr_tick)
         sources = []
         if not hasattr(self, "_unlocated_drills_warned"):
             self._unlocated_drills_warned = set()
@@ -211,13 +213,13 @@ class VehicleCargoMixin:
         for outpost in outposts:
             if getattr(outpost, "id", None) == home_id or not hasattr(outpost, "coords"):
                 continue
-            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, items, requests, curr_tick, exclude_vehicle=self._host.name)
+            for_need, for_buffer = logistics_requests.outpost_free_tiers(outpost, items, None, curr_tick, exclude_vehicle=self._host.name, reads=reads)
             if for_need:
                 sources.append({"kind": "outpost", "id": outpost.id, "coords": outpost.coords(), "available": for_need, "available_buffer": for_buffer, "outpost": outpost})
 
         positions = drill_sites.known_positions()
         for drill_id, entry in drill_sites.advertised_drills(curr_tick).items():
-            taken = logistics_requests.reserved_from(drill_id, curr_tick, exclude_vehicle=self._host.name)
+            taken = reads.reserved_from(drill_id, self._host.name)
             available = {}
             for item_id, units in (entry.get("items") or {}).items():
                 free = units - taken.get(item_id, 0)
@@ -235,7 +237,7 @@ class VehicleCargoMixin:
 
         if pump_salt.SALT_ITEM_ID in items:
             for pump_id, entry in pump_salt.salt_sources(curr_tick).items():
-                taken = logistics_requests.reserved_from(pump_id, curr_tick, exclude_vehicle=self._host.name)
+                taken = reads.reserved_from(pump_id, self._host.name)
                 free = entry["available"] - taken.get(pump_salt.SALT_ITEM_ID, 0)
                 if free > 0:
                     sources.append({"kind": "pump", "id": pump_id, "coords": entry["coords"], "available": {pump_salt.SALT_ITEM_ID: free}, "outpost": None})
