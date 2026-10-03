@@ -287,7 +287,7 @@ class Slot:
         self.machine = machine
         self.buffer = buffer
         self._capacity = capacity
-        self.connected = None
+        self.connected = ""
         self.connect_log = []
 
     # -- shared --
@@ -589,15 +589,19 @@ class Notebook:
 
 
 class Clock:
-    def __init__(self):
+    def __init__(self, seconds_per_hour=25.0):
         self.now = 1000
         self.hours = 0.0
+        self.seconds_per_hour = seconds_per_hour
 
     def tick(self):
         return self.now
 
     def elapsed_game_hours(self):
         return self.hours
+
+    def real_seconds_per_hour(self):
+        return self.seconds_per_hour
 
 
 class Commander:
@@ -681,11 +685,21 @@ class OutpostNetwork:
 
 
 class Journal:
+    """Site and creature lists are test-set; the planet id is ignored."""
+
+    def __init__(self, surveyed=(), discovered=(), creatures=()):
+        self.surveyed = list(surveyed)
+        self.discovered = list(discovered)
+        self.creatures = list(creatures)
+
     def surveyed_sites(self, planet_id):
-        return []
+        return list(self.surveyed)
+
+    def discovered_sites(self, planet_id):
+        return list(self.discovered)
 
     def cataloged_creatures(self, planet_id):
-        return []
+        return list(self.creatures)
 
 
 class Construction:
@@ -1680,7 +1694,7 @@ class World:
         """(store, problem) for a port at `outpost` reaching target_id. problem
         is "ok" (store set) or one of "no_connection", "not_found", "not_local",
         "inventory_not_local"; each port method maps it to its own status."""
-        if target_id is None:
+        if not target_id:
             return None, "no_connection"
         if target_id == "inventory":
             return (self.inventory, "ok") if outpost is self.home else (None, "inventory_not_local")

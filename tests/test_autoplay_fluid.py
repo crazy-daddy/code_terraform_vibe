@@ -3,7 +3,7 @@ import builtins
 import unittest
 
 import harness
-from game_stubs import ConstructionBlueprints, Journal as BaseJournal
+from game_stubs import ConstructionBlueprints, Journal
 import grid_geom as g
 import fluid_plan as fp
 import autoplay_roles as roles
@@ -16,14 +16,6 @@ from test_autoplay_power import Job, Result, Site
 
 def k(tx, ty):
     return g.tile_key(tx, ty)
-
-
-class Journal(BaseJournal):
-    def __init__(self, sites):
-        self._sites = sites
-
-    def surveyed_sites(self, planet_id):
-        return self._sites
 
 
 class Blueprints(ConstructionBlueprints):

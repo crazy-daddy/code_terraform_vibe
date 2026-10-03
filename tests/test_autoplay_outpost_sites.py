@@ -281,17 +281,15 @@ class _Planet:
         return [NS(x=10, y=20, scanned=False, kind="unknown"), NS(x=300, y=300, scanned=True, kind="biomass")]
 
 
-class _Journal(Journal):
-    def discovered_sites(self, planet_id):
-        return [_Site(100.0, 100.0, "mineral", True, item_id="cobalt", purity="rich", hardness=3),
-                _Site(200.0, 200.0, "exotic", True, fluid="raw_chlorine"),
-                _Site(250.0, 250.0, "water", False)]
+DISCOVERED = [_Site(100.0, 100.0, "mineral", True, item_id="cobalt", purity="rich", hardness=3),
+              _Site(200.0, 200.0, "exotic", True, fluid="raw_chlorine"),
+              _Site(250.0, 250.0, "water", False)]
 
 
 class ReaderTests(harness.StubTestCase):
     def test_read_world_takes_pois_sites_and_drill_reach(self):
         self.world.components["nocturna"] = _Planet()
-        self.world.components["journal"] = _Journal()
+        self.world.components["journal"] = Journal(discovered=DISCOVERED)
         snap = os_.read_world([HOME], {"mining_drill_kit", "mining_drill_industrial_kit"}, 200.0)
         self.assertEqual(snap["bounds"], (-900.0, 900.0, -900.0, 900.0))
         self.assertEqual(snap["hardness_limit"], 3)

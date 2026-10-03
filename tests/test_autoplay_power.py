@@ -4,7 +4,7 @@ import unittest
 from typing import Any, cast
 
 import harness
-from game_stubs import Construction, ConstructionBlueprints, Journal as BaseJournal, Position, PowerControl, PowerGrid, Result as BaseResult
+from game_stubs import Construction, ConstructionBlueprints, Journal, Position, PowerControl, PowerGrid, Result as BaseResult
 import grid_geom as g
 import infra_topology as topo
 import power_plan as pp
@@ -85,14 +85,6 @@ class Site:
 
     def base_rate(self):
         return self._rate
-
-
-class Journal(BaseJournal):
-    def __init__(self, sites):
-        self._sites = sites
-
-    def surveyed_sites(self, planet_id):
-        return self._sites
 
 
 class Blueprints(ConstructionBlueprints):

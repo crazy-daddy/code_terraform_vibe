@@ -15,16 +15,11 @@ class _Cap:
         return self.phase_in
 
 
-class _Clock(Clock):
-    def real_seconds_per_hour(self):
-        return 30.0
-
-
 def _controller(cap, phase="dormant", pressure=0.0, max_rise=0.0):
     ctl = thermal_cap.ThermalCapController.__new__(thermal_cap.ThermalCapController)
     ctl.cap = cap
     ctl.name = cap.id
-    ctl.clock = _Clock()
+    ctl.clock = Clock(30.0)
     ctl.last_phase = phase
     ctl.last_pressure = pressure
     ctl.max_rise_per_tick = max_rise

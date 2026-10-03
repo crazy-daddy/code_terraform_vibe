@@ -125,7 +125,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - **Done when:** existing tests still pass unchanged; contract test covers the new fakes.
 - **Verify:** `python -m unittest discover -s tests`; Pyright on `tests/`.
 
-### - [ ] Step 5: Migrate tests to the shared fakes
+### - [x] Step 5: Migrate tests to the shared fakes
 - **Goal:** remove private duplicates.
 - **Read first:** `tests/game_stubs.py`, then only the test files in this session's batch.
 - **Touch:** 1–2 test files per session, in this order: `test_turbine_commit`,
@@ -285,7 +285,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
 - `World.local_store()` narrows with `store is None or not isinstance(...)`: with the typed
   components the repo's Pyright config no longer narrows `isinstance` alone there.
 
-### Step 5 (in progress)
+### Step 5 (2026-10-03)
 - Done: `test_turbine_commit`, `test_fuel_assembler`, `test_habitat`, `test_fleet_commission`,
   `test_fleet_decommission`, `test_plants_retire`, `test_script_parking`, `test_refiner`
   (2026-10-03). Next, by count of private classes named like a `game_stubs` export:
@@ -364,6 +364,43 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   synthetic ones); ports are shared `FluidPort(capacity=10.0)` and `Slot` over
   `input_buffer["tar"]`. `_Refiner(Building)` stays (no shared refiner); `_Router` stays (it
   fakes our own routing helper).
+
+- Parallel finish (2026-10-03): four Sonnet worktree agents as planned, rebalanced first.
+  `test_wildlife_planner` already had no private fakes and was dropped; `test_site_supply`
+  moved from group A to B (A had 5 files, B 3 light ones). No assertion was weakened.
+- Gap pass in `game_stubs`: `Journal(surveyed=(), discovered=(), creatures=())` with
+  `discovered_sites()` (journal.md); `Clock(seconds_per_hour=25.0)` with
+  `real_seconds_per_hour()` (clock.md; 25 matches the `exotic_cap` / `thermal_cap` fallback,
+  so `test_exotic_cap` keeps its numbers); `Slot.connected` starts as `""` (spec:
+  `connected_id` returns `string`, like `FluidPort`), and `World.local_store()` treats any
+  falsy target as `no_connection`. This dropped the local `Journal` subclasses (autoplay power /
+  fluid / outpost sites, site supply, habitat) and the `Clock` subclasses (reactor, thermal cap).
+  `test_smelter` and `test_ship_before_craft` now assert `connected_id() == ""` for a
+  disconnected port.
+- `test_autoplay_power` / `test_autoplay_fluid` (group A): `Pos` → `Position`, `Job(Construction)`,
+  `Grid(PowerGrid)` / `Power(PowerControl)` over fixed grid lists with no world, `Blueprints` /
+  `ProbeBlueprints(ConstructionBlueprints)` with answer queues; blueprint plan results are
+  `Result("ok", blueprint_ids=[...])`. `test_autoplay_extractor` (in no group) imports
+  `Result`, `Job`, `Site`, `Journal`, `Power`, `Grid` and both `Blueprints` from these files and
+  sets `.jobs`; the positional-ids `Result` subclass, `Power` and the `jobs` property (alias of
+  `pending`) stay for it. Migrate it to direct `game_stubs` imports, then drop those shims.
+- Group B: `test_mining_drill` puts `_Drill(Building)` on a grid with `add_building(...,
+  cls=_Drill)` + `add_grid(id, [id])`; the default `world.power_control` replaces its private
+  one. `test_ingot_buffer` reads `world.power_control.calls`.
+- Group C: `test_reactor` uses `add_lead_cask`, `Slot` (rod input, capacity 10), `add_tank`,
+  `FluidPort`; `_SimReactor(Building)` stays. The test that moves the tank level writes
+  `tank._level` (no public setter). Shared `FluidPort.connect()` answers `not_found` for a
+  non-component id where the private fakes said `ok`; no test depended on it.
+- Group D: `_FeedMaker(Machine)` (adds progress / stockpile / `tier()`), `_Drone(Drone)` (scripted
+  `collect()`, `exposure()`), `_Store(Store)` (fixed `transfer_to` answer, incl. Auto Feeder
+  `busy`). Feed maker eject assertions check Inventory instead of an eject log.
+- Open gaps, kept as local subclasses (candidates for a later pass, each with contract-test
+  coverage): `ConstructionBlueprints.plan_power_line` / `plan_pipe` / `plan_bridge` /
+  `mark_deconstruct` / `cancel` (construction_blueprint.md); `Drone.collect` / `exposure`
+  (drone.md); a `FeedMaker` fake (spec `feed_maker`); a `Tank` level setter; a surveyed-site
+  value type (`kind`, `pump_id`, `cap_id`, `medium`, ...); thermal / exotic cap fakes;
+  `PowerGrid` described by outpost ids without placed buildings; `OutpostRef.x` / `.y`.
+  `Store.transfer_to` answering `busy` is documented only in `lib/field_keeper` comments.
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).

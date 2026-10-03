@@ -113,7 +113,7 @@ class RemoteSmelterTests(StubTestCase):
         controller = smelter.SmelterController(s)
         run_steps(controller, 3)
         self.assertEqual(self.world.console.text("warn").count("No Warehouse at outpost 'outpost_2'"), 1)
-        self.assertIsNone(s.input.connected_id())
+        self.assertEqual(s.input.connected_id(), "")
 
     def test_loads_only_local_ore(self):
         w = self.world

@@ -260,20 +260,12 @@ class _Site:
         return self._medium
 
 
-class _Journal(Journal):
-    def __init__(self, sites):
-        self.sites = sites
-
-    def surveyed_sites(self, planet):
-        return self.sites
-
-
 class ConstructionStockTests(StubTestCase):
     def setUp(self):
         super().setUp()
         self.remote = self.world.add_outpost("outpost_2")
         disable_ingot_buffer(self.world)
-        self.world.services["journal"] = _Journal(
+        self.world.services["journal"] = Journal(
             [_Site("water")] * 7 + [_Site("water", "wp1"), _Site("thermal"), _Site("exotic", medium="gas"),
                                     _Site("exotic", "cap9", medium="liquid"), _Site("mineral")])
 

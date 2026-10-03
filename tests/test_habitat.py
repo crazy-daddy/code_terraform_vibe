@@ -45,15 +45,10 @@ class _Creature:
         self.revive_reagents = {r: 1 for r in ("alkaline_buffer", "cryo_solvent", "protein_marker", "chelating_agent", "enzyme_solution")}
 
 
-class _Journal(Journal):
-    def cataloged_creatures(self, planet_id):
-        return [_Creature(s) for s in ("salt_tortoise", "spire_drake")]
-
-
 class HabitatTestCase(harness.StubTestCase):
     def setUp(self):
         super().setUp()
-        self.world.services["journal"] = _Journal()
+        self.world.services["journal"] = Journal(creatures=[_Creature(s) for s in ("salt_tortoise", "spire_drake")])
         self.stock = {}
         self._orig = (habitat.take_item, habitat.cash, habitat.local_port_target)
 

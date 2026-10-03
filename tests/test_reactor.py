@@ -11,11 +11,6 @@ SECONDS_PER_GH = 25.0
 TICK_GH = 0.1 / SECONDS_PER_GH
 
 
-class _SimClock(Clock):
-    def real_seconds_per_hour(self):
-        return SECONDS_PER_GH
-
-
 class _SimReactor(Building):
     """Simworker reactor step (ige) per 0.1 s tick; condition from `conditions[window]`."""
     type_id = "reactor"
@@ -104,7 +99,7 @@ class _SimReactor(Building):
 class ReactorTests(harness.StubTestCase):
     def setUp(self):
         super().setUp()
-        self.clock = _SimClock()
+        self.clock = Clock(SECONDS_PER_GH)
         self.world.services["clock"] = self.clock
         fluid_routing._WATER_RESERVE_MEMO.update({"tick": None, "hold": False})
         self.notified = []
