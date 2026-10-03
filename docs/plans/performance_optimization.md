@@ -7,8 +7,9 @@ Working notes from the 2026-10-03 perf pass. They let a later session measure th
 The game is CPU-bound. Host CPU sits at about 30–40% (likely two cores at full load), and raising game speed changes almost nothing. This changes how fixes should be judged:
 
 - **Total interpreter steps** across all scripts are what cost real CPU. Cutting work in any script helps, including work duplicated across instances.
-- **Atomic execution** (`lib/atomic.py`) does not cut CPU. It packs the same steps into fewer ticks and can make frames longer. Use it only where one script's latency matters, never as a CPU fix.
-- **The running-script count N** sets the per-script allowance, `floor(50000 / N)` steps per tick. A block's cost in ticks therefore grows with N. Compare costs in steps, not ticks, whenever N differs between two measurements.
+- **Atomic execution** (`lib/atomic.py`) does not cut CPU. It packs the same steps into fewer ticks and can make frames longer. Use it where one script's latency matters - eg if the script slowing down would make a machine idle - don't use it as a CPU fix.
+- **The running-script count N** sets the per-script allowance, `min(floor(50000 / N) , 1000)` steps per tick. A block's cost in ticks therefore grows with N. Compare costs in steps, not ticks, whenever N differs between two measurements.
+- **Reduce N** reducing the number of concurrently running scripts (=machines) thus becomes imperative for general script performance. `lib/script_parking.py` tries to park idle machines; however they need to be woken in a timely fassion once they have new work. Some decisions have to be (currently) made by the operator (later autoplay) and weighed (eg using turbines vs oil generators -> former need 1 machine for 100W latter 1 for 700W but the latter use oil - a more restricted resource compared to steam for the former). However you can make recommendations where you see fit; these will later drive the autoplay-decision-engine. 
 
 ## Method
 
