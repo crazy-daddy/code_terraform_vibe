@@ -74,6 +74,15 @@ A slot whose panel/automation was deleted in game keeps its `.py` file but is
 missing from the workspace's `customPanels`/`automations`; it is skipped and
 holds no role (unassigned_slot()).
 
+A slot's file is its workspace `name`, not always `<id>.py`: contract
+`contract_lattice` lives in `lattice.py` (slot_scripts()/slot_id()). The game
+never deletes a slot file. A slot whose machine was sold or whose
+panel/automation was deleted for good is gone from `context.scripts` and
+listed in `abandonedPaths` of codeterraform-scripts.json; every sync moves
+such a file, and an `<id>.py` file next to a slot named otherwise, to
+devtools/.sync-backups/orphans/<save>/ (sweep_orphans()). A blank file
+staged in scripts/_unmatched/ for a slot that is gone is dropped.
+
 No duplicate files across tiers: for a given category/base_name, the resolver
 walks tiers from the active one down to `0_cold_boot` and uses the first file
 found, so a higher tier only needs a file when its content actually diverges
@@ -382,19 +391,35 @@ def read_workspace_context(save_dir: Path) -> Optional[dict]:
     return context
 
 
+def slot_scripts(save_dir: Path) -> dict:
+    """{file stem: workspace info} for every slot in `context.scripts`. A
+    slot's file is its `name`, which can differ from its id: contract
+    `contract_lattice` lives in `lattice.py`. The external-command channel
+    takes the id (slot_id()). Empty when the workspace can't be read."""
+    context = read_workspace_context(save_dir)
+    slots = {}
+    for sid, info in ((context or {}).get("scripts") or {}).items():
+        if isinstance(info, dict):
+            name = info.get("name") or "%s.py" % sid
+            slots[name[:-3] if name.endswith(".py") else name] = info
+    return slots
+
+
+def slot_id(save_dir: Path, stem: str) -> str:
+    """The game's script id for the slot file `<stem>.py`."""
+    return (slot_scripts(save_dir).get(stem) or {}).get("id") or stem
+
+
 def missing_slot_sources(save_dir: Path) -> dict:
-    """script id -> its live `source` text, for every slot workspace state
+    """file stem -> its live `source` text, for every slot workspace state
     knows about that has no `.py` file on disk yet. Read-only; used by both
     `status` (to report) and materialize_missing_slots() (to act)."""
-    context = read_workspace_context(save_dir)
-    if context is None:
-        return {}
     missing = {}
-    for sid, info in context.get("scripts", {}).items():
-        path = save_dir / ("%s.py" % sid)
+    for stem, info in slot_scripts(save_dir).items():
+        path = save_dir / ("%s.py" % stem)
         if path.exists() or not is_candidate(path, save_dir):
             continue
-        missing[sid] = info.get("source") or ""
+        missing[stem] = info.get("source") or ""
     return missing
 
 
@@ -420,6 +445,83 @@ def materialize_missing_slots(opts: Options) -> int:
             ok("  sense %-28s <- workspace state (%s)" % (path.name, tag))
             created += 1
     return created
+
+
+# ------------------------------------------------------------ orphaned slots
+# The game never deletes a slot's `.py` file. When a machine is sold or
+# decommissioned, or a Custom Panel/Automation is deleted for good, its slot
+# leaves `context.scripts` and its file is listed in `abandonedPaths` of
+# codeterraform-scripts.json. A Custom Panel/Automation deleted to Scripts >
+# Unassigned stays in `context.scripts` and is not an orphan.
+SCRIPTS_JSON = "codeterraform-scripts.json"
+ORPHAN_DIR = BACKUP_DIR / "orphans"
+_abandoned_cache: dict = {}
+
+
+def abandoned_paths(save_dir: Path) -> set:
+    """Read-only: file names the game lists as abandoned. Empty when unreadable."""
+    path = save_dir / SCRIPTS_JSON
+    if not path.is_file():
+        return set()
+    mtime = path.stat().st_mtime
+    cached = _abandoned_cache.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        with path.open(encoding="utf-8") as fh:
+            entries = json.load(fh).get("abandonedPaths") or []
+        names = {e["path"] for e in entries if isinstance(e, dict) and isinstance(e.get("path"), str)}
+    except (OSError, ValueError, KeyError, AttributeError):
+        return set()
+    _abandoned_cache[path] = (mtime, names)
+    return names
+
+
+def orphan_slots(save_dir: Path) -> list:
+    """Slot files no live slot owns: files the game abandoned, and files
+    named after a slot id whose real file has another name
+    (`contract_lattice.py` next to the live `lattice.py`). An abandoned file
+    that comes back (a rebuilt machine reusing its id) is live again and
+    stays. Nothing when the workspace can't be read or lists no scripts (a
+    partial snapshot)."""
+    live = slot_scripts(save_dir)
+    if not live:
+        return []
+    misnamed = {"%s.py" % info.get("id") for stem, info in live.items() if info.get("id") != stem}
+    found = []
+    for name in abandoned_paths(save_dir) | misnamed:
+        path = save_dir / name
+        if path.stem not in live and path.is_file() and is_candidate(path, save_dir):
+            found.append(path)
+    return sorted(found)
+
+
+def sweep_orphans(opts: Options) -> int:
+    """Moves every orphaned slot file to ORPHAN_DIR/<save>/ so it is neither
+    pushed nor left as clutter. Returns how many were (or would be) moved."""
+    orphans = orphan_slots(opts.save_dir)
+    if not orphans:
+        return 0
+    dest_dir = ORPHAN_DIR / opts.save_dir.name
+    if opts.dry_run:
+        ok("  would retire %d orphaned slot(s) to %s: %s" % (
+            len(orphans), show(dest_dir), ", ".join(p.name for p in orphans)))
+        return len(orphans)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    moved = []
+    for path in orphans:
+        dest = dest_dir / path.name
+        if dest.exists():
+            dest = dest_dir / ("%s.%s.py" % (path.stem, stamp))
+        try:
+            shutil.move(str(path), str(dest))
+            moved.append(path.name)
+        except OSError as exc:
+            err("  fail  %-28s %s" % (path.name, exc))
+    if moved:
+        ok("  retire %d orphaned slot(s) -> %s: %s" % (len(moved), show(dest_dir), ", ".join(moved)))
+    return len(moved)
 
 
 class TierNamingError(RuntimeError):
@@ -1209,7 +1311,7 @@ def restart_in_game(save_dir: Path, stem: str, body: str) -> bool:
     for attempt, delay in enumerate((0.0,) + RESTART_RETRY_DELAYS_S):
         if delay:
             time.sleep(delay)
-        result = send_game_command(save_dir, "run", scriptId=stem, source=body)
+        result = send_game_command(save_dir, "run", scriptId=slot_id(save_dir, stem), source=body)
         if result.get("ok"):
             ok("  run   %-28s restarted in game%s" % (stem + ".py", " (retry %d)" % attempt if attempt else ""))
             return True
@@ -1254,8 +1356,7 @@ def libs_reached(text: str, opts: Options) -> set:
 
 def slot_status(save_dir: Path, stem: str) -> Optional[str]:
     """The game's own run status for a slot ("running", "idle", ...), or None."""
-    context = read_workspace_context(save_dir)
-    info = (context or {}).get("scripts", {}).get(stem)
+    info = slot_scripts(save_dir).get(stem)
     return info.get("status") if isinstance(info, dict) else None
 
 
@@ -1283,14 +1384,18 @@ def tidy_unmatched(index: dict, opts: Options) -> None:
     for path in sorted(opts.unmatched_dir.glob("*.py")):
         # A role-matched slot never resolves by its number, so a blank one
         # staged here has nothing to wait for.
+        # A blank one whose save slot is gone (sweep_orphans()) has nothing
+        # to wait for either.
         role_slot = base_name(path.stem) in ROLE_MATCHED
         matched = index.get(match_key(path.stem))
-        if matched is None and not role_slot:
+        gone = not (opts.save_dir / path.name).exists()
+        if matched is None and not role_slot and not gone:
             continue
         text = read(path)
         if text is None or text.strip():
             continue
-        why = "now matched by %s" % show(matched) if matched else "role slot, paired by role instead"
+        why = ("now matched by %s" % show(matched) if matched
+               else "role slot, paired by role instead" if role_slot else "slot gone from the save")
         if opts.dry_run:
             typer.echo("  would drop %-24s (blank, %s)" % (show(path), why))
             continue
@@ -1739,7 +1844,7 @@ def note_restart(save_dir: Path, stem: str, body: str) -> None:
     """Records a restart this process sent: which source, under which applied
     lib state, and the run serial it replaced, so recover_scripts() can tell
     a stale "error" in the lagging workspace file from a fresh one."""
-    info = ((read_workspace_context(save_dir) or {}).get("scripts") or {}).get(stem)
+    info = slot_scripts(save_dir).get(stem)
     _RESTARTS[stem] = (body, _APPLY_GENERATION[0], _run_serial(info) if isinstance(info, dict) else None)
 
 
@@ -1761,15 +1866,13 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
         context = read_workspace_context(opts.save_dir)
         if context is None:
             return restarted
-        scripts = context.get("scripts") or {}
+        scripts = slot_scripts(opts.save_dir)
         gone = {s for s in _HELD_RESTARTS if s not in scripts or unassigned_slot(opts.save_dir, s)}
         if gone:
             _HELD_RESTARTS.difference_update(gone)
             save_held(opts.save_dir)
         pending = libs_awaiting_apply(opts)
-        for stem, info in sorted((context.get("scripts") or {}).items()):
-            if not isinstance(info, dict):
-                continue
+        for stem, info in sorted(scripts.items()):
             held = stem in _HELD_RESTARTS
             if not held and info.get("status") != "error":
                 continue
@@ -1886,6 +1989,7 @@ def sync_all(script_index: dict, lib_index: dict, opts: Options) -> int:
     """Full pass: mirror lib/, push matched script slots, stage the rest."""
     opts.lib_index = lib_index
     opts.lib_closure = lib_dependency_closure(lib_index)
+    sweep_orphans(opts)
     materialized = materialize_missing_slots(opts)
     changed_lib_keys = sync_lib(lib_index, opts)
     register_new_libraries(lib_index, opts)
@@ -2052,6 +2156,11 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
         for sid in sorted(missing):
             typer.echo("  %-24s %s" % (sid + ".py", "has code" if missing[sid].strip() else "empty"))
 
+    orphans = orphan_slots(opts.save_dir)
+    if orphans:
+        typer.echo("\nOrphaned slots (%d) - `once`/`watch` will move these to %s: %s" % (
+            len(orphans), show(ORPHAN_DIR / opts.save_dir.name), ", ".join(p.name for p in orphans)))
+
     staged = sorted(opts.unmatched_dir.glob("*.py")) if opts.unmatched_dir.is_dir() else []
     if staged:
         typer.echo("\nStaged in %s (%d), waiting to be written and moved:" % (show(opts.unmatched_dir), len(staged)))
@@ -2065,7 +2174,7 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     if pending:
         typer.echo("\nlib/ modules the game hasn't applied yet (%d): %s" % (len(pending), ", ".join(sorted(pending))))
 
-    files = sorted(p for p in opts.save_dir.glob("*.py") if is_candidate(p, opts.save_dir))
+    files = sorted(p for p in opts.save_dir.glob("*.py") if is_candidate(p, opts.save_dir) and p not in orphans)
     typer.echo("\nSave scripts (%d):" % len(files))
     for path in files:
         text = read(path) or ""
@@ -2245,6 +2354,8 @@ class Watcher:
             # real write into the watched save_dir) and flows into the
             # normal self.pending fill path - no extra handling needed here.
             materialize_missing_slots(self.opts)
+            # A machine sold mid-session abandons its slot the same way.
+            sweep_orphans(self.opts)
             # Slots held for a fleet-upgrade handoff (upgrade_fill_for()):
             # the save file sits outside the watched directory, so nothing
             # fires when the next autosave lands. Retry them on this cadence.
