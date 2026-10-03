@@ -110,10 +110,7 @@ class SteamTurbineController:
         independent of the Cap's own steam_out, hence the Cap fallback.
         """
         own_outpost_id = getattr(getattr(self.turbine, "outpost", None), "id", None)
-        ranked = []
-        for type_id in ("gas_tank", "thermal_cap"):
-            pairs = fluid_routing.discover_network_buildings(type_id, resolve=False, fluid_id="steam")
-            ranked.extend(fluid_routing.rank_own_outpost_first(pairs, own_outpost_id))
+        ranked = fluid_routing.discover_ranked(fluid_routing.STEAM_SOURCE_TIERS, own_outpost_id)
         self.log.debug(f"[{self.name}] Rediscovered steam sources (own outpost '{own_outpost_id}' first): {ranked}.")
         return ranked
 

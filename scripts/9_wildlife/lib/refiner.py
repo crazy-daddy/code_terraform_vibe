@@ -286,8 +286,7 @@ class RefinerController:
             out_id = self.outpost_id
 
             def discover():
-                pairs = fluid_routing.discover_network_buildings(in_types, resolve=False, fluid_id=raw)
-                return fluid_routing.rank_own_outpost_first(pairs, out_id)
+                return fluid_routing.discover_ranked(((in_types, raw),), out_id)
 
             self._routers[rid] = (
                 fluid_routing.FluidInputRouter(

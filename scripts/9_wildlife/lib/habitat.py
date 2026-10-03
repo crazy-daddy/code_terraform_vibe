@@ -287,8 +287,7 @@ class HabitatController:
 
     def _discover(self, medium, fluid_id):
         def discover():
-            pairs = fluid_routing.discover_network_buildings(MEDIA[medium]["tanks"], resolve=False, fluid_id=fluid_id)
-            return fluid_routing.rank_own_outpost_first(pairs, self.outpost_id)
+            return fluid_routing.discover_ranked(((MEDIA[medium]["tanks"], fluid_id),), self.outpost_id)
         return discover
 
     def _route(self, medium, fluid_id, curr_tick):

@@ -149,12 +149,8 @@ class OilGeneratorController:
         Pumps as a direct fallback (docs/components/oil_generator.md recommends a tank buffer, since
         oil wells go dormant)."""
         own_outpost_id = getattr(getattr(self.generator, "outpost", None), "id", None)
-        ranked = []
-        for type_id in OIL_TANK_TYPE_IDS:
-            pairs = fluid_routing.discover_network_buildings(type_id, resolve=False, fluid_id="oil")
-            ranked.extend(fluid_routing.rank_own_outpost_first(pairs, own_outpost_id))
-        pumps = fluid_routing.discover_network_buildings("oil_pump", resolve=False)
-        ranked.extend(fluid_routing.rank_own_outpost_first(pumps, own_outpost_id))
+        tiers = [(type_id, "oil") for type_id in OIL_TANK_TYPE_IDS] + [("oil_pump", None)]
+        ranked = fluid_routing.discover_ranked(tiers, own_outpost_id)
         self.log.debug(f"[{self.name}] Rediscovered oil sources (tanks first, own outpost '{own_outpost_id}' first): {ranked}.")
         return ranked
 

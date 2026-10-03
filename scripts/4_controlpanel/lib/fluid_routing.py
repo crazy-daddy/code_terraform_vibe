@@ -716,6 +716,21 @@ def rank_own_outpost_first(pairs, own_outpost_id):
     return [b_id for b_id, _ in sorted(pairs, key=lambda p: p[1] != own_outpost_id)]
 
 
+# Steam Turbine / Condenser / Mk III Heat Generator steam_in candidates: steam Gas Tanks, then Caps.
+STEAM_SOURCE_TIERS = (("gas_tank", "steam"), ("thermal_cap", "steam"))
+
+
+def discover_ranked(tiers, own_outpost_id):
+    """Source ids tier by tier: each (type_ids, fluid_id) tier is discover_network_buildings(type_ids,
+    resolve=False, fluid_id=fluid_id), own outpost first within the tier. fluid_id None skips the
+    tank eligibility filter (a dedicated producer such as an Oil Pump)."""
+    ranked = []
+    for type_ids, fluid_id in tiers:
+        pairs = discover_network_buildings(type_ids, resolve=False, fluid_id=fluid_id)
+        ranked.extend(rank_own_outpost_first(pairs, own_outpost_id))
+    return ranked
+
+
 class FluidInputEvent:
     """Result of FluidInputRouter.ensure(). .kind is one of "no_port"/"reserved"/"healthy"/"pending"/"connected"/
     "waiting"/"not_found"/"exhausted". .source_id is set for "healthy" (the healthy peer, if known),

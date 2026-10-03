@@ -16,7 +16,7 @@
 # patch or reset it there, not through this facade.
 from production_core import AFTERMATHS_KEY, claim_site_id, construction_site_id, craft_prefill_units, craft_seconds, discover_building_ids, discover_fabricator_ids, discover_smelter_ids, discover_supply_dock_ids, DISCOVERY_TTL_TICKS, FABRICATOR_TYPE_ID, FUEL_ASSEMBLER_OUTPUTS, FUEL_ASSEMBLER_TYPE_ID, home_outpost_id, INPUT_PREFILL_SECONDS, log, machine_outpost_id, SECONDS_PER_GAME_HOUR, site_recipe_claims, smelter_ores, SMELTER_TYPE_ID, SUPPLY_DOCK_TYPE_ID
 from production_docks import dock_remaining_requirements, find_dock_order_requiring, _all_dock_orders, _dock_order_remaining
-from production_fluids import BUFFER_FLUID_TYPE_IDS, can_source_fluid, fluid_building_is_viable, FLUID_LATCH_IDS, FLUID_SOURCE_TYPE_IDS
+from production_fluids import BUFFER_FLUID_TYPE_IDS, can_source_fluid, discover_fluid_sources, fluid_building_is_viable, FLUID_LATCH_IDS, FLUID_SOURCE_TYPE_IDS
 from production_source import can_fulfill_order, can_source_item, SourceCache
 from production_orders import BACKLOG_ORDERS_KEY, consume_manual_order, DEFAULT_FABRICATOR_STOCK_TARGETS, FABRICATOR_STOCK_TARGETS_KEY, get_backlog_orders, get_fabricator_stock_targets, get_manual_orders, get_upgrade_orders, MANUAL_ORDERS_KEY, MANUAL_TRANSIT_KEY, manual_transit_wants, reconcile_manual_transit, RECURRING_ORDER_REQUESTERS, set_backlog_order, set_upgrade_order, STANDING_ORDER_REQUESTERS, UPGRADE_ORDERS_KEY
 from production_cascade import blueprint_demand_items, blueprint_required_items, fabricator_root_targets, fabricator_unlocked_outputs, get_construction_material_reservations, get_fabricator_targets, get_manual_order_blocking_items, RECIPE_INDEX_TTL_TICKS, _recipe_inputs_for

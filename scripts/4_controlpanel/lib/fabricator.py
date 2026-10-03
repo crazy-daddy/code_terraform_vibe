@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, fluid_building_is_viable, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims, discover_smelter_ids
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, site_recipe_claims, discover_smelter_ids
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_inventory_first, local_port_target, outpost_is_home
 from version_guard import validate_game_version
@@ -231,23 +231,8 @@ class FabricatorController:
         producer to ever fill it). Called by this fluid's FluidInputRouter,
         which caches it (fluid_routing.TickedDiscoveryCache).
         """
-        pairs = []
-        network = get_component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    outpost_id = getattr(outpost, "id", None)
-                    for type_id in type_ids:
-                        for building in outpost.buildings(type_id):
-                            if not fluid_building_is_viable(fluid_key, type_id, building):
-                                continue
-                            b_id = getattr(building, "id", None)
-                            if b_id:
-                                pairs.append((b_id, outpost_id))
-            except Exception as error:
-                swallowed("fabricator.FabricatorController._discover_fluid_candidates: network.outposts", error)
         own_outpost_id = getattr(getattr(self.machine, "outpost", None), "id", None)
-        ids = fluid_routing.rank_own_outpost_first(pairs, own_outpost_id)
+        ids = discover_fluid_sources(fluid_key, own_outpost_id, type_ids)
         self.log.debug(f"[{self.name}] {fluid_key}: rediscovered sources (own outpost first): {ids}.")
         return ids
 

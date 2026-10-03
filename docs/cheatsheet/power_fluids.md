@@ -124,6 +124,13 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
        healthy (established output links keep the plain stall blacklist). Only conflicts notify;
        `"unreachable"` stays a quiet debug-level blacklist (separate pipe networks are normal).
        The AUTOMATION card lists live conflicts (`active_pipe_conflicts()`).
+  - **Candidate helpers** (each caller's `discover` callable): recipe-fluid ports (Fabricator,
+    Caster, Reactor, Mk III water, Sprinkler, Plant Terraformer) use
+    `production.discover_fluid_sources(fluid_key, own_outpost_id)` — `FLUID_SOURCE_TYPE_IDS`
+    filtered by `fluid_building_is_viable()`, own outpost first. Tiered candidate lists (steam
+    tanks then Caps, oil tanks then Oil Pumps, Habitat/Refiner tanks) use
+    `fluid_routing.discover_ranked(tiers, own_outpost_id)`, tiers of `(type_ids, fluid_id)`;
+    `STEAM_SOURCE_TIERS` is the steam_in list.
   - **Discovery cost**: the network walk is skipped entirely while a connection is healthy — Cap/
     Pump check one `fill_pct()` on the already-connected id; input routers return on a healthy
     peer. When discovery does run, `TickedDiscoveryCache` holds results for

@@ -2,6 +2,7 @@
 # FluidPort, the buffer-tank latch rule and the network-wide source check.
 from swallow import swallowed
 from production_core import log, _component
+from fluid_routing import rank_own_outpost_first
 
 
 # A Fabricator recipe's water/steam/oil requirement (recipe.fluid_inputs,
@@ -76,6 +77,40 @@ def fluid_building_is_viable(fluid_key, type_id, building):
     except Exception as error:
         swallowed("production_fluids.fluid_building_is_viable: getattr(building, 'fluid')", error)
         return False
+
+
+def viable_fluid_source_pairs(fluid_key, type_ids=None):
+    """
+    [(building_id, outpost_id), ...] for every building on the network that
+    can deliver fluid_key right now: type_ids (default
+    FLUID_SOURCE_TYPE_IDS[fluid_key]) filtered by fluid_building_is_viable(),
+    in discovery order.
+    """
+    if type_ids is None:
+        type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key, ())
+    pairs = []
+    network = _component("outpost_network")
+    if not network or not hasattr(network, "outposts"):
+        return pairs
+    try:
+        for outpost in network.outposts():
+            o_id = getattr(outpost, "id", None)
+            for type_id in type_ids:
+                for building in outpost.buildings(type_id):
+                    b_id = getattr(building, "id", None)
+                    if b_id and fluid_building_is_viable(fluid_key, type_id, building):
+                        pairs.append((b_id, o_id))
+    except Exception as error:
+        swallowed("production_fluids.viable_fluid_source_pairs: network.outposts", error)
+    return pairs
+
+
+def discover_fluid_sources(fluid_key, own_outpost_id, type_ids=None):
+    """Source ids from viable_fluid_source_pairs(), own outpost's first
+    (fluid_routing.rank_own_outpost_first()). The discover callable of a
+    recipe-fluid FluidInputRouter (Fabricator, Caster, Reactor, Mk III water,
+    Sprinkler, Plant Terraformer)."""
+    return rank_own_outpost_first(viable_fluid_source_pairs(fluid_key, type_ids), own_outpost_id)
 
 
 def can_source_fluid(fluid_key, cache=None):

@@ -1,6 +1,6 @@
 from swallow import swallowed
 import fluid_routing
-from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
+from production import discover_fluid_sources
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -42,21 +42,7 @@ class PlantTerraformerWaterMixin:
     def _discover_water_sources(self):
         host = self._host
         host.log.start(f"[{host.name}] _discover_water_sources", level="debug")
-        type_ids = FLUID_SOURCE_TYPE_IDS["water_in"]
-        pairs = []
-        network = get_component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    o_id = getattr(outpost, "id", None)
-                    for type_id in type_ids:
-                        for building in outpost.buildings(type_id):
-                            b_id = getattr(building, "id", None)
-                            if b_id and fluid_building_is_viable("water_in", type_id, building):
-                                pairs.append((b_id, o_id))
-            except Exception as error:
-                host.log.debug(f"water source discovery failed: {error}")
-        ids = fluid_routing.rank_own_outpost_first(pairs, host.outpost_id)
+        ids = discover_fluid_sources("water_in", host.outpost_id)
         host.log.debug(f"water_in: sources (own outpost first): {ids}.")
         host.log.end()
         return ids

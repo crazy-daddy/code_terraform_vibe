@@ -70,7 +70,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Production planning (demand-driven) | `production.py` — facade re-exporting the `production_*.py` modules below; callers import from it. Module state (memos, TTLs, `log`) is patched/reset in the defining module |
 | &nbsp;&nbsp;↳ craft timing, memoized building discovery, site ids, shared `log` | `production_core.py` |
 | &nbsp;&nbsp;↳ Supply Dock orders, units still owed, consuming sites | `production_docks.py` |
-| &nbsp;&nbsp;↳ fluid source types, buffer-tank latch rule, `can_source_fluid()` | `production_fluids.py` |
+| &nbsp;&nbsp;↳ fluid source types, buffer-tank latch rule, `can_source_fluid()`, `discover_fluid_sources()` | `production_fluids.py` |
 | &nbsp;&nbsp;↳ `SourceCache`, `can_source_item()`, `can_fulfill_order()` | `production_source.py` |
 | &nbsp;&nbsp;↳ archive order books: stock targets, manual orders + transit, upgrade, backlog | `production_orders.py` |
 | &nbsp;&nbsp;↳ recipe index, demand cascades, network-wide Fabricator targets | `production_cascade.py` |

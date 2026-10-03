@@ -16,7 +16,7 @@
 from bio import get_my_biome, is_local_order, is_order_incomplete, _order_fragment_remaining
 from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED, STACK_IGNORE
 from storage import take_item, best_unload_target
-from production import set_upgrade_order, fabricator_unlocked_outputs, FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable, SECONDS_PER_GAME_HOUR
+from production import set_upgrade_order, fabricator_unlocked_outputs, discover_fluid_sources, SECONDS_PER_GAME_HOUR
 import logistics_requests
 import fluid_routing
 from swallow import swallowed
@@ -339,21 +339,7 @@ class BioCasterController(BioProcessorController):
     def _discover_fluid_sources(self, fluid_key):
         """Network-wide source ids for fluid_key (FLUID_SOURCE_TYPE_IDS), own outpost first.
         Buffer tanks count only when latched to the right fluid (fluid_building_is_viable())."""
-        own_outpost_id = getattr(self.machine.outpost, "id", None)
-        pairs = []
-        network = get_component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    o_id = getattr(outpost, "id", None)
-                    for type_id in FLUID_SOURCE_TYPE_IDS[fluid_key]:
-                        for building in outpost.buildings(type_id):
-                            b_id = getattr(building, "id", None)
-                            if b_id and fluid_building_is_viable(fluid_key, type_id, building):
-                                pairs.append((b_id, o_id))
-            except Exception as error:
-                swallowed("bio_volcanic.BioCasterController._discover_fluid_sources: network.outposts", error)
-        ids = fluid_routing.rank_own_outpost_first(pairs, own_outpost_id)
+        ids = discover_fluid_sources(fluid_key, getattr(self.machine.outpost, "id", None))
         self.log.debug(f"[{self.name}] {fluid_key}: sources (own outpost first): {ids}.")
         return ids
 

@@ -21,7 +21,7 @@
 from archive import archive
 import field_layout
 import fluid_routing
-from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
+from production import discover_fluid_sources, home_outpost_id
 from storage import take_item
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -134,25 +134,8 @@ class FieldProviderController:
 
     def _discover_water_sources(self):
         self.log.start(f"[{self.name}] _discover_water_sources", level="debug")
-        type_ids = FLUID_SOURCE_TYPE_IDS["water_in"]
-        pairs = []
-        home_id = None
-        network = get_component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    o_id = getattr(outpost, "id", None)
-                    if getattr(outpost, "is_home", False):
-                        home_id = o_id
-                    for type_id in type_ids:
-                        for building in outpost.buildings(type_id):
-                            b_id = getattr(building, "id", None)
-                            if b_id and fluid_building_is_viable("water_in", type_id, building):
-                                pairs.append((b_id, o_id))
-            except Exception as error:
-                self.log.debug(f"water source discovery failed: {error}")
         # Field machines always stand on the home field.
-        ids = fluid_routing.rank_own_outpost_first(pairs, home_id)
+        ids = discover_fluid_sources("water_in", home_outpost_id())
         self.log.debug(f"water_in: sources (home first): {ids}.")
         self.log.end()
         return ids

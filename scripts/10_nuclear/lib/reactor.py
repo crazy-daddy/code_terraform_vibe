@@ -59,7 +59,7 @@ import math
 import fluid_routing
 import lead_cask
 from archive import archive
-from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
+from production import discover_fluid_sources
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
@@ -273,21 +273,7 @@ class ReactorController:
     # ------------------------------------------------------------------
     def _discover_water(self):
         own = getattr(getattr(self.reactor, "outpost", None), "id", None)
-        pairs = []
-        network = get_component("outpost_network")
-        if network is None:
-            return []
-        try:
-            for outpost in network.outposts():
-                o_id = getattr(outpost, "id", None)
-                for type_id in FLUID_SOURCE_TYPE_IDS["water_in"]:
-                    for building in outpost.buildings(type_id):
-                        b_id = getattr(building, "id", None)
-                        if b_id and fluid_building_is_viable("water_in", type_id, building):
-                            pairs.append((b_id, o_id))
-        except Exception as error:
-            swallowed("reactor.ReactorController._discover_water: network.outposts", error)
-        ranked = fluid_routing.rank_own_outpost_first(pairs, own)
+        ranked = discover_fluid_sources("water_in", own)
         self.log.debug(f"[{self.name}] water_in sources (own outpost '{own}' first): {ranked}.")
         return ranked
 

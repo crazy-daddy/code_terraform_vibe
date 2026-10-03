@@ -6,7 +6,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from production import FLUID_SOURCE_TYPE_IDS, fluid_building_is_viable
+from production import discover_fluid_sources
 import fluid_routing
 import lead_cask
 import power
@@ -112,27 +112,11 @@ class Mk3FluidFeed:
         own_outpost_id = self._own_outpost_id()
         if self.fluid_key == "steam_in":
             # Same candidates and order as the Steam Turbine / Condenser: steam Gas Tanks, then Caps.
-            ranked = []
-            for type_id in ("gas_tank", "thermal_cap"):
-                pairs = fluid_routing.discover_network_buildings(type_id, resolve=False, fluid_id="steam")
-                ranked.extend(fluid_routing.rank_own_outpost_first(pairs, own_outpost_id))
+            ranked = fluid_routing.discover_ranked(fluid_routing.STEAM_SOURCE_TIERS, own_outpost_id)
             self.log.debug(f"steam_in: sources (steam tanks, then Caps; own outpost first): {ranked}.")
             self.log.end()
             return ranked
-        pairs = []
-        network = get_component("outpost_network")
-        if network and hasattr(network, "outposts"):
-            try:
-                for outpost in network.outposts():
-                    o_id = getattr(outpost, "id", None)
-                    for type_id in FLUID_SOURCE_TYPE_IDS[self.fluid_key]:
-                        for building in outpost.buildings(type_id):
-                            b_id = getattr(building, "id", None)
-                            if b_id and fluid_building_is_viable(self.fluid_key, type_id, building):
-                                pairs.append((b_id, o_id))
-            except Exception as error:
-                swallowed("terraforming.Mk3FluidFeed._discover_sources: network.outposts", error)
-        ids = fluid_routing.rank_own_outpost_first(pairs, own_outpost_id)
+        ids = discover_fluid_sources(self.fluid_key, own_outpost_id)
         self.log.debug(f"{self.fluid_key}: sources (own outpost first): {ids}.")
         self.log.end()
         return ids
