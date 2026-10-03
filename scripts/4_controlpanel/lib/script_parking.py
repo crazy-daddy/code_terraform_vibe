@@ -94,6 +94,20 @@ WAKE_AFTER_TICKS = {
     # (lib/habitat.py); the Wildlife planner wakes it when that changes or a node purchase is queued.
     "habitat": 6000,
 }
+# Timed re-checks that found nothing back off: a machine that parks again within
+# FRUITLESS_REPARK_TICKS of a "re-check due" wake gets its next wake_after doubled (base
+# WAKE_AFTER_TICKS << streak), up to the kind's cap here. A park that comes later than that
+# window (the machine did work in between) resets the streak. Kinds without an event wake pay
+# at most the cap in extra latency for new work.
+WAKE_BACKOFF_MAX_TICKS = {
+    "smelter": 1200,
+    "fabricator": 1200,
+    "crop_automator": 1800,
+    "supply_dock": 1800,
+}
+# A park filed this soon after a re-check wake means the machine woke, found no work and idled again
+# (its request is re-filed on its first idle step, parked on the next 50-tick pass).
+FRUITLESS_REPARK_TICKS = 150
 # Station kinds: never park the last awake one of a type (see the module docstring).
 STATION_KINDS = ("charging_station", "drone_service_station")
 # How long a visit wake holds a station awake (ticks). Covers the trip there;
@@ -110,6 +124,9 @@ MAX_WAKE_AFTER_TICKS = 6000
 # below this are woken at once (their script starts burning at
 # oil_generator.OIL_START_RESERVE_FRACTION = 0.30, so this leaves time to react).
 OIL_WAKE_RESERVE_FRACTION = 0.40
+# A grid's low-reserve verdict is reused for this many ticks (the reserve moves slowly; measuring
+# reads every steam tank of the grid).
+RESERVE_CACHE_TICKS = 150
 # Oil Generators are woken (and not parked) while the network-wide oil tank fill is at or
 # above this: their script runs them as base load from oil_generator.OIL_SURPLUS_START_FRACTION
 # (same value; this tier-4 module cannot import the tier-5 one).
@@ -382,6 +399,10 @@ class ScriptParking:
         self.power = power or get_component("power_control")
         self.run_control = run_control or get_component("run_control")
         self.clock = clock or get_component("clock")
+        # {machine_id: (tick of its last re-check wake, fruitless streak)}; lost on a restart, which only resets the backoff.
+        self._rechecks = {}
+        # {grid anchor id: (tick, low)}: _low_reserve_grids() verdicts, reused for RESERVE_CACHE_TICKS.
+        self._reserve_cache = {}
 
     def step(self, grids, elevation, dock_plan=None):
         """
@@ -407,12 +428,14 @@ class ScriptParking:
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
-            if get_component(machine_id) is None:
+            member = members.get(machine_id)  # a grid member was read this pass: it exists and its powered flag is current
+            if member is None and get_component(machine_id) is None:
                 log.debug(f"{machine_id} no longer exists, dropped from the parked list")
                 del parked[machine_id]
+                self._rechecks.pop(machine_id, None)
                 changed = True
                 continue
-            if self._is_powered(machine_id):
+            if member[2] if member is not None else self._is_powered(machine_id):
                 # Switched on by the player (or anything else): no longer parked here.
                 log.debug(f"{machine_id} is powered again, dropped from the parked list")
                 woken[machine_id] = entry.get("since", now)
@@ -424,6 +447,7 @@ class ScriptParking:
                 log.debug(f"woke {machine_id} ({reason})")
                 woken[machine_id] = entry.get("since", now)
                 del parked[machine_id]
+                self._note_wake(machine_id, reason, entry, now)
                 changed = True
 
         awake = None  # {station kind: ids neither parked nor shed}, built on first use
@@ -452,6 +476,11 @@ class ScriptParking:
             entry = {"kind": kind, "mode": "breaker", "since": now}
             if request.get("wake_after") is not None:
                 entry["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
+            else:
+                backoff = self._backoff_wake_after(machine_id, kind, now)
+                if backoff is not None:
+                    entry["wake_after"] = backoff
+                    log.debug(f"{machine_id} found no work after its last re-check, next one in {backoff} ticks")
             # Recorded before the breaker goes off: a script killed in between leaves an
             # entry for a powered machine (dropped next pass), never an untracked dark one.
             self._commit({}, {machine_id: entry})
@@ -518,6 +547,28 @@ class ScriptParking:
         return bool(adopted)
 
     # ------------------------------------------------------------------ wake
+
+    def _note_wake(self, machine_id, reason, entry, now):
+        """Remembers a timed re-check wake (its fruitless streak so far) for _backoff_wake_after(); other wakes forget it."""
+        if reason != "re-check due" or entry.get("kind") not in WAKE_BACKOFF_MAX_TICKS:
+            self._rechecks.pop(machine_id, None)
+            return
+        streak = self._rechecks.get(machine_id, (0, 0))[1]
+        self._rechecks[machine_id] = (now, streak)
+
+    def _backoff_wake_after(self, machine_id, kind, now):
+        """wake_after for a machine being parked, longer when its last re-check found no work; None for the kind default."""
+        cap = WAKE_BACKOFF_MAX_TICKS.get(kind)
+        recheck = self._rechecks.get(machine_id)
+        if cap is None or recheck is None:
+            return None
+        woke, streak = recheck
+        if now - woke > FRUITLESS_REPARK_TICKS:
+            self._rechecks.pop(machine_id, None)
+            return None
+        streak += 1
+        self._rechecks[machine_id] = (woke, streak)
+        return min(WAKE_AFTER_TICKS[kind] << streak, cap)
 
     def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan, oil_surplus=False):
         kind = entry.get("kind")
@@ -588,19 +639,33 @@ class ScriptParking:
         grid_power = _power_module()
         if not hasattr(grid_power, "measure_grid"):
             return low
+        now_tick = _now_tick()
+        tanks = {}  # {anchor: gas tank ids}, from the member rows already read this pass
+        for member_id, (anchor, type_id, _powered) in members.items():
+            if type_id == "gas_tank" and anchor in wanted:
+                tanks.setdefault(anchor, []).append(member_id)
         for grid in grids:
             anchor = getattr(grid, "anchor_id", None)
             if anchor not in wanted:
                 continue
+            cached = self._reserve_cache.get(anchor)
+            if cached is not None and 0 <= now_tick - cached[0] < RESERVE_CACHE_TICKS:
+                if cached[1]:
+                    low.add(anchor)
+                continue
             try:
-                now = grid_power.measure_grid(grid, grid_power.grid_steam_tank_ids(grid))
+                now = grid_power.measure_grid(grid, tanks.get(anchor, []))
                 fractions = [f for f in (grid_power.reserve_fraction(now), now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None) if f is not None]
             except Exception as error:
                 swallowed("script_parking._low_reserve_grids: power.measure_grid", error)
                 low.add(anchor)  # unreadable reserve: wake, the generator's own script fails safe
                 continue
-            if not fractions or min(fractions) < OIL_WAKE_RESERVE_FRACTION:
+            is_low = not fractions or min(fractions) < OIL_WAKE_RESERVE_FRACTION
+            self._reserve_cache[anchor] = (now_tick, is_low)
+            if is_low:
                 low.add(anchor)
+        for anchor in [a for a in self._reserve_cache if a not in wanted]:
+            del self._reserve_cache[anchor]
         return low
 
     @staticmethod

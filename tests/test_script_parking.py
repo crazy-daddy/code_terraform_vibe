@@ -149,10 +149,47 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.power.calls, [("oil_generator_1", False)])
         script_parking.power = _FakePower(0.1)
         self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("oil_generator_1", False))  # the 0.5 verdict is still cached
+        self.world.clock.now += script_parking.RESERVE_CACHE_TICKS
+        self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
         self.request("oil_generator_1", "oil_generator")
         self.parking.step(self.grids, 10.0)
         self.assertEqual(self.power.calls[-1], ("oil_generator_1", True))
+
+    def _recheck_cycle(self, idle_ticks):
+        """Wakes smelter_1 on its timed re-check, lets it idle for idle_ticks, then files its next park request."""
+        entry = self.world.notebook.data[PARKED_KEY]["smelter_1"]
+        self.world.clock.now += entry.get("wake_after", WAKE_AFTER_TICKS["smelter"])
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+        self.world.clock.now += idle_ticks
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", False))
+        return self.world.notebook.data[PARKED_KEY]["smelter_1"]
+
+    def test_fruitless_rechecks_back_off_up_to_the_cap_and_work_resets_it(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        base = WAKE_AFTER_TICKS["smelter"]
+        cap = script_parking.WAKE_BACKOFF_MAX_TICKS["smelter"]
+        self.assertNotIn("wake_after", self.world.notebook.data[PARKED_KEY]["smelter_1"])
+        self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 2, cap))
+        self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 4, cap))
+        self.assertEqual(self._recheck_cycle(50)["wake_after"], cap)
+        # It worked after this wake (parked again later than the window): back to the default.
+        self.assertNotIn("wake_after", self._recheck_cycle(script_parking.FRUITLESS_REPARK_TICKS + 50))
+        self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 2, cap))
+
+    def test_event_wake_does_not_start_a_backoff(self):
+        self.request("supply_dock_1", "supply_dock")
+        self.parking.step(self.grids, 10.0, {"supply_dock_1": None})
+        self.parking.step(self.grids, 10.0, {"supply_dock_1": "order_7"})
+        self.world.clock.now += 50
+        self.request("supply_dock_1", "supply_dock")
+        self.parking.step(self.grids, 10.0, {"supply_dock_1": None})
+        self.assertNotIn("wake_after", self.world.notebook.data[PARKED_KEY]["supply_dock_1"])
 
     def test_machine_filed_wake_time_is_used(self):
         requests = self.world.notebook.data.setdefault(PARK_REQUESTS_KEY, {})
