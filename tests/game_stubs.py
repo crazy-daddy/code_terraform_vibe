@@ -281,12 +281,15 @@ class LeadCask(PassiveStore):
 
 class Slot:
     """InputSlot / OutputSlot on a machine. `buffer` is the machine-side
-    {item: units} dict the slot fills (input) or drains (output)."""
+    {item: units} dict the slot fills (input) or drains (output).
+    `material_slots`: cap on distinct materials in a multi-material
+    stockpile (take() of a new one past it -> "slots_full"); None = no cap."""
 
-    def __init__(self, machine, buffer, capacity):
+    def __init__(self, machine, buffer, capacity, material_slots=None):
         self.machine = machine
         self.buffer = buffer
         self._capacity = capacity
+        self.material_slots = material_slots
         self.connected = ""
         self.connect_log = []
 
@@ -305,6 +308,12 @@ class Slot:
 
     def connected_to(self):
         return self.connected
+
+    def _slots_full_for(self, item_id):
+        """True when item_id is a new material and every material slot is taken."""
+        if self.material_slots is None or self.buffer.get(item_id, 0) > 0:
+            return False
+        return sum(1 for n in self.buffer.values() if n > 0) >= self.material_slots
 
     def _resolve(self, target_id):
         """(store, problem) for target_id as seen from this machine's outpost;
@@ -335,6 +344,8 @@ class Slot:
         room = self._capacity - self.machine._input_used()
         if room <= 0:
             return Result("buffer_full")
+        if self._slots_full_for(item_id):
+            return Result("slots_full", requested=count)
         moved = store.remove(item_id, min(count, room))
         if moved > 0:
             self.buffer[item_id] = self.buffer.get(item_id, 0) + moved
