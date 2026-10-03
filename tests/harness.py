@@ -46,6 +46,7 @@ def _tier_lib_dirs(max_tier):
 def _install_builtins(world):
     builtins.get_component = world.get_component  # type: ignore[attr-defined]
     builtins.sleep = lambda _seconds: None  # type: ignore[attr-defined]
+    builtins.notify = lambda text, *_args, **_kwargs: world.notices.append(text)  # type: ignore[attr-defined]
 
 
 # autoplay/lib (the infrastructure planner) sits after every tier: it imports their modules, never the reverse.

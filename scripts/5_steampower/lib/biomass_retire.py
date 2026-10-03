@@ -2,6 +2,7 @@ import fluid_routing
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+from retired_machines import retire, release, retired_ids
 
 # Biomass pillar retirement. The Biomass pillar owns a fixed 100,000 TP of
 # the Terraform Index and adds nothing once biomass reaches its final phase
@@ -45,6 +46,8 @@ MIXER_TIER_PACKS = ((2, "biomass_mixer_upgrade_pack_mk2"),)
 
 # One dict: {"complete", "tons", "machines": {id: {...}}, "ready", "status", "last_sale"}.
 RETIRE_KEY = "biomass.retire"
+# retired_machines registry name of this retirement.
+RETIRED_BY = "biomass"
 # Other scripts' per-machine telemetry, pruned for sold machines.
 LIQUIFIER_STATUS_KEY = "essence_liquifier.status"
 MIXER_STATUS_KEY = "biomass_mixer.status"
@@ -149,11 +152,15 @@ class BiomassRetirement:
             log.print(f"Biomass {tons:.0f} t >= {BIOMASS_COMPLETE_T} t: pillar complete, retiring Liquifiers and Mixers.")
 
         machines = self._machines()
-        for machine_id, entry in machines.items():
-            # A Mixer can go dark at once; a Liquifier's own script must keep
-            # running until it has ejected its input bin.
-            if entry["type"] == MIXER_TYPE_ID or entry["ready"]:
-                entry["powered_off"] = self._switch_off(machine_id)
+        # A Mixer can go dark at once; a Liquifier's own script must keep
+        # running until it has ejected its input bin.
+        dark = [m for m, e in machines.items() if e["type"] == MIXER_TYPE_ID or e["ready"]]
+        # Registered before the breakers go off, so script parking never sees them as stray dark.
+        unregistered = set(dark) - retired_ids(RETIRED_BY)
+        if unregistered:
+            retire(sorted(unregistered), RETIRED_BY)
+        for machine_id in dark:
+            machines[machine_id]["powered_off"] = self._switch_off(machine_id)
         waiting = sorted(i for i, e in machines.items() if not e["ready"])
         ready = bool(machines) and not waiting
         if not machines:
@@ -189,6 +196,7 @@ def _sell_one(shop, item_id):
 
 
 def _prune_telemetry(machine_id):
+    release([machine_id])
     archive.pop_entry(LIQUIFIER_STATUS_KEY, machine_id)
     archive.pop_entry(MIXER_STATUS_KEY, machine_id)
     archive.delete(f"{MIXER_GATE_KEY_PREFIX}{machine_id}")

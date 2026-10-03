@@ -2,6 +2,7 @@ import fluid_routing
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
+from script_parking import PARKED_KEY
 
 # Biomass Mixer duty-cycle gate: pause a Mixer (breaker off) while one of its
 # expected essences is dry, resume once every expected essence has refilled.
@@ -82,6 +83,9 @@ REWIRE_HOLD_TICKS = 1200
 STATE_KEY_PREFIX = "biomass_mixer.gate."
 KNOWN_LIQUIFIERS_KEY = "biomass_mixer.gate_known_liquifiers"
 SHEDDED_KEY = "power.shedded"
+
+# script.parked mode of a gate pause: script parking leaves the Mixer dark and never counts it as stray.
+PARK_MODE = "mixer_gate"
 
 STATE_RUN = "run"
 STATE_PAUSE = "pause"
@@ -208,6 +212,22 @@ class MixerGate:
             self.log.level("warn").print(f"[{mixer_id}] breaker {'on' if on else 'off'} failed: {error}")
             return False
 
+    @staticmethod
+    def _record_parked(mixer_id, tick):
+        """Adds (tick given) or drops (tick None) the Mixer's script.parked entry."""
+        def updater(parked):
+            parked = parked if isinstance(parked, dict) else {}
+            if tick is None:
+                parked.pop(mixer_id, None)
+            else:
+                parked[mixer_id] = {"kind": MIXER_TYPE_ID, "mode": PARK_MODE, "since": tick}
+            return parked
+
+        try:
+            archive.transaction(PARKED_KEY, {}, updater)
+        except Exception as error:
+            swallowed("biomass_mixer_gate.MixerGate._record_parked: archive.transaction", error)
+
     # ---- state machine ---------------------------------------------------
 
     def _load_state(self, mixer_id):
@@ -226,6 +246,7 @@ class MixerGate:
     def _enter_pause(self, mixer_id, state, tick, reason, levels):
         if not self._switch(mixer_id, False):
             return
+        self._record_parked(mixer_id, tick)
         state.update({
             "state": STATE_PAUSE,
             "paused_by_gate": True,
@@ -243,6 +264,7 @@ class MixerGate:
                 return
             if not self._switch(mixer_id, True):
                 return
+        self._record_parked(mixer_id, None)
         state.update({"state": STATE_RUN, "paused_by_gate": False, "since": tick, "reason": reason, "progress": {}})
         self.log.print(f"[{mixer_id}] Resumed: {reason}.")
 

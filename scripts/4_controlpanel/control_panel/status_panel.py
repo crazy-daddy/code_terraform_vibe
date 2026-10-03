@@ -29,6 +29,7 @@ from version_guard import version_mismatch, good_version, confirm_new_version
 from swallow import swallowed
 from biomass_retire import retire_state, sell_retired_machines
 from lead_cask import reactor_fuel_alerts
+from script_parking import stray_alerts
 
 # Must match control_room_automation.py's own AUTOMATION_SUMMARY_KEY.
 AUTOMATION_SUMMARY_KEY = "control_room.automation_summary"
@@ -105,12 +106,17 @@ while True:
     panel.progress_bar(col3, 66, width * 0.16, 12, used / slots if slots else 0.0, "error" if inventory_full else "accent")
     panel.label(col3, 88, f"{used} / {slots} slots", "muted")
 
-    # (text, level): Reactor fuel first (lead_cask.REACTOR_FUEL_KEY), level picks the dot colour.
+    # (text, level): Reactor fuel first (lead_cask.REACTOR_FUEL_KEY), then stray dark machines
+    # (script_parking.STRAY_KEY); level picks the dot colour.
     alerts = []
     try:
         alerts.extend(reactor_fuel_alerts(clock.tick() if clock else 0))
     except Exception as e:
         swallowed("status_panel: reactor_fuel_alerts", e)
+    try:
+        alerts.extend(stray_alerts())
+    except Exception as e:
+        swallowed("status_panel: stray_alerts", e)
     if inventory_full:
         alerts.append(("Inventory full: production and Rover unloading may pause", "error"))
     if net < 0:

@@ -394,6 +394,18 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [ ] Fluid routes connected and conflict-free.
   - [ ] Storage capacity available at every producer and consumer.
   - [ ] Required research, blueprint, module, and service range verified.
+- [ ] **Stray dark machines: script parking warns, notifies, then switches on breakers nobody owns** (`ScriptParking._strays()`, `lib/script_parking.py`; see `docs/cheatsheet/dev_workflow.md` §1d-2). Machines built before their grid had power come up switched off, and their script never starts. Three stages by time since first seen: warn line, then `notify()` + Status panel alert, then breaker on + idle script started. Opt-out: `script.manual_off`. Stub-tested only.
+  - [ ] Deploy `script_parking.py`, `retired_machines.py` (new), `biomass_retire.py`, `biomass_mixer_gate.py`, `archive_cleaner.py`, `status_panel.py`; validate live: first-run warn list (expect only genuinely stray machines), `run_control.status().state` of a never-started script reads `"idle"` and `start()` works right after `set_powered(True)`.
+  - [x] **Retired machine registry** (`lib/retired_machines.py`, archive `machine.retired` `{machine_id: {"by", "since"}}`): retirements register before switching breakers off, undeploy releases; script parking skips registered ids; the archive cleaner prunes gone ids.
+  - [ ] `machine_activity` classifies registered machines as "retired", not "off", so they stay out of the spare/retire statistics (`activity_panel.py` needs a colour for it).
+  - Retirements:
+    - [x] Essence chain (`biomass_retire.py`): registers Liquifiers + Mixers as `"biomass"`.
+    - [ ] Essence chain: deconstruct its tanks and (maybe) pipes after the sale.
+    - [ ] Plant Terraformers (`plants_retire.py`, undeployed at 5,000,000 km², no registry entry needed): verify none stays dark while it waits to empty.
+    - [ ] Bio chain per biome (Collector / Lab / Exchange / processor): retire once that biome has nothing left to catalog or deliver (not automated yet).
+    - [ ] Habitats: retire once their species' wildlife is maxed (not automated yet).
+    - [ ] Oxygen Generators / Heaters / Pressure machines: retire each type once its atmosphere value is at maximum (not automated yet).
+  - [x] Biomass Mixer gate pauses are recorded in `script.parked` (mode `"mixer_gate"`).
 - [ ] Exercise failure scenarios: full Inventory, full output buffer, missing recipe, stale Rover claim, disconnected pipe, split power subnet, and stranded vehicle.
 - [ ] Keep scripts and documentation aligned with the component/API guides after each major unlock.
 - [ ] **Consolidate remaining per-entity archive keys into shared dicts** (archive key-count cap, see CLAUDE.md rule 7): remaining: `biomass_mixer.gate.<id>` (bounded by mixer count, do when next touching `biomass_mixer_gate.py`) and per-grid `power.shedded:`/`power.daily:`/`power.daily_hist:`/`power.night_wh:<anchor>` (4 keys per grid; deferred until 8+ separate grids — two `power.py` tiers, and global `power.shedded` must stay flat).

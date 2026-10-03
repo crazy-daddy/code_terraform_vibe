@@ -1005,11 +1005,19 @@ class PowerControl:
 
 
 class RunControl:
-    """`run_control`: which machines' scripts run (a set of ids)."""
+    """`run_control`: which machines' scripts run (a set of ids). status() reads
+    `states[id]` when set, else "running"/"idle" from `running`."""
 
     def __init__(self, world):
         self._world = world
         self.running = set()
+        self.states = {}
+
+    def status(self, machine_id, slot=0):
+        if machine_id not in self._world.components:
+            raise ReferenceError(machine_id)
+        state = self.states.get(machine_id) or ("running" if machine_id in self.running else "idle")
+        return type("RunControlStatus", (), {"state": state, "script_id": "", "variant_id": "", "variant_name": ""})()
 
     def is_running(self, machine_id):
         return machine_id in self.running
@@ -1648,6 +1656,7 @@ class World:
         self.components = {}
         self.outposts = {}
         self.notebook = Notebook()
+        self.notices = []  # notify() texts (harness builtin)
         self.clock = Clock()
         self.console = Console()
         self.home = self.add_outpost("home", is_home=True)

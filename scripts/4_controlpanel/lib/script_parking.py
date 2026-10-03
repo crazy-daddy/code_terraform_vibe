@@ -27,8 +27,18 @@ wake a parked station that is nearest to a stranded vehicle, so it rescues.
 
 Parked machines are tracked in one archive dict (PARKED_KEY) so a panel restart
 keeps waking them. Load shedding (lib/power.py) uses the same breakers with its
-own `power.shedded` list; a shed id is never parked, and only ids in
-PARKED_KEY are ever switched back on here.
+own `power.shedded` list; a shed id is never parked. Other breaker owners
+record their machines in PARKED_KEY under their own mode (turbine_commit,
+biomass_mixer_gate) or in the retired registry (lib/retired_machines.py).
+
+Stray dark machines: a grid member with a breaker that is switched off while
+nothing above tracks it (not in PARKED_KEY, `power.shedded`, the retired
+registry, PARK_REQUESTS_KEY or the operator's MANUAL_OFF_KEY), typically a
+machine built before its grid had power. Three stages, by time since first seen
+(STRAY_KEY): a warn line at once, notify() plus a Status panel alert
+(stray_alerts()) after STRAY_NOTIFY_TICKS, and after STRAY_SWITCH_ON_TICKS the
+breaker goes on and an idle script is started (an errored or completed one is
+left alone).
 """
 
 from archive import archive
@@ -36,6 +46,7 @@ from tree_console import TreeConsole
 from swallow import swallowed
 import fluid_routing
 from atomic import run_batched
+from retired_machines import retired_ids
 # lib/power.py is imported where it is used (_low_reserve_grids()): the tier-5 power.py imports
 # turbine_commit, which imports this module, so a module-level import would be a cycle.
 power = None
@@ -105,6 +116,14 @@ OIL_WAKE_RESERVE_FRACTION = 0.25
 OIL_SURPLUS_WAKE_FRACTION = 0.90
 
 SOLAR_TYPE_ID = "solar_generator"
+
+# {machine_id: {"kind": type_id, "first": tick, "stage": 1 | 2}}: stray dark machines (module docstring).
+STRAY_KEY = "script.stray_dark"
+# {machine_id: note}: operator list of machines switched off on purpose; never stray.
+MANUAL_OFF_KEY = "script.manual_off"
+# Ticks after first sight: notify() + Status alert, then breaker on + script start.
+STRAY_NOTIFY_TICKS = 600
+STRAY_SWITCH_ON_TICKS = 3000
 
 
 def _power_module():
@@ -306,6 +325,23 @@ class ParkRequester:
             swallowed("script_parking.ParkRequester._write: archive.transaction", error)
 
 
+def stray_alerts(entries=None):
+    """[(text, "warn")] for the Status panel: one line over every stray dark machine at stage 2."""
+    if entries is None:
+        try:
+            entries = archive.get(STRAY_KEY, {}) or {}
+        except Exception as error:
+            swallowed("script_parking.stray_alerts: archive.get", error)
+            return []
+    if not isinstance(entries, dict):
+        return []
+    ids = sorted(m for m, e in entries.items() if isinstance(e, dict) and e.get("stage", 1) >= 2)
+    if not ids:
+        return []
+    shown = ", ".join(ids[:3]) + (f" +{len(ids) - 3}" if len(ids) > 3 else "")
+    return [(f"Switched off, no owner: {shown}", "warn")]
+
+
 class ScriptParking:
     """Panel-side half, one instance in control_room_automation.py; call `step()` every few seconds."""
 
@@ -398,6 +434,7 @@ class ScriptParking:
         changed = self._solar(elevation, members, parked, now) or changed
         if changed:
             self._commit(before, parked)
+        self._strays(members, parked, woken, shed, requests, now)
         log.end()
         return self._summary(parked)
 
@@ -550,6 +587,84 @@ class ScriptParking:
         except Exception as error:
             swallowed("script_parking._clear_requests: archive.transaction", error)
 
+    # ------------------------------------------------------------------ strays
+
+    def _strays(self, members, parked, woken, shed, requests, now):
+        """Advances every stray dark machine one stage when due (module docstring); keeps STRAY_KEY current."""
+        try:
+            strays = archive.get(STRAY_KEY, {}) or {}
+        except Exception as error:
+            swallowed("script_parking._strays: archive.get", error)
+            return
+        strays = strays if isinstance(strays, dict) else {}
+        dark = [m for m, (_anchor, _type_id, powered) in members.items()
+                if not powered and m not in parked and m not in woken and m not in shed and m not in requests]
+        if not dark and not strays:
+            return
+        if dark:
+            manual = archive.get(MANUAL_OFF_KEY, {}) or {}
+            excluded = retired_ids() | (set(manual) if isinstance(manual, dict) else set())
+            dark = [m for m in dark if m not in excluded]
+        updated = {}
+        for machine_id in sorted(dark):
+            entry = strays.get(machine_id)
+            type_id = members[machine_id][1]
+            if not isinstance(entry, dict):
+                if not self._can_power_off(machine_id):
+                    continue
+                entry = {"kind": type_id, "first": now, "stage": 1}
+                log.level("warn").print(
+                    f"[PARKING] {machine_id} ({type_id}) is switched off at its breaker and no automation owns that. "
+                    f"Switching it on in {STRAY_SWITCH_ON_TICKS // 600} min unless listed in archive '{MANUAL_OFF_KEY}'.")
+            age = now - entry.get("first", now)
+            if age >= STRAY_SWITCH_ON_TICKS:
+                if self._switch_on_stray(machine_id, type_id):
+                    continue
+            elif age >= STRAY_NOTIFY_TICKS and entry.get("stage", 1) < 2:
+                entry = dict(entry, stage=2)
+                self._notify(f"[Parking] {machine_id} ({type_id}) has been switched off for {age // 600} min with no automation owning it; "
+                             f"it is switched on in {(STRAY_SWITCH_ON_TICKS - age) // 600} min. List it in archive '{MANUAL_OFF_KEY}' to keep it off.")
+            updated[machine_id] = entry
+        for machine_id in strays:
+            if machine_id not in updated and machine_id not in dark:
+                log.debug(f"{machine_id} no longer stray dark")
+        if updated != strays:
+            try:
+                archive.set(STRAY_KEY, updated)
+            except Exception as error:
+                swallowed("script_parking._strays: archive.set", error)
+
+    def _switch_on_stray(self, machine_id, type_id):
+        """Breaker on, then starts the script when it is idle (never run). True when the breaker went on."""
+        if not self._set_powered(machine_id, True):
+            return False
+        state = self._script_state(machine_id)
+        started = state == "idle" and self._run(machine_id, "start")
+        if state in ("error", "completed"):
+            log.level("warn").print(f"[PARKING] Switched on stray dark {machine_id} ({type_id}); its script is {state}, not restarted.")
+        else:
+            log.print(f"[PARKING] Switched on stray dark {machine_id} ({type_id}){'; started its script' if started else ''}.")
+        return True
+
+    def _script_state(self, machine_id):
+        """run_control.status().state; None when the machine has no script or the read fails."""
+        if self.run_control is None:
+            return None
+        try:
+            return getattr(self.run_control.status(machine_id), "state", None)
+        except ReferenceError:
+            return None
+        except Exception as error:
+            swallowed("script_parking._script_state: run_control.status", error)
+            return None
+
+    @staticmethod
+    def _notify(text):
+        try:
+            notify(text, level="warn", duration_seconds=10.0)
+        except Exception as error:
+            swallowed("script_parking._notify: notify", error)
+
     # ------------------------------------------------------------------ solar
 
     def _solar(self, elevation, members, parked, now):
@@ -595,6 +710,8 @@ class ScriptParking:
 
     def _is_powered(self, machine_id):
         """power_control.is_powered(); False on a read failure (the entry stays until its re-check)."""
+        if self.power is None:
+            return False
         try:
             return bool(self.power.is_powered(machine_id))
         except Exception as error:
@@ -602,6 +719,8 @@ class ScriptParking:
             return False
 
     def _can_power_off(self, machine_id):
+        if self.power is None:
+            return False
         try:
             return bool(self.power.can_power_off(machine_id))
         except Exception as error:
@@ -609,6 +728,8 @@ class ScriptParking:
             return False
 
     def _set_powered(self, machine_id, on):
+        if self.power is None:
+            return False
         try:
             result = self.power.set_powered(machine_id, on)
         except Exception as error:
@@ -620,6 +741,8 @@ class ScriptParking:
         return status == "ok"
 
     def _is_running(self, machine_id):
+        if self.run_control is None:
+            return False
         try:
             return bool(self.run_control.is_running(machine_id))
         except Exception as error:

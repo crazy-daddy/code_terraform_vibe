@@ -142,7 +142,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
 | Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_batched(fn, items, size, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
 | Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` (tier 5) — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
-| Script parking (idle machines' breakers off, solar scripts stopped at night; `ParkRequester` machine side, `ScriptParking` in `control_room_automation.py`) | `script_parking.py` — see dev_workflow.md §1d-2 |
+| Script parking (idle machines' breakers off, solar scripts stopped at night, stray dark machines warned about then switched on; `ParkRequester` machine side, `ScriptParking` in `control_room_automation.py`) | `script_parking.py` — see dev_workflow.md §1d-2 |
+| Retired machines registry (machines switched off for good by a retirement; script parking leaves them dark) | `retired_machines.py` — see dev_workflow.md §1d-2 |
 | Script census (counts running scripts every `CENSUS_TICK_INTERVAL = 300` ticks, logs `scripts running: N of M machines, allowance A steps/tick` for `devtools/log_block_timing.py`; called from `control_room_automation.py` `park_if_due()`) | `script_census.py` — see dev_workflow.md §1d-1 |
 | Machine activity (per-machine and per-group active/waiting/idle/running/parked/off time shares and `retire` candidates, archive `machine.activity`; sampled from each census snapshot by `control_room_automation.py`) | `machine_activity.py` — see dev_workflow.md §1d-3 |
 

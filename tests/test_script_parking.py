@@ -3,6 +3,7 @@ import unittest
 from harness import StubTestCase
 from game_stubs import Building, Result
 import script_parking
+import retired_machines
 from script_parking import ParkRequester, ScriptParking, PARK_REQUESTS_KEY, PARKED_KEY, WAKE_AFTER_TICKS
 
 
@@ -344,6 +345,80 @@ class FieldProviderParkingTests(StubTestCase):
         controller.step()
         self.assertTrue(lamp.enabled)
         self.assertNotIn("grow_lamp_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+
+
+class StrayDarkTests(StubTestCase):
+    """Breakers switched off with no owner: warn, then notify + alert, then switched on."""
+
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.power, self.run_control = w.power_control, w.run_control
+        for machine_id in ("smelter_1", "smelter_2"):
+            w.add_building(machine_id, w.home, "smelter")
+        self.grids = [w.add_grid("grid_a", ["smelter_1", "smelter_2"])]
+        self.parking = ScriptParking(power=self.power, run_control=self.run_control)
+        self.power.powered["smelter_1"] = False
+
+    def step_at(self, age):
+        self.world.clock.now = self.start + age
+        self.parking.step(self.grids, 10.0)
+
+    def strays(self):
+        return self.world.notebook.data.get(script_parking.STRAY_KEY, {})
+
+    def test_three_stages(self):
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.assertEqual(self.strays()["smelter_1"]["stage"], 1)
+        self.assertEqual(self.world.notices, [])
+        self.assertEqual(script_parking.stray_alerts(), [])
+        self.step_at(script_parking.STRAY_NOTIFY_TICKS)
+        self.assertEqual(self.strays()["smelter_1"]["stage"], 2)
+        self.assertEqual(len(self.world.notices), 1)
+        self.assertIn("smelter_1", script_parking.stray_alerts()[0][0])
+        self.step_at(script_parking.STRAY_NOTIFY_TICKS + 50)
+        self.assertEqual(len(self.world.notices), 1)  # notified once
+        self.assertEqual(self.power.calls, [])
+        self.step_at(script_parking.STRAY_SWITCH_ON_TICKS)
+        self.assertEqual(self.power.calls, [("smelter_1", True)])
+        self.assertIn("smelter_1", self.run_control.running)
+        self.assertEqual(self.strays(), {})
+
+    def test_errored_script_is_not_restarted(self):
+        self.run_control.states["smelter_1"] = "error"
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.step_at(script_parking.STRAY_SWITCH_ON_TICKS)
+        self.assertEqual(self.power.calls, [("smelter_1", True)])
+        self.assertNotIn("smelter_1", self.run_control.running)
+
+    def test_switched_on_by_hand_is_forgotten(self):
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.power.powered["smelter_1"] = True
+        self.step_at(50)
+        self.assertEqual(self.strays(), {})
+
+    def test_owned_dark_machines_are_not_stray(self):
+        self.world.notebook.data[script_parking.MANUAL_OFF_KEY] = {"smelter_1": "kept off for testing"}
+        self.power.powered["smelter_2"] = False
+        retired_machines.retire(["smelter_2"], "test")
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.step_at(script_parking.STRAY_SWITCH_ON_TICKS)
+        self.assertEqual(self.strays(), {})
+        self.assertEqual(self.power.calls, [])
+
+    def test_shed_or_otherwise_parked_machines_are_not_stray(self):
+        self.world.notebook.data["power.shedded"] = ["smelter_1"]
+        self.power.powered["smelter_2"] = False
+        self.world.notebook.data[PARKED_KEY] = {"smelter_2": {"kind": "biomass_mixer", "mode": "mixer_gate", "since": 0}}
+        self.start = self.world.clock.now
+        self.step_at(0)
+        self.step_at(script_parking.STRAY_SWITCH_ON_TICKS)
+        self.assertEqual(self.strays(), {})
+        self.assertEqual(self.power.calls, [])
 
 
 if __name__ == "__main__":
