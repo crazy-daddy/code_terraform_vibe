@@ -261,8 +261,8 @@ def _scan_drone_buildings(type_id):
     "outpost_id": str}, ...]. Mirrors
     vehicle_energy.py's get_all_charging_stations() discovery shape, but
     module-level so both DroneEnergyMixin and lib/drone_service.py's own
-    station-side nearest-station arbitration (mirroring charging.py's
-    is_nearest_station_to()) can share one implementation.
+    station-side nearest-station arbitration (lib/station_controller.py
+    assess_stations()) can share one implementation.
     """
     refs = []
     found_ids = set()

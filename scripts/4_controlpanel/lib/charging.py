@@ -2,12 +2,11 @@
 # Manages docked vehicle fast-charging, queue optimization, and automated rescue
 # drone dispatch for stranded or critically low-battery vehicles in the field.
 from vehicle_energy import rescue_wh_per_meter_for
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
-from script_parking import ParkRequester, parked_ids, parked_nearest, wake_for_visit
+from script_parking import parked_ids, parked_nearest, wake_for_visit
+from station_controller import StationController
 
-class ChargingStationController:
+class ChargingStationController(StationController):
     """
     Automates a Vehicle Charging Station.
     - Manages charging queues for docked vehicles (Rovers, Pioneers).
@@ -15,25 +14,15 @@ class ChargingStationController:
     - Detects stranded vehicles or low-battery vehicles in the field and auto-dispatches the rescue drone.
     - Broadcasts fleet charge status and rescue events via popup toasts (notify).
     """
-    RETURN_SAFETY_MARGIN = 1.05
+    MODULE = "charging"
+    PARK_KIND = "charging_station"
+    DEFAULT_NAME = "vehicle_charging_station"
     RETURN_EMERGENCY_RESERVE_WH = 8.0
     RESCUE_EXTRA_RESERVE_WH = 8.0
-    # Poll cadence: ACTIVE while this station has work (bays charging or queued,
-    # a rescue under way, a vehicle it is responsible for stranded/below floor/
-    # heading home); IDLE otherwise.
-    ACTIVE_POLL_SECONDS = 1.5
-    IDLE_POLL_SECONDS = 5.0
 
     def __init__(self, station, target_charge_level=1.0):
-        self.station = station
-        self.name = getattr(station, "id", "vehicle_charging_station")
-        self.target_charge_level = target_charge_level
-        self.fleet = get_component("fleet")
-        self.power = get_component("power_control")
-
+        super().__init__(station, target_charge_level)
         self.last_rescued_vehicle = None
-        self.log = TreeConsole(module="charging")
-        self.parker = ParkRequester(self.name, "charging_station")
 
     def all_station_refs(self):
         """
@@ -71,57 +60,6 @@ class ChargingStationController:
     def charging_station_coords(self):
         """Returns known charging-station coordinates, nearest first when available."""
         return [r["coords"] for r in self.all_station_refs()]
-
-    def my_coords(self):
-        """This station's own coordinates, from the shared station-ref list."""
-        for r in self.all_station_refs():
-            if r["id"] == self.name:
-                return r["coords"]
-        return None
-
-    def is_nearest_station_to(self, vehicle_ref):
-        """
-        True when this station is the closest known charging station to
-        vehicle_ref. Every deployed station runs its own independent copy of
-        this script and polls the same fleet snapshot, so without this check
-        every station within range would dispatch its own rescue drone to the
-        same stranded vehicle. Ties (e.g. a solo station, or coordinates that
-        can't be resolved) default to True rather than deadlocking silent.
-        """
-        my_pos = self.my_coords()
-        if my_pos is None:
-            return True
-        my_dist = ((vehicle_ref.x - my_pos[0]) ** 2 + (vehicle_ref.y - my_pos[1]) ** 2) ** 0.5
-        for ref in self.all_station_refs():
-            if ref["id"] == self.name:
-                continue
-            other_dist = ((vehicle_ref.x - ref["coords"][0]) ** 2 + (vehicle_ref.y - ref["coords"][1]) ** 2) ** 0.5
-            if other_dist < my_dist:
-                return False
-        return True
-
-    def assess_stations(self, vehicle_ref, refs, self_known):
-        """
-        One pass over station refs: (is_mine, nearest_distance, nearest_coords).
-        is_mine matches is_nearest_station_to(): True when this station's own
-        position is unknown, otherwise True unless another station is strictly
-        closer. nearest_* are None when there are no stations.
-        """
-        x = vehicle_ref.x
-        y = vehicle_ref.y
-        best = None
-        best_coords = None
-        mine = None
-        for ref in refs:
-            coords = ref["coords"]
-            dist_sq = (x - coords[0]) ** 2 + (y - coords[1]) ** 2
-            if ref["id"] == self.name:
-                mine = dist_sq
-            if best is None or dist_sq < best:
-                best = dist_sq
-                best_coords = coords
-        is_mine = (not self_known) or mine is None or mine <= best
-        return is_mine, (None if best is None else best ** 0.5), best_coords
 
     def return_floor_wh(self, vehicle_ref, distance=None):
         """
@@ -177,16 +115,7 @@ class ChargingStationController:
         target_wh = max(current_wh, floor + self.RESCUE_EXTRA_RESERVE_WH)
         return min(1.0, target_wh / capacity)
 
-    def is_station_powered(self):
-        """Verifies whether this charging station currently has grid power."""
-        if self.power and hasattr(self.power, "is_powered"):
-            try:
-                return self.power.is_powered(self.name)
-            except Exception as error:
-                swallowed("charging.ChargingStationController.is_station_powered: self.power.is_powered", error)
-        return True
-
-    def manage_docked_vehicles(self):
+    def manage_docked(self):
         """Inspects all docked vehicles and ensures they are actively charging up to target level. True while bays are active or queued."""
         docked_ids = self.station.get_docked()
         if not docked_ids:
@@ -215,7 +144,7 @@ class ChargingStationController:
                         elif res.status != "target_reached":
                             self.log.level("warn").print(f"[{self.name}] Charge queue notice for {v_id}: {res.status} - {res.message}")
             except Exception as e:
-                swallowed("charging.ChargingStationController.manage_docked_vehicles: get_component", e)
+                swallowed("charging.ChargingStationController.manage_docked: get_component", e)
         return busy
 
     def manage_fleet_rescues(self):
@@ -329,30 +258,7 @@ class ChargingStationController:
                     self.log.end(f"[{self.name}] Rescue dispatch rejected for {v_id}")
         return busy
 
-    def step(self):
-        """Single supervision cycle for dock charging and field rescue; returns True while this station has work (poll fast)."""
-        if not self.is_station_powered():
-            self.parker.update(False)
-            return False
-
-        docked_busy = self.manage_docked_vehicles()
-        rescue_busy = self.manage_fleet_rescues()
-        busy = docked_busy or rescue_busy
-        self.parker.update(not busy)
-        return busy
-
-    def run(self, poll_interval=ACTIVE_POLL_SECONDS, idle_poll_seconds=IDLE_POLL_SECONDS):
-        """Continuous supervision loop."""
+    def online_message(self):
         bay_count = getattr(self.station, "get_bay_count", lambda: 1)()
         bay_rate = getattr(self.station, "get_bay_rate", lambda: 30)()
-        self.log.print(f"Charging Station ({self.name}) online via Shared Library ({bay_count} bay(s), {bay_count * bay_rate} W max pool).")
-        validate_game_version()
-        while True:
-            reset_all()
-            busy = False
-            try:
-                busy = self.step()
-            except Exception as e:
-                self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
-            flush_all()
-            sleep(poll_interval if busy else idle_poll_seconds)
+        return f"Charging Station ({self.name}) online via Shared Library ({bay_count} bay(s), {bay_count * bay_rate} W max pool)."
