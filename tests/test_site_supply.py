@@ -5,6 +5,7 @@ from unittest import mock
 
 from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
 from game_stubs import Recipe, FABRICATOR_RECIPES, Journal
+import production_sites
 
 
 def site_requests(world, outpost_id):
@@ -203,7 +204,7 @@ class SiteSupplyTests(StubTestCase):
     def _forage_fab(self, outpost):
         recipe = Recipe("craft_reinforced_biopolymer", {"forage": 6, "gas_pipe_segment": 1}, "reinforced_biopolymer", output_count=4)
         self.world.add_fabricator("fabricator_2", outpost, FABRICATOR_RECIPES + [recipe])
-        patcher = mock.patch.object(production, "get_fabricator_active_recipe", lambda fabricator, cache=None: (recipe, 50))
+        patcher = mock.patch.object(production_sites, "get_fabricator_active_recipe", lambda fabricator, cache=None: (recipe, 50))
         patcher.start()
         self.addCleanup(patcher.stop)
 

@@ -52,7 +52,7 @@ One script per Fuel Assembler (thin `nuclear/fuel_assembler.py`). Tier `10_nucle
 `drain_dock_cargo()` ejects every non-empty slot to Inventory (off home: a local Warehouse via `best_unload_target(outpost=)`, none with room → left in the dock); `step()` calls it (retries next
 cycle) whenever `curr_order` is `None` but `dock.total() > 0`, before trying `set_order()`.
 
-### 2a-0-1. Construction material demand cascade (`lib/production.py`)
+### 2a-0-1. Construction material demand cascade (`lib/production_cascade.py`)
 
 `_cascade_blueprint_demand()` = single source of truth for "how much of any item — finished or
 intermediate — active construction ultimately needs":
@@ -82,7 +82,7 @@ Two consumers read cascade differently:
 Deliberately conservative: job's full cascaded demand stays reserved while pending/paused, even
 after cargo loaded (cargo not tracked here).
 
-### 2a-0-2. Multi-Fabricator Support (`lib/production.py`, `lib/fabricator.py`)
+### 2a-0-2. Multi-Fabricator Support (`lib/production_core.py`, `lib/production_sites.py`, `lib/fabricator.py`)
 
 `production.discover_fabricator_ids()`/`_default_fabricator()` find Fabricators at runtime (no hardcoded ids), network-wide (every `outpost_network.outposts()` entry; pass `outpost=` for one outpost). `discover_smelter_ids()` and `discover_supply_dock_ids()` same. `claim_recipe()`/`release_recipe()` (`lib/fabricator.py`,
 `STALE_TICKS=600`, archive key `"fabricator.recipe_claims"`, shape `{outpost_id: {recipe_id: {"fabricator": id, "tick": n}}}` via `production.site_recipe_claims()`/`claim_site_id()`, so only machines at the same outpost block each other; flat per-recipe entries are dropped on the next write) stop multiple Fabricators converging on same recipe: `choose_recipe()`'s candidate loop claims each sourceable candidate in shortfall order, next on claim fail.
@@ -126,7 +126,7 @@ after cargo loaded (cargo not tracked here).
   `get_fabricator_targets()`, `get_fabricator_active_recipe()`, `get_material_demands()`,
   `_cascade_blueprint_demand()`, `_cascade_fabricator_output_demand()` all take optional `cache=None` (same behavior without).
 
-### 2a-0-6. Per-site demand and order trees (`lib/production.py`, tier-5 `lib/site_plan.py`)
+### 2a-0-6. Per-site demand and order trees (`lib/production_sites.py`, tier-5 `lib/site_plan.py`)
 
 A fab site = outpost with ≥ 1 Fabricator (`fab_site_counts(cache)` → `{site_id: Fabricators}`, site id = `claim_site_id()`). Each root target's whole tree builds at the sites planned for it; a site's stock counts only for its own trees.
 
@@ -137,12 +137,12 @@ A fab site = outpost with ≥ 1 Fabricator (`fab_site_counts(cache)` → `{site_
 - **Plan**: archive `fabricator.site_plan` (`production.SITE_PLAN_KEY`) = `{root_item: [site_id, ...]}`, written by `site_plan.plan_sites()` once per storage tick in headless `control_room_automation.py`, only on change. Unplanned roots fall back to `default_root_sites()` (consuming fab site, else home, else first fab site). New root: `min(fab sites, max(1, remaining // SPLIT_UNITS_PER_SITE))` sites, `SPLIT_UNITS_PER_SITE = 20`, ordered by most consumed there, least loaded (planned roots per Fabricator), home, id. Sticky while it has units left; dead sites dropped, replanned once none remain; entry removed once built; cleared when only home has Fabricators.
 - **Hauling finished roots**: §2i-1 consumer site.
 
-### 2a-0-3. Multi-Dock Support (`lib/production.py`, `lib/fabricator.py`)
+### 2a-0-3. Multi-Dock Support (`lib/production_docks.py`, `lib/fabricator.py`)
 
 `discover_supply_dock_ids()` + `_all_dock_orders()` (`[(dock, order), ...]`) feed every dock's active order into `get_fabricator_targets()`,
 `get_material_demands()`, `get_raw_material_reason()`. No claim coordination (unlike Fabricator recipes) — fulfillment inherently per-dock; several docks may serve same order, share shipped progress (`docs/components/supply_dock.md`), explicitly fine. `find_dock_order_requiring(item_id)` consolidates "which dock's order wants this item", shared by `get_raw_material_reason()` + `lib/fabricator.py`'s `target_reason()`. §2a-0-5 covers which order each dock gets.
 
-### 2a-0-4. Multi-Fabricator active-recipe input demand (`lib/production.py` `get_material_demands()`)
+### 2a-0-4. Multi-Fabricator active-recipe input demand (`lib/production_demand.py` `get_material_demands()`)
 
 "Selected Fabricator recipe = explicit production intention" block loops `discover_fabricator_ids()` (fallback `["fabricator_1"]`), sums each Fabricator's own `get_fabricator_active_recipe()` input demand, not just first discovered Fabricator. Safe to sum: when several Fabricators share claimed recipe, `get_fabricator_active_recipe()` already divides `crafts_remaining` by worker count (§2a-0-2), so each adds only fair share.
 
@@ -163,7 +163,7 @@ Central planner `plan_dock_assignments(clock=None)` runs **once** per cycle from
 - **Hot cargo** (Raw Uranium, Fuel Rods, `lead_cask.HOT_ITEMS`): an order needing one goes only to a dock whose outpost has a Lead Cask (`_servable_at()`, planner and `pick_best_order()`); the dock loads it from that outpost's casks (`lead_cask.take_from_casks()`), affinity counts cask stock, and leftovers eject to a cask (`lead_cask.unload_target()`). Sourceability (`production.can_source_item()`): a hot item in any cask, Raw Uranium with a live uranium site in `weather.aftermaths`, Fuel Rods / Nuclear Batteries via the first Fuel Assembler's unlocked recipes (`SourceCache.fuel_assembler_recipes()`; the recipe index and Fabricator cascades stay Fabricator/Smelter-only). Readiness (`_order_readiness()`) counts hot items from Lead Casks network-wide (`SourceCache.cask_stock()`, fallback `lead_cask.network_cask_stock()`).
 - **Shared scoring**: `_score_campaign_order()`/`_score_weekly_order()`/`_order_readiness()` module-level, used by planner + per-instance fallback — no ranking drift.
 
-### 2a-1. Fabricator demand tracking (`lib/production.py` `get_fabricator_targets()`)
+### 2a-1. Fabricator demand tracking (`lib/production_cascade.py` `get_fabricator_targets()`)
 
 Single source of truth for what Fabricator builds, feeds `get_material_demands()`. Ore demand comes from the site supply ore requests (§2i-1), home included. Five demand sources folded into one `{item_id: quantity}` dict:
 
@@ -178,7 +178,7 @@ Single source of truth for what Fabricator builds, feeds `get_material_demands()
 
 `choose_recipe()` priority has **six tiers** (biggest shortfall first within each): (0) manual-order-blocking intermediate, (1) manual order, (2) **Construction Blueprint demand** (`production.blueprint_demand_items()` = every item `_cascade_blueprint_demand()` reaches — building new things beats upgrading working old ones), (3) **fleet upgrade order** or an input it is blocked on (`get_manual_order_blocking_items(outputs, get_upgrade_orders())`), (4) everything else (Earth/Supply Dock orders, stock targets), (5) **backlog order** whose upgrade order and stock target are met and no Supply Dock order needs it (`FabricatorController.backlog_only()`), so only idle Fabricator time goes to it. A backlog item whose upgrade order is still short ranks tier 3; its intermediates rank as usual (tier 4). Tier 0 detail: `production.get_manual_order_blocking_items()` outranks even manual orders. = set of Fabricator-output items a manual order transitively needs as INPUT (e.g. `machine_frame` under manual `drone_service_station_kit` order) currently short of stock — found via same shortfall-only BFS as `_cascade_fabricator_output_demand()` (§2a-0-1), seeded from manual orders only. Needed because `can_source_item()` only checks that some recipe path exists for an intermediate, not that anything is producing it.
 
-### 2a-1b. Sourceability caching across a pass (`lib/production.py` `SourceCache`)
+### 2a-1b. Sourceability caching across a pass (`lib/production_source.py` `SourceCache`)
 
 `can_source_item()`, `can_source_fluid()`, `can_fulfill_order()` (§2a-0-5) each walk real game-API calls (Smelter/Fabricator discovery + `list_recipes()`, `outpost.buildings()`,
 `journal.surveyed_sites()`, per-Warehouse `count()`), not free local compute.

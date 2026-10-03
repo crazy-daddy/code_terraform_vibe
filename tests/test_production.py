@@ -2,6 +2,7 @@
 import unittest
 
 from harness import StubTestCase, production, storage, supply_dock
+import production_core
 
 
 class DiscoveryTests(StubTestCase):
@@ -34,7 +35,7 @@ class DiscoveryTests(StubTestCase):
 class DiscoveryMemoTests(StubTestCase):
     def setUp(self):
         super().setUp()
-        production.DISCOVERY_TTL_TICKS = 20
+        production_core.DISCOVERY_TTL_TICKS = 20
 
     def test_memo_holds_within_ttl_and_refreshes_after(self):
         w = self.world

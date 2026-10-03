@@ -92,9 +92,9 @@ def steps_per_tick(scripts):
 
 def game_memos():
     """Discovery memos at their in-game TTLs (the stub harness turns them off)."""
-    import production
+    import production_core
     import storage
-    production.DISCOVERY_TTL_TICKS = 20
+    production_core.DISCOVERY_TTL_TICKS = 20
     storage.DISCOVERY_TTL_TICKS = 20
 
 

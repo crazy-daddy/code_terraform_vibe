@@ -67,7 +67,15 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Rover / Pioneer specializations | `rover.py`, `pioneer.py` — thin `VehicleController` subclasses; **no** shared vehicle logic here |
 | Harvesting (grid survey/collection) | `harvesting.py` (`HarvesterController`) |
 | Smelting | `smelter.py` |
-| Production planning (demand-driven) | `production.py` |
+| Production planning (demand-driven) | `production.py` — facade re-exporting the `production_*.py` modules below; callers import from it. Module state (memos, TTLs, `log`) is patched/reset in the defining module |
+| &nbsp;&nbsp;↳ craft timing, memoized building discovery, site ids, shared `log` | `production_core.py` |
+| &nbsp;&nbsp;↳ Supply Dock orders, units still owed, consuming sites | `production_docks.py` |
+| &nbsp;&nbsp;↳ fluid source types, buffer-tank latch rule, `can_source_fluid()` | `production_fluids.py` |
+| &nbsp;&nbsp;↳ `SourceCache`, `can_source_item()`, `can_fulfill_order()` | `production_source.py` |
+| &nbsp;&nbsp;↳ archive order books: stock targets, manual orders + transit, upgrade, backlog | `production_orders.py` |
+| &nbsp;&nbsp;↳ recipe index, demand cascades, network-wide Fabricator targets | `production_cascade.py` |
+| &nbsp;&nbsp;↳ per-fab-site targets, site plan split, shared site targets, ship-before-craft, active recipe | `production_sites.py` |
+| &nbsp;&nbsp;↳ material/Smelter demand, fab-site ingot buffer, Smelter peers, raw-ore reasons | `production_demand.py` |
 | Supply Dock logistics | `supply_dock.py` |
 | Biology, shared pipeline (collector/lab/exchange + biome-processor discovery) | `bio.py` — outpost-aware (Warehouse-only outposts, no Inventory) throughout, biome-agnostic; see §1g/§2g |
 | &nbsp;&nbsp;↳ Coastal biome processor (glow-tint) | `bio_coastal.py` (`BioLuminizerController`) — see §1e/§1g |
