@@ -183,5 +183,52 @@ class FeedMakerTests(FeedMakerTestCase):
         self.assertEqual(self.taken, [])
 
 
+
+class _FeedMakerWithOutput(_FeedMaker):
+    """_FeedMaker whose output bin reports its real count."""
+
+    def get_output_count(self):
+        return sum(self.output_buffer.values())
+
+
+class HabitatDirectFeedTests(harness.StubTestCase):
+    FEED = "feed_salt_tortoise"
+
+    def setUp(self):
+        super().setUp()
+        w = self.world
+        self.warehouse = w.add_warehouse("warehouse_1", w.home)
+        self.habitat = w.add_habitat("habitat_1", w.home, species="salt_tortoise", feed_item=self.FEED, established=True)
+        self.maker = _FeedMakerWithOutput(w)
+        self.maker.output_buffer[self.FEED] = 20
+        self.ctrl = feed_maker.FeedMakerController(self.maker)
+        self.now = self.ctrl.tick()
+
+    def status(self, **entry):
+        row = {"feed_item": self.FEED, "feed_level": 10.0, "parked": "", "tick": self.now}
+        row.update(entry)
+        self.world.notebook.data[wc.STATUS_KEY] = {"habitat_1": row}
+
+    def test_feed_goes_into_its_habitat_first(self):
+        self.status()
+        self.assertTrue(self.ctrl.drain_output(self.now))
+        self.assertEqual(self.habitat.input_buffer.get(self.FEED), 20)
+        self.assertEqual(self.warehouse.count(self.FEED), 0)
+
+    def test_overflow_past_top_up_target_goes_to_storage(self):
+        self.status(feed_level=wc.FEED_TOPUP_TARGET - 5.0)
+        self.ctrl.drain_output(self.now)
+        self.assertEqual(self.habitat.input_buffer.get(self.FEED), 5)
+        self.assertEqual(self.warehouse.count(self.FEED), 15)
+
+    def test_parked_stale_or_other_species_skipped(self):
+        for entry in ({"parked": wc.PARK_NO_FEED}, {"tick": self.now - wc.STATUS_STALE_TICKS}, {"feed_item": "feed_spire_drake"}):
+            self.maker.output_buffer[self.FEED] = 20
+            self.status(**entry)
+            self.ctrl.drain_output(self.now)
+        self.assertEqual(self.habitat.input_buffer.get(self.FEED, 0), 0)
+        self.assertEqual(self.warehouse.count(self.FEED), 60)
+
+
 if __name__ == "__main__":
     unittest.main()

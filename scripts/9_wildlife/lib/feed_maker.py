@@ -15,7 +15,9 @@
 #     it). The loaded Forage stays for the next recipe; items the new recipe
 #     doesn't use are ejected only when they leave no room for its craft.
 #   - Stocks one craft at a time and the next one once the 200-unit stockpile
-#     has room; finished feed goes to a home Warehouse (Inventory fallback).
+#     has room; finished feed goes straight into the local Habitat housing its
+#     species (`wildlife.status`: fresh, unparked, bin below the top-up
+#     target), the rest to a home Warehouse (Inventory fallback).
 #   - Soft-shed (`power.shedded`, lib/power.py): starts no new craft.
 # Never crafts past the target; idle (no deficit or no inputs) -> parked.
 
@@ -23,7 +25,7 @@ from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed, call_or
-from storage import take_item, total_stock, drain_port_storage_first, local_port_target, hit_slot_cap, eject_unneeded
+from storage import take_item, total_stock, drain_port_storage_first, push_to_targets, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
 import wildlife_common as wc
@@ -36,6 +38,7 @@ FAST_POLL_S = 0.2
 IDLE_POLL_S = 20.0
 RECIPE_REFRESH_TICKS = 1200  # republish unlocked recipes at least this often
 PUBLISH_REFRESH_TICKS = 600  # status rewritten on change, else at least this often
+HABITAT_MAP_REFRESH_TICKS = 3000  # local Habitat ids re-listed at least this often
 
 
 class FeedMakerController:
@@ -54,6 +57,8 @@ class FeedMakerController:
         self._last_blocker = None
         self._published = None
         self._published_tick = -PUBLISH_REFRESH_TICKS
+        self._habitat_ids = None
+        self._habitat_ids_tick = 0
 
     def tick(self):
         try:
@@ -200,10 +205,43 @@ class FeedMakerController:
                 break
         return moved
 
-    def drain_output(self):
-        """Empties the output bin to a home Warehouse (Inventory fallback); True when it held feed."""
+    def local_habitat_ids(self, curr_tick):
+        """Habitat ids at this outpost, refreshed every HABITAT_MAP_REFRESH_TICKS (placements rarely change)."""
+        if self._habitat_ids is not None and curr_tick - self._habitat_ids_tick < HABITAT_MAP_REFRESH_TICKS:
+            return self._habitat_ids
+        ids = []
+        try:
+            ids = [getattr(ref, "id", None) for ref in self.outpost.buildings("habitat")] if self.outpost else []
+        except Exception as error:
+            swallowed("feed_maker.FeedMakerController.local_habitat_ids: outpost.buildings", error)
+        self._habitat_ids = [i for i in ids if i]
+        self._habitat_ids_tick = curr_tick
+        return self._habitat_ids
+
+    def habitat_targets(self, item, curr_tick):
+        """[(habitat_id, units)] for local Habitats whose published status wants
+        `item` as feed: fresh, not parked (a parked Habitat is woken on storage
+        stock only), bin below FEED_TOPUP_TARGET."""
+        status = archive.get(wc.STATUS_KEY, {}) or {}
+        targets = []
+        for hid in self.local_habitat_ids(curr_tick):
+            entry = status.get(hid) if isinstance(status, dict) else None
+            if not isinstance(entry, dict) or not wc.fresh(entry, curr_tick) or entry.get("feed_item") != item or entry.get("parked"):
+                continue
+            room = int(wc.FEED_TOPUP_TARGET - float(entry.get("feed_level") or 0.0))
+            if room > 0:
+                targets.append((hid, room))
+        return targets
+
+    def drain_output(self, curr_tick):
+        """Empties the output bin: feed first straight into the local Habitat
+        housing its species, the rest to a home Warehouse (Inventory fallback).
+        True when it held feed."""
         if int(self._call("get_output_count", 0)) <= 0:
             return False
+        for item, count in self.output_counts().items():
+            for hid, moved in push_to_targets(self.maker.output, item, count, self.habitat_targets(item, curr_tick)):
+                self.log.debug(f"[{self.name}] {moved} {item} -> '{hid}'.")
         moved = drain_port_storage_first(self.maker.output, outpost=self.outpost)
         if moved:
             self.log.debug(f"[{self.name}] {moved} feed to storage.")
@@ -248,7 +286,7 @@ class FeedMakerController:
 
     def step(self):
         curr_tick = self.tick()
-        drained = self.drain_output()
+        drained = self.drain_output(curr_tick)
         recipes = self.recipes(curr_tick)
         deficits = self.deficits(recipes)
         running = bool(self._call("is_running", False))
