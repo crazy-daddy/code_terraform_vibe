@@ -9,32 +9,35 @@ if TYPE_CHECKING:
     from user_stubs import data_tablet as self
 
 c = self.contract
-tablet = c.tablet
-rows = tablet.rows
-cols = tablet.cols
-
-print(f"Contract: {c.name} ({c.id}), Dimensions: {rows}x{cols}")
-
-message_cells = []
-
-# Scan the full grid
-for r in range(rows):
-    for col in range(cols):
-        res = tablet.probe(r, col)
-        if res.distance == 0:
-            message_cells.append((r, col, res.char))
-            print(f"Found message char '{res.char}' at ({r}, {col})")
-
-# Sort cells in reading order: top-to-bottom, then left-to-right
-message_cells.sort(key=lambda item: (item[0], item[1]))
-
-message = "".join(item[2] for item in message_cells)
-print(f"Decoded message ({len(message)} chars): '{message}'")
-
-transmitter = get_component("transmitter")
-if not transmitter:
-    print("[DATA_TABLET] No Transmitter found!")
+if c.status == "completed":
+    print(f"Contract {c.name} ({c.id}) already completed; skipping.")
 else:
-    transmitter.connect("earth")
-    t_res = transmitter.transmit(c.id, message)
-    print("Transmission status:", t_res.status, "-", t_res.message)
+    tablet = c.tablet
+    rows = tablet.rows
+    cols = tablet.cols
+
+    print(f"Contract: {c.name} ({c.id}), Dimensions: {rows}x{cols}")
+
+    message_cells = []
+
+    # Scan the full grid
+    for r in range(rows):
+        for col in range(cols):
+            res = tablet.probe(r, col)
+            if res.distance == 0:
+                message_cells.append((r, col, res.char))
+                print(f"Found message char '{res.char}' at ({r}, {col})")
+
+    # Sort cells in reading order: top-to-bottom, then left-to-right
+    message_cells.sort(key=lambda item: (item[0], item[1]))
+
+    message = "".join(item[2] for item in message_cells)
+    print(f"Decoded message ({len(message)} chars): '{message}'")
+
+    transmitter = get_component("transmitter")
+    if not transmitter:
+        print("[DATA_TABLET] No Transmitter found!")
+    else:
+        transmitter.connect("earth")
+        t_res = transmitter.transmit(c.id, message)
+        print("Transmission status:", t_res.status, "-", t_res.message)

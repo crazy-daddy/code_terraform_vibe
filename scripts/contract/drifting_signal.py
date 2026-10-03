@@ -2,27 +2,31 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import drifting_signal as self
 
-device = self.contract.device
-text = device.slabs
-transmitter = get_component("transmitter")
-if not transmitter:
-    print("[DRIFTING_SIGNAL] No Transmitter found!")
+c = self.contract
+if c.status == "completed":
+    print(f"Contract {c.name} ({c.id}) already completed; skipping.")
 else:
-    transmitter.connect("earth")
+    device = c.device
+    text = device.slabs
+    transmitter = get_component("transmitter")
+    if not transmitter:
+        print("[DRIFTING_SIGNAL] No Transmitter found!")
+    else:
+        transmitter.connect("earth")
 
-    for shift in range(0,27):
+        for shift in range(0,27):
 
-        result = []
-        shift = shift % 26  # normalize
+            result = []
+            shift = shift % 26  # normalize
 
-        for ch in text:
-            if "a" <= ch <= "z":
-                base = ord("a")
-                result.append(chr((ord(ch) - base - shift) % 26 + base))
-            elif "A" <= ch <= "Z":
-                base = ord("A")
-                result.append(chr((ord(ch) - base - shift) % 26 + base))
-            else:
-                result.append(ch)  # keep spaces, punctuation, etc.
+            for ch in text:
+                if "a" <= ch <= "z":
+                    base = ord("a")
+                    result.append(chr((ord(ch) - base - shift) % 26 + base))
+                elif "A" <= ch <= "Z":
+                    base = ord("A")
+                    result.append(chr((ord(ch) - base - shift) % 26 + base))
+                else:
+                    result.append(ch)  # keep spaces, punctuation, etc.
 
-        transmitter.transmit(self.contract.id, "".join(result))
+            transmitter.transmit(c.id, "".join(result))

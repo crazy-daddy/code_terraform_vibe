@@ -79,55 +79,55 @@ def forced_move(board):
 
 
 c = self.contract
-print(f"Contract: {c.name} ({c.id}), Reward: {c.reward} credits")
-
 if c.status == "completed":
-    print("Contract already marked completed.")
-
-arbiter = c.arbiter
-target = arbiter.target()
-print(f"Goal: {target} wins in a row")
-
-if forced_move([""] * 9) is None:
-    print("No forced win exists from the empty board; aborting.")
+    print(f"Contract {c.name} ({c.id}) already completed; skipping.")
 else:
-    games = 0
-    max_games = target * 4
-    while arbiter.streak() < target and games < max_games:
-        started = arbiter.new_game()
-        if started.status != "ok":
-            print(f"new_game: {started.status} - {started.message}")
-            continue
-        games += 1
-        outcome = "ongoing"
-        while outcome == "ongoing":
-            board = list(arbiter.board())
-            move = forced_move(board)
-            if move is None:
-                empties = [k for k in range(9) if board[k] == ""]
-                move = empties[0]
-                print(f"Game {games}: no forced win from {board}, improvising cell {move}")
-            turn = arbiter.play(move)
-            outcome = turn.status
-            if outcome not in ("ongoing", "win", "loss", "draw"):
-                print(f"Game {games}: play({move}) -> {outcome} - {turn.message}")
-                break
-        if outcome != "win":
-            print(f"Game {games}: {outcome}, streak reset")
-        elif games % 10 == 0:
-            print(f"Game {games}: streak {arbiter.streak()}/{target}")
+    print(f"Contract: {c.name} ({c.id}), Reward: {c.reward} credits")
 
-    print(f"Streak {arbiter.streak()}/{target} after {games} games")
-    if arbiter.streak() >= target:
-        transmitter = get_component("transmitter")
-        if not transmitter:
-            print("[BEAT_THE_SYSTEM] No Transmitter found!")
-        else:
-            link = transmitter.connect("earth")
-            if link.status != "ok":
-                print(f"Transmitter connection failed: {link.status} - {link.message}")
-            else:
-                tx_res = transmitter.transmit(c.id, arbiter.token())
-                print("Transmission status:", tx_res.status, "-", tx_res.message)
+    arbiter = c.arbiter
+    target = arbiter.target()
+    print(f"Goal: {target} wins in a row")
+
+    if forced_move([""] * 9) is None:
+        print("No forced win exists from the empty board; aborting.")
     else:
-        print("Target streak not reached; token not transmitted.")
+        games = 0
+        max_games = target * 4
+        while arbiter.streak() < target and games < max_games:
+            started = arbiter.new_game()
+            if started.status != "ok":
+                print(f"new_game: {started.status} - {started.message}")
+                continue
+            games += 1
+            outcome = "ongoing"
+            while outcome == "ongoing":
+                board = list(arbiter.board())
+                move = forced_move(board)
+                if move is None:
+                    empties = [k for k in range(9) if board[k] == ""]
+                    move = empties[0]
+                    print(f"Game {games}: no forced win from {board}, improvising cell {move}")
+                turn = arbiter.play(move)
+                outcome = turn.status
+                if outcome not in ("ongoing", "win", "loss", "draw"):
+                    print(f"Game {games}: play({move}) -> {outcome} - {turn.message}")
+                    break
+            if outcome != "win":
+                print(f"Game {games}: {outcome}, streak reset")
+            elif games % 10 == 0:
+                print(f"Game {games}: streak {arbiter.streak()}/{target}")
+
+        print(f"Streak {arbiter.streak()}/{target} after {games} games")
+        if arbiter.streak() >= target:
+            transmitter = get_component("transmitter")
+            if not transmitter:
+                print("[BEAT_THE_SYSTEM] No Transmitter found!")
+            else:
+                link = transmitter.connect("earth")
+                if link.status != "ok":
+                    print(f"Transmitter connection failed: {link.status} - {link.message}")
+                else:
+                    tx_res = transmitter.transmit(c.id, arbiter.token())
+                    print("Transmission status:", tx_res.status, "-", tx_res.message)
+        else:
+            print("Target streak not reached; token not transmitted.")

@@ -105,39 +105,39 @@ def solve_core(core):
 
 
 c = self.contract
-print(f"Contract: {c.name} ({c.id}), Reward: {c.reward} credits")
-
 if c.status == "completed":
-    print("Contract already marked completed.")
-
-device = c.device
-cores = c.cores
-print(f"Reconstructing {len(cores)} cores")
-
-for index, core in enumerate(cores):
-    fixed, why = solve_core(core)
-    if fixed is None:
-        print(f"Core {index}: cannot reconstruct ({why})")
-        continue
-    try:
-        result = device.submit(index, fixed)
-    except (TypeError, ValueError) as err:
-        print(f"Core {index}: submit error: {err}")
-        continue
-    print(f"Core {index}: {result.status} - {result.message}")
-
-print(f"Recovered {device.recovered()}/{device.target()}")
-
-if device.recovered() >= device.target():
-    transmitter = get_component("transmitter")
-    if not transmitter:
-        print("[CORE_SAMPLE] No Transmitter found!")
-    else:
-        link = transmitter.connect("earth")
-        if link.status != "ok":
-            print(f"Transmitter connection failed: {link.status} - {link.message}")
-        else:
-            tx_res = transmitter.transmit(c.id, device.token())
-            print("Transmission status:", tx_res.status, "-", tx_res.message)
+    print(f"Contract {c.name} ({c.id}) already completed; skipping.")
 else:
-    print("Not all cores recovered; token not transmitted.")
+    print(f"Contract: {c.name} ({c.id}), Reward: {c.reward} credits")
+
+    device = c.device
+    cores = c.cores
+    print(f"Reconstructing {len(cores)} cores")
+
+    for index, core in enumerate(cores):
+        fixed, why = solve_core(core)
+        if fixed is None:
+            print(f"Core {index}: cannot reconstruct ({why})")
+            continue
+        try:
+            result = device.submit(index, fixed)
+        except (TypeError, ValueError) as err:
+            print(f"Core {index}: submit error: {err}")
+            continue
+        print(f"Core {index}: {result.status} - {result.message}")
+
+    print(f"Recovered {device.recovered()}/{device.target()}")
+
+    if device.recovered() >= device.target():
+        transmitter = get_component("transmitter")
+        if not transmitter:
+            print("[CORE_SAMPLE] No Transmitter found!")
+        else:
+            link = transmitter.connect("earth")
+            if link.status != "ok":
+                print(f"Transmitter connection failed: {link.status} - {link.message}")
+            else:
+                tx_res = transmitter.transmit(c.id, device.token())
+                print("Transmission status:", tx_res.status, "-", tx_res.message)
+    else:
+        print("Not all cores recovered; token not transmitted.")

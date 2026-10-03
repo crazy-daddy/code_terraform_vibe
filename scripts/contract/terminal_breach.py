@@ -19,50 +19,53 @@ if TYPE_CHECKING:
     from user_stubs import terminal_breach as self
 
 c = self.contract
-terminal = c.terminal
-length = terminal.length
-
-print(f"Contract: {c.name} ({c.id}), Length: {length}")
-
-# Initial baseline
-code = [1] * length
-res = terminal.guess(code)
-current_correct = res.correct
-print(f"Baseline guess [1]*{length} -> correct: {current_correct}, misplaced: {res.misplaced}")
-
-if current_correct < length:
-    for i in range(length):
-        if current_correct == length:
-            break
-        # Test alternatives for position i
-        found_digit = False
-        for d in [2, 3, 4, 5]:
-            test_code = list(code)
-            test_code[i] = d
-            res = terminal.guess(test_code)
-            
-            if res.correct == current_correct + 1:
-                code[i] = d
-                current_correct = res.correct
-                found_digit = True
-                print(f"Position {i} confirmed as {d} (total correct: {current_correct}/{length})")
-                break
-            elif res.correct == current_correct - 1:
-                # Changing position i from 1 to d reduced correct count, so position i MUST be 1!
-                found_digit = True
-                print(f"Position {i} confirmed as 1 (reduced score on change)")
-                break
-        
-        if not found_digit:
-            # If none of 2,3,4,5 increased score and none decreased it, position i must be 1.
-            print(f"Position {i} remains 1")
-
-print(f"Final cracked passcode: {code}")
-
-transmitter = get_component("transmitter")
-if not transmitter:
-    print("[TERMINAL_BREACH] No Transmitter found!")
+if c.status == "completed":
+    print(f"Contract {c.name} ({c.id}) already completed; skipping.")
 else:
-    transmitter.connect("earth")
-    t_res = transmitter.transmit(c.id, code)
-    print("Transmission status:", t_res.status, "-", t_res.message)
+    terminal = c.terminal
+    length = terminal.length
+
+    print(f"Contract: {c.name} ({c.id}), Length: {length}")
+
+    # Initial baseline
+    code = [1] * length
+    res = terminal.guess(code)
+    current_correct = res.correct
+    print(f"Baseline guess [1]*{length} -> correct: {current_correct}, misplaced: {res.misplaced}")
+
+    if current_correct < length:
+        for i in range(length):
+            if current_correct == length:
+                break
+            # Test alternatives for position i
+            found_digit = False
+            for d in [2, 3, 4, 5]:
+                test_code = list(code)
+                test_code[i] = d
+                res = terminal.guess(test_code)
+
+                if res.correct == current_correct + 1:
+                    code[i] = d
+                    current_correct = res.correct
+                    found_digit = True
+                    print(f"Position {i} confirmed as {d} (total correct: {current_correct}/{length})")
+                    break
+                elif res.correct == current_correct - 1:
+                    # Changing position i from 1 to d reduced correct count, so position i MUST be 1!
+                    found_digit = True
+                    print(f"Position {i} confirmed as 1 (reduced score on change)")
+                    break
+
+            if not found_digit:
+                # If none of 2,3,4,5 increased score and none decreased it, position i must be 1.
+                print(f"Position {i} remains 1")
+
+    print(f"Final cracked passcode: {code}")
+
+    transmitter = get_component("transmitter")
+    if not transmitter:
+        print("[TERMINAL_BREACH] No Transmitter found!")
+    else:
+        transmitter.connect("earth")
+        t_res = transmitter.transmit(c.id, code)
+        print("Transmission status:", t_res.status, "-", t_res.message)

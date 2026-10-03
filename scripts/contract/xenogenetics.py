@@ -5,20 +5,22 @@ if TYPE_CHECKING:
     from user_stubs import xenogenetics as self
 
 c = self.contract
-
-# 1. Store known Earth sequences in a set for O(1) membership check
-earth_set = set(c.earth_ref)
-
-# 2. Extract all samples that are NOT found in the Earth reference set
-alien_list = [sample for sample in c.samples if sample not in earth_set]
-
-print(f"Total samples: {len(c.samples)}, Earth refs: {len(earth_set)}, Alien samples found: {len(alien_list)}")
-
-# 3. Transmit the alien_list to Earth
-transmitter = get_component("transmitter")
-if not transmitter:
-    print("[XENOGENETICS] No Transmitter found!")
+if c.status == "completed":
+    print(f"Contract {c.name} ({c.id}) already completed; skipping.")
 else:
-    transmitter.connect("earth")
-    res = transmitter.transmit(c.id, alien_list)
-    print("Transmit result:", res.status, "-", res.message)
+    # 1. Store known Earth sequences in a set for O(1) membership check
+    earth_set = set(c.earth_ref)
+
+    # 2. Extract all samples that are NOT found in the Earth reference set
+    alien_list = [sample for sample in c.samples if sample not in earth_set]
+
+    print(f"Total samples: {len(c.samples)}, Earth refs: {len(earth_set)}, Alien samples found: {len(alien_list)}")
+
+    # 3. Transmit the alien_list to Earth
+    transmitter = get_component("transmitter")
+    if not transmitter:
+        print("[XENOGENETICS] No Transmitter found!")
+    else:
+        transmitter.connect("earth")
+        res = transmitter.transmit(c.id, alien_list)
+        print("Transmit result:", res.status, "-", res.message)
