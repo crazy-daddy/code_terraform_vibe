@@ -160,7 +160,7 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   drops the local subclasses that covered them, appends the notes, runs the suite and Pyright on
   `tests/`, and commits per group.
 
-### - [ ] Step 6: Sample world, guard test, docs
+### - [x] Step 6: Sample world, guard test, docs
 - **Goal:** keep the shared world the default from now on.
 - **Read first:** `tests/sample_world.py`, `tests/test_sample_world.py`,
   `docs/cheatsheet/dev_workflow.md` (testing section).
@@ -401,6 +401,29 @@ Order: 1 → 2 → (3, 4 in either order) → 5 (may span several sessions) → 
   value type (`kind`, `pump_id`, `cap_id`, `medium`, ...); thermal / exotic cap fakes;
   `PowerGrid` described by outpost ids without placed buildings; `OutpostRef.x` / `.y`.
   `Store.transfer_to` answering `busy` is documented only in `lib/field_keeper` comments.
+
+### Step 6 (2026-10-03)
+- `sample_world.SIZES` gains `tanks`, `batteries`, `depots`, `drones`, `pioneers`, `habitats`.
+  Step 3's census was never built, so "large" takes the live save's counts read directly from
+  `state.machines` (gas_tank + bulk_liquid_reservoir 35, battery + battery_large 18,
+  drone_station_large 7, drone_small/large 17, pioneer 4, habitat 16). The older keys
+  (outposts, warehouses, ...) keep their guesses so earlier `step_profile` numbers stay
+  comparable; the live save has 9 outposts and 27 Large Warehouses against "large"'s 4 and 5.
+  Tanks alternate `gas_tank` / `liquid_tank`, batteries `battery_large` / `battery`; every
+  4th drone is undocked (`traveling`); one grid per outpost spans its non-mobile buildings.
+  Habitat species and feed items are synthetic (`species_<n>`, `feed_<species>`).
+- Guard `tests/test_no_private_fakes.py` (AST): a class in a `test_*.py` file (top-level or
+  nested) named like a `game_stubs` class, with or without leading `_`, must list that class
+  as a base; `from game_stubs import X as Y` aliases count as X. It found three: a nested
+  `Recipe` in `test_autoplay_outpost_needs` (now `game_stubs.Recipe`), a nested `Store` in
+  `test_autoplay_survey` that faked our `lib/archive.py` (now `_Archive(Notebook)`), and
+  `test_autoplay_power`'s `Result(BaseResult)` (a subclass under an alias; passes).
+- `devtools/step_profile.py`'s `raw_demands` target called the removed
+  `production.get_raw_material_demands()` (commit 12241b2) and crashed every all-targets run;
+  it is now `demands` over `get_material_demands()`. All targets run on "large".
+- Docs point to `devtools/stub_census.py` nowhere: it does not exist (step 3 open).
+- Pyright on new AST code reports `Cannot access attribute ... for class "AST"` after
+  `isinstance` checks, as in `test_stub_contract.py` / `test_game_imports.py`: a config issue.
 
 ## Out of scope
 - Running the real simworker JS as the test backend (full engine, needs a Python bridge).

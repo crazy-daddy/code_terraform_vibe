@@ -2,6 +2,7 @@
 import unittest
 
 import harness
+from game_stubs import Recipe
 import outpost_needs as on
 import autoplay_roles as roles
 from grid_geom import extractor_box
@@ -213,13 +214,8 @@ class WarehouseSlotTests(unittest.TestCase):
         self.assertEqual(on.feed_stock(None), {})
 
     def test_smelter_stock_only_when_every_ore_smelts(self):
-        class Recipe:
-            def __init__(self, ore, out):
-                self.inputs = {ore: 2}
-                self.output_item = out
-                self.byproduct_item = None
         from outpost_mining import RAW_ORE_ITEM_IDS
-        full = [Recipe(ore, ore + "_out") for ore in RAW_ORE_ITEM_IDS]
+        full = [Recipe("smelt_" + ore, {ore: 2}, ore + "_out") for ore in RAW_ORE_ITEM_IDS]
         got = on.smelter_stock(full)
         self.assertEqual(len(got["smelter"]), 2 * len(RAW_ORE_ITEM_IDS))
         self.assertEqual(len(got["factory"]), len(RAW_ORE_ITEM_IDS))

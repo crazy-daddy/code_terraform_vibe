@@ -2,7 +2,7 @@
 import unittest
 
 import harness
-from game_stubs import ConstructionBlueprints, Result
+from game_stubs import ConstructionBlueprints, Notebook, Result
 import construction_plan as cp
 import power_survey as ps
 import grid_geom as g
@@ -222,21 +222,20 @@ class LedgerUpdaterBudgetTests(unittest.TestCase):
         self.assertNotIn("7", rows)
 
     def test_swap_power_ledger(self):
-        class Store:
-            def __init__(self):
-                self.data = {}
-                self.interfere = 0
+        class _Archive(Notebook):
+            """A Pioneer writes the ledger between read and swap `interfere` times."""
 
-            def get(self, key, default=None):
-                return self.data.get(key, default)
+            def __init__(self):
+                super().__init__()
+                self.interfere = 0
 
             def transaction(self, key, default, updater):
                 if self.interfere:
                     self.interfere -= 1
                     self.data[key] = {"surveyed": None, "rows": {"9": [[1, 1]]}, "dirty": []}
-                self.data[key] = updater(self.data.get(key, default))
+                return super().transaction(key, default, updater)
 
-        store = Store()
+        store = _Archive()
         self.assertTrue(cp.swap_power_ledger(store, lambda cur: {"surveyed": 5, "rows": cur["rows"], "dirty": []}))
         self.assertEqual(store.data[cp.POWER_TILES_KEY]["surveyed"], 5)
         store.interfere = 1  # a Pioneer writes between read and swap: the retry sees its row

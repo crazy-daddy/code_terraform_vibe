@@ -27,6 +27,20 @@ class SampleWorldTests(StubTestCase):
         self.assertTrue(any(f.outpost.id in remote_ids for f in sample.fabricators))
         self.assertTrue(any(d.outpost.id in remote_ids for d in sample.docks))
 
+    def test_fluids_power_and_units_follow_sizes(self):
+        for size, spec in sample_world.SIZES.items():
+            with self.subTest(size=size):
+                sample = self.use(size)
+                counts = [len(sample.tanks), len(sample.batteries), len(sample.depots), len(sample.drones), len(sample.pioneers), len(sample.habitats)]
+                self.assertEqual(counts, [spec[k] for k in ("tanks", "batteries", "depots", "drones", "pioneers", "habitats")])
+                power = sample.world.power_control
+                self.assertEqual(len(power.grids()), 1 + spec["outposts"])
+                self.assertTrue(all(power.grid(b.id) is not None for b in sample.batteries))
+                self.assertGreater(power.total().stored, 0)
+                docked = [d for d in sample.drones if d.station]
+                self.assertTrue(docked)
+                self.assertTrue(all(len(depot.get_docked()) <= depot.bay_count() for depot in sample.depots))
+
     def test_route_scenario_is_seeded(self):
         self.assertEqual(sample_world.route_scenario("small"), sample_world.route_scenario("small"))
         dests, sources = sample_world.route_scenario("large")

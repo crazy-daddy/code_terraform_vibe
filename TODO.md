@@ -402,7 +402,7 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
   - [ ] Step 3: `devtools/stub_census.py` gap report (optional).
   - [x] Step 4: consolidate and extend `tests/game_stubs.py`.
   - [x] Step 5: migrate tests off private fakes.
-  - [ ] Step 6: sample world, no-private-fakes guard, dev_workflow docs.
+  - [x] Step 6: sample world, no-private-fakes guard, dev_workflow docs.
 - [ ] **Consolidate remaining per-entity archive keys into shared dicts** (archive key-count cap, see CLAUDE.md rule 7): remaining: `biomass_mixer.gate.<id>` (bounded by mixer count, do when next touching `biomass_mixer_gate.py`) and per-grid `power.shedded:`/`power.daily:`/`power.daily_hist:`/`power.night_wh:<anchor>` (4 keys per grid; deferred until 8+ separate grids — two `power.py` tiers, and global `power.shedded` must stay flat).
 - [ ] **Archive cleaner: prune more per-entity dicts** (`lib/archive_cleaner.py`; `clean_building_entries()` already covers `script.parked`/`script.park_requests`/`script.park_holds`/`fluid_routing.tank_assignments` via `BUILDING_ID_KEYS`). Each prune skips when its live-id lookup comes back empty, so a failed query never wipes a dict.
   - [ ] Outpost-keyed dicts `logistics.requests` and `site_supply.stranded`: drop entries whose outpost is no longer in `outpost_network.outposts()` (outposts can be decommissioned). Needs an outpost-id set beside `get_live_building_ids()`.

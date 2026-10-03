@@ -129,13 +129,13 @@ def target_dock_plan(size):
     return lambda: supply_dock.plan_dock_assignments(clock)
 
 
-def target_raw_demands(size):
+def target_demands(size):
     import production
     sample = sample_world.build_sample_world(size)
     game_memos()
-    production.get_raw_material_demands()  # warm the per-script memos (discovery, recipe table)
+    production.get_material_demands()  # warm the per-script memos (discovery, recipe table)
     sample.world.clock.now += 1
-    return production.get_raw_material_demands
+    return production.get_material_demands
 
 
 class _RouteHost:
@@ -268,7 +268,7 @@ TARGETS = {
     "fabricator": target_fabricator,
     "smelter": target_smelter,
     "dock_plan": target_dock_plan,
-    "raw_demands": target_raw_demands,
+    "demands": target_demands,
     "haul": target_haul,
     "pull": target_pull,
     "wildlife_ration": target_wildlife_ration,
