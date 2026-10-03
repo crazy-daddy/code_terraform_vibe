@@ -131,6 +131,13 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     tanks then Caps, oil tanks then Oil Pumps, Habitat/Refiner tanks) use
     `fluid_routing.discover_ranked(tiers, own_outpost_id)`, tiers of `(type_ids, fluid_id)`;
     `STEAM_SOURCE_TIERS` is the steam_in list.
+  - **Event logging**: callers run their router through `fluid_routing.ensure_input_logged()` /
+    `ensure_output_logged()`, which build the callbacks and print the standard lines on the
+    caller's console: drop / blacklist / connect notice warn, new connection info, healthy trace,
+    every-candidate-blacklisted debug (remaining ticks per entry at trace), `not_found` debug with
+    the caller's hint. Habitat and Refiner call the routers bare (their blocker/status covers it).
+    `fluid_routing.port_starved()` is the `is_starved` signal for a port on a machine without
+    `is_stalled()` (flow 0 with room left).
   - **Discovery cost**: the network walk is skipped entirely while a connection is healthy — Cap/
     Pump check one `fill_pct()` on the already-connected id; input routers return on a healthy
     peer. When discovery does run, `TickedDiscoveryCache` holds results for

@@ -1,8 +1,8 @@
 """Stub tests for the shared fluid-input glue: production.discover_fluid_sources(),
-fluid_routing.discover_ranked() and fluid_routing.port_starved()."""
+fluid_routing.discover_ranked(), fluid_routing.port_starved() and the ensure_*_logged() wrappers."""
 import unittest
 
-from harness import StubTestCase, production, fluid_routing
+from harness import StubTestCase, production, fluid_routing, TreeConsole
 from game_stubs import FluidPort
 
 
@@ -51,6 +51,56 @@ class PortStarvedTests(StubTestCase):
         port = FluidPort(self.world, level=10)
         port.flow = 0.5
         self.assertFalse(fluid_routing.port_starved(port))
+
+
+class FakeRouter:
+    """Router whose ensure()/ensure_connection() fire the given callbacks, then return `event`."""
+
+    def __init__(self, event, fire=()):
+        self.event = event
+        self.fire = fire
+        self.blacklist = fluid_routing.PerEntryBlacklist(100)
+
+    def ensure(self, port, curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
+        for args in self.fire:
+            on_dropped(*args)
+        return self.event
+
+    def ensure_connection(self, port, curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
+        for args in self.fire:
+            on_blacklisted(*args)
+        return self.event
+
+
+class EnsureLoggedTests(StubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.log = TreeConsole(module="test")
+        self.log.console = self.world.console
+
+    def text(self):
+        return self.debug_log()
+
+    def test_input_connected_and_dropped_lines(self):
+        router = FakeRouter(fluid_routing.FluidInputEvent("connected", "tank_1"), fire=[("tank_0", "starved")])
+        event = fluid_routing.ensure_input_logged(router, object(), 5, True, self.log, "fab_1", "water_in", "No water.")
+        self.assertEqual(event.kind, "connected")
+        self.assertIn("[fab_1] Dropping water_in source 'tank_0': starved. Picking another.", self.text())
+        self.assertIn("[fab_1] Connected water_in -> 'tank_1'.", self.text())
+
+    def test_input_not_found_uses_caller_text_or_nothing(self):
+        router = FakeRouter(fluid_routing.FluidInputEvent("not_found"))
+        fluid_routing.ensure_input_logged(router, object(), 5, False, self.log, "fab_1", "water_in", "No water source.")
+        fluid_routing.ensure_input_logged(router, object(), 5, False, self.log, "fab_2", "water_in")
+        self.assertIn("[fab_1] No water source.", self.text())
+        self.assertNotIn("fab_2", self.text())
+
+    def test_output_blacklisted_and_connected_lines(self):
+        event = fluid_routing.FluidOutputEvent("connected", "gas_tank_2", 0.25)
+        router = FakeRouter(event, fire=[("gas_tank_1",)])
+        fluid_routing.ensure_output_logged(router, object(), 5, True, self.log, "cap_1", "steam_out", "reported stalled")
+        self.assertIn("[cap_1] 'gas_tank_1' reported stalled. Blacklisting and picking a different target.", self.text())
+        self.assertIn("[cap_1] Connected steam_out -> 'gas_tank_2' (25% full).", self.text())
 
 
 if __name__ == "__main__":

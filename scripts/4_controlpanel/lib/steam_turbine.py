@@ -120,23 +120,8 @@ class SteamTurbineController:
         port = getattr(self.turbine, "steam_in", None)
         curr_tick = self.get_current_tick()
         fluid_routing.warn_about_unassigned_tanks(curr_tick)
-
-        def on_dropped(source_id, reason):
-            self.log.level("warn").print(f"[{self.name}] Dropping steam source '{source_id}': {reason}. Picking a different source.")
-
-        def on_connect_notice(source_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] steam_in connect notice for '{source_id}': {status} - {message}")
-
-        event = self._router.ensure(port, curr_tick, fluid_routing.safe_is_stalled(self.turbine), on_dropped, on_connect_notice)
-        if event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected steam_in -> '{event.source_id}'.")
-        elif event.kind == "waiting":
-            self.log.debug(f"[{self.name}] Every known steam source is still within its blacklist window; waiting for one to expire.")
-            for sid, blacklisted_at in self._router.blacklist._blacklisted_at.items():
-                remaining = max(0, self._router.blacklist.rescan_interval_ticks - (curr_tick - blacklisted_at))
-                self.log.debug(f"[{self.name}] Blacklisted source '{sid}': {remaining} tick(s) remaining until retry-eligible.")
-        elif event.kind == "not_found":
-            self.log.debug(f"[{self.name}] No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
+        fluid_routing.ensure_input_logged(self._router, port, curr_tick, fluid_routing.safe_is_stalled(self.turbine), self.log, self.name, "steam_in",
+                                          "No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
 
     def buffer_fraction(self):
         """Fraction (0-1) of steam_in's own buffer currently filled."""

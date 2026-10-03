@@ -279,17 +279,9 @@ class ReactorController:
 
     def ensure_water(self):
         port = getattr(self.reactor, "water_in", None)
-
-        def on_dropped(source_id, reason):
-            self.log.level("warn").print(f"[{self.name}] Dropping water source '{source_id}': {reason}.")
-
-        def on_connect_notice(source_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] water_in connect notice for '{source_id}': {status} - {message}")
-
-        event = self.router.ensure(port, self.tick(), self.status == "no_coolant", on_dropped, on_connect_notice)
+        event = fluid_routing.ensure_input_logged(self.router, port, self.tick(), self.status == "no_coolant", self.log, self.name, "water_in")
         if event.kind == "connected":
             self.water_warned = False
-            self.log.print(f"[{self.name}] Connected water_in -> '{event.source_id}'.")
         elif event.kind in ("not_found", "exhausted") and not self.water_warned:
             self.water_warned = True
             self.log.level("warn").print(f"[{self.name}] No reachable water source for cooling (Water Pump, Steam Condenser or water tank).")

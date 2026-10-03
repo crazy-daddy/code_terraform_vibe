@@ -336,24 +336,15 @@ class EssenceLiquifierController:
         # way the router should move on. no_input is explicitly NOT evidence (see OUTPUT_BLOCKED_STALL_REASONS).
         blocked = reason in OUTPUT_BLOCKED_STALL_REASONS or own_state in fluid_routing.BROKEN_CONNECTION_STATES
         self.log.debug(f"[{self.name}] output: stall_reason={reason!r}, declared link state={own_state!r} -> blocked={blocked}.")
-
-        def on_blacklisted(target_id):
-            self.log.level("warn").print(f"[{self.name}] '{target_id}' can't take essence (stall={reason}, link={own_state}) -- likely no completed Liquid Pipe route or tank full. Trying another tank.")
-
-        def on_connect_notice(target_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] {self.fluid_id}_out connect notice for '{target_id}': {status} - {message}")
-
-        event = self._router.ensure_connection(port, curr_tick, blocked, on_blacklisted, on_connect_notice)
-        if event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected {self.fluid_id}_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
-        elif event.kind == "not_found":
+        event = fluid_routing.ensure_output_logged(
+            self._router, port, curr_tick, blocked, self.log, self.name, f"{self.fluid_id}_out",
+            f"can't take essence (stall={reason}, link={own_state}) -- likely no completed Liquid Pipe route or tank full")
+        if event.kind == "not_found":
             peer = fluid_routing.healthy_peer_id(port)
             if peer:
                 self.log.debug(f"[{self.name}] No '{self.fluid_id}' Liquid Tank, but '{peer}' already draws from this port directly.")
             else:
                 self.log.debug(f"[{self.name}] No Liquid Tank latched/assigned to '{self.fluid_id}' network-wide (see fluid_routing.tank_assignments).")
-        else:
-            self.log.debug(f"[{self.name}] output router: {event.kind}.")
 
     # ------------------------------------------------------------- telemetry
 

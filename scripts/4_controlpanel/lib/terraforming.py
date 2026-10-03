@@ -199,20 +199,8 @@ class Mk3FluidFeed:
             if not self.guard_open:
                 self._report_degraded()
                 return
-
-        def on_dropped(source_id, reason):
-            self.log.level("warn").print(f"[{self.name}] Dropping {self.fluid_key} source '{source_id}': {reason}. Picking another.")
-
-        def on_connect_notice(source_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] {self.fluid_key} connect notice for '{source_id}': {status} - {message}")
-
-        event = self.router.ensure(port, curr_tick, fluid_routing.port_starved(port), on_dropped, on_connect_notice)
-        if event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected {self.fluid_key} -> '{event.source_id}'.")
-        elif event.kind == "not_found":
-            self.log.debug(f"[{self.name}] No {self.fluid_key} source on the network.")
-        elif event.kind == "waiting":
-            self.log.debug(f"[{self.name}] Every known {self.fluid_key} source is still blacklisted; waiting.")
+        fluid_routing.ensure_input_logged(self.router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, self.fluid_key,
+                                          f"No {self.fluid_key} source on the network.")
         self._report_degraded()
 
 

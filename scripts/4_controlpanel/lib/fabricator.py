@@ -274,19 +274,9 @@ class FabricatorController:
             port = getattr(self.machine, fluid_key, None)
             if not port or not hasattr(port, "connect"):
                 continue
-
-            def on_dropped(source_id, reason, fluid_key=fluid_key):
-                self.log.level("warn").print(f"[{self.name}] Dropping {fluid_key} source '{source_id}': {reason}. Picking a different source.")
-
-            def on_connect_notice(source_id, status, message, fluid_key=fluid_key):
-                self.log.level("warn").print(f"[{self.name}] {fluid_key} connect notice for '{source_id}': {status} - {message}")
-
             router = self._fluid_router(fluid_key, type_ids)
-            event = router.ensure(port, curr_tick, fluid_routing.port_starved(port), on_dropped, on_connect_notice)
-            if event.kind == "connected":
-                self.log.print(f"[{self.name}] Connected {fluid_key} -> '{event.source_id}'.")
-            elif event.kind == "waiting":
-                self.log.level("warn").print(f"[{self.name}] Every known {fluid_key} source is still within its blacklist window; waiting for one to expire.")
+            fluid_routing.ensure_input_logged(router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, fluid_key,
+                                              f"No {fluid_key} source on the network.")
 
     @staticmethod
     def is_fluid_only(recipe):

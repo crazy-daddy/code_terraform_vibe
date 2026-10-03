@@ -371,18 +371,8 @@ class BioCasterController(BioProcessorController):
                     reserve_fluid="water" if fluid_key == "water_in" else None,
                 )
                 self.fluid_routers[fluid_key] = router
-
-            def on_dropped(source_id, reason, key=fluid_key):
-                self.log.level("warn").print(f"[{self.name}] Dropping {key} source '{source_id}': {reason}. Picking another.")
-
-            def on_connect_notice(source_id, status, message, key=fluid_key):
-                self.log.level("warn").print(f"[{self.name}] {key} connect notice for '{source_id}': {status} - {message}")
-
-            event = router.ensure(port, curr_tick, fluid_routing.port_starved(port), on_dropped, on_connect_notice)
-            if event.kind == "connected":
-                self.log.print(f"[{self.name}] Connected {fluid_key} -> '{event.source_id}'.")
-            elif event.kind == "not_found":
-                self.log.debug(f"[{self.name}] no {fluid_key} source on the network.")
+            fluid_routing.ensure_input_logged(router, port, curr_tick, fluid_routing.port_starved(port), self.log, self.name, fluid_key,
+                                              f"No {fluid_key} source on the network.")
 
     def _set_knobs(self, heat_pct, cool_pct):
         """Sets heat/cool only when the value changes. A knob above 0 needs fluid in its

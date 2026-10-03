@@ -169,20 +169,8 @@ class OilGeneratorController:
         """Keeps oil_in on a reachable oil source. A tank has no script, so this generator declares the link."""
         port = getattr(self.generator, "oil_in", None)
         curr_tick = self.get_current_tick()
-
-        def on_dropped(source_id, reason):
-            self.log.level("warn").print(f"[{self.name}] Dropping oil source '{source_id}': {reason}. Picking a different source.")
-
-        def on_connect_notice(source_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] oil_in connect notice for '{source_id}': {status} - {message}")
-
-        event = self._router.ensure(port, curr_tick, self.is_starved(), on_dropped, on_connect_notice)
-        if event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected oil_in -> '{event.source_id}'.")
-        elif event.kind == "waiting":
-            self.log.debug(f"[{self.name}] Every known oil source is still within its blacklist window; waiting for one to expire.")
-        elif event.kind == "not_found":
-            self.log.debug(f"[{self.name}] No oil-eligible tank or Oil Pump found network-wide yet (an empty tank needs a fluid_routing.tank_assignments entry for 'oil').")
+        fluid_routing.ensure_input_logged(self._router, port, curr_tick, self.is_starved(), self.log, self.name, "oil_in",
+                                          "No oil-eligible tank or Oil Pump found network-wide yet (an empty tank needs a fluid_routing.tank_assignments entry for 'oil').")
 
     # ------------------------------------------------------------------
     # Last-resort decision

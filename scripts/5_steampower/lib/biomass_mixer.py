@@ -118,23 +118,10 @@ class EssenceInputRouter:
 
     def ensure(self, curr_tick):
         """Returns one of "no_port"/"healthy"/"pending"/"connected"/"waiting"/"not_found"/"exhausted"."""
-        def on_dropped(source_id, reason):
-            self.log.level("warn").print(f"[{self.name}] {self.port_name}: dropping '{source_id}' ({reason}). Trying another source.")
-
-        def on_connect_notice(source_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] {self.port_name} connect notice for '{source_id}': {status} - {message}")
-
         port = self.port()
         is_starved = bool(port) and self._port_starved(port)
-        event = self._router.ensure(port, curr_tick, is_starved=is_starved, on_dropped=on_dropped, on_connect_notice=on_connect_notice)
-        if event.kind == "healthy":
-            self.log.trace(f"[{self.name}] {self.port_name}: healthy via '{event.source_id}'.")
-        elif event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected {self.port_name} -> '{event.source_id}'.")
-        elif event.kind == "waiting":
-            self.log.debug(f"[{self.name}] {self.port_name}: every known source is blacklisted; waiting for expiry.")
-        elif event.kind == "not_found":
-            self.log.debug(f"[{self.name}] {self.port_name}: no '{self.fluid_id}' tank or '{self.biome}' Liquifier anywhere yet.")
+        event = fluid_routing.ensure_input_logged(self._router, port, curr_tick, is_starved, self.log, self.name, self.port_name,
+                                                  f"{self.port_name}: no '{self.fluid_id}' tank or '{self.biome}' Liquifier anywhere yet.")
         return event.kind
 
 

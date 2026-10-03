@@ -1161,3 +1161,55 @@ class FluidOutputRouter:
         _ret = FluidOutputEvent("exhausted")
         log.end()
         return _ret
+
+
+def _log_waiting(log, name, port_label, blacklist, curr_tick):
+    log.debug(f"[{name}] Every known {port_label} candidate is still within its blacklist window; waiting for one to expire.")
+    for entry_id, blacklisted_at in blacklist._blacklisted_at.items():
+        duration = blacklist._durations.get(entry_id, blacklist.rescan_interval_ticks)
+        log.trace(f"[{name}] Blacklisted '{entry_id}': {max(0, duration - (curr_tick - blacklisted_at))} tick(s) until retry-eligible.")
+
+
+def ensure_input_logged(router, port, curr_tick, starved, log, name, port_label, not_found=None):
+    """FluidInputRouter.ensure() with the standard lines on the caller's console: drops and connect
+    notices warn, a new connection info, healthy trace, waiting debug (blacklist detail trace),
+    not_found debug with the caller's `not_found` text (None: no line). Returns the event."""
+    def on_dropped(source_id, reason):
+        log.level("warn").print(f"[{name}] Dropping {port_label} source '{source_id}': {reason}. Picking another.")
+
+    def on_connect_notice(source_id, status, message):
+        log.level("warn").print(f"[{name}] {port_label} connect notice for '{source_id}': {status} - {message}")
+
+    event = router.ensure(port, curr_tick, starved, on_dropped, on_connect_notice)
+    if event.kind == "connected":
+        log.print(f"[{name}] Connected {port_label} -> '{event.source_id}'.")
+    elif event.kind == "healthy":
+        log.trace(f"[{name}] {port_label}: healthy via '{event.source_id}'.")
+    elif event.kind == "waiting":
+        _log_waiting(log, name, port_label, router.blacklist, curr_tick)
+    elif event.kind == "not_found" and not_found:
+        log.debug(f"[{name}] {not_found}")
+    return event
+
+
+def ensure_output_logged(router, port, curr_tick, stalled, log, name, port_label, blacklist_reason, not_found=None):
+    """FluidOutputRouter.ensure_connection() with the standard lines: a blacklisted target warns
+    "'<id>' <blacklist_reason>. Blacklisting ...", connect notices warn, a new connection info (with
+    fill), healthy trace, waiting debug, not_found debug with `not_found` (None: no line). Returns
+    the event."""
+    def on_blacklisted(target_id):
+        log.level("warn").print(f"[{name}] '{target_id}' {blacklist_reason}. Blacklisting and picking a different target.")
+
+    def on_connect_notice(target_id, status, message):
+        log.level("warn").print(f"[{name}] {port_label} connect notice for '{target_id}': {status} - {message}")
+
+    event = router.ensure_connection(port, curr_tick, stalled, on_blacklisted, on_connect_notice)
+    if event.kind == "connected":
+        log.print(f"[{name}] Connected {port_label} -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
+    elif event.kind == "healthy":
+        log.trace(f"[{name}] Current {port_label} target still healthy; no rebalance needed this cycle.")
+    elif event.kind == "waiting":
+        _log_waiting(log, name, port_label, router.blacklist, curr_tick)
+    elif event.kind == "not_found" and not_found:
+        log.debug(f"[{name}] {not_found}")
+    return event

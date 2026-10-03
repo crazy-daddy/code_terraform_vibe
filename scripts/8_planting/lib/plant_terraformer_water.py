@@ -62,15 +62,5 @@ class PlantTerraformerWaterMixin:
                 label=f"{host.name}.water_in",
                 reserve_fluid="water",
             )
-
-        def on_dropped(source_id, reason):
-            host.log.level("warn").print(f"[{host.name}] Dropping water source '{source_id}': {reason}. Picking another.")
-
-        def on_connect_notice(source_id, status, message):
-            host.log.level("warn").print(f"[{host.name}] water_in connect notice for '{source_id}': {status} - {message}")
-
-        event = self._water_router.ensure(port, curr_tick, fluid_routing.port_starved(port), on_dropped, on_connect_notice)
-        if event.kind == "connected":
-            host.log.print(f"[{host.name}] Connected water_in -> '{event.source_id}'.")
-        elif event.kind == "not_found":
-            host.log.debug(f"[{host.name}] no water source on the network.")
+        fluid_routing.ensure_input_logged(self._water_router, port, curr_tick, fluid_routing.port_starved(port), host.log, host.name, "water_in",
+                                          "No water source on the network.")

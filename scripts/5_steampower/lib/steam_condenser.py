@@ -132,40 +132,18 @@ class SteamCondenserController:
     def ensure_steam_input(self, starved):
         port = getattr(self.condenser, "steam_in", None)
         curr_tick = self.get_current_tick()
-
-        def on_dropped(source_id, reason):
-            self.log.level("warn").print(f"[{self.name}] Dropping steam source '{source_id}': {reason}. Picking a different source.")
-
-        def on_connect_notice(source_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] steam_in connect notice for '{source_id}': {status} - {message}")
-
-        event = self._steam_router.ensure(port, curr_tick, starved, on_dropped, on_connect_notice)
-        if event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected steam_in -> '{event.source_id}'.")
-        elif event.kind == "waiting":
-            self.log.debug(f"[{self.name}] Every known steam source is still within its blacklist window; waiting for one to expire.")
-        elif event.kind == "not_found":
-            self.log.debug(f"[{self.name}] No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
+        fluid_routing.ensure_input_logged(self._steam_router, port, curr_tick, starved, self.log, self.name, "steam_in",
+                                          "No steam-eligible Gas Tank or Thermal Cap found network-wide yet.")
 
     def ensure_water_output(self, water_full):
         port = getattr(self.condenser, "water_out", None)
         if not port or not hasattr(port, "connect"):
             return
         curr_tick = self.get_current_tick()
-
-        def on_blacklisted(target_id):
-            self.log.level("warn").print(f"[{self.name}] '{target_id}' is not taking water (water_out buffer full) -- likely no completed Liquid Pipe route. Blacklisting and picking a different tank.")
-
-        def on_connect_notice(target_id, status, message):
-            self.log.level("warn").print(f"[{self.name}] water_out connect notice for '{target_id}': {status} - {message}")
-
-        event = self._water_router.ensure_connection(port, curr_tick, water_full, on_blacklisted, on_connect_notice)
-        if event.kind == "connected":
-            self.log.print(f"[{self.name}] Connected water_out -> '{event.target_id}' ({event.fill_pct*100:.0f}% full).")
-        elif event.kind == "waiting":
-            self.log.debug(f"[{self.name}] Every known water tank is still within its blacklist window; waiting for one to expire.")
-        elif event.kind == "not_found":
-            self.log.debug(f"[{self.name}] No Liquid Tank or Large Liquid Tank eligible for water found network-wide (an empty tank needs a fluid_routing.tank_assignments entry).")
+        fluid_routing.ensure_output_logged(
+            self._water_router, port, curr_tick, water_full, self.log, self.name, "water_out",
+            "is not taking water (water_out buffer full) -- likely no completed Liquid Pipe route",
+            "No Liquid Tank or Large Liquid Tank eligible for water found network-wide (an empty tank needs a fluid_routing.tank_assignments entry).")
 
     def water_pool_fraction(self):
         """Pooled fill (0-1) of the reachable water tanks, or None when there are none."""
