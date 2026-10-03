@@ -184,6 +184,24 @@ Rules for every fix agent:
 
 A2 and A4 both touch the `production_*` modules. Run A2 first, or merge the two agents.
 
+### Phase A results (commits on main, 2026-10-03, not yet deployed)
+
+| Commit | Item | Change |
+|---|---|---|
+| `e4eec23` | A2, A4 | `site_spare_elsewhere` memoizes each other outpost's share per item on the `SourceCache` (`_spare_contribution`), so the sites of one recompute share it. `network_stock` is memoized per item, which also covers both loops of `get_smelter_demands`. `get_material_demands` is unchanged: it has no per-pass memo of the active recipe, and adding one could change behaviour. The rest of a recompute (cascade, `local_make_seconds`) is unchanged, so expect a few thousand to about 10k steps saved per recompute, not most of the 80k. |
+| `d6eeb92` | A4 | `stage_life_forms` and `flush_surplus` read the storage layout once (`storage_layout()`) and read it again only after a send. |
+| `41eb1fc` | A9 | The Wildlife planner stops at `WILDLIFE_COMPLETE_POPULATION` (5,000,000): it withdraws the Feed Maker life-form requests, writes an empty `wildlife.plan` with `complete: True`, and shows "Wildlife complete" on the AUTOMATION card. Habitats keep their colonies and park once out of feed; Feed Makers park idle. |
+| `322e291` | A6 | The census also counts the POI extractors (power grid members of `POI_TYPE_IDS`), the harvester (`HARVESTER_ID`, a fixed id, because no API lists it) and the panel and automation scripts (probed by id, counted toward N only). Sensor and planet scripts are still not counted, so N is a lower bound. |
+| `060d84f` | A5 | `drain_port_to_storage` tries the next-best Warehouse, up to `BUSY_TARGET_RETRIES` (3) times, when the picked one answers `busy`. Feed Maker output takes the same path. |
+| `060d84f` | A7 | `compact()` runs every `COMPACT_TICK_INTERVAL` (6000 ticks, one game day). Rebalance and reclaim already ran at home only. |
+| `87f125e` | A3, A8 | Every Fabricator and Smelter wake was a timed `re-check due` (462 of 462), so a machine that parks again within `FRUITLESS_REPARK_TICKS` (150) of such a wake gets its next re-check doubled, up to `WAKE_BACKOFF_MAX_TICKS` (Fabricator and Smelter 1200, crop_automator and supply_dock 1800). The worst-case delay before an idle Fabricator sees new work grows from 300 to 1200 ticks. The low-reserve verdict per grid is cached for `RESERVE_CACHE_TICKS` (150), and tank ids come from the member rows already read. |
+| `f582cb9` | A1 | The output router leaves a full tank only for one emptier by more than `OUTPUT_REBALANCE_MARGIN` (0.02). Otherwise it returns `full` and stays connected. A stall on a full tank does not blacklist it. A routine rebalance logs at debug in `ensure_output_logged`. |
+
+Open points from Phase A:
+
+- `HARVESTER_ID = "harvester_1"` is a fixed id. Replace it if an API or an archive entry ever lists the harvester.
+- Measure the effect: run the tools with `--since` set to the deploy time of these commits.
+
 ### Phase B: static sweep (Haiku, read-only, parallel)
 
 - Split the 131 `lib/` modules into about 10 batches by concern: fluids, power, production, logistics, drones, vehicles, pioneers, bio and planting, wildlife, and the rest.
@@ -210,7 +228,7 @@ Tool fixes go into Phase A as needed: the `repeat_read_scan.py` block matching f
 
 ## Open items
 
-1. **Next measurement.** Run both tools with `--since 2026-10-03T13:40`. Every commit up to `83aa9c6` was deployed by then.
+1. **Next measurement.** Run both tools with `--since` set to the deploy time of the Phase A commits (`e4eec23` to `f582cb9`). Until they are deployed, `--since 2026-10-03T13:40` measures the handler-unification refactors only.
 2. **Fluid router switching between equally full tanks.** Decided: fix it (Phase A1). With every tank full, thermal_cap and water_pump switch tanks on each call.
    - Each switch prints a `Connected ...` info line (0.1 s of game time per console call) and resets `ticks_since_connect`, so the stall blacklist never kicks in.
    - The fix would be not to switch when no candidate is emptier than the current tank.
