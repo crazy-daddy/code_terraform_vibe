@@ -191,6 +191,7 @@ class PassiveStore:
         self.outpost = outpost
         self.capacity_units = capacity
         self.items = dict(items or {})
+        self.busy = False  # True: a material endpoint lock, OutputSlot.send() answers "busy"
 
     def count(self, item_id):
         return self.items.get(item_id, 0)
@@ -392,6 +393,8 @@ class Slot:
             return Result("target_not_local")
         if store is None:
             return Result("inventory_not_local")
+        if getattr(store, "busy", False):
+            return Result("busy")
         n = min(count, self.buffer.get(item_id, 0))
         if n <= 0:
             return Result("source_empty")

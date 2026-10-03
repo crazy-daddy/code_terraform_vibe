@@ -97,6 +97,9 @@ SUMMARY_SEPARATOR = " | "
 # ~1s and 10s at 10 ticks/sec (see lib/archive_cleaner.py's documented tick rate).
 SOLAR_TICK_INTERVAL = 10
 STORAGE_TICK_INTERVAL = 100
+# Warehouse compaction sweep (storage.consolidate_cross_warehouse_stock()): about once per game
+# day, 6000 ticks (86400 game s at 14.4 game s per tick).
+COMPACT_TICK_INTERVAL = 6000
 MIXER_GATE_TICK_INTERVAL = 10
 # Dock planning is checked on its own, shorter interval, at the top of every loop and again between
 # the storage pass's sub-steps: those sweeps wait on feeder cycles, and a plan held back until they
@@ -121,6 +124,7 @@ COMMISSION_FAST_TICK_INTERVAL = 30
 grid_managers = {}          # {anchor_id: PowerGridManager}, reused so day/night state persists
 last_solar_tick = 0
 last_storage_tick = 0
+last_compact_tick = 0
 last_mixer_gate_tick = 0
 last_drill_tick = 0
 last_parking_tick = 0
@@ -346,20 +350,19 @@ while True:
                     if current_ids != known_ids:
                         archive.set(OUTPOST_KNOWN_IDS_KEY, sorted(current_ids))
 
-                    # Cross-warehouse consolidation sweep (storage.py's
+                    # Warehouse compaction sweep (storage.py's
                     # consolidate_cross_warehouse_stock(), which calls
-                    # .compact()) -- every outpost, not just home, since a
-                    # remote outpost's Warehouses (e.g. a Bio Lab reagent drop)
-                    # can end up with the same item split across multiple
-                    # Warehouse buildings the same way repeat hauler deliveries
-                    # can at home.
-                    for o in outposts:
-                        o_id = getattr(o, "id", "?")
-                        try:
-                            consolidate_cross_warehouse_stock(o)
-                        except Exception as e:
-                            report_error(f"Cross-warehouse consolidation at '{o_id}'", e)
-                        between_steps(clock)
+                    # .compact() on each Warehouse), every outpost, once per
+                    # COMPACT_TICK_INTERVAL.
+                    if last_compact_tick == 0 or current_tick - last_compact_tick >= COMPACT_TICK_INTERVAL:
+                        last_compact_tick = current_tick
+                        for o in outposts:
+                            o_id = getattr(o, "id", "?")
+                            try:
+                                consolidate_cross_warehouse_stock(o)
+                            except Exception as e:
+                                report_error(f"Warehouse compaction at '{o_id}'", e)
+                            between_steps(clock)
             except Exception as e:
                 report_error("Outpost sync", e)
 

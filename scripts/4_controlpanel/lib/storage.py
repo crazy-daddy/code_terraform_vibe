@@ -293,7 +293,7 @@ def _inventory_first(item_id, min_amount, outpost):
     return item_id not in _items_demanded_by_active_dock_orders(outpost)
 
 
-def best_unload_target(item_id, min_amount=1, outpost=None):
+def best_unload_target(item_id, min_amount=1, outpost=None, exclude=()):
     """
     Destination id string for offloading item_id, else None if there is nowhere
     local to put it. Among every discovered Warehouse with space_for(item_id) >=
@@ -320,9 +320,12 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
     hauled-in kit or module doesn't wait in a Warehouse for
     reclaim_inventory_only_items_from_warehouses(). Items an active Supply
     Dock order owes keep the Warehouse routing, as in that sweep.
+
+    exclude: Warehouse ids to skip (ones that already answered "busy" to a
+    send), so a caller can ask for the next-best target.
     """
     log.start(f"best_unload_target({item_id})", level="debug")
-    if outpost_is_home(outpost) and _inventory_first(item_id, min_amount, outpost):
+    if outpost_is_home(outpost) and not exclude and _inventory_first(item_id, min_amount, outpost):
         log.debug("Inventory-only item with room in Inventory -> 'inventory'")
         log.end()
         return "inventory"
@@ -330,7 +333,7 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
     others = []
     for building in discover_storage_buildings(outpost):
         component = building["component"]
-        if not component or not hasattr(component, "space_for"):
+        if not component or not hasattr(component, "space_for") or building["id"] in exclude:
             continue
         try:
             space = component.space_for(item_id)
@@ -350,7 +353,7 @@ def best_unload_target(item_id, min_amount=1, outpost=None):
     if not pool:
         resolved = outpost if outpost is not None else _home_outpost()
         is_home = bool(resolved and getattr(resolved, "is_home", False))
-        fallback = "inventory" if is_home else None
+        fallback = "inventory" if is_home and not exclude else None
         log.debug(f"no Warehouse has space_for >= {min_amount}, falling back to {fallback!r} (is_home={is_home})")
         log.end()
         return fallback
@@ -471,6 +474,10 @@ def crop_automator_forage(outpost=None):
 def crop_automator_forage_total(outpost=None):
     """Forage sitting in the Crop Automators' outputs at `outpost`."""
     return int(sum(e[1] for e in crop_automator_forage(outpost)))
+
+
+# Extra Warehouses drain_port_to_storage() tries for a stack after a "busy" send.
+BUSY_TARGET_RETRIES = 3
 
 
 def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
@@ -673,6 +680,25 @@ def send_stack(port, item_id, count, target):
     return (getattr(res, "moved", 0) or 0), getattr(res, "status", None), getattr(res, "message", "")
 
 
+def _send_to_best_target(port, item_id, count, outpost, allow_partial):
+    """Sends one stack to best_unload_target(); a Warehouse that answers "busy"
+    (a material endpoint lock, e.g. the one a blend was just taken from) is
+    skipped and the next-best one tried, up to BUSY_TARGET_RETRIES times.
+    Returns units moved; 0 leaves the stack staged."""
+    tried = []
+    for _ in range(BUSY_TARGET_RETRIES + 1):
+        target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost, exclude=tried)
+        if target is None:
+            return 0  # no local storage has room -- leave it staged, try again next cycle
+        moved, status, _message = send_stack(port, item_id, count, target)
+        if moved > 0 or status != "busy":
+            return moved
+        mark_busy(target)
+        tried.append(target)
+        log.debug(f"'{target}' busy for {item_id}, trying the next-best Warehouse")
+    return 0
+
+
 def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False):
     """
     Sends every stack currently staged in `port` (a machine output/byproduct slot
@@ -709,10 +735,7 @@ def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False)
         if include is not None and not include(item_id):
             continue
 
-        target = best_unload_target(item_id, 1 if allow_partial else count, outpost=outpost)
-        if target is None:
-            continue  # no local storage has room -- leave it staged, try again next cycle
-        moved_total += send_stack(port, item_id, count, target)[0]
+        moved_total += _send_to_best_target(port, item_id, count, outpost, allow_partial)
 
     return moved_total
 
@@ -814,13 +837,12 @@ def drain_port_inventory_first(port, outpost=None):
 def consolidate_cross_warehouse_stock(outpost=None):
     """
     Calls `.compact()` on every discovered Warehouse/Large Warehouse at
-    `outpost` to consolidate same-item stock split across multiple buildings.
-    `.compact()` operates across buildings (its outcome vocabulary matches
-    `transfer_to()`'s multi-building statuses), not just within one building.
-    It locks its Warehouse as a material endpoint for the whole cycle, so
-    concurrent take_item() calls against it get "busy". Complements
-    best_unload_target()'s consolidation-aware routing. Returns total units
-    moved across every building.
+    `outpost`. `.compact()` compacts only that one Warehouse's own slots (same
+    item split across several of its slots), never stock held by other
+    buildings. It answers `already_compact` immediately when nothing would
+    move and locks the Warehouse as a material endpoint only while moving,
+    when concurrent take_item() calls against it get "busy". Returns total
+    units moved across every building.
     """
     log.start("consolidate_cross_warehouse_stock", level="debug")
     moved_total = 0
