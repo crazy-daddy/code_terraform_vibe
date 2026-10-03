@@ -194,11 +194,11 @@ headless Automation (`infra_planner_automation.py`, role marker `# ct-automation
    field structures: `5bd36e5`. Live check pending (expected: 745 power tiles, 29 probe jobs cancelled;
    `thermal_cap_4` links 2 tiles to the bare line). Details: cheatsheet autoplay.md §11d.
 4. `autoplay_roles` + `fluid_plan` (water first, then oil, steam) + conflict tests. **Done**: `autoplay_roles`
-   (presets incl. `refinery_<fluid>`/`wildlife_<fluid>` sub-roles, home always `farm`), `fluid_plan` (one route
+   (presets incl. `wildlife_<fluid>` sub-roles, home always `farm`), `fluid_plan` (one route
    per pass, foreign footprints are walls, bridges over other lines, port reservation, `autoplay.port_status`),
    `blueprint_queue.queue_pipe_route()`, cheatsheet §11e/§11f, `tests/test_autoplay_fluid.py`. Not live-tested.
    Role presets carry `"in"`/`"out"` fluids, so outposts produce too (`condenser` steam → water,
-   `refinery_<fluid>` raw → refined). Open: `autoplay.networks` is never pruned (phase 5b).
+   `refinery` raw → refined). Open: `autoplay.networks` is never pruned (phase 5b).
 5. `extractor_plan` + `supply_tiers`: urgency tiers, fluid extractors, one drill per Smelter ore,
    plan-ahead chunks in the fluid and power passes. **Done** (not live-tested). Condensers and
    tanks are no supply (a water pump beats a condenser). Plan-ahead stock comes from the new

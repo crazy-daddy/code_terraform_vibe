@@ -29,7 +29,7 @@
 #   soon  the next Biomass phase's essence; a wanted ore whose surveyed sites
 #         are all out of every outpost's mining range; every Smelter /
 #         Fabricator host full; a refined exotic a designated role takes,
-#         with no refinery_<fluid> anywhere.
+#         with its raw deposit surveyed and no refinery anywhere.
 #   later end-state checklist: weather_<biome> and liquifier_<biome> in every
 #         biome, bio_<biome> where the biome has a processor. A locked role
 #         (autoplay_roles.unlocked() False) is always "later".
@@ -47,8 +47,9 @@
 # its slots are reserved for HOME_RESERVED_ROLES (farm, Plant Terraformers,
 # Feed Makers, Habitats: Forage comes from the home field). Leftover found needs group into founding
 # bundles: one per biome lock, one for mining, one for the rest.
-# refinery_<fluid> never founds (found False): it goes onto an outpost with
-# a raw deposit of its fluid within supply_tiers.NEAR_TILES.
+# refinery never founds (found False): it goes onto an outpost with a raw
+# exotic deposit within supply_tiers.NEAR_TILES. It takes every raw exotic
+# and makes every refined one (the Refiner picks its recipe network-wide).
 
 from swallow import swallowed
 from grid_geom import outpost_box
@@ -78,7 +79,7 @@ def _rank(urgency):
 
 def _need(role, urgency, why, **extra):
     need = {"role": role, "biome": role_flag(role, "biome"), "urgency": urgency, "why": why,
-            "found": not role.startswith("refinery_"), "locked": False}
+            "found": role != "refinery", "locked": False}
     need.update(extra)
     return need
 
@@ -161,10 +162,9 @@ def now_signals(snap):
             needs.append(_need(role, "soon", f"every {role} outpost is full"))
     taken = set(snap.get("fluids_in", []))
     raws = set([row["fluid"] for row in snap.get("fluid_sites", [])])
-    for fluid in REFINED_EXOTICS:
-        role = "refinery_" + fluid
-        if fluid in taken and "raw_" + fluid in raws and not hosts(role, outposts) and not hosts("refinery", outposts):
-            needs.append(_need(role, "soon", f"{fluid} is taken, nothing refines it"))
+    wanted = [fluid for fluid in REFINED_EXOTICS if fluid in taken and "raw_" + fluid in raws]
+    if wanted and not hosts("refinery", outposts):
+        needs.append(_need("refinery", "soon", ", ".join(wanted) + " taken, nothing refines it"))
     return needs
 
 
@@ -211,10 +211,10 @@ def _with_depot(roles, entry=None):
 
 def _site_ok(need, entry, snap):
     role = need["role"]
-    if role.startswith("refinery_"):
-        raw = "raw_" + role[len("refinery_"):]
+    if role == "refinery":
+        raws = ["raw_" + fluid for fluid in REFINED_EXOTICS]
         box = outpost_box(entry["x"], entry["y"])
-        return gap(box, [row["box"] for row in snap.get("fluid_sites", []) if row["fluid"] == raw]) <= NEAR_TILES
+        return gap(box, [row["box"] for row in snap.get("fluid_sites", []) if row["fluid"] in raws]) <= NEAR_TILES
     if need.get("ores"):
         range_m = snap.get("range_m", 0)
         return all(any(_dist(row["x"], row["y"], entry["x"], entry["y"]) <= range_m

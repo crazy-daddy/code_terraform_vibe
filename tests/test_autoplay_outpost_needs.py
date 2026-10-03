@@ -47,7 +47,7 @@ class NeedTests(unittest.TestCase):
         deep = outpost("outpost_1", "deep", types={"weather_station": 1})
         self.assertFalse(on.covers(deep, "weather_coastal"))
         self.assertTrue(on.covers(deep, "weather_deep"))
-        self.assertFalse(on.covers(outpost("o", "deep", types={"refiner": 1}), "refinery_chlorine"))
+        self.assertTrue(on.covers(outpost("o", "deep", types={"refiner": 1}), "refinery"))
 
     def test_bio_orders_without_chain_are_now(self):
         needs = on.needs(snap([HOME], bio_orders={"coastal": 2, "frozen": 1}))
@@ -83,9 +83,10 @@ class NeedTests(unittest.TestCase):
         raw = [{"id": "f1", "fluid": "raw_chlorine", "x": 100.0, "y": 0.0, "box": extractor_box(100.0, 0.0)}]
         home = dict(HOME, roles=["wildlife_chlorine"])
         needs = on.needs(snap([home], fluid_sites=raw, fluids_in=["chlorine"]))
-        need = [n for n in needs if n["role"] == "refinery_chlorine"][0]
+        need = [n for n in needs if n["role"] == "refinery"][0]
         self.assertEqual((need["urgency"], need["found"]), ("soon", False))
-        self.assertNotIn("refinery_chlorine", roles_of(on.needs(snap([home], fluid_sites=raw))))
+        self.assertIn("chlorine", need["why"])
+        self.assertNotIn("refinery", roles_of(on.needs(snap([home], fluid_sites=raw))))
 
 
 class HostTests(unittest.TestCase):
@@ -136,9 +137,9 @@ class HostTests(unittest.TestCase):
     def test_refinery_goes_only_near_raw_site_and_never_founds(self):
         far = outpost("outpost_1", "deep", 600, 600)
         near = outpost("outpost_2", "deep", 90, 0)
-        raw = [{"id": "f1", "fluid": "raw_chlorine", "x": 100.0, "y": 0.0, "box": extractor_box(100.0, 0.0)}]
+        raw = [{"id": "f1", "fluid": "raw_cryofluid", "x": 100.0, "y": 0.0, "box": extractor_box(100.0, 0.0)}]
         s = snap([far, near], fluid_sites=raw, fluids_in=["chlorine"])
-        need = on._need("refinery_chlorine", "soon", "t")
+        need = on._need("refinery", "soon", "t")
         plan = on.plan_hosts([need], s)
         self.assertEqual([d["outpost"] for d in plan["designate"]], ["outpost_2"])
         plan = on.plan_hosts([need], snap([far], fluid_sites=raw))

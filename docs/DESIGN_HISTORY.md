@@ -668,3 +668,14 @@ stationed loop for `HOME_BASE`).
   already does. `mining.reserved_yield` stays only for Rover mining trips.
 - `site_supply` runs from tier 4 (`control_room_automation.py`), the same tier the lib-driven
   Rovers, Pioneers and haulers start at, so no earlier tier depended on the old path.
+
+## §11f — One Refinery Role, No Per-Fluid Sub-Roles (2026-10-03)
+
+- The `refinery_<fluid>` sub-roles (one raw fluid in, one refined fluid out) were dropped. Only `refinery` is
+  left, and it always pipes all four raw exotics in and all four refined exotics out.
+- Reason: the Refiner controller (`lib/refiner.py`) picks its recipe from the network-wide tank fill. It
+  takes the emptiest refined fluid whose raw fluid has stock anywhere. A Refiner with only one fluid pair
+  piped in would switch to a recipe whose raw input it cannot reach, or whose output has no pipe.
+- Port budget: the refinery needs 4 gas fluids and 4 liquid fluids. A 4×4 footprint has 12 perimeter
+  tiles per layer, so it also fits next to `factory` or `wildlife`.
+- No migration: no save used the sub-roles yet.

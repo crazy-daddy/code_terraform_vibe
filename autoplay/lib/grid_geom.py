@@ -113,6 +113,11 @@ def outpost_box(x, y):
     return (tx0, ty0, tx0 + FOOTPRINT_TILES - 1, ty0 + FOOTPRINT_TILES - 1)
 
 
+def buffer_box(box, width):
+    """Inclusive tile box `box` grown by `width` tiles on every side."""
+    return (box[0] - width, box[1] - width, box[2] + width, box[3] + width)
+
+
 def extractor_box(x, y):
     """(tx0, ty0, tx1, ty1) inclusive tile box of a field extractor footprint (centre anchor)."""
     half = FOOTPRINT_TILES * TILE_M / 2

@@ -209,7 +209,7 @@ class PlannerTests(harness.StubTestCase):
         outpost_needs.snapshot = lambda: dict(self.snap)
         plan_.needs = lambda snap: []
         plan_.plan_hosts = lambda open_needs, snap: self.plan
-        plan_.read_world = lambda outposts, kits, range_m: {
+        plan_.read_world = lambda outposts, kits, range_m, pipes=(): {
             "bounds": (-900.0, 900.0, -900.0, 900.0), "outposts": outposts, "ghosts": [], "pois": [],
             "sites": [], "range_m": range_m, "hardness_limit": None}
 

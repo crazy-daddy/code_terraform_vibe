@@ -106,7 +106,10 @@ class RolesTests(harness.StubTestCase):
         presets = roles.DEFAULT_ROLE_PRESETS
         self.assertNotIn("steam_hub", presets)
         self.assertEqual(presets["condenser"], {"in": ["steam"], "out": ["water"]})
-        self.assertEqual(presets["refinery_quicksilver"], {"in": ["raw_quicksilver"], "out": ["quicksilver"]})
+        self.assertNotIn("refinery_quicksilver", presets)
+        self.assertEqual(roles.fluids_for("refinery", presets)["order"],
+                         ["raw_sulfur_gas", "raw_chlorine", "raw_cryofluid", "raw_quicksilver",
+                          "sulfur_gas", "chlorine", "cryofluid", "quicksilver"])
         self.assertEqual(presets["wildlife_ammonia"], {"in": ["ammonia"]})
         self.assertEqual(presets["liquifier_deep"], {"out": ["deep_essence"]})
         self.assertEqual(presets["storage_steam"], {"in": ["steam"], "out": ["steam"]})
@@ -216,6 +219,33 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(len(bridges), 1)
         self.assertEqual((g.tile_xy(bridges[0][1])[0], bridges[0][2]), (10, "horizontal"))
         self.assertEqual(fp.route_cost(steps)[1], 1)
+
+    def storage_setup(self, takes):
+        pump = term("wp1", g.extractor_tiles(205, 15), producer=True)
+        outpost = term("o1", g.outpost_tiles(0, 0))
+        store = term("st", g.outpost_tiles(100, 0))   # between pump and o1
+        structures = {"wp1": pump["tiles"], "o1": outpost["tiles"], "st": store["tiles"]}
+        terms = [pump, outpost] + ([store] if takes else [])
+        buffers = fp.storage_buffers({"st": (100.0, 0.0), "o1": (0.0, 0.0)}, {"st": ["storage"], "o1": "factory"})
+        return terms, structures, buffers
+
+    def test_storage_buffer_walls_other_fluids(self):
+        terms, structures, buffers = self.storage_setup(False)
+        wall, soft = fp.buffer_split(buffers, terms, structures)
+        self.assertEqual(soft, set())
+        self.assertFalse(wall & set(structures["wp1"]) or wall & set(structures["o1"]))
+        walls, held = fp.split_labels({}, "water")
+        req = fp.route_request("water", terms, {}, held, {"o1": entry(["water"])}, {"water"}, set())
+        path = fp.find_route(req, walls, fp.foreign_footprints(structures, terms) | wall, soft)
+        self.assertTrue(path)
+        self.assertFalse({t for t, _b in path} & wall)
+
+    def test_storage_buffer_soft_for_its_own_fluids(self):
+        terms, structures, buffers = self.storage_setup(True)
+        wall, soft = fp.buffer_split(buffers, terms, structures)
+        self.assertEqual(wall, set())
+        self.assertEqual(len(soft), 12 * 12 - 16)
+        self.assertEqual(set(buffers), {"st"})
 
     def test_gas_ignores_liquid(self):
         cap = term("cap1", g.extractor_tiles(205, 15), producer=True)
@@ -331,7 +361,7 @@ class FluidPassTests(harness.StubTestCase):
         for oid, x in (("ref", 400.0), ("zoo", 600.0)):
             self.world.add_outpost(oid).x = x
             self.world.outposts[oid].y = 0.0
-        self.world.notebook.set(roles.ROLES_KEY, {"ref": "refinery_quicksilver", "zoo": "wildlife_quicksilver"})
+        self.world.notebook.set(roles.ROLES_KEY, {"ref": "refinery", "zoo": "wildlife_quicksilver"})
         self.world.inventory.items = {"liquid_pipe_segment": 1000}
         for _ in range(4):
             self.run_pass()

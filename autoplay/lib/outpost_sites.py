@@ -9,6 +9,9 @@
 #     centre: other outposts (their centre, ghosts too) OUTPOST_CLEARANCE_M,
 #     every point of interest (unknown, scanned, biomass) POI_CLEARANCE_M.
 #   - The outpost's biome is the biome at the anchor point.
+#   - A bundle that keeps a pipe buffer (autoplay_roles.keeps_buffer(): the
+#     storage outpost) also needs its footprint and the STORAGE_BUFFER_TILES
+#     around it free of pipes and pipe jobs (ctx "pipes", pipe_blocks()).
 #
 # Knowledge levels per contact (in-game data only, no world knowledge):
 #   1  nocturna.points_of_interest() contact, kind "unknown"
@@ -28,7 +31,7 @@
 #            P(mineral) x that), up to ORE_CAP x ores.
 #   fluid    per wanted field fluid (the bundle's "in" fluids with a site kind):
 #            best contact within NEAR_TILES of the centre, closeness 1 .. 0.
-#   exotic   raw exotic deposits within NEAR_TILES (a later refinery_ role), capped at 1.
+#   exotic   raw exotic deposits within NEAR_TILES (a later refinery role), capped at 1.
 #   biosite  biomass contacts within BIOSITE_RANGE_M in the bundle's biome,
 #            unknown contacts by P(biomass), capped at BIOSITE_CAP.
 #   margin   biome-locked bundles: share of the MARGIN_PROBES_M rings around
@@ -55,8 +58,8 @@
 from atomic import run_batched, run_chunked
 from swallow import swallowed
 from supply_tiers import NEAR_TILES
-from grid_geom import TILE_M
-from autoplay_roles import role_flag, fluids_for
+from grid_geom import TILE_M, outpost_box, buffer_box
+from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_TILES
 from outpost_mining import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
 from survey_requests import read_known_biomass, read_blocked
@@ -96,6 +99,7 @@ START_UNITS = 4            # per anchor started (~150 operations)
 FINISH_UNITS = 14          # per anchor finished (~600 operations)
 DETAIL_CHUNK = 1           # candidates per atomic add_detail() slice (margin + room)
 VALUE_CHUNK = 20           # contacts per atomic value_rows() slice
+PIPE_BLOCK_TILES = 4       # pipe tiles bucketed in square blocks of this many tiles per side
 
 # Site kind -> field fluid for non-exotic kinds (known from the kind alone).
 KIND_FLUID = {"water": "water", "oil": "oil", "thermal": "steam"}
@@ -280,15 +284,17 @@ def field_fluids():
 
 def wants(bundle, role_presets):
     """
-    {"ores", "fluids", "biosites", "biome"} a founding bundle looks for:
+    {"ores", "fluids", "biosites", "biome", "clear"} a founding bundle looks for:
     its need's ores, the field fluids its roles take and do not make,
-    biosites when a role collects life (bio_ / liquifier_).
+    biosites when a role collects life (bio_ / liquifier_), clear land
+    without pipes when it keeps a pipe buffer (keeps_buffer()).
     """
     fluids = fluids_for(bundle.get("roles", []), role_presets)
     field = field_fluids()
     wanted = [fluid for fluid in fluids["in"] if fluid in field and fluid not in fluids["out"]]
     return {"ores": list(bundle.get("ores", [])), "fluids": wanted, "biome": bundle.get("biome"),
-            "biosites": any(role_flag(name, "biosites") for name in bundle.get("roles", []))}
+            "biosites": any(role_flag(name, "biosites") for name in bundle.get("roles", [])),
+            "clear": keeps_buffer(bundle.get("roles", []))}
 
 
 # --- context ---
@@ -298,7 +304,8 @@ def prepare(world, biome_at):
     Scoring context from a world snapshot (read_world()):
       {"bounds", "outposts": [{"id", "x", "y", "home", "depot"}], "ghosts": [(x, y)],
        "pois": [{"x", "y", "kind"}], "sites": site_rows(), "range_m", "hardness_limit",
-       "blocked" (survey_requests.blocked_targets(), optional)}
+       "blocked" (survey_requests.blocked_targets(), optional),
+       "pipes": [(tx, ty), ...] pipe and pipe-job tiles (optional, read for buffer bundles)}
     biome_at(x, y): the game's nocturna.biome_at (a read, atomic-safe);
     answers are cached per TILE_M tile.
     """
@@ -312,6 +319,7 @@ def prepare(world, biome_at):
             "pois": bucket([{"x": float(poi["x"]), "y": float(poi["y"])} for poi in world.get("pois", [])]),
             "outposts": bucket([{"x": cx, "y": cy} for cx, cy in centres]),
             "centres": centres, "home": home[0] if home else None,
+            "pipes": pipe_blocks(world.get("pipes", [])),
             "biome_at": biome_at, "biomes": {}}
 
 
@@ -328,8 +336,31 @@ def biome(ctx, x, y):
     return cache[key]
 
 
-def check(ctx, x, y, want_biome=None):
-    """None when an outpost may stand at anchor (x, y), else the reason (out_of_bounds, outpost_clearance, poi_clearance, biome <id>)."""
+def pipe_blocks(tiles):
+    """{(bx, by): [(tx, ty), ...]} of pipe tiles in PIPE_BLOCK_TILES square blocks."""
+    out = {}
+    for tx, ty in tiles:
+        out.setdefault((tx // PIPE_BLOCK_TILES, ty // PIPE_BLOCK_TILES), []).append((tx, ty))
+    return out
+
+
+def pipe_near(blocks, x, y, width=STORAGE_BUFFER_TILES):
+    """True when a pipe tile lies on the footprint anchored at (x, y) or within `width` tiles of it."""
+    tx0, ty0, tx1, ty1 = buffer_box(outpost_box(x, y), width)
+    for bx in range(tx0 // PIPE_BLOCK_TILES, tx1 // PIPE_BLOCK_TILES + 1):
+        for by in range(ty0 // PIPE_BLOCK_TILES, ty1 // PIPE_BLOCK_TILES + 1):
+            for tx, ty in blocks.get((bx, by), ()):
+                if tx0 <= tx <= tx1 and ty0 <= ty <= ty1:
+                    return True
+    return False
+
+
+def check(ctx, x, y, want_biome=None, clear=False):
+    """
+    None when an outpost may stand at anchor (x, y), else the reason
+    (out_of_bounds, outpost_clearance, poi_clearance, biome <id>, pipe_buffer).
+    clear: the bundle keeps a pipe buffer (pipe_near()).
+    """
     if not in_bounds(x, y, ctx["bounds"]):
         return "out_of_bounds"
     cx, cy = centre(x, y)
@@ -345,12 +376,14 @@ def check(ctx, x, y, want_biome=None):
         found = biome(ctx, x, y)
         if found != want_biome:
             return "biome " + str(found)
+    if clear and pipe_near(ctx.get("pipes", {}), x, y):
+        return "pipe_buffer"
     return None
 
 
-def filter_slice(anchors, ctx, want_biome):
+def filter_slice(anchors, ctx, want_biome, clear=False):
     """Anchors of a slice that pass check() (atomic-safe: reads and own caches only)."""
-    return [anchor for anchor in anchors if check(ctx, anchor[0], anchor[1], want_biome) is None]
+    return [anchor for anchor in anchors if check(ctx, anchor[0], anchor[1], want_biome, clear) is None]
 
 
 # --- scoring ---
@@ -639,7 +672,8 @@ def rank_sites(bundle, ctx, role_presets, count=REFINE_TOP, want=None):
     """
     if want is None:
         want = prepare_want(ctx, wants(bundle, role_presets))
-    coarse = run_batched(filter_slice, grid(ctx["bounds"], CANDIDATE_STEP_M), FILTER_CHUNK, ctx, want["biome"])
+    clear = want.get("clear", False)
+    coarse = run_batched(filter_slice, grid(ctx["bounds"], CANDIDATE_STEP_M), FILTER_CHUNK, ctx, want["biome"], clear)
     rough = _best(score_all(ctx, coarse, want), REFINE_TOP, want)
     seen = set()
     fine = []
@@ -650,7 +684,7 @@ def rank_sites(bundle, ctx, role_presets, count=REFINE_TOP, want=None):
             if anchor not in seen:
                 seen.add(anchor)
                 fine.append(anchor)
-    fine = run_batched(filter_slice, fine, FILTER_CHUNK, ctx, want["biome"])
+    fine = run_batched(filter_slice, fine, FILTER_CHUNK, ctx, want["biome"], clear)
     best = _best(score_all(ctx, fine, want), count * 2, want)
     full = _best(run_batched(detail_slice, best, DETAIL_CHUNK, ctx, want), count, want)
     out = []
@@ -721,10 +755,11 @@ def hardness_limit(kits):
     return max(cuts) if cuts else None
 
 
-def read_world(outposts, kits, range_m):
+def read_world(outposts, kits, range_m, pipes=()):
     """
     World snapshot for prepare(): bounds, outposts (outpost_needs.read_outposts()
     entries), outpost ghosts, POIs and discovered sites; None without nocturna.
+    pipes: pipe and pipe-job tiles (tx, ty) for buffer bundles (pipe_tiles()).
     """
     planet = get_component("nocturna")
     journal = get_component("journal")
@@ -745,7 +780,7 @@ def read_world(outposts, kits, range_m):
             swallowed("outpost_sites.read_world: journal.discovered_sites", error)
     return {"bounds": bounds, "outposts": outposts, "ghosts": read_ghosts(),
             "pois": poi_rows(points, read_known_biomass()), "sites": site_rows(sites), "range_m": range_m,
-            "blocked": read_blocked(),
+            "blocked": read_blocked(), "pipes": list(pipes),
             "hardness_limit": hardness_limit(kits)}
 
 

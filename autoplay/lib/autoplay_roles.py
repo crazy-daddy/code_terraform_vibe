@@ -43,6 +43,11 @@ DEFAULT_ROLE_PRESETS = {
     "wildlife": {"in": ["ammonia", "swamp_gas", "sulfur_gas", "chlorine", "brine", "cryofluid", "quicksilver"]},   # Habitat gas_in / liquid_in
 }
 HOME_ROLES = ["farm"]
+# A storage outpost takes many fluids, each on its own lane: no pipe of
+# another network may run within STORAGE_BUFFER_TILES of its footprint
+# (fluid_plan routes around it, outpost_sites founds it only on clear land).
+STORAGE_BUFFER_ROLES = ("storage",)
+STORAGE_BUFFER_TILES = 4
 BACKUP_ROLES = ("condenser",)   # roles whose "out" is no supply of its own (storage_<fluid> neither)
 BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 # Every fluid id (docs/database/fluids.md), for the storage_<fluid> sub-roles.
@@ -51,11 +56,10 @@ FLUIDS = ("steam", "water", "oil", "frozen_essence", "coastal_essence", "geother
           "raw_cryofluid", "cryofluid", "raw_quicksilver", "quicksilver")
 
 # One-fluid sub-roles, so exotics can be spread over several outposts:
-# refinery_<refined fluid> refines its raw feed, wildlife_<fluid> takes one
-# Habitat fluid. liquifier_<biome>: an Essence Liquifier makes its outpost
+# wildlife_<fluid> takes one Habitat fluid. Refining has no sub-roles: the
+# Refiner controller picks its recipe from the network-wide tank fill, so a
+# refinery outpost gets every raw exotic in and every refined one out. liquifier_<biome>: an Essence Liquifier makes its outpost
 # biome's essence. storage_<fluid>: tanks that take and give back one fluid.
-for _raw in DEFAULT_ROLE_PRESETS["refinery"]["in"]:
-    DEFAULT_ROLE_PRESETS["refinery_" + _raw[len("raw_"):]] = {"in": [_raw], "out": [_raw[len("raw_"):]]}
 for _fluid in DEFAULT_ROLE_PRESETS["wildlife"]["in"]:
     DEFAULT_ROLE_PRESETS["wildlife_" + _fluid] = {"in": [_fluid]}
 for _biome in BIOMES:
@@ -106,15 +110,13 @@ for _biome in BIOMES:
     ROLE_CATALOG["bio_" + _biome] = {"buildings": _chain, "biome": _biome, "unique": True, "items": True, "biosites": True}
     ROLE_CATALOG["weather_" + _biome] = {"buildings": ["weather_station"], "biome": _biome, "unique": True}
     ROLE_CATALOG["liquifier_" + _biome] = {"buildings": ["essence_liquifier"], "biome": _biome, "items": True, "biosites": True}
-for _raw in DEFAULT_ROLE_PRESETS["refinery"]["in"]:
-    ROLE_CATALOG["refinery_" + _raw[len("raw_"):]] = {"buildings": ["refiner"]}
 for _fluid in DEFAULT_ROLE_PRESETS["wildlife"]["in"]:
     ROLE_CATALOG["wildlife_" + _fluid] = {"buildings": ["habitat"], "items": True}
 for _fluid in FLUIDS:
     ROLE_CATALOG["storage_" + _fluid] = {"buildings": [TANKS]}
 # Roles one Fluid-parameterised building stands for many times over; an
-# observed tank or Refiner does not tell which of them it is.
-FAMILY_PREFIXES = ("storage_", "refinery_", "wildlife_", "liquifier_", "weather_")
+# observed tank or Habitat does not tell which of them it is.
+FAMILY_PREFIXES = ("storage_", "wildlife_", "liquifier_", "weather_")
 
 # Overcrowding (simworker machine table): counted buildings that lose 10%
 # per building over the outpost cap; every other counted building is exempt.
@@ -308,6 +310,11 @@ def warehouse_slots(type_counts):
 def biome_locks(roles):
     """Sorted biome locks of a designation's roles; more than one means no outpost can host it."""
     return sorted(set([role_flag(name, "biome") for name in role_list(roles) if role_flag(name, "biome")]))
+
+
+def keeps_buffer(roles):
+    """True when a designation (role name or list) holds a STORAGE_BUFFER_ROLES role."""
+    return any(name in STORAGE_BUFFER_ROLES for name in role_list(roles))
 
 
 def outpost_roles():

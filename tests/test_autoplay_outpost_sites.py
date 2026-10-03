@@ -203,6 +203,12 @@ class BudgetTests(unittest.TestCase):
         outposts = [HOME] + [{"id": f"o{i}", "x": float(100 * i), "y": 700.0, "home": False} for i in range(8)]
         return os_.prepare(world(outposts=outposts, pois=pois, sites=sites), west_frozen)
 
+    def test_filter_slice_fits_with_dense_pipes(self):
+        ctx = self.dense()
+        ctx["pipes"] = os_.pipe_blocks([(tx, ty) for tx in range(30, 70) for ty in range(30, 70) if (tx + ty) % 2])
+        anchors = [(450 + 7 * i, 450) for i in range(os_.FILTER_CHUNK)]
+        self.assertLess(ops(os_.filter_slice, anchors, ctx, "coastal", True), ATOMIC_STEP_BUDGET)
+
     def test_filter_slice_fits(self):
         ctx = self.dense()
         anchors = [(450 + 7 * i, 450) for i in range(os_.FILTER_CHUNK)]
@@ -309,3 +315,20 @@ class ReaderTests(harness.StubTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PipeBufferTests(unittest.TestCase):
+    def test_storage_bundle_wants_clear_land(self):
+        self.assertTrue(os_.wants({"roles": ["storage", "drone_depot"]}, PRESETS)["clear"])
+        self.assertFalse(os_.wants(mining("iron_ore"), PRESETS)["clear"])
+
+    def test_pipe_within_buffer_blocks_only_buffer_bundles(self):
+        ctx = os_.prepare(dict(world(), pipes=[(45, 50)]), west_frozen)   # footprint tiles x 40..43, buffer 36..47
+        self.assertEqual(os_.check(ctx, 400, 500, None, True), "pipe_buffer")
+        self.assertIsNone(os_.check(ctx, 400, 500, None, False))
+
+    def test_pipe_just_outside_buffer_passes(self):
+        ctx = os_.prepare(dict(world(), pipes=[(48, 50), (35, 50)]), west_frozen)   # footprint tiles 40..43, buffer 36..47
+        self.assertIsNone(os_.check(ctx, 400, 500, None, True))
+        ctx = os_.prepare(dict(world(), pipes=[(47, 50)]), west_frozen)
+        self.assertEqual(os_.check(ctx, 400, 500, None, True), "pipe_buffer")

@@ -108,7 +108,7 @@ class TierTests(unittest.TestCase):
         self.assertEqual({c[3]: c[0] for c in cands}["w1"], st.TIER_NOW)
         presets = roles.DEFAULT_ROLE_PRESETS
         self.assertEqual(roles.fluids_for(["condenser", "storage_water"], presets)["supply"], [])
-        self.assertEqual(roles.fluids_for(["refinery_chlorine"], presets)["supply"], ["chlorine"])
+        self.assertEqual(roles.fluids_for(["refinery"], presets)["supply"], ["sulfur_gas", "chlorine", "cryofluid", "quicksilver"])
 
 
 class ChunkTests(unittest.TestCase):

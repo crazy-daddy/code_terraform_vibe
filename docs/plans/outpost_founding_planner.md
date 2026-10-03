@@ -75,9 +75,10 @@ Produces a list of **needs**: `{role, biome|None, urgency: now|soon|later, why}`
   an outpost; Biomass phase needs an essence the network can't make; Smelter/Fab demand that home slots
   can't take (home `is_full`, Phase E); ore requested with no site within mining range of any outpost.
 - **b) Later** (end-state checklist): one outpost per biome (5) with `weather_<biome>`, `liquifier_<biome>`,
-  `bio_<biome>` where the biome has a processor; wildlife needs. Refining is fast, so `refinery_<fluid>` is
+  `bio_<biome>` where the biome has a processor; wildlife needs. Refining is fast, so `refinery` is
   never a reason to found: it is a **secondary role** added to an existing outpost (slots free, under cap)
-  that has raw deposits of that fluid within `NEAR_TILES`.
+  that has a raw exotic deposit within `NEAR_TILES`. It takes all four raw exotics and makes all four
+  refined ones (the Refiner controller picks its recipe network-wide).
   Gated by tech: a locked role is still a need at `later`, but only `now`/`soon` needs trigger a proposal.
 - **c) Merge roles** onto existing outposts first: a need is met by designating an existing outpost
   (same biome if locked, slots free under the cap, site needs within range) before proposing a new
@@ -118,7 +119,7 @@ Score for a candidate given the role bundle it should host (higher better, weigh
   `mineral` contacts and unknown POIs. Bonus for ores no outpost covers yet. Penalty for sites too hard for
   any unlocked drill or Pioneer (`drill.hardness_limit()`).
 - **Fluid sites:** wanted fluid sites (`site.fluid`) within `supply_tiers.NEAR_TILES` (steam vents for
-  `power`); raw exotics only as a small bonus (future secondary `refinery_*` role).
+  `power`); raw exotics only as a small bonus (future secondary `refinery` role).
 - **Biosites:** count of bio-scanned `biomass` POIs (plus expected value for unknown POIs) within drone
   range, for `bio_<biome>`.
 - **Biome margin:** distance from anchor to the nearest other biome (`biome_at` probe ring); a site near a
@@ -187,7 +188,10 @@ Archive (one dict per concern):
 - **One `storage` outpost at most**, for large stockpiles nobody uses locally yet: life-form stockpiles,
   stray tar until a Refiner takes it, etc. It holds only exempt buildings, so it may go over the cap. Need
   signal: such stock has no home elsewhere (home slot budget §1l-2, eviction holds). No Supply Dock there: docks
-  are penalized.
+  are penalized. It takes many fluids (tanks, every one on its own lane), so it keeps a pipe buffer of
+  `STORAGE_BUFFER_TILES` (4) around its footprint: the fluid pass routes no other network through it, and
+  site scoring founds it only where no pipe runs within that buffer (§11e, §11i). Designating `storage` onto
+  an existing outpost has no buffer check yet: no `storage` need is generated so far.
 - **Pioneer mining early, drills later:** score ore clusters for Pioneer reach first. Once drills are unlocked,
   ore proximity matters less (drills sit on the site) and logistics distance matters more. This is also a
   relocation trigger (above).

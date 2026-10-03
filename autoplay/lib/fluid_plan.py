@@ -25,6 +25,14 @@
 # preset order that still need one (reserved); a footprint with no free tile
 # left is full for that medium (autoplay.port_status).
 #
+# Storage buffer: a storage outpost (designated
+# autoplay_roles.STORAGE_BUFFER_ROLES) takes many fluids, and every one needs
+# its own lane in. The tiles within STORAGE_BUFFER_TILES of its footprint (storage_buffer_tiles(), minus every
+# structure footprint) are walls for a fluid that outpost does not take, and
+# soft tiles (SOFT_TILE_COST) for one it takes, so a through-route of its own
+# fluid stays short. When a wall buffer leaves no route (a producer standing
+# inside it), the route is searched again without the buffer.
+#
 # Urgency (supply_tiers): a field producer whose connection is plan-ahead
 # (far from every consumer of its fluid while a nearer one supplies it) is
 # left out of the normal routes. Only when no normal route is open, the power
@@ -36,7 +44,7 @@
 from archive import archive
 from atomic import run_atomic, run_batched, run_chunked
 from swallow import swallowed
-from grid_geom import outpost_tiles, extractor_tiles, route_init, route_seed, route_step, route_path, path_plan, run_pieces, truncate_steps, SEED_CHUNK
+from grid_geom import outpost_tiles, outpost_box, buffer_box, tile_key, extractor_tiles, route_init, route_seed, route_step, route_path, path_plan, run_pieces, truncate_steps, SEED_CHUNK
 from infra_topology import fluid_medium, footprint_ports, outpost_positions, home_outpost_id, surveyed_sites
 from blueprint_queue import stock, queue_pipe_route, open_planned
 from construction_plan import DEFAULT_PRIORITY
@@ -171,9 +179,36 @@ def foreign_footprints(structures, terms):
     return {tile for name, tiles in structures.items() if name not in own for tile in tiles if tile not in own_tiles}
 
 
-def find_route(request, walls, foreign):
+def storage_buffer_tiles(x, y, width=autoplay_roles.STORAGE_BUFFER_TILES):
+    """Tiles within `width` tiles of the outpost footprint anchored at (x, y), the footprint left out."""
+    box = outpost_box(x, y)
+    tx0, ty0, tx1, ty1 = buffer_box(box, width)
+    return {tile_key(tx, ty) for tx in range(tx0, tx1 + 1) for ty in range(ty0, ty1 + 1)
+            if not (box[0] <= tx <= box[2] and box[1] <= ty <= box[3])}
+
+
+def storage_buffers(outpost_xy, roles_map):
+    """{outpost_id: buffer tiles} of the live outposts whose designation keeps a buffer (autoplay_roles.keeps_buffer())."""
+    out = {}
+    for outpost_id, roles in roles_map.items():
+        if outpost_id in outpost_xy and autoplay_roles.keeps_buffer(roles):
+            out[outpost_id] = storage_buffer_tiles(*outpost_xy[outpost_id])
+    return out
+
+
+def buffer_split(buffers, terms, structures):
+    """(wall tiles, soft tiles) of the storage buffers for one fluid: soft around a terminal of it, wall elsewhere; footprints left out."""
+    own = {term["name"] for term in terms}
+    footprints = {tile for tiles in structures.values() for tile in tiles}
+    wall, soft = set(), set()
+    for outpost_id, tiles in buffers.items():
+        (soft if outpost_id in own else wall).update(tiles)
+    return (wall - soft - footprints, soft - footprints)
+
+
+def find_route(request, walls, foreign, soft=None):
     """route_path() for a route_request(): atomic seed slices and router steps."""
-    state = run_atomic(route_init, (), list(request["goals"]), walls | foreign, walls)
+    state = run_atomic(route_init, (), list(request["goals"]), walls | foreign, walls, soft)
     run_batched(route_seed, request["sources"], SEED_CHUNK, state)
     run_chunked(route_step, state)
     return route_path(state)
@@ -224,6 +259,7 @@ class FluidPlanner:
     def __init__(self, log):
         self.log = log
         self.failed = set()   # (fluid, terminal name) the game rejected or no route reached this run; retried after restart
+        self.buffers = {}     # storage_buffers() of the current pass
 
     def run_pass(self, topo, power_idle=True):
         """
@@ -250,6 +286,7 @@ class FluidPlanner:
         deferred = {row["name"] for row in producers if row["name"] not in urgent}
         routable = {row["fluid"] for row in producers if row["fluid"]} | {f for entry in demand.values() for f in entry["out"]}
         structures = _structures(outpost_xy, producers, topo.structure_rows)
+        self.buffers = storage_buffers(outpost_xy, autoplay_roles.outpost_roles())
         fluids = []
         for fluid in fluid_order([f for entry in demand.values() for f in entry["in"]]):
             if fluid in routable:
@@ -317,7 +354,11 @@ class FluidPlanner:
     def _route(self, fluid, medium, request, walls, held, structures, terms, ahead=False):
         """Searches and queues one route (a plan-ahead one cut to PLAN_AHEAD_MAX_PIECES); returns the block's outcome line."""
         foreign = foreign_footprints(structures, terms)
-        path = find_route(request, walls, foreign)
+        buffer_wall, buffer_soft = buffer_split(self.buffers, terms, structures)
+        path = find_route(request, walls, foreign | buffer_wall, buffer_soft)
+        if not path and buffer_wall:
+            self.log.debug(f"Fluid {fluid}: no route around the storage buffer; searching through it.")
+            path = find_route(request, walls, foreign, buffer_soft)
         if not path:
             names = sorted(set(request["goals"].values()))
             for name in names:

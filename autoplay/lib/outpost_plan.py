@@ -48,6 +48,8 @@ import outpost_sites
 from outpost_needs import URGENCIES, needs, plan_hosts, log_plan
 from outpost_sites import REFINE_TOP, DETAIL_CHUNK, check, score, detail_slice, prepare, prepare_want, wants
 from outpost_sites import rank_sites, log_sites, read_world
+from infra_topology import Topology
+from grid_geom import tile_xy
 import survey_requests
 
 PROPOSALS_KEY = "autoplay.outpost_proposals"
@@ -286,13 +288,19 @@ def resolve(entry):
         entry["status"] = "approved" if entry.get("ok") and not blockers(entry) else "proposed"
 
 
+def pipe_tiles(log):
+    """(tx, ty) of every gas and liquid pipe and pipe job on the map (infra_topology.Topology read)."""
+    occ = Topology().read(log).occ
+    return [tile_xy(tile) for layer in ("gas", "liquid") for tile in occ.get(layer, {})]
+
+
 def recheck(entry, ctx, want):
     """
     Placement check (and, after a drag, a re-score) of a found proposal
     against `ctx` (outpost_sites.prepare()); want = its bundle's
     prepare_want(), None to skip the re-score.
     """
-    entry["blocked"] = check(ctx, entry["x"], entry["y"], entry.get("lock"))
+    entry["blocked"] = check(ctx, entry["x"], entry["y"], entry.get("lock"), autoplay_roles.keeps_buffer(entry.get("roles", [])))
     entry["biome"] = outpost_sites.biome(ctx, entry["x"], entry["y"])
     if entry.get("recheck") and want is not None:
         if entry["blocked"] is None:
@@ -532,7 +540,11 @@ class OutpostPlanner:
         fresh = self.rank_tick is not None and tick - self.rank_tick < RERANK_TICKS
         if signature == self.signature and self.ctx is not None and fresh:
             return
-        world = read_world(snap["outposts"], snap["kits"], snap["range_m"])
+        pipes = []
+        if any(autoplay_roles.keeps_buffer(bundle["roles"]) for bundle in plan["found"]):
+            pipes = pipe_tiles(self.log)
+            self.log.debug(f"Outposts: {len(pipes)} pipe tile(s) read for the storage buffer check.")
+        world = read_world(snap["outposts"], snap["kits"], snap["range_m"], pipes)
         planet = get_component("nocturna")
         if world is None or planet is None:
             self.log.debug("Outposts: planet unreadable; sites not ranked.")
