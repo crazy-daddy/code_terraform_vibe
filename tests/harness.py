@@ -68,6 +68,7 @@ import logistics_requests  # noqa: E402
 import site_supply  # noqa: E402
 import site_plan  # noqa: E402
 import supply_dock  # noqa: E402
+import fluid_routing  # noqa: E402
 import tree_console  # noqa: E402
 from tree_console import TreeConsole  # noqa: E402
 
@@ -87,6 +88,7 @@ def _reset_module_state(world):
     production._WARNED_UNKNOWN_MANUAL_ITEMS.clear()
     production._DISCOVERY_MEMO.clear()
     production._RECIPE_INDEX_MEMO.clear()
+    fluid_routing._NETWORK_WALK.clear()
     production.DISCOVERY_TTL_TICKS = 0  # the stub clock stands still while tests add buildings; DiscoveryMemoTests turns it on
     for module in list(sys.modules.values()):
         module_file = getattr(module, "__file__", None) or ""

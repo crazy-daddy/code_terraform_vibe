@@ -128,7 +128,16 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     Pump check one `fill_pct()` on the already-connected id; input routers return on a healthy
     peer. When discovery does run, `TickedDiscoveryCache` holds results for
     `DISCOVERY_CACHE_INTERVAL_TICKS=100` simulation ticks (every router), invalidated on every
-    blacklist/drop, so a newly built/assigned tank is seen within ~10 s.
+    blacklist/drop, so a newly assigned tank is seen within ~10 s. For `FluidOutputRouter` a
+    refresh only re-reads eligibility (one `.fluid()` per tank, one `tank_assignments` read) over
+    the network walk (`outposts()` × `buildings(type_id)` × `get_component()`), which
+    `fluid_routing.network_buildings()` reuses for `NETWORK_WALK_INTERVAL_TICKS=600` ticks (~60 s)
+    across every output router in the script with the same type ids. A newly built tank is seen
+    within that window; a cached tank whose `.fluid()`/`fill_pct()` raises or a `connect()`
+    answering `"not_found"` drops the walk at once. Rebalance reads each candidate's `fill_pct()`
+    once (least-full first, ties in discovery order). The fast path reads `fill_pct()` before
+    eligibility, so a full current tank costs no eligibility read. `PerEntryBlacklist` drops an
+    entry once it has expired.
 - **Thermal Cap** — keeps `pressure()` off `1.0` overpressure ceiling (hit = *entire* chamber blown to atmosphere — `.is_overpressured()`). Proportional release-valve (`steam_out`,
   via `set_throttle()`) bands on `pressure()`: `≥0.90→1.0`, `≥0.60→0.6`, `≥0.30→0.3`, else
   `THROTTLE_TRICKLE=0.3` (release below 30% pressure, into Gas Tank/Turbines, not lost). Relief valve (`set_relief()`, dumps to atmosphere) engages only once

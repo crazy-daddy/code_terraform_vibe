@@ -95,7 +95,8 @@ RESCAN_INTERVAL_TICKS = 300
 # at once) so repeated reselection attempts in a short window don't each pay
 # the full network walk. Simulation ticks (same units as RESCAN_INTERVAL_TICKS
 # above), not step() calls -- see FluidOutputRouter._discovered_at_tick for why:
-# ~10 s at normal speed, so a newly built/assigned tank is seen that fast.
+# ~10 s at normal speed, so a newly assigned tank is seen that fast (a newly built one
+# within fluid_routing.NETWORK_WALK_INTERVAL_TICKS).
 DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 

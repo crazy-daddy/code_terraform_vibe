@@ -89,6 +89,14 @@ def tank_matches_assignment(building_id, fluid_id, assignments=None):
     return assignments.get(building_id) == fluid_id
 
 
+def tank_assignment(building_id):
+    """building_id's get_tank_assignments() value, or None: one archive read, without copying and
+    filtering the whole registry (the per-call check on an already-connected tank)."""
+    stored = archive.get(TANK_ASSIGNMENTS_KEY, {})
+    value = stored.get(building_id) if isinstance(stored, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
 def tank_is_eligible_target(building, fluid_id, assignments=None):
     """
     Whether a resolved Liquid/Gas Tank building (discover_network_buildings(resolve=True) shape --
@@ -107,13 +115,13 @@ def tank_is_eligible_target(building, fluid_id, assignments=None):
     A tank assigned RETIRING_ASSIGNMENT is never eligible, latched or not -- checked before the
     latch, since a retiring tank keeps its latch until it has drained to 0.
 
-    assignments: as in tank_matches_assignment().
+    assignments: as in tank_matches_assignment(); None reads only this tank's entry (tank_assignment()).
     """
     b_id = getattr(building, "id", None)
     if not b_id:
         return False
     if assignments is None:
-        assignments = get_tank_assignments()
+        assignments = {b_id: tank_assignment(b_id)}
     if assignments.get(b_id) == RETIRING_ASSIGNMENT:
         return False
     current_fluid = None
@@ -311,6 +319,8 @@ class PerEntryBlacklist:
         still_blacklisted = curr_tick == 0 or age < duration
         if not still_blacklisted:
             log.debug(f"PerEntryBlacklist: '{entry_id}' blacklist expired (age={age} >= {duration}), eligible again")
+            self._blacklisted_at.pop(entry_id, None)
+            self._durations.pop(entry_id, None)
         return still_blacklisted
 
     def blacklist(self, entry_id, curr_tick, duration_ticks=None):
@@ -322,7 +332,10 @@ class PerEntryBlacklist:
         self._blacklisted_at[entry_id] = curr_tick
 
     def filter_reachable(self, entries, curr_tick, key=lambda e: e):
-        return [e for e in entries if not self.is_blacklisted(key(e), curr_tick)]
+        listed = self._blacklisted_at
+        if not listed:
+            return list(entries)
+        return [e for e in entries if key(e) not in listed or not self.is_blacklisted(key(e), curr_tick)]
 
 
 def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
@@ -562,9 +575,10 @@ def warn_about_unassigned_tanks(curr_tick):
     archive.set(LAST_UNASSIGNED_WARNING_TICK_KEY, curr_tick)
 
     tanks = discover_network_buildings(TANK_TYPE_IDS, resolve=True)
+    assignments = get_tank_assignments()
     blocked = sorted({
         building.id for building, _outpost_id in tanks
-        if not (hasattr(building, "fluid") and _safe_fluid(building)) and building.id not in get_tank_assignments()
+        if not (hasattr(building, "fluid") and _safe_fluid(building)) and building.id not in assignments
     })
     if blocked:
         _add_blank_tank_assignments(blocked)
@@ -611,7 +625,9 @@ class TickedDiscoveryCache:
     interval_ticks *simulation* ticks, and on the next get() after invalidate() (every
     blacklist/drop -- a failed target is exactly when a newly built/assigned tank is most likely the
     answer). curr_tick == 0 (no clock) always recomputes -- a stale list is the failure mode this
-    cache must never cause.
+    cache must never cause. FluidOutputRouter's compute reads eligibility over the cached
+    network_buildings() walk, so there a refresh catches a newly assigned tank at once and a newly
+    built one within NETWORK_WALK_INTERVAL_TICKS.
 
     Tick-based on purpose, NOT counted in slow-path calls: routers only reach discovery on the slow
     path, so a call counter advanced once per rebalance/stall event and a new tank could stay
@@ -638,6 +654,59 @@ class TickedDiscoveryCache:
             self.value = compute()
             self._computed_at_tick = curr_tick
         return self.value
+
+
+# The FluidOutputRouter network walk (outpost_network.outposts() x buildings(type_id) x
+# get_component()) is reused for this many simulation ticks (~60 s at normal speed) by every router
+# in the script with the same type ids. Only which buildings exist is cached: eligibility (latch,
+# tank_assignments) and fill are read live on every TickedDiscoveryCache refresh / rebalance. A
+# newly built tank is seen within this window; a cached building that fails to answer, or a
+# connect() answering "not_found", forces a fresh walk at once.
+NETWORK_WALK_INTERVAL_TICKS = 600
+# tuple(type_ids) -> {"tick": walk tick, "buildings": [resolved component, ...]}
+_NETWORK_WALK = {}
+
+
+def _walk_key(type_ids):
+    return (type_ids,) if isinstance(type_ids, str) else tuple(type_ids)
+
+
+def invalidate_network_walk(type_ids):
+    """Drops the cached walk for type_ids, so the next network_buildings() call walks again."""
+    _NETWORK_WALK.pop(_walk_key(type_ids), None)
+
+
+def network_buildings(type_ids, curr_tick):
+    """Resolved components of every type_ids building network-wide (discover_network_buildings()
+    order), from a walk at most NETWORK_WALK_INTERVAL_TICKS old. curr_tick == 0 (no clock) or a
+    clock that went backwards always walks."""
+    key = _walk_key(type_ids)
+    entry = _NETWORK_WALK.get(key)
+    if (entry is None or curr_tick == 0 or curr_tick < entry["tick"]
+            or curr_tick - entry["tick"] >= NETWORK_WALK_INTERVAL_TICKS):
+        entry = {"tick": curr_tick, "buildings": [b for b, _ in discover_network_buildings(key, resolve=True)]}
+        _NETWORK_WALK[key] = entry
+        log.debug(f"network walk {key}: {len(entry['buildings'])} building(s)")
+    return entry["buildings"]
+
+
+def eligible_targets(buildings, fluid_id):
+    """The buildings tank_is_eligible_target() accepts for fluid_id (all of them for None), in order,
+    with one archive read and one .fluid() per building. None when a building's .fluid() raised (it
+    was most likely removed): the caller walks again."""
+    if fluid_id is None:
+        return list(buildings)
+    try:
+        fluids = [b.fluid() for b in buildings]
+    except Exception as error:
+        swallowed("fluid_routing.eligible_targets: building.fluid", error)
+        return None
+    assignments = get_tank_assignments()
+    return [
+        b for b, fluid in zip(buildings, fluids)
+        if assignments.get(b.id) != RETIRING_ASSIGNMENT
+        and (fluid == fluid_id if fluid else assignments.get(b.id) == fluid_id)
+    ]
 
 
 def rank_own_outpost_first(pairs, own_outpost_id):
@@ -853,6 +922,10 @@ class FluidInputRouter:
         return _ret
 
 
+def _target_id(target):
+    return target.id
+
+
 class FluidOutputEvent:
     """Result of FluidOutputRouter.ensure_connection(). .kind is one of "no_port"/"healthy"/"waiting"/"not_found"/"connected"/"exhausted". .target_id/.fill_pct are only meaningful for "connected" (default None/0.0 otherwise)."""
 
@@ -899,6 +972,8 @@ class FluidOutputRouter:
         # wholesale-cleared -- a building's identity doesn't change between
         # scans, only the candidate list goes stale.
         self._target_lookup = {}
+        # Candidate ids of the last refresh; the "rediscovered" debug line is logged only when they change.
+        self._last_ids = None
         # Tracked locally instead of re-querying the port every step.
         # Synced from the port's stable id exactly once, at bootstrap (via
         # connected_id(), not connected_to() -- connected_to() returns the
@@ -918,14 +993,40 @@ class FluidOutputRouter:
         return self._cache.value
 
     def _discover_targets_cached(self, curr_tick):
-        """Target objects network-wide, via TickedDiscoveryCache (tick-based, invalidated on blacklist)."""
+        """Eligible target objects network-wide, via TickedDiscoveryCache (tick-based, invalidated on
+        blacklist). A refresh re-reads eligibility live over the cached network walk
+        (network_buildings()); the walk itself only repeats every NETWORK_WALK_INTERVAL_TICKS."""
         def discover():
-            targets = [b for b, _ in discover_network_buildings(self.type_ids, fluid_id=self.fluid_id)]
-            for building in targets:
-                self._target_lookup[building.id] = building
-            log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(targets)} candidate target(s): {[b.id for b in targets]}")
+            buildings = network_buildings(self.type_ids, curr_tick)
+            targets = eligible_targets(buildings, self.fluid_id)
+            if targets is None:
+                invalidate_network_walk(self.type_ids)
+                buildings = network_buildings(self.type_ids, curr_tick)
+                targets = eligible_targets(buildings, self.fluid_id)
+            if targets is None:
+                assignments = get_tank_assignments()
+                targets = [b for b in buildings if tank_is_eligible_target(b, self.fluid_id, assignments)]
+            ids = [b.id for b in targets]
+            self._target_lookup.update(zip(ids, targets))
+            if ids != self._last_ids:
+                self._last_ids = ids
+                log.debug(f"FluidOutputRouter({self.type_ids}): rediscovered {len(targets)} candidate target(s): {ids}")
             return targets
         return self._cache.get(curr_tick, discover)
+
+    def _least_full_first(self, candidates):
+        """[(target, fill_pct), ...] least-full first, ties in discovery order (the order of
+        sorted(candidates, key=fill_pct_of)), one fill_pct() per candidate."""
+        if not candidates:
+            return []
+        try:
+            fills = [t.fill_pct() for t in candidates]
+        except Exception as error:
+            swallowed("fluid_routing.FluidOutputRouter._least_full_first: fill_pct", error)
+            invalidate_network_walk(self.type_ids)
+            self._cache.invalidate()
+            fills = [fill_pct_of(t) for t in candidates]
+        return [(candidates[i], fill) for fill, i in sorted(zip(fills, range(len(candidates))))]
 
     def _resolve_target(self, target_id):
         """Building object for target_id, preferring the cache filled by discovery over a fresh get_component() round trip."""
@@ -972,23 +1073,23 @@ class FluidOutputRouter:
 
         # Fast path: a connection already judged healthy needs no network
         # scan, just the cached (not necessarily fresh) resolved target --
-        # see _resolve_target(). Still re-checks tank_is_eligible_target()
-        # every call so an operator reassigning this exact tank to a
-        # different fluid is caught immediately, not only whenever it next
-        # happens to stall. In the overwhelmingly common case this target is
-        # already latched to self.fluid_id, so the check is a cheap "read
-        # one cached building's .fluid()", not a registry lookup at all.
-        if (current_id and not self.blacklist.is_blacklisted(current_id, curr_tick)
-                and (self.fluid_id is None or tank_is_eligible_target(self._resolve_target(current_id), self.fluid_id))
-                and fill_pct_of(self._resolve_target(current_id)) < self.rebalance_fill_fraction):
-            if not is_stalled:
-                self.was_healthy = True
-            _ret = FluidOutputEvent("healthy")
-            log.end()
-            return _ret
+        # see _resolve_target(). Fill first (a full target fails here without
+        # the eligibility read), then tank_is_eligible_target() every call so
+        # an operator reassigning this exact tank to a different fluid is
+        # caught immediately, not only whenever it next happens to stall: one
+        # .fill_pct(), one .fluid() and one archive read.
+        if current_id and not self.blacklist.is_blacklisted(current_id, curr_tick):
+            current = self._resolve_target(current_id)
+            if (fill_pct_of(current) < self.rebalance_fill_fraction
+                    and (self.fluid_id is None or tank_is_eligible_target(current, self.fluid_id))):
+                if not is_stalled:
+                    self.was_healthy = True
+                _ret = FluidOutputEvent("healthy")
+                log.end()
+                return _ret
 
         all_known_targets = self._discover_targets_cached(curr_tick)
-        targets = self.blacklist.filter_reachable(all_known_targets, curr_tick, key=lambda t: t.id)
+        targets = self.blacklist.filter_reachable(all_known_targets, curr_tick, key=_target_id)
         if not targets:
             # Every known target is still within its own blacklist window
             # (or none exist at all) -- deliberately do NOT wipe the
@@ -1002,9 +1103,7 @@ class FluidOutputRouter:
         # several), falling through to the next since not every target is
         # necessarily physically pipe-reachable from this port's location.
         log.debug(f"FluidOutputRouter({self.type_ids}): current='{current_id}' not healthy, rebalancing among {len(targets)} reachable candidate(s) (least-full first)")
-        for target in sorted(targets, key=fill_pct_of):
-            if target.id == current_id:
-                continue
+        for target, fill in self._least_full_first([t for t in targets if t.id != current_id]):
             try:
                 res = port.connect(target.id)
             except Exception as error:
@@ -1019,11 +1118,14 @@ class FluidOutputRouter:
                 self.ticks_since_connect = 0
                 self.was_healthy = False
                 self._connected_id = target.id
-                log.debug(f"FluidOutputRouter({self.type_ids}): connected -> '{target.id}' (fill={fill_pct_of(target):.2f})")
-                _ret = FluidOutputEvent("connected", target_id=target.id, fill_pct=fill_pct_of(target))
+                log.debug(f"FluidOutputRouter({self.type_ids}): connected -> '{target.id}' (fill={fill:.2f})")
+                _ret = FluidOutputEvent("connected", target_id=target.id, fill_pct=fill)
                 log.end()
                 return _ret
             elif res.status != "busy":
+                if res.status == "not_found":
+                    invalidate_network_walk(self.type_ids)
+                    self._cache.invalidate()
                 if on_connect_notice:
                     on_connect_notice(target.id, res.status, res.message)
 
