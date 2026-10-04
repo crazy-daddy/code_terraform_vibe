@@ -13,3 +13,7 @@
 [submodule "early_game_runner"]
 	path = early_game_runner
 	url = https://github.com/crazy-daddy/code-terraform-earlygame-automation.git
+[submodule "internals"]
+	path = internals
+	url = https://github.com/crazy-daddy/code_terraform_internals.git
+	update = none

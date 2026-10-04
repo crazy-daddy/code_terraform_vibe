@@ -11,7 +11,6 @@ docs/Code-Terraform-DOCS-Manual*.md
 *.pyo
 *.pyd
 .codeterraform/
-internals/
 /.claude
 *codeterraform-retired*
 codeterraform-scripts.json
