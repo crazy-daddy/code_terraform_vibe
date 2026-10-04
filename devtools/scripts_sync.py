@@ -46,13 +46,15 @@ just filled from empty. A slot whose imports reach a lib/ module the game
 hasn't applied yet (deployed file != the Library's `deployedSource` in
 codeterraform-workspace.json) is still pushed but not restarted: a restart
 would run the new script against the stale cached lib. `--apply-libs` applies
-changed libs over the external-command channel (the game restarts every
-running script that imports them); without it, the in-game "Apply & restart
-all" swaps the cache. Once its libs are applied, a held-back slot is
+changed libs over the external-command channel, one at a time with imported
+libs first (the game restarts every running script that imports them at each
+apply); without it, the in-game "Apply & restart all" swaps the cache. Once its libs are applied, a held-back slot is
 restarted (held slots persist in devtools/.sync-backups/held_restarts.json, so
 a later run restarts them after an in-game Apply), and so is any script left in "error" that this process pushed or
 that reaches a lib it changed (once per script source, so a real bug does not
-loop). `--no-restart` pushes only.
+loop). Run status comes from codeterraform-fleet.json, which the game keeps
+current; codeterraform-workspace.json's can be minutes stale. Every printed
+line also goes to devtools/.sync-backups/sync.log. `--no-restart` pushes only.
 
 Matching ignores a trailing `_<number>` (`bio_lab_1.py` matches `bio_lab.py`),
 except for slot types listed in ROLE_MATCHED (`panel` for Custom Panels,
@@ -137,7 +139,7 @@ import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -155,6 +157,9 @@ BACKUP_DIR = REPO / "devtools" / ".sync-backups"
 # While this file exists, watch queues changes instead of pushing them, so a
 # multi-file edit lands as one consistent state once the file is removed.
 SYNC_HOLD_FILE = BACKUP_DIR / "hold"
+# Every line ok()/warn()/err()/echo() prints, UTC-stamped, across runs.
+SYNC_LOG = BACKUP_DIR / "sync.log"
+SYNC_LOG_MAX_BYTES = 2_000_000
 PARAMS_CACHE = REPO / "devtools" / ".sync-backups" / "script_params.json"
 RESOLVED_PREVIEW_DIR = REPO / ".pyright-resolved"
 UNMATCHED = "_unmatched"            # under scripts/; staged, never a source
@@ -234,16 +239,40 @@ def show(path: Path) -> str:
         return str(path)
 
 
+def log_line(level: str, msg: str) -> None:
+    """Appends one UTC-stamped line to SYNC_LOG (same timestamp format as the
+    game's logs/ files, so the two line up). Rotates once at SYNC_LOG_MAX_BYTES
+    into sync.1.log. A log failure never stops the sync."""
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    try:
+        SYNC_LOG.parent.mkdir(parents=True, exist_ok=True)
+        if SYNC_LOG.exists() and SYNC_LOG.stat().st_size > SYNC_LOG_MAX_BYTES:
+            os.replace(SYNC_LOG, SYNC_LOG.with_name("sync.1.log"))
+        with SYNC_LOG.open("a", encoding="utf-8") as fh:
+            for line in msg.splitlines() or [""]:
+                fh.write("[%s] [%s] %s\n" % (stamp, level, line))
+    except OSError:
+        pass
+
+
+def echo(msg: str) -> None:
+    typer.echo(msg)
+    log_line("info", msg)
+
+
 def err(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.RED, err=True)
+    log_line("error", msg)
 
 
 def warn(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.YELLOW)
+    log_line("warn", msg)
 
 
 def ok(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.GREEN)
+    log_line("ok", msg)
 
 
 # ------------------------------------------------------------------ discovery
@@ -267,7 +296,7 @@ def resolve_save(save_dir: Optional[Path]) -> Path:
             err("No save directory found under %s." % (appdata() / GAME_DIR))
             err("Pass --save-dir, or set CT_SAVE_DIR.")
             raise typer.Exit(2)
-        typer.echo("Save (auto-detected): %s" % save_dir)
+        echo("Save (auto-detected): %s" % save_dir)
     if not save_dir.is_dir():
         err("Not a directory: %s" % save_dir)
         raise typer.Exit(2)
@@ -403,6 +432,59 @@ def slot_scripts(save_dir: Path) -> dict:
             name = info.get("name") or "%s.py" % sid
             slots[name[:-3] if name.endswith(".py") else name] = info
     return slots
+
+
+FLEET_JSON = "codeterraform-fleet.json"
+_fleet_cache: dict = {}
+
+
+def read_fleet_scripts(save_dir: Path) -> Optional[dict]:
+    """{file stem: {status, errorLine, errorMessage}} from the game's
+    `codeterraform-fleet.json`, or None when missing or unreadable.
+
+    The game rewrites this small file within ~0.5 s of any change to it,
+    run status included. codeterraform-workspace.json is rewritten only when
+    a script or library source, or the save's structure (machines, slots,
+    libraries, blueprints, ...) changes, so its `status`/`errorLine`/
+    `errorMessage` (and each Library's `deployedSource`) can stay stale for
+    minutes; live_slot_scripts() takes run status from here instead."""
+    path = save_dir / FLEET_JSON
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    cached = _fleet_cache.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        with path.open(encoding="utf-8") as fh:
+            raw = json.load(fh).get("scripts")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    scripts = {}
+    for sid, info in raw.items():
+        if isinstance(info, dict):
+            name = info.get("name") or "%s.py" % sid
+            scripts[name[:-3] if name.endswith(".py") else name] = info
+    _fleet_cache[path] = (mtime, scripts)
+    return scripts
+
+
+def live_slot_scripts(save_dir: Path) -> dict:
+    """slot_scripts() with `status`, `errorLine` and `errorMessage` taken from
+    the fresher fleet file (read_fleet_scripts()) wherever it lists the slot."""
+    slots = slot_scripts(save_dir)
+    fleet = read_fleet_scripts(save_dir) or {}
+    live = {}
+    for stem, info in slots.items():
+        fresh = fleet.get(stem)
+        if isinstance(fresh, dict):
+            info = dict(info, status=fresh.get("status"), errorLine=fresh.get("errorLine"),
+                        errorMessage=fresh.get("errorMessage"))
+        live[stem] = info
+    return live
 
 
 def slot_id(save_dir: Path, stem: str) -> str:
@@ -1356,7 +1438,7 @@ def libs_reached(text: str, opts: Options) -> set:
 
 def slot_status(save_dir: Path, stem: str) -> Optional[str]:
     """The game's own run status for a slot ("running", "idle", ...), or None."""
-    info = slot_scripts(save_dir).get(stem)
+    info = live_slot_scripts(save_dir).get(stem)
     return info.get("status") if isinstance(info, dict) else None
 
 
@@ -1397,11 +1479,11 @@ def tidy_unmatched(index: dict, opts: Options) -> None:
         why = ("now matched by %s" % show(matched) if matched
                else "role slot, paired by role instead" if role_slot else "slot gone from the save")
         if opts.dry_run:
-            typer.echo("  would drop %-24s (blank, %s)" % (show(path), why))
+            echo("  would drop %-24s (blank, %s)" % (show(path), why))
             continue
         try:
             path.unlink()
-            typer.echo("  drop  %-28s blank, %s" % (show(path), why))
+            echo("  drop  %-28s blank, %s" % (show(path), why))
         except OSError:
             pass
 
@@ -1428,10 +1510,10 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
     if source is None:
         if not was_empty:
             if not quiet_skips:
-                typer.echo("  skip  %-28s has code, no match in scripts/" % path.name)
+                echo("  skip  %-28s has code, no match in scripts/" % path.name)
             return False
         if not quiet_skips:
-            typer.echo("  skip  %-28s no match in scripts/" % path.name)
+            echo("  skip  %-28s no match in scripts/" % path.name)
         stage_unmatched(path, text, opts)
         return False
 
@@ -1447,7 +1529,7 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
         mode, old_id, params = upgrade_fill_for(opts.save_dir, path.stem) if was_empty else ("normal", None, None)
         if mode == "hold":
             if path not in HELD_SLOTS:
-                typer.echo("  hold  %-28s %s" % (path.name, old_id))
+                echo("  hold  %-28s %s" % (path.name, old_id))
             HELD_SLOTS.add(path)
             return False
         HELD_SLOTS.discard(path)
@@ -1679,7 +1761,12 @@ def register_new_libraries(lib_index: dict, opts: Options) -> int:
 #                        the game picked up), else "source_changed".
 #   apply-all-libraries  applies every Library whose saved source differs
 #                        from its deployed one.
-# Both restart every script that imports an applied Library. Result:
+# Both restart, at once, every running script that imports an applied Library
+# directly or through other libs; a script stopped in "error" is not restarted.
+# A restarted script resolves its other imports against each Library's
+# deployed (last applied) source. apply-all-libraries walks Libraries in the
+# game's own registration order, so this tool applies one Library at a time,
+# imported libs before their importers (apply_order()). Result:
 # {ok, reason?, libraryApply: {applied: ["x.py"], affected, restartFailed,
 # notApplied: [{library, line, error} | {library, changed}]}}; reasons include
 # research_required, not_found, source_changed, already_applied,
@@ -1687,9 +1774,12 @@ def register_new_libraries(lib_index: dict, opts: Options) -> int:
 APPLY_PICKUP_TIMEOUT_S = 15.0
 APPLY_PICKUP_POLL_S = 0.5
 # After an apply, how long recover_scripts() keeps looking for importers that
-# crash on restart (the game rewrites the workspace file on its own cadence).
+# crash on restart (run status comes from the fleet file, ~0.5 s behind).
 RECOVER_SETTLE_S = 10.0
 RECOVER_POLL_S = 1.0
+# A script still in "error" this long after our restart crashed again; sooner,
+# the fleet file may not show the restart yet.
+RECOVER_REERROR_S = 3.0
 
 # lib key -> source this process applied, so libs_awaiting_apply() does not
 # report it again before the game rewrites the workspace file.
@@ -1704,12 +1794,14 @@ _PUSHED_SCRIPTS: set = set()
 _HELD_RESTARTS: set = set()
 _HELD_LOADED: set = set()
 HELD_FILE = BACKUP_DIR / "held_restarts.json"
-# stem -> (source, apply generation, run serial replaced) of the last restart
-# this process sent (note_restart()); bumped generation = libs were applied.
+# stem -> (source, apply generation, monotonic time) of the last restart this
+# process sent (note_restart()); bumped generation = libs were applied.
 _RESTARTS: dict = {}
 _APPLY_GENERATION = [0]
 # Scripts already reported as erroring again, so a watch loop warns once.
 _REPORTED_ERRORS: set = set()
+# stem -> last reason recover_scripts() logged for skipping it.
+_RECOVER_NOTES: dict = {}
 
 
 def _same_source(a, b) -> bool:
@@ -1778,14 +1870,26 @@ def _report_apply(result: dict, label: str) -> None:
         warn("  apply %-28s not applied (%s)" % (label, result.get("reason")))
 
 
+def apply_order(keys, closure: dict) -> list:
+    """keys sorted so every lib comes after the libs it imports (directly or
+    through other libs, per closure), ties by name. A lib's in-set import
+    closure strictly contains that of each lib it imports, so sorting by its
+    size is a topological order; libs in an import cycle keep name order."""
+    keys = set(keys)
+    return sorted(keys, key=lambda k: (len(closure.get(k, set()) & keys), k))
+
+
 def apply_pending_libraries(opts: Options) -> int:
     """Applies every deployed lib module whose code differs from the one the
     game runs, over the command channel. Waits up to APPLY_PICKUP_TIMEOUT_S
     for the game to pick up the files on disk, then applies only modules
     whose saved source in game equals our file (a module edited in game
-    stays unapplied, with a warning). One apply-all-libraries when those are
-    all the game has pending, else one apply-library each. Returns how many
-    were applied. The game restarts every running script importing them."""
+    stays unapplied, with a warning). A module that imports a pending module
+    not ready yet waits too, since its importers would restart against the
+    old copy. Sends one apply-library per module in apply_order(), so each
+    restart of an importer finds the libs it imports already applied; a
+    module whose import failed to apply is skipped. Returns how many were
+    applied. The game restarts every running script importing them."""
     pending = libs_awaiting_apply(opts)
     if not pending:
         return 0
@@ -1805,57 +1909,65 @@ def apply_pending_libraries(opts: Options) -> int:
         warn("  apply %-28s not a game Library yet, register it first" % (key + ".py"))
     for key in sorted(waiting):
         warn("  apply %-28s game holds other source (in-game edit, or file not picked up yet); not applied" % (key + ".py"))
+    blocked = pending - ready
+    for key in sorted(ready):
+        missing = opts.lib_closure.get(key, set()) & blocked
+        if missing:
+            warn("  apply %-28s imports unapplied %s; not applied" % (key + ".py", ", ".join(sorted(missing))))
+    ready = {k for k in ready if not opts.lib_closure.get(k, set()) & blocked}
     if not ready:
         return 0
+    order = apply_order(ready, opts.lib_closure)
+    log_line("debug", "  apply order: %s" % ", ".join(order))
     if opts.dry_run:
-        ok("  would apply %s" % ", ".join(sorted(k + ".py" for k in ready)))
+        ok("  would apply %s" % ", ".join(k + ".py" for k in order))
         return 0
-    others = {k for k, info in entries.items()
-              if k not in ready and not _same_source(info.get("source"), info.get("deployedSource"))}
-    if len(ready) > 1 and not others:
-        result = send_game_command(opts.save_dir, "apply-all-libraries")
-        _report_apply(result, "all libraries")
-        applied = {str(n)[:-3] for n in (result.get("libraryApply") or {}).get("applied") or []}
-        if result.get("reason") == "nothing_pending":
-            applied = set(ready)  # the game is ahead of its workspace file
-    else:
-        applied = set()
-        for key in sorted(ready):
-            info = entries[key]
-            result = send_game_command(opts.save_dir, "apply-library", scriptId=info.get("id"), source=info.get("source"))
-            _report_apply(result, key + ".py")
-            if result.get("ok") or result.get("reason") == "already_applied":
-                applied.add(key)
-            elif result.get("reason") in ("no_session", "unconfirmed", "busy"):
+    applied = set()
+    failed = set()
+    for key in order:
+        if opts.lib_closure.get(key, set()) & failed:
+            warn("  apply %-28s skipped, imports %s which did not apply" % (
+                key + ".py", ", ".join(sorted(opts.lib_closure[key] & failed))))
+            failed.add(key)
+            continue
+        info = entries[key]
+        result = send_game_command(opts.save_dir, "apply-library", scriptId=info.get("id"), source=info.get("source"))
+        _report_apply(result, key + ".py")
+        if result.get("ok") or result.get("reason") == "already_applied":
+            applied.add(key)
+            _APPLIED_LIBS[key] = bodies[key]
+        else:
+            failed.add(key)
+            if result.get("reason") in ("no_session", "unconfirmed", "busy"):
                 break  # game unreachable: do not wait 20 s per remaining module
-    for key in applied & ready:
-        _APPLIED_LIBS[key] = bodies[key]
-    if applied & ready:
+    if applied:
         _APPLY_GENERATION[0] += 1
-    return len(applied & ready)
-
-
-def _run_serial(info: dict) -> tuple:
-    """Changes whenever the game starts a new run of the script."""
-    return (info.get("runHistorySerial"), info.get("runtimeRunSerial"))
+    return len(applied)
 
 
 def note_restart(save_dir: Path, stem: str, body: str) -> None:
     """Records a restart this process sent: which source, under which applied
-    lib state, and the run serial it replaced, so recover_scripts() can tell
-    a stale "error" in the lagging workspace file from a fresh one."""
-    info = slot_scripts(save_dir).get(stem)
-    _RESTARTS[stem] = (body, _APPLY_GENERATION[0], _run_serial(info) if isinstance(info, dict) else None)
+    lib state, and when, so recover_scripts() neither repeats it nor mistakes
+    the pre-restart "error" for a new crash."""
+    _RESTARTS[stem] = (body, _APPLY_GENERATION[0], time.monotonic())
+
+
+def _note_recover(stem: str, reason: str) -> None:
+    """Logs why recover_scripts() left a script stopped, once per change."""
+    if _RECOVER_NOTES.get(stem) != reason:
+        _RECOVER_NOTES[stem] = reason
+        log_line("debug", "  recover %s: %s" % (stem, reason))
 
 
 def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
     """Restarts the scripts a lib or script push left stopped, once every lib
     they reach is applied: held-back slots (sync_file()), and any script in
     "error" that this process pushed or that reaches a lib it wrote (e.g. an
-    import that failed against a half-applied lib set). A script is restarted
-    again only after its source or the applied libs changed; a repeat error
-    under the same state is reported once, not retried. With settle_s, keeps
-    looking that long for importers the game's own apply restart made crash.
+    import that failed against a half-applied lib set). Run status comes from
+    live_slot_scripts(). A script is restarted again only after its source or
+    the applied libs changed; one still in "error" RECOVER_REERROR_S after
+    that restart is reported once, not retried. With settle_s, keeps looking
+    that long for importers the game's own apply restart made crash.
     Returns how many were restarted."""
     if not opts.restart or opts.dry_run:
         return 0
@@ -1866,7 +1978,7 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
         context = read_workspace_context(opts.save_dir)
         if context is None:
             return restarted
-        scripts = slot_scripts(opts.save_dir)
+        scripts = live_slot_scripts(opts.save_dir)
         gone = {s for s in _HELD_RESTARTS if s not in scripts or unassigned_slot(opts.save_dir, s)}
         if gone:
             _HELD_RESTARTS.difference_update(gone)
@@ -1882,16 +1994,20 @@ def recover_scripts(opts: Options, settle_s: float = 0.0) -> int:
                 continue
             reached = libs_reached(body, opts)
             if not held and stem not in _PUSHED_SCRIPTS and not reached & _TOUCHED_LIBS:
+                _note_recover(stem, "error not ours: %s" % (info.get("errorMessage") or ""))
                 continue  # an error we did not cause: leave it to the operator
             if reached & pending:
+                _note_recover(stem, "waits for unapplied %s" % ", ".join(sorted(reached & pending)))
                 continue  # still reaches an unapplied lib; a later pass retries
             last = _RESTARTS.get(stem)
             if not held and last and last[0] == body and last[1] == _APPLY_GENERATION[0]:
-                if last[2] != _run_serial(info) and stem not in _REPORTED_ERRORS:
+                if time.monotonic() - last[2] >= RECOVER_REERROR_S and stem not in _REPORTED_ERRORS:
                     _REPORTED_ERRORS.add(stem)
                     warn("  run   %-28s in error again after restart (line %s): %s" % (
                         stem + ".py", info.get("errorLine"), info.get("errorMessage") or ""))
-                continue  # same state as our last restart: stale status, or a real bug
+                continue  # same state as our last restart: not shown yet, or a real bug
+            if not held and (live_slot_scripts(opts.save_dir).get(stem) or {}).get("status") != "error":
+                continue  # started meanwhile (operator, game) during this pass's earlier restarts
             if held:
                 _HELD_RESTARTS.discard(stem)
                 save_held(opts.save_dir)
@@ -2060,7 +2176,7 @@ def sync_user_stubs(opts: Options) -> bool:
     if merged is None or (path.is_file() and path.read_text(encoding="utf-8") == merged):
         return False
     if opts.dry_run:
-        typer.echo("  would update %s" % USER_STUBS)
+        echo("  would update %s" % USER_STUBS)
         return True
     if path.is_file():
         backup(path)
@@ -2139,43 +2255,43 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     """Show the resolved tier, the scripts/lib mapping, and what each save script would do."""
     opts = make_opts(save_dir, scripts_dir, strict, False, False, no_renumber, force_tier,
                      include_autoplay=include_autoplay)
-    typer.echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
+    echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
     script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     report_conflicts(conflicts)
 
-    typer.echo("\nResolved scripts (%d):" % len(script_index))
+    echo("\nResolved scripts (%d):" % len(script_index))
     for key, path in sorted(script_index.items()):
-        typer.echo("  %-24s %s" % (key, show(path)))
-    typer.echo("\nResolved lib/ (%d):" % len(lib_index))
+        echo("  %-24s %s" % (key, show(path)))
+    echo("\nResolved lib/ (%d):" % len(lib_index))
     for key, path in sorted(lib_index.items()):
-        typer.echo("  %-24s %s" % (key, show(path)))
+        echo("  %-24s %s" % (key, show(path)))
 
     missing = missing_slot_sources(opts.save_dir)
     if missing:
-        typer.echo("\nKnown to the game, no file on disk yet (%d) - `once`/`watch` will materialize these from workspace state:" % len(missing))
+        echo("\nKnown to the game, no file on disk yet (%d) - `once`/`watch` will materialize these from workspace state:" % len(missing))
         for sid in sorted(missing):
-            typer.echo("  %-24s %s" % (sid + ".py", "has code" if missing[sid].strip() else "empty"))
+            echo("  %-24s %s" % (sid + ".py", "has code" if missing[sid].strip() else "empty"))
 
     orphans = orphan_slots(opts.save_dir)
     if orphans:
-        typer.echo("\nOrphaned slots (%d) - `once`/`watch` will move these to %s: %s" % (
+        echo("\nOrphaned slots (%d) - `once`/`watch` will move these to %s: %s" % (
             len(orphans), show(ORPHAN_DIR / opts.save_dir.name), ", ".join(p.name for p in orphans)))
 
     staged = sorted(opts.unmatched_dir.glob("*.py")) if opts.unmatched_dir.is_dir() else []
     if staged:
-        typer.echo("\nStaged in %s (%d), waiting to be written and moved:" % (show(opts.unmatched_dir), len(staged)))
+        echo("\nStaged in %s (%d), waiting to be written and moved:" % (show(opts.unmatched_dir), len(staged)))
         for path in staged:
             text = read(path) or ""
-            typer.echo("  %-24s %s" % (path.name, "blank" if not text.strip() else "in progress"))
+            echo("  %-24s %s" % (path.name, "blank" if not text.strip() else "in progress"))
 
     opts.lib_index = lib_index
     opts.lib_closure = lib_dependency_closure(lib_index)
     pending = libs_awaiting_apply(opts)
     if pending:
-        typer.echo("\nlib/ modules the game hasn't applied yet (%d): %s" % (len(pending), ", ".join(sorted(pending))))
+        echo("\nlib/ modules the game hasn't applied yet (%d): %s" % (len(pending), ", ".join(sorted(pending))))
 
     files = sorted(p for p in opts.save_dir.glob("*.py") if is_candidate(p, opts.save_dir) and p not in orphans)
-    typer.echo("\nSave scripts (%d):" % len(files))
+    echo("\nSave scripts (%d):" % len(files))
     for path in files:
         text = read(path) or ""
         empty = is_empty(text, opts.strict)
@@ -2204,8 +2320,8 @@ def status(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
                     state += "  (no restart: unapplied lib %s)" % ", ".join(blockers)
             if role_note:
                 state += "  [%s]" % role_note
-        typer.echo("  %-28s %s" % (path.name, state))
-    typer.echo("")
+        echo("  %-28s %s" % (path.name, state))
+    echo("")
 
 
 @app.command()
@@ -2217,12 +2333,12 @@ def once(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     """Push every matched save script, restart it in game, and sync lib/."""
     opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs,
                      include_autoplay)
-    typer.echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
+    echo("Active tier: %s%s" % (opts.active_tier, "  (forced)" if force_tier else ""))
     script_index, lib_index, conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
     report_conflicts(conflicts)
-    typer.echo("Syncing %s" % opts.save_dir)
+    echo("Syncing %s" % opts.save_dir)
     n = sync_all(script_index, lib_index, opts)
-    typer.echo("%s %d file(s)." % ("Would sync" if dry_run else "Synced", n))
+    echo("%s %d file(s)." % ("Would sync" if dry_run else "Synced", n))
     if not dry_run:
         write_resolved_preview(opts.scripts_dir, opts.active_tier, opts.save_dir)
 
@@ -2247,8 +2363,8 @@ def register_libs(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Script
     if registered is None:
         err("Cannot read %s - open this save in the game first." % WORKSPACE_JSON)
         raise typer.Exit(1)
-    typer.echo("Deployed lib modules not registered in game: %s" % (", ".join(sorted(k for k in lib_index if k not in registered)) or "none"))
-    typer.echo("Registered %d." % register_new_libraries(lib_index, opts))
+    echo("Deployed lib modules not registered in game: %s" % (", ".join(sorted(k for k in lib_index if k not in registered)) or "none"))
+    echo("Registered %d." % register_new_libraries(lib_index, opts))
 
 
 @app.command(name="apply-libs")
@@ -2265,13 +2381,13 @@ def apply_libs_cmd(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Scrip
         err("Cannot read %s - open this save in the game first." % WORKSPACE_JSON)
         raise typer.Exit(1)
     pending = libs_awaiting_apply(opts)
-    typer.echo("Deployed lib modules not applied in game: %s" % (", ".join(sorted(pending)) or "none"))
+    echo("Deployed lib modules not applied in game: %s" % (", ".join(sorted(pending)) or "none"))
     _TOUCHED_LIBS.update(pending)
     n = apply_pending_libraries(opts)
-    typer.echo("Applied %d." % n)
+    echo("Applied %d." % n)
     load_held(opts.save_dir)
     if n or _HELD_RESTARTS:
-        typer.echo("Restarted %d held-back or crashed script(s)." % recover_scripts(opts, settle_s=RECOVER_SETTLE_S if n else 0.0))
+        echo("Restarted %d held-back or crashed script(s)." % recover_scripts(opts, settle_s=RECOVER_SETTLE_S if n else 0.0))
 
 
 class Watcher:
@@ -2404,13 +2520,13 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
                      include_autoplay)
     watcher = Watcher(opts)
 
-    typer.echo("Save     %s" % opts.save_dir)
-    typer.echo("Scripts  %s (tier %s)" % (opts.scripts_dir, opts.active_tier))
-    typer.echo("Autoplay %s" % ("%s included (--include-autoplay)" % show(AUTOPLAY_DIR) if include_autoplay else "off"))
-    typer.echo("Staging  %s for game files with no match" % show(opts.unmatched_dir))
-    typer.echo("Push     every matched slot follows scripts/ (in-game edits are overwritten, backups in %s)" % show(BACKUP_DIR))
-    typer.echo("Restart  %s" % ("off (--no-restart)" if no_restart else "running and newly filled slots, unless an unapplied lib/ is reached"))
-    typer.echo("Apply    %s" % ("changed lib/ modules in game (--apply-libs)" if apply_libs else "off, use the in-game Apply & restart all (or --apply-libs)"))
+    echo("Save     %s" % opts.save_dir)
+    echo("Scripts  %s (tier %s)" % (opts.scripts_dir, opts.active_tier))
+    echo("Autoplay %s" % ("%s included (--include-autoplay)" % show(AUTOPLAY_DIR) if include_autoplay else "off"))
+    echo("Staging  %s for game files with no match" % show(opts.unmatched_dir))
+    echo("Push     every matched slot follows scripts/ (in-game edits are overwritten, backups in %s)" % show(BACKUP_DIR))
+    echo("Restart  %s" % ("off (--no-restart)" if no_restart else "running and newly filled slots, unless an unapplied lib/ is reached"))
+    echo("Apply    %s" % ("changed lib/ modules in game (--apply-libs)" if apply_libs else "off, use the in-game Apply & restart all (or --apply-libs)"))
     if dry_run:
         warn("Dry run: nothing will be written.")
     watcher.sweep()
@@ -2421,7 +2537,7 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     if opts.autoplay_dir is not None and opts.autoplay_dir.is_dir():
         observer.schedule(Events(watcher.note_repo), str(opts.autoplay_dir), recursive=True)
     observer.start()
-    typer.echo("Ready. Ctrl-C to stop.")
+    echo("Ready. Ctrl-C to stop.")
     try:
         while True:
             time.sleep(0.2)
@@ -2440,7 +2556,7 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
             except Exception as exc:
                 err("  drain error (watcher still running): %s" % exc)
     except KeyboardInterrupt:
-        typer.echo("\nStopped.")
+        echo("\nStopped.")
     finally:
         observer.stop()
         observer.join()
