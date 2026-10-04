@@ -11,6 +11,10 @@
 # Recommended card size: 2 x 2.
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from cash import budget, priority_order, move_priority, kind_of, is_operating, OPERATING, CONSUMER_LABELS
 from swallow import swallowed
 

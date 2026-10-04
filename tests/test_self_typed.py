@@ -71,6 +71,13 @@ class SelfTypesGenerationTests(unittest.TestCase):
         for name, expr in self_typing.SELF_TYPE_OVERRIDES.items():
             self.assertIn("%s: %s" % (name, expr), self.stub)
 
+    def test_component_export_only_when_defined(self):
+        import_line = self.stub.splitlines()[1]
+        self.assertNotIn("BatteryComponent", import_line)
+        stub, _ = self_typing.build_self_types(
+            SERVER_FRAGMENT, BUILTINS_FRAGMENT + '\nclass BatteryComponent(Component):\n    """Battery: Stores."""\n')
+        self.assertIn("BatteryComponent", stub.splitlines()[1])
+
     def test_stub_is_valid_python(self):
         ast.parse(self.stub)
 

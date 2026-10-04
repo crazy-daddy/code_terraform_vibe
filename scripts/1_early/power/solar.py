@@ -13,10 +13,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import solar as self
 
-clock = get_component("clock")
-home = get_component("outpost_home")
+def need(component):
+    # Core component this script cannot run without; fail loudly at start if missing.
+    assert component is not None
+    return component
+
+
+clock = need(get_component("clock"))
+home = need(get_component("outpost_home"))
 research = get_component("research")
-shop = get_component("shop")
+shop = need(get_component("shop"))
 nocturna = get_component("nocturna")
 
 pressure_sensor = get_component("pressure_sensor")

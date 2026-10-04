@@ -43,8 +43,14 @@ COST_ITEM     = 1       # Heat cost moving to item sector
 COST_EMPTY    = 7       # Heat cost moving to empty sector
 IDLE_HOURS    = 0.5     # World-hours to wait when no targets are known
 
-scanner = get_component(SCANNER_ID)
-shop = get_component("shop")
+def need(component):
+    # Core component this script cannot run without; fail loudly at start if missing.
+    assert component is not None
+    return component
+
+
+scanner = need(get_component(SCANNER_ID))
+shop = need(get_component("shop"))
 home = get_component("outpost_home")
 
 # No lib/ access in this tier: local stand-in for lib/swallow.py's swallowed().
@@ -63,7 +69,7 @@ def _swallowed(where, error):
 
 
 try:
-    clock = get_component("clock")
+    clock = need(get_component("clock"))
     RSPH = clock.real_seconds_per_hour()
 except Exception as error:
     _swallowed("harvester: get_component", error)
@@ -176,7 +182,7 @@ def put_away():
         if not self.get_held():
             return True
         r = self.store()
-        if r.status == "ok":
+        if r.status == "ok" and r.item_id:
             try:
                 sale = shop.sell_all(r.item_id)
                 if sale.status == "ok":

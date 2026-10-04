@@ -583,6 +583,7 @@ class SupplyDock(Building):
         self.input = Slot(self, self.input_buffer, 200)
         self.order = None
         self.enabled = False
+        self.input_busy = False
 
     def current_order(self):
         return self.order

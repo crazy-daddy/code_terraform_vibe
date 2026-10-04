@@ -3,10 +3,10 @@
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from user_stubs import heater as self
+    from user_stubs import heater as self, BatteryComponent
 
 clock = get_component("clock")
-battery = get_component("battery_1")
+assert clock is not None
 
 ORDER = (5, 6, 4, 7, 3, 8, 2, 9, 1, 10)
 optimal_power = None
@@ -29,14 +29,20 @@ def _swallowed(where, error):
 
 
 def get_battery_pct():
-    if not battery:
-        return 1.0
+    # Charge across every Battery at this outpost (Solar buys more over time);
+    # 1.0 (no throttling) when there is none or it can't be read.
+    level = 0.0
+    capacity = 0.0
     try:
-        cap = battery.get_capacity()
-        return (battery.get_level() / cap) if cap > 0 else 1.0
+        for ref in self.outpost.buildings("battery"):
+            battery: "BatteryComponent | None" = get_component(ref.id)  # type: ignore[assignment]  # by-id lookup typed as Component
+            if battery:
+                level += battery.get_level()
+                capacity += battery.get_capacity()
     except Exception as error:
-        _swallowed("heater.get_battery_pct: battery.get_capacity", error)
+        _swallowed("heater.get_battery_pct: battery read", error)
         return 1.0
+    return (level / capacity) if capacity > 0 else 1.0
 
 while True:
     current_day = int(clock.get_day())

@@ -42,9 +42,15 @@ TICK = 1                    # seconds between drive-loop checks
 STUCK_TICKS = 20            # zero speed for this long mid-drive = stuck
 RESCAN_IDLE_SECONDS = 120   # once fully explored, re-check this often for new POIs
 
-nocturna = get_component("nocturna")
-journal = get_component("journal")
-network = get_component("outpost_network")
+def need(component):
+    # These core components always exist; fail loudly at start if not.
+    assert component is not None
+    return component
+
+
+nocturna = need(get_component("nocturna"))
+journal = need(get_component("journal"))
+network = need(get_component("outpost_network"))
 comms = get_component("comms")
 
 print(f"[scout] Pioneer {self.id} starting temporary Scout role (100k-150k TP window)...")
@@ -199,8 +205,11 @@ def explore(p):
         if survey.status == "ok":
             resolved = resolved + 1
             found = survey.site
+            if found is None:
+                continue
             if found.kind() == "mineral":
-                print(f"[scout] surveyed {found.name} - {found.item_id} hardness {found.hardness} purity {found.purity}")
+                # Runtime type is MiningSite; stubs can't narrow Site on kind(), so read by name.
+                print(f"[scout] surveyed {found.name} - {getattr(found, 'item_id', None)} hardness {getattr(found, 'hardness', None)} purity {getattr(found, 'purity', None)}")
             else:
                 print(f"[scout] surveyed {found.name} - {found.kind()}")
         else:

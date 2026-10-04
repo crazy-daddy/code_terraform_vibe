@@ -145,7 +145,7 @@ def _queue(schedule, targets):
     return head + rest
 
 
-def schedule_habitats(habitat_ids, kits, peak=0):
+def schedule_habitats(habitat_ids, kits, peak: "int | None" = 0):
     """
     Habitat count for schedule_for(): the largest count of owned Habitats
     (deployed + kits in Inventory) seen so far, `peak` being the last pass's

@@ -36,7 +36,7 @@
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from user_stubs import bio_lab as self
+    from user_stubs import bio_lab as self, BioCollector, BioExchange
 
 STORE = "inventory"    # freight endpoint; at a remote outpost use a local bin
 REAGENT_BUFFER = 5     # spare units to keep beyond the recipe's need
@@ -70,12 +70,20 @@ def find_machine(kind, configured):
     return None
 
 
-collector = find_machine("bio_collector", COLLECTOR_ID)
-exchange = find_machine("bio_exchange", EXCHANGE_ID)
-inventory = get_component("inventory")
-shop = get_component("shop")
-commander = get_component("commander")
-research = get_component("research")
+# Stubs type by-name lookups as plain Component; the ids above are these machines.
+collector: "BioCollector | None" = find_machine("bio_collector", COLLECTOR_ID)  # type: ignore[assignment]  # Component -> BioCollector
+exchange: "BioExchange | None" = find_machine("bio_exchange", EXCHANGE_ID)  # type: ignore[assignment]  # Component -> BioExchange
+
+def need(component):
+    # These core components always exist; fail loudly at start if not.
+    assert component is not None
+    return component
+
+
+inventory = need(get_component("inventory"))
+shop = need(get_component("shop"))
+commander = need(get_component("commander"))
+research = need(get_component("research"))
 
 if collector is None:
     print("[lab] no Bio Collector found — is it powered on?")
@@ -338,6 +346,9 @@ while True:
             continue
 
         info = result.info
+        if info is None:
+            sleep(IDLE_SLEEP)
+            continue
         recipes[info.fragment_id] = info.required_recipe
         per_sample = recipe_cost(info.required_recipe)
         print("[lab] analyzed", info.name, "-", info.rarity,

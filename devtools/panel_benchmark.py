@@ -138,7 +138,7 @@ def bench_in_loop_1000(n):
 
 def bench_in_native_1000(n):
     for i in range(n):
-        999 in data
+        999 in data  # pyright: ignore[reportUnusedExpression]  # the measured op
 
 
 def bench_sum_loop_1000(n):
@@ -186,12 +186,12 @@ def bench_slice_assign(n):
 
 def bench_list_concat(n):
     for i in range(n):
-        row3 + row3
+        row3 + row3  # pyright: ignore[reportUnusedExpression]  # the measured op
 
 
 def bench_list_mul(n):
     for i in range(n):
-        [0] * 1156
+        [0] * 1156  # pyright: ignore[reportUnusedExpression]  # the measured op
 
 
 def bench_tuple_iter(n):

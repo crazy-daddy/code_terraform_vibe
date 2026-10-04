@@ -36,7 +36,7 @@
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from user_stubs import bio_collector as self
+    from user_stubs import bio_collector as self, BioExchange
 
 BOOTSTRAP_UNKNOWNS = 10   # unknown dots to sample before targeting begins
 EXPLORE_EVERY = 5         # after that, every Nth trip is still an unknown dot
@@ -71,7 +71,8 @@ def find_machine(kind, configured):
     return None
 
 
-exchange = find_machine("bio_exchange", EXCHANGE_ID)
+# Stubs type by-name lookups as plain Component; this id is the Bio Exchange.
+exchange: "BioExchange | None" = find_machine("bio_exchange", EXCHANGE_ID)  # type: ignore[assignment]  # Component -> BioExchange
 
 if exchange is None:
     print("[collector] no Bio Exchange found — is it powered on?")

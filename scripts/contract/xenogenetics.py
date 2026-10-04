@@ -22,5 +22,5 @@ else:
         print("[XENOGENETICS] No Transmitter found!")
     else:
         transmitter.connect("earth")
-        res = transmitter.transmit(c.id, alien_list)
+        res = transmitter.transmit(c.id, alien_list)  # pyright: ignore[reportArgumentType]  # stub types value as invariant list[JsonValue]
         print("Transmit result:", res.status, "-", res.message)

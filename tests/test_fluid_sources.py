@@ -63,11 +63,13 @@ class FakeRouter:
 
     def ensure(self, port, curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
         for args in self.fire:
+            assert on_dropped is not None
             on_dropped(*args)
         return self.event
 
     def ensure_connection(self, port, curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
         for args in self.fire:
+            assert on_blacklisted is not None
             on_blacklisted(*args)
         return self.event
 

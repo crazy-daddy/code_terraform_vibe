@@ -19,7 +19,7 @@ class HysteresisLatch:
     `active`.
     """
 
-    def __init__(self, on_at, off_at, on_above=True, unknown=False, active=False):
+    def __init__(self, on_at, off_at, on_above=True, unknown: "bool | None" = False, active=False):
         self.on_at = on_at
         self.off_at = off_at
         self.on_above = on_above

@@ -14,6 +14,10 @@
 # comment for why a horizontal slider is repurposed as a scrollbar: there's
 # no vertical slider/scroll widget in the panel API).
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from production import discover_smelter_ids, discover_fabricator_ids, discover_supply_dock_ids
 
 ROLE_COLORS = {

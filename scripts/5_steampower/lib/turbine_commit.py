@@ -189,7 +189,7 @@ class TurbineCommitment:
         """Feeds the all-on (battery) and steam surplus latches; logs each flip."""
         bat_frac = bat_wh / bat_cap if bat_cap > 0 else None
         flip = self.all_on.update(bat_frac)
-        if flip == "on":
+        if flip == "on" and bat_frac is not None:  # all_on forces off, never on, for None
             log.print(f"[TURBINES] '{grid_id_str}': battery {bat_frac * 100:.0f}% < {TURBINE_EMERGENCY_BATTERY_FRACTION * 100:.0f}% -- all turbines on until {TURBINE_EMERGENCY_RELEASE_FRACTION * 100:.0f}%.")
         elif flip == "off":
             shown = f"{bat_frac * 100:.0f}%" if bat_frac is not None else "n/a"

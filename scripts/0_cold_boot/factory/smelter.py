@@ -23,8 +23,13 @@ BATCH = 10                                   # units to commit to before re-choo
 IDLE_SLEEP = 2
 POLL = 1
 
-research = get_component("research")
-inventory = get_component("inventory")
+def need(component):
+    # These core components always exist; fail loudly at start if not.
+    assert component is not None
+    return component
+
+research = need(get_component("research"))
+inventory = need(get_component("inventory"))
 comms = get_component("comms")
 
 if comms is None:
@@ -44,7 +49,7 @@ def demand():
     wanted = {}
     if comms is not None:
         needs = comms.latest("factory.needs")
-        if needs is not None:
+        if isinstance(needs, dict):
             for item in needs.keys():
                 wanted[item] = needs[item]
     for item in FLOORS.keys():
@@ -138,6 +143,8 @@ def select(recipe):
 
 def feed(recipe, units_left):
     ore = ore_for(recipe)
+    if ore is None:
+        return
     crafts_left = ceil(units_left / recipe.output_count)
     want_in = crafts_left * ore["per_craft"]
     room = self.input.capacity() - self.input.count()
@@ -198,8 +205,9 @@ while True:
         sleep(POLL)
         made = made + drain()
         if self.get_input_count() == 0 and not self.is_running():
-            if inventory.count(ore_for(recipe)["item"]) == 0:
-                print("[smelter] out of", ore_for(recipe)["item"], "after", made, "units")
+            ore = ore_for(recipe)
+            if ore is not None and inventory.count(ore["item"]) == 0:
+                print("[smelter] out of", ore["item"], "after", made, "units")
                 break
 
     made = made + drain()

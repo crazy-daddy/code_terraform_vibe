@@ -100,8 +100,10 @@ class FabricatorWantsTests(StubTestCase):
         self.controller.step()  # takes the 2 in stock, wants the rest of its prefill window
         cap = production.craft_prefill_units(self.fab.find_recipe("craft_steel_plate"), "iron_ingot")
         self.assertEqual(self.fab.input_buffer.get("iron_ingot"), 2)
-        self.assertEqual(self.wants()["wants"], {"iron_ingot": cap - 2})
-        self.assertEqual(self.wants()["site"], "home")
+        wants = self.wants()
+        assert wants is not None
+        self.assertEqual(wants["wants"], {"iron_ingot": cap - 2})
+        self.assertEqual(wants["site"], "home")
 
     def test_entry_removed_once_nothing_is_short(self):
         self.world.inventory.add("iron_ingot", 2)

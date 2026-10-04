@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import solar as self
 
-clock = get_component("clock")
+def need(component):
+    # Core component this script cannot run without; fail loudly at start if missing.
+    assert component is not None
+    return component
+
+
+clock = need(get_component("clock"))
 
 while True:
     elev = clock.get_elevation()

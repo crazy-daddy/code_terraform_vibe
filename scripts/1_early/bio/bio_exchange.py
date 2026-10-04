@@ -50,9 +50,15 @@ RARITY_WEIGHT = {
     "legendary": 8,
 }
 
-inventory = get_component("inventory")
-catalog = get_component("item_catalog")
-research = get_component("research")
+def need(component):
+    # Core component this script cannot run without; fail loudly at start if missing.
+    assert component is not None
+    return component
+
+
+inventory = need(get_component("inventory"))
+catalog = need(get_component("item_catalog"))
+research = need(get_component("research"))
 
 if not research.is_unlocked("research_auto_feeders"):
     print("[exchange] Auto Feeders is not researched — self.input.take()")

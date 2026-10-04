@@ -56,7 +56,14 @@ SELF_TYPE_OVERRIDES = {
     "oxygen_sensor": "OxygenSensor",
     "pressure_sensor": "PressureSensor",
     "mount_vehicle": "Rover | Pioneer",
+    # Not a `self`: panel scripts get the injected global `panel` and import
+    # it under its own name (`from user_stubs import panel`).
+    "panel": "Panel",
 }
+# Component classes re-exported for scripts that bind a by-name lookup
+# (`get_component("battery_1")`, typed plain Component) to its real type.
+# Exported only when the save's __builtins__.pyi defines them.
+COMPONENT_EXPORTS = ("BatteryComponent",)
 # Script stems whose typed-self name differs from their slot-stripped stem.
 STEM_ALIASES = {
     "pioneer_scout": "pioneer",
@@ -118,6 +125,8 @@ def build_self_types(server_text: str, builtins_text: str):
         entries[prefix] = " | ".join(resolved)
     entries.update(SELF_TYPE_OVERRIDES)
     imports = {part.strip() for expr in entries.values() for part in expr.split("|")}
+    imports.update(name for name in COMPONENT_EXPORTS
+                   if re.search(r"^class %s\(" % name, builtins_text, re.M))
     script_classes = []
     for contract_class, contract_id in CONTRACT_CLASS.findall(builtins_text):
         script_class = "_%sScript" % contract_class

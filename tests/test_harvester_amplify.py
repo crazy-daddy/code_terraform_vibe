@@ -171,7 +171,7 @@ class _Store(game_stubs.Store):
         self.answer = answer
         self.calls = 0
 
-    def transfer_to(self, target, item_id, count):
+    def transfer_to(self, target, item_id, count, properties=None, property_match=None):
         self.calls += 1
         moved = min(count, self.held) if self.answer == "ok" else 0
         return game_stubs.Result(self.answer, moved, requested=count)

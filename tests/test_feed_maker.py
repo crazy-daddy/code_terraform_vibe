@@ -24,7 +24,7 @@ class _FeedMaker(game_stubs.Machine):
         self.calls = []
 
     def get_progress(self): return 0.0
-    def get_output_count(self): return 0
+    def get_output_count(self) -> float: return 0
     def get_stockpile(self): return {k: v for k, v in self.input_buffer.items() if v > 0}
     def get_stockpile_capacity(self): return 200
     def get_stockpile_used(self): return sum(self.get_stockpile().values())

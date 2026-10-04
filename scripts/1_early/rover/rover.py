@@ -53,10 +53,16 @@ PURITY_VALUE = {"standard": 1, "rich": 2, "pure": 3}
 TICK = 1                   # seconds between drive-loop checks
 STUCK_TICKS = 20           # zero speed for this long mid-drive = stuck
 
-nocturna = get_component("nocturna")
-journal = get_component("journal")
-network = get_component("outpost_network")
-research = get_component("research")
+def need(component):
+    # These core components always exist; fail loudly at start if not.
+    assert component is not None
+    return component
+
+
+nocturna = need(get_component("nocturna"))
+journal = need(get_component("journal"))
+network = need(get_component("outpost_network"))
+research = need(get_component("research"))
 comms = get_component("comms")
 
 
@@ -242,9 +248,12 @@ def explore(p):
         if survey.status == "ok":
             resolved = resolved + 1
             found = survey.site
+            if found is None:
+                continue
             if found.kind() == "mineral":
-                print("[rover] surveyed", found.name, "-", found.item_id,
-                      "hardness", found.hardness, "purity", found.purity)
+                # Runtime type is MiningSite; stubs can't narrow Site on kind(), so read by name.
+                print("[rover] surveyed", found.name, "-", getattr(found, "item_id", None),
+                      "hardness", getattr(found, "hardness", None), "purity", getattr(found, "purity", None))
             else:
                 print("[rover] surveyed", found.name, "-", found.kind())
         else:
@@ -276,7 +285,7 @@ def wanted_ores():
     wanted = {}
     if comms != None:
         published = comms.latest("factory.ore")
-        if published != None and len(published) > 0:
+        if isinstance(published, dict) and len(published) > 0:
             for item in published.keys():
                 wanted[item] = published[item]
             return wanted
@@ -306,14 +315,16 @@ def best_site():
     for site in journal.surveyed_sites(PLANET_ID):
         if site.kind() != "mineral":
             continue
-        if site.hardness == None or site.hardness > hardness_limit:
+        # MiningSite fields (runtime type); stubs can't narrow Site on kind().
+        hardness = getattr(site, "hardness", None)
+        if hardness == None or hardness > hardness_limit:
             continue
         if not can_afford_trip(site.x, site.y):
             continue
         d = self.nav.get_distance_to(site.x, site.y)
-        score = PURITY_VALUE.get(site.purity, 1) / (1 + d / 100)
+        score = PURITY_VALUE.get(getattr(site, "purity", None), 1) / (1 + d / 100)
         if total_wanted > 0:
-            need = wanted.get(site.item_id, 0)
+            need = wanted.get(getattr(site, "item_id", None), 0)
             score = score * (0.1 + 9.9 * (need / total_wanted))
         elif len(wanted) > 0:
             score = score * 0.1

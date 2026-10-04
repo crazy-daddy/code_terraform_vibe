@@ -81,7 +81,7 @@ for mod_id, wanted in wanted_counts.items():
 # --- Phase 2: fill container internal bays (e.g. Battery Holder -> Portable Battery) -
 
 for s in self.modules():
-    item_id = INTERNAL_ITEM_FOR.get(s.module_id)
+    item_id = INTERNAL_ITEM_FOR.get(s.module_id or "")
     if not item_id or not s.internal_count:
         continue
     bay = len(s.internal_items or [])

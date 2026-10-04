@@ -24,7 +24,13 @@ TARGET_LEVEL = 1.0         # charge docked vehicles to full
 RESCUE_BELOW = 0.05        # dispatch the drone for any vehicle under this
 POLL = 5
 
-fleet = get_component("fleet")
+def need(component):
+    # Core component this script cannot run without; fail loudly at start if missing.
+    assert component is not None
+    return component
+
+
+fleet = need(get_component("fleet"))
 
 rescuing = ""
 

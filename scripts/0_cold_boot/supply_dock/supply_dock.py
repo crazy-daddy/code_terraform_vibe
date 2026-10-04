@@ -17,8 +17,14 @@ LOAD_CHUNK = 10   # units per take() call, keeps a single cycle cheap
 IDLE_SLEEP = 3.0
 POLL = 1.0
 
-orders = get_component("orders")
-inventory = get_component("inventory")
+def need(component):
+    # Core component this script cannot run without; fail loudly at start if missing.
+    assert component is not None
+    return component
+
+
+orders = need(get_component("orders"))
+inventory = need(get_component("inventory"))
 clock = get_component("clock")
 
 

@@ -14,6 +14,10 @@
 # Recommended card size: 2 x 2 (1 x 2 works, the name column narrows).
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from machine_activity import CLASSES, group_rows, machine_rows, get
 from swallow import swallowed
 import fleet_status
