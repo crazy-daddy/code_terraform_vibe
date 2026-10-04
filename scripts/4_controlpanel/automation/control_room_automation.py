@@ -160,7 +160,7 @@ def card_items(summaries):
     return items or [QUIET_SUMMARY]
 
 
-def plan_docks_if_due(clock):
+def plan_docks_if_due(clock: "Clock | None"):
     """
     Every DOCK_PLAN_TICK_INTERVAL: runs supply_dock.plan_dock_assignments() when
     supply_dock.plan_signature() differs from the last plan's, or
@@ -190,7 +190,7 @@ def step_commission(now):
         report_error("Fleet commission", e)
 
 
-def commission_if_due(clock):
+def commission_if_due(clock: "Clock | None"):
     """Every COMMISSION_FAST_TICK_INTERVAL while fleet_commission.commission_fast(): one coordinator pass."""
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
     if now - commission["tick"] < COMMISSION_FAST_TICK_INTERVAL or not commission_fast():
@@ -198,7 +198,7 @@ def commission_if_due(clock):
     step_commission(now)
 
 
-def plan_wildlife_if_due(clock):
+def plan_wildlife_if_due(clock: "Clock | None"):
     """Wildlife planner pass when due; its summary goes on the AUTOMATION card."""
     try:
         wildlife_planner.plan_if_due(clock)
@@ -206,7 +206,7 @@ def plan_wildlife_if_due(clock):
         report_error("Wildlife planner", e)
 
 
-def supervise_grids_if_due(clock, power):
+def supervise_grids_if_due(clock: "Clock | None", power: "PowerControl | None"):
     """Every SOLAR_TICK_INTERVAL: PowerGridManager.supervise_grid() on every grid (Power Guard, turbine commitment)."""
     global last_solar_tick
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
@@ -237,7 +237,7 @@ def supervise_grids_if_due(clock, power):
         report_error("Grid supervision", e)
 
 
-def park_if_due(clock, power):
+def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
     """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (parks idle machines, wakes due or triggered ones),
     the requested script restarts (lib/script_restart.py), then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
     machine activity sample (lib/machine_activity.py)."""
@@ -277,7 +277,7 @@ def park_if_due(clock, power):
             report_error("Machine activity", e)
 
 
-def between_steps(clock):
+def between_steps(clock: "Clock | None"):
     """Short-interval checks run between the storage pass's slow sub-steps. Grid supervision and
     parking wakes go first: the power reserve can drain within one full loop pass."""
     power = get_component("power_control")

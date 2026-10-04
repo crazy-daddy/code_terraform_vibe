@@ -203,7 +203,7 @@ class RefinerController:
     def _port(self, name):
         return getattr(self.refiner, name, None)
 
-    def _level(self, port):
+    def _level(self, port: "FluidPort | None"):
         if port is None or not hasattr(port, "level"):
             return 0.0
         try:
@@ -212,7 +212,7 @@ class RefinerController:
             swallowed("refiner.RefinerController._level: port.level", error)
             return 0.0
 
-    def _capacity(self, port):
+    def _capacity(self, port: "FluidPort | None"):
         if port is None or not hasattr(port, "capacity"):
             return OUT_PORT_FALLBACK_T
         try:

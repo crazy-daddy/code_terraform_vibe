@@ -56,7 +56,7 @@ MK4_MAGAZINE_TARGET = 1
 MK4_CHECK_INTERVAL_TICKS = 600
 
 
-def _current_tick(clock):
+def _current_tick(clock: "Clock | None"):
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
@@ -78,7 +78,7 @@ class UnboundPortRestart:
     machine's request once the port is there.
     """
 
-    def __init__(self, name, port_name, reason, log):
+    def __init__(self, name, port_name, reason, log: "TreeConsole"):
         self.name = name
         self.port_name = port_name
         self.reason = reason
@@ -116,7 +116,7 @@ class Mk3FluidFeed:
     transitions at info level.
     """
 
-    def __init__(self, machine, fluid_key, name, log, steam_guard=False):
+    def __init__(self, machine: "OxygenGenerator | TempHeater | PressureGenerator", fluid_key, name, log: "TreeConsole", steam_guard=False):
         self.machine = machine
         self.fluid_key = fluid_key
         self.name = name
@@ -187,7 +187,7 @@ class Mk3FluidFeed:
     def guard_open(self):
         return not self.guard.active
 
-    def _update_guard(self, port):
+    def _update_guard(self, port: "FluidPort"):
         self.log.start(f"[{self.name}] _update_guard", level="debug")
         fraction = self._steam_pool_fraction()
         flip = self.guard.update(fraction)
@@ -202,7 +202,7 @@ class Mk3FluidFeed:
             self.log.debug(f"Steam pool {fraction*100:.0f}%, guard {'open' if self.guard_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
         self.log.end()
 
-    def _disconnect(self, port):
+    def _disconnect(self, port: "FluidPort"):
         if not hasattr(port, "disconnect"):
             return
         try:
@@ -256,7 +256,7 @@ class Mk3FluidFeed:
 class Mk4RodFeed:
     """Keeps a Mk IV generator's Fuel Rod magazine stocked from the outpost's Lead Casks."""
 
-    def __init__(self, machine, name, log):
+    def __init__(self, machine: "OxygenGenerator | TempHeater | PressureGenerator", name, log: "TreeConsole"):
         self.machine = machine
         self.name = name
         self.log = log
@@ -301,7 +301,7 @@ class HeatController:
     Tracks day / weather condition changes, sweeps 1-10W to find 100% efficiency,
     and caches learned optimal setpoints per thermal state locally and in the Data Archive.
     """
-    def __init__(self, machine, clock=None):
+    def __init__(self, machine: "TempHeater", clock: "Clock | None" = None):
         self.machine = machine
         self.clock = clock or get_component("clock")
         self.name = getattr(machine, "id", "heater")
@@ -374,7 +374,7 @@ class PressureController:
     Identifies the sync window [next_window_low, next_window_high] and triggers
     self.sync() inside the window for 100% compression efficiency.
     """
-    def __init__(self, machine):
+    def __init__(self, machine: "PressureGenerator"):
         self.machine = machine
         self.name = getattr(machine, "id", "pressure")
         self.synced_this_sweep = False
@@ -468,7 +468,7 @@ class OxygenController:
     Sets intake to peak sweet spot (CO2 / 10), and dumps carbon waste inside the
     clean window (50-60 units) to avoid penalties or production stalling at 100.
     """
-    def __init__(self, machine, atmo=None):
+    def __init__(self, machine: "OxygenGenerator", atmo=None):
         self.machine = machine
         self.atmo = atmo or get_component("atmosphere")
         self.name = getattr(machine, "id", "o2gen")

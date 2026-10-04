@@ -136,7 +136,7 @@ def site_at(coords, tolerance=SITE_MATCH_TOLERANCE_M):
     return best
 
 
-def record_built_drill(port, kind, coords):
+def record_built_drill(port: "InputSlot | VehicleInputSlot", kind, coords):
     """
     Called by a Pioneer parked at a just-finished mining_drill* blueprint:
     finds the new drill among this variant's drills with no known position
@@ -151,7 +151,7 @@ def record_built_drill(port, kind, coords):
     return drill_id
 
 
-def _locate_built_drill(port, kind, coords):
+def _locate_built_drill(port: "InputSlot | VehicleInputSlot", kind, coords):
     site_id = site_at(coords)
     unresolved = []
     for attempt in range(BUILT_DRILL_DISCOVERY_ATTEMPTS):
@@ -172,7 +172,7 @@ def _locate_built_drill(port, kind, coords):
     return None
 
 
-def connect_to_drill(port, drill_id):
+def connect_to_drill(port: "InputSlot | VehicleInputSlot", drill_id):
     """True when `port` (vehicle.input) is now connected to drill_id -- only possible inside its service area."""
     log.start(f"connect_to_drill({drill_id!r})", level="debug")
     try:
@@ -193,7 +193,7 @@ def connect_to_drill(port, drill_id):
     return status == "ok"
 
 
-def take_from_drill(port, item_id, amount):
+def take_from_drill(port: "InputSlot | VehicleInputSlot", item_id, amount):
     """take()s up to `amount` of item_id from the already-connected drill; returns units moved."""
     log.start("take_from_drill", level="debug")
     moved_total = 0

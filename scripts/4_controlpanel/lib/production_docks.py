@@ -123,7 +123,7 @@ def dock_remaining_requirements(outpost_id=None):
     return remaining_by_item
 
 
-def dock_owed_at(item_id, outpost=None):
+def dock_owed_at(item_id, outpost: "OutpostRef | None" = None):
     """[(dock_id, units)] for every Supply Dock at `outpost` (None = home)
     whose active order still owes item_id: required - shipped - what this
     outpost's docks on that order already hold. Docks sharing an order each

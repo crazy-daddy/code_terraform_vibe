@@ -275,7 +275,7 @@ class FleetCommissionCoordinator:
         self.log.end(f"[fleet_commission] {label}: bought {needed} for {cost}cr." if failure is None else f"[fleet_commission] {label}: purchase incomplete ({failure})")
         return failure
 
-    def _buy_parts(self, shop, needed, catalogue, consumer, label):
+    def _buy_parts(self, shop: "Shop", needed, catalogue, consumer, label):
         """Buys each of needed {item_id: n}; books what was paid. None on success, else the waiting reason."""
         paid = 0
         for item, n in needed.items():

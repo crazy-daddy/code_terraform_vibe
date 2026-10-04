@@ -63,7 +63,7 @@ class EssenceInputRouter:
     """Keeps one <biome>_essence_in port connected to a reachable tank or Liquifier of that essence,
     via the shared consumer-side fluid_routing.FluidInputRouter."""
 
-    def __init__(self, mixer, biome, log):
+    def __init__(self, mixer, biome, log: "TreeConsole"):
         self.mixer = mixer
         self.biome = biome
         self.fluid_id = f"{biome}_essence"
@@ -84,7 +84,7 @@ class EssenceInputRouter:
     def port(self):
         return getattr(self.mixer, self.port_name, None)
 
-    def _port_starved(self, port):
+    def _port_starved(self, port: "FluidPort"):
         """Buffer nearly empty and nothing flowing in -- the linked source has nothing to give."""
         try:
             level = port.level()

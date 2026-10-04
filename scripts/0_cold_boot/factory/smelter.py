@@ -58,7 +58,7 @@ def demand():
             wanted[item] = short
     return wanted
 
-def ore_for(recipe):
+def ore_for(recipe: "Recipe"):
     for item in recipe.inputs.keys():
         pair = {}
         pair["item"] = item
@@ -124,7 +124,7 @@ def flush_input_to_store():
             ok = False
     return ok
 
-def select(recipe):
+def select(recipe: "Recipe"):
     if self.get_recipe() == recipe.id:
         return True
     if self.is_running():
@@ -141,7 +141,7 @@ def select(recipe):
     print("[smelter] recipe ->", recipe.name)
     return True
 
-def feed(recipe, units_left):
+def feed(recipe: "Recipe", units_left):
     ore = ore_for(recipe)
     if ore is None:
         return

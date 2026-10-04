@@ -20,7 +20,7 @@ class ChargingStationController(StationController):
     RETURN_EMERGENCY_RESERVE_WH = 8.0
     RESCUE_EXTRA_RESERVE_WH = 8.0
 
-    def __init__(self, station, target_charge_level=1.0):
+    def __init__(self, station: "ChargingStation", target_charge_level=1.0):
         super().__init__(station, target_charge_level)
         self.last_rescued_vehicle = None
 
@@ -127,12 +127,12 @@ class ChargingStationController(StationController):
 
         for v_id in docked_ids:
             try:
-                v = get_component(v_id)
-                if not v or not hasattr(v, "battery"):
+                battery = getattr(get_component(v_id), "battery", None)
+                if battery is None:
                     continue
 
-                lvl = v.battery.level()
-                wh = v.battery.wh()
+                lvl = battery.level()
+                wh = battery.wh()
 
                 # If vehicle is below target and not active or queued, queue it for charging
                 if lvl < (self.target_charge_level - 0.02):

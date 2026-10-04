@@ -51,7 +51,7 @@ class VehicleCargoMixin:
     def _host(self) -> "VehicleController":
         return self  # type: ignore[return-value]
 
-    def unload_cargo(self, outpost=None):
+    def unload_cargo(self, outpost: "OutpostRef | None" = None):
         """Transfers mined/gathered minerals and items into outpost's Inventory/
         Warehouse (default: this vehicle's own self.home_outpost -- see
         storage.best_unload_target()), or at an explicit `outpost`."""
@@ -348,7 +348,7 @@ class VehicleCargoMixin:
         self._host.log.debug(f"[{self._host.name}] pull: Shop source for buyable deficits {available}.")
         return {"kind": "shop", "id": f"{logistics_requests.SHOP_SOURCE_ID}:{getattr(home, 'id', None)}", "coords": base.coords(), "available": available, "outpost": base}
 
-    def _buy_and_take(self, item_id, amount, outpost):
+    def _buy_and_take(self, item_id, amount, outpost: "OutpostRef"):
         """
         Buys up to `amount` of item_id at the Shop one Inventory stack at a
         time and take_item()s each stack into cargo before buying the next,

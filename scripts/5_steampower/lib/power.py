@@ -143,14 +143,14 @@ def steam_pool(tank_ids):
     return stored_t, capacity_t, count
 
 
-def grid_steam_tank_ids(grid):
+def grid_steam_tank_ids(grid: "PowerGrid"):
     """Gas Tank ids listed in grid.members (buildings at a connected outpost
     are members with an empty roles list). PowerGridManager adds a throttled
     outpost-walk fallback on top of this for grids where they are missing."""
     return [m.id for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == "gas_tank"]
 
 
-def measure_grid(grid, tank_ids):
+def measure_grid(grid: "PowerGrid", tank_ids):
     """Battery + steam snapshot of one grid, the shape reserve_fraction() reads."""
     bat_wh = getattr(grid, "stored", 0.0) + getattr(grid, "reserve_stored", 0.0)
     bat_cap = getattr(grid, "capacity", 0.0) + getattr(grid, "reserve_capacity", 0.0)
@@ -185,7 +185,7 @@ def reserve_fraction(now):
 class PowerGridManager:
     """Supervises one power grid: daily reserve balance + emergency shedding."""
 
-    def __init__(self, grid, clock=None, power=None):
+    def __init__(self, grid: "PowerGrid", clock: "Clock | None" = None, power: "PowerControl | None" = None):
         self.clock = clock or get_component("clock")
         self.power = power or get_component("power_control")
         self.log = TreeConsole(module="power")
@@ -213,7 +213,7 @@ class PowerGridManager:
     # ------------------------------------------------------------------
     # Reserve measurement
     # ------------------------------------------------------------------
-    def _steam_tank_ids(self, grid):
+    def _steam_tank_ids(self, grid: "PowerGrid"):
         ids = grid_steam_tank_ids(grid)
         if ids:
             return ids
@@ -234,13 +234,13 @@ class PowerGridManager:
             self.log.debug(f"[POWER] Gas Tanks not in grid members for '{self.grid_anchor}'; outpost walk over {len(outpost_ids)} outpost(s) found {len(found)}.")
         return self.fallback_tank_ids
 
-    def _measure(self, grid):
+    def _measure(self, grid: "PowerGrid"):
         return measure_grid(grid, self._steam_tank_ids(grid))
 
     # ------------------------------------------------------------------
     # Daily balance
     # ------------------------------------------------------------------
-    def _integrate(self, state, grid):
+    def _integrate(self, state, grid: "PowerGrid"):
         """Adds this sample's generated/consumed energy to today's totals."""
         hours = self.clock.elapsed_game_hours() if self.clock and hasattr(self.clock, "elapsed_game_hours") else None
         if hours is None:
@@ -294,7 +294,7 @@ class PowerGridManager:
             self.log.debug(f"[POWER] Day {summary['day']} on '{grid_id_str}': no pool lost more than {DAILY_LOSS_WARN_FRACTION*100:.0f}% of capacity; no advisory.")
         self.log.end(f"[POWER] Day {summary['day']} closed on '{grid_id_str}' ({'draining' if draining else 'no advisory'})")
 
-    def _track_day(self, grid, now, grid_id_str):
+    def _track_day(self, grid: "PowerGrid", now, grid_id_str):
         self.log.start("[POWER] _track_day", level="debug")
         current_day = self.clock.get_day() if self.clock else 1
         key = f"{DAILY_STATE_KEY_PREFIX}{self.grid_anchor}"
@@ -436,7 +436,7 @@ class PowerGridManager:
         self.log.end()
 
     # ------------------------------------------------------------------
-    def supervise_grid(self, grid, elevation=None):
+    def supervise_grid(self, grid: "PowerGrid", elevation=None):
         """One supervision cycle. `elevation` is accepted for control_room_automation.py's
         call signature and ignored -- sun position no longer matters here."""
         if not grid:

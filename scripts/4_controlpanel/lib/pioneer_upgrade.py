@@ -167,7 +167,7 @@ class PioneerUpgradeMixin:
         outcome = self._swap_function_module(shop, slot.index, old_id, best, cost)
         self._host.log.end(f"[{self._host.name}] {outcome}")
 
-    def _swap_function_module(self, shop, slot_index, old_id, best, cost):
+    def _swap_function_module(self, shop: "Shop", slot_index, old_id, best, cost):
         """Unmounts old_id, buys and mounts best, sells old_id; returns the outcome text."""
         unmount_res = self._host.vehicle.unmount(slot_index)
         if unmount_res.status != "ok":
@@ -257,7 +257,7 @@ class PioneerUpgradeMixin:
             outcome = self._swap_container(shop, slot, old_id, best, fill_item, total_cost)
             self._host.log.end(f"[{self._host.name}] {outcome}")
 
-    def _swap_container(self, shop, slot, old_id, best, fill_item, total_cost):
+    def _swap_container(self, shop: "Shop", slot, old_id, best, fill_item, total_cost):
         """Empties, unmounts and sells old_id, buys and mounts best, refills its bays; returns the outcome text."""
         slot_index = slot.index
         for internal_index, item_id in enumerate(slot.internal_items):
@@ -321,7 +321,7 @@ class PioneerUpgradeMixin:
                 outcome = self._swap_portable(shop, slot.index, internal_index, base_portable, heavy_portable, heavy_cost)
                 self._host.log.end(f"[{self._host.name}] {outcome}")
 
-    def _swap_portable(self, shop, slot_index, internal_index, base_portable, heavy_portable, heavy_cost):
+    def _swap_portable(self, shop: "Shop", slot_index, internal_index, base_portable, heavy_portable, heavy_cost):
         """Replaces one installed base portable with the Heavy variant; returns the outcome text."""
         uninstall_res = self._host.vehicle.uninstall(slot_index, internal_index)
         if uninstall_res.status != "ok":

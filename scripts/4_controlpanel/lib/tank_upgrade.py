@@ -122,7 +122,7 @@ class TankUpgrader(BuildingSwapUpgrader):
 
     # ------------------------------------------------------------ swap
 
-    def _drain(self, swap, computer):
+    def _drain(self, swap, computer: "Computer"):
         outpost_id = swap.get("outpost")
         new_id = swap.get("new_id")
         liquid = swap.get("liquid")
@@ -146,7 +146,7 @@ class TankUpgrader(BuildingSwapUpgrader):
         self.log.print(f"[tank_upgrade] Swap done at '{outpost_id}': {swap.get('old_ids')} -> '{new_id}' ({liquid}).")
         return f"{outpost_id}: {swap.get('old_ids')} -> {new_id} done"
 
-    def _drain_one(self, old_id, new_id, outpost_id, computer):
+    def _drain_one(self, old_id, new_id, outpost_id, computer: "Computer"):
         """One check on one old tank: keep new.liquid_in pulling from it, or remove it once empty."""
         self.log.start("[tank_upgrade] _drain_one", level="debug")
         old = self._component(old_id)

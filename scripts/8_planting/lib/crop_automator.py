@@ -98,7 +98,7 @@ def _position(ref):
 class CropAutomatorController:
     """Queues harvest and plant jobs for the full-layout cells this Crop Automator owns."""
 
-    def __init__(self, machine):
+    def __init__(self, machine: "CropAutomator"):
         self.machine = machine
         self.name = getattr(machine, "id", "crop_automator")
         self.parker = ParkRequester(self.name, "crop_automator")

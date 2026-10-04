@@ -94,7 +94,7 @@ STATE_PAUSE = "pause"
 class MixerGate:
     """Duty-cycles every Biomass Mixer on the network so it only mixes at full expected diversity."""
 
-    def __init__(self, power=None, clock=None):
+    def __init__(self, power: "PowerControl | None" = None, clock: "Clock | None" = None):
         self.power = power or get_component("power_control")
         self.clock = clock or get_component("clock")
         self.log = TreeConsole(module="biomass_mixer_gate")

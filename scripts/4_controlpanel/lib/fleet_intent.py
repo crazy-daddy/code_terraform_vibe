@@ -115,7 +115,7 @@ def demand_roots(curr_tick=None):
     return roots
 
 
-def _path_to(seeds, item_id, cache, shortfall_only):
+def _path_to(seeds, item_id, cache: "SourceCache", shortfall_only):
     """Recipe path [item_id, ..., seed] from one root's seeds down to item_id, or None."""
     frontier = dict(seeds)
     parent = {i: None for i in seeds}
@@ -145,7 +145,7 @@ def _path_to(seeds, item_id, cache, shortfall_only):
     return None
 
 
-def demand_root(item_id, roots=None, cache=None, curr_tick=None):
+def demand_root(item_id, roots=None, cache: "SourceCache | None" = None, curr_tick=None):
     """Label of the demand root whose recipe tree reaches item_id (see module header), or None."""
     log.start(f"demand_root({item_id})", level="debug")
     cache = cache if cache is not None else SourceCache()

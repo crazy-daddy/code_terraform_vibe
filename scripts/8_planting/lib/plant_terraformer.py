@@ -118,7 +118,7 @@ def forage_to_go(phase, remaining_km2, committed_km2):
 class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDemandMixin):
     """Keeps one Plant Terraformer fed with Forage, Water and support items and runs it in full-ish batches."""
 
-    def __init__(self, machine):
+    def __init__(self, machine: "PlantTerraformer"):
         self.machine = machine
         self.name = getattr(machine, "id", "plant_terraformer")
         self.outpost = getattr(machine, "outpost", None)

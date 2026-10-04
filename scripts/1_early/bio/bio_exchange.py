@@ -83,7 +83,7 @@ def weight_of(fragment_id):
     return weight
 
 
-def score_order(order):
+def score_order(order: "BioOrder"):
     # How this order stands right now.
     #
     # Returns a dict with:
@@ -193,7 +193,7 @@ def drain_output():
             print("[exchange] could not return", stack.id, "-", result.message)
 
 
-def stage_one(order):
+def stage_one(order: "BioOrder"):
     # Move one qualifying sample from the store into self.input.
     #
     # matches_order() is the authority, not the fragment id: coastal orders

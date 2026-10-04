@@ -570,7 +570,7 @@ def summary_line(plan):
 
 # ---------------------------------------------------------------- game side
 
-def _now(clock):
+def _now(clock: "Clock | None"):
     try:
         return clock.tick() if clock and hasattr(clock, "tick") else 0
     except Exception as error:
@@ -834,7 +834,7 @@ def _record_released(snap, release, now):
         snap["released"][species] = {"habitat": hid}
 
 
-def _undeploy(computer, hid):
+def _undeploy(computer: "Computer", hid):
     """undeploy() status ("ok", "not_found", a refusal); "error" when the call raised."""
     try:
         res = computer.undeploy(hid)
@@ -946,7 +946,7 @@ def _notify(message):
         swallowed("wildlife_planner._notify: notify", error)
 
 
-def plan(clock):
+def plan(clock: "Clock | None"):
     """One planning pass. Returns the AUTOMATION card summary."""
     now = _now(clock)
     snap = snapshot(now)
@@ -1077,7 +1077,7 @@ def _retire_pass(now):
     log.print("[WILDLIFE] No Habitat or Feed Maker left; planner stops.")
 
 
-def plan_if_due(clock):
+def plan_if_due(clock: "Clock | None"):
     """Every PLAN_TICK_INTERVAL: one pass. Returns the last summary.
 
     Once the sensor reads WILDLIFE_COMPLETE_POPULATION it is no longer read

@@ -12,6 +12,7 @@
     },
     {
       "root": "tests",
+      "reportArgumentType": "none",
       "extraPaths": [
         ".pyright-resolved/lib",
         "scripts/4_controlpanel/lib",

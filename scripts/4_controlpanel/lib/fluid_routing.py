@@ -160,7 +160,7 @@ HEALTHY_CONNECTION_STATES = ("local", "ready")
 BROKEN_CONNECTION_STATES = ("unreachable", "conflict", "incompatible")
 
 
-def port_connections(port):
+def port_connections(port: "FluidPort"):
     """port.connections() -- every effective peer, including ones the PEER declared -- or [] if unavailable."""
     if not port or not hasattr(port, "connections"):
         return []
@@ -171,7 +171,7 @@ def port_connections(port):
         return []
 
 
-def healthy_peer_id(port):
+def healthy_peer_id(port: "FluidPort"):
     """machine_id of the first effective peer in a HEALTHY_CONNECTION_STATES state, or None. Counts
     links declared by either side (declared_by "self"/"peer"/"both"), so a port another machine's
     script already wired up reads as healthy without this side declaring anything."""
@@ -181,7 +181,7 @@ def healthy_peer_id(port):
     return None
 
 
-def declared_connection(port):
+def declared_connection(port: "FluidPort"):
     """FluidConnection of this port's OWN declared target (connected_id()), or None if it has none or
     the target isn't in connections() yet."""
     if not port or not hasattr(port, "connected_id"):
@@ -199,7 +199,7 @@ def declared_connection(port):
     return None
 
 
-def declared_connection_state(port):
+def declared_connection_state(port: "FluidPort"):
     """FluidConnection.state of this port's OWN declared target, or None (see declared_connection())."""
     return getattr(declared_connection(port), "state", None)
 
@@ -230,7 +230,7 @@ def _prune_conflicts(stored, curr_tick):
     }
 
 
-def yield_pipe_conflict(port, label, source_id, fluid, curr_tick, blacklist):
+def yield_pipe_conflict(port: "FluidPort", label, source_id, fluid, curr_tick, blacklist):
     """Disconnects port's own declaration onto source_id (the "conflict" link), blacklists source_id
     for CONFLICT_BLACKLIST_TICKS and reports it: warn log, notify() and a PIPE_CONFLICTS_KEY entry.
     Only pipe conflicts are reported this way -- an "unreachable" source is normal with several
@@ -266,7 +266,7 @@ def active_pipe_conflicts(curr_tick):
     return [f"{label} x {entry.get('source')}" for label, entry in sorted(live.items())]
 
 
-def port_starved(port):
+def port_starved(port: "FluidPort"):
     """Input FluidPort reads flow_rate() == 0 with room left -- a full port also reads 0, not a stall.
     The is_starved signal for a FluidInputRouter on a machine without is_stalled()."""
     try:
@@ -809,7 +809,7 @@ class FluidInputRouter:
         """Last discovered candidate ids (empty before first discovery)."""
         return self._cache.value or []
 
-    def _yield_to_reserve(self, port):
+    def _yield_to_reserve(self, port: "FluidPort"):
         """Disconnects the port for the water reservation; the next ensure() after it lifts reconnects."""
         self.stall_streak = 0
         self.steps_since_connect = 0
@@ -830,7 +830,7 @@ class FluidInputRouter:
         if on_dropped:
             on_dropped(source_id, reason)
 
-    def ensure(self, port, curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
+    def ensure(self, port: "FluidPort", curr_tick, is_starved=False, on_dropped=None, on_connect_notice=None):
         log.start("ensure", level="debug")
         if not port or not hasattr(port, "connect"):
             _ret = FluidInputEvent("no_port")
@@ -1103,7 +1103,7 @@ class FluidOutputRouter:
             self._target_lookup[target_id] = building
         return building
 
-    def ensure_connection(self, port, curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
+    def ensure_connection(self, port: "FluidPort", curr_tick, is_stalled, on_blacklisted=None, on_connect_notice=None):
         """Returns a FluidOutputEvent. See class docstring for callback timing. Caller is responsible for the port-null guard before calling (matches the original methods' early-return ordering)."""
         log.start("ensure_connection", level="debug")
         warn_about_unassigned_tanks(curr_tick)
@@ -1224,14 +1224,14 @@ class FluidOutputRouter:
         return _ret
 
 
-def _log_waiting(log, name, port_label, blacklist, curr_tick):
+def _log_waiting(log: "TreeConsole", name, port_label, blacklist, curr_tick):
     log.debug(f"[{name}] Every known {port_label} candidate is still within its blacklist window; waiting for one to expire.")
     for entry_id, blacklisted_at in blacklist._blacklisted_at.items():
         duration = blacklist._durations.get(entry_id, blacklist.rescan_interval_ticks)
         log.trace(f"[{name}] Blacklisted '{entry_id}': {max(0, duration - (curr_tick - blacklisted_at))} tick(s) until retry-eligible.")
 
 
-def ensure_input_logged(router, port, curr_tick, starved, log, name, port_label, not_found=None):
+def ensure_input_logged(router, port: "FluidPort", curr_tick, starved, log: "TreeConsole", name, port_label, not_found=None):
     """FluidInputRouter.ensure() with the standard lines on the caller's console: drops and connect
     notices warn, a new connection info, healthy trace, waiting debug (blacklist detail trace),
     not_found debug with the caller's `not_found` text (None: no line). Returns the event."""
@@ -1253,7 +1253,7 @@ def ensure_input_logged(router, port, curr_tick, starved, log, name, port_label,
     return event
 
 
-def ensure_output_logged(router, port, curr_tick, stalled, log, name, port_label, blacklist_reason, not_found=None):
+def ensure_output_logged(router, port: "FluidPort", curr_tick, stalled, log: "TreeConsole", name, port_label, blacklist_reason, not_found=None):
     """FluidOutputRouter.ensure_connection() with the standard lines: a blacklisted target warns
     "'<id>' <blacklist_reason>. Blacklisting ...", connect notices warn, a new connection info (with
     fill; debug for a rebalance to an emptier tank), healthy and full trace, waiting debug, not_found debug with `not_found` (None: no line). Returns

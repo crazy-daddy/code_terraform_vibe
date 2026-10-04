@@ -77,7 +77,7 @@ RECIPE_REFRESH_TICKS = 1200
 class FuelAssemblerController:
     """Crafts Fuel Rods to the local consumers' stock target, then Nuclear Batteries to open demand."""
 
-    def __init__(self, machine):
+    def __init__(self, machine: "FuelAssembler"):
         self.machine = machine
         self.name = getattr(machine, "id", "fuel_assembler")
         self.outpost = getattr(machine, "outpost", None)

@@ -30,6 +30,7 @@ from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from tree_console import TreeConsole
     from drone import DroneController
 
 DRONE_SERVICE_TYPE_ID = "drone_service_station"
@@ -666,7 +667,7 @@ class DroneEnergyMixin:
         drive_wh = dist * self.wh_per_meter_at_throttle(self._host.cruise_throttle)
         return (drive_wh * self.SAFETY_MARGIN_MULTIPLIER) + self.emergency_reserve()
 
-    def return_to_service_for_charge(self, log, reason):
+    def return_to_service_for_charge(self, log: "TreeConsole", reason):
         """
         Flies to (and docks at) the home drone_service (get_home_service()),
         or the nearest one when the home service is out of reach on the
@@ -709,7 +710,7 @@ class DroneEnergyMixin:
         log.end(f"[{self._host.name}] Return to drone_service: {'arrived' if docked else 'not reached'}")
         return True
 
-    def hold_for_launch_charge(self, log):
+    def hold_for_launch_charge(self, log: "TreeConsole"):
         """
         Launch hysteresis gate, checked right before picking a new mission.
         Returns True (and sends/keeps the drone docked at its drone_service)

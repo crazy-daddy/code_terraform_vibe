@@ -529,7 +529,7 @@ class PlanReads:
             self._by_source[exclude_vehicle] = groups
         return groups.get(source_id, {})
 
-    def stock(self, outpost, item_ids):
+    def stock(self, outpost: "OutpostRef", item_ids):
         """{item_id: units} at `outpost` per outpost_stock() (Warehouses + Drone Depots, + home Inventory/Forage), read once per outpost over every requested item plus `item_ids`."""
         outpost_id = getattr(outpost, "id", None)
         cached = self._stock.get(outpost_id)
@@ -547,7 +547,7 @@ class PlanReads:
 
 # --------------------------------------------------------------------- stock
 
-def local_depots(outpost):
+def local_depots(outpost: "OutpostRef"):
     """Resolved Drone Depots at `outpost` (an OutpostRef)."""
     if not outpost or not hasattr(outpost, "buildings"):
         return []
@@ -631,7 +631,7 @@ def depot_stock(depot):
     return stock
 
 
-def take_from_depots(port, item_id, amount, outpost):
+def take_from_depots(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "OutpostRef"):
     """
     take()s up to `amount` x `item_id` into `port` (an InputSlot) from the
     Drone Depots at `outpost`, depot by depot, asking each only for what its
@@ -658,7 +658,7 @@ def take_from_depots(port, item_id, amount, outpost):
     return moved_total
 
 
-def outpost_stock(item_ids, outpost):
+def outpost_stock(item_ids, outpost: "OutpostRef | None"):
     """
     {item_id: units} held at `outpost`: its Warehouses + Drone Depots, plus
     home Inventory and Crop Automator Forage when `outpost` is the home
@@ -700,7 +700,7 @@ def _tier_split(entry, have, flying):
     return need, max(0, buffer)
 
 
-def outpost_deficits_tiered(outpost, curr_tick=None, live=True, reads=None):
+def outpost_deficits_tiered(outpost: "OutpostRef | None", curr_tick=None, live=True, reads=None):
     """
     ({item_id: need units}, {item_id: buffer units}) still missing for
     requests at `outpost` (OutpostRef): need = min - local stock - in-flight,
@@ -731,7 +731,7 @@ def outpost_deficits_tiered(outpost, curr_tick=None, live=True, reads=None):
     return need, buffer
 
 
-def buyable_deficits(outpost, need, buffer, curr_tick=None):
+def buyable_deficits(outpost: "OutpostRef", need, buffer, curr_tick=None):
     """
     ({item_id: need units}, {item_id: buffer units}): the part of `outpost`'s
     deficits (outpost_deficits_tiered() output) whose request is flagged
@@ -745,7 +745,7 @@ def buyable_deficits(outpost, need, buffer, curr_tick=None):
             {i: u for i, u in buffer.items() if i in flagged})
 
 
-def outpost_deficits(outpost, curr_tick=None, live=True):
+def outpost_deficits(outpost: "OutpostRef | None", curr_tick=None, live=True):
     """
     {item_id: units still missing} for requests at `outpost` (OutpostRef):
     target - local stock - in-flight pickups (need + buffer tier, see
@@ -865,7 +865,7 @@ def network_deficits(curr_tick=None):
     return totals
 
 
-def outpost_free_tiers(outpost, item_ids, requests=None, curr_tick=None, exclude_vehicle=None, include_depots=False, reads=None):
+def outpost_free_tiers(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None, include_depots=False, reads=None):
     """
     ({item_id: free for another outpost's need}, {item_id: free for a buffer
     top-up}) -- an outpost's "free stock", computed live (no per-outpost
@@ -906,7 +906,7 @@ def outpost_free_tiers(outpost, item_ids, requests=None, curr_tick=None, exclude
     return for_need, for_buffer
 
 
-def _free_tier_stock(outpost, item_ids, include_depots):
+def _free_tier_stock(outpost: "OutpostRef", item_ids, include_depots):
     """{item_id: units} outpost_free_tiers() counts: Warehouses (+ Depots with include_depots, + home Inventory/Forage)."""
     stock = warehouse_stocks(item_ids, outpost)
     if include_depots:
@@ -925,7 +925,7 @@ def _free_tier_stock(outpost, item_ids, include_depots):
     return stock
 
 
-def outpost_free_stock(outpost, item_ids, requests=None, curr_tick=None, exclude_vehicle=None):
+def outpost_free_stock(outpost: "OutpostRef", item_ids, requests=None, curr_tick=None, exclude_vehicle=None):
     """{item_id: units} an outpost can give to a buffer top-up (outpost_free_tiers() buffer tier, Warehouses only)."""
     return outpost_free_tiers(outpost, item_ids, requests, curr_tick, exclude_vehicle)[1]
 

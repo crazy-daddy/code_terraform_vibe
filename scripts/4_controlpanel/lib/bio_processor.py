@@ -53,7 +53,7 @@ class BioProcessorController:
         normally _stack_properties(stack). Default: every stack is raw."""
         return STACK_RAW, self._stack_properties(stack)
 
-    def _candidate_fragments(self, order):
+    def _candidate_fragments(self, order: "BioOrder"):
         """Fragment ids of order this processor can load, in preference order
         (bio.processor_fragment_preference(), the same ranking the Collector uses)."""
         return processor_fragment_preference(self.machine, self.TYPE_ID, (order.requires or {}).keys())
@@ -95,6 +95,8 @@ class BioProcessorController:
         """Returns count units of one exact staged variant from self.input to local storage."""
         try:
             destination = best_unload_target(staged_id, count, outpost=self.machine.outpost)
+            if destination is None:
+                return
             res = self.machine.input.eject(destination, staged_id, count, properties, "exact")
         except Exception as error:
             swallowed(f"{self.MODULE}._eject_staged: self.machine.input.eject", error)
@@ -133,7 +135,7 @@ class BioProcessorController:
         except Exception as error:
             swallowed(f"{self.MODULE}._notify_heartbeat: self.comms.broadcast", error)
 
-    def _port_stacks(self, port, where):
+    def _port_stacks(self, port: "InputSlot | OutputSlot", where):
         if not hasattr(port, "stacks"):
             return []
         try:
@@ -159,7 +161,7 @@ class BioProcessorController:
                 orders = []
         return outpost, exchange, orders, _local_stock_snapshot(outpost)
 
-    def _find_raw_stack(self, orders, fragment_id, outpost):
+    def _find_raw_stack(self, orders, fragment_id, outpost: "OutpostRef"):
         """(source_id, properties, count) for the first local fragment_id stack that
         _classify_stack() calls raw, or None. Finished stacks are left for delivery."""
         for source_id, component in _local_sources(outpost):

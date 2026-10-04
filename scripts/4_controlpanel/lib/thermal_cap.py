@@ -103,7 +103,7 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 class ThermalCapController:
     """Keeps a Thermal Cap's chamber pressure off the overpressure ceiling."""
 
-    def __init__(self, cap):
+    def __init__(self, cap: "ThermalCap"):
         self.cap = cap
         self.name = getattr(cap, "id", "thermal_cap")
         self.last_phase = None

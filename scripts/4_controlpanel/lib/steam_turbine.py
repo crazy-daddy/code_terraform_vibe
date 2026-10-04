@@ -153,7 +153,7 @@ class SteamTurbineController:
                 swallowed("steam_turbine.SteamTurbineController.is_night: self.clock.get_elevation", error)
         return False
 
-    def committed(self, grid):
+    def committed(self, grid: "PowerGrid"):
         """True while the grid manager's turbine commitment manages this turbine's grid (COMMIT_HEARTBEAT_KEY)."""
         beats = archive.get(COMMIT_HEARTBEAT_KEY, {}) or {}
         tick = beats.get(getattr(grid, "anchor_id", None)) if isinstance(beats, dict) else None

@@ -51,7 +51,7 @@ def get_manual_orders():
     }
 
 
-def consume_manual_order(item_id, quantity, outpost=None):
+def consume_manual_order(item_id, quantity, outpost: "OutpostRef | None" = None):
     """Counts down an active manual build order (see get_manual_orders()) by quantity actually
     drained from a machine's output, dropping the entry entirely once it reaches zero. No-ops if
     item_id has no active manual order or quantity <= 0. Units drained off home (`outpost` given
@@ -141,7 +141,7 @@ def _parse_transit(stored):
     return entries
 
 
-def _settle_transit(entries, cache):
+def _settle_transit(entries, cache: "SourceCache"):
     """{item_id: (units, base)} with arrived units removed (see MANUAL_TRANSIT_KEY)."""
     settled = {}
     for item_id, (units, base) in entries.items():
@@ -151,7 +151,7 @@ def _settle_transit(entries, cache):
     return settled
 
 
-def manual_transit_wants(cache=None):
+def manual_transit_wants(cache: "SourceCache | None" = None):
     """{item_id: units wanted at home} for manual-order units still off home."""
     entries = _manual_transit_entries()
     if not entries:
@@ -160,7 +160,7 @@ def manual_transit_wants(cache=None):
     return {item_id: base + units for item_id, (units, base) in _settle_transit(entries, cache).items()}
 
 
-def reconcile_manual_transit(cache=None):
+def reconcile_manual_transit(cache: "SourceCache | None" = None):
     """Writes MANUAL_TRANSIT_KEY back without arrived units. Writes only on change."""
     stored = archive.get(MANUAL_TRANSIT_KEY, {})
     if not stored:

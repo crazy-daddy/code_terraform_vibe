@@ -60,7 +60,7 @@ class FabricatorController(RecipeClaimMixin):
     docs/components/fabricator.md). Demand, targets and worker splits stay
     network-wide."""
 
-    def __init__(self, machine):
+    def __init__(self, machine: "Fabricator"):
         self.machine = machine
         self.name = getattr(machine, "id", "fabricator_1")
         self.connected_input = False
@@ -154,7 +154,7 @@ class FabricatorController(RecipeClaimMixin):
             self._fluid_routers[fluid_key] = router
         return router
 
-    def ensure_fluid_connections(self, recipe):
+    def ensure_fluid_connections(self, recipe: "Recipe | None"):
         """
         Connects each fluid_input the active recipe declares (recipe.fluid_inputs,
         e.g. {"water_in": 1.0} -- a separate field from .inputs, delivered via
@@ -182,11 +182,11 @@ class FabricatorController(RecipeClaimMixin):
                                               f"No {fluid_key} source on the network.")
 
     @staticmethod
-    def is_fluid_only(recipe):
+    def is_fluid_only(recipe: "Recipe | None"):
         """True for a recipe with fluid inputs and no item inputs (e.g. craft_tar)."""
         return bool(recipe) and not (getattr(recipe, "inputs", {}) or {}) and bool(getattr(recipe, "fluid_inputs", {}) or {})
 
-    def stop_fluid_feed(self, recipe):
+    def stop_fluid_feed(self, recipe: "Recipe | None"):
         """Disconnects every fluid port the recipe feeds from, so no new
         craft starts. ensure_fluid_connections() reconnects once a recipe
         needing that fluid is active again."""
@@ -202,11 +202,11 @@ class FabricatorController(RecipeClaimMixin):
             except Exception as error:
                 swallowed("fabricator.FabricatorController.stop_fluid_feed: port.disconnect", error)
 
-    def recipe_is_sourceable(self, recipe, cache=None):
+    def recipe_is_sourceable(self, recipe: "Recipe", cache: "SourceCache | None" = None):
         """Whether every input of this recipe -- solid and fluid alike -- has a currently known supply."""
         return self.recipe_unsourceable_reason(recipe, cache) is None
 
-    def recipe_unsourceable_reason(self, recipe, cache=None):
+    def recipe_unsourceable_reason(self, recipe: "Recipe | None", cache: "SourceCache | None" = None):
         """None if every input of this recipe -- solid and fluid alike -- has a currently known
         supply, else a short human-readable reason naming the first unsourceable input (used to
         annotate the "Skipping unreachable recipe(s)" log in choose_recipe()).
@@ -231,7 +231,7 @@ class FabricatorController(RecipeClaimMixin):
                 return f"no known source for fluid '{fluid_key}'"
         return None
 
-    def target_reason(self, item_id, cache=None):
+    def target_reason(self, item_id, cache: "SourceCache | None" = None):
         """Describes the active demand driving a target quantity for item_id."""
         try:
             fabricator_outputs = {getattr(r, "output_item", None) for r in self.machine.list_recipes()} - {None}
@@ -262,7 +262,7 @@ class FabricatorController(RecipeClaimMixin):
         _, order = find_dock_order_requiring(item_id)
         return not order
 
-    def choose_recipe(self, cache=None):
+    def choose_recipe(self, cache: "SourceCache | None" = None):
         # One snapshot for the whole pass (step() shares its own): targets, stock,
         # pipeline and the sourceability checks below all read it.
         self.log.start(f"[{self.name}] choose_recipe", level="debug")
@@ -342,7 +342,7 @@ class FabricatorController(RecipeClaimMixin):
         # several Fabricators, all of them would converge on the same single
         # biggest-shortfall recipe while every other demanded output goes
         # unbuilt.
-        def _priority_tier(recipe):
+        def _priority_tier(recipe: "Recipe"):
             output_item = getattr(recipe, "output_item", None)
             if output_item in blocking_items:
                 return 0
@@ -499,7 +499,7 @@ class FabricatorController(RecipeClaimMixin):
             self.log.level("warn").print(f"[{self.name}] Byproduct buffer full ({left}/{capacity}) and no storage has room -- recipe will stall until space frees up.")
         return moved > 0
 
-    def load_inputs(self, recipe, crafts_remaining, remaining_capacity, cache=None):
+    def load_inputs(self, recipe: "Recipe", crafts_remaining, remaining_capacity, cache: "SourceCache | None" = None):
         """Tops the stockpile up for `recipe` (crafts_remaining and the free
         stockpile room come from step()); returns the units loaded."""
         # Fill the stockpile with enough for several crafts at once (not just
@@ -550,7 +550,7 @@ class FabricatorController(RecipeClaimMixin):
             self.log.print(f"[{self.name}] Loaded {', '.join(loaded)} for {recipe.id}.")
         return len(loaded)
 
-    def wake_local_smelters(self, item_id, cache=None):
+    def wake_local_smelters(self, item_id, cache: "SourceCache | None" = None):
         """Wakes the parked Smelters at this outpost when item_id (a Smelter
         output) found no stock, throttled per item (SMELTER_WAKE_THROTTLE_TICKS).
         Returns the ids woken."""
@@ -570,7 +570,7 @@ class FabricatorController(RecipeClaimMixin):
         self.log.debug(f"[{self.name}] no {item_id} in stock: woke parked Smelter(s) {woken or 'none'}")
         return woken
 
-    def eject_excess_inputs(self, recipe, crafts_remaining):
+    def eject_excess_inputs(self, recipe: "Recipe | None", crafts_remaining):
         """
         Recovers input-stockpile material this Fabricator no longer needs
         back into circulation (Inventory or a Warehouse) via

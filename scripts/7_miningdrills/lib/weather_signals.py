@@ -117,7 +117,7 @@ def leader_id(stations):
 class WeatherController:
     """Leader-elected sweep of every Weather Station receiver; decodes aftermath coordinates into the archive."""
 
-    def __init__(self, station):
+    def __init__(self, station: "WeatherStation"):
         self.station = station
         self.name = station.id
         self.log = TreeConsole(module="weather_signals")

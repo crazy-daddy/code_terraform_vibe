@@ -118,7 +118,7 @@ def salt_sources(curr_tick=None):
     return out
 
 
-def _free_warehouse_units(outpost):
+def _free_warehouse_units(outpost: "OutpostRef"):
     free = 0
     for building in discover_storage_buildings(outpost):
         component = building["component"]

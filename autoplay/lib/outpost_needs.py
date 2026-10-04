@@ -64,6 +64,10 @@ from archive import archive
 from outpost_mining import RAW_ORE_ITEM_IDS
 from wildlife_common import FEED_KEY, recipe_of
 from wildlife_data import SPECIES
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 URGENCIES = ("now", "soon", "later")
 PROPOSE_URGENCIES = ("now", "soon")
@@ -342,7 +346,7 @@ def found_bundles(leftovers, snap=None):
     return sorted(bundles, key=lambda bundle: (_rank(bundle["urgency"]), bundle["roles"]))
 
 
-def log_plan(log, open_needs, plan):
+def log_plan(log: "TreeConsole", open_needs, plan):
     """Debug trail of one need pass (CODE_GUIDES.md#logging): needs, rejected hosts, proposals."""
     for need in open_needs:
         log.debug(f"Need {need['role']} ({need['urgency']}{', locked' if need['locked'] else ''}): {need['why']}.")

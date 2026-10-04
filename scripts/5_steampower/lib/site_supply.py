@@ -178,7 +178,7 @@ def free_elsewhere(item_ids, site_id, outposts, requests, tick):
     return totals
 
 
-def consumer_wants(outpost, consumers, sources, requests, tick, flying, outposts=None, anywhere=(), urgent=()):
+def consumer_wants(outpost: "OutpostRef", consumers, sources, requests, tick, flying, outposts=None, anywhere=(), urgent=()):
     """{root_item: (target, have, min, urgent)} finished root targets
     consumed at this outpost that it pulls in from the other supply sites,
     or from every other outpost for items in `anywhere` (blueprint
@@ -205,7 +205,7 @@ def consumer_wants(outpost, consumers, sources, requests, tick, flying, outposts
     return wants
 
 
-def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
+def ship_wants(outpost: "OutpostRef", requests, cache: "SourceCache", flying, smelter_outputs, wants):
     """Adds this fab site's ship plan (production.get_site_ship_plan():
     intermediates spare elsewhere it hauls in instead of building) to wants,
     level = local + in flight + to ship, all need tier. An item this
@@ -226,7 +226,7 @@ def ship_wants(outpost, requests, cache, flying, smelter_outputs, wants):
         log.debug(f"ship_wants({site_id}): {item_id} local={have.get(item_id, 0)} in_flight={flying.get(item_id, 0)} ship={plan.get(item_id, 0)} -> level {level}")
 
 
-def raw_input_wants(outpost, raw, outposts, requests, tick, flying, wants):
+def raw_input_wants(outpost: "OutpostRef", raw, outposts, requests, tick, flying, wants):
     """Adds the raw inputs this fab site's Fabricators still need staged
     (`raw`: {item_id: units}, inputs no Smelter or Fabricator makes, e.g.
     Forage from the home Crop Automators) to wants, all need tier: level =
@@ -247,7 +247,7 @@ def raw_input_wants(outpost, raw, outposts, requests, tick, flying, wants):
         log.debug(f"raw_input_wants({site_id}): {item_id} staged need={raw[item_id]} local={local} free elsewhere={spare.get(item_id, 0)} -> pull {pull}")
 
 
-def ingot_wants(outpost, cache, wants):
+def ingot_wants(outpost: "OutpostRef", cache: "SourceCache", wants):
     """Raises this fab site's wants to its ingot buffer
     (production.fab_site_ingot_targets()): target at least the buffer target,
     need level at least the buffer's need tier. Published even with nothing
@@ -272,7 +272,7 @@ def ingot_wants(outpost, cache, wants):
         log.debug(f"ingot_wants({site_id}): {item_id} local={have.get(item_id, 0)} need level={floor} target={level}")
 
 
-def _stock_table(table, outpost):
+def _stock_table(table, outpost: "OutpostRef"):
     """{item_id: units} a {building type: {item: units}} table asks of this outpost (max over its building types)."""
     out = {}
     for type_id, items in sorted(table.items()):
@@ -283,17 +283,17 @@ def _stock_table(table, outpost):
     return out
 
 
-def site_stock_targets(outpost):
+def site_stock_targets(outpost: "OutpostRef"):
     """{item_id: target} SITE_STOCK_TARGETS asks of this outpost (max over its building types)."""
     return _stock_table(SITE_STOCK_TARGETS, outpost)
 
 
-def site_stock_needs(outpost):
+def site_stock_needs(outpost: "OutpostRef"):
     """{item_id: need level} SITE_STOCK_NEED asks of this outpost (max over its building types)."""
     return _stock_table(SITE_STOCK_NEED, outpost)
 
 
-def stock_wants(outpost, targets, outposts, requests, tick, flying, wants, needs=None):
+def stock_wants(outpost: "OutpostRef", targets, outposts, requests, tick, flying, wants, needs=None):
     """Raises wants to `targets` (site_stock_targets()) as buffer tier, with
     need level max(`needs` (site_stock_needs()), any need level already
     planned (ship plan)). Requested whether or not any is free elsewhere yet:
@@ -330,7 +330,7 @@ def untapped_kits(sites):
     return counts
 
 
-def construction_stock_targets(cache):
+def construction_stock_targets(cache: "SourceCache"):
     """{item_id: target} the Constructor's home keeps: CONSTRUCTION_STOCK_TARGETS plus min(untapped sites, CONSTRUCTION_KIT_CAP) kits per extractor kind."""
     targets = dict(CONSTRUCTION_STOCK_TARGETS)
     for kit, count in untapped_kits(cache.surveyed_sites()).items():
@@ -359,7 +359,7 @@ def order_site_stock(outposts, fabricator_outputs, construction=None):
     log.debug(f"order_site_stock: backlog {totals or 'none'}, need {needs or 'none'}, construction {build or 'none'}")
 
 
-def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=None, anywhere=(), urgent=(), extra_stock=None):
+def plan_site(outpost: "OutpostRef", outposts, requests, cache: "SourceCache", tick, consumers=None, sources=None, anywhere=(), urgent=(), extra_stock=None):
     """{item_id: (target, have, min)} this outpost should request, {} when it
     has no Smelter/Fabricator and consumes no root built elsewhere (or needs
     nothing). extra_stock: more stockpile targets (the construction stock at
@@ -435,7 +435,7 @@ def plan_site(outpost, outposts, requests, cache, tick, consumers=None, sources=
     return wants
 
 
-def settled_items(item_ids, roots, cache):
+def settled_items(item_ids, roots, cache: "SourceCache"):
     """The item_ids no Fabricator will add more of: none in any Fabricator's
     pipeline (production.get_fabricator_pipeline()) and no units of its root
     target left to build (production.root_remaining()). Hauling one of
@@ -526,7 +526,7 @@ def goods_destination(source_id, home_id, fab_ids):
     return None
 
 
-def _category(catalog, item_id):
+def _category(catalog: "ItemCatalog", item_id):
     try:
         info = catalog.lookup(item_id)
     except Exception as error:
@@ -535,7 +535,7 @@ def _category(catalog, item_id):
     return getattr(info, "category", None) if info else None
 
 
-def evictable_goods(cache):
+def evictable_goods(cache: "SourceCache"):
     """Item ids that may be evicted as stranded goods: Fabricator recipe
     inputs in EVICT_GOODS_CATEGORIES, minus storage.must_stay_in_inventory(),
     Constructor items and EVICT_HOLD_ITEM_IDS. Empty without an item_catalog."""
@@ -550,7 +550,7 @@ def evictable_goods(cache):
     return {i for i in candidates if not must_stay_in_inventory(i)}
 
 
-def held_item_ids(outpost):
+def held_item_ids(outpost: "OutpostRef"):
     """Item ids in an outpost's Warehouses and Drone Depots (what a hauler can load)."""
     held = set()
     for building in discover_storage_buildings(outpost):
@@ -653,7 +653,7 @@ def evict_stranded(outposts, requests, tick, consumers=None, smelt_ores=None, go
     return wants, {site_id: extra for site_id, extra in free.items() if site_id != home_id}
 
 
-def add_evicted(outpost, wants, extra, tick):
+def add_evicted(outpost: "OutpostRef", wants, extra, tick):
     """Raises this site's request targets by the stranded ore or goods
     headed here (buffer tier: need level unchanged)."""
     site_id = getattr(outpost, "id", None)

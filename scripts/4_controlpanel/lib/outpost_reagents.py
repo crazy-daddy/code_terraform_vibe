@@ -96,7 +96,7 @@ def reagent_stock_target_for(outpost_id, item_id):
     return default
 
 
-def publish_reagent_requests(outpost, curr_tick=None, force=False):
+def publish_reagent_requests(outpost: "OutpostRef", curr_tick=None, force=False):
     """
     Publishes this remote outpost's reagent stock targets as pull requests
     (logistics_requests.publish_requests(), requester REQUESTER_ID, whole

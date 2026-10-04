@@ -85,7 +85,7 @@ def synced_switch(key, x, y, value, label):
     return on
 
 
-def vehicle_role(vehicle):
+def vehicle_role(vehicle: "VehicleRef"):
     """Role pill from VehicleRef.kind ("rover"/"pioneer"), so renamed vehicles keep theirs."""
     kind = str(getattr(vehicle, "kind", "") or "").lower()
     if kind == "rover":

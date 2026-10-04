@@ -18,7 +18,7 @@ RECIPE_INDEX_TTL_TICKS = 6000
 _RECIPE_INDEX_MEMO = {}
 
 
-def fabricator_unlocked_outputs(cache=None):
+def fabricator_unlocked_outputs(cache: "SourceCache | None" = None):
     """Set of item ids the default Fabricator can craft today (list_recipes()
     only lists unlocked recipes, docs/components/fabricator.md)."""
     if cache is not None:
@@ -33,20 +33,20 @@ def fabricator_unlocked_outputs(cache=None):
     return {getattr(r, "output_item", None) for r in recipes} - {None}
 
 
-def blueprint_demand_items(cache=None):
+def blueprint_demand_items(cache: "SourceCache | None" = None):
     """Item ids any pending/paused Construction Blueprint needs, directly or via
     the recipe cascade (_cascade_blueprint_demand()). choose_recipe()'s tier 2."""
     return set(_cascade_blueprint_demand(cache).keys())
 
 
-def _stock_fn(cache):
+def _stock_fn(cache: "SourceCache | None"):
     """cache.stock when a SourceCache is threaded through, else the uncached
     storage.total_stock() -- lets every demand helper take an optional
     `cache` without changing behavior for callers that don't pass one."""
     return cache.stock if cache is not None else total_stock
 
 
-def _recipe_lists(cache=None):
+def _recipe_lists(cache: "SourceCache | None" = None):
     """[Fabricator recipes, Smelter recipes] (a cache's memoized lists, else one list_recipes() each)."""
     if cache is not None:
         return [cache.fabricator_recipes(), cache.smelter_recipes()]
@@ -77,7 +77,7 @@ def _build_recipe_index(recipe_lists):
     return index
 
 
-def _recipe_index(cache=None):
+def _recipe_index(cache: "SourceCache | None" = None):
     """
     The recipe input table, kept per script for RECIPE_INDEX_TTL_TICKS and rebuilt
     early when a recipe list's length changes (a research unlock). Memoized on
@@ -99,7 +99,7 @@ def _recipe_index(cache=None):
     return index
 
 
-def _recipe_inputs_for(item_id, cache=None):
+def _recipe_inputs_for(item_id, cache: "SourceCache | None" = None):
     """{input_item_id: qty_per_output_unit} for whichever of Fabricator/
     Smelter builds item_id, or None if neither does. Shared by
     _cascade_blueprint_demand(), _cascade_fabricator_output_demand() and
@@ -108,7 +108,7 @@ def _recipe_inputs_for(item_id, cache=None):
     return _recipe_index(cache).get(item_id)
 
 
-def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=None, stock=None, supply=None):
+def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache: "SourceCache | None" = None, stock=None, supply=None):
     """
     Breadth-first demand cascade seeded from seed_targets (Fabricator stock
     targets/Supply Dock orders, restricted to items the Fabricator itself
@@ -168,7 +168,7 @@ def _cascade_fabricator_output_demand(seed_targets, fabricator_outputs, cache=No
     return targets
 
 
-def get_manual_order_blocking_items(fabricator_outputs, orders=None, cache=None):
+def get_manual_order_blocking_items(fabricator_outputs, orders=None, cache: "SourceCache | None" = None):
     """
     Set of Fabricator-output item_ids that an active manual build order
     (get_manual_orders(), or the `orders` dict given instead -- e.g.
@@ -251,7 +251,7 @@ def _vehicle_cargo_counts(item_ids):
     return {k: v for k, v in counts.items() if v > 0}
 
 
-def blueprint_required_items(cache=None):
+def blueprint_required_items(cache: "SourceCache | None" = None):
     """{item_id: units} pending/paused Construction Blueprints still need as
     their own required_item (summed across jobs, deduped by job id), minus
     units already aboard vehicles. The seed of _walk_blueprint_demand().
@@ -295,7 +295,7 @@ def blueprint_required_items(cache=None):
     return frontier
 
 
-def _cascade_blueprint_demand(cache=None):
+def _cascade_blueprint_demand(cache: "SourceCache | None" = None):
     """Memoized on `cache` (one blueprint + fleet cargo walk per pass) -- see _walk_blueprint_demand()."""
     if cache is None:
         return _walk_blueprint_demand(None)
@@ -304,7 +304,7 @@ def _cascade_blueprint_demand(cache=None):
     return dict(cache._blueprint_demand)
 
 
-def _walk_blueprint_demand(cache):
+def _walk_blueprint_demand(cache: "SourceCache | None"):
     """
     Breadth-first demand cascade seeded from pending/paused Construction
     Blueprint required_item/required_count (summed across jobs, deduped by
@@ -358,7 +358,7 @@ def _walk_blueprint_demand(cache):
     return total_needed
 
 
-def get_construction_material_reservations(cache=None):
+def get_construction_material_reservations(cache: "SourceCache | None" = None):
     """
     Returns {item_id: units} to protect (Inventory + every Warehouse -- see
     storage.total_stock()) for active Construction Blueprints, cascading down
@@ -382,7 +382,7 @@ def get_construction_material_reservations(cache=None):
     return reservations
 
 
-def dock_delivery_targets(item_id, count, outpost=None, cache=None):
+def dock_delivery_targets(item_id, count, outpost: "OutpostRef | None" = None, cache: "SourceCache | None" = None):
     """
     [(dock_id, units)] a producer at `outpost` may push `count` fresh units of
     item_id into directly (storage.push_to_targets()): the local Supply Docks
@@ -405,7 +405,7 @@ def dock_delivery_targets(item_id, count, outpost=None, cache=None):
 _WARNED_UNKNOWN_MANUAL_ITEMS = set()
 
 
-def get_fabricator_targets(cache=None):
+def get_fabricator_targets(cache: "SourceCache | None" = None):
     """Returns desired finished-goods quantities for Fabricator planning.
 
     With a `cache` (SourceCache), the result is memoized on it for the rest
@@ -441,7 +441,7 @@ def get_fabricator_targets(cache=None):
     return targets
 
 
-def fabricator_root_targets(cache=None):
+def fabricator_root_targets(cache: "SourceCache | None" = None):
     """
     (roots, consumers, fabricator_outputs): the root Fabricator targets
     before the intermediate cascade -- standing stock targets, manual orders,

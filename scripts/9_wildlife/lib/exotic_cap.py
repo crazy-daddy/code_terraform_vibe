@@ -42,7 +42,7 @@ EXOTIC_WAKE_LEAD_TICKS = 150
 DEFAULT_REAL_SECONDS_PER_HOUR = 25.0
 
 
-def deposit_active(cap):
+def deposit_active(cap: "ExoticGasCap | ExoticSpringTap"):
     """True while the cap's deposit is in its active phase; False when dormant, unsurveyed or missing."""
     deposit = cap.deposit() if hasattr(cap, "deposit") else None
     return deposit is not None and deposit.current_phase() == "active"
@@ -51,7 +51,7 @@ def deposit_active(cap):
 class ExoticCapController(FluidPumpController):
     """Routes an Exotic Gas Cap / Spring Tap output to tanks of its deposit's fluid; parks through long dormant phases."""
 
-    def __init__(self, cap):
+    def __init__(self, cap: "ExoticGasCap | ExoticSpringTap"):
         medium = "gas" if hasattr(cap, "gas_out") else "liquid"
         deposit = None
         try:

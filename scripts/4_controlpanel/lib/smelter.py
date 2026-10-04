@@ -85,7 +85,7 @@ class SmelterController(RecipeClaimMixin):
         "lead_ore": "smelt_lead_ingot",
     }
 
-    def __init__(self, smelter, target_ore="iron_ore"):
+    def __init__(self, smelter: "Smelter", target_ore="iron_ore"):
         self.smelter = smelter
         self.name = getattr(smelter, "id", "smelter_1")
         self.target_ore = target_ore
@@ -121,7 +121,7 @@ class SmelterController(RecipeClaimMixin):
     def at_home(self):
         return outpost_is_home(self.outpost())
 
-    def demands(self, cache):
+    def demands(self, cache: "SourceCache"):
         """get_smelter_demands(), merged per item (max) with this site's own
         Fabricators' need (production.site_smelter_demands()), home
         included: network stock at another outpost only covers this site
@@ -225,7 +225,7 @@ class SmelterController(RecipeClaimMixin):
             swallowed("smelter.SmelterController.log_outcome: self.smelter.get_input_count", error)
         self.log.debug(f"[{self.name}] outcome: {reason} {detail}")
 
-    def switch_min_demand(self, recipe, ore):
+    def switch_min_demand(self, recipe: "Recipe", ore):
         """Smallest output demand worth pulling this Smelter off a recipe that
         still has work: one prefill window's worth (SMELTER_PREFILL_SECONDS of
         crafting, craft_prefill_units()), converted from ore units to output
@@ -236,7 +236,7 @@ class SmelterController(RecipeClaimMixin):
         output_count = max(1, getattr(recipe, "output_count", 1))
         return max(1, prefill * output_count // per_run)
 
-    def local_ore(self, ore, cache):
+    def local_ore(self, ore, cache: "SourceCache"):
         """Units of `ore` in storage this Smelter's input can reach (the
         step's SourceCache.local_stock(): Inventory + Warehouses at home,
         the outpost's own Warehouses elsewhere)."""
@@ -252,7 +252,7 @@ class SmelterController(RecipeClaimMixin):
         """Outpost id this Smelter stands at (home when not exposed), as production._dock_order_sites() names it."""
         return machine_outpost_id(self.smelter) or home_outpost_id()
 
-    def available_ore(self, ore, cache, dock_reserved):
+    def available_ore(self, ore, cache: "SourceCache", dock_reserved):
         """Units of `ore` this Smelter may refine: local stock minus whatever
         an active Supply Dock order at this outpost still needs to ship as raw
         ore. `dock_reserved` = dock_remaining_requirements(self.site_id())."""
@@ -348,7 +348,7 @@ class SmelterController(RecipeClaimMixin):
         else:
             self.log.end(f"[{self.name}] Locked recipe '{current_recipe}' not cleared ({clear_res.status}).")
 
-    def select_recipe(self, unlocked_recipes, demands, cache, dock_reserved):
+    def select_recipe(self, unlocked_recipes, demands, cache: "SourceCache", dock_reserved):
         """Picks (recipe, ore, refilling, demands) for this step. Idle time goes
         to this fab site's ingot buffer (production.site_ingot_refill()), only
         when no real demand is sourceable: a real demand found next step wins
@@ -380,7 +380,7 @@ class SmelterController(RecipeClaimMixin):
             self.release_recipe(current_recipe)
             self.log.print(f"[{self.name}] Recipe cleared (no demand): every refined output is already at its stock target or order requirement.")
 
-    def switch_recipe(self, recipe, ore, current_recipe, refilling):
+    def switch_recipe(self, recipe: "Recipe", ore, current_recipe, refilling):
         """Switches the Smelter from current_recipe to recipe. Waits (returns
         False) while a craft is running or foreign input can't be recovered
         yet. Returns True once the new recipe is set."""
@@ -408,7 +408,7 @@ class SmelterController(RecipeClaimMixin):
         self.log.print(f"[{self.name}] Set recipe '{recipe_id}' to refine {ore} -> {output_item} for {reason}.")
         return True
 
-    def load_ore(self, recipe, ore_to_process, demands, cache, dock_reserved, refilling, output_blocked):
+    def load_ore(self, recipe: "Recipe", ore_to_process, demands, cache: "SourceCache", dock_reserved, refilling, output_blocked):
         """Tops up the input buffer with ore_to_process, capped by hardware,
         chunk size, demand share, prefill and fair share. take_item() tries
         only endpoints that actually hold the ore -- Inventory first (never
@@ -491,7 +491,7 @@ class SmelterController(RecipeClaimMixin):
         self.log_outcome(outcome, **outcome_detail)
         return loaded
 
-    def settle_idle(self, unlocked_recipes, demands, cache, dock_reserved, changed):
+    def settle_idle(self, unlocked_recipes, demands, cache: "SourceCache", dock_reserved, changed):
         """Returns whether the Smelter is active (is_busy(), or `changed` =
         ore/recipe was just loaded/set). A fully idle Smelter with no demanded
         ore pending in reachable storage clears its recipe -- power_draw only
@@ -526,14 +526,14 @@ class SmelterController(RecipeClaimMixin):
                 self.log.print(f"[{self.name}] Recovered {result.moved}x {stack.id} from stale recipe input to '{destination}'.")
         return self.smelter.get_input_count() == 0
 
-    def select_needed_ore(self, unlocked_recipes=None, demands=None, cache=None, dock_reserved=None):
+    def select_needed_ore(self, unlocked_recipes=None, demands=None, cache: "SourceCache | None" = None, dock_reserved=None):
         """Logs the decision trail as one debug block around _select_needed_ore()."""
         self.log.start(f"[{self.name}] select_needed_ore", level="debug")
         choice = self._select_needed_ore(unlocked_recipes, demands, cache, dock_reserved)
         self.log.end()
         return choice
 
-    def _select_needed_ore(self, unlocked_recipes, demands, cache, dock_reserved):
+    def _select_needed_ore(self, unlocked_recipes, demands, cache: "SourceCache | None", dock_reserved):
         """
         Selects only ore whose unlocked recipe has an active downstream need,
         preferring a recipe no other live smelter already holds a fresh claim

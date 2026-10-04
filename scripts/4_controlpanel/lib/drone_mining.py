@@ -373,7 +373,7 @@ class DroneMiningMixin:
                 flush_all()
                 sleep(5.0)
 
-    def _run_mission(self, log, target):
+    def _run_mission(self, log: "TreeConsole", target):
         """Flies to the reserved biosite, extracts and unloads; returns (caller should back off, outcome text)."""
         self._host.set_intent(fleet_intent.describe("sampling", [target["sample_type"]], at=target["target_key"], root=fleet_intent.haul_root([target["sample_type"]])))
         self._host.publish_telemetry("OUTBOUND", target["target_key"])
@@ -388,7 +388,7 @@ class DroneMiningMixin:
             return True, "extracted, unload deferred"
         return False, "extracted and unloaded"
 
-    def _adopt_interrupted_extraction(self, log):
+    def _adopt_interrupted_extraction(self, log: "TreeConsole"):
         """
         Restart-during-extraction check, run once when the miner loop starts.
         extract() keeps the drone occupied across a script restart, so every
@@ -476,7 +476,7 @@ class DroneMiningMixin:
         self._host.log.end(f"{extracted_total:.1f}t extracted")
         self._host.log.trace(f"[{self._host.name}] _extract_until_done({coords}) exit.")
 
-    def _wait_for_depot_space(self, log, depot_id, ticks_left):
+    def _wait_for_depot_space(self, log: "TreeConsole", depot_id, ticks_left):
         """
         Depot-full backoff: hover in place off the berth (free) and report
         WAITING_DEPOT_SPACE for depot_id, which lets that Depot flush surplus
@@ -495,7 +495,7 @@ class DroneMiningMixin:
         self._host.hover_wait("WAITING_DEPOT_SPACE", depot_id)
         log.end()
 
-    def _deliver_elsewhere(self, log):
+    def _deliver_elsewhere(self, log: "TreeConsole"):
         """
         Stalled at a full home Depot: delivers cargo that another Depot
         outpost requests (logistics_requests.outpost_deficits()) there, once,
@@ -541,7 +541,7 @@ class DroneMiningMixin:
         log.end("delivered" if delivered else "not delivered")
         return delivered
 
-    def _deliver_to_depot(self, log, depot):
+    def _deliver_to_depot(self, log: "TreeConsole", depot):
         """Docks at the other outpost's Depot and unloads the stalled cargo; True when anything was unloaded."""
         self._host.publish_telemetry("DELIVERING", depot["id"])
         if not self._host.fly_to_station(depot["id"], target_coords=depot["coords"]):

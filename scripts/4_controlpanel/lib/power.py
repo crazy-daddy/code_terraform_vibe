@@ -88,7 +88,7 @@ class PowerGridManager:
     - Restores shedded machinery progressively when battery/surplus recovers.
     """
 
-    def __init__(self, grid, clock=None, power=None):
+    def __init__(self, grid: "PowerGrid", clock: "Clock | None" = None, power: "PowerControl | None" = None):
         self.clock = clock or get_component("clock")
         self.power = power or get_component("power_control")
         self.log = TreeConsole(module="power")
@@ -449,7 +449,7 @@ class PowerGridManager:
             self.update_archive_shedded()
         self.log.end()
 
-    def supervise_grid(self, grid, elevation):
+    def supervise_grid(self, grid: "PowerGrid", elevation):
         """Core supervision cycle for this grid."""
         self.log.start("[POWER] supervise_grid", level="debug")
         entry_tick = self.clock.tick() if self.clock and hasattr(self.clock, "tick") else 0

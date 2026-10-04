@@ -196,7 +196,7 @@ class SeedSupplyController(SeedMakerController):
 
     # ------------------------------------------------------------ crafting
 
-    def _craft(self, seed_id, recipe):
+    def _craft(self, seed_id, recipe: "SeedRecipe"):
         blend = list(recipe.blend)
         loaded = self._chamber()
         for form in blend:

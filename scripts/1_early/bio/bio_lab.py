@@ -114,7 +114,7 @@ def recipe_cost(recipe):
     return total
 
 
-def order_estimate(order):
+def order_estimate(order: "BioOrder"):
     # What finishing `order` would cost in reagents, from what we know.
     #
     # Returns {"cost": n, "known": n, "unknown": n} where cost covers only

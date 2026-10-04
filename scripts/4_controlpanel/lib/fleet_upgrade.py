@@ -271,7 +271,7 @@ class FleetUpgradeCoordinator:
 
     # ------------------------------------------------------------ Depot swap
 
-    def _advance_depot(self, old_id, entry, depots, computer, current_tick):
+    def _advance_depot(self, old_id, entry, depots, computer: "Computer", current_tick):
         self.log.start("[fleet_upgrade] _advance_depot", level="debug")
         state = entry.get("state")
         kit = entry.get("target_kit")
@@ -395,7 +395,7 @@ class FleetUpgradeCoordinator:
 
     # ------------------------------------------------------------ drone swap
 
-    def _advance_drone(self, old_id, entry, drones, computer, current_tick):
+    def _advance_drone(self, old_id, entry, drones, computer: "Computer", current_tick):
         self.log.start("[fleet_upgrade] _advance_drone", level="debug")
         state = entry.get("state")
         kind = entry.get("target_kind")
@@ -475,7 +475,7 @@ class FleetUpgradeCoordinator:
         self.log.end()
         return f"{old_id}: unknown state {state!r}"
 
-    def _swap_drone(self, old_id, entry, drones, computer):
+    def _swap_drone(self, old_id, entry, drones, computer: "Computer"):
         kind = entry.get("target_kind")
         outpost_id = entry.get("outpost")
         new_id = entry.get("new_id")

@@ -72,7 +72,7 @@ WATER_RESCAN_INTERVAL_TICKS = 300
 WATER_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 
-def _port_fill(port):
+def _port_fill(port: "FluidPort"):
     """(level, capacity) of a FluidPort, (0.0, 0.0) when unreadable."""
     if not port:
         return 0.0, 0.0

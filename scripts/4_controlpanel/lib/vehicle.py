@@ -45,7 +45,7 @@ class VehicleController(
     """
     DEFAULT_SPEED_MPH = 25.0
 
-    def __init__(self, vehicle, home_base=None):
+    def __init__(self, vehicle: "Rover | Pioneer", home_base=None):
         self.vehicle = vehicle
         self.name = getattr(vehicle, "id", getattr(vehicle, "name", "vehicle"))
         # home_base is an outpost id (None = the production/home outpost,

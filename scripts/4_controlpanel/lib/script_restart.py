@@ -87,7 +87,7 @@ def _mark_restarted(machine_id, tick):
     return archive.transaction(RESTART_REQUESTS_KEY, {}, updater)
 
 
-def process_restart_requests(run_control, tick):
+def process_restart_requests(run_control: "RunControl | None", tick):
     """Stops and starts every script with a "requested" entry. Returns
     (restarted ids, {id: refusal status}) for the caller to log. A refused start
     keeps the request, so the next pass retries it."""

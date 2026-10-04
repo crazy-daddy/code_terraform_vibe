@@ -25,7 +25,7 @@ class StationController:
     ACTIVE_POLL_SECONDS = 1.5
     IDLE_POLL_SECONDS = 5.0
 
-    def __init__(self, station, target_charge_level=1.0):
+    def __init__(self, station: "ChargingStation | DroneServiceStation", target_charge_level=1.0):
         self.station = station
         self.name = getattr(station, "id", self.DEFAULT_NAME)
         self.target_charge_level = target_charge_level

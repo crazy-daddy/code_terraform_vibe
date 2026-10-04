@@ -30,6 +30,10 @@ from construction_plan import EXTRACTOR_KITS
 from production import smelter_ores
 import autoplay_roles
 import supply_tiers
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 MAX_OPEN_URGENT = 2       # urgent extractor jobs of ours open at once
 MAX_TRIES_PER_PASS = 5    # sites tried per pass when the game rejects one
@@ -142,7 +146,7 @@ def smelter_outposts():
 class ExtractorPlanner:
     """One extractor pass per planner tick; see the module header."""
 
-    def __init__(self, log):
+    def __init__(self, log: "TreeConsole"):
         self.log = log
         self.skip = set()     # site ids the game rejected this run
         self.locked = set()   # structure kinds plan_structure() reported locked this run

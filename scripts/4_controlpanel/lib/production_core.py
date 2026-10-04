@@ -41,7 +41,7 @@ def _ceil(x):
     return i + 1 if x > i else i
 
 
-def craft_seconds(recipe):
+def craft_seconds(recipe: "Recipe"):
     """Real-world seconds per craft for `recipe`, converted from its
     `.duration_game_hours` via the fixed day-cycle schedule. Floors at 1
     second if the recipe reports a missing/zero duration, so dividing
@@ -52,7 +52,7 @@ def craft_seconds(recipe):
     return hours * SECONDS_PER_GAME_HOUR
 
 
-def craft_prefill_units(recipe, item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
+def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
     """
     How many units of `item_id` (one of recipe.inputs) a Smelter/Fabricator
     should keep staged to cover roughly the next `prefill_seconds` of real
@@ -113,7 +113,7 @@ DISCOVERY_TTL_TICKS = 20
 _DISCOVERY_MEMO = {}
 
 
-def _discover_building_ids(type_id, outpost=None):
+def _discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
     """Ids of every `type_id` building at `outpost`, or at every outpost when
     `outpost` is None (home first, then outpost_network order). Memoized for
     DISCOVERY_TTL_TICKS."""
@@ -127,7 +127,7 @@ def _discover_building_ids(type_id, outpost=None):
     return list(ids)
 
 
-def _scan_building_ids(type_id, outpost):
+def _scan_building_ids(type_id, outpost: "OutpostRef | None"):
     outposts = [outpost] if outpost is not None else _all_outposts()
     ids = []
     for candidate in outposts:
@@ -143,12 +143,12 @@ def _scan_building_ids(type_id, outpost):
     return ids
 
 
-def discover_building_ids(type_id, outpost=None):
+def discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
     """Ids of every `type_id` building at `outpost`, or network-wide when omitted (memoized discovery)."""
     return _discover_building_ids(type_id, outpost)
 
 
-def discover_smelter_ids(outpost=None):
+def discover_smelter_ids(outpost: "OutpostRef | None" = None):
     """
     All Smelter building ids at `outpost`, or network-wide when omitted --
     a Smelter at a factory outpost is a peer like any home one. Recipe
@@ -160,13 +160,13 @@ def discover_smelter_ids(outpost=None):
     return _discover_building_ids(SMELTER_TYPE_ID, outpost)
 
 
-def machine_outpost_id(machine):
+def machine_outpost_id(machine: "Smelter | Fabricator | None"):
     """Id of the outpost a Smelter/Fabricator is deployed at (its .outpost
     OutpostRef), or None when the component doesn't expose one."""
     return getattr(getattr(machine, "outpost", None), "id", None)
 
 
-def claim_site_id(machine):
+def claim_site_id(machine: "Smelter | Fabricator | None"):
     """Outpost id a machine's recipe claim is filed under (smelter/fabricator
     .recipe_claims): its own outpost, HOME_OUTPOST_ID when not exposed."""
     return machine_outpost_id(machine) or HOME_OUTPOST_ID
@@ -241,7 +241,7 @@ def construction_site_id():
     return site_id or home_outpost_id()
 
 
-def smelter_ores(outpost):
+def smelter_ores(outpost: "OutpostRef"):
     """{ore: output_item} for every raw ore a Smelter at `outpost` has an
     unlocked recipe for, {} without a Smelter there. list_recipes() is
     tech-gated and identical per Smelter, so the first one that answers
@@ -276,7 +276,7 @@ def _default_smelter():
 FABRICATOR_TYPE_ID = "fabricator"
 
 
-def discover_fabricator_ids(outpost=None):
+def discover_fabricator_ids(outpost: "OutpostRef | None" = None):
     """All Fabricator building ids at `outpost`, or network-wide when omitted. Same shape/reasoning as discover_smelter_ids()."""
     return _discover_building_ids(FABRICATOR_TYPE_ID, outpost)
 
@@ -312,7 +312,7 @@ def _uranium_aftermath_pending():
 SUPPLY_DOCK_TYPE_ID = "supply_dock"
 
 
-def discover_supply_dock_ids(outpost=None):
+def discover_supply_dock_ids(outpost: "OutpostRef | None" = None):
     """
     All Supply Dock building ids at outpost (default: every outpost, like
     Smelter/Fabricator discovery -- a dock at a fab outpost ships what that

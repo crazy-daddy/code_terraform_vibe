@@ -184,7 +184,7 @@ class OilGeneratorController:
                 swallowed("oil_generator.OilGeneratorController.get_grid: self.power.grid", error)
         return None
 
-    def oil_deficit_share(self, grid):
+    def oil_deficit_share(self, grid: "PowerGrid"):
         """(deficit_w, share_w, generator_count, oil_w). deficit_w = consumption minus every NON-oil
         generator's output; share_w is this generator's even share of it; oil_w = the Oil Generators' output."""
         oil_members = [m for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == "oil_generator"]
@@ -247,7 +247,7 @@ class OilGeneratorController:
                 self.log.print(f"[{self.name}] Oil surplus base load OFF -- oil tanks {oil_str} (stop below {OIL_SURPLUS_STOP_FRACTION*100:.0f}%).")
         return self.surplus
 
-    def surplus_throttle(self, grid, battery, count):
+    def surplus_throttle(self, grid: "PowerGrid", battery, count):
         """Throttle that burns the gross oil inflow plus a correction toward OIL_SURPLUS_TARGET_FRACTION,
         capped at the grid's consumption (+ recharge below OIL_SURPLUS_TOPUP_BELOW), shared over count."""
         recharge = OIL_RECHARGE_W if battery is not None and battery < OIL_SURPLUS_TOPUP_BELOW else 0.0

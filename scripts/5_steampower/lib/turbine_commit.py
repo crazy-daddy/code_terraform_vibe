@@ -122,7 +122,7 @@ def rank_turbines(infos, running_bonus=True):
 class TurbineCommitment:
     """One per grid (owned by PowerGridManager)."""
 
-    def __init__(self, power=None):
+    def __init__(self, power: "PowerControl | None" = None):
         self.power = power or get_component("power_control")
         self.woken_at = {}  # {turbine_id: tick} woken here, for TURBINE_MIN_ON_TICKS
         self.turbine_ids = []  # this grid's turbines at the last step(), for release_all()
@@ -132,7 +132,7 @@ class TurbineCommitment:
     # ------------------------------------------------------------------ reads
 
     @staticmethod
-    def _source_fill(port):
+    def _source_fill(port: "FluidPort"):
         """Fill (0-1) of the steam source a turbine's steam_in is connected to: a Gas Tank's
         fill_pct, a Thermal Cap's pressure; 0.5 when unknown."""
         try:
@@ -144,11 +144,13 @@ class TurbineCommitment:
         if source is None:
             return 0.5
         try:
-            if hasattr(source, "fill_pct"):
-                pct = source.fill_pct()
+            fill_pct = getattr(source, "fill_pct", None)
+            if fill_pct is not None:
+                pct = fill_pct()
                 return pct / 100.0 if pct > 1.0 else pct
-            if hasattr(source, "pressure"):
-                return max(0.0, min(1.0, source.pressure()))
+            pressure = getattr(source, "pressure", None)
+            if pressure is not None:
+                return max(0.0, min(1.0, pressure()))
         except Exception as error:
             swallowed("turbine_commit._source_fill: source.fill_pct", error)
         return 0.5
@@ -202,7 +204,7 @@ class TurbineCommitment:
             shown = f"{steam_fraction * 100:.0f}%" if steam_fraction is not None else "n/a"
             log.print(f"[TURBINES] '{grid_id_str}': steam pool {shown} (stop below {TURBINE_SURPLUS_STOP_FRACTION * 100:.0f}%) -- steam surplus base load OFF.")
 
-    def step(self, grid, grid_id_str, steam_fraction=None):
+    def step(self, grid: "PowerGrid", grid_id_str, steam_fraction=None):
         """One pass for `grid` (a power_control grid snapshot). steam_fraction: the grid's steam
         pool fill (power.measure_grid()), None without a steam tank. Returns a short status string."""
         turbine_ids = sorted(m.id for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == TURBINE_TYPE_ID)

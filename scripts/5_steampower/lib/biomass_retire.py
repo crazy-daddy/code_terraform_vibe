@@ -96,7 +96,7 @@ def _input_count(liquifier):
 class BiomassRetirement:
     """Stage 1 bookkeeping for control_room_automation.py: breakers off, readiness per machine, RETIRE_KEY status."""
 
-    def __init__(self, power=None):
+    def __init__(self, power: "PowerControl | None" = None):
         self.power = power or get_component("power_control")
         self._announced = False
         self._unswitchable_warned = set()
@@ -182,7 +182,7 @@ class BiomassRetirement:
         return status
 
 
-def _sell_one(shop, item_id):
+def _sell_one(shop: "Shop", item_id):
     """Sells one item_id from Inventory; credits earned, 0 on failure."""
     try:
         res = shop.sell(item_id, 1)

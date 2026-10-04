@@ -213,7 +213,7 @@ class FleetDecommissionCoordinator:
                 notes.append(f"{machine_id} {entry.get('state')}")
         return "decommission: " + ", ".join(notes) if notes else "decommission idle"
 
-    def _retire(self, machine_id, entry, drones, computer):
+    def _retire(self, machine_id, entry, drones, computer: "Computer"):
         kind = entry.get("kind")
         self.log.start(f"[decommission] Retiring {kind} '{machine_id}'")
         if self._cargo_count(machine_id) > 0:

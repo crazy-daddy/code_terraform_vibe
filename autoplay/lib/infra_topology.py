@@ -23,6 +23,10 @@ from archive import archive
 from atomic import run_batched
 from swallow import swallowed
 from grid_geom import piece_tiles, job_tiles, tile_at, run_tiles
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 NETWORKS_KEY = "autoplay.networks"
 
@@ -290,7 +294,7 @@ class Topology:
         self.passes = 0        # reads since the last full pipe read
         self.last = ""         # what the latest read did, for the pass log
 
-    def _read_rows(self, pipes, log):
+    def _read_rows(self, pipes, log: "TreeConsole | None"):
         rows = []
         for start in range(0, len(pipes), PIPE_PROGRESS_EVERY):
             rows.extend(run_batched(read_pipe_slice, pipes[start:start + PIPE_PROGRESS_EVERY], PIPE_CHUNK))
@@ -299,7 +303,7 @@ class Topology:
                 log.flush()
         return rows
 
-    def _read_pipes(self, log):
+    def _read_pipes(self, log: "TreeConsole | None"):
         """Updates the pipe cache; returns True when it changed."""
         try:
             pipes = list_pipes() or []  # type: ignore[name-defined]  # game builtin
@@ -324,7 +328,7 @@ class Topology:
         self.last = f"{len(fresh)} new, {max(removed, 0)} removed of {len(pipes)} pipes"
         return bool(fresh) or removed > 0
 
-    def read(self, log=None):
+    def read(self, log: "TreeConsole | None" = None):
         """Updates the occupancy from the game; returns self. Missing APIs leave the matching rows empty.
         log: TreeConsole for a debug progress line every PIPE_PROGRESS_EVERY pipes read."""
         pipes_changed = self._read_pipes(log)

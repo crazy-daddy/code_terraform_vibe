@@ -100,7 +100,7 @@ def get_free_base_slots():
         _swallowed("solar.get_free_base_slots: home.buildings_capacity", error)
         return max(0, 25 - len(home.buildings()))
 
-def safe_undeploy_and_sell(computer, type_id, keep_count, item_id):
+def safe_undeploy_and_sell(computer: "Computer", type_id, keep_count, item_id):
     current_ids = get_building_ids(type_id)
     to_remove = len(current_ids) - keep_count
     if to_remove <= 0:
@@ -121,7 +121,7 @@ def safe_undeploy_and_sell(computer, type_id, keep_count, item_id):
             print(f"[buyer] Sold {sale.units}x {item_id} (+{sale.credits} cr)")
     return removed
 
-def safe_buy_and_deploy(computer, item_id, count_needed, tech_gate=None):
+def safe_buy_and_deploy(computer: "Computer", item_id, count_needed, tech_gate=None):
     if tech_gate and not is_tech_unlocked(tech_gate):
         return False
     # Mobile vehicles (rover, pioneer) do not consume base building slots

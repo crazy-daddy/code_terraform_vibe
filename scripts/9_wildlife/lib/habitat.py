@@ -82,7 +82,7 @@ def next_poll(feed_level, burn_per_h):
 class HabitatController:
     """Runs one Habitat: revival, feeding, fluid bands, purchases, parking."""
 
-    def __init__(self, machine):
+    def __init__(self, machine: "Habitat"):
         self.machine = machine
         self.name = getattr(machine, "id", "habitat")
         self.outpost = getattr(machine, "outpost", None)
@@ -114,7 +114,7 @@ class HabitatController:
         return call_or("habitat.HabitatController._call", self.machine, method, default, *args)
 
     @staticmethod
-    def held(port):
+    def held(port: "InputSlot"):
         out = {}
         try:
             for stack in port.stacks():
@@ -193,7 +193,10 @@ class HabitatController:
         for other, count in bin_.items():
             if other != item and count > 0:
                 try:
-                    port.eject(local_port_target(self.outpost), other, count)
+                    target = local_port_target(self.outpost)
+                    if target is None:
+                        continue
+                    port.eject(target, other, count)
                     self.log.print(f"[{self.name}] Ejected {count}x wrong feed '{other}'.")
                 except Exception as error:
                     swallowed("habitat.HabitatController.stage_feed: port.eject", error)
@@ -312,7 +315,7 @@ class HabitatController:
             return False
         return True
 
-    def _drop_wrong_source(self, medium, port, fluid_id):
+    def _drop_wrong_source(self, medium, port: "FluidPort", fluid_id):
         """
         Disconnects the port's declared source when its link carries, or the tank is assigned
         to, a fluid other than `fluid_id` (the base-fluid tank once a stage switches to the

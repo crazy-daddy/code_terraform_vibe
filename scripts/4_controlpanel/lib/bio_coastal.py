@@ -19,7 +19,7 @@ class BioLuminizerController(BioProcessorController):
     DISPLAY_NAME = "Bio Luminizer"
     FINISHED_LABEL = "already-tinted"
 
-    def __init__(self, machine):
+    def __init__(self, machine: "BioLuminizer"):
         BioProcessorController.__init__(self, machine)
         self._lamp_matrix = None  # (red_sig, green_sig, blue_sig) -- fixed hardware, read once
 

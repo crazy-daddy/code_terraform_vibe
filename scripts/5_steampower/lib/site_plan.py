@@ -38,7 +38,7 @@ def _site_order(consumer_sites, fab_sites, load, home_id):
     return sorted(fab_sites, key=key)
 
 
-def plan_sites(cache=None):
+def plan_sites(cache: "SourceCache | None" = None):
     """Updates SITE_PLAN_KEY (written only on change); returns the plan."""
     cache = SourceCache() if cache is None else cache
     home_id = home_outpost_id()

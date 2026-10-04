@@ -318,7 +318,7 @@ def start_script(machine_id):
     return "ok" if res.status in ("ok", "already_running") else res.status
 
 
-def set_powered(power, machine_id, on, log):
+def set_powered(power: "PowerControl | None", machine_id, on, log: "TreeConsole"):
     """power_control.set_powered(machine_id, on); True on "ok". A refusal is
     logged at debug on log, an exception goes to swallowed()."""
     if power is None:
@@ -436,7 +436,7 @@ def stray_alerts(entries=None):
 class ScriptParking:
     """Panel-side half, one instance in control_room_automation.py; call `step()` every few seconds."""
 
-    def __init__(self, power=None, run_control=None, clock=None):
+    def __init__(self, power: "PowerControl | None" = None, run_control: "RunControl | None" = None, clock: "Clock | None" = None):
         self.power = power or get_component("power_control")
         self.run_control = run_control or get_component("run_control")
         self.clock = clock or get_component("clock")
@@ -447,7 +447,7 @@ class ScriptParking:
         # {(kind, source key, item): amount} of the last pass's demand (_demand_signature()); None before the first pass.
         self._demand = None
 
-    def step(self, grids, elevation, dock_plan=None):
+    def step(self, grids: "list[PowerGrid]", elevation, dock_plan=None):
         """
         One pass: wake due or triggered machines, park fresh requests, stop/start
         solar scripts by `elevation`. `grids` = power_control.grids() of this tick;
@@ -695,7 +695,7 @@ class ScriptParking:
         fill = fluid_routing.fluid_reserve_fraction("oil")
         return fill is not None and fill >= OIL_SURPLUS_WAKE_FRACTION
 
-    def _low_reserve_grids(self, grids, parked, requests, members):
+    def _low_reserve_grids(self, grids: "list[PowerGrid]", parked, requests, members):
         """Anchor ids of grids with a parked or park-requesting Oil Generator whose reserve is below OIL_WAKE_RESERVE_FRACTION."""
         entries = list(parked.items()) + [(m, r) for m, r in requests.items() if isinstance(r, dict)]
         wanted = {members[m][0] for m, e in entries if e.get("kind") == "oil_generator" and m in members}
@@ -863,7 +863,7 @@ class ScriptParking:
     # ------------------------------------------------------------------ game calls
 
     @staticmethod
-    def _members(grids):
+    def _members(grids: "list[PowerGrid]"):
         """{machine_id: (grid anchor id, type_id, powered)} over every grid. The member
         attribute reads run in atomic batches (_member_rows())."""
         out = {}
