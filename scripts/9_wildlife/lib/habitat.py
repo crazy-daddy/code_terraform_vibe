@@ -7,9 +7,10 @@
 #     (and the Adaptation is bought when the plan says Adaptation first);
 #   - rearing (12 game hours): keep the feed present; on rearing_failed()
 #     re-stage and retry up to MAX_REVIVE_RETRIES;
-#   - released (`plan.release`, colony at the Mk II ceiling): no feed, fluid or
-#     purchase; ejects feed and reagents to local storage, purges both buffers
-#     and inlets, then publishes `release` "ready" for the planner to undeploy it;
+#   - released (`plan.release`, colony at the Mk II ceiling, or every Habitat
+#     once Wildlife is complete, wc.RELEASE_NO_COLONY for one without an
+#     established colony): no feed, fluid or purchase; ejects feed and
+#     reagents to local storage, purges both buffers and inlets, then publishes `release` "ready" for the planner to undeploy it;
 #   - established: top up feed, regulate gas and liquid toward the band centre
 #     from tanks holding the required fluid, pre-fill a medium that opens at
 #     the next stage, buy queued Breakthroughs/Adaptations. A fluid the
@@ -477,7 +478,7 @@ class HabitatController:
             self.blocker = "releasing"
             return wc.RELEASE_EMPTYING
         if self.released != wc.RELEASE_READY:
-            self.log.print(f"[{self.name}] {species} released: Habitat empty, waiting to be undeployed.")
+            self.log.print(f"[{self.name}] {species or 'no colony'} released: Habitat empty, waiting to be undeployed.")
         return wc.RELEASE_READY
 
     # ------------------------------------------------------------ loop
@@ -506,9 +507,9 @@ class HabitatController:
         released = ""
         item, feed, rate, fluids = "", float(self._call("feed_level", 0.0)), 0.0, {}
         poll = POLL_STAGING_S
-        if release and established and release == species:
+        if (release == wc.RELEASE_NO_COLONY and not established) or (release and established and release == species):
             # Published `feed_item` stays "", so Feed Makers deliver nothing here.
-            released = self.release_step(species)
+            released = self.release_step(species if established else "")
             feed = float(self._call("feed_level", 0.0))
             poll = POLL_MAX_S if released == wc.RELEASE_READY else POLL_STAGING_S
         elif established:

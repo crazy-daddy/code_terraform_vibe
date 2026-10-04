@@ -357,6 +357,23 @@ class ReleaseTests(HabitatTestCase):
         ctrl.step()
         self.assertNotIn(("unlock_bonus", "salt_tortoise_a"), machine.calls)
 
+    def test_no_colony_release_empties_habitat(self):
+        machine = self.habitat(revive="salt_tortoise")
+        machine.input_buffer[wc.feed_item_of("salt_tortoise")] = 5
+        ctrl = self.controller(machine)
+        self.world.notebook.data[wc.PLAN_KEY]["release"] = {"habitat_1": wc.RELEASE_NO_COLONY}
+        ctrl.step()
+        self.assertEqual(self.status()["release"], wc.RELEASE_READY)
+        self.assertEqual(sum(machine.input_buffer.values()), 0)
+
+    def test_no_colony_release_ignored_by_established_colony(self):
+        machine = self.habitat("salt_tortoise", established=True)
+        machine.pop, machine.rate = 1000, 10.0
+        ctrl = self.controller(machine)
+        self.world.notebook.data[wc.PLAN_KEY]["release"] = {"habitat_1": wc.RELEASE_NO_COLONY}
+        ctrl.step()
+        self.assertEqual(self.status()["release"], "")
+
     def test_unreleased_colony_keeps_feeding(self):
         machine = self.habitat("salt_tortoise", established=True)
         machine.pop, machine.rate = 1000, 10.0

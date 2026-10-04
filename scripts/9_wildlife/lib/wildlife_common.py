@@ -95,6 +95,9 @@ PARK_RATIONED = "rationed"   # fluid denied by the planner and buffer out of ban
 # Habitat status `release`: "" (not released), RELEASE_EMPTYING, RELEASE_READY (holders and buffers empty).
 RELEASE_EMPTYING = "emptying"
 RELEASE_READY = "ready"
+# `plan.release` value for a Habitat without an established colony, released once Wildlife is complete.
+RELEASE_NO_COLONY = "-"
+FEED_MAKER_TYPE_ID = "feed_maker"
 
 
 def feed_item_of(species):

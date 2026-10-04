@@ -24,6 +24,10 @@
 #   - While a craft of the picked recipe runs nothing is decided: the stock
 #     walk and the pick run once it has ended.
 #   - Soft-shed (`power.shedded`, lib/power.py): starts no new craft.
+#   - Wildlife complete (`plan.complete`): crafts nothing; once the running
+#     craft ends it clears the recipe, ejects the stockpile to local storage,
+#     drains the output and publishes `retire` "ready" for the planner to
+#     undeploy it.
 # Never crafts past the target; idle (no deficit or no inputs) -> parked.
 
 from archive import archive
@@ -40,6 +44,7 @@ ACTIVE_POLL_S = 2.0          # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
 # done, and the craft ran during the Forage transfer, so the next step is due now.
 FAST_POLL_S = 0.2
 IDLE_POLL_S = 20.0
+RETIRED_POLL_S = 10.0        # emptied, waiting for the planner's undeploy (not IDLE_POLL_S: must not park)
 RECIPE_REFRESH_TICKS = 1200  # republish unlocked recipes at least this often
 PUBLISH_REFRESH_TICKS = 600  # status rewritten on change, else at least this often
 HABITAT_MAP_REFRESH_TICKS = 3000  # local Habitat ids re-listed at least this often
@@ -67,6 +72,7 @@ class FeedMakerController:
         self._habitat_ids = None
         self._habitat_ids_tick = 0
         self._picked = None
+        self._retire = ""
 
     def tick(self):
         try:
@@ -109,6 +115,12 @@ class FeedMakerController:
         """The planner's `feed_demand` ({feed_item: [target, priority, short]})."""
         plan = archive.get(wc.PLAN_KEY, {}) or {}
         return (plan.get("feed_demand") or {}) if isinstance(plan, dict) else {}
+
+    @staticmethod
+    def complete():
+        """True once the planner marks Wildlife complete (`plan.complete`)."""
+        plan = archive.get(wc.PLAN_KEY, {}) or {}
+        return bool(plan.get("complete")) if isinstance(plan, dict) else False
 
     def home_stock(self, recipes, demand):
         """{item_id: units} at home of every demanded feed and every recipe input, in one walk."""
@@ -279,11 +291,35 @@ class FeedMakerController:
             self.log.debug(f"[{self.name}] {moved} feed to storage.")
         return True
 
+    # ------------------------------------------------------------- retire
+
+    def retire_step(self, curr_tick):
+        """
+        Empties the Feed Maker once Wildlife is complete: waits for the running
+        craft, clears the recipe, ejects the stockpile to local storage and
+        drains the output. Returns wc.RELEASE_READY once nothing is left, else
+        wc.RELEASE_EMPTYING.
+        """
+        self.drain_output(curr_tick)
+        if self._call("is_running", False):
+            return wc.RELEASE_EMPTYING
+        if self._call("get_recipe", ""):
+            self._call("clear_recipe", None)
+        target = local_port_target(self.outpost)
+        if target and self.stockpile():
+            ejected = eject_unneeded(self.maker.input, (), target)
+            self.log.debug(f"[{self.name}] retire: ejected {', '.join(ejected) or 'nothing'} to '{target}'.")
+        if self.stockpile() or int(self._call("get_output_count", 0)) > 0:
+            return wc.RELEASE_EMPTYING
+        if self._retire != wc.RELEASE_READY:
+            self.log.print(f"[{self.name}] Wildlife complete: Feed Maker empty, waiting to be undeployed.")
+        return wc.RELEASE_READY
+
     # ---------------------------------------------------------------- loop
 
     def publish(self, recipes, blocker, curr_tick):
-        """Writes `wildlife.feed[id]` when recipe, run state or blocker change, else every PUBLISH_REFRESH_TICKS."""
-        key = (self._call("get_recipe", ""), self._picked, bool(self._call("is_running", False)), blocker, len(recipes))
+        """Writes `wildlife.feed[id]` when recipe, run state, blocker or retire state change, else every PUBLISH_REFRESH_TICKS."""
+        key = (self._call("get_recipe", ""), self._picked, bool(self._call("is_running", False)), blocker, len(recipes), self._retire)
         if key == self._published and curr_tick - self._published_tick < PUBLISH_REFRESH_TICKS:
             return
         entry = {
@@ -296,6 +332,7 @@ class FeedMakerController:
             "stockpile": self.stockpile(),
             "tier": int(self._call("tier", 1)),
             "blocker": blocker,
+            "retire": self._retire,
             "tick": curr_tick,
         }
 
@@ -319,8 +356,14 @@ class FeedMakerController:
 
     def step(self):
         curr_tick = self.tick()
-        drained = self.drain_output(curr_tick)
         recipes = self.recipes(curr_tick)
+        if self.complete():
+            self._picked = None
+            self._retire = self.retire_step(curr_tick)
+            self.publish(recipes, "retiring" if self._retire == wc.RELEASE_EMPTYING else None, curr_tick)
+            return RETIRED_POLL_S if self._retire == wc.RELEASE_READY else ACTIVE_POLL_S
+        self._retire = ""
+        drained = self.drain_output(curr_tick)
         running = bool(self._call("is_running", False))
         current = self._call("get_recipe", "")
         blocker = None

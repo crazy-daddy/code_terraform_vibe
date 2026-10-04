@@ -289,5 +289,27 @@ class HabitatDirectFeedTests(harness.StubTestCase):
         self.assertEqual(self.warehouse.count(self.FEED), 60)
 
 
+class RetireTests(FeedMakerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.world.notebook.data[wc.PLAN_KEY] = {"complete": True, "feed_demand": {wc.feed_item_of("salt_tortoise"): [40, 200, 40]}}
+
+    def test_empties_and_reports_ready(self):
+        maker = _FeedMaker(self.world, recipe=wc.recipe_of("salt_tortoise"), stock_pile={"forage": 100, "sea_algae": 1})
+        ctrl = feed_maker.FeedMakerController(maker)
+        self.assertEqual(ctrl.step(), feed_maker.RETIRED_POLL_S)
+        self.assertIn(("clear_recipe",), maker.calls)
+        self.assertEqual(maker.get_stockpile(), {})
+        self.assertEqual(self.taken, [])
+        self.assertEqual(self.world.notebook.data[wc.FEED_KEY]["feed_maker_1"]["retire"], wc.RELEASE_READY)
+
+    def test_waits_for_running_craft(self):
+        maker = _FeedMaker(self.world, recipe=wc.recipe_of("salt_tortoise"), running=True, stock_pile={"forage": 100})
+        ctrl = feed_maker.FeedMakerController(maker)
+        self.assertEqual(ctrl.step(), feed_maker.ACTIVE_POLL_S)
+        self.assertNotIn(("clear_recipe",), maker.calls)
+        self.assertEqual(self.world.notebook.data[wc.FEED_KEY]["feed_maker_1"]["retire"], wc.RELEASE_EMPTYING)
+
+
 if __name__ == "__main__":
     unittest.main()

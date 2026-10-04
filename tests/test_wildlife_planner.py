@@ -1,5 +1,6 @@
 import unittest
 
+import game_stubs
 import harness
 import logistics_requests
 import tree_console
@@ -372,7 +373,7 @@ class SnapshotTests(harness.StubTestCase):
 class CompletionTests(harness.StubTestCase):
     def setUp(self):
         super().setUp()
-        wp.state.update({"tick": 0, "summary": wp.IDLE_SUMMARY, "complete": False, "requests": None, "request_tick": 0})
+        wp.state.update({"tick": 0, "summary": wp.IDLE_SUMMARY, "complete": False, "retired": False, "undeploy_warned": {}})
         self.clock = self.world.components.get("clock") or self.world.services["clock"]
         self.world.add_habitat("habitat_1", self.world.home)
 
@@ -380,24 +381,67 @@ class CompletionTests(harness.StubTestCase):
         self.world.clock.now = tick
         return wp.plan_if_due(self.clock)
 
-    def test_complete_skips_plan_and_publishes_empty_plan(self):
+    def add_feed_maker(self, maker_id="feed_maker_1"):
+        maker = game_stubs.Machine(self.world, maker_id, self.world.home, [])
+        maker.type_id = wc.FEED_MAKER_TYPE_ID
+        return self.world._place(maker)
+
+    def statuses(self, tick, **releases):
+        self.world.notebook.data[wc.STATUS_KEY] = {hid: dict(established("salt_tortoise", pop=wc.RELEASE_POPULATION), release=r, tick=tick)
+                                                   for hid, r in releases.items()}
+
+    def test_complete_publishes_retire_plan(self):
+        self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
+        self.statuses(1000, habitat_1="")
+        self.world.add_habitat("habitat_2", self.world.home)
+        self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY + ", retiring 2")
+        plan = self.world.notebook.data[wc.PLAN_KEY]
+        self.assertEqual((plan["assign"], plan["buy"], plan["feed_demand"], plan["forage_reserve"], plan["form_targets"]), ({}, {}, {}, 0, {}))
+        self.assertEqual(plan["release"], {"habitat_1": "salt_tortoise", "habitat_2": wc.RELEASE_NO_COLONY})
+        self.assertTrue(plan["complete"])
+        self.assertIn("habitat_1", self.world.components)
+
+    def test_life_form_requests_withdrawn_every_pass(self):
         self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
         logistics_requests.set_requests("home", wp.REQUESTER_ID, {"crystal": (10, 0)}, 1)
         logistics_requests.set_requests("home", "seed_maker", {"seed": (5, 0)}, 1)
-        self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY)
-        plan = self.world.notebook.data[wc.PLAN_KEY]
-        self.assertEqual((plan["assign"], plan["buy"], plan["feed_demand"], plan["forage_reserve"], plan["form_targets"]), ({}, {}, {}, 0, {}))
-        self.assertTrue(plan["complete"])
+        self.pass_at(1000)
+        self.assertEqual(list(logistics_requests.active_requests(1000).get("home", {})), ["seed"])
+        logistics_requests.set_requests("home", wp.REQUESTER_ID, {"crystal": (10, 0)}, 1000)
+        self.pass_at(1000 + wp.PLAN_TICK_INTERVAL)
         self.assertEqual(list(logistics_requests.active_requests(1000).get("home", {})), ["seed"])
 
-    def test_logs_once_and_stops_reading_sensor(self):
+    def test_ready_machines_undeployed_feed_dropped_then_stops(self):
         sensor = self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION + 1)
-        self.pass_at(1000)
+        self.add_feed_maker()
+        self.statuses(1000, habitat_1=wc.RELEASE_READY)
+        self.world.notebook.data[wc.FEED_KEY] = {"feed_maker_1": {"retire": wc.RELEASE_READY, "tick": 1000}}
+        self.world.inventory.add(wc.feed_item_of("spire_drake"), 30)
+        warehouse = self.world.add_warehouse("warehouse_1", self.world.home, {wc.feed_item_of("salt_tortoise"): 60})
+        self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY)
+        self.assertEqual(warehouse.count(wc.feed_item_of("salt_tortoise")), 0)
+        self.assertEqual(self.world.inventory.count(wc.feed_item_of("salt_tortoise")), 0)
+        self.assertNotIn("habitat_1", self.world.components)
+        self.assertNotIn("feed_maker_1", self.world.components)
+        self.assertNotIn("feed_maker_1", self.world.notebook.data[wc.FEED_KEY])
+        self.assertEqual(self.world.inventory.count(wc.feed_item_of("spire_drake")), 0)
+        self.assertTrue(wp.state["retired"])
         sensor.broken = True
-        self.assertEqual(self.pass_at(1000 + wp.PLAN_TICK_INTERVAL), wp.COMPLETE_SUMMARY)
+        calls = len(self.world.computer.calls)
         self.assertEqual(self.pass_at(1000 + 5 * wp.PLAN_TICK_INTERVAL), wp.COMPLETE_SUMMARY)
+        self.assertEqual(len(self.world.computer.calls), calls)
         tree_console.flush_all()
         self.assertEqual(self.world.console.text().count("Wildlife pillar complete"), 1)
+
+    def test_emptying_machines_wait(self):
+        self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
+        self.add_feed_maker()
+        self.statuses(1000, habitat_1=wc.RELEASE_EMPTYING)
+        self.world.notebook.data[wc.FEED_KEY] = {"feed_maker_1": {"retire": wc.RELEASE_EMPTYING, "tick": 1000}}
+        self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY + ", retiring 2")
+        self.assertIn("habitat_1", self.world.components)
+        self.assertIn("feed_maker_1", self.world.components)
+        self.assertFalse(wp.state["retired"])
 
     def test_below_threshold_plans(self):
         self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION - 1)
@@ -525,7 +569,9 @@ class ReleaseExecutionTests(harness.StubTestCase):
     def test_ready_habitat_undeployed_and_feed_dropped(self):
         self.status(wc.RELEASE_READY)
         self.world.inventory.add(self.item, 40)
+        warehouse = self.world.add_warehouse("warehouse_1", self.world.home, {self.item: 25, "iron_ore": 5})
         wp.plan(self.world.clock)
+        self.assertEqual((warehouse.count(self.item), warehouse.count("iron_ore")), (0, 5))
         self.assertNotIn("habitat_1", self.world.components)
         self.assertNotIn("habitat_1", self.world.notebook.data[wc.STATUS_KEY])
         self.assertEqual(self.world.inventory.count(self.item), 0)
