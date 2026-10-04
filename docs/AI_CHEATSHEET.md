@@ -14,7 +14,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 0, 0a, 0b | `lib/` module map, runtime limits, `TreeConsole` logging, `swallowed()` | this file |
 | 1 | Terraforming formula table | this file |
 | 1a, 1a-0, 1a-1 | Brownout load-shedding, steam-aware Power Guard, grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
-| 1b, 1c, 1c-1, 1c-2, 1c-3, 1c-4 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine, Reactor heat control | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
+| 1b, 1c, 1c-1, 1c-2, 1c-3, 1c-4, 1c-5 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine, Reactor heat control, game fluid delivery rules (same-outpost / script source / pooled) | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1d, 1d-1, 1d-2, 1d-3 | Tick-cost profiling, script cost model (cost scales with running-script count), script parking, machine activity (retire candidates) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
 | 1i, 1k | Seed discovery sweep, planting (layout, Harvester, field machines, Terraformer) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |

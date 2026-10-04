@@ -94,6 +94,7 @@ class EssenceLiquifierController:
             discovery_cache_interval_ticks=DISCOVERY_CACHE_INTERVAL_TICKS,
             fluid_id=self.fluid_id,
             label=f"{self.name}.{self.fluid_id}_out",
+            local_outpost_id=getattr(getattr(self.liquifier, "outpost", None), "id", None),
         )
         self.log.debug(f"[{self.name}] Host biome '{biome}' -> output port '{self.fluid_id}_out', routing to Liquid Tanks latched/assigned to '{self.fluid_id}'.")
         return True

@@ -1,4 +1,4 @@
-# Power & Fluids (§1a–§1c-4)
+# Power & Fluids (§1a–§1c-5)
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §1.
 
@@ -99,7 +99,10 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     immediately. `NEUTRAL_GRACE_STEPS=5`.
   - **Input vs output routers** (`lib/fluid_routing.py`): two classes, one per port direction,
     sharing `PerEntryBlacklist`, `TickedDiscoveryCache` and `discover_network_buildings()`.
-    `FluidOutputRouter` (Cap/Pump/Liquifier) rebalances among targets by `fill_pct()`.
+    `FluidOutputRouter` (Cap/Pump/Liquifier) rebalances among targets by `fill_pct()`. With
+    `local_outpost_id` (Refiner, Liquifier, Steam Condenser; not Caps/Pumps/Taps) own-outpost targets
+    rank first, and a healthy cross-outpost target is left once an own-outpost one is below
+    `rebalance_fill_fraction - LOCAL_RETURN_MARGIN` (0.10); why: §1c-5.
     `FluidInputRouter` (Turbine, Fabricator, Biomass Mixer) ignores fill and only asks whether fluid
     arrives. Per `ensure()` call:
     0. Built with `reserve_fluid="water"` and `water_reserve_holds()` (Reactor water reservation,
@@ -261,3 +264,14 @@ Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `10_nuclear/nucl
 - **Status changes** logged at info (running) or warn; overheat also `notify()`s.
 - Not parked and not in any shedding tier: heat returns to 0 when the script stops. No control state in archive; the gain is re-measured within a few polls after a restart.
 - Simulated closed loop (`tests/test_reactor.py`, per-tick simworker physics): from cold ~6 game h to the target, then ~4.8 kW mean across alternating 0.72/1.25 conditions, peak 878 °C.
+
+### 1c-5. Fluid Delivery Rules (game mechanic, simworker `$ge` flow tick)
+
+How the game moves fluid along a `connect()`ed port pair. Planners and routers depend on it.
+
+- **Same outpost** (both machines' `locationId` is the same built outpost): moved directly source → sink, capped by sink headroom (`tickDirectConnections`). No pipe needed; such pairs never appear as pipe-network routes.
+- **Script sources** (`thermal_cap`, `water_pump`, `oil_pump`, `exotic_gas_cap`, `exotic_spring_tap`): delivered per route to the route's sink, capped by the sink's headroom and the network's throughput (`routeSourceToTarget`), whatever the sink holds. A tank filled by pumps over a pipe keeps filling while it feeds other machines over the same network.
+- **Every other cross-outpost pair** (Refiner, tanks, any building feeding through pipes): pooled per fluid network (`redistributePerFluidNetworks`). Providers = source endpoints holding > 0 t. Consumers = sink endpoints with headroom **that are not providers**. Consequences:
+  - A tank that feeds machines over a pipe network (it is a route source there) and holds any stock is not a consumer on that network: cross-outpost Refiners (or tanks) cannot fill it. Their output goes only to the other sinks; with none taking (full inlet, unpowered machine = 0 headroom), the network stalls and producer outputs back up.
+  - Fix in the layout: give each producer a tank of its fluid **in its own outpost** (direct delivery), and pipe that tank onward. `FluidOutputRouter(local_outpost_id=...)` moves the producer's port to such a tank (§1b input vs output routers).
+- Unpowered non-tank machines have 0 headroom and supply 0 (`Kb`/`Gb`); tanks are read regardless of power.

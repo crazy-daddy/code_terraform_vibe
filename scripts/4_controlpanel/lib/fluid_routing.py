@@ -957,6 +957,9 @@ def _target_id(target):
 # A candidate must be emptier than the full current target by more than this fill fraction for the
 # output router to switch to it; equally full tanks never trade places.
 OUTPUT_REBALANCE_MARGIN = 0.02
+# FluidOutputRouter(local_outpost_id=...): a cross-outpost target is left for an own-outpost one
+# below rebalance_fill_fraction minus this margin, so a local tank near full does not flip back and forth.
+LOCAL_RETURN_MARGIN = 0.10
 
 
 class FluidOutputEvent:
@@ -989,13 +992,22 @@ class FluidOutputRouter:
     synchronously, in order, for side-events that can occur in addition to
     the single terminal event returned from a call -- mirrors the original
     methods' shape exactly.
+
+    local_outpost_id (the producer's own outpost; None for Caps, Pumps and Taps): own-outpost
+    targets rank first, and a healthy cross-outpost target is left once an own-outpost one has
+    room (fill < rebalance_fill_fraction - LOCAL_RETURN_MARGIN). The game moves same-outpost
+    links directly; a cross-outpost link from a building that is not a Cap/Pump/Tap goes through
+    the pipe network's shared pool, where a tank that also feeds machines over that network and
+    holds stock takes nothing (docs/cheatsheet/power_fluids.md §1c-5).
     """
 
     def __init__(self, type_ids, rebalance_fill_fraction, connection_grace_ticks,
-                 rescan_interval_ticks, discovery_cache_interval_ticks, fluid_id=None, label="output"):
+                 rescan_interval_ticks, discovery_cache_interval_ticks, fluid_id=None, label="output",
+                 local_outpost_id=None):
         self.type_ids = type_ids
         self.fluid_id = fluid_id
         self.label = label
+        self.local_outpost_id = local_outpost_id
         self.rebalance_fill_fraction = rebalance_fill_fraction
         self.connection_grace_ticks = connection_grace_ticks
         self.discovery_cache_interval_ticks = discovery_cache_interval_ticks
@@ -1062,6 +1074,21 @@ class FluidOutputRouter:
             fills = [fill_pct_of(t) for t in candidates]
         return [(candidates[i], fill) for fill, i in sorted(zip(fills, range(len(candidates))))]
 
+    def _is_local(self, building):
+        """Whether building stands in local_outpost_id (False without one)."""
+        if self.local_outpost_id is None:
+            return False
+        return getattr(getattr(building, "outpost", None), "id", None) == self.local_outpost_id
+
+    def _local_with_room(self, curr_tick):
+        """Id of a non-blacklisted own-outpost target below the local return threshold, or None."""
+        limit = self.rebalance_fill_fraction - LOCAL_RETURN_MARGIN
+        targets = self.blacklist.filter_reachable(self._discover_targets_cached(curr_tick), curr_tick, key=_target_id)
+        for target in targets:
+            if self._is_local(target) and fill_pct_of(target) < limit:
+                return target.id
+        return None
+
     def _resolve_target(self, target_id):
         """Building object for target_id, preferring the cache filled by discovery over a fresh get_component() round trip."""
         building = self._target_lookup.get(target_id)
@@ -1125,13 +1152,19 @@ class FluidOutputRouter:
             current = self._resolve_target(current_id)
             current_fill = fill_pct_of(current)
             if self.fluid_id is None or tank_is_eligible_target(current, self.fluid_id):
-                if current_fill < self.rebalance_fill_fraction:
+                local_id = None
+                if current_fill < self.rebalance_fill_fraction and self.local_outpost_id is not None and not self._is_local(current):
+                    local_id = self._local_with_room(curr_tick)
+                if current_fill < self.rebalance_fill_fraction and local_id is None:
                     if not is_stalled:
                         self.was_healthy = True
                     _ret = FluidOutputEvent("healthy")
                     log.end()
                     return _ret
-                if current:
+                if local_id is not None:
+                    log.debug(f"FluidOutputRouter({self.type_ids}): '{current_id}' is outside {self.local_outpost_id}, own-outpost '{local_id}' has room, rebalancing")
+                    stay_fill = 1.0
+                elif current:
                     stay_fill = current_fill
 
         all_known_targets = self._discover_targets_cached(curr_tick)
@@ -1150,6 +1183,8 @@ class FluidOutputRouter:
         # necessarily physically pipe-reachable from this port's location.
         log.debug(f"FluidOutputRouter({self.type_ids}): current='{current_id}' not healthy, rebalancing among {len(targets)} reachable candidate(s) (least-full first)")
         ranked = self._least_full_first([t for t in targets if t.id != current_id])
+        if self.local_outpost_id is not None:
+            ranked = sorted(ranked, key=lambda pair: not self._is_local(pair[0]))
         if stay_fill is not None:
             ranked = [(t, f) for t, f in ranked if f < stay_fill - OUTPUT_REBALANCE_MARGIN]
             if not ranked:

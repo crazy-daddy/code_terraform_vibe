@@ -10,7 +10,12 @@
 #     assigned to it (fluid_routing.get_tank_assignments()). A recipe is a
 #     candidate when its raw fluid holds >= RAW_MIN_TONS (or its input port
 #     already holds a craft) and its refined fluid has tank capacity below
-#     REFINED_FULL_FRACTION. The candidate with the lowest refined fill wins.
+#     REFINED_FULL_FRACTION with free room for every Refiner's output port on
+#     it: (1 + other Refiners on that recipe or switching to it, from
+#     refiner.status, re-read on each new switch decision) x out port
+#     capacity, so a nearly full small tank is not taken by two at once and
+#     left holding output that blocks the next set_recipe() ("output_busy").
+#     The candidate with the lowest refined fill wins.
 #     Exotic Caps/Taps stand in the field, outside any outpost, and fill raw
 #     tanks (lib/exotic_cap.py); the Refiner draws from those tanks.
 #   - No flip-flopping, no starving: a recipe runs at least MIN_RECIPE_TICKS;
@@ -25,7 +30,11 @@
 #     recipe shared is purged.
 #   - Ports: gas_in / liquid_in from tanks eligible for the raw fluid (own
 #     outpost first, FluidInputRouter), only while the recipe has raw supply; gas_out / liquid_out to tanks eligible
-#     for the refined fluid (FluidOutputRouter).
+#     for the refined fluid (FluidOutputRouter, own outpost's tanks first: a
+#     cross-outpost Refiner link cannot fill a tank that also feeds over pipes).
+#     The router hears of a stall once the output port cannot fit another
+#     craft (level > capacity - out_tons) while is_stalled(), so it moves on to
+#     another tank as soon as the Refiner stops.
 #   - Tar (input, 50-unit bin): refilled to full via take_item() from this
 #     outpost's storage once it drops to TAR_REFILL_AT. The outpost's tar
 #     stockpile is requested by lib/site_supply.py (SITE_STOCK_TARGETS["refiner"]).
@@ -51,6 +60,7 @@ TOTALS_REFRESH_TICKS = 300
 
 RAW_MIN_TONS = 4.0
 REFINED_FULL_FRACTION = 0.95
+OUT_PORT_FALLBACK_T = 20.0
 MIN_RECIPE_TICKS = 1200
 MAX_RECIPE_TICKS = 6000
 SWITCH_MARGIN = 0.20
@@ -99,11 +109,12 @@ def fluid_totals():
     return totals
 
 
-def recipe_candidates(unlocked, totals, staged=None):
+def recipe_candidates(unlocked, totals, staged=None, others=None):
     """{recipe_id: refined fill 0-1} for recipes with raw feedstock available (>= RAW_MIN_TONS in
     tanks, or staged[recipe_id] True: a craft already in the input port) and refined tank room
-    (capacity > 0, fill < REFINED_FULL_FRACTION)."""
+    (capacity > 0, fill < REFINED_FULL_FRACTION, free t >= (1 + others[recipe_id]) x out port capacity)."""
     staged = staged or {}
+    others = others or {}
     out = {}
     for rid, spec in unlocked.items():
         raw = totals.get(spec["raw_fluid"]) or [0.0, 0.0]
@@ -113,9 +124,25 @@ def recipe_candidates(unlocked, totals, staged=None):
         if capacity <= 0:
             continue
         fill = level / capacity
-        if fill < REFINED_FULL_FRACTION:
+        need = (1 + others.get(rid, 0)) * spec.get("out_capacity", OUT_PORT_FALLBACK_T)
+        if fill < REFINED_FULL_FRACTION and capacity - level >= need:
             out[rid] = fill
     return out
+
+
+def recipe_counts(status, exclude, curr_tick):
+    """{recipe_id: Refiners on it} from refiner.status, leaving out `exclude` and stale entries. A
+    Refiner mid-switch counts for its recipe and its switch target (`switching_to`)."""
+    counts = {}
+    if not isinstance(status, dict):
+        return counts
+    for name, entry in status.items():
+        if name == exclude or not isinstance(entry, dict) or curr_tick - entry.get("tick", 0) > STATUS_STALE_TICKS:
+            continue
+        for rid in {entry.get("recipe") or "", entry.get("switching_to") or ""}:
+            if rid:
+                counts[rid] = counts.get(rid, 0) + 1
+    return counts
 
 
 def choose_recipe(candidates, current, age_ticks):
@@ -153,6 +180,7 @@ class RefinerController:
         self._recipes_tick = -RECIPE_REFRESH_TICKS
         self._totals = {}
         self._totals_tick = -TOTALS_REFRESH_TICKS
+        self._others = {}
         self._routers = {}
         self._since = None
         self._switch_to = None
@@ -183,6 +211,15 @@ class RefinerController:
         except Exception as error:
             swallowed("refiner.RefinerController._level: port.level", error)
             return 0.0
+
+    def _capacity(self, port):
+        if port is None or not hasattr(port, "capacity"):
+            return OUT_PORT_FALLBACK_T
+        try:
+            return float(port.capacity())
+        except Exception as error:
+            swallowed("refiner.RefinerController._capacity: port.capacity", error)
+            return OUT_PORT_FALLBACK_T
 
     def raw_available(self, rid):
         """Whether rid had raw feedstock (tank stock or a staged craft) at the last pick; pinned -> True."""
@@ -240,14 +277,18 @@ class RefinerController:
                 "input_port": in_port,
                 "output_port": out_port,
                 "raw_tons": float(fluid_inputs.get(in_port, 4.0)),
+                "out_tons": float(fluid_outputs.get(out_port, 4.0)),
+                "out_capacity": self._capacity(self._port(out_port)),
                 "tar": int(inputs.get(TAR_ITEM_ID, spec.get("tar", 2))),
             }
         self._recipes = out
         return out
 
     def totals(self, curr_tick):
+        """Tank totals and the other Refiners' recipe counts, both refreshed every TOTALS_REFRESH_TICKS."""
         if curr_tick - self._totals_tick >= TOTALS_REFRESH_TICKS:
             self._totals = fluid_totals()
+            self._others = recipe_counts(archive.get(STATUS_KEY, {}), self.name, curr_tick)
             self._totals_tick = curr_tick
         return self._totals
 
@@ -259,11 +300,17 @@ class RefinerController:
         if current in unlocked:
             spec = unlocked[current]
             staged[current] = self._level(self._port(spec["input_port"])) >= spec["raw_tons"]
-        candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged)
+        candidates = recipe_candidates(unlocked, self.totals(curr_tick), staged, self._others)
         self._raw_ok = set(candidates)
         if self._since is None:
             self._since = curr_tick
         choice = choose_recipe(candidates, current if current in unlocked else None, curr_tick - self._since)
+        if choice != current and choice != self._switch_to:
+            # A new switch decision: recount the other Refiners now, not as of the last totals refresh.
+            self._others = recipe_counts(archive.get(STATUS_KEY, {}), self.name, curr_tick)
+            candidates = recipe_candidates(unlocked, self._totals, staged, self._others)
+            self._raw_ok = set(candidates)
+            choice = choose_recipe(candidates, current if current in unlocked else None, curr_tick - self._since)
         if choice != current:
             fills = ", ".join(f"{r}={f:.2f}" for r, f in sorted(candidates.items()))
             self.log.debug(f"[{self.name}] wants '{choice}' over '{current or '-'}' (refined fill: {fills or 'no candidate'})")
@@ -297,6 +344,7 @@ class RefinerController:
                     discovery_cache_interval_ticks=100,
                     fluid_id=refined,
                     label=f"{self.name}.{spec['output_port']}",
+                    local_outpost_id=out_id,
                 ),
             )
         return self._routers[rid]
@@ -305,12 +353,13 @@ class RefinerController:
         port = self._port(spec["output_port"])
         if port is None:
             return
+        # The Refiner stops once the port cannot fit another craft's output, well before it is full.
         try:
-            full = self._level(port) >= float(port.capacity()) - 0.5
+            no_room = self._level(port) > float(port.capacity()) - spec.get("out_tons", 4.0)
         except Exception as error:
             swallowed("refiner.route_output: port.capacity", error)
-            full = False
-        self.routers(rid, spec)[1].ensure_connection(port, curr_tick, full and self._call("is_stalled", False))
+            no_room = False
+        self.routers(rid, spec)[1].ensure_connection(port, curr_tick, no_room and self._call("is_stalled", False))
 
     def route_input(self, rid, spec, curr_tick):
         port = self._port(spec["input_port"])
@@ -399,14 +448,14 @@ class RefinerController:
         return None
 
     def publish_status(self, rid, blocker, curr_tick):
-        status = (rid, blocker)
+        status = (rid, blocker, self._switch_to)
         if status == self._last_status and curr_tick - self._status_tick < STATUS_REFRESH_TICKS:
             return
         if blocker != (self._last_status or (None, None))[1]:
             self.log.debug(f"[{self.name}] state: {blocker or 'refining'} (recipe {rid or '-'})")
         self._last_status = status
         self._status_tick = curr_tick
-        entry = {"recipe": rid or "", "blocker": blocker, "outpost": self.outpost_id, "tick": curr_tick}
+        entry = {"recipe": rid or "", "switching_to": self._switch_to or "", "blocker": blocker, "outpost": self.outpost_id, "tick": curr_tick}
 
         def updater(stored):
             if not isinstance(stored, dict):

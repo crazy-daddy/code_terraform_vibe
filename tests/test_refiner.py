@@ -92,6 +92,25 @@ class RefinerTestCase(harness.StubTestCase):
         self.assertEqual((spec["input_port"], spec["output_port"]), ("liquid_in", "liquid_out"))
         self.assertEqual(spec["tar"], 2)
         self.assertEqual(spec["raw_tons"], 4.0)
+        self.assertEqual(spec["out_tons"], 4.0)
+
+    def test_output_stall_reported_once_a_craft_no_longer_fits(self):
+        calls = []
+
+        class Recording(_Router):
+            def ensure_connection(self, port, tick, stalled, *args, **kwargs):
+                calls.append(stalled)
+
+        self.ctrl.routers = lambda rid, spec: (_Router(), Recording())
+        spec = self.ctrl.unlocked_recipes(0)["refine_cryofluid"]
+        self.comp.stalled = True
+        for level in (6.0, 6.5, 9.0):
+            self.comp.liquid_out._level = level
+            self.ctrl.route_output("refine_cryofluid", spec, 0)
+        # Starved (stalled with room in the port) is not an output stall.
+        self.comp.liquid_out._level = 0.0
+        self.ctrl.route_output("refine_cryofluid", spec, 0)
+        self.assertEqual(calls, [False, True, True, False])
 
     def test_candidates_need_raw_stock_and_refined_room(self):
         unlocked = self.ctrl.unlocked_recipes(0)
@@ -105,6 +124,69 @@ class RefinerTestCase(harness.StubTestCase):
         self.assertIn("refine_chlorine", refiner.recipe_candidates(unlocked, totals, {"refine_chlorine": True}))
         # No tank for the refined fluid: nowhere to put it.
         self.assertEqual(refiner.recipe_candidates(unlocked, {"raw_sulfur_gas": [50.0, 100.0]}), {})
+
+    def test_candidates_need_room_for_every_refiner_output_port(self):
+        unlocked = self.ctrl.unlocked_recipes(0)
+        self.assertEqual(unlocked["refine_cryofluid"]["out_capacity"], 10.0)
+        totals = {"raw_cryofluid": [50.0, 100.0], "cryofluid": [85.0, 100.0]}
+        # 15 t free: fits this Refiner's 10 t port, not a second Refiner's as well.
+        self.assertIn("refine_cryofluid", refiner.recipe_candidates(unlocked, totals))
+        self.assertNotIn("refine_cryofluid", refiner.recipe_candidates(unlocked, totals, others={"refine_cryofluid": 1}))
+        totals["cryofluid"] = [92.0, 100.0]
+        self.assertNotIn("refine_cryofluid", refiner.recipe_candidates(unlocked, totals))
+
+    def test_recipe_counts_skip_self_and_stale(self):
+        status = {
+            "refiner_1": {"recipe": "refine_cryofluid", "tick": 1000},
+            "refiner_2": {"recipe": "refine_cryofluid", "tick": 1000},
+            "refiner_3": {"recipe": "refine_chlorine", "tick": 1000},
+            "refiner_4": {"recipe": "refine_cryofluid", "tick": 1000 - refiner.STATUS_STALE_TICKS - 1},
+            "refiner_5": {"recipe": "", "tick": 1000},
+            "refiner_6": {"recipe": "refine_chlorine", "switching_to": "refine_cryofluid", "tick": 1000},
+        }
+        self.assertEqual(refiner.recipe_counts(status, "refiner_1", 1000), {"refine_cryofluid": 2, "refine_chlorine": 2})
+        self.assertEqual(refiner.recipe_counts(None, "refiner_1", 1000), {})
+
+    def test_step_counts_other_refiners_from_status(self):
+        archive.set(refiner.STATUS_KEY, {"refiner_2": {"recipe": "refine_cryofluid", "tick": 0}})
+        # Cryofluid is emptier (0.85 < 0.90) but its 15 t free cannot take two 10 t ports.
+        self.totals = {
+            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [90.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0], "cryofluid": [85.0, 100.0],
+        }
+        self.ctrl.step()
+        self.assertEqual(self.comp.recipe, "refine_sulfur_gas")
+        # Without the other Refiner, the emptier cryofluid wins.
+        archive.set(refiner.STATUS_KEY, {})
+        fresh = refiner.RefinerController(self.comp)
+        fresh.routers = self.ctrl.routers
+        fresh.top_up_tar = lambda: None
+        self.comp.recipe = ""
+        fresh.step()
+        self.assertEqual(self.comp.recipe, "refine_cryofluid")
+
+    def test_new_switch_decision_rereads_status(self):
+        self.totals = {
+            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [90.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0], "cryofluid": [85.0, 100.0],
+        }
+        self.ctrl.totals(0)
+        # Another Refiner started switching to cryofluid after this one's last totals refresh.
+        archive.set(refiner.STATUS_KEY, {"refiner_2": {"recipe": "refine_chlorine", "switching_to": "refine_cryofluid", "tick": 0}})
+        self.ctrl.step()
+        self.assertEqual(self.comp.recipe, "refine_sulfur_gas")
+
+    def test_status_publishes_switch_target(self):
+        self.comp.recipe = "refine_sulfur_gas"
+        self.comp.running = True
+        self.ctrl._since = -refiner.MIN_RECIPE_TICKS
+        self.totals = {
+            "raw_sulfur_gas": [50.0, 100.0], "sulfur_gas": [90.0, 100.0],
+            "raw_cryofluid": [50.0, 100.0], "cryofluid": [5.0, 100.0],
+        }
+        self.ctrl.step()
+        entry = archive.get(refiner.STATUS_KEY)["refiner_1"]
+        self.assertEqual((entry["recipe"], entry["switching_to"], entry["blocker"]), ("refine_sulfur_gas", "refine_cryofluid", "switching"))
 
     def test_choose_recipe_dwell_margin_and_rotation(self):
         cands = {"a": 0.5, "b": 0.4}

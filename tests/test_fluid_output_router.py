@@ -165,6 +165,59 @@ class FluidOutputRouterCacheTests(StubTestCase):
         self.assertEqual(self.ensure(router, 1001).target_id, "gas_tank_2")
 
 
+class FluidOutputRouterLocalTests(StubTestCase):
+    """local_outpost_id: own-outpost tanks rank first and win back a producer linked elsewhere."""
+
+    def setUp(self):
+        super().setUp()
+        self.port = FluidPort(self.world)
+        self.world.clock.now = 1000
+        self.remote = self.world.add_outpost("outpost_remote")
+        self.local = self.world.add_outpost("outpost_local")
+        builtins.notify = lambda text, **kw: None  # type: ignore[attr-defined]
+
+    def tank(self, tank_id, outpost, level):
+        return self.world._place(Tank(self.world, tank_id, outpost, "liquid_tank", "cryofluid", level, 100))
+
+    def router(self, local_outpost_id: str | None = "outpost_local"):
+        return fluid_routing.FluidOutputRouter(
+            type_ids="liquid_tank", rebalance_fill_fraction=0.98, connection_grace_ticks=2,
+            rescan_interval_ticks=300, discovery_cache_interval_ticks=100, fluid_id="cryofluid",
+            label="refiner.liquid_out", local_outpost_id=local_outpost_id)
+
+    def ensure(self, router, tick):
+        self.world.clock.now = tick
+        return router.ensure_connection(self.port, tick, False)
+
+    def test_own_outpost_ranks_before_emptier_remote(self):
+        self.tank("liquid_tank_1", self.remote, 1)
+        self.tank("liquid_tank_2", self.local, 50)
+        self.assertEqual(self.ensure(self.router(), 1000).target_id, "liquid_tank_2")
+
+    def test_without_local_id_least_full_wins(self):
+        self.tank("liquid_tank_1", self.remote, 1)
+        self.tank("liquid_tank_2", self.local, 50)
+        self.assertEqual(self.ensure(self.router(None), 1000).target_id, "liquid_tank_1")
+
+    def test_healthy_remote_left_for_new_local_tank(self):
+        self.tank("liquid_tank_1", self.remote, 12)
+        router = self.router()
+        self.assertEqual(self.ensure(router, 1000).target_id, "liquid_tank_1")
+        self.assertEqual(self.ensure(router, 1001).kind, "healthy")
+        self.tank("liquid_tank_2", self.local, 1)
+        event = self.ensure(router, 1000 + fluid_routing.NETWORK_WALK_INTERVAL_TICKS)
+        self.assertEqual((event.kind, event.target_id, event.rebalance), ("connected", "liquid_tank_2", True))
+        self.assertEqual(router.blacklist._blacklisted_at, {})
+
+    def test_remote_kept_while_local_near_full(self):
+        self.tank("liquid_tank_1", self.remote, 12)
+        self.tank("liquid_tank_2", self.local, 95)
+        router = self.router()
+        router._connected_id = "liquid_tank_1"
+        router._id_synced = True
+        self.assertEqual(self.ensure(router, 1000).kind, "healthy")
+        self.assertEqual(router._connected_id, "liquid_tank_1")
+
 class PerEntryBlacklistTests(StubTestCase):
     def test_expired_entry_is_dropped(self):
         blacklist = fluid_routing.PerEntryBlacklist(100)
