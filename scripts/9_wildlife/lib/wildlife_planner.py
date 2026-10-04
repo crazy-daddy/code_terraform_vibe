@@ -32,8 +32,9 @@
 #   pass retires instead (see plan_if_due, _retire): life-form requests
 #   withdrawn, every Habitat released (`plan.release`, wc.RELEASE_NO_COLONY
 #   for one without an established colony) and every Feed Maker emptied
-#   (`plan.complete`), each undeployed once it reports ready, all feed dropped
-#   from Inventory. Wildlife never decays and an unhoused colony keeps counting
+#   (`plan.complete`), each undeployed once it reports ready, their kits sold
+#   (Mk II packs stay in Inventory), all feed dropped from Inventory.
+#   Wildlife never decays and an unhoused colony keeps counting
 #   (docs/guide/wildlife_overview.md), so nothing is lost.
 #
 # Release: an established colony at wc.RELEASE_POPULATION (the Mk II
@@ -64,6 +65,8 @@ PLAN_TICK_INTERVAL = 250            # one game hour
 TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "cargo_present")
 DROP_ROUNDS = 3                     # Warehouse -> Inventory -> drop rounds per feed item and pass (Inventory room limits each pull)
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
+# Kits sold from Inventory at Wildlife complete. Mk II packs are not sellable (only droppable) and stay.
+RETIRE_SELL_ITEMS = (wc.HABITAT_KIT_ITEM_ID, wc.FEED_MAKER_TYPE_ID)
 IDLE_SUMMARY = "wildlife idle"
 COMPLETE_SUMMARY = "Wildlife complete"
 MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/step_profile.py wildlife_ration)
@@ -995,12 +998,33 @@ def _retire_label(entry):
     return wc.RELEASE_NO_COLONY
 
 
+def _sell_kits():
+    """Sells every RETIRE_SELL_ITEMS unit in Inventory; a refused sale leaves it there and warns."""
+    shop = get_component("shop")
+    if shop is None:
+        return
+    for item in RETIRE_SELL_ITEMS:
+        units = inventory_count(item)
+        if units <= 0:
+            continue
+        try:
+            res = shop.sell(item, units)
+        except Exception as error:
+            swallowed("wildlife_planner._sell_kits: shop.sell", error)
+            continue
+        if getattr(res, "status", "") == "ok":
+            log.print(f"[WILDLIFE] Sold {units}x {item} for {getattr(res, 'credits', 0) or 0} cr (Wildlife complete).")
+        else:
+            log.level("warn").print(f"[WILDLIFE] sell {units}x {item} -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}. Left in Inventory.")
+
+
 def _retire(now):
     """
     One pass after the Wildlife pillar is complete: withdraws the life-form
     requests (again while any is left), releases every Habitat and empties
     every Feed Maker (`plan.release` / `plan.complete`), undeploys each that
-    reports ready, wakes the parked rest and drops all feed from Inventory.
+    reports ready, sells their kits, wakes the parked rest and drops all feed
+    from Inventory.
     Returns the number of Habitats and Feed Makers still deployed.
     """
     if _own_requests_left():
@@ -1025,6 +1049,7 @@ def _retire(now):
     labels = {hid: ("no colony" if s == wc.RELEASE_NO_COLONY else s) + ", Wildlife complete" for hid, s in release.items()}
     gone = _undeploy_ready(labels, statuses, wc.STATUS_KEY, "release")
     gone += _undeploy_ready({m: "Feed Maker, Wildlife complete" for m in maker_ids}, feed, wc.FEED_KEY, "retire")
+    _sell_kits()
     parked = parked_ids("habitat")
     for hid in habitat_ids:
         if hid in parked and hid not in gone:

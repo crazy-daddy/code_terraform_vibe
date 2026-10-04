@@ -418,8 +418,9 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
     - [ ] Bio chain per biome (Collector / Lab / Exchange / processor): retire once that biome has nothing left to catalog or deliver (not automated yet).
     - [x] Habitats: released and undeployed at 350,000 once the species' Breakthrough is bought (`wildlife_planner` release, §1l-2); its feed is no longer made and its feed in Inventory and home Warehouses is dropped.
       - [x] Validate live: Habitat `input.eject("inventory", ...)` of feed and reagents, `purge_reserve`/`purge_intake` empty the buffers, `computer.undeploy()` accepts the emptied Habitat (or which cargo blocks it), the colony keeps counting toward Wildlife.
-    - [x] Habitats and Feed Makers at Wildlife complete (5,000,000): every Habitat released and undeployed, every Feed Maker emptied and undeployed, life-form requests withdrawn, all feed dropped from Inventory and home Warehouses (`wildlife_planner._retire`, §1l-2 Completion).
+    - [x] Habitats and Feed Makers at Wildlife complete (5,000,000): every Habitat released and undeployed, every Feed Maker emptied and undeployed, life-form requests withdrawn, all feed dropped from Inventory and home Warehouses, Habitat and Feed Maker kits sold (`wildlife_planner._retire`, §1l-2 Completion).
       - [ ] Validate live: Feed Maker `clear_recipe()` + stockpile eject, `computer.undeploy()` accepts the emptied Feed Maker; a Habitat without a colony (`"-"`) empties and undeploys.
+      - [ ] Mk II packs (`habitat_upgrade_pack_mk2`, `feed_maker_pack_mk2`) left in Inventory after the retire: not sellable, only droppable. Drop them once nothing can use them (recrafting is costly, so kept for now).
     - [ ] Oxygen Generators / Heaters / Pressure machines: retire each type once its atmosphere value is at maximum (not automated yet).
   - [x] Biomass Mixer gate pauses are recorded in `script.parked` (mode `"mixer_gate"`).
 - [ ] Exercise failure scenarios: full Inventory, full output buffer, missing recipe, stale Rover claim, disconnected pipe, split power subnet, and stranded vehicle.

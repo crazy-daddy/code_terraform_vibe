@@ -478,7 +478,7 @@ class HabitatController:
             self.blocker = "releasing"
             return wc.RELEASE_EMPTYING
         if self.released != wc.RELEASE_READY:
-            self.log.print(f"[{self.name}] {species or 'no colony'} ready for release: Habitat drained, undeploy it to unhouse the colony.")
+            self.log.print(f"[{self.name}] {species or 'no colony'} ready for release: Habitat drained, waiting for the planner's undeploy.")
         return wc.RELEASE_READY
 
     # ------------------------------------------------------------ loop
