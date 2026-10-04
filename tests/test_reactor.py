@@ -220,6 +220,13 @@ class ReactorTests(harness.StubTestCase):
         self.assertEqual(lead_cask.reactor_fuel_alerts(self.clock.tick()), [])
         self.assertIn("Fuel supply restored", self.debug_log())
 
+    def test_new_reactor_loading_first_rod_no_alert(self):
+        self.world.add_lead_cask("lead_cask_1", self.world.home, "fuel_rod", 3)
+        _, controller = self.make([1.0], staged=0)
+        controller.step()
+        self.assertEqual(self.fuel_entry()["level"], "")
+        self.assertEqual(self.notified, [])
+
     def test_spare_rods_no_alert(self):
         self.world.add_lead_cask("lead_cask_1", self.world.home, "fuel_rod", 2)
         _, controller = self.make([1.0], staged=1)

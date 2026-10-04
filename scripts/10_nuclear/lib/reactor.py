@@ -314,7 +314,11 @@ class ReactorController:
         self.report_fuel(now, staged + lead_cask.cask_stock(lead_cask.ROD_ITEM, casks=casks), getattr(outpost, "id", None))
 
     def fuel_state(self, spare):
-        """(level, alert, hours): level "" / "warn" / "error", hours = game hours of fuel left at the current heat."""
+        """(level, alert, hours): level "" / "warn" / "error", hours = game hours of fuel left at the current heat.
+
+        "no_fuel" with a rod staged or in a cask is not an error: the status read
+        predates the load (a new Reactor reads "no_fuel" until it takes its first rod).
+        """
         try:
             active = float(self.reactor.fuel_level())
         except Exception as error:
@@ -322,7 +326,7 @@ class ReactorController:
             active = 0.0
         heat = max(self.heat or SAFE_HEAT, MIN_HEAT_FOR_GAIN)
         hours = (active + spare) * ROD_LIFE_GH / heat
-        if self.status == "no_fuel":
+        if self.status == "no_fuel" and spare <= 0:
             return "error", "OUT OF FUEL RODS", hours
         if spare <= 0:
             return "warn", f"no spare Fuel Rod, ~{hours:.0f} h left", hours
