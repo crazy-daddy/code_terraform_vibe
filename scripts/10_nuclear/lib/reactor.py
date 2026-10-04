@@ -74,10 +74,13 @@ CONDITION_PERIOD_GH = 12.0
 FULL_OUTPUT_C = 900.0
 OVERHEAT_C = 950.0
 
-# Held core temperature: 97% output, 20 °C below the red band for estimate error.
-TARGET_C = 880.0
-# Above the target's band, under the red band's start plus a few degrees.
-TRIP_C = 910.0
+# Held core temperature: 100% output, just at the red band.
+# We basically never overshoot this, so no safety margin is needed.
+TARGET_C = FULL_OUTPUT_C
+# The core temperature that trips the controller to SAFE_HEAT and forgets the gain.
+# This is 10% of the red band above full output, so a bad gain estimate or a
+# missed boundary cannot ever reach 950 °C.
+TRIP_C = FULL_OUTPUT_C + (OVERHEAT_C - FULL_OUTPUT_C) * 0.1
 SAFE_HEAT = TARGET_C / GAIN_MAX_C
 
 # Gain estimation.
