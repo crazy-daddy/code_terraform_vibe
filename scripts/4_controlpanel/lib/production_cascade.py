@@ -1,8 +1,9 @@
 # Network-wide Fabricator demand: the recipe input table, the blueprint and
 # Fabricator-output demand cascades and the folded root/final targets.
 from storage import total_stock
+from components import component
 from swallow import swallowed
-from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _component, _current_tick, _default_fabricator, _default_smelter
+from production_core import construction_site_id, FUEL_ASSEMBLER_OUTPUTS, home_outpost_id, log, _current_tick, _default_fabricator, _default_smelter
 from production_docks import dock_owed_at, _dock_order_remaining, _dock_order_sites
 from production_source import SourceCache
 from production_orders import get_backlog_orders, get_fabricator_stock_targets, get_manual_orders, get_upgrade_orders, manual_transit_wants, SITE_ORDER_REQUESTERS
@@ -226,7 +227,7 @@ def _vehicle_cargo_counts(item_ids):
     vehicle (fleet.vehicles() + each vehicle's live cargo.stacks()). Only
     items with a non-zero count are returned."""
     counts = {}
-    fleet = _component("fleet")
+    fleet = component("fleet")
     if not fleet or not hasattr(fleet, "vehicles"):
         return counts
     try:
@@ -235,7 +236,7 @@ def _vehicle_cargo_counts(item_ids):
         swallowed("production_cascade._vehicle_cargo_counts: fleet.vehicles", error)
         return counts
     for ref in refs:
-        vehicle = _component(getattr(ref, "id", None))
+        vehicle = component(getattr(ref, "id", None))
         cargo = getattr(vehicle, "cargo", None) if vehicle else None
         if not cargo or not hasattr(cargo, "stacks"):
             continue
@@ -258,7 +259,7 @@ def blueprint_required_items(cache=None):
     if cache is not None and cache._blueprint_seeds is not None:
         return dict(cache._blueprint_seeds)
     frontier = {}
-    bp = _component("construction_blueprint")
+    bp = component("construction_blueprint")
     if bp:
         seen_jobs = set()
         for getter_name in ("pending_constructions", "paused_constructions"):

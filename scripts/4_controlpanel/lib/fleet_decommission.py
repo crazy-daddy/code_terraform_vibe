@@ -39,6 +39,7 @@ from archive import archive
 from vehicle_claims import set_vehicle_recalled
 from drone_claims import set_drone_recalled
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 from script_parking import start_script
 from storage import inventory_count
@@ -109,14 +110,6 @@ def is_decommission_requested(machine_id):
     return bool(entry) and entry.get("state") == "requested"
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("fleet_decommission._component: get_component", error)
-        return None
-
-
 class FleetDecommissionCoordinator:
     """Host side: undeploys ready machines, sells Pioneer parts, cleans the archive. State lives in the archive."""
 
@@ -127,7 +120,7 @@ class FleetDecommissionCoordinator:
 
     def _fleet_ids(self):
         """({vehicle_id}, {drone_id: DroneRef}); (None, None) when the fleet is unreadable."""
-        fleet = _component("fleet")
+        fleet = component("fleet")
         if not fleet:
             return None, None
         try:
@@ -139,7 +132,7 @@ class FleetDecommissionCoordinator:
         return vehicles, drones
 
     def _depot_ids(self):
-        network = _component("outpost_network")
+        network = component("outpost_network")
         ids = set()
         try:
             for outpost in (network.outposts() if network else []):
@@ -150,7 +143,7 @@ class FleetDecommissionCoordinator:
         return ids
 
     def _cargo_count(self, machine_id):
-        machine = _component(machine_id)
+        machine = component(machine_id)
         cargo = getattr(machine, "cargo", None) if machine else None
         try:
             return int(cargo.count() or 0) if cargo else 0
@@ -161,7 +154,7 @@ class FleetDecommissionCoordinator:
     def _pioneer_parts(self, machine_id):
         """{item_id: count} the undeploy returns: chassis kit, modules and their portables."""
         parts = {PIONEER_KIT_ID: 1}
-        machine = _component(machine_id)
+        machine = component(machine_id)
         try:
             slots = machine.modules() if machine and hasattr(machine, "modules") else []
         except Exception as error:
@@ -174,7 +167,7 @@ class FleetDecommissionCoordinator:
         return parts
 
     def _stop_script(self, machine_id):
-        run = _component("run_control")
+        run = component("run_control")
         try:
             if run and run.is_running(machine_id):
                 run.stop(machine_id)
@@ -198,7 +191,7 @@ class FleetDecommissionCoordinator:
         vehicles, drones = self._fleet_ids()
         if vehicles is None:
             return "decommission: fleet unreadable"
-        computer = _component("computer")
+        computer = component("computer")
         if not computer or not hasattr(computer, "undeploy"):
             return "decommission: no Ship Computer"
 
@@ -258,7 +251,7 @@ class FleetDecommissionCoordinator:
 
     def _sell_returned(self, parts, before):
         """Sells what the undeploy returned of each part (Inventory gain, capped at the snapshot count)."""
-        shop = _component("shop")
+        shop = component("shop")
         if not shop:
             return "no Shop, parts left in Inventory"
         credits = 0

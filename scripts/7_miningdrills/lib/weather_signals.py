@@ -30,6 +30,7 @@
 from archive import archive
 from tree_console import TreeConsole, flush_all, reset_all
 from version_guard import validate_game_version
+from components import weather_station
 from swallow import swallowed
 
 BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
@@ -183,7 +184,9 @@ class WeatherController:
             if not powered:
                 continue
             try:
-                station = self.station if station_id == self.name else get_component(station_id)
+                station = self.station if station_id == self.name else weather_station(station_id)
+                if station is None:
+                    continue
                 heard = station.signal_receiver.transmissions()
             except Exception as error:
                 swallowed("weather_signals.WeatherController.listen: signal_receiver.transmissions", error)

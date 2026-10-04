@@ -46,6 +46,7 @@
 # cargo on the move without counting a planned pickup twice.
 
 from archive import archive
+from components import drone_station
 from storage import warehouse_stocks, stacks_stock, crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID
 from fleet_status import FLEET_STATUS_KEY
 from tree_console import TreeConsole
@@ -560,7 +561,7 @@ def local_depots(outpost):
     depots = []
     for ref in refs:
         try:
-            depot = get_component(ref.id)
+            depot = drone_station(ref.id)
         except Exception as error:
             swallowed("logistics_requests.local_depots: get_component", error)
             depot = None

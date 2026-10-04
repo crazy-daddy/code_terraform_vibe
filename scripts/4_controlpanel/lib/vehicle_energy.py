@@ -53,6 +53,7 @@ def is_rover_chassis_for(vehicle):
     return str(name).startswith("rover")
 
 from archive import archive
+from components import charging_station
 from swallow import swallowed
 from tree_console import flush_all
 from script_parking import wake_for_visit
@@ -860,7 +861,7 @@ class VehicleEnergyMixin:
         else:
             station_coords = (float(station_coords[0]), float(station_coords[1]))
             if station_id:
-                cs = get_component(station_id)
+                cs = charging_station(station_id)
             if not cs:
                 for st in self.get_all_charging_stations():
                     if self._host.distance_between(st["coords"], station_coords) < 2.0:
@@ -871,7 +872,7 @@ class VehicleEnergyMixin:
 
         if not cs:
             if station_id:
-                cs = get_component(station_id)
+                cs = charging_station(station_id)
             if not cs:
                 stations = self.get_all_charging_stations()
                 if stations:
@@ -911,7 +912,7 @@ class VehicleEnergyMixin:
         docked_id = balanced["id"] if balanced else self.current_station()
         if docked_id and docked_id != station_id:
             station_id = docked_id
-            cs = balanced["component"] if balanced else (get_component(docked_id) or cs)
+            cs = balanced["component"] if balanced else (charging_station(docked_id) or cs)
             wake_for_visit(station_id, f"{self._host.name} coming to charge")
         self._host.publish_telemetry("CHARGING")
         self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")

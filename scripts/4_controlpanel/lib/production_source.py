@@ -3,8 +3,9 @@
 from storage import crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID, discover_storage_buildings, outpost_is_home
 from outpost_mining import HOME_OUTPOST_ID
 from logistics_requests import aboard_units, DRONE_DEPOT_TYPE_IDS
+import components
 from swallow import swallowed
-from production_core import log, _all_outposts, _component, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
+from production_core import log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
 from production_fluids import can_source_fluid
 import lead_cask
 
@@ -78,7 +79,7 @@ class SourceCache:
         game calls."""
         totals = {}
         per_building = {}
-        sources = [("inventory", _component("inventory"))] + [(b["id"], b["component"]) for b in discover_storage_buildings()]
+        sources = [("inventory", components.component("inventory"))] + [(b["id"], b["component"]) for b in discover_storage_buildings()]
         for source_id, component in sources:
             if not component or not hasattr(component, "stacks"):
                 continue
@@ -242,7 +243,7 @@ class SourceCache:
 
     def surveyed_sites(self):
         if self._surveyed_sites is None:
-            journal = _component("journal")
+            journal = components.component("journal")
             try:
                 self._surveyed_sites = list(journal.surveyed_sites("nocturna")) if journal and hasattr(journal, "surveyed_sites") else []
             except Exception as error:

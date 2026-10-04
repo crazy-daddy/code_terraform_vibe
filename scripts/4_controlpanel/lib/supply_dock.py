@@ -37,6 +37,7 @@
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
+from components import supply_dock
 from storage import take_item, total_stock, warehouse_stock, local_port_target, best_unload_target, outpost_is_home
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
@@ -364,7 +365,7 @@ def plan_dock_assignments(clock=None):
 
     docks = {}
     for dock_id in discover_supply_dock_ids():
-        dock = get_component(dock_id)
+        dock = supply_dock(dock_id)
         if dock and hasattr(dock, "current_order"):
             docks[dock_id] = dock
     if not docks:

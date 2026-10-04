@@ -3,8 +3,9 @@
 from archive import archive
 from storage import total_stock
 from logistics_requests import in_flight
+from components import component
 from swallow import swallowed
-from production_core import discover_fabricator_ids, discover_smelter_ids, log, machine_outpost_id, _add_demand, _ceil, _component, _default_fabricator, _default_smelter
+from production_core import discover_fabricator_ids, discover_smelter_ids, log, machine_outpost_id, _add_demand, _ceil, _default_fabricator, _default_smelter
 from production_docks import find_dock_order_requiring, _dock_order_remaining
 from production_source import SourceCache
 from production_cascade import get_fabricator_targets, _recipe_inputs_for, _stock_fn
@@ -26,7 +27,7 @@ def get_smelter_worker_count(recipe_id):
     """
     count = 0
     for smelter_id in discover_smelter_ids():
-        candidate = _component(smelter_id)
+        candidate = component(smelter_id)
         if not candidate or not hasattr(candidate, "get_recipe"):
             continue
         try:
@@ -72,7 +73,7 @@ def get_material_demands(cache=None):
     # counts here, like Smelter/Supply Dock discovery (production_core.py).
     fabricator_ids = discover_fabricator_ids() or ["fabricator_1"]
     for fabricator_id in fabricator_ids:
-        fabricator = _component(fabricator_id)
+        fabricator = component(fabricator_id)
         if not fabricator:
             continue
         recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)
@@ -171,7 +172,7 @@ def get_smelter_demands(cache=None):
 
     staged = {}
     for fabricator_id in discover_fabricator_ids():
-        fabricator = _component(fabricator_id)
+        fabricator = component(fabricator_id)
         if not fabricator or not hasattr(fabricator, "get_stockpile"):
             continue
         try:
@@ -309,7 +310,7 @@ def smelter_recipe_peers(recipe_id, outpost_id=None):
     count = 0
     buffered = 0
     for smelter_id in discover_smelter_ids():
-        candidate = _component(smelter_id)
+        candidate = component(smelter_id)
         if not candidate or not hasattr(candidate, "get_recipe"):
             continue
         try:

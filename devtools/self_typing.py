@@ -63,7 +63,32 @@ SELF_TYPE_OVERRIDES = {
 # Component classes re-exported for scripts that bind a by-name lookup
 # (`get_component("battery_1")`, typed plain Component) to its real type.
 # Exported only when the save's __builtins__.pyi defines them.
-COMPONENT_EXPORTS = ("BatteryComponent",)
+COMPONENT_EXPORTS = (
+    "BatteryComponent",
+    "ChargingStation",
+    "DroneLarge",
+    "DroneMedium",
+    "DroneServiceStation",
+    "DroneSmall",
+    "DroneStation",
+    "DroneStationLarge",
+    "DroneStationMedium",
+    "Fabricator",
+    "GasTank",
+    "LargeWarehouse",
+    "LiquidTank",
+    "MiningDrill",
+    "MiningDrillHeavy",
+    "MiningDrillIndustrial",
+    "OilPump",
+    "OutpostComponent",
+    "Smelter",
+    "SteamTurbine",
+    "SupplyDock",
+    "Warehouse",
+    "WaterPump",
+    "WeatherStation",
+)
 # Script stems whose typed-self name differs from their slot-stripped stem.
 STEM_ALIASES = {
     "pioneer_scout": "pioneer",

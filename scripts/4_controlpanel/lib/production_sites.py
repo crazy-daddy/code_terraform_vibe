@@ -4,8 +4,9 @@
 from archive import archive
 from outpost_mining import HOME_OUTPOST_ID
 from logistics_requests import active_requests, in_flight, outpost_free_tiers
+from components import component
 from swallow import swallowed
-from production_core import claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _component, _current_tick, _default_fabricator
+from production_core import claim_site_id, craft_seconds, discover_fabricator_ids, discover_smelter_ids, home_outpost_id, log, _all_outposts, _ceil, _current_tick, _default_fabricator
 from production_source import SourceCache
 from production_cascade import fabricator_root_targets, get_fabricator_targets, _cascade_fabricator_output_demand
 
@@ -34,7 +35,7 @@ def get_fabricator_worker_ids(recipe_id, site_id=None):
     """
     ids = []
     for fabricator_id in discover_fabricator_ids():
-        candidate = _component(fabricator_id)
+        candidate = component(fabricator_id)
         if not candidate or not hasattr(candidate, "get_recipe"):
             continue
         try:
@@ -68,7 +69,7 @@ def _pipeline_by_site(cache=None):
         return cache._pipeline_by_site
     by_site = {}
     for fabricator_id in discover_fabricator_ids():
-        fabricator = _component(fabricator_id)
+        fabricator = component(fabricator_id)
         if not fabricator:
             continue
         pipeline = by_site.setdefault(claim_site_id(fabricator), {})
@@ -135,7 +136,7 @@ def fab_site_counts(cache=None):
         return dict(cache._fab_sites)
     counts = {}
     for fabricator_id in discover_fabricator_ids():
-        fabricator = _component(fabricator_id)
+        fabricator = component(fabricator_id)
         if fabricator:
             site_id = claim_site_id(fabricator)
             counts[site_id] = counts.get(site_id, 0) + 1
@@ -582,7 +583,7 @@ def fab_site_gross_need(fabricator_ids, smelter_outputs, cache):
     inputs in `smelter_outputs` (every input when None)."""
     need = {}
     for fabricator_id in fabricator_ids:
-        fabricator = _component(fabricator_id)
+        fabricator = component(fabricator_id)
         if not fabricator:
             continue
         recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)

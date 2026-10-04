@@ -1,6 +1,7 @@
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
+from components import mining_drill
 from swallow import swallowed
 from drill_sites import STATUS_KEY, DRILL_TYPE_IDS, advertised_drills
 
@@ -197,7 +198,7 @@ def publish_all_drills():
     for drill_id, drill_type in types.items():
         controller = _CONTROLLERS.get(drill_id)
         if controller is None:
-            drill = get_component(drill_id)
+            drill = mining_drill(drill_id)
             if drill is None:
                 continue
             controller = MiningDrillController(drill, drill_type=drill_type)

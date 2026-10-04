@@ -5,6 +5,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 from fleet_status import FLEET_STATUS_KEY, LEGACY_FLEET_STATUS_PREFIXES
 from fluid_routing import discover_network_buildings
@@ -90,15 +91,6 @@ BUILDING_ID_KEYS = (
 )
 
 
-def safe_get_component(name):
-    """Safely retrieves a game component without raising exceptions."""
-    try:
-        return get_component(name)
-    except Exception as error:
-        swallowed("archive_cleaner.safe_get_component: get_component", error)
-        return None
-
-
 class _SilentConsole:
     """Console stand-in that drops every line, for a non-verbose cleaner's info blocks."""
 
@@ -158,7 +150,7 @@ class ArchiveCleaner:
         return self.archive is not None and getattr(self.archive, "available", False)
 
     def get_current_tick(self):
-        clock = safe_get_component("clock")
+        clock = component("clock")
         if clock and hasattr(clock, "tick"):
             try:
                 return clock.tick()
@@ -170,7 +162,7 @@ class ArchiveCleaner:
         """Returns set of coordinates (x, y) and poi_x_y keys for already-scanned POIs."""
         scanned_keys = set()
         scanned_coords = set()
-        nocturna = safe_get_component("nocturna")
+        nocturna = component("nocturna")
         if nocturna and hasattr(nocturna, "points_of_interest"):
             try:
                 pois = nocturna.points_of_interest() or []
@@ -189,7 +181,7 @@ class ArchiveCleaner:
         """Returns set of site IDs and coordinates (x, y) for fully surveyed mineral sites."""
         surveyed_ids = set()
         surveyed_coords = set()
-        journal = safe_get_component("journal")
+        journal = component("journal")
         if journal and hasattr(journal, "surveyed_sites"):
             try:
                 sites = journal.surveyed_sites("nocturna") or []
@@ -211,7 +203,7 @@ class ArchiveCleaner:
         Drones come from fleet.drones(), not fleet.vehicles() -- leaving them out made
         clean_telemetry() treat every drone's telemetry as orphaned."""
         vehicles = set()
-        fleet = safe_get_component("fleet")
+        fleet = component("fleet")
         for source in ("vehicles", "drones"):
             if not (fleet and hasattr(fleet, source)):
                 continue
@@ -231,7 +223,7 @@ class ArchiveCleaner:
         used to tell a still-live per-grid power.shedded:<anchor>/power.night_wh:<anchor>
         entry apart from one orphaned by two grids joining into one via a new power line."""
         anchors = set()
-        power = safe_get_component("power_control")
+        power = component("power_control")
         if power and hasattr(power, "grids"):
             try:
                 for g in power.grids() or []:
@@ -766,7 +758,7 @@ class ArchiveCleaner:
         """Ids of every building on the outpost network (outpost.buildings() with no type
         filter). Empty when discovery fails or finds nothing."""
         ids = set()
-        network = safe_get_component("outpost_network")
+        network = component("outpost_network")
         if network and hasattr(network, "outposts"):
             try:
                 for outpost in network.outposts() or []:

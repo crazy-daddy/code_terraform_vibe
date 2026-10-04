@@ -33,6 +33,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 
 BUDGET_KEY = "cash.budget"
@@ -70,16 +71,8 @@ SPEND_LOG_LEN = 200             # spend log entries kept (also pruned to the win
 log = TreeConsole(module="cash")
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("cash._component: get_component", error)
-        return None
-
-
 def _tick():
-    clock = _component("clock")
+    clock = component("clock")
     try:
         return int(clock.tick()) if clock else 0
     except Exception as error:
@@ -88,7 +81,7 @@ def _tick():
 
 
 def _hours():
-    clock = _component("clock")
+    clock = component("clock")
     try:
         return float(clock.elapsed_game_hours()) if clock and hasattr(clock, "elapsed_game_hours") else 0.0
     except Exception as error:
@@ -98,7 +91,7 @@ def _hours():
 
 def balance():
     """Current credit balance, 0 if the commander can't be read."""
-    commander = _component("commander")
+    commander = component("commander")
     try:
         return int(commander.get_credits()) if commander else 0
     except Exception as error:
@@ -113,7 +106,7 @@ def shop_price(item_id, fallback=0):
     """Shop catalogue price of item_id, cached per script run (prices are static)."""
     if item_id in _prices:
         return _prices[item_id]
-    shop = _component("shop")
+    shop = component("shop")
     try:
         for entry in (shop.get_catalogue() if shop else []):
             _prices[entry.id] = int(entry.cost)
@@ -305,7 +298,7 @@ def rates(history, spend_log, now_h):
 
 def order_pipeline():
     """{"campaign": remaining cr, "campaign_shipped": cr already earned in progress, "weekly": cr} from the Earth Order boards."""
-    orders = _component("orders")
+    orders = component("orders")
     out = {"campaign": 0, "campaign_shipped": 0, "weekly": 0}
     if not orders:
         return out

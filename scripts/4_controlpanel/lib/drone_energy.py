@@ -24,6 +24,7 @@
 
 from archive import archive
 from drone_upgrade import retiring_depot_ids
+from components import drone_service_station
 from swallow import swallowed
 from script_parking import wake_for_visit
 from typing import TYPE_CHECKING
@@ -169,7 +170,7 @@ def service_oil_state(service_id):
     port's own declaration). Unreadable reads as (False, 0.0, 0.0).
     """
     try:
-        station = get_component(service_id)
+        station = drone_service_station(service_id)
         port = getattr(station, "oil_in", None) if station else None
         if port is None:
             return (False, 0.0, 0.0)

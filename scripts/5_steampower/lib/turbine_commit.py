@@ -31,6 +31,7 @@
 
 from archive import archive
 from script_parking import PARKED_KEY, set_powered
+from components import steam_turbine
 from hysteresis import HysteresisLatch
 from tree_console import TreeConsole
 from swallow import swallowed
@@ -154,7 +155,7 @@ class TurbineCommitment:
 
     def _info(self, turbine_id):
         """{"capable", "buffer", "source_fill", "powered", "output"} for one turbine, or None."""
-        turbine = get_component(turbine_id)
+        turbine = steam_turbine(turbine_id)
         if turbine is None or self.power is None:
             return None
         try:

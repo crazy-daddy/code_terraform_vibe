@@ -94,6 +94,7 @@ from storage import outpost_is_home, discover_storage_buildings, must_stay_in_in
 from outpost_mining import ore_stock_target, assigned_ores_for, assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 
 log = TreeConsole(module="site_supply")
@@ -152,16 +153,8 @@ _EXOTIC_EXTRACTORS = {"gas": "exotic_gas_cap", "liquid": "exotic_spring_tap"}
 _SITE_MACHINE_GETTERS = {"water": "pump_id", "oil": "pump_id", "thermal": "cap_id", "exotic": "cap_id"}
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("site_supply._component: get_component", error)
-        return None
-
-
 def _outposts():
-    network = _component("outpost_network")
+    network = component("outpost_network")
     if not network or not hasattr(network, "outposts"):
         return []
     try:
@@ -546,7 +539,7 @@ def evictable_goods(cache):
     """Item ids that may be evicted as stranded goods: Fabricator recipe
     inputs in EVICT_GOODS_CATEGORIES, minus storage.must_stay_in_inventory(),
     Constructor items and EVICT_HOLD_ITEM_IDS. Empty without an item_catalog."""
-    catalog = _component("item_catalog")
+    catalog = component("item_catalog")
     if not catalog or not hasattr(catalog, "lookup"):
         return set()
     inputs = set()

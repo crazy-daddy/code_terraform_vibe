@@ -12,6 +12,7 @@
 # back (lib/drone_energy.py). This station watches and rescues.
 
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
+from components import drone
 from swallow import swallowed
 from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController
@@ -131,7 +132,7 @@ class DroneServiceController(StationController):
 
         for d_id in docked_ids:
             try:
-                d = get_component(d_id)
+                d = drone(d_id)
                 if not d:
                     continue
                 # Probe, not hasattr(): drones expose both .battery and

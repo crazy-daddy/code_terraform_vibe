@@ -49,6 +49,7 @@
 # with no free Habitat a revive step can never run and is skipped.
 
 from archive import archive
+import components
 from swallow import swallowed
 from tree_console import TreeConsole
 import logistics_requests
@@ -684,8 +685,10 @@ def _tank_rows(tanks, wanted):
     rows = []
     for tank_id, medium in tanks:
         try:
-            tank = get_component(tank_id)
-            fluid = tank.fluid() if tank else None
+            tank = components.tank(tank_id)
+            if tank is None:
+                continue
+            fluid = tank.fluid()
             if fluid and wanted.get(fluid) == medium:
                 rows.append((fluid, float(tank.level() or 0.0)))
         except Exception as error:

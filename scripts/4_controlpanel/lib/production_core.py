@@ -6,6 +6,7 @@ from archive import archive
 from outpost_mining import HOME_OUTPOST_ID, RAW_ORE_ITEM_IDS
 from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
+from components import component, fabricator, smelter
 from swallow import swallowed
 import fleet_status
 
@@ -78,7 +79,7 @@ def craft_prefill_units(recipe, item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
 
 def _current_tick():
     """Module-level tick read (mirrors VehicleController.get_current_tick()) for callers with no vehicle instance."""
-    clock = _component("clock")
+    clock = component("clock")
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
@@ -87,21 +88,13 @@ def _current_tick():
     return 0
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("production_core._component: get_component", error)
-        return None
-
-
 SMELTER_TYPE_ID = "smelter"
 
 
 def _all_outposts():
     """Every owned OutpostRef (outpost_network.outposts()), or just home when
     the network can't be listed."""
-    network = _component("outpost_network")
+    network = component("outpost_network")
     if network and hasattr(network, "outposts"):
         try:
             return list(network.outposts())
@@ -223,7 +216,7 @@ def site_recipe_claims(claims, owner_field):
 
 
 def _home_outpost():
-    network = _component("outpost_network")
+    network = component("outpost_network")
     if network and hasattr(network, "home"):
         return network.home()
     return None
@@ -254,7 +247,7 @@ def smelter_ores(outpost):
     tech-gated and identical per Smelter, so the first one that answers
     stands in for all."""
     for smelter_id in discover_smelter_ids(outpost):
-        smelter = _component(smelter_id)
+        smelter = component(smelter_id)
         if not smelter or not hasattr(smelter, "list_recipes"):
             continue
         try:
@@ -276,8 +269,8 @@ def _default_smelter():
     """First discovered Smelter component (dynamic stand-in for the old hardcoded 'smelter_1')."""
     ids = discover_smelter_ids()
     if ids:
-        return _component(ids[0])
-    return _component("smelter_1")  # last-resort fallback if discovery finds nothing (e.g. outpost_network unavailable)
+        return smelter(ids[0])
+    return smelter("smelter_1")  # last-resort fallback if discovery finds nothing (e.g. outpost_network unavailable)
 
 
 FABRICATOR_TYPE_ID = "fabricator"
@@ -292,8 +285,8 @@ def _default_fabricator():
     """First discovered Fabricator component (dynamic stand-in for the old hardcoded 'fabricator_1')."""
     ids = discover_fabricator_ids()
     if ids:
-        return _component(ids[0])
-    return _component("fabricator_1")  # last-resort fallback if discovery finds nothing
+        return fabricator(ids[0])
+    return fabricator("fabricator_1")  # last-resort fallback if discovery finds nothing
 
 
 FUEL_ASSEMBLER_TYPE_ID = "fuel_assembler"
@@ -305,7 +298,7 @@ AFTERMATHS_KEY = "weather.aftermaths"
 
 def _default_fuel_assembler():
     ids = _discover_building_ids(FUEL_ASSEMBLER_TYPE_ID)
-    return _component(ids[0]) if ids else None
+    return component(ids[0]) if ids else None
 
 
 def _uranium_aftermath_pending():

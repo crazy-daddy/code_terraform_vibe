@@ -43,6 +43,7 @@ left alone).
 
 from archive import archive
 from tree_console import TreeConsole
+from components import oil_pump
 from swallow import swallowed
 import fluid_routing
 from atomic import run_batched
@@ -663,7 +664,7 @@ class ScriptParking:
     @staticmethod
     def _well_active(machine_id):
         """Oil Pump well_active() (readable from any script); True on a read failure so the pump wakes."""
-        pump = get_component(machine_id)
+        pump = oil_pump(machine_id)
         if pump is None or not hasattr(pump, "well_active"):
             return False
         try:

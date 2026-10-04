@@ -29,6 +29,8 @@
 from archive import archive
 from patterns import is_wildcard_pattern, filter_wildcard_matches
 from tree_console import TreeConsole
+from components import gas_tank
+import components
 from swallow import swallowed
 from turbine_commit import TurbineCommitment
 
@@ -127,7 +129,7 @@ def steam_pool(tank_ids):
     count = 0
     for tank_id in tank_ids:
         try:
-            tank = get_component(tank_id)
+            tank = gas_tank(tank_id)
             if tank is None:
                 continue
             fluid = tank.fluid()
@@ -223,7 +225,7 @@ class PowerGridManager:
             found = []
             for outpost_id in outpost_ids:
                 try:
-                    outpost = get_component(outpost_id)
+                    outpost = components.outpost(outpost_id)
                     for ref in outpost.buildings("gas_tank") if outpost else []:
                         found.append(ref.id)
                 except Exception as error:

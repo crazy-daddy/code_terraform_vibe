@@ -15,6 +15,7 @@
 
 from archive import archive
 from tree_console import TreeConsole
+import components
 from swallow import swallowed
 from script_parking import wake_for_visit
 from atomic import run_batched
@@ -63,16 +64,8 @@ INVENTORY_ONLY_ITEM_IDS = (
 )
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("storage._component: get_component", error)
-        return None
-
-
 def _home_outpost():
-    network = _component("outpost_network")
+    network = components.component("outpost_network")
     if network and hasattr(network, "home"):
         try:
             return network.home()
@@ -154,7 +147,7 @@ def _scan_storage_buildings(outpost, type_ids):
             b_id = getattr(b, "id", None)
             if not b_id or b_id in seen_ids:
                 continue
-            component = _component(b_id) or b
+            component = components.component(b_id) or b
             seen_ids.add(b_id)
             found.append({"id": b_id, "component": component})
     return found
@@ -165,7 +158,7 @@ def total_stock(item_id, outpost=None):
     discovered Warehouse -- the single source of truth for "how much of this
     item exists at all", including both home Inventory and remote Warehouses."""
     total = 0
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if inventory and hasattr(inventory, "count"):
         try:
             total += inventory.count(item_id)
@@ -183,7 +176,7 @@ def total_stock(item_id, outpost=None):
 
 def inventory_count(item_id):
     """inventory.count(item_id): units in home Inventory only, 0 if unreadable."""
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "count"):
         return 0
     try:
@@ -334,7 +327,7 @@ def _inventory_first(item_id, min_amount, outpost):
     min_amount, and no active Supply Dock order at outpost owes it."""
     if not must_stay_in_inventory(item_id):
         return False
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "space_for"):
         return False
     try:
@@ -443,7 +436,7 @@ def recently_busy(source_id, now=None):
 
 
 def _now_tick():
-    clock = _component("clock")
+    clock = components.component("clock")
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
@@ -498,7 +491,7 @@ def crop_automator_forage(outpost=None):
         if getattr(ref, "type_id", CROP_AUTOMATOR_TYPE_ID) != CROP_AUTOMATOR_TYPE_ID:
             continue
         ca_id = getattr(ref, "id", None)
-        machine = _component(ca_id) if ca_id else None
+        machine = components.component(ca_id) if ca_id else None
         port = getattr(machine, "output", None)
         if not ca_id or not port or not hasattr(port, "stacks"):
             continue
@@ -570,7 +563,7 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
         holders += list(cache.building_stock(item_id))
     else:
         if is_home:
-            inventory = _component("inventory")
+            inventory = components.component("inventory")
             if inventory and hasattr(inventory, "count"):
                 try:
                     count = inventory.count(item_id)
@@ -957,7 +950,7 @@ def consolidate_cross_warehouse_stock(outpost=None):
 
 def inventory_stack_size():
     """Current Inventory stack size per slot: 10, or 20 once Bigger Stacks is unlocked."""
-    research = _component("research")
+    research = components.component("research")
     if research and hasattr(research, "is_unlocked"):
         try:
             if research.is_unlocked(BIGGER_STACKS_TECH_ID):
@@ -974,7 +967,7 @@ def must_stay_in_inventory(item_id):
     inventory manager sweep must leave it alone."""
     if item_id in INVENTORY_ONLY_ITEM_IDS:
         return True
-    catalog = _component("item_catalog")
+    catalog = components.component("item_catalog")
     if not catalog or not hasattr(catalog, "lookup"):
         return False
     try:
@@ -989,7 +982,7 @@ def _occupied_stackable_slots_by_item():
     """{item_id: [count_per_occupied_slot, ...]} for Inventory, skipping empty,
     property-bearing (non-stackable), and Inventory-only-category slots
     (see must_stay_in_inventory)."""
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "get_slots"):
         return {}
     try:
@@ -1099,7 +1092,7 @@ def _items_demanded_by_active_dock_orders(outpost=None):
         dock_id = getattr(ref, "id", None)
         if not dock_id:
             continue
-        dock = _component(dock_id)
+        dock = components.component(dock_id)
         if not dock or not hasattr(dock, "current_order"):
             continue
         try:
@@ -1144,7 +1137,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
     different variant of the same item_id.
     """
     log.start("reclaim_inventory_only_items_from_warehouses", level="debug")
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "transfer_to"):
         log.end()
         return
@@ -1221,7 +1214,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
     slots used (slots freed by the move > slots the evicted occupant would
     cost) -- never a wash or a net loss.
     """
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "transfer_to"):
         return
 
