@@ -7,6 +7,9 @@
 #     (and the Adaptation is bought when the plan says Adaptation first);
 #   - rearing (12 game hours): keep the feed present; on rearing_failed()
 #     re-stage and retry up to MAX_REVIVE_RETRIES;
+#   - released (`plan.release`, colony at the Mk II ceiling): no feed, fluid or
+#     purchase; ejects feed and reagents to local storage, purges both buffers
+#     and inlets, then publishes `release` "ready" for the planner to undeploy it;
 #   - established: top up feed, regulate gas and liquid toward the band centre
 #     from tanks holding the required fluid, pre-fill a medium that opens at
 #     the next stage, buy queued Breakthroughs/Adaptations. A fluid the
@@ -93,6 +96,7 @@ class HabitatController:
         self.retries = 0
         self.blocker = None
         self.parked = ""
+        self.released = ""
         self.rationed_out = False
         self._last_failed = False
 
@@ -119,13 +123,14 @@ class HabitatController:
         return out
 
     def plan_entry(self):
-        """(assignment, node slot to buy or None, [fluids the planner denies this Habitat])."""
+        """(assignment, node slot to buy or None, [fluids the planner denies this Habitat], released species or "")."""
         plan = archive.get(wc.PLAN_KEY, {}) or {}
         if not isinstance(plan, dict):
-            return {}, None, []
+            return {}, None, [], ""
         assign = (plan.get("assign") or {}).get(self.name) or {}
         denied = (plan.get("fluid_ration") or {}).get(self.name) or []
-        return assign, (plan.get("buy") or {}).get(self.name), list(denied)
+        release = (plan.get("release") or {}).get(self.name) or ""
+        return assign, (plan.get("buy") or {}).get(self.name), list(denied), release
 
     def bought(self):
         """{"adaptation": bool, "breakthrough": bool} from the live bonus tree; {} before a target exists."""
@@ -436,6 +441,45 @@ class HabitatController:
             self.parked = wc.PARK_RATIONED
         return item, feed, rate, fluids
 
+    # ------------------------------------------------------------ release
+
+    def release_step(self, species):
+        """
+        Empties a released Habitat: intakes 0, feed and reagents ejected to
+        local storage, both buffers and inlets purged. Returns
+        wc.RELEASE_READY once nothing is left, else wc.RELEASE_EMPTYING.
+        """
+        target = local_port_target(self.outpost)
+        left = 0
+        for port_name in ("input", "reagents"):
+            port = getattr(self.machine, port_name, None)
+            if port is None:
+                continue
+            for item, count in self.held(port).items():
+                if count <= 0 or not target:
+                    continue
+                try:
+                    status = getattr(port.eject(target, item, count), "status", "")
+                except Exception as error:
+                    swallowed("habitat.HabitatController.release_step: port.eject", error)
+                    continue
+                self.log.debug(f"[{self.name}] release: eject {count}x '{item}' to '{target}' -> {status}.")
+            left += sum(self.held(port).values())
+        for medium in MEDIA:
+            self._set_intake(medium, 0.0)
+            if float(self._call(f"{medium}_level", 0.0)) > 0:
+                self._call("purge_reserve", None, medium)
+            port = getattr(self.machine, MEDIA[medium]["port"], None)
+            if port is not None and float(call_or("habitat.HabitatController.release_step", port, "level", 0.0) or 0.0) > 0:
+                self._call("purge_intake", None, MEDIA[medium]["port"])
+            left += 1 if float(self._call(f"{medium}_level", 0.0)) > 0 else 0
+        if left:
+            self.blocker = "releasing"
+            return wc.RELEASE_EMPTYING
+        if self.released != wc.RELEASE_READY:
+            self.log.print(f"[{self.name}] {species} released: Habitat empty, waiting to be undeployed.")
+        return wc.RELEASE_READY
+
     # ------------------------------------------------------------ loop
 
     def publish(self, entry, curr_tick):
@@ -453,15 +497,21 @@ class HabitatController:
 
     def step(self):
         curr_tick = self.tick()
-        assign, buy, denied = self.plan_entry()
+        assign, buy, denied, release = self.plan_entry()
         species = self._call("species", "")
         established = bool(self._call("is_established", False))
         previous = self.blocker
         self.blocker = None
         self.parked = ""
+        released = ""
         item, feed, rate, fluids = "", float(self._call("feed_level", 0.0)), 0.0, {}
         poll = POLL_STAGING_S
-        if established:
+        if release and established and release == species:
+            # Published `feed_item` stays "", so Feed Makers deliver nothing here.
+            released = self.release_step(species)
+            feed = float(self._call("feed_level", 0.0))
+            poll = POLL_MAX_S if released == wc.RELEASE_READY else POLL_STAGING_S
+        elif established:
             item, feed, rate, fluids = self.established_step(species, buy, denied, curr_tick)
             mult = wc.feed_multiplier(species, self._purchased_ids())
             poll = next_poll(feed, rate * 0.1 * mult)
@@ -481,6 +531,7 @@ class HabitatController:
         else:
             self.parked = wc.PARK_EMPTY
             poll = POLL_MAX_S
+        self.released = released
         if self.blocker != previous and self.blocker:
             self.log.print(f"[{self.name}] blocker: {self.blocker}.")
         self.publish({
@@ -503,6 +554,7 @@ class HabitatController:
             "bought": self.bought(),
             "blocker": self.blocker,
             "parked": self.parked,
+            "release": released,
             "retries": self.retries,
             "tick": curr_tick,
         }, curr_tick)

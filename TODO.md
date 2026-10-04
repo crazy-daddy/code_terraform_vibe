@@ -417,7 +417,8 @@ Chain: Weather Stations decode storm aftermaths → drones collect Raw Uranium �
     - [ ] Essence chain: deconstruct its tanks and (maybe) pipes after the sale.
     - [ ] Plant Terraformers (`plants_retire.py`, undeployed at 5,000,000 km², no registry entry needed): verify none stays dark while it waits to empty.
     - [ ] Bio chain per biome (Collector / Lab / Exchange / processor): retire once that biome has nothing left to catalog or deliver (not automated yet).
-    - [ ] Habitats: retire once their species' wildlife is maxed (not automated yet).
+    - [x] Habitats: released and undeployed at 350,000 once the species' Breakthrough is bought (`wildlife_planner` release, §1l-2); its feed is no longer made and Inventory feed is dropped.
+      - [ ] Validate live: Habitat `input.eject("inventory", ...)` of feed and reagents, `purge_reserve`/`purge_intake` empty the buffers, `computer.undeploy()` accepts the emptied Habitat (or which cargo blocks it), the colony keeps counting toward Wildlife.
     - [ ] Oxygen Generators / Heaters / Pressure machines: retire each type once its atmosphere value is at maximum (not automated yet).
   - [x] Biomass Mixer gate pauses are recorded in `script.parked` (mode `"mixer_gate"`).
 - [ ] Exercise failure scenarios: full Inventory, full output buffer, missing recipe, stale Rover claim, disconnected pipe, split power subnet, and stranded vehicle.

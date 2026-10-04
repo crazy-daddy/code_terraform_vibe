@@ -11,10 +11,11 @@
 #   2. build_plan(snapshot): pure, as a chain of atomic calls
 #      (lib/atomic.py), each bounded by the Habitat count; the whole plan in
 #      one call would pass the 10,000-step callback cap. First call:
-#      walks the offline revival schedule (wildlife_model.schedule_for(live
-#      Habitat count)) the way the optimizer does: steps run strictly in
-#      order; a step that can never run (species already revived, node
-#      bought, not cataloged, recipe locked, no Habitat left) is skipped;
+#      walks the offline revival schedule (wildlife_model.schedule_for() of
+#      schedule_habitats(): peak count of deployed Habitats + Habitat kits
+#      in Inventory, latched in `plan.schedule_habitats`) the way the optimizer does: steps run strictly in order; a
+#      step that can never run (species already revived, node bought, not
+#      cataloged, recipe locked, no Habitat left) is skipped;
 #      the first step that can run later (Insight short, Breakthrough
 #      source below 10,000) stops the walk, holding Insight.
 #      Then each colony's hours to its ceiling at the full-support model
@@ -30,8 +31,16 @@
 #   With the sensor at WILDLIFE_COMPLETE_POPULATION the pass is skipped (see
 #   plan_if_due): requests withdrawn, an empty plan published, COMPLETE_SUMMARY.
 #
-# Parking of finished colonies (undeploy at the Mk I ceiling, rehouse) is not
-# done: with no free Habitat a revive step can never run and is skipped.
+# Release: an established colony at wc.RELEASE_POPULATION (the Mk II
+# ceiling) whose Breakthrough is bought is released (`plan.release`
+# {habitat_id: species}, species recorded in wc.RELEASED_KEY). It gets no
+# feed demand, fluid or purchase; its Habitat ejects its feed and reagents to
+# local storage and purges its buffers, then reports `release` "ready" and is
+# undeployed here (kit and Mk II pack back to Inventory). Feed of a released
+# species in Inventory is dropped. A released species is never revived again.
+#
+# Parking of colonies at the Mk I ceiling (undeploy, rehouse) is not done:
+# with no free Habitat a revive step can never run and is skipped.
 
 from archive import archive
 from swallow import swallowed
@@ -46,6 +55,8 @@ import wildlife_common as wc
 from storage import inventory_count
 
 PLAN_TICK_INTERVAL = 250            # one game hour
+# undeploy() answers that only mean "not right now" (retried next pass).
+TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "cargo_present")
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
 IDLE_SUMMARY = "wildlife idle"
 COMPLETE_SUMMARY = "Wildlife complete"
@@ -55,16 +66,24 @@ TANK_CHUNK = 100                    # tanks per atomic get_component()/fluid()/l
 log = TreeConsole(module="wildlife_planner")
 
 # Module state between passes (the Control Room Automation imports this once).
-state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "progress": None, "complete": False}
+state = {"tick": 0, "summary": IDLE_SUMMARY, "alerts": None, "readiness": None, "progress": None, "complete": False, "undeploy_warned": {}}
 
 
 # ---------------------------------------------------------------- pure core
 
-def _purchased(statuses):
-    """{species: {"adaptation": bool, "breakthrough": bool}} and the set of bought node ids."""
+def _purchased(statuses, released=None):
+    """
+    {species: {"adaptation": bool, "breakthrough": bool}} and the set of bought
+    node ids, from the Habitats' telemetry and the released species' records
+    (an undeployed colony keeps its bonuses).
+    """
     by_species = {}
     nodes = set()
-    for entry in statuses.values():
+    entries = list(statuses.values())
+    for species, record in (released or {}).items():
+        if isinstance(record, dict):
+            entries.append({"species": species, "bought": record.get("bought") or {}})
+    for entry in entries:
         species = entry.get("species") or entry.get("target")
         bought = entry.get("bought") or {}
         if not species or species not in BONUS_TREES:
@@ -117,11 +136,23 @@ def _queue(schedule, targets):
     return head + rest
 
 
-def _walk(snap, colonies, free, assign, bought, insight):
+def schedule_habitats(habitat_ids, kits, peak=0):
+    """
+    Habitat count for schedule_for(): the largest count of owned Habitats
+    (deployed + kits in Inventory) seen so far, `peak` being the last pass's
+    value. The optimizer's schedules count a released colony's Habitat for the
+    whole run, so its undeploy and the sale of its kit do not lower the count.
+    """
+    owned = len(habitat_ids) + max(0, int(kits or 0))
+    return max(owned, int(peak or 0))
+
+
+def _walk(snap, colonies, free, assign, bought, insight, released=()):
     """
     Runs the schedule queue. Returns (assign, buy, skipped, waiting) where
     buy = {habitat_id: slot} and waiting = (step, reason) of the first held
-    step, or None.
+    step, or None. A released species is never revived, and its unbought
+    nodes are skipped ("released").
 
     A held step keeps its cost reserved. Revivals stop at the first held
     step; a later Adaptation or Breakthrough still runs from Insight above
@@ -146,7 +177,7 @@ def _walk(snap, colonies, free, assign, bought, insight):
         kind, s = step
         flags = bought.get(s) or {}
         if kind in ("revive", "revive_raw"):
-            if s in colonies:
+            if s in colonies or s in released:
                 continue
             if s not in cataloged:
                 skipped.append((step, "not_cataloged"))
@@ -171,6 +202,9 @@ def _walk(snap, colonies, free, assign, bought, insight):
             continue
         slot = "adaptation" if kind == "adapt" else "breakthrough"
         if flags.get(slot):
+            continue
+        if s in released:
+            skipped.append((step, "released"))
             continue
         hid = colonies.get(s)
         cost = ADAPTATION_COST if slot == "adaptation" else BREAKTHROUGH_COST
@@ -394,19 +428,25 @@ def _form_targets(snap, colonies, use, demand):
     return {f: min(wc.FORM_REQUEST_CAP, n) for f, n in targets.items()}
 
 
-def _wakes_and_alerts(snap, statuses, assign, buy, ration):
+def _wakes_and_alerts(snap, statuses, assign, buy, ration, release=None):
     """([habitat ids to wake, with reason], {"no_feed": [...], "capped": [...], "rationed": [...]}).
 
     Only the source species' Habitat can buy its nodes, so a parked one with a
-    queued purchase is woken whatever it is parked for.
+    queued purchase is woken whatever it is parked for. A released Habitat is
+    woken to empty itself.
 
     "rationed" lists every Habitat denied a fluid this pass, parked or not."""
     wakes = []
     alerts = {wc.PARK_NO_FEED: [], wc.PARK_CAPPED: [], wc.PARK_RATIONED: sorted(ration)}
     parked = snap["parked"]
+    release = release or {}
     for hid in snap["habitat_ids"]:
         entry = statuses.get(hid) or {}
         reason = entry.get("parked") or ""
+        if hid in release:
+            if hid in parked:
+                wakes.append((hid, "release " + release[hid]))
+            continue
         if reason in (wc.PARK_NO_FEED, wc.PARK_CAPPED):
             alerts[reason].append(hid)
         if hid not in parked:
@@ -426,34 +466,55 @@ def _wakes_and_alerts(snap, statuses, assign, buy, ration):
     return wakes, alerts
 
 
+def _releases(colonies, statuses, bought, released, buy):
+    """
+    {habitat_id: species} to release: a housed species already released, or an
+    established colony at wc.RELEASE_POPULATION whose Breakthrough is bought
+    (held while its Habitat still buys a node this pass).
+    """
+    out = {}
+    for species, hid in colonies.items():
+        entry = statuses.get(hid) or {}
+        if species in released:
+            out[hid] = species
+        elif (entry.get("established") and int(entry.get("pop") or 0) >= wc.RELEASE_POPULATION
+              and (bought.get(species) or {}).get("breakthrough") and hid not in buy):
+            out[hid] = species
+    return out
+
+
 def _assign_pass(snap):
-    """Purchases, colonies and the schedule walk in one pure call (run atomically; bounded by the Habitat count)."""
+    """Purchases, colonies, the schedule walk and the releases in one pure call (run atomically; bounded by the Habitat count)."""
     statuses = snap["statuses"]
-    bought, nodes = _purchased(statuses)
+    released = snap.get("released") or {}
+    bought, nodes = _purchased(statuses, released)
     colonies, assign, free = _colonies(snap["habitat_ids"], statuses, snap["prev_assign"])
-    assign, buy, skipped, waiting = _walk(snap, colonies, free, assign, bought, snap["insight"])
-    return nodes, colonies, assign, buy, skipped, waiting
+    assign, buy, skipped, waiting = _walk(snap, colonies, free, assign, bought, snap["insight"], released)
+    release = _releases(colonies, statuses, bought, released, buy)
+    return nodes, colonies, assign, buy, skipped, waiting, release
 
 
-def _demand_pass(snap, colonies, nodes, model, assign, buy, ration):
+def _demand_pass(snap, colonies, nodes, model, assign, buy, ration, release):
     """Feed demand, Forage reserve, life-form targets, wakes and alerts in one pure call (run atomically; bounded by the Habitat count)."""
     statuses = snap["statuses"]
     demand, use = _feed_demand(snap, colonies, statuses, nodes, model)
     forage = sum(wc.forage_for(v[2]) for v in demand.values())
     if forage:
         forage += wc.forage_for(FEED_PER_CRAFT)
-    wakes, alerts = _wakes_and_alerts(snap, statuses, assign, buy, ration)
+    wakes, alerts = _wakes_and_alerts(snap, statuses, assign, buy, ration, release)
     return demand, forage, _form_targets(snap, colonies, use, demand), wakes, alerts
 
 
 def build_plan(snap):
     """Pure: the whole plan from one snapshot (no game calls, no logging)."""
     statuses = snap["statuses"]
-    nodes, colonies, assign, buy, skipped, waiting = run_atomic(_assign_pass, snap)
-    model = _colony_model(colonies, statuses, nodes)
-    ration, supply = run_atomic(_ration_pass, colonies, statuses, model, snap["fluid_stock"],
+    nodes, colonies, assign, buy, skipped, waiting, release = run_atomic(_assign_pass, snap)
+    # Released colonies get no feed, fluid or model rank.
+    active = {s: hid for s, hid in colonies.items() if hid not in release}
+    model = _colony_model(active, statuses, nodes)
+    ration, supply = run_atomic(_ration_pass, active, statuses, model, snap["fluid_stock"],
                                 snap["prev_supply"], snap["prev_ration"], snap["tick"])
-    demand, forage, form_targets, wakes, alerts = run_atomic(_demand_pass, snap, colonies, nodes, model, assign, buy, ration)
+    demand, forage, form_targets, wakes, alerts = run_atomic(_demand_pass, snap, active, nodes, model, assign, buy, ration, release)
     missing_creatures = sorted(s for s in SPECIES if s not in snap["cataloged"])
     missing_recipes = sorted(s for s in SPECIES if snap["recipes"] and wc.recipe_of(s) not in snap["recipes"])
     return {
@@ -464,6 +525,7 @@ def build_plan(snap):
         "form_targets": form_targets,
         "fluid_ration": ration,
         "fluid_supply": supply,
+        "release": release,
         "progress": {
             "waiting": [list(waiting[0]), waiting[1]] if waiting else None,
             "skipped": [[list(step), reason] for step, reason in skipped],
@@ -473,6 +535,7 @@ def build_plan(snap):
         "alerts": alerts,
         "wakes": wakes,
         "readiness": {"missing_creatures": missing_creatures, "missing_recipes": missing_recipes},
+        "schedule_habitats": snap.get("schedule_habitats", len(snap["habitat_ids"])),
         "tick": snap["tick"],
     }
 
@@ -481,6 +544,8 @@ def summary_line(plan):
     """One AUTOMATION card item, or IDLE_SUMMARY when nothing needs the operator."""
     parts = []
     alerts = plan.get("alerts") or {}
+    if plan.get("release"):
+        parts.append("releasing %d at %d" % (len(plan["release"]), wc.RELEASE_POPULATION))
     if alerts.get(wc.PARK_CAPPED):
         parts.append("%d capped at Mk I (Mk II needed)" % len(alerts[wc.PARK_CAPPED]))
     if alerts.get(wc.PARK_NO_FEED):
@@ -630,6 +695,8 @@ def snapshot(now):
     recipes, recipe_inputs = _recipes(feed if isinstance(feed, dict) else {}, now)
     plan = archive.get(wc.PLAN_KEY, {}) or {}
     targets = archive.get(wc.TARGETS_KEY, []) or []
+    released = archive.get(wc.RELEASED_KEY, {}) or {}
+    released = {s: r for s, r in released.items() if isinstance(r, dict)} if isinstance(released, dict) else {}
     feed_items = [wc.feed_item_of(s) for s in SPECIES]
     forms = sorted(set(f for r in recipe_inputs.values() for f in r if f != "forage"))
     stock = logistics_requests.outpost_stock(feed_items + forms, home) if home else {}
@@ -640,6 +707,7 @@ def snapshot(now):
             populations[species] = int(entry.get("pop") or 0)
     if not isinstance(plan, dict):
         plan = {}
+    habitats = schedule_habitats(habitat_ids, inventory_count(wc.HABITAT_KIT_ITEM_ID), plan.get("schedule_habitats") or 0)
     return {
         "tick": now,
         "habitat_ids": habitat_ids,
@@ -649,8 +717,10 @@ def snapshot(now):
         "recipes": recipes,
         "recipe_inputs": recipe_inputs,
         "insight": _insight(statuses, now),
-        "schedule": schedule_for(len(habitat_ids)),
+        "schedule_habitats": habitats,
+        "schedule": schedule_for(habitats),
         "targets": list(targets) if isinstance(targets, list) else [],
+        "released": released,
         "prev_assign": plan.get("assign") or {},
         "prev_ration": plan.get("fluid_ration") or {},
         "prev_supply": plan.get("fluid_supply") or {},
@@ -676,7 +746,7 @@ def _publish_requests(snap: dict, plan: dict, now):
 
 
 def _write(plan):
-    stored = {k: plan[k] for k in ("assign", "buy", "feed_demand", "forage_reserve", "form_targets", "fluid_ration", "fluid_supply", "progress", "alerts", "tick")}
+    stored = {k: plan[k] for k in ("assign", "buy", "feed_demand", "forage_reserve", "form_targets", "fluid_ration", "fluid_supply", "release", "progress", "alerts", "schedule_habitats", "tick")}
 
     def updater(_old):
         return stored
@@ -728,6 +798,90 @@ def _report(plan, prev_assign, prev_buy, prev_ration):
         state["alerts"] = alerts
 
 
+def _record_released(snap, release, now):
+    """Adds newly released species to wc.RELEASED_KEY (with their bought nodes); logs each once."""
+    statuses = snap["statuses"]
+    new = {s: hid for hid, s in release.items() if s not in snap["released"]}
+    if not new:
+        return
+
+    def updater(records):
+        records = records if isinstance(records, dict) else {}
+        for species, hid in new.items():
+            entry = statuses.get(hid) or {}
+            records.setdefault(species, {"habitat": hid, "pop": int(entry.get("pop") or 0),
+                                         "bought": dict(entry.get("bought") or {}), "tick": now})
+        return records
+
+    if not archive.transaction(wc.RELEASED_KEY, {}, updater):
+        log.level("warn").print(f"{wc.RELEASED_KEY} write rejected; release recorded next pass.")
+        return
+    for species, hid in sorted(new.items()):
+        pop = int((statuses.get(hid) or {}).get("pop") or 0)
+        log.print(f"[WILDLIFE] {hid}: {species} at {pop}: released; Habitat empties, then is undeployed.")
+        snap["released"][species] = {"habitat": hid}
+
+
+def _undeploy(computer, hid):
+    """undeploy() status ("ok", "not_found", a refusal); "error" when the call raised."""
+    try:
+        res = computer.undeploy(hid)
+    except Exception as error:
+        swallowed("wildlife_planner._undeploy: computer.undeploy", error)
+        return "error"
+    status = getattr(res, "status", "") or "?"
+    if status not in ("ok", "not_found"):
+        warned = state["undeploy_warned"]
+        level = "debug" if status in TRANSIENT_UNDEPLOY_STATUSES else "warn"
+        if level == "debug" or warned.get(hid) != status:
+            warned[hid] = status
+            log.level(level).print(f"[WILDLIFE] {hid}: undeploy -> {status}: {getattr(res, 'message', '')}")
+    return status
+
+
+def _drop_released_feed(released):
+    """Drops every unit of a released species' feed from Inventory (the emptied Habitat ejects it there)."""
+    inventory = get_component("inventory")
+    if inventory is None:
+        return
+    for species in sorted(released):
+        item = wc.feed_item_of(species)
+        if inventory_count(item) <= 0:
+            continue
+        try:
+            res = inventory.drop_all(item)
+        except Exception as error:
+            swallowed("wildlife_planner._drop_released_feed: inventory.drop_all", error)
+            continue
+        if getattr(res, "status", "") == "ok":
+            log.print(f"[WILDLIFE] Dropped {getattr(res, 'count', '?')}x {item} ({species} released).")
+
+
+def _execute_releases(snap, plan, now):
+    """
+    Records new releases, undeploys each released Habitat once it reports
+    `release` "ready" (refusals are retried next pass) and drops released
+    species' feed from Inventory.
+    """
+    release = plan["release"]
+    _record_released(snap, release, now)
+    computer = get_component("computer") if release else None
+    for hid, species in sorted(release.items()):
+        entry = snap["statuses"].get(hid) or {}
+        if entry.get("release") != wc.RELEASE_READY:
+            log.debug(f"{hid}: {species} release waits for the Habitat to empty ({entry.get('release') or 'not started'}).")
+            continue
+        if computer is None:
+            continue
+        status = _undeploy(computer, hid)
+        if status in ("ok", "not_found"):
+            archive.pop_entry(wc.STATUS_KEY, hid)
+            state["undeploy_warned"].pop(hid, None)
+            if status == "ok":
+                log.print(f"[WILDLIFE] {hid}: undeployed ({species} released); kit back in Inventory.")
+    _drop_released_feed(snap["released"])
+
+
 def _notify(message):
     try:
         notify(message, level="warn", duration_seconds=10.0)
@@ -751,6 +905,7 @@ def plan(clock):
         return state["summary"]
     _report(result, snap["prev_assign"], (prev.get("buy") or {}) if isinstance(prev, dict) else {}, snap["prev_ration"])
     _publish_requests(snap, result, now)
+    _execute_releases(snap, result, now)
     for hid, reason in result["wakes"]:
         wake_for_visit(hid, reason, hold=False)
     if result["feed_demand"]:
@@ -778,7 +933,7 @@ def _complete(now):
     log.print(f"[WILDLIFE] Population reached {WILDLIFE_COMPLETE_POPULATION}: Wildlife pillar complete, planner stops.")
     logistics_requests.clear_requests(REQUESTER_ID)
     state["alerts"] = None
-    empty = {"assign": {}, "buy": {}, "feed_demand": {}, "forage_reserve": 0, "form_targets": {}, "fluid_ration": {}, "fluid_supply": {},
+    empty = {"assign": {}, "buy": {}, "feed_demand": {}, "forage_reserve": 0, "form_targets": {}, "fluid_ration": {}, "fluid_supply": {}, "release": {},
              "progress": {"waiting": None, "skipped": [], "colonies": 0, "habitats": 0}, "alerts": {}, "complete": True, "tick": now}
     if not archive.transaction(wc.PLAN_KEY, {}, lambda _old: empty):
         log.level("warn").print(f"{wc.PLAN_KEY} write rejected; completed plan not published.")

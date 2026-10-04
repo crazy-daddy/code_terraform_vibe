@@ -442,5 +442,104 @@ class FluidStockTests(harness.StubTestCase):
         self.assertEqual(wp._fluid_stock({"habitat_1": established("salt_tortoise")}), {})
 
 
+class ReleaseTests(harness.StubTestCase):
+    MAXED = wc.RELEASE_POPULATION
+
+    def maxed(self, breakthrough=True, **kw):
+        return established("salt_tortoise", pop=self.MAXED, rate=0.0, tier=2,
+                           bought={"adaptation": True, "breakthrough": breakthrough}, **kw)
+
+    def test_maxed_colony_with_breakthrough_is_released_and_unfed(self):
+        statuses = {"habitat_1": self.maxed(feed_level=0.0), "habitat_2": established("magmatic_annelid")}
+        plan = wp.build_plan(snap(habitats=2, statuses=statuses))
+        self.assertEqual(plan["release"], {"habitat_1": "salt_tortoise"})
+        self.assertNotIn(wc.feed_item_of("salt_tortoise"), plan["feed_demand"])
+        self.assertIn("releasing 1", wp.summary_line(plan))
+
+    def test_release_waits_for_breakthrough(self):
+        plan = wp.build_plan(snap(habitats=1, statuses={"habitat_1": self.maxed(breakthrough=False)}))
+        self.assertEqual(plan["release"], {})
+
+    def test_release_waits_while_breakthrough_is_bought_this_pass(self):
+        statuses = {"habitat_1": self.maxed(breakthrough=False)}
+        plan = wp.build_plan(snap(habitats=1, statuses=statuses, insight=5.0, populations={"salt_tortoise": self.MAXED},
+                                  schedule=[("break", "salt_tortoise")]))
+        self.assertEqual(plan["buy"], {"habitat_1": "breakthrough"})
+        self.assertEqual(plan["release"], {})
+
+    def test_below_ceiling_is_not_released(self):
+        statuses = {"habitat_1": established("salt_tortoise", pop=self.MAXED - 1, tier=2, bought={"breakthrough": True})}
+        self.assertEqual(wp.build_plan(snap(habitats=1, statuses=statuses))["release"], {})
+
+    def test_released_species_never_revived_and_keeps_its_bonuses(self):
+        released = {"salt_tortoise": {"habitat": "habitat_9", "bought": {"adaptation": True, "breakthrough": True}}}
+        s = snap(habitats=2, statuses={"habitat_1": established("magmatic_annelid")})
+        s["released"] = released
+        plan = wp.build_plan(s)
+        self.assertNotIn("salt_tortoise", [e["species"] for e in plan["assign"].values()])
+        bought, nodes = wp._purchased({}, released)
+        self.assertTrue(bought["salt_tortoise"]["breakthrough"])
+        self.assertIn(BONUS_TREES["salt_tortoise"]["breakthrough"][0], nodes)
+
+    def test_released_node_step_is_skipped_not_held(self):
+        s = snap(habitats=2, statuses={"habitat_1": established("magmatic_annelid")}, insight=5.0,
+                 schedule=[("adapt", "salt_tortoise"), ("adapt", "magmatic_annelid")])
+        s["released"] = {"salt_tortoise": {"bought": {}}}
+        plan = wp.build_plan(s)
+        self.assertEqual(plan["buy"], {"habitat_1": "adaptation"})
+        self.assertIn([["adapt", "salt_tortoise"], "released"], plan["progress"]["skipped"])
+
+    def test_schedule_habitat_count_never_drops(self):
+        self.assertEqual(wp.schedule_habitats(["habitat_3", "habitat_4"], 8), 10)
+        # Released Habitat undeployed, kit sold: the peak holds.
+        self.assertEqual(wp.schedule_habitats(["habitat_3"], 0, 10), 10)
+        self.assertEqual(wp.schedule_habitats(["habitat_3"] * 12, 0, 10), 12)
+        self.assertEqual(wp.schedule_habitats(["habitat_3"], 0, None), 1)
+
+    def test_parked_released_habitat_is_woken_not_alerted(self):
+        statuses = {"habitat_1": self.maxed(parked=wc.PARK_NO_FEED, feed_level=0.0)}
+        plan = wp.build_plan(snap(habitats=1, statuses=statuses, parked=["habitat_1"]))
+        self.assertEqual(plan["wakes"], [("habitat_1", "release salt_tortoise")])
+        self.assertEqual(plan["alerts"][wc.PARK_NO_FEED], [])
+
+
+class ReleaseExecutionTests(harness.StubTestCase):
+    def setUp(self):
+        super().setUp()
+        wp.state.update({"tick": 0, "summary": wp.IDLE_SUMMARY, "complete": False, "undeploy_warned": {}})
+        self.world.add_habitat("habitat_1", self.world.home)
+        self.world.add_habitat("habitat_2", self.world.home)
+        self.item = wc.feed_item_of("salt_tortoise")
+
+    def status(self, release=""):
+        entry = established("salt_tortoise", pop=wc.RELEASE_POPULATION, rate=0.0, tier=2, bought={"adaptation": True, "breakthrough": True})
+        entry.update({"release": release, "tick": 1000})
+        self.world.notebook.data[wc.STATUS_KEY] = {"habitat_1": entry, "habitat_2": dict(established("magmatic_annelid"), tick=1000)}
+
+    def test_emptying_habitat_is_recorded_not_undeployed(self):
+        self.status(wc.RELEASE_EMPTYING)
+        wp.plan(self.world.clock)
+        self.assertEqual(self.world.notebook.data[wc.RELEASED_KEY]["salt_tortoise"]["habitat"], "habitat_1")
+        self.assertIn("habitat_1", self.world.components)
+
+    def test_ready_habitat_undeployed_and_feed_dropped(self):
+        self.status(wc.RELEASE_READY)
+        self.world.inventory.add(self.item, 40)
+        wp.plan(self.world.clock)
+        self.assertNotIn("habitat_1", self.world.components)
+        self.assertNotIn("habitat_1", self.world.notebook.data[wc.STATUS_KEY])
+        self.assertEqual(self.world.inventory.count(self.item), 0)
+        self.assertIn("salt_tortoise", self.world.notebook.data[wc.RELEASED_KEY])
+
+    def test_refused_undeploy_is_retried(self):
+        self.status(wc.RELEASE_READY)
+        self.world.computer.forced_status = "inventory_full"
+        wp.plan(self.world.clock)
+        self.assertIn("habitat_1", self.world.components)
+        self.world.computer.forced_status = None
+        wp.plan(self.world.clock)
+        self.assertNotIn("habitat_1", self.world.components)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -261,6 +261,10 @@ class Store(PassiveStore):
     def total(self):
         return self._used()
 
+    def drop_all(self, item_id):
+        n = self.items.pop(item_id, 0)
+        return Result("ok" if n > 0 else "no_op", count=n)
+
     def compact(self):
         return Result("already_compact")
 

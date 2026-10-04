@@ -6,7 +6,7 @@
 # Time: one game day is 600 s (production.DAY_CYCLE_DURATION_SECONDS), so one
 # game hour is 25 s of script time and 250 clock ticks.
 
-from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS
+from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR
 from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
 from fluid_routing import LIQUID_TANK_TYPE_IDS
 
@@ -15,18 +15,26 @@ STATUS_KEY = "wildlife.status"
 # {feed_maker_id: telemetry incl. unlocked recipe ids}, written by each Feed Maker.
 FEED_KEY = "wildlife.feed"
 # The planner's decisions: assign / buy / feed_demand / forage_reserve / form_targets /
-# fluid_ration / fluid_supply / progress / alerts.
+# fluid_ration / fluid_supply / release / progress / alerts / schedule_habitats.
 PLAN_KEY = "wildlife.plan"
 # {missing_creatures: [...], missing_recipes: [...]}.
 READINESS_KEY = "wildlife.readiness"
 # Operator override: a list of species to revive first (and only those, while non-empty).
 TARGETS_KEY = "wildlife.targets"
+# Species released at RELEASE_POPULATION: {species: {"habitat", "pop", "bought", "tick"}},
+# written by the planner; never revived, fed or housed again.
+RELEASED_KEY = "wildlife.released"
 
 PLANET_ID = "nocturna"
 TICKS_PER_GAME_HOUR = 250
 FEED_ITEM_PREFIX = "feed_"
 RECIPE_PREFIX = "craft_"
 MK2_PACK_ITEM_ID = "habitat_upgrade_pack_mk2"
+HABITAT_KIT_ITEM_ID = "habitat"
+
+# A colony at the Mk II ceiling is released: its Habitat empties itself and is
+# undeployed, once the species' Breakthrough is bought.
+RELEASE_POPULATION = STAGE_CAPACITY[4] * HABITAT_MK2_CAPACITY_FACTOR
 
 # Entries of machines that stopped publishing (10 ticks/s: 1 h real).
 STATUS_STALE_TICKS = 36000
@@ -83,6 +91,10 @@ PARK_EMPTY = "empty"
 PARK_NO_FEED = "no_feed"
 PARK_CAPPED = "capped"
 PARK_RATIONED = "rationed"   # fluid denied by the planner and buffer out of band
+
+# Habitat status `release`: "" (not released), RELEASE_EMPTYING, RELEASE_READY (holders and buffers empty).
+RELEASE_EMPTYING = "emptying"
+RELEASE_READY = "ready"
 
 
 def feed_item_of(species):

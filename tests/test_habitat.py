@@ -327,6 +327,46 @@ class WrongSourceTests(HabitatTestCase):
         self.assertNotIn(("purge_intake", "gas_in"), self.machine.calls)
 
 
+class ReleaseTests(HabitatTestCase):
+    def released(self):
+        machine = self.habitat("salt_tortoise", established=True)
+        machine.pop, machine.level, machine.room = wc.RELEASE_POPULATION, 2, 0
+        machine.input_buffer[wc.feed_item_of("salt_tortoise")] = 30
+        machine.reagents_buffer["alkaline_buffer"] = 1
+        machine.levels["gas"], machine.fluids["gas"] = 200.0, "ammonia"
+        ctrl = self.controller(machine)
+        self.world.notebook.data[wc.PLAN_KEY]["release"] = {"habitat_1": "salt_tortoise"}
+        return machine, ctrl
+
+    def test_release_empties_and_reports_ready(self):
+        machine, ctrl = self.released()
+        self.stock[wc.feed_item_of("salt_tortoise")] = 100
+        ctrl.step()
+        self.assertEqual(self.status()["release"], wc.RELEASE_READY)
+        self.assertEqual(self.status()["feed_item"], "")
+        self.assertEqual(sum(machine.input_buffer.values()) + sum(machine.reagents_buffer.values()), 0)
+        self.assertEqual(self.world.inventory.count(wc.feed_item_of("salt_tortoise")), 30)
+        self.assertEqual(self.world.inventory.count("alkaline_buffer"), 1)
+        self.assertEqual(machine.levels["gas"], 0.0)
+        self.assertEqual(machine.intake, {"gas": 0.0, "liquid": 0.0})
+        self.assertEqual(self.status()["parked"], "")
+
+    def test_release_buys_nothing(self):
+        machine, ctrl = self.released()
+        self.world.notebook.data[wc.PLAN_KEY]["buy"] = {"habitat_1": "adaptation"}
+        ctrl.step()
+        self.assertNotIn(("unlock_bonus", "salt_tortoise_a"), machine.calls)
+
+    def test_unreleased_colony_keeps_feeding(self):
+        machine = self.habitat("salt_tortoise", established=True)
+        machine.pop, machine.rate = 1000, 10.0
+        machine.input_buffer[wc.feed_item_of("salt_tortoise")] = 40
+        ctrl = self.controller(machine)
+        ctrl.step()
+        self.assertEqual(self.status()["release"], "")
+        self.assertEqual(self.status()["feed_item"], wc.feed_item_of("salt_tortoise"))
+
+
 class PollTests(unittest.TestCase):
     def test_poll_tracks_feed_burn(self):
         self.assertEqual(habitat.next_poll(50, 0), habitat.POLL_MAX_S)
