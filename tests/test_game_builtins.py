@@ -3,9 +3,8 @@ Every builtin called in scripts/ must exist inside the game.
 
 The game's interpreter ships a subset of CPython's builtins: `id`, `frozenset`,
 `open`, `eval`, ... raise NameError in game while CPython tests pass. The
-game's builtin list comes from docs/extracted/reference/ (builtins.md,
-global-functions.md, builtin-types.md); that dump is generated locally and
-gitignored, so the test skips when it is missing.
+game's builtin list comes from the "Built-in Functions" section of
+docs/guide/builtins_and_commands.md, split from the in-game DOCS Manual.
 """
 import ast
 import builtins
@@ -16,16 +15,12 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
 AUTOPLAY_DIR = os.path.join(REPO_ROOT, "autoplay")
-REFERENCE_DIR = os.path.join(REPO_ROOT, "docs", "extracted", "reference")
-REFERENCE_FILES = ("builtins.md", "global-functions.md", "builtin-types.md")
+REFERENCE_FILE = os.path.join(REPO_ROOT, "docs", "guide", "builtins_and_commands.md")
 
 
 def _game_builtins():
-    names = set()
-    for name in REFERENCE_FILES:
-        with open(os.path.join(REFERENCE_DIR, name), encoding="utf-8") as handle:
-            names |= set(re.findall(r"^#+ `(\w+)", handle.read(), re.M))
-    return names
+    with open(REFERENCE_FILE, encoding="utf-8") as handle:
+        return set(re.findall(r"^#+ `(\w+)", handle.read(), re.M))
 
 
 def _missing_builtins():
@@ -36,8 +31,6 @@ def _missing_builtins():
 
 class GameBuiltinsTests(unittest.TestCase):
     def test_scripts_call_only_game_builtins(self):
-        if not all(os.path.exists(os.path.join(REFERENCE_DIR, n)) for n in REFERENCE_FILES):
-            self.skipTest("docs/extracted/reference/ not generated")
         missing = _missing_builtins()
         bad = []
         for root, _dirs, files in [w for top in (SCRIPTS_DIR, AUTOPLAY_DIR) for w in os.walk(top)]:

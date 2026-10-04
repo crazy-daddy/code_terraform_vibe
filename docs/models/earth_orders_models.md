@@ -6,7 +6,7 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 
 ```python
 class Order:
-    """orders.list_orders() / orders.list_upcoming_orders() / orders.list_weekly_orders() / orders.get_order() / orders.completed_orders() (Aufträge der Erde)"""
+    """orders.list_orders() / orders.list_upcoming_orders() / orders.list_weekly_orders() / orders.get_order() / orders.completed_orders() (Earth Orders)"""
     id: _str
     name: _str
     requires: _dict[_str, _int]
@@ -25,21 +25,21 @@ class Order:
 
 ```python
 class Orders(Component):
-    """Aufträge der Erde: Lies die aktuellen Aufträge der Erde, künftige Anforderungen und Belohnungen der Kampagne sowie den Verlauf abgeschlossener Kampagnenaufträge über `get_component(\"orders\")`. Skripte von Versorgungsdocks können anhand von Kampagnenaufträgen und wöchentlichen Aufträgen entscheiden, was sie versenden; Übersichten können den Fortschritt anzeigen. Skripte können Aufträge der Erde weder erstellen noch stornieren. Bioaufträge stammen stattdessen von einer Biobörse."""
+    """Earth Orders: Read Earth's current orders, future campaign requirements and rewards, and completed campaign history through `get_component(\"orders\")`. Supply Dock scripts can use campaign and Weekly Orders to decide what to ship, while dashboards can show progress. Scripts cannot create or cancel Earth Orders. Bio Orders come from a Bio Exchange instead."""
     name: _str
     def list_orders(self) -> _list[Order]:
-        """Aktuelle Kampagnenaufträge der Auftraggeber als Liste von `Order`-Objekten in fester Reihenfolge. Diese Aufträge verfallen nie und verschwinden aus der Liste, sobald alles versendet wurde. Eine leere Liste bedeutet, dass derzeit keine Lieferung für einen Auftraggeber möglich ist. Siehe `Order`."""
+        """Current contractor campaign Orders as a stable list of `Order` objects. These orders never expire and disappear from this list when fully shipped. Empty means no contractor shipment is currently available. See `Order`."""
         ...
     def list_upcoming_orders(self) -> _list[Order]:
-        """Plane künftige Produktion und Belohnungen anhand der anstehenden Kampagnenaufträge der Auftraggeber. Die Aufträge stehen in der Reihenfolge der Kampagne; die Abfolge jedes Auftraggebers bleibt erhalten. Aktuelle und abgeschlossene Aufträge sowie wöchentliche Aufträge der Erde sind ausgeschlossen. Anstehende Aufträge können Versorgungsdocks erst zugewiesen werden, wenn sie aktuell sind. Siehe `Order`."""
+        """Plan future production and reward paths with upcoming contractor campaign Orders, in campaign declaration order, preserving each contractor's queue sequence. Excludes current orders, completed orders, and Weekly Earth Orders. Upcoming orders cannot be assigned to Supply Docks until they become current. See `Order`."""
         ...
     def list_weekly_orders(self) -> _list[Order]:
-        """Die fünf aktuellen wöchentlichen Aufträge der Erde, einschließlich der in diesem Zyklus bereits erfüllten Angebote. Gibt eine leere Liste zurück, bis eine geeignete Produktionskette verfügbar ist. Wöchentliche Objekte haben `.kind == \"weekly\"` und `.expires_day`, aber keinen Auftraggeber; sie bieten ausschließlich Credits als Belohnung und ihr `.status` lautet `\"active\"` oder `\"completed\"`. Die gesamte Liste wird alle sieben Tage ersetzt."""
+        """The current five Weekly Earth Orders, including offers already fulfilled during this cycle. Returns an empty list until an eligible production chain is available. Weekly objects have `.kind == \"weekly\"`, `.expires_day`, no contractor, credits-only rewards, and `.status` of `\"active\"` or `\"completed\"`. The whole list is replaced every seven days."""
         ...
     def get_order(self, order_id: _str) -> Order | None:
-        """Suche einen bestimmten Auftrag der Erde anhand seiner ID, auch einen anstehenden Kampagnenauftrag zur Planung. Anstehende Aufträge können Versorgungsdocks erst zugewiesen werden, wenn sie aktuell sind. Unbekannte oder abgelaufene IDs wöchentlicher Aufträge liefern `None`; abgeschlossene wöchentliche Aufträge bleiben nur bis zur Aktualisierung ihrer Auftragstafel sichtbar. Siehe `Order`."""
+        """Look up a specific Earth Order by id, including upcoming campaign orders for planning. Upcoming orders cannot be assigned to Supply Docks until they become current. Unknown or expired weekly ids return `None`; weekly completions remain visible only until their board refreshes. See `Order`."""
         ...
     def completed_orders(self) -> _list[Order]:
-        """Dauerhafter Verlauf der Kampagnenaufträge der Auftraggeber, nach Abschlusszeit sortiert (älteste zuerst). Abgeschlossene wöchentliche Aufträge bleiben auf der aktuellen wöchentlichen Auftragstafel und sind in diesem Verlauf bewusst nicht enthalten."""
+        """Permanent contractor campaign history, ordered by completion time (oldest first). Weekly completions stay on the current Weekly board and are intentionally excluded from this ledger."""
         ...
 ```

@@ -6,7 +6,7 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 
 ```python
 class ActionResult(Generic[_StatusT]):
-    """Spielbefehle ohne zusätzliche Ergebnisfelder"""
+    """Gameplay commands with no extra result fields"""
     status: _StatusT
     message: _str
 ```
@@ -56,7 +56,7 @@ class BlockedContact:
 
 ```python
 class BlueprintPlanResult(Generic[_StatusT]):
-    """Planungsbefehle für construction_blueprint"""
+    """construction_blueprint planning commands"""
     status: _StatusT
     message: _str
     blueprint_ids: _list[_str]
@@ -87,7 +87,7 @@ class CommandResult(Generic[_StatusT]):
 
 ```python
 class CountResult(Generic[_StatusT]):
-    """Befehle zum Einreihen, Verwerfen, Leeren und Zählen größerer Mengen"""
+    """Queue, discard, clear, and bulk-count commands"""
     status: _StatusT
     message: _str
     count: _int
@@ -97,7 +97,7 @@ class CountResult(Generic[_StatusT]):
 
 ```python
 class CropJobResult(Generic[_StatusT]):
-    """next_result() des Anbauautomaten"""
+    """Crop Automator next_result()"""
     status: _StatusT
     message: _str
     job_id: _int | None
@@ -152,7 +152,7 @@ class LatticeProbeResult(Generic[_StatusT]):
 
 ```python
 class LifeFormScanResult:
-    """PortableBioScanner.scan().scan nach status == \"ok\" / Abfragen von Biofundstellen im Logbuch"""
+    """PortableBioScanner.scan().scan after status == \"ok\" / journal biosite queries"""
     coord: _list[_int]
     life_forms: _list[LifeFormSample]
     is_empty: _bool
@@ -247,7 +247,7 @@ class SurveyResult(Generic[_StatusT]):
 
 ```python
 class TransferResult(Generic[_StatusT]):
-    """InputSlot.take(), InputSlot.eject(), InputSlot.flush(), VehicleInputSlot.take(), OutputSlot.send(), Cargo.compact(), Transfermethoden von storage_bin, warehouse.compact()"""
+    """InputSlot.take(), InputSlot.eject(), InputSlot.flush(), VehicleInputSlot.take(), OutputSlot.send(), Cargo.compact(), storage_bin transfer methods, warehouse.compact()"""
     status: _StatusT
     message: _str
     requested: _int

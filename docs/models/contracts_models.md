@@ -8,7 +8,7 @@ Granular data models and return types extracted from `__builtins__.pyi`.
 class Archive:
     """.archive"""
     def flip(self, row: _int, col: _int) -> _str:
-        """Decke das Wort in einer Rasterzelle mit ganzzahligen Koordinaten auf und gib es zurück. Falsche Argumenttypen lösen `TypeError` aus; gebrochene, nicht endliche oder außerhalb des Rasters liegende Koordinaten lösen `ValueError` aus."""
+        """Reveal and return the word at a whole-number grid cell. Wrong argument types raise `TypeError`; fractional, non-finite, or out-of-bounds coordinates raise `ValueError`."""
         ...
     rows: _int
     cols: _int
@@ -67,7 +67,7 @@ class Contract:
 
 ```python
 class ContractScript:
-    """self (in Vertragsskripten)"""
+    """self (in contract scripts)"""
     name: _str
     contract: Contract
 ```
@@ -117,7 +117,7 @@ class CrosstalkContract(Contract):
 class DataTablet:
     """.tablet"""
     def probe(self, row: _int, col: _int) -> ProbeResult:
-        """Eine Rasterzelle mit ganzzahligen Koordinaten untersuchen und ein `ProbeResult` mit `.char` und ganzzahliger `.distance` zurückgeben. Falsche Argumenttypen lösen `TypeError` aus; Koordinaten mit Nachkommastellen oder außerhalb des Rasters lösen `ValueError` aus."""
+        """Probe a whole-number cell and return a `ProbeResult` with `.char` and whole-number `.distance`. Wrong argument types raise `TypeError`; fractional or out-of-bounds coordinates raise `ValueError`."""
         ...
     rows: _int
     cols: _int
@@ -177,7 +177,7 @@ class RelayHackContract(Contract):
 class RelayLock:
     """.lock"""
     def intercept(self, code: _list[_int]) -> _list[_bool]:
-        """Teste eine Liste mit genau 6 ganzen Zahlen im Bereich **0–99**. Für jedes Zahlenrad wird ein True/False-Wert zurückgegeben. Falsche Argumenttypen lösen `TypeError` aus; eine falsche Listenlänge, nicht endliche oder gebrochene Zahlen sowie Werte außerhalb des Bereichs lösen `ValueError` aus."""
+        """Test a list of exactly 6 whole-number values in the **0-99** range and return one True/False value per tumbler. Wrong argument types raise `TypeError`; wrong list length, non-finite or fractional values, and values outside the range raise `ValueError`."""
         ...
     tumblers: _int
     range: _int
@@ -256,11 +256,11 @@ class ThreeEchoesContract(Contract):
 class Vault:
     """.vault"""
     def move(self, direction: _str) -> ActionResult[Literal["path", "wall", "exit"]]:
-        """Gehe ein Feld in `direction`: `\"north\"`, `\"south\"`, `\"east\"` oder `\"west\"`. Eine Richtung, die keine Zeichenfolge ist, löst einen `TypeError` aus; eine unbekannte Richtung löst einen `ValueError` aus, ohne dass eine Bewegung stattfindet. Fester Ergebnisvertrag: `ActionResult`; verzweige anhand von `.status` und lies `.message`."""
+        """Step one cell in `direction`: `\"north\"`, `\"south\"`, `\"east\"`, or `\"west\"`. A non-string direction raises `TypeError`; an unknown direction raises `ValueError` without moving. Fixed result contract: `ActionResult`; branch on `.status` and read `.message`."""
         ...
     position: VaultPosition
     def escape(self) -> VaultEscapeResult[Literal["ok", "not_at_exit"]]:
-        """Öffne die Kammer von ihrem Ausgangsfeld aus. Fester Ergebnisvertrag: `VaultEscapeResult`; verzweige anhand von `.status` und lies `.message`. Nutzdatenfelder: `.key`."""
+        """Open the vault from its exit cell. Fixed result contract: `VaultEscapeResult`; branch on `.status` and read `.message`. Payload fields: `.key`."""
         ...
     size: _int
 ```
@@ -273,7 +273,7 @@ class VaultPosition:
     row: _int
     col: _int
     def __iter__(self) -> Iterator[_int]:
-        """Durchläuft zuerst `row`, dann `col`, sodass sich diese Position entpacken oder an `list()` übergeben lässt."""
+        """Iterate over `row`, then `col`, so this position can be unpacked or passed to `list()`."""
         ...
 ```
 

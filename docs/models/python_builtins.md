@@ -10,28 +10,28 @@ class Match:
     pattern: _str
     string: _str
     def group(self, group: _int | _str = ..., /, *groups: _int | _str) -> _str | None:
-        """Gibt den übereinstimmenden Text einer Gruppe zurück, wahlweise über ihre Nummer oder über ihren Namen aus `(?P<name>...)`. Gruppe `0` umfasst die gesamte Übereinstimmung; mehrere Gruppen ergeben ein Tupel: `m.group(1, \"unit\")`. Optionale Gruppen ohne Übereinstimmung geben `None` zurück; eine unbekannte Gruppe löst einen Fehler aus. `m[1]` entspricht `m.group(1)`."""
+        """Return the matched text for a group, by number or by `(?P<name>...)` name. Group `0` is the whole match, and several groups return a tuple: `m.group(1, \"unit\")`. Optional groups that did not match return `None`; an unknown group raises. `m[1]` is the same as `m.group(1)`."""
         ...
     def groups(self, default: object = ...) -> _tuple[_str | None, ...]:
-        """Gibt ein Tupel der erfassten Gruppen zurück, ohne Gruppe `0`. Gruppen ohne Übereinstimmung erhalten den Wert `default`, der bei Auslassung `None` ist."""
+        """Return a tuple of captured groups, excluding group `0`. Groups that did not match use `default`, which is `None` if omitted."""
         ...
     def start(self, index: _int | _str = ...) -> _int:
-        """Startindex der Zeichen für die Gruppe. Nicht übereinstimmende optionale Gruppen geben `-1` zurück."""
+        """Start character index for the group. Unmatched optional groups return `-1`."""
         ...
     def end(self, index: _int | _str = ...) -> _int:
-        """Endindex der Zeichen für die Gruppe. Nicht übereinstimmende optionale Gruppen geben `-1` zurück."""
+        """End character index for the group. Unmatched optional groups return `-1`."""
         ...
     def span(self, index: _int | _str = ...) -> _tuple[_int, ...]:
-        """Gibt `(start, end)` für die Gruppe zurück. Nicht übereinstimmende optionale Gruppen geben `(-1, -1)` zurück."""
+        """Return `(start, end)` for the group. Unmatched optional groups return `(-1, -1)`."""
         ...
     def __getitem__(self, group: _int | _str, /) -> _str | None:
-        """`m[1]` oder `m[\"name\"]`: derselbe Text wie `m.group(1)` oder `None` für eine Gruppe, die nicht an der Übereinstimmung beteiligt war."""
+        """`m[1]` or `m[\"name\"]`: the same text as `m.group(1)`, or `None` for a group that took no part in the match."""
         ...
     def groupdict(self, default: object = ...) -> _dict[_str, _str | None]:
-        """Gibt ein dict zurück, das jedem Gruppennamen den Text seiner benannten Gruppe zuordnet. Benannte Gruppen ohne Übereinstimmung erhalten `default`, das ohne Angabe `None` ist."""
+        """Return a dict of every named group's text, by name. Named groups that did not match use `default`, which is `None` if omitted."""
         ...
     def expand(self, template: _str, /) -> _str:
-        """Füllt eine Ersetzungsvorlage wie `re.sub()` mit den Werten dieser Übereinstimmung aus: `m.expand(r\"\\2-\\1\")`."""
+        """Fill in a replacement template the way `re.sub()` does, from this match: `m.expand(r\"\\2-\\1\")`."""
         ...
     lastindex: _int | None
     lastgroup: _str | None
@@ -50,28 +50,28 @@ class Pattern:
     groups: _int
     groupindex: _dict[_str, _float]
     def search(self, string: _str, pos: _int = ..., endpos: _int | None = ...) -> Match | None:
-        """Wie `re.search()` mit diesem Muster, sucht aber nur zwischen `pos` und `endpos`: ein `Match` oder `None`, wenn dort nichts übereinstimmt."""
+        """Like `re.search()` with this pattern, looking only between `pos` and `endpos`: a `Match`, or `None` if nothing there matches."""
         ...
     def match(self, string: _str, pos: _int = ..., endpos: _int | None = ...) -> Match | None:
-        """Wie `re.match()` mit diesem Muster, verankert an `pos`: ein `Match` oder `None`, wenn der Text an `pos` nicht übereinstimmt."""
+        """Like `re.match()` with this pattern, anchored at `pos`: a `Match`, or `None` if the text at `pos` does not match."""
         ...
     def fullmatch(self, string: _str, pos: _int = ..., endpos: _int | None = ...) -> Match | None:
-        """Wie `re.fullmatch()` mit diesem Muster, angewendet auf den Text von `pos` bis `endpos`: ein `Match` oder `None`, wenn ein Teil davon ohne Übereinstimmung bleibt."""
+        """Like `re.fullmatch()` with this pattern, over the text from `pos` to `endpos`: a `Match`, or `None` if any part is left unmatched."""
         ...
     def findall(self, string: _str, pos: _int = ..., endpos: _int | None = ...) -> _list[Any]:
-        """Wie `re.findall()` mit diesem Muster, zwischen `pos` und `endpos`."""
+        """Like `re.findall()` with this pattern, between `pos` and `endpos`."""
         ...
     def finditer(self, string: _str, pos: _int = ..., endpos: _int | None = ...) -> Iterator[Match]:
-        """Wie `re.finditer()` mit diesem Muster, zwischen `pos` und `endpos`."""
+        """Like `re.finditer()` with this pattern, between `pos` and `endpos`."""
         ...
     def sub(self, repl: _str | Callable[..., Any], string: _str, count: _int = ...) -> _str:
-        """Wie `re.sub()` mit diesem Muster."""
+        """Like `re.sub()` with this pattern."""
         ...
     def subn(self, repl: _str | Callable[..., Any], string: _str, count: _int = ...) -> _tuple[_str, _int]:
-        """Wie `re.subn()` mit diesem Muster."""
+        """Like `re.subn()` with this pattern."""
         ...
     def split(self, string: _str, maxsplit: _int = ...) -> _list[Any]:
-        """Wie `re.split()` mit diesem Muster."""
+        """Like `re.split()` with this pattern."""
         ...
 ```
 
@@ -79,7 +79,7 @@ class Pattern:
 
 ```python
 class enumerate(_list[_tuple[_int, _T]], Generic[_T]):
-    """Liste von Paaren aus Index und Wert. Das optionale ganzzahlige `start=N` verschiebt den Index: `enumerate(items, start=1)` für eine Zählung ab 1. Auch beliebig große ganzzahlige Startwerte bleiben exakt. `start` kann als Positions- oder Schlüsselwortargument übergeben werden, aber nicht als beides zugleich. Bei einem Generator wird statt einer Liste ein Lazy-Iterator zurückgegeben, der jedes Element erst holt, wenn die Schleife es anfordert."""
+    """List of (index, value) pairs. Optional integer `start=N` shifts the index: `enumerate(items, start=1)` for 1-based indexing. Arbitrarily large integer starts remain exact. `start` may be positional or keyword, but not both. Given a generator, it returns a lazy iterator instead of a list, taking each item only when the loop asks for it."""
     @overload
     def __new__(cls, sequence: Generator[_T, Any, Any], /, start: _int = ...) -> Iterator[_tuple[_int, _T]]: ...  # pyright: ignore[reportOverlappingOverload]
     @overload
@@ -91,7 +91,7 @@ class enumerate(_list[_tuple[_int, _T]], Generic[_T]):
 
 ```python
 class filter(_list[_T], Generic[_T]):
-    """Behält Elemente, für die das Ergebnis der reinen Funktion `fn(item)` als wahr ausgewertet wird; Rückruffunktionen dürfen das Skript weder unterbrechen noch den Spielzustand verändern. `filter(None, iter)` behält ohne Rückruffunktion alle Elemente, die als wahr ausgewertet werden. Bei leerer Eingabe wird `fn` weder geprüft noch aufgerufen. Bei einem Generator wird statt einer Liste ein Lazy-Iterator zurückgegeben."""
+    """Keep items for which pure `fn(item)` is truthy; callbacks cannot suspend the script or mutate game state. `filter(None, iter)` keeps every truthy item without a callback. An empty input never inspects or calls `fn`. Given a generator, it returns a lazy iterator instead of a list."""
     @overload
     def __new__(cls, fn: Callable[[_T], object] | None, iterable: Generator[_T, Any, Any], /) -> Iterator[_T]: ...  # pyright: ignore[reportOverlappingOverload]
     @overload
@@ -103,7 +103,7 @@ class filter(_list[_T], Generic[_T]):
 
 ```python
 class map(_list[_R], Generic[_R]):
-    """Wendet die reine Funktion `fn` auf die jeweils entsprechenden Elemente aller iterierbaren Werte an. Rückruffunktionen dürfen das Skript weder unterbrechen noch den Spielzustand verändern. Bei einer Eingabe wird `fn(x)` aufgerufen, bei mehreren Eingaben `fn(x, y, ...)`. Die Verarbeitung endet mit der kürzesten Eingabe, außer wenn `strict=True` gesetzt ist; dann lösen unterschiedliche Längen einen Fehler aus. Wenn kein Ergebniselement entsteht, wird `fn` weder geprüft noch aufgerufen. Ist eine Eingabe ein Generator, wird statt einer Liste ein Lazy-Iterator zurückgegeben."""
+    """Apply pure `fn` to corresponding items of each iterable. Callbacks cannot suspend the script or mutate game state. Single-iter form calls `fn(x)`; multi-iter form calls `fn(x, y, ...)` and stops at the shortest input unless `strict=True`, which raises if input lengths differ. If no row is produced, `fn` is never inspected or called. When an input is a generator, it returns a lazy iterator instead of a list."""
     @overload
     def __new__(cls, fn: Callable[[_T], _R], iter1: Generator[_T, Any, Any], /, *, strict: _bool = ...) -> Iterator[_R]: ...  # pyright: ignore[reportOverlappingOverload]
     @overload
@@ -126,7 +126,7 @@ class map(_list[_R], Generic[_R]):
 
 ```python
 class range(_list[_int]):
-    """Erstellt eine Liste ganzer Zahlen von `start` bis ausschließlich `stop` in Schritten von `step`. `range(5)` → `[0,1,2,3,4]`. Grenzen und Schrittweite bleiben exakte Ganzzahlen beliebiger Größe; die erzeugte Liste muss jedoch innerhalb der Größenbeschränkung des Interpreters für Sammlungen liegen. Alle Argumente müssen Ganzzahlen sein; `step=0` und Bruchzahlen werden abgewiesen. Ein negatives `step` zählt abwärts: `range(5, 0, -1)` → `[5,4,3,2,1]`."""
+    """Materialize the bounded integer range from `start` to `stop` (exclusive), stepping by `step`. `range(5)` → `[0,1,2,3,4]`. Endpoints and steps retain arbitrary-size exact integers, while the produced list must fit the interpreter's collection limit. All arguments must be integers; `step=0` and fractional values are rejected. Negative `step` counts down: `range(5, 0, -1)` → `[5,4,3,2,1]`."""
     @overload
     def __init__(self, stop: _int, /) -> None: ...
     @overload
@@ -137,7 +137,7 @@ class range(_list[_int]):
 
 ```python
 class reversed(_list[_T], Generic[_T]):
-    """Gibt eine Listenkopie eines beliebigen endlichen iterierbaren Objekts mit umgekehrter Elementreihenfolge zurück. Die Eingabe wird vollständig durchlaufen; ein unendlicher Generator überschreitet daher die Größenbeschränkung für Sammlungen. Wörterbücher (über ihre Schlüssel), Sets (in deterministischer Einfügereihenfolge), Generatoren und eigene Klassen mit Iteratorprotokoll werden akzeptiert."""
+    """Return a reversed list copy of any finite iterable. This consumes the input fully, so an infinite generator exceeds the collection limit; dictionaries (their keys), sets (deterministic insertion order), generators, and custom iterator-protocol classes are accepted."""
     def __init__(self, sequence: Iterable[_T], /) -> None: ...
 ```
 
@@ -145,7 +145,7 @@ class reversed(_list[_T], Generic[_T]):
 
 ```python
 class zip(_list[_Z], Generic[_Z]):
-    """Kombiniert iterierbare Objekte zu Tupeln. Ohne Argumente wird eine leere Liste zurückgegeben. Mit einem Argument wird eine Liste aus 1-Tupeln zurückgegeben. Die Verarbeitung endet bei der kürzesten Eingabe, sofern nicht `strict=True` gesetzt ist; dann lösen unterschiedliche Eingabelängen einen Fehler aus. Ist eine Eingabe ein Generator, wird statt einer Liste ein Lazy-Iterator zurückgegeben."""
+    """Combine iterables into tuples. With no args, returns empty list. With one arg, returns a list of 1-tuples. Stops at the shortest input unless `strict=True`, which raises if input lengths differ. When an input is a generator, it returns a lazy iterator instead of a list."""
     @overload
     def __new__(cls, *, strict: _bool = ...) -> zip[_tuple[Any, ...]]: ...
     @overload

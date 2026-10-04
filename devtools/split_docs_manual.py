@@ -22,9 +22,13 @@ docs/models/ is not in the manual: it holds one "## `Class`" + python block per
 public class of the game's __builtins__.pyi stub (STUBS, refreshed by the
 editor integration on each game update). Existing files keep their classes;
 a new class goes to the file whose classes mention it most (else misc_models).
+
+docs/README.md's "Current extraction" line is rewritten with the manual's build
+and the export file's date.
 """
 from __future__ import annotations
 
+import datetime
 import difflib
 import glob
 import os
@@ -128,6 +132,20 @@ def split_file(path: str) -> tuple[list[str], list[dict]]:
 def write(rel: str, text: str) -> None:
     with open(os.path.join(DOCS, rel), "w", encoding="utf-8", newline="\r\n") as fh:  # match the CRLF working copy
         fh.write(text.rstrip("\n") + "\n")
+
+
+README_BUILD = re.compile(r"\*\*build [^*]+\*\* \([^)]*\)")
+
+
+def update_readme(build: str, manual: str) -> None:
+    text = read(os.path.join(DOCS, "README.md"))
+    date = datetime.date.fromtimestamp(os.path.getmtime(manual)).isoformat()
+    new, count = README_BUILD.subn(f"**build {build}** ({date})", text)
+    if count != 1:
+        print("  SKIPPED  README.md: no single '**build <id>** (<date>)' line to update")
+        return
+    write("README.md", new)
+    print(f"  README   build {build} ({date})")
 
 
 def stub_classes(path: str) -> dict[str, str]:
@@ -272,6 +290,7 @@ def main() -> None:
             out = "\n\n".join(chunks)
         write(rel, out)
     print(f"Wrote {len(files)} files.")
+    update_readme(build, manual)
 
     if os.path.exists(STUBS):
         refresh_models(STUBS)
