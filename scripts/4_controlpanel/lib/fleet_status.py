@@ -3,7 +3,7 @@
 # (both add "home": home outpost id, and "role": job designation, None until
 # detected; drones also "unit", "engine")
 # instead of one key per vehicle -- the Data Archive has a fixed key-count cap
-# (CLAUDE.md rule 7). Written by VehicleController/DroneController
+# (CODE_GUIDES.md#archive). Written by VehicleController/DroneController
 # publish_telemetry(); the FLEET/DRONE FLEET cards read "intent" from it.
 #
 # Replaces three legacy per-entity families: fleet.status.<id> plus the exact

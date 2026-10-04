@@ -536,7 +536,7 @@ class VehicleMiningMixin:
         cycle per iteration, recall-checked and exception-guarded, same shape
         as run_pull_loop(). This is what a thin entrypoint
         script should call directly (a single line: no while/recall logic
-        belongs there -- see CLAUDE.md's thin-entrypoint rule).
+        belongs there -- see CODE_GUIDES.md#module-layout).
         """
         self._host.log.print(f"Pioneer Mining Controller ({self._host.name}) online. Assigned base slot: {self._host.assigned_slot_coords}. Stationed at '{outpost_id}'.")
         validate_game_version()

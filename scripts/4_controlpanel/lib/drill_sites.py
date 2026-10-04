@@ -18,7 +18,7 @@
 # hauler and the Pioneer constructor import it at every tier; with no drills
 # deployed, nothing here does anything.
 #
-# Archive shape (one shared dict per concern, CLAUDE.md rule 7):
+# Archive shape (one shared dict per concern, CODE_GUIDES.md#archive):
 #   drill.positions = {drill_id: {"pos": [x, y], "site": site_id | None}}
 # Entries of drills no longer deployed (discover_drill_ids()) are pruned on
 # every write, unless discovery came back empty.

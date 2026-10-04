@@ -150,7 +150,7 @@ Archive (one dict per concern):
 - When the outpost appears in `outpost_network.outposts()` near (x, y): write its roles into
   `autoplay.outpost_roles`, run `outpost_mining.reevaluate_unassigned_near_outpost()` (today manual), mark `built`.
 - `designate` approvals write `autoplay.outpost_roles` directly.
-- Every decision logs `debug()` reasons (AGENTS.md rule 5): need → candidates kept/rejected → score terms.
+- Every decision logs `debug()` reasons (CODE_GUIDES.md#scope): need → candidates kept/rejected → score terms.
 - Pass hooks into `planner_loop.run_planner()` as its first pass (needs before extractors/fluids), so a
   new outpost's roles drive extractor/pipe/power work on the next pass.
 

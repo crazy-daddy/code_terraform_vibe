@@ -37,7 +37,8 @@ early_game_runner/           # git submodule: auto-deploy/DAP/early-game automat
 inspirations/                # git submodules: other players' Code: Terraform repos
 legacy/                      # archived / reference-only material
 
-CLAUDE.md                    # project rules and conventions for AI coding agents
+CLAUDE.md                    # instructions for AI coding agents
+CODE_GUIDES.md               # code rules for every editor
 TODO.md                      # roadmap and task tracker
 TODO_inspirations.md         # ideas from inspirations/ picked for implementation
 docs/AI_CHEATSHEET.md        # single source of truth for formulas, constants, module map

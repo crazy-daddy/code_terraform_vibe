@@ -97,7 +97,7 @@ class ArchiveClient:
             swallowed("archive.ArchiveClient.keys: self.notebook.keys", error)
             return []
 
-    # One-shared-dict-per-concern helpers (CLAUDE.md rule 7): a key holds
+    # One-shared-dict-per-concern helpers (CODE_GUIDES.md#archive): a key holds
     # {entry_id: value} for many entities instead of one key per entity.
     # Writes are atomic transactions touching only entry_id's own slot, and a
     # non-dict stored value is treated as empty.

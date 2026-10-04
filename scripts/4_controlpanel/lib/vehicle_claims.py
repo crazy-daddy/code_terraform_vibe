@@ -25,7 +25,7 @@ LEGACY_ROVER_UNSUPPORTED_KEY = "rover.unsupported_targets"
 SURVEY_CLAIMS_KEY = "survey.claims"
 LEGACY_ROVER_CLAIMS_KEY = "rover.claims"
 # One shared dict {vehicle_name: {target_key, target, kind, tick}} of
-# resumable in-progress missions (not one key per vehicle, CLAUDE.md rule 7).
+# resumable in-progress missions (not one key per vehicle, CODE_GUIDES.md#archive).
 # LEGACY_MISSION_KEY_PREFIX is the old per-vehicle "vehicle.mission:<name>"
 # shape: load_mission() moves a leftover into the dict on first read, so a
 # vehicle mid-mission across the deploy still resumes; ArchiveCleaner's

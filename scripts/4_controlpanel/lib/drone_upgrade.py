@@ -24,7 +24,7 @@ from storage import inventory_count
 if TYPE_CHECKING:
     from drone import DroneController
 
-# One shared dict (CLAUDE.md rule 7), written by both halves via transaction():
+# One shared dict (CODE_GUIDES.md#archive), written by both halves via transaction():
 #   {"enabled": bool,
 #    "status": str,                         # coordinator's one-line summary (drones_panel.py)
 #    "depots": {old_depot_id: {...}},       # swap state per Depot (fleet_upgrade.py)

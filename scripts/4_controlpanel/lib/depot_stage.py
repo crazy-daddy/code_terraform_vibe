@@ -6,7 +6,7 @@
 # staged items out of its own drain/staging passes until the drone clears
 # the request.
 #
-# Archive shape (one shared dict per concern, CLAUDE.md rule 7):
+# Archive shape (one shared dict per concern, CODE_GUIDES.md#archive):
 #   depot.stage = {depot_id: {item_id: {"units": n, "by": drone, "tick": t}}}
 # One requester per (depot, item): a second drone staging the same item at
 # the same Depot adds its units to the entry and takes over "by"; clearing

@@ -178,7 +178,7 @@ def reconcile_manual_transit(cache=None):
 
 
 # Fleet hardware upgrade orders (lib/fleet_upgrade.py, lib/drone_upgrade.py):
-# ONE shared dict {requester_id: {item_id: quantity}} (CLAUDE.md rule 7), so
+# ONE shared dict {requester_id: {item_id: quantity}} (CODE_GUIDES.md#archive), so
 # each requester -- the coordinator, or a drone wanting a bigger Cargo Pod --
 # owns and clears only its own entry. Quantities are "keep at least this many
 # in stock" floors, summed across requesters. Ranked below manual orders AND

@@ -7,9 +7,9 @@
 #  - once, to backfill markers for sites surveyed before this system existed;
 #  - after surveying a batch of new POIs (auto_assign_new_site() already runs
 #    per-site during a live survey pass -- this is just for catching up);
-#  - after founding a new outpost (CLAUDE.md: outposts are never founded
-#    automatically, so there's no automatic hook for "a new outpost just
-#    appeared" -- re-running this script is the intended trigger).
+#  - after founding a new outpost (by hand or by autoplay/;
+#    nothing triggers a marker resync when a new outpost appears, so
+#    re-running this script is the intended trigger).
 
 import outpost_mining
 

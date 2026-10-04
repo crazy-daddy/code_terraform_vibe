@@ -6,7 +6,7 @@ STATUS_KEY = "plant.terraformer"
 REQUESTER_ID = "plant_terraformer"
 
 # 10 ticks/s -> 1 h. Entries of Terraformers that stopped publishing are
-# pruned by the next publish (one shared dict, CLAUDE.md rule 7).
+# pruned by the next publish (one shared dict, CODE_GUIDES.md#archive).
 STATUS_STALE_TICKS = 36000
 
 # Statuses where the machine can't use power at all: switched off.

@@ -2,7 +2,7 @@
 # (lib/drone_claims.py) claim mixins. Each mixin keeps its own archive keys and
 # owner field; these functions take the key and an owns(claim) predicate.
 #
-# Shapes (one shared dict per concern, AGENTS.md rule 7):
+# Shapes (one shared dict per concern, CODE_GUIDES.md#archive):
 #   recall flags  {unit_name: True}            -- absent = not recalled
 #   missions      {unit_name: {target_key, target, kind, tick}}
 #   claims        {target_key: {<owner field(s)>, coords, name, tick, ...}}

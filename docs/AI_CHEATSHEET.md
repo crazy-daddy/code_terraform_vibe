@@ -1,7 +1,7 @@
 # Code: Terraform — AI Agent Quick Reference Cheat Sheet
 
 Dense ref: physics, formulas, component specs, bus channels, data conventions.
-**Single source of truth for tunable numbers and definitions** for every agent on project — this hub plus the topic files in [`cheatsheet/`](cheatsheet/). Change tunable constant in code (safety margins, tiers, thresholds, stale-tick counts, budgets, etc.) → update the section that documents it, same change. Other docs (`CLAUDE.md`, `TODO.md`) point at constant/module name, not restate value — one place to keep current.
+**Single source of truth for tunable numbers and definitions** for every agent on project — this hub plus the topic files in [`cheatsheet/`](cheatsheet/). Change tunable constant in code (safety margins, tiers, thresholds, stale-tick counts, budgets, etc.) → update the section that documents it, same change. Other docs (`CODE_GUIDES.md`, `CLAUDE.md`, `TODO.md`) point at constant/module name, not restate value — one place to keep current.
 
 **Current state only.** Describe what the code does now — no "previously", "was changed", "bug fixed on …", "found live" narration. *Why* behind design (postmortems, rejected approaches, history) → **[`DESIGN_HISTORY.md`](DESIGN_HISTORY.md)** and commit messages.
 
@@ -31,7 +31,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | 3, 5, 6 | Biome colors, hardware catalog, invocation pattern | this file |
 | 4 | Signal Bus channels, Data Archive keys | [`cheatsheet/archive_ipc.md`](cheatsheet/archive_ipc.md) |
 | 7 | Control Room panels | [`cheatsheet/panels.md`](cheatsheet/panels.md) |
-| 8, 8a, 9, 10 | Live debugging, sim fast-forward via WebView2 DevTools, tiered `scripts/` + `scripts_sync.py`, offline stub tests (`tests/`) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
+| 8, 8a, 8b, 9, 10 | Live debugging, sim fast-forward via WebView2 DevTools, reading live state/logs/decompiled logic, tiered `scripts/` + `scripts_sync.py`, offline stub tests (`tests/`) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 11–11j | Autoplay infrastructure planner (`autoplay/`): map tile geometry, footprints, router, utility-layer occupancy, power pass, blueprint queue, power-line ledger, fluid pass, outpost roles, extractor pass and urgency tiers (plan-ahead chunks), outpost needs, site scoring and proposals with marker approval (founding planner) | [`cheatsheet/autoplay.md`](cheatsheet/autoplay.md) |
 
 ## 🗺️ Progression Walkthroughs & Speedrun Guides

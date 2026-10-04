@@ -2,8 +2,8 @@
 #
 # Format: <relative path> | <ISO date assessed> | <note>
 # Only files actually read and assessed are listed here. Files not listed are
-# unassessed and should be picked up in a future batch (see evaluate-inspirations
-# workflow). graviadaemon's core lib/*.py and panel_*.py files were reviewed prior
+# unassessed and should be picked up in a future batch (see the sweep workflow in
+# .claude/rules/inspirations.md). graviadaemon's core lib/*.py and panel_*.py files were reviewed prior
 # to this tracker's existence (see TODO_inspirations.md "Source Notes" section,
 # commit 3f6118a) and are not re-listed individually here yet.
 #

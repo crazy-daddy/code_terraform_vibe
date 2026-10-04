@@ -573,7 +573,7 @@ def warn_about_unassigned_tanks(curr_tick):
     several Water Pumps/Thermal Caps/Turbines all calling into this, a module global would let each
     one independently decide "I haven't warned recently" and print its own copy every interval --
     archive is the one state store this codebase already uses specifically because it IS shared
-    across scripts (see CLAUDE.md's Data Archive rule).
+    across scripts (see CODE_GUIDES.md#archive).
 
     Since tank_matches_assignment() now denies an unassigned, never-latched tank by default (see
     module docstring), this is the operator's only signal that such a tank exists at all: it

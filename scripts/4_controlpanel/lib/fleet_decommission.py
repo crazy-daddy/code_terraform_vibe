@@ -28,7 +28,7 @@
 #      pickups, yield reservations, Depot stage, home-Depot pin, upgrade
 #      orders/state, sport nav request, commission lineage).
 #
-# State: one dict, fleet.decommission = {machine_id: entry} (CLAUDE.md rule 7)
+# State: one dict, fleet.decommission = {machine_id: entry} (CODE_GUIDES.md#archive)
 #   entry = {"kind": "pioneer" | "drone", "state": "requested" | "ready" | "blocked",
 #            "attempts": int, "reason": str}
 # Kept free of heavy imports: vehicle_claims.py/drone_claims.py import it

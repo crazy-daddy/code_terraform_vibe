@@ -42,7 +42,7 @@ def set_drone_recalled(drone_name, recalled):
     """Sets or clears drone_name's recall flag in the shared DRONE_RECALL_KEY dict."""
     common.set_flagged(DRONE_RECALL_KEY, drone_name, recalled)
 
-# Bounded fixed-size cache per CLAUDE.md rule 7 -- 35 permanent biosites total
+# Bounded fixed-size cache per CODE_GUIDES.md#archive -- 35 permanent biosites total
 # (7 per biome x 5 biomes, docs/guide/biosphere_biomass_tier.md) means the
 # realistic ceiling of ever-scanned-empty POIs is small; this cap is a very
 # generous margin, not a tight tuning.
@@ -287,8 +287,8 @@ class DroneClaimsMixin:
     def mark_poi_empty(self, x, y):
         """
         Records (x, y) as a confirmed-empty scanned POI, bounded to
-        SCOUTED_EMPTY_POI_MAX_ENTRIES (fixed-size history per CLAUDE.md rule
-        7) by dropping the oldest-scanned entries once the cache overflows.
+        SCOUTED_EMPTY_POI_MAX_ENTRIES (fixed-size history per CODE_GUIDES.md
+        #archive) by dropping the oldest-scanned entries once the cache overflows.
         """
         self._host.log.start(f"[{self._host.name}] mark_poi_empty", level="debug")
         curr_tick = self._host.get_current_tick()

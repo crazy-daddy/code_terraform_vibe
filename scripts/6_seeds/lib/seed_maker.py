@@ -13,7 +13,7 @@
 #   - recipes() is the game's own discover-once journal, so hits never need to
 #     be stored here -- only which triples have been tried.
 #
-# State (Data Archive, one shared dict -- CLAUDE.md rule 7):
+# State (Data Archive, one shared dict -- CODE_GUIDES.md#archive):
 #   seed.combos_tried = {"a,b,c": True | {"by": maker_id, "tick": n, "stage": s}}
 #     True  -> tried (sludge or hit); never retried.
 #     dict  -> in-flight claim by one Seed Maker ("loading" -> "running"),

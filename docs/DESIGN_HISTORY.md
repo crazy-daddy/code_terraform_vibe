@@ -679,3 +679,12 @@ stationed loop for `HOME_BASE`).
 - Port budget: the refinery needs 4 gas fluids and 4 liquid fluids. A 4×4 footprint has 12 perimeter
   tiles per layer, so it also fits next to `factory` or `wildlife`.
 - No migration: no save used the sub-roles yet.
+
+## §0 — Mixin Self-Typing: `_host` Over Fake Base or Protocol (2026-09-22)
+
+Mixins (vehicle, drone, pioneer, harvester, ...) need `self` typed as the composed controller for Pyright.
+
+- **Fake base, rejected**: `_Base = VehicleController if TYPE_CHECKING else object`, then `class VehicleSurveyMixin(_Base)`. Checking one mixin file alone showed only a harmless "dead code" hint, so it was rolled out to all 11 mixins. A full-repo `npx pyright` then reported "Class cannot derive from itself" on every base of `class VehicleController(...)` in `lib/vehicle.py` (same for `lib/drone.py`): each mixin's type-only base is the composed class itself, a real cycle that only shows at the composition site. Fully reverted.
+- **Protocol, not built**: a `VehicleControllerLike(Protocol)` with the whole cross-mixin surface, used as a per-method `self:` annotation. It worked in a scratchpad test, but needed the full attribute surface of all mixins and an annotation on every method.
+- **Chosen**: one `_host` property per mixin returning `self` typed as the controller (one `# type: ignore[return-value]`), with methods going through `self._host`. A full Pyright pass at `lib/vehicle.py` showed 0 errors, 0 warnings.
+- **Lesson**: a single-file diagnostics check is not evidence that a typing pattern is safe for a multi-file composition. Verify at the composition site before rolling a pattern out.

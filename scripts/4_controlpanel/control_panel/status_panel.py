@@ -7,7 +7,7 @@
 # worker (grid supervision, rebalance sweep, outpost sync, Supply Dock
 # planning). It publishes its result summary to `archive`
 # (AUTOMATION_SUMMARY_KEY below) for this card to read and display -- the
-# Archive-as-decoupling-channel pattern CLAUDE.md calls for. A multi-second
+# Archive-as-decoupling-channel pattern CODE_GUIDES.md#archive calls for. A multi-second
 # call (supply_dock.plan_dock_assignments()) inside a per-tick rendering loop
 # blanks the card, so none of that work runs here.
 #

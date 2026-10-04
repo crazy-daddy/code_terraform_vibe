@@ -10,7 +10,7 @@
 # top of PioneerController.run(), before detect_role() -- a bare chassis would
 # otherwise be detected as a hauler with no battery.
 #
-# One archive dict, fleet.commission (CLAUDE.md rule 7), shared with the
+# One archive dict, fleet.commission (CODE_GUIDES.md#archive), shared with the
 # drone jobs (lib/drone_commission.py):
 #   {"jobs": [job, ...],               # queue; one pioneer and one drone job worked at a time
 #    "lineage": {vehicle_id: {...}},   # commissioned Pioneers not fitted yet

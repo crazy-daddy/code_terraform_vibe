@@ -166,7 +166,7 @@ Rules for every fix agent:
 - Edit the highest tier that defines the module (`scripts/<tier>/lib/x.py`).
 - Run `git log` on the code first and do not redo earlier perf work.
 - Run `pytest` and Pyright before committing. Write the commit message with the `caveman-commit` skill.
-- Keep the AGENTS.md rules: no stdlib imports, `swallowed()` in every recovering `except Exception`, balanced `log.start()`/`log.end()`, and constant changes documented in `docs/cheatsheet/`.
+- Keep the CODE_GUIDES.md rules: no stdlib imports, `swallowed()` in every recovering `except Exception`, balanced `log.start()`/`log.end()`, and constant changes documented in `docs/cheatsheet/`.
 
 ### Phase A: log-driven fixes (Sonnet, one worktree each, parallel)
 

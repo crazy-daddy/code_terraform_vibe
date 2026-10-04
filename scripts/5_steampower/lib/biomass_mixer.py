@@ -53,8 +53,8 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 STARVED_LEVEL_T = 1.0
 STALL_STREAK_THRESHOLD = 6
 
-# One shared dict {mixer_id: telemetry} (not one key per mixer, CLAUDE.md
-# rule 7). Old per-mixer "biomass_mixer.status.<id>" keys are purged by
+# One shared dict {mixer_id: telemetry} (not one key per mixer, CODE_GUIDES.md
+# #archive). Old per-mixer "biomass_mixer.status.<id>" keys are purged by
 # ArchiveCleaner.clean_retired_keys().
 STATUS_KEY = "biomass_mixer.status"
 

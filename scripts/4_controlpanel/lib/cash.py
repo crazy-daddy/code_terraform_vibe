@@ -1,6 +1,6 @@
 # Cash manager: one budget owner for every credit consumer (docs/AI_CHEATSHEET.md §2l).
 #
-# Two halves, one archive dict (cash.budget, CLAUDE.md rule 7):
+# Two halves, one archive dict (cash.budget, CODE_GUIDES.md#archive):
 #   - CashManager.step(), run by the headless control_room_automation.py every storage
 #     tick: samples the credit balance, measures gross income and operating
 #     (reagent) burn from the balance history + spend log, sets the dynamic

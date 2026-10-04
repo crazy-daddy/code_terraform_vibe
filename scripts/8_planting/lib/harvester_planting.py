@@ -30,7 +30,7 @@
 # step: the game keeps plants, growth and treatment timers, so there is no
 # mission state to persist.
 #
-# Archive (one shared dict per concern, CLAUDE.md rule 7):
+# Archive (one shared dict per concern, CODE_GUIDES.md#archive):
 #   plant.layout      = {"version", "mode", "fill", "chunks", "base", "anchor",
 #                        "starter_version", "cells": {sector: species},
 #                        "reserved": {sector: machine kind}, "garden": [kept sectors]}

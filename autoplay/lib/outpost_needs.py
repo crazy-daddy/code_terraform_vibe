@@ -343,7 +343,7 @@ def found_bundles(leftovers, snap=None):
 
 
 def log_plan(log, open_needs, plan):
-    """Debug trail of one need pass (AGENTS.md rule 7): needs, rejected hosts, proposals."""
+    """Debug trail of one need pass (CODE_GUIDES.md#logging): needs, rejected hosts, proposals."""
     for need in open_needs:
         log.debug(f"Need {need['role']} ({need['urgency']}{', locked' if need['locked'] else ''}): {need['why']}.")
     for role, outpost_id, reason in plan["rejected"]:

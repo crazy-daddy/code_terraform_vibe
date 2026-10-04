@@ -696,7 +696,7 @@ def rank_sites(bundle, ctx, role_presets, count=REFINE_TOP, want=None):
 
 
 def log_sites(log, bundle, rows):
-    """Debug trail of one bundle's site search (AGENTS.md rule 7)."""
+    """Debug trail of one bundle's site search (CODE_GUIDES.md#logging)."""
     if not rows:
         log.debug(f"Sites for {bundle['roles']}: no anchor passes the placement checks.")
         return

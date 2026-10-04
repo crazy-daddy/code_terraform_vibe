@@ -50,8 +50,8 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 # blacklist a perfectly good tank.
 OUTPUT_BLOCKED_STALL_REASONS = ("output_full", "unconnected")
 
-# One shared dict {liquifier_id: telemetry} (not one key per liquifier, CLAUDE.md
-# rule 7). Old per-liquifier "essence_liquifier.status.<id>" keys are purged by
+# One shared dict {liquifier_id: telemetry} (not one key per liquifier, CODE_GUIDES.md
+# #archive). Old per-liquifier "essence_liquifier.status.<id>" keys are purged by
 # ArchiveCleaner.clean_retired_keys().
 STATUS_KEY = "essence_liquifier.status"
 

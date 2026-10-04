@@ -22,8 +22,8 @@ from drill_sites import STATUS_KEY, DRILL_TYPE_IDS, advertised_drills
 # hauler (lib/vehicle_cargo.py run_pull_loop()) reads "items" as free stock;
 # where the drill stands comes from drill.positions (lib/drill_sites.py).
 
-# One shared dict {drill_id: telemetry} (not one key per drill, CLAUDE.md
-# rule 7). Drills live on mineral sites, not on the outpost network, so
+# One shared dict {drill_id: telemetry} (not one key per drill, CODE_GUIDES.md
+# #archive). Drills live on mineral sites, not on the outpost network, so
 # ArchiveCleaner's network-based pruning can't see them; entries not
 # refreshed within STATUS_STALE_TICKS (10 ticks/s -> 1 h) are pruned here on
 # every publish instead.

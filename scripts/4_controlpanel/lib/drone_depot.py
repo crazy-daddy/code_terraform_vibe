@@ -44,8 +44,8 @@ import depot_stage
 import fleet_status
 from script_parking import ParkRequester
 
-# One shared dict {depot_id: telemetry} (not one key per depot, CLAUDE.md
-# rule 7). Old per-depot "drone_depot.status.<id>" keys are purged by
+# One shared dict {depot_id: telemetry} (not one key per depot, CODE_GUIDES.md
+# #archive). Old per-depot "drone_depot.status.<id>" keys are purged by
 # ArchiveCleaner.clean_retired_keys().
 DEPOT_STATUS_KEY = "drone_depot.status"
 LIQUIFIER_TYPE_ID = "essence_liquifier"

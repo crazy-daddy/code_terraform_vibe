@@ -11,7 +11,7 @@
 # needs material pulled to a specific outpost (e.g. ore from remote mining
 # drills) can register requests the same way.
 #
-# Archive shape (one shared dict per concern, CLAUDE.md rule 7):
+# Archive shape (one shared dict per concern, CODE_GUIDES.md#archive):
 #   logistics.requests = {outpost_id: {item_id: {"target": t, "have": h,
 #                                                "min": m, "by": requester,
 #                                                "buy": bool, "urgent": bool,
