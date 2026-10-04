@@ -11,6 +11,7 @@ import fluid_routing
 import lead_cask
 from hysteresis import HysteresisLatch
 import power
+import script_restart
 
 # Mk III fluid feed (docs/components/heat_generator.md, pressure_generator.md,
 # oxygen_generator.md):
@@ -64,6 +65,49 @@ def _current_tick(clock):
     return 0
 
 
+MK3_PORT_RESTART_REASON = "mk3_port_unbound"
+MK4_INPUT_RESTART_REASON = "mk4_input_unbound"
+
+
+class UnboundPortRestart:
+    """
+    The game binds an upgrade's port (steam_in / water_in, Mk IV input) on
+    `self` only when the script starts, so a pack applied under a running
+    script leaves it missing. missing() asks control_room_automation.py for a
+    restart once per script run (lib/script_restart.py); present() drops this
+    machine's request once the port is there.
+    """
+
+    def __init__(self, name, port_name, reason, log):
+        self.name = name
+        self.port_name = port_name
+        self.reason = reason
+        self.log = log
+        self.requested = False
+        self.cleared = False
+
+    def missing(self, tick):
+        if self.requested:
+            return
+        self.requested = True
+        state = script_restart.request_restart(self.name, self.reason, tick)
+        warn = self.log.level("warn")
+        if state == script_restart.STATE_GAVE_UP:
+            warn.print(f"[{self.name}] {self.port_name} still unbound after {script_restart.MAX_RESTARTS} restarts -- restart the script by hand.")
+        elif state == script_restart.STATE_REQUESTED:
+            warn.print(f"[{self.name}] {self.port_name} unbound (the game binds it at script start) -- restart requested from the Control Room automation.")
+        else:
+            warn.print(f"[{self.name}] {self.port_name} unbound and the restart request could not be written -- restart the script by hand.")
+
+    def present(self):
+        if self.cleared:
+            return
+        self.cleared = True
+        entry = script_restart.clear_restart(self.name, self.reason)
+        if entry:
+            self.log.print(f"[{self.name}] {self.port_name} bound after {entry.get('restarts', 0)} restart(s).")
+
+
 class Mk3FluidFeed:
     """
     Keeps one Mk III input port (steam_in or water_in) on a reachable source,
@@ -84,6 +128,7 @@ class Mk3FluidFeed:
         self.guard = HysteresisLatch(STEAM_POOL_STOP_FRACTION, STEAM_POOL_START_FRACTION, on_above=False)
         self.last_check_tick = None
         self.last_degraded = None
+        self.restart = UnboundPortRestart(name, fluid_key, MK3_PORT_RESTART_REASON, log)
         self.router = fluid_routing.FluidInputRouter(
             discover=self._discover_sources,
             rescan_interval_ticks=FLUID_RESCAN_INTERVAL_TICKS,
@@ -194,7 +239,9 @@ class Mk3FluidFeed:
         port = getattr(self.machine, self.fluid_key, None)
         if not port:
             self.log.debug(f"[{self.name}] Mk III but no {self.fluid_key} port.")
+            self.restart.missing(curr_tick)
             return
+        self.restart.present()
 
         if self.steam_guard:
             self._update_guard(port)
@@ -216,6 +263,7 @@ class Mk4RodFeed:
         self.clock = get_component("clock")
         self.last_check = None
         self.warned = False
+        self.restart = UnboundPortRestart(name, "input", MK4_INPUT_RESTART_REASON, log)
 
     def step(self):
         now = _current_tick(self.clock)
@@ -225,7 +273,11 @@ class Mk4RodFeed:
         try:
             if int(self.machine.tier()) < MK4_TIER:
                 return
-            port = self.machine.input
+            port = getattr(self.machine, "input", None)
+            if port is None:
+                self.restart.missing(now)
+                return
+            self.restart.present()
             staged = int(port.count())
         except Exception as error:
             swallowed("terraforming.Mk4RodFeed.step: machine.tier", error)

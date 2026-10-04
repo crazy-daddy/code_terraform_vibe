@@ -27,16 +27,17 @@ from swallow import swallowed
 #     so the Condenser only takes the surplus of a nearly full pool (active
 #     vent phase). Hysteresis: resumes at STEAM_POOL_START_FRACTION. A grid
 #     with no measurable steam tank skips this gate.
-#   - water gate: the pooled fill (total level / total capacity) of the
-#     water tanks water_out can reach -- the router's discovered targets
-#     minus blacklisted ones -- is at or above WATER_POOL_STOP_FRACTION.
-#     Pooled, not per tank: the router moves water_out to the least-full
-#     tank once the current one reaches WATER_TANK_SWITCH_FRACTION, so every
-#     reachable tank fills before the Condenser idles. Resumes below
-#     WATER_POOL_START_FRACTION: wide hysteresis, since at 250 t/h the
-#     Condenser refills fast and would otherwise cycle on and off. Routing
-#     pauses while this gate is closed, so water_out doesn't hop between
-#     tanks that are all past the switch line.
+#   - water gate: the fill of the least-full water tank water_out can
+#     reach -- the router's discovered targets minus blacklisted ones -- is
+#     at or above WATER_TANK_STOP_FRACTION, so every reachable tank is full
+#     (the router moves water_out to the least-full tank once the current
+#     one reaches WATER_TANK_SWITCH_FRACTION). Resumes once any reachable
+#     tank drops below WATER_TANK_START_FRACTION: the least-full tank is
+#     the one consumers are draining, and a full tank nobody draws from must
+#     not hold the Condenser idle while another runs dry. Wide hysteresis,
+#     since at 250 t/h the Condenser refills fast and would otherwise cycle
+#     on and off. Routing pauses while this gate is closed, so water_out
+#     doesn't hop between tanks that are all past the switch line.
 #   - sink gate: a Waste Processor at the water_out tank's outpost is
 #     draining that tank (enabled, "liquid" mode, liquid_in on the tank);
 #     condensing then would feed the drain. Read live from the processor,
@@ -47,11 +48,11 @@ from swallow import swallowed
 # No archive state: the game resets the throttle to 0 when the script stops,
 # and both gates re-evaluate from live readings on the first step.
 
-STEAM_POOL_STOP_FRACTION = 0.85
+STEAM_POOL_STOP_FRACTION = 0.90
 STEAM_POOL_START_FRACTION = 0.95
 
-WATER_POOL_STOP_FRACTION = 0.85
-WATER_POOL_START_FRACTION = 0.50
+WATER_TANK_STOP_FRACTION = 0.85
+WATER_TANK_START_FRACTION = 0.50
 
 WASTE_PROCESSOR_TYPE_ID = "garbage_disposal"
 
@@ -62,10 +63,10 @@ STEAM_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 NEUTRAL_GRACE_STEPS = 5
 
 # water_out routing -- same meaning as lib/fluid_pump.py's constants, except
-# the switch line: the Condenser leaves a tank at the pool stop line instead
+# the switch line: the Condenser leaves a tank at the tank stop line instead
 # of 0.98, so it spreads water across tanks rather than topping one up.
 LIQUID_TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir")
-WATER_TANK_SWITCH_FRACTION = WATER_POOL_STOP_FRACTION
+WATER_TANK_SWITCH_FRACTION = WATER_TANK_STOP_FRACTION
 CONNECTION_GRACE_TICKS = 2
 WATER_RESCAN_INTERVAL_TICKS = 300
 WATER_DISCOVERY_CACHE_INTERVAL_TICKS = 100
@@ -94,7 +95,7 @@ class SteamCondenserController:
         # Active = gate closed. An unreadable steam pool opens the steam gate; no reachable water
         # tank keeps the water gate as it is.
         self.steam_gate = HysteresisLatch(STEAM_POOL_STOP_FRACTION, STEAM_POOL_START_FRACTION, on_above=False)
-        self.water_gate = HysteresisLatch(WATER_POOL_STOP_FRACTION, WATER_POOL_START_FRACTION, unknown=None)
+        self.water_gate = HysteresisLatch(WATER_TANK_STOP_FRACTION, WATER_TANK_START_FRACTION, unknown=None)
         self._last_reason = None
         self._steam_router = fluid_routing.FluidInputRouter(
             discover=self._discover_steam_sources,
@@ -149,23 +150,28 @@ class SteamCondenserController:
             "is not taking water (water_out buffer full) -- likely no completed Liquid Pipe route",
             "No Liquid Tank or Large Liquid Tank eligible for water found network-wide (an empty tank needs a fluid_routing.tank_assignments entry).")
 
-    def water_pool_fraction(self):
-        """Pooled fill (0-1) of the reachable water tanks, or None when there are none."""
+    def water_tank_min_fraction(self):
+        """Fill (0-1) of the least-full reachable water tank, or None when there are none."""
         curr_tick = self.get_current_tick()
         router = self._water_router
         tanks = router.blacklist.filter_reachable(router._discover_targets_cached(curr_tick), curr_tick, key=lambda tank: tank.id)
-        level = 0.0
-        capacity = 0.0
+        lowest = None
+        lowest_id = None
         for tank in tanks:
             try:
-                level += tank.level()
-                capacity += tank.capacity()
+                capacity = tank.capacity()
+                if capacity <= 0:
+                    continue
+                fill = tank.level() / capacity
             except Exception as error:
-                swallowed("steam_condenser.SteamCondenserController.water_pool_fraction: tank.level", error)
-        if capacity <= 0:
+                swallowed("steam_condenser.SteamCondenserController.water_tank_min_fraction: tank.level", error)
+                continue
+            if lowest is None or fill < lowest:
+                lowest, lowest_id = fill, tank.id
+        if lowest is None:
             return None
-        self.log.trace(f"[{self.name}] Water pool {level:.0f}/{capacity:.0f} t over {len(tanks)} reachable tank(s).")
-        return level / capacity
+        self.log.trace(f"[{self.name}] Least-full water tank {lowest_id} at {lowest*100:.0f}% of {len(tanks)} reachable tank(s).")
+        return lowest
 
     # ------------------------------------------------------------------
     # Gates
@@ -211,16 +217,16 @@ class SteamCondenserController:
 
     def update_water_gate(self):
         self.log.start(f"[{self.name}] update_water_gate", level="debug")
-        fill = self.water_pool_fraction()
+        fill = self.water_tank_min_fraction()
         flip = self.water_gate.update(fill)
         if fill is None:
             self.log.debug(f"No reachable water tank; water gate stays {'open' if self.water_gate_open else 'closed'}.")
         elif flip == "on":
-            self.log.print(f"[{self.name}] Water tanks {fill*100:.0f}% full (>= {WATER_POOL_STOP_FRACTION*100:.0f}%) -- pausing condensation.")
+            self.log.print(f"[{self.name}] Every water tank at least {fill*100:.0f}% full (>= {WATER_TANK_STOP_FRACTION*100:.0f}%) -- pausing condensation.")
         elif flip == "off":
-            self.log.print(f"[{self.name}] Water tanks down to {fill*100:.0f}% (< {WATER_POOL_START_FRACTION*100:.0f}%) -- resuming condensation.")
+            self.log.print(f"[{self.name}] A water tank is down to {fill*100:.0f}% (< {WATER_TANK_START_FRACTION*100:.0f}%) -- resuming condensation.")
         else:
-            self.log.trace(f"Water pool {fill*100:.0f}%, gate {'open' if self.water_gate_open else 'closed'} (stop >= {WATER_POOL_STOP_FRACTION*100:.0f}%, start < {WATER_POOL_START_FRACTION*100:.0f}%).")
+            self.log.trace(f"Least-full water tank {fill*100:.0f}%, gate {'open' if self.water_gate_open else 'closed'} (stop >= {WATER_TANK_STOP_FRACTION*100:.0f}%, start < {WATER_TANK_START_FRACTION*100:.0f}%).")
         self.log.end()
 
     def sink_draining_target(self):

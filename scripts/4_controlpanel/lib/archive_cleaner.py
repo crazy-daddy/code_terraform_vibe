@@ -84,6 +84,7 @@ BUILDING_ID_KEYS = (
     "script.park_holds",  # HOLDS_KEY
     "script.stray_dark",  # STRAY_KEY
     "script.manual_off",  # MANUAL_OFF_KEY
+    "script.restart_requests",  # lib/script_restart.py RESTART_REQUESTS_KEY
     "machine.retired",  # lib/retired_machines.py RETIRED_KEY
     "fluid_routing.tank_assignments",
 )

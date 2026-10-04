@@ -52,6 +52,10 @@
 #     tier like the Mixer gate): undeploys each Plant Terraformer once it
 #     reads "complete" and its own script has emptied its holders; retried
 #     every storage pass. Idles until a Terraformer reports "complete".
+#   - Script restarts (lib/script_restart.py): stops and starts each script
+#     that filed a restart request (an upgrade port the game left unbound),
+#     on the parking interval; names the ones that ran out of restarts on
+#     the AUTOMATION card.
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController do
 # none of this themselves -- it's a hard dependency on this script running
 # (see legacy/README.md for pre-Control-Room saves). The manual
@@ -79,6 +83,7 @@ from mining_drill import publish_all_drills
 import wildlife_planner
 from fluid_routing import active_pipe_conflicts
 from script_parking import ScriptParking
+import script_restart
 from script_census import census_if_due
 import machine_activity
 from tree_console import flush_all, reset_all
@@ -234,7 +239,7 @@ def supervise_grids_if_due(clock, power):
 
 def park_if_due(clock, power):
     """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (parks idle machines, wakes due or triggered ones),
-    then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
+    the requested script restarts (lib/script_restart.py), then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
     machine activity sample (lib/machine_activity.py)."""
     global last_parking_tick, parking
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
@@ -252,6 +257,14 @@ def park_if_due(clock, power):
             )
     except Exception as e:
         report_error("Script parking", e)
+    try:
+        restarted, refused = script_restart.process_restart_requests(get_component("run_control"), now)
+        if restarted:
+            print(f"[AUTOMATION] Restarted on request: {', '.join(restarted)}.")
+        for machine_id, status in refused.items():
+            print(f"[AUTOMATION] Restart of {machine_id} refused ({status}); retrying next pass.")
+    except Exception as e:
+        report_error("Script restarts", e)
     try:
         taken = census_if_due(now)
     except Exception as e:
@@ -426,6 +439,12 @@ while True:
                 conflict_items = [f"pipe conflict: {c}" for c in active_pipe_conflicts(current_tick)]
             except Exception as e:
                 report_error("Pipe conflicts", e)
+            try:
+                gave_up = script_restart.gave_up_ids()
+                if gave_up:
+                    conflict_items.append(f"restart gave up: {', '.join(gave_up)}")
+            except Exception as e:
+                report_error("Script restarts", e)
             archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 
