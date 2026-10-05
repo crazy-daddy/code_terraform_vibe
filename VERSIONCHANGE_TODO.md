@@ -26,7 +26,7 @@ Computer's Library tab. It has live side effects (vehicles re-plan, machines res
 - [x] Live test 2026-09-30: `apply-libs` applied `archive_cleaner`, `profiling` via
       `apply-all-libraries`, 1 importer restarted, 0 crashed. `runtimeRunSerial` is a per-script
       run counter (values 1..262 across scripts), so recovery's stale-status check holds.
-- [ ] Live test of `once --apply-libs` with a real lib change, and of crash recovery (a lib
+- [x] Live test of `once --apply-libs` with a real lib change, and of crash recovery (a lib
       change that breaks an import mid-apply).
 - [x] "Lib redeploy" memory updated.
 - [ ] Decide: make `--apply-libs` the default.

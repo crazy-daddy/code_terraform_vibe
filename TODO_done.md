@@ -13,6 +13,9 @@ Finished items moved out of [TODO.md](TODO.md), grouped under the same section h
 - [x] **`relaunch_lib_dependents()` is misnamed** — per the finding above it reports, it doesn't relaunch. Rename it (and its `sync_all()`/`Watcher` call sites) to something like `warn_stale_lib_dependents()` next time that area gets touched.
 - [x] **Panel source files named by role, paired to save slots by marker.** `scripts/4_controlpanel/control_panel/` holds `status_panel.py`, `vehicles_panel.py`, `production_panel.py`, `automation_panel.py`, `drones_panel.py`, `warehouse_upgrade_panel.py`, each starting with `# ct-panel: <role>`. `devtools/scripts_sync.py` (`ROLE_MATCHED`, `role_for_slot()`) pairs a live `panel_N.py` slot by the marker, a header-line match, or (empty slot) the one unpaired role. See `docs/cheatsheet/dev_workflow.md` §9.
 - [x] **Decided against adopting `inspirations/vakermit`'s `build_docs.py` workflow (2026-10-04).** `devtools/split_docs_manual.py` plus the in-game DOCS Manual export stays the docs source: same content, per-component files that cost fewer tokens, and an official export instead of parsing the game executable. The script also rewrites the build line in `docs/README.md`. `tests/test_game_builtins.py` and AGENTS.md now read `docs/guide/builtins_and_commands.md` and `docs/guide/language_reference.md`. `docs/extracted/` stays as an optional, gitignored local dump.
+- [x] **External "apply library" command**: shipped in v0.1.29, wired into `devtools/scripts_sync.py` (`--apply-libs`, `apply-libs`, crashed-script recovery). Live test pending: see [VERSIONCHANGE_TODO.md](VERSIONCHANGE_TODO.md) §1.
+- [x] **`weather_station`** canonical script written (`7_miningdrills/weather/weather_station.py`, `lib/weather_signals.py`; see Phase 10).
+- [x] **`7_miningdrills` tier (2026-09-23)** — gated on the first deployed Mining Drill of any variant via the new OR-key `"buildings_any"` (`criteria_met()` in `devtools/scripts_sync.py`). Telemetry controller written (`7_miningdrills/lib/mining_drill.py`, thin `mining/mining_drill{,_industrial,_heavy}.py`; publishes `drill.status`, warns on full/stalled/near-full — see `docs/AI_CHEATSHEET.md` §1j). Not yet live-verified; confirm 1 stockpile unit = 1 t for the time-to-full estimate.
 
 ## 🧹 Handler Unification (2026-10-03)
 
@@ -36,6 +39,19 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
   - [x] fabricator/smelter recipe claims: `lib/recipe_claims.py` `RecipeClaimMixin` (claim/release/foreign_claims/is_shedded). The two `run()` loops stay: 12 lines each with different poll arguments.
   - [x] charging/drone_service base: `lib/station_controller.py` `StationController` (arbitration, power gate, step/run); unused `is_nearest_station_to()` dropped.
   - [x] Small exact duplicates: `drone_energy._nearest()`, `archive.set_entry_pruned()`, `script_parking.set_powered()`/`start_script()`, `fleet_status.wrap_text()`, `VehicleController.extract_coords()` via `construction_plan.coords_of()`.
+
+## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
+
+- [x] **Park Drone Service / Charging Stations** (dev_workflow.md §1d-2): vehicles and drones wake the station they head to (`wake_for_visit()`); awake stations hand a vehicle nearest to a parked one over by waking it; the last awake station per type stays up.
+  - [x] Validate live: an unpowered station still discoverable and dockable, visit wake arrives before docking, hand-off rescue from the woken station.
+- [x] **On-demand script scheduler** (`lib/script_parking.py`, dev_workflow.md §1d-2): Smelters, Fabricators, Supply Docks and Oil Generators breaker-parked while idle; solar scripts stopped at night.
+- [x] **Extend script parking** to Oil Pumps (dormant well) and Crop Automators (nothing to do).
+- [x] **Park Drone Depots** (dev_workflow.md §1d-2): empty, idle depots park; `fly_to_station()` and `request_stage()` wake them.
+- [x] **Station low-charge nudge removed**: it was a remote write the game blocks (`PermissionError`); a unit whose script could read a signal already budgets its own way back, and rescue covers the rest.
+- [x] **Seed Maker parked while idle** (no seed deficit; Harvester wakes it on changed seed demand, 3000-tick re-check refreshes its requests) and **Scanner script ends** once all 192 sectors are mapped (no breaker).
+- [x] **Park field providers** (Grow Lamp, Sprinkler, Dispenser) while switched off; a new layout or changed recipes wake them (dev_workflow.md §1d-2). Lit/serving ones stay up (unpowered = no service).
+- [x] **Callback atomicity helper** (`lib/atomic.py`, dev_workflow.md §1d-1), used by the Harvester route search.
+- [x] **Harvester startup geometry**: `full_chunk_count()` (~48k of the ~55k startup steps) is stored in `plant.geometry` and reused across restarts (chunking it atomically was rejected: spread over thousands of small calls, uncatchable `StepLimitError` risk, saves ~20 s once per restart).
 
 ## 🧭 Phase 1: Early Automation & Industrial Bootstrapping
 
@@ -121,6 +137,17 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
     - [x] Implement initial read-only Status, Fleet, and Production cards (`status_panel.py`, `vehicles_panel.py`, `production_panel.py`).
     - [x] **`status_panel.py` gained an AUTOMATION card** — not read-only, this is where the always-on housekeeping that used to have no reliable home (or was duplicated per-instance unnecessarily) now lives, since a panel script is the one process guaranteed to keep running: centralized Power Grid supervision + Smelter rebalance sweep (see Phase A's leader-election-removal bullet above), outpost-founding → resource marker auto-reassignment, and manual "Clean Archive" (`lib/archive_cleaner.py`'s `ArchiveCleaner`, previously dead code — only ever run from `playground/clean_archive.py`, which isn't synced into the live game) / "Sync Unsupported" (`lib/unsupported_markers.py`, promoted from `playground/mark_unsupported_targets.py` for the same reason — also has a thin root entrypoint `mark_unsupported_targets.py`) buttons. See `docs/AI_CHEATSHEET.md` §7.
     - [x] **Split the combined script into a headless calculator + a UI card.** Found live that running `supply_dock.plan_dock_assignments()` (a multi-second call even after `lib/production.py`'s `SourceCache` fix) inside the combined script's own per-tick render loop wedged that Custom Panel's rendering permanently — the script kept executing fine underneath, but the card stayed blank. The calculator is now headless (no `panel.*` calls, `sleep(1.0)`-paced) and does only the automation work, publishing its summary to `archive` (`control_room.automation_summary`); the UI script reads that back plus draws the version gate and manual buttons directly (cheap/rare, not chronic per-cycle cost). **Current mapping: `status_panel.py` = UI, `automation_panel.py` = headless calculator** — see `docs/AI_CHEATSHEET.md` §7's panel-numbering-quirk note (Custom Panel ids only increment and can't be drag-reordered, so this mapping drifted once already and will again; verify against the operator, don't assume).
+- [x] Complete Earth contracts for starting credits:
+  - `relay_hack.py` (Completed)
+  - `xenogenetics.py` (Completed)
+  - `corrupted_archive.py` (Completed)
+  - `sealed_vault.py` (Maze DFS traversal & key transmitter)
+  - `terminal_breach.py` (Mastermind iterative probe solver)
+  - `data_tablet.py` (2D grid probe & reading-order string decoder)
+  - **Version 2 (Signal Bus & Shared Library Pipeline)**:
+  - **Relocated to the Coastal outpost (`outpost_1`) + Bio Luminizer** (`docs/AI_CHEATSHEET.md` §1e, §2g): `lib/bio.py`'s Collector/Lab/Exchange were home-Inventory-hardcoded (`.connect("inventory")`, `get_component("inventory")`) — broken the moment they sit at a Warehouse-only outpost. Now outpost-aware throughout via new `storage.warehouse_stock()`/`drain_port_to_storage()` and `bio.local_stock()`. Exchange's sweep now checks `matches_order()` against each candidate stack before an exact `take()`, required for a coastal order's exact `target_glow` requirement (previously took blindly, which only ever worked for plain-fragment orders). New `BioLuminizerController` (`bio_luminizer_1.py`) solves the 3-lamp mix (`_solve_3x3()`) to hit each order's `target_glow` and infuses/discards accordingly.
+  - **Reagent resupply** (`docs/AI_CHEATSHEET.md` §2g): new `lib/outpost_reagents.py` (seed-once-editable per-reagent stock targets, default 100/100/60/20/10 for `alkaline_buffer`/`cryo_solvent`/`protein_marker`/`chelating_agent`/`enzyme_solution` respectively, dialed down for the pricier ones). `lib/vehicle_cargo.py`'s ore-hauler and reagent-hauler both reduce to the same demand-driven haul/unload/recharge mechanics, buying any shortfall at the Shop stack-by-stack when the source is home — the old role-specific `run_supply_run_loop()`/`run_reagent_delivery_loop()` wrappers were later removed in favor of every thin entrypoint script calling `run_haul_loop(dest_outpost_id)` directly (`dest_outpost_id` alone disambiguates the role). `pioneer_7.py` repurposed from its old ore-hauling role (outpost_1 no longer mines) to this.
+  - [x] Live-verify in game once Bio Luminizer is deployed at `outpost_1`: relocated Lab/Exchange operate correctly with no Inventory; `set_lamps`/`glow`/`infuse` produce a sample `deliver()` actually accepts; the reagent transporter buys/hauls/tops up the coastal Warehouse.
 
 ## 🏭 Phase 2: Logistics & Manufacturing Infrastructure
 
@@ -152,6 +179,8 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
 - [x] **Oil Pump + last-resort Oil Generator** (tier `5_steampower`). `lib/water_pump.py` generalized into `lib/fluid_pump.py` `FluidPumpController(pump, fluid_id)` for both Water and Oil Pumps (old name kept as a shim for already-filled save slots); the Oil Pump idles at throttle 0 while `well_active()` is False. New `5_steampower/lib/oil_generator.py` burns oil only when the combined reserve (same `power.reserve_fraction()` the tier-5 guard uses) is below 15% AND the grid runs a deficit without oil, covers only that deficit (shared across all Oil Generators), stops at 30%. Stub-tested. Open: live-verify that Oil Pumps/Oil Generators appear in `outpost.buildings()` and `grid.members`, and assign the first oil Liquid Tank in `fluid_routing.tank_assignments`. See `docs/AI_CHEATSHEET.md` §1c/§1c-1.
   - [x] Tap local **Water Wells** — deferred; confirmed no Water source built yet in this save (blocks any recipe/blueprint needing Water, e.g. Circuit Panel — see `can_source_fluid()` in `lib/production.py`).
     now feasible and done
+- [x] **Simplified Power Guard for steam-backed grids** (`scripts/5_steampower/lib/power.py`, `docs/AI_CHEATSHEET.md` §1a-0). The old guard sheds every night on battery alone while Gas Tanks still hold steam for the Turbines. The new one treats battery + steam tanks as one reserve, records the net gain/loss of each per day, and sends one `notify()` a day when either pool lost >20% of its capacity. It sheds only when the combined reserve is under 10%. Stub-tested. Tier 5 `.criteria` now gates on built buildings (`thermal_cap` >= 2, `steam_turbine` >= 5) via the new `buildings` key in `scripts_sync.py`, so the module deploys once the steam grid exists. Also verify live that Gas Tanks appear in `grid.members`.
+- [x] **Oil Pump + last-resort Oil Generator** (tier `5_steampower`). `lib/water_pump.py` generalized into `lib/fluid_pump.py` `FluidPumpController(pump, fluid_id)` for both Water and Oil Pumps (old name kept as a shim for already-filled save slots); the Oil Pump idles at throttle 0 while `well_active()` is False. New `5_steampower/lib/oil_generator.py` burns oil only when the combined reserve (same `power.reserve_fraction()` the tier-5 guard uses) is below 15% AND the grid runs a deficit without oil, covers only that deficit (shared across all Oil Generators), stops at 30%. Stub-tested. Open: live-verify that Oil Pumps/Oil Generators appear in `outpost.buildings()` and `grid.members`, and assign the first oil Liquid Tank in `fluid_routing.tank_assignments`. See `docs/AI_CHEATSHEET.md` §1c/§1c-1.
 
 ## 🌐 Phase 3: Multi-Outpost Coordination & Production Network
 
@@ -184,6 +213,12 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
     time (runtime Depot discovery, no hardcoded outpost list), and log the reject reason at `debug()`.
     Operator switch "leave to drones" on the FLEET card (`logistics.drone_yield`, default off). Pull loop only;
     see `docs/cheatsheet/production_logistics.md` §2i. Stub-tested only.
+  - [x] Validate live: switch on, pull hauler skips drills + Depot outposts, drone haulers pick the ore up.
+- [x] **Fleet decommissioning** (`lib/fleet_decommission.py`, retire buttons on FLEET / DRONE FLEET; see
+  `docs/cheatsheet/vehicles_drones.md` §2k-4): recall home, unload, undeploy; Pioneer parts sold, drone parts kept
+  in Inventory; per-machine archive entries dropped. Operator-triggered only. Stub-tested only.
+  - [x] Validate live (ask first): retire one Pioneer and one drone. Confirm `undeploy()` works with the Pioneer
+    parked at HOME_BASE (not only at home), that it returns the portables inside Holders/Racks, and the sale total.
 
 ### Multi-Outpost Production Network
 
@@ -244,6 +279,8 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
   - [x] Duty-cycle Mixers for max essence diversity (`lib/biomass_mixer_gate.py`, driven by `automation_panel.py` -- single copy for all tiers since new-only lib modules deploy from `2_libunlock` on; biomass per ton essence scales with √d, so pause while an expected essence is dry). Mixer/Liquifier scripts moved to `5_steampower`.
 - [x] Reach **500 t Biomass** threshold (unlocks Seed Maker).
 - [x] Reach **2,000 t Biomass** threshold (unlocks Plant Terraformers).
+- [x] Connect multi-biome essence pipeline to central **Biomass Mixers**. (scripted side done: `lib/biomass_mixer.py`; physical pipes still manual)
+  - [x] Validate gate live once tier 5 is active: pause/resume transitions, buffers refilling while breaker off, give-up/backpressure escapes; retune `PAUSE_LEVEL_T`/`RESUME_LEVEL_T`/`NO_PROGRESS_TICKS` from observed Liquifier rates.
 
 ## 🌾 Phase 5: Biosphere Tier 2 — Agriculture & Plant Terraformers
 
@@ -267,8 +304,44 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
 - [ ] Design and construct orthogonal farm layout:
   - [x] Install **Grow Lamps** (Light), **Sprinklers** (Piped Water), and **Dispensers** (Salt). (auto-ordered + deployed, see Field machines above; validate live)
 
+## 🐾 Phase 6: Biosphere Tier 3 — Wildlife Husbandry & Endgame
+- [x] **Script parking for the bio machines** when this phase starts (dev_workflow.md §1d-2, `lib/script_parking.py`): every bio machine (Bio Lab, Collector, Exchange, Caster, Conditioner, Luminizer, DNA Sequencer, Habitat, Feed Maker) has a breaker. Decide per machine what "idle" means and what wakes it (a Bio Order, a docked collector drone, a sample arriving), like the depots' visit wake and the field providers' `wake_kind()`. Don't add always-running scripts where parking works.
+- [x] Catalog all 5 DNA fragments per target creature in Bio Lab to unlock their feed recipes.
+  - [x] Use Bio Orders to drive specimen collection and keep completed samples out of Inventory through Exchange delivery.
+  - [x] Bio Caster bulk material demand (`lib/bio_volcanic.py`, requester `bio_caster`, §1g): deploy `bio_volcanic.py` + `production.py` by hand; live-verify `find_recipe()` returns materials for never-analyzed fragments, forged stacks carry a property (forged-stock subtraction), Fabricator builds the floor and a hauler serves the Volcanic outpost; steam_in/water_in connect via `FluidInputRouter` (steam source must be reachable by gas pipe if not local).
+- [x] Deploy **Habitats** and assign target species (`set_revival_target(creature_id)`).
+  - [x] Stage at least 2 feed plus the rarity-scaled Shop lab reagents before attempting revival (see Phase 9).
+- [x] Produce species-specific feed in **Feed Makers**.
+  - [x] Select only unlocked feed recipes and track forage, algae, moss, essences, and output demand.
+- [x] Prospect, cap, and pipe exotic fluid feeds:
+  - [x] Common: Ammonia, Swamp Gas, Brine.
+  - [x] Uncommon/Rare (Refined with Tar): Sulfur Gas, Cryofluid, Chlorine, Quicksilver.
+  - [x] Add Tar production and storage capacity before enabling Refiner recipes.
+- [x] Script closed-loop regulation for Habitat gas/liquid intake to maintain health and breeding cycles.
+  - [x] Keep local tanks above feed thresholds and avoid overfilling Habitat inputs.
+- [x] Accumulate shared **Insight** points and unlock creature trait nodes.
+- [x] Upgrade Habitats to **Mk II** (350,000 capacity per species) to achieve full planetary biodiversity.
+
 ## 🦎 Phase 9: Wildlife automation
 - [x] **Bio Labs reactivated per biome: not needed** (checked 2026-09-30). All 80 fragments are cataloged and all 80 Bio Orders the game defines are completed; revival, breeding, `rehouse()` and `unlock_bonus()` don't touch the Bio Lab (decompiled Habitat result codes). The last Collector/Lab/Exchange/Caster set stays parked at its outpost.
+- [x] **Feed is made at home.** Feed needs **Forage**, which is produced at home (Crop Automators / Harvester, §Phase 8), so Feed Makers stay at home next to the Habitats.
+  - [x] `lib/feed_maker.py` controller: `list_recipes()` (only unlocked recipes), pick the recipe by demand (below), stock `input` from Crop Automator Forage + local life forms with `storage.take_item()`, drain `output` to a local Warehouse, Mk II aware.
+  - [x] Demand-driven: feed target per housed species = its growth rate × 0.1 feed per individual (× trait feed multiplier) over a buffer window. Parked species need none. Do not overproduce when output/storage is full.
+  - [x] Ingredient planning: recipes use cross-biome life forms that are buffered at each biome's outpost (2 Warehouse slots per form, §1h-1). Publish per-recipe ingredient deficits at home as `logistics.requests` so haulers bring them home.
+  - [x] Validate live: recipe ids/inputs from `list_recipes()`, `input.take()` of Forage and life forms, the Feed Maker's 200-unit shared stockpile and 50-unit output buffer.
+- [x] **Revival reagents** are the five Shop lab reagents (`alkaline_buffer`, `cryo_solvent`, `protein_marker`, `chelating_agent`, `enzyme_solution`), not fragments. `CatalogedCreature.revive_reagents` gives the quantity, the same for each reagent: common 1, uncommon 2, rare 3, legendary 5 (one set 1,243 cr). Shop purchases land at home only, which fits reviving at home: a home Habitat's `reagents` input can connect Base Inventory directly.
+- [x] **Forage budget**: feed takes 100 Forage per 20 feed, from the same home Crop Automator output the Plant Terraformers eat. Feed first: the home Plant Terraformer leaves `wildlife.plan.forage_reserve` (§1l-2).
+- [x] **Habitat controller** (`lib/habitat.py`): `set_revival_target()`, stage feed + rarity-scaled reagents, `revive()` and branch on `.status`, then per-stage gas/liquid regulation using the two-sided-band pattern from the Husbandry guide (`next_*` fields to prep upcoming fluids, `purge_reserve()` on overfill). Insight spending via `unlock_bonus()`. Fluid supply and tank routing follow Phase 6 (exotic prospecting) and `FluidInputRouter`.
+- [x] **Docs**: new cheatsheet section for the constants above and the `9_wildlife` module map entry in `docs/AI_CHEATSHEET.md`, updated in the same change as each constant.
+- [x] **Validate live** (after deploy, with the operator): `list_recipes()` ids/inputs, `input.take()` of Forage and life forms into the Feed Maker, Habitat `reagents` take from Inventory, `unlock_bonus()` before `revive()`, bonus-tree node ids match `BONUS_TREES`, the real Habitat intake flow limit (`MAX_INTAKE_T_PER_H`), whether an unpowered Habitat's buffer still bleeds, feed burn vs the Habitat poll at the rate ceiling.
+- [x] **Fluid supply** (taps, pipes, Refiner controller): built once Exotic Husbandry unlocks; the Habitat only routes from tanks that already hold the required fluid.
+  - [x] Cap/Tap controller: `lib/exotic_cap.py` + `9_wildlife/fluids/exotic_gas_cap.py` / `exotic_spring_tap.py` (Oil Pump routing loop, valve always open, parks only through a long Deep-surveyed dormant phase). Live: cycles are under a minute real time, ammonia_2 averages ~13 t/h and Habitats drain gas_tank_26 as fast as it fills.
+  - [x] Validate live: caps/taps have a breaker and are grid members (else they never park), `deposit()` readable while unpowered, tank assignment for each exotic fluid, slots matched by the sync (`_unmatched/exotic_*`).
+  - [x] Refiner controller: `lib/refiner.py` + `9_wildlife/fluids/refiner.py` (refines the emptiest refined fluid with raw stock, dwell/margin against flip-flop; tar stockpile via `site_supply`).
+  - [x] Validate the Refiner live: `Recipe.fluid_inputs`/`fluid_outputs` keyed by port name, `set_recipe()` replacing a recipe without `clear_recipe()`, `output_busy` on a shared output port, tar hauled to a remote Refiner outpost (150 need tier, rest buffer), `refiner` typeId in `outpost.buildings()`.
+  - [x] Short supply: the planner rations each fluid to the slowest colonies first (`fluid_ration`); a denied Habitat stops intake, keeps its buffer, and parks once out of band; feed goes first to fluid-holding colonies (`PRIO_FLUID_HELD`) (§1l-2).
+  - [x] Validate the ration live: tank `level()` sums per fluid, Habitat port `flow_rate()` vs the intake setpoint, the inflow estimate against the caps' real output, and the real per-port intake limit vs `MAX_INTAKE_T_PER_H = 50`.
+- [x] **Open questions for later:** which biome outposts exist today. (Resolved: typeIds are `feed_maker` and `habitat`, from `state.machines`.)
 
 ## 🧪 Phase 7: Reliability, Diagnostics & Operations
 
@@ -304,3 +377,9 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
   - [x] Step 4: consolidate and extend `tests/game_stubs.py`.
   - [x] Step 5: migrate tests off private fakes.
   - [x] Step 6: sample world, no-private-fakes guard, dev_workflow docs.
+
+## ☢️ Phase 10: Nuclear power
+
+- [x] **Weather Station signal decoding** (`lib/weather_signals.py`, §1m): one leader script reads every station's receiver, validates checksums, assembles coordinates into `weather.aftermaths`. Not yet live-verified.
+- [x] **Station coverage**: dust (uranium) messages need a powered station in all 5 biomes; only 1 station is deployed (`outpost_5`). Buy and deploy one per missing biome (60,000 cr each).
+- [x] **Aftermath collection** (`lib/drone_weather.py`, §2j-1): plated `aftermath` drone role (uranium + glass, uranium into the home outpost's Lead Cask), haulers take Storm Glass between jobs. Not yet live-verified: commission/plate one drone, watch the next thunderstorm aftermath.
