@@ -204,3 +204,9 @@ No new patterns worth adopting from this set.
 
 - [x] **Hub-batched survey order.** Merged into TODO.md's existing **Range-aware sonar scanning** item (Rover Automation). The idea: scan from the centroid of a cluster of POIs within sonar range instead of parking on each POI, ranking clusters by new-biome contacts. The POI blacklist already keeps our scout from circling home, so vakermit's biome weighting only affects ranking there.
   - Reference: [inspirations/vakermit/scripts/lib/scout.py](inspirations/vakermit/scripts/lib/scout.py) (`cluster()`, `best_hub()`)
+
+## zroski Python Idioms: Dataclasses and Decorators (Reviewed 2026-10-05)
+
+- Source: [inspirations/discord-ideas/zroski.txt](inspirations/discord-ideas/zroski.txt)
+- [X] `RConsole.block` / `block_as` / `run`: a decorator that wraps a function in nested `┏━ label` / `┗━ label` log lines and marks the block with `!! exception` when it raises. A small debug aid on top of the new log levels. It is also a low-risk first decorator in this codebase. The game has no `contextlib`, so a decorator or `run(label, fn)` is the only way to get a `with`-style block. The nested `start`/`end` indent with per-level colors and `pretty_format` are in the same file.
+  - Implemented 2026-10-05 as `TreeConsole.run()`, `@log.block()` and `@method_block()` in `lib/tree_console.py` (cheatsheet §0a, "Wrapped blocks"). Per-level colors and `pretty_format` were not taken: one `log.color()` call in the codebase, and CODE_GUIDES prefers aggregates to dumps.

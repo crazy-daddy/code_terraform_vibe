@@ -113,3 +113,5 @@ inspirations/vakermit/scripts/lib/control.py | 2026-09-29 | Diff only: docstring
 
 # STATUS (2026-09-29): reviewed vakermit aa5568f..b1887c9. Findings under "vakermit Pioneer
 # Range & Conserve Fixes (Reviewed 2026-09-29)" in TODO_inspirations.md.
+inspirations/discord-ideas/zroski.txt | 2026-10-05 | zroski snippets: dataclass, RConsole block decorator, CommandStatusWrapper, Overload, task registry. Dataclass (in-memory only), log-block decorator and functools.cache logged; rest not recommended.
+inspirations/discord-ideas/image.png | 2026-10-05 | Screenshot: serializable_dataclass round trip (nested dataclass to dict and back). Covered in the zroski section.

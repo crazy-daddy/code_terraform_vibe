@@ -34,7 +34,7 @@
 from archive import archive
 from storage import discover_storage_buildings, warehouse_stocks, drain_port_to_storage
 import logistics_requests
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole, flush_all, method_block, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 from drone_upgrade import retiring_depot_ids
@@ -430,6 +430,7 @@ class DroneDepotController:
                 return True
         return False
 
+    @method_block(lambda self, for_stage=False: f"[{self.name}] flush_surplus")
     def flush_surplus(self, for_stage=False):
         """
         Discards surplus life forms when the stockpile is full (units or
@@ -442,23 +443,18 @@ class DroneDepotController:
         stockpile, so everything else is drained first and the flush only
         runs when nothing but surplus is left. Returns units destroyed.
         """
-        self.log.start(f"[{self.name}] flush_surplus", level="debug")
         outpost = getattr(self.station, "outpost", None)
         port = getattr(self.station, "input", None)
         if not outpost or not port or not hasattr(port, "flush"):
-            self.log.end()
             return 0
         stock = logistics_requests.depot_stock(self.station)
         if not stock:
-            self.log.end()
             return 0
         room, slots = self._stockpile_room(stock)
         if room > 0 and slots > 0:
-            self.log.end()
             return 0
         if not for_stage and not self._drone_waiting():
             self.log.trace(f"flush: stockpile full but no drone waiting; keeping {stock}.")
-            self.log.end()
             return 0
         staged = depot_stage.staged_items(self.name)
         requests = logistics_requests.active_requests()
@@ -481,7 +477,6 @@ class DroneDepotController:
                 self.log.debug(f"flush: keep {item_id} (stash {stash}/{cap}, {'no room to stage' if stash_full else 'stageable'}, requests need {needed}).")
         if not surplus:
             self.log.debug(f"flush: stockpile full ({stock}) but nothing is surplus.")
-            self.log.end()
             return 0
         port_out = getattr(self.station, "output", None)
         if port_out:
@@ -491,22 +486,18 @@ class DroneDepotController:
         blockers = {i: u for i, u in left.items() if i not in surplus and u > 0}
         if blockers:
             self.log.level("warn").print(f"[{self.name}] Surplus {surplus} can't be flushed: {blockers} still in the stockpile (no local room or staged for a hauler).")
-            self.log.end()
             return 0
         try:
             res = port.flush()
         except Exception as e:
             self.log.level("warn").print(f"[{self.name}] flush() failed: {e}")
-            self.log.end()
             return 0
         status = getattr(res, "status", "ok")
         if status not in ("ok", None):
             self.log.level("warn").print(f"[{self.name}] flush() notice: {status} - {getattr(res, 'message', '')}")
-            self.log.end()
             return 0
         destroyed = sum(left.values())
         self.log.print(f"[{self.name}] Flushed surplus life forms {left} ({destroyed} unit(s)): Warehouse stash full and covers every request.")
-        self.log.end()
         return destroyed
 
     def drain_everything(self):

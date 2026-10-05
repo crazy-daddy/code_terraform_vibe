@@ -79,7 +79,7 @@ Use `TreeConsole` (`lib/tree_console.py`) for all console output, never ad hoc `
 - `debug()`: the decision trail: which branch was taken, candidates considered and rejected, computed thresholds and estimates. With debug on, the log tells the whole story of a run.
 - `trace()`: per-item and hot-loop detail. Never put per-item lines at info level, also not in one-off probe scripts. Prefer aggregates (counts, group-by) to listing items.
 - Every console call costs 0.1 s of simulation time, even when hidden ([docs/BENCHMARK.md](docs/BENCHMARK.md)). `TreeConsole` buffers consecutive debug lines into one message. Call `log.flush()` before every `sleep()`.
-- Wrap each coherent unit of work (trip, order cycle, build, sweep, active tick phase) in `log.start(...)` … `log.end(<outcome>)`. Close every `start()` on every path: early `return`, error branch, `continue`, `break`. Enforced by `tests/test_log_blocks_balanced.py`.
+- Wrap each coherent unit of work (trip, order cycle, build, sweep, active tick phase) in `log.start(...)` … `log.end(<outcome>)`. Close every `start()` on every path: early `return`, error branch, `continue`, `break`. Enforced by `tests/test_log_blocks_balanced.py`. For a debug block around a whole function with several exits, prefer `@method_block()` / `log.run()` ([cheatsheet §0a](docs/AI_CHEATSHEET.md), "Wrapped blocks").
 - Each top-level `run*` loop starts every tick with `reset_all()`, because an escaping exception leaves a block open (`tests/test_reset_in_run_loops.py`).
 - No block on an idle tick.
 

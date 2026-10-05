@@ -79,6 +79,12 @@ the block. Their block still shows around them.
 Exceptions: an exception escaping a `start()`/`end()` pair leaves its indent open, so run loops call
 `reset_all()` at the top of every tick (`tests/test_reset_in_run_loops.py`).
 
+Wrapped blocks: `log.run(label, fn)` runs `fn()` inside a block and closes it on every return, so a function
+with many exits needs no `end()` before each `return`. `@log.block()` (module-level `log`) and
+`@method_block()` (methods, reads `self.log`) do the same as decorators. An exception escaping the block
+closes it, and any block left open inside it, with `END <name> !! <Type>: <message>` and is raised again.
+The log then shows where the error passed, and the indent is not left open.
+
 Construct one instance per controller in `__init__` (or once before a
 `run_*_loop()`'s `while True:`, never inside it) and store it as `self.log`/
 `log` -- constructing it reads the `console.log_levels` archive dict, so
@@ -88,10 +94,16 @@ re-constructing per call or per tick defeats the point. Name it `log`, not
 See docs/AI_CHEATSHEET.md #0a for the usage pattern.
 """
 
+import functools
 import re
+from typing import TYPE_CHECKING
 
 from archive import archive
 import swallow
+
+if TYPE_CHECKING:
+    from typing import Any, Callable, TypeVar
+    F = TypeVar("F", bound=Callable[..., Any])
 
 _BRANCH = "┃   "  # "┃   "
 _START = "┏━ "  # "┏━ "
@@ -236,6 +248,30 @@ def _write(console, text, level, channel, color, buffered, stamp=""):
 swallow.set_flush_hook(flush_all)
 
 
+def _block_label(name, fn, args, kwargs) -> str:
+    """Block header for a wrapped call: `name(*args, **kwargs)` when it is callable, else `name`, else the
+    function's name."""
+    if callable(name):
+        return str(name(*args, **kwargs))
+    return name or getattr(fn, "__name__", "block")
+
+
+def method_block(name=None, level: str = "debug") -> "Callable[[F], F]":
+    """Decorator: run the method inside `self.log.run()`. `name` is the header text, or a callable that takes
+    the method's arguments (`self` first) and returns it; default the method's name. Without a `self.log`
+    the method runs unwrapped."""
+    def decorate(fn: "F") -> "F":
+        @functools.wraps(fn)
+        def wrapped(self, *args, **kwargs):
+            log = getattr(self, "log", None)
+            if log is None:
+                return fn(self, *args, **kwargs)
+            label = _block_label(name, fn, (self,) + args, kwargs)
+            return log.run(label, lambda: fn(self, *args, **kwargs), level)
+        return wrapped  # type: ignore[return-value]
+    return decorate
+
+
 class TreeConsole:
     def __init__(
         self,
@@ -326,6 +362,36 @@ class TreeConsole:
         self._emit(_END + msg, channel or block[3], headers=False)
         if self._indent == 0 and block[0] not in _BUFFERED_LEVELS:
             flush_all()
+
+    def run(self, label: str, fn, level: str = "debug"):
+        """Run `fn()` inside a `start(label, level=level)` ... `end()` block and return its result. An
+        exception closes the block (see `_fail()`) and is raised again."""
+        self.start(label, level=level)
+        depth = len(self._blocks)
+        try:
+            result = fn()
+        except Exception as error:  # not recovered: raised again after closing the block
+            self._fail(depth, error)
+            raise error
+        self.end("" if (level or self.default_level) in _BUFFERED_LEVELS else "END " + label)  # "" keeps collapsing
+        return result
+
+    def block(self, name=None, level: str = "debug") -> "Callable[[F], F]":
+        """Decorator: run the function inside `run()`. `name` as in `method_block()`."""
+        def decorate(fn: "F") -> "F":
+            @functools.wraps(fn)
+            def wrapped(*args, **kwargs):
+                return self.run(_block_label(name, fn, args, kwargs), lambda: fn(*args, **kwargs), level)
+            return wrapped  # type: ignore[return-value]
+        return decorate
+
+    def _fail(self, depth: int, error) -> None:
+        """Close every block from `depth` (1 = outermost) inward with `END <name> !! <Type>: <message>`. Pending
+        headers and held lines are written first, so the failure path shows even in an idle debug block."""
+        self._show_headers()
+        marker = f" !! {getattr(type(error), '__name__', 'Exception')}: {error}"
+        while len(self._blocks) >= depth:
+            self.end("END " + self._blocks[-1][5] + marker)
 
     def reset(self) -> None:
         """Drop this instance's open blocks (see `reset_all()`)."""

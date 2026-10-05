@@ -721,3 +721,21 @@ The 93 % average heater efficiency in [autoplay/early_optimization.md](autoplay/
 was measured in the headless runner, which wakes parked heater scripts only every
 `HEATER_REFRESH_TICKS` (`devtools/headless/passive.mjs`). Part of that dip is the runner, not
 the script.
+
+## §0a — TreeConsole Wrapped Blocks: Decorator, Opt-In (2026-10-05)
+
+Adapted from zroski's newer `RConsole.block` / `run` (`inspirations/discord-ideas/zroski.txt`), the same
+author's console that TreeConsole grew from.
+
+- **Why**: 249 `log.start()` calls need 612 `log.end()` calls, mostly an `end()` before every early `return`.
+  A wrapper closes the block on every exit. An exception escaping a manual block also left the header with no
+  END line until `reset_all()`; the wrapper writes `END <name> !! <Type>: <message>` instead, so the log
+  shows the path the error took.
+- **Opt-in, no mass migration**: most info blocks end with an outcome message (`end("3 orders placed")`)
+  that a wrapper cannot know. The wrapper fits debug decision-trail blocks around a whole function.
+- **`method_block` reads `self.log` at call time**: a class-level decorator cannot see the instance's
+  `log`, so `@self.log.block` (RConsole's shape) is impossible for methods.
+- **Not taken**: per-indent colors (one `log.color()` call in the codebase) and `pretty_format` dumps
+  (CODE_GUIDES prefers aggregates; dumps fight the buffer cap).
+- **Unverified in game at the time of writing**: no `lib/` used a custom decorator, `functools.wraps` or
+  `__name__` live before. `drone_depot.flush_surplus` is the pilot: it runs in the current save on every Drone Depot.

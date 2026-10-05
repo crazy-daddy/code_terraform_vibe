@@ -368,5 +368,119 @@ class BlockTests(ConsoleCase):
         self.assertEqual(self.lines(), [("debug", "after")])
 
 
+class WrappedBlockTests(ConsoleCase):
+    def test_run_returns_the_result_and_closes_the_block(self):
+        log = self.make()
+
+        def work():
+            log.debug("a")
+            log.debug("b")
+            return 7
+
+        self.assertEqual(log.run("job", work), 7)
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   a\n┃   b\n┗━ END job")])
+
+    def test_run_block_with_one_line_collapses(self):
+        log = self.make()
+        log.run("job", lambda: log.debug("only"))
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "job: only")])
+
+    def test_exception_closes_the_block_with_a_marker_and_is_raised_again(self):
+        log = self.make()
+
+        def work():
+            log.debug("before")
+            raise ValueError("bad input")
+
+        with self.assertRaises(ValueError):
+            log.run("job", work)
+        log.debug("after")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   before\n┗━ END job !! ValueError: bad input\nafter")])
+
+    def test_exception_in_an_idle_block_still_shows_the_path(self):
+        log = self.make()
+        log.start("outer", level="debug")
+
+        def work():
+            raise KeyError("x")
+
+        with self.assertRaises(KeyError):
+            log.run("job", work)
+        log.end()
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ outer\n┃   ┏━ job\n┃   ┗━ END job !! KeyError: 'x'\n┗━ END outer")])
+
+    def test_exception_closes_blocks_left_open_inside(self):
+        log = self.make()
+
+        def work():
+            log.start("inner", level="debug")
+            log.debug("deep")
+            raise ValueError("boom")
+
+        with self.assertRaises(ValueError):
+            log.run("job", work)
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ job\n┃   ┏━ inner\n┃   ┃   deep\n┃   ┗━ END inner !! ValueError: boom\n"
+                                                  "┗━ END job !! ValueError: boom")])
+        self.assertEqual(log._blocks, [])
+
+    def test_info_run_writes_header_immediately(self):
+        log = self.make()
+        log.run("cycle", lambda: None, level="info")
+        self.assertEqual(self.lines(), [("info", "┏━ cycle"), ("info", "┗━ END cycle")])
+
+    def test_block_decorator_uses_the_function_name_and_keeps_it(self):
+        log = self.make()
+
+        @log.block()
+        def plan(n):
+            log.debug(f"n={n}")
+            log.debug("done")
+            return n * 2
+
+        self.assertEqual(plan(3), 6)
+        self.assertEqual(plan.__name__, "plan")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "┏━ plan\n┃   n=3\n┃   done\n┗━ END plan")])
+
+    def test_method_block_reads_self_log_and_label_callable(self):
+        from tree_console import method_block
+        test = self
+
+        class Controller:
+            name = "smelter_1"
+
+            def __init__(self):
+                self.log = test.make()
+
+            @method_block(lambda self, target: f"[{self.name}] solve {target}")
+            def solve(self, target):
+                if target > 1:
+                    self.log.debug("too high")
+                    return "skip"
+                return "ok"
+
+        controller = Controller()
+        self.assertEqual(controller.solve(2), "skip")
+        self.assertEqual(controller.solve(1), "ok")
+        log = controller.log
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "[smelter_1] solve 2: too high")])
+
+    def test_method_block_without_log_runs_unwrapped(self):
+        from tree_console import method_block
+
+        class Bare:
+            @method_block()
+            def work(self):
+                return 5
+
+        self.assertEqual(Bare().work(), 5)
+
+
 if __name__ == "__main__":
     unittest.main()

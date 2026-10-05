@@ -246,6 +246,21 @@ Not actionable (already matched or exceeded):
   - [ ] Consider an INFRA/FLUIDS card once cross-outpost liquid/gas piping exists in this save: one row per tank with status, fill level, flow direction, and source/receive role assignment — read-only telemetry first; role assignment (`APPLY`/`RELEASE`) would need the same intent-publish/controller-validates pattern as other command cards, not direct tank control from the panel.
 - Cross-cutting mockup conventions worth folding into the existing "Standardize panel interaction and visual language" backlog item: color-only status coding (green/orange/red text, no icons) for OPERATIONAL/DRAINING/STALLED-style states, a `▸ TAB ◂` chevron marker for the active top-level tab, and an OVERVIEW tab that shows one shortened summary line per section (mirroring each dedicated tab's headline fact) plus a single `PRIORITY / ALERTS` rollup list and a footer hint ("SELECT A TOP TAB FOR FULL CONTROLS") pointing at the detail tabs.
 
+## zroski Python Idioms: Dataclasses and Decorators (Reviewed 2026-10-05)
+
+Source: [inspirations/discord-ideas/zroski.txt](inspirations/discord-ideas/zroski.txt) and [inspirations/discord-ideas/image.png](inspirations/discord-ideas/image.png). This is a set of code snippets from a different codebase (rover task queue, bio exchange orders, console helpers), not a full solution. The game supports both `dataclasses` and `functools` (`wraps`, `cache`, `lru_cache`, `partial`); see the manual's dataclasses and functools sections. We use neither yet.
+
+- [ ] Try `@dataclass` on one in-memory record class that has a long hand-written `__init__` (plan rows, claims, haul candidates). It gives generated construction, a readable `repr` in logs, value equality for test asserts, `order=True` sorting, and `replace()`.
+  - Only for objects that stay in memory. The manual says a dataclass cannot cross notebook, archive or Signal Bus boundaries: use `TypedDict` for those. Going out needs `asdict()`, and coming in needs a manual rebuild of nested fields. zroski's `serializable_dataclass` / `typed_dict` helpers (see `image.png`) exist only to work around that rebuild. Our persisted state is dict-shaped, so a conversion on every tick costs work for no gain.
+  - Not supported in game: `frozen=True`, `slots=True`, `ClassVar`, `InitVar`. Annotations are not enforced.
+- [ ] `functools.cache` / `lru_cache` for pure lookups, for example the cached clock in step 1 of [docs/plans/controller_unification.md](docs/plans/controller_unification.md). The cached function must not read game state that changes.
+
+Not recommended:
+- `CommandStatusWrapper` (status-to-callback map as a decorator). It fits our code poorly: about 258 `.status` branches in `scripts/` handle statuses differently per call site, and a decorator hides that control flow. zroski's version also has a mutable `{}` default, no `functools.wraps`, and discards the `ActionResult` for a bool. A plain status-group helper (`lib/results.py` style) without the decorator is the better shape.
+- `Overload` (type dispatch keyed on type names): obscure, and pyright cannot follow it.
+- `__init_subclass__` task registry: nothing needs a class registry. The `MachineControllerBase` plan uses class attributes, not a registry.
+- `Point` multi-type constructor, duplicated travel-power formulas, `BaseMachine` loop: no gain over our vehicle energy model and controller loops.
+
 ## Engineering Quality
 
 - [ ] Adopt a capability-first import convention for new libraries:
@@ -255,7 +270,7 @@ Not actionable (already matched or exceeded):
   - [ ] No new hardcoded machine ids when discovery is available.
 - [ ] Add result-status groups/helpers for common transient, capacity, research, and capability failures.
   - Reference: [inspirations/graviadaemon/lib/results.py](inspirations/graviadaemon/lib/results.py)
-  - A standalone (unattributed) reference file, [inspirations/classes](inspirations/classes), sketches one concrete way to shape this: a `CommandStatusWrapper(callbacks={...})` decorator that wraps a machine action, returns `True` on `status == "ok"`, dispatches to a named per-status callback (e.g. `"complete": OrderWasCompletedCallback`) when one is registered, and otherwise falls through to a generic once-per-failure `notify(...)`. That is a more declarative shape than a chain of `if res.status == ...` branches and pairs naturally with a `lib/results.py`-style status-group helper — the wrapper's callback dict would key off group names instead of exact statuses. The same file's `BaseMachine` (postInit/tick/InputCommandLoop hooks around a `while True` loop with a broad `except Exception` per tick) is a reasonable shape for a single OOP class-based controller, but does not fit cleanly with this codebase's existing convention of thin functional entrypoints calling `lib/` controller objects — not recommended as a wholesale replacement, only the decorator idea is worth lifting.
+  - Use plain helpers (for example `is_transient(res)`), not a decorator. [inspirations/classes](inspirations/classes) and [inspirations/discord-ideas/zroski.txt](inspirations/discord-ideas/zroski.txt) show a `CommandStatusWrapper(callbacks={...})` decorator that maps statuses to callbacks. A 2026-10-05 review rejected it: our status branches differ per call site, and the decorator hides that control flow. See "zroski Python Idioms" above. The same files' `BaseMachine` loop does not fit our thin entry points calling `lib/` controllers either.
 - [ ] Add once-per-session warning helpers for recurring blocked conditions.
 - [ ] Add focused test doubles or offline validation for:
   - [ ] Empty/missing optional components.
