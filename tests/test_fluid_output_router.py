@@ -5,7 +5,7 @@ import builtins
 import unittest
 
 from harness import StubTestCase
-from game_stubs import FluidPort, Tank
+from game_stubs import FluidConnection, FluidPort, Tank
 import fluid_routing
 
 
@@ -22,6 +22,15 @@ class RemovableTank(Tank):
         if self.removed:
             raise RuntimeError("building not found")
         return super().fill_pct()
+
+
+class FedTank(Tank):
+    """Tank with a liquid_out port; feed() adds a consumer link in the given state."""
+
+    def feed(self, consumer_id, state):
+        self.liquid_out = FluidPort(self.world, connected=consumer_id)
+        self.liquid_out.links = [FluidConnection(consumer_id, self._fluid, state)]
+        return self
 
 
 class FluidOutputRouterCacheTests(StubTestCase):
@@ -177,7 +186,7 @@ class FluidOutputRouterLocalTests(StubTestCase):
         builtins.notify = lambda text, **kw: None  # type: ignore[attr-defined]
 
     def tank(self, tank_id, outpost, level):
-        return self.world._place(Tank(self.world, tank_id, outpost, "liquid_tank", "cryofluid", level, 100))
+        return self.world._place(FedTank(self.world, tank_id, outpost, "liquid_tank", "cryofluid", level, 100))
 
     def router(self, local_outpost_id: str | None = "outpost_local"):
         return fluid_routing.FluidOutputRouter(
@@ -208,6 +217,20 @@ class FluidOutputRouterLocalTests(StubTestCase):
         event = self.ensure(router, 1000 + fluid_routing.NETWORK_WALK_INTERVAL_TICKS)
         self.assertEqual((event.kind, event.target_id, event.rebalance), ("connected", "liquid_tank_2", True))
         self.assertEqual(router.blacklist._blacklisted_at, {})
+
+    def test_remote_relay_tank_ranks_after_plain_remote(self):
+        self.tank("liquid_tank_1", self.remote, 1).feed("fabricator_9", "ready")
+        self.tank("liquid_tank_2", self.remote, 50)
+        self.assertEqual(self.ensure(self.router(), 1000).target_id, "liquid_tank_2")
+
+    def test_local_feed_does_not_make_a_relay(self):
+        self.tank("liquid_tank_1", self.remote, 1).feed("fabricator_9", "local")
+        self.tank("liquid_tank_2", self.remote, 50)
+        self.assertEqual(self.ensure(self.router(), 1000).target_id, "liquid_tank_1")
+
+    def test_relay_still_used_when_nothing_else(self):
+        self.tank("liquid_tank_1", self.remote, 1).feed("fabricator_9", "ready")
+        self.assertEqual(self.ensure(self.router(), 1000).target_id, "liquid_tank_1")
 
     def test_remote_kept_while_local_near_full(self):
         self.tank("liquid_tank_1", self.remote, 12)

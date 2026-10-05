@@ -266,6 +266,18 @@ def active_pipe_conflicts(curr_tick):
     return [f"{label} x {entry.get('source')}" for label, entry in sorted(live.items())]
 
 
+def feeds_remote_route(building):
+    """True when building's liquid_out/gas_out has a "ready" peer: it is the source of a
+    cross-outpost route, so on that pipe component it pools as a provider and, while it holds
+    fluid, no other passive provider fills it (docs/gameknowledge/fluids.md, "Remote (pipe)
+    connections"). One connections() read per port."""
+    for name in ("liquid_out", "gas_out"):
+        port = getattr(building, name, None)
+        if port is not None and any(getattr(c, "state", None) == "ready" for c in port_connections(port)):
+            return True
+    return False
+
+
 def port_starved(port: "FluidPort"):
     """Input FluidPort reads flow_rate() == 0 with room left -- a full port also reads 0, not a stall.
     The is_starved signal for a FluidInputRouter on a machine without is_stalled()."""
@@ -436,13 +448,21 @@ def discover_network_buildings(type_ids, resolve=True, fluid_id=None):
 TANK_TYPE_IDS = ("liquid_tank", "bulk_liquid_reservoir", "gas_tank")
 
 
-def fluid_reserve_tons(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir")):
+def fluid_reserve_tons(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir"), curr_tick=None):
     """
     (level t, capacity t) summed over every tank eligible for fluid_id (tank_is_eligible_target())
-    network-wide, None when there is no such tank or none is readable.
+    network-wide, None when there is no such tank or none is readable. With curr_tick the tanks
+    come from the cached network_buildings() walk instead of a fresh one.
     """
+    if curr_tick is None:
+        tanks = [tank for tank, _outpost_id in discover_network_buildings(type_ids, resolve=True, fluid_id=fluid_id)]
+    else:
+        tanks = eligible_targets(network_buildings(type_ids, curr_tick), fluid_id)
+        if tanks is None:
+            invalidate_network_walk(type_ids)
+            tanks = eligible_targets(network_buildings(type_ids, curr_tick), fluid_id) or []
     level = capacity = 0.0
-    for tank, _outpost_id in discover_network_buildings(type_ids, resolve=True, fluid_id=fluid_id):
+    for tank in tanks:
         try:
             cap = float(tank.capacity())
             if cap > 0:
@@ -453,9 +473,10 @@ def fluid_reserve_tons(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir
     return (level, capacity) if capacity > 0 else None
 
 
-def fluid_reserve_fraction(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir")):
-    """Network-wide fill (0-1) of every tank eligible for fluid_id, None when there is no such tank."""
-    tons = fluid_reserve_tons(fluid_id, type_ids)
+def fluid_reserve_fraction(fluid_id, type_ids=("liquid_tank", "bulk_liquid_reservoir"), curr_tick=None):
+    """Network-wide fill (0-1) of every tank eligible for fluid_id, None when there is no such tank.
+    curr_tick: as in fluid_reserve_tons()."""
+    tons = fluid_reserve_tons(fluid_id, type_ids, curr_tick)
     return tons[0] / tons[1] if tons else None
 
 
@@ -994,8 +1015,9 @@ class FluidOutputRouter:
     methods' shape exactly.
 
     local_outpost_id (the producer's own outpost; None for Caps, Pumps and Taps): own-outpost
-    targets rank first, and a healthy cross-outpost target is left once an own-outpost one has
-    room (fill < rebalance_fill_fraction - LOCAL_RETURN_MARGIN). The game moves same-outpost
+    targets rank first, another outpost's tank that feeds a cross-outpost route ranks last, and a
+    healthy cross-outpost target is left once an own-outpost one has room
+    (fill < rebalance_fill_fraction - LOCAL_RETURN_MARGIN). The game moves same-outpost
     links directly; a cross-outpost link from a building that is not a Cap/Pump/Tap goes through
     the pipe network's shared pool, where a tank that also feeds machines over that network and
     holds stock takes nothing (docs/cheatsheet/power_fluids.md §1c-5).
@@ -1079,6 +1101,14 @@ class FluidOutputRouter:
         if self.local_outpost_id is None:
             return False
         return getattr(getattr(building, "outpost", None), "id", None) == self.local_outpost_id
+
+    def _remote_rank(self, building):
+        """Sort key with local_outpost_id: own outpost 0, other outposts 1, another outpost's
+        tank that feeds a cross-outpost route 2 (this producer's pipe output only reaches that
+        tank's consumers, the tank itself never fills; feeds_remote_route())."""
+        if self._is_local(building):
+            return 0
+        return 2 if feeds_remote_route(building) else 1
 
     def _local_with_room(self, curr_tick):
         """Id of a non-blacklisted own-outpost target below the local return threshold, or None."""
@@ -1184,7 +1214,7 @@ class FluidOutputRouter:
         log.debug(f"FluidOutputRouter({self.type_ids}): current='{current_id}' not healthy, rebalancing among {len(targets)} reachable candidate(s) (least-full first)")
         ranked = self._least_full_first([t for t in targets if t.id != current_id])
         if self.local_outpost_id is not None:
-            ranked = sorted(ranked, key=lambda pair: not self._is_local(pair[0]))
+            ranked = sorted(ranked, key=lambda pair: self._remote_rank(pair[0]))
         if stay_fill is not None:
             ranked = [(t, f) for t, f in ranked if f < stay_fill - OUTPUT_REBALANCE_MARGIN]
             if not ranked:

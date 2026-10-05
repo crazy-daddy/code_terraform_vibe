@@ -1,5 +1,5 @@
 # Shared Fabricator automation: maintain building stock and fulfill active orders.
-from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
+from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
 from version_guard import validate_game_version
@@ -8,6 +8,7 @@ from swallow import swallowed
 from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
 from recipe_claims import RecipeClaimMixin
+from hysteresis import HysteresisLatch
 
 # run() sleep between steps: short while the machine is running or moved
 # material this step, long when there is nothing to do.
@@ -48,6 +49,17 @@ FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 # Declared link still "neutral" after this many checks is dropped, only if another candidate exists.
 FLUID_NEUTRAL_GRACE_STEPS = 5
 
+# A fluid-only recipe (craft_tar) can draw its fluid faster than the tanks refill. The source tank
+# then sits near 0 t and runs dry inside every tick, and each empty/refill flip makes the game
+# rebuild every fluid network (docs/gameknowledge/fluids.md, "The trap"). So a fluid-only recipe
+# pauses (feed cut, recipe skipped) while the network-wide fill of its fluid's tanks
+# (fluid_routing.fluid_reserve_fraction()) is below FLUID_ONLY_PAUSE_BELOW, until it is back at
+# FLUID_ONLY_RESUME_AT. The supply sets the throughput either way; the pause only batches it.
+# No tank of that fluid: never paused. The fill is re-read every FLUID_ONLY_RESERVE_REFRESH_TICKS.
+FLUID_ONLY_PAUSE_BELOW = 0.05
+FLUID_ONLY_RESUME_AT = 0.20
+FLUID_ONLY_RESERVE_REFRESH_TICKS = 100
+
 
 class FabricatorController(RecipeClaimMixin):
     RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
@@ -73,6 +85,10 @@ class FabricatorController(RecipeClaimMixin):
         # need more than one fluid at once (e.g. oil refining needs oil_in + water_in), and each
         # port's source is independent of the others.
         self._fluid_routers = {}
+        # fluid_key -> HysteresisLatch, active while that fluid's tanks are too low for fluid-only recipes.
+        self._fluid_low = {}
+        # fluid_key -> (tick, fill) of the last fluid_reserve_fraction() read.
+        self._fluid_fill = {}
         # recipe_id -> tick of the last claim this Fabricator won and wrote to the archive.
         self._claim_ticks = {}
         self.parker = ParkRequester(self.name, "fabricator")
@@ -186,6 +202,32 @@ class FabricatorController(RecipeClaimMixin):
         """True for a recipe with fluid inputs and no item inputs (e.g. craft_tar)."""
         return bool(recipe) and not (getattr(recipe, "inputs", {}) or {}) and bool(getattr(recipe, "fluid_inputs", {}) or {})
 
+    def fluid_low_reason(self, recipe: "Recipe | None"):
+        """For a fluid-only recipe: why it is paused (its fluid's tanks are low, see
+        FLUID_ONLY_PAUSE_BELOW), else None."""
+        if not self.is_fluid_only(recipe):
+            return None
+        now = self.get_current_tick()
+        for fluid_key in (getattr(recipe, "fluid_inputs", {}) or {}):
+            fluid_id = FLUID_LATCH_IDS.get(fluid_key)
+            if not fluid_id:
+                continue
+            read = self._fluid_fill.get(fluid_key)
+            if read is None or not 0 <= now - read[0] < FLUID_ONLY_RESERVE_REFRESH_TICKS:
+                read = (now, fluid_routing.fluid_reserve_fraction(fluid_id, curr_tick=now))
+                self._fluid_fill[fluid_key] = read
+            fill = read[1]
+            latch = self._fluid_low.setdefault(fluid_key, HysteresisLatch(FLUID_ONLY_PAUSE_BELOW, FLUID_ONLY_RESUME_AT, on_above=False, unknown=False))
+            flip = latch.update(fill)
+            fill_str = f"{fill*100:.1f}%" if fill is not None else "n/a (no tank)"
+            if flip == "on":
+                self.log.print(f"[{self.name}] {fluid_id} tanks at {fill_str}: pausing '{getattr(recipe, 'id', '?')}' until {FLUID_ONLY_RESUME_AT*100:.0f}%.")
+            elif flip == "off":
+                self.log.print(f"[{self.name}] {fluid_id} tanks at {fill_str}: '{getattr(recipe, 'id', '?')}' may run again.")
+            if latch.active:
+                return f"{fluid_id} tanks below {FLUID_ONLY_RESUME_AT*100:.0f}%, paused to keep a buffer"
+        return None
+
     def stop_fluid_feed(self, recipe: "Recipe | None"):
         """Disconnects every fluid port the recipe feeds from, so no new
         craft starts. ensure_fluid_connections() reconnects once a recipe
@@ -198,7 +240,7 @@ class FabricatorController(RecipeClaimMixin):
                 if hasattr(port, "connected_id") and not port.connected_id():
                     continue
                 result = port.disconnect()
-                self.log.print(f"[{self.name}] Target met for fluid-only '{getattr(recipe, 'id', '?')}': disconnected {fluid_key} ({getattr(result, 'status', '?')}).")
+                self.log.print(f"[{self.name}] Stopping fluid-only '{getattr(recipe, 'id', '?')}': disconnected {fluid_key} ({getattr(result, 'status', '?')}).")
             except Exception as error:
                 swallowed("fabricator.FabricatorController.stop_fluid_feed: port.disconnect", error)
 
@@ -366,6 +408,11 @@ class FabricatorController(RecipeClaimMixin):
         sourceable = []
         held_by_others = self.foreign_claims(site_id) if candidates else {}
         for missing, recipe in candidates:
+            paused = self.fluid_low_reason(recipe)
+            if paused is not None:
+                # Logged once on the latch flip (fluid_low_reason()), not as a warn every poll.
+                self.log.debug(f"skipping '{getattr(recipe, 'id', '?')}': {paused}")
+                continue
             reason = self.recipe_unsourceable_reason(recipe, cache)
             if reason is not None:
                 output_item = getattr(recipe, "output_item", recipe)
@@ -381,7 +428,7 @@ class FabricatorController(RecipeClaimMixin):
                 self.log.debug(f"'{recipe_id}' already claimed by {held_by_others[recipe_id]!r}, trying next candidate")
                 continue
             sticky = current is not None and recipe is not current and _priority_tier(current) == _priority_tier(recipe)
-            if sticky and self.recipe_unsourceable_reason(current, cache) is None and self.claim_recipe(current_id):
+            if sticky and self.recipe_unsourceable_reason(current, cache) is None and self.fluid_low_reason(current) is None and self.claim_recipe(current_id):
                 self.log.debug(f"keeping '{current_id}' over '{recipe_id}' (same tier, still short)")
                 self.log.end()
                 return current
@@ -686,10 +733,11 @@ class FabricatorController(RecipeClaimMixin):
 
         # A fluid-only recipe (e.g. craft_tar) never goes idle while its
         # fluid flows, so the idle-only switch below would never fire: once
-        # its target is met, cut the feed and switch even while running.
-        winding_down = self.is_fluid_only(active_recipe) and active_remaining <= 0
+        # its target is met or its tanks run low (fluid_low_reason()), cut
+        # the feed and switch even while running.
+        winding_down = self.is_fluid_only(active_recipe) and (active_remaining <= 0 or self.fluid_low_reason(active_recipe) is not None)
         if winding_down:
-            self.log.debug(f"[{self.name}] step: fluid-only recipe '{getattr(active_recipe, 'id', '?')}' target met, cutting the fluid feed")
+            self.log.debug(f"[{self.name}] step: fluid-only recipe '{getattr(active_recipe, 'id', '?')}' target met or tanks low, cutting the fluid feed")
             self.stop_fluid_feed(active_recipe)
         else:
             self.ensure_fluid_connections(active_recipe)
