@@ -28,7 +28,8 @@ Three levels, same tree formatting:
 Log levels: the `console.log_levels` archive dict maps a `module` name to the
 lowest level it writes: `"trace"` < `"debug"` < `"info"` < `"warn"` < `"error"`.
 A module without an entry takes the `"*"` entry, else `"debug"` (everything but
-trace). A line below the module's level is dropped before it reaches
+trace). The first TreeConsole that finds no dict writes `{"*": "debug"}`, so the
+key shows up in the Data Archive Notebook ready to edit. A line below the module's level is dropped before it reaches
 `console`, and so is the header and END line of a block below it; lines logged
 inside still follow their own level. Levels other than these five (custom
 badges) count as info. Read once at construction, not per call: restart the
@@ -252,7 +253,11 @@ class TreeConsole:
         self._pending_color = ""
         self._pending_level = ""
 
-        levels = archive.get(LOG_LEVELS_KEY, {}) or {}
+        levels = archive.get(LOG_LEVELS_KEY)
+        if levels is None:
+            levels = {"*": DEFAULT_LOG_LEVEL}
+            archive.set(LOG_LEVELS_KEY, levels)
+        levels = levels or {}
         self.module = module
         min_level = levels.get(module, levels.get("*", DEFAULT_LOG_LEVEL))
         self.min_rank = _LEVEL_RANKS.get(min_level, _LEVEL_RANKS[DEFAULT_LOG_LEVEL])

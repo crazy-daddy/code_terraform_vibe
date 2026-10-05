@@ -108,6 +108,15 @@ class BufferingTests(ConsoleCase):
         log.end("done")
         self.assertEqual(self.lines(), [("warn", "low battery")])
 
+    def test_missing_levels_dict_is_seeded_with_debug(self):
+        self.make()
+        self.assertEqual(self.world.notebook.get(tree_console.LOG_LEVELS_KEY), {"*": "debug"})
+
+    def test_existing_levels_dict_is_kept(self):
+        self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"power": "trace"})
+        self.make()
+        self.assertEqual(self.world.notebook.get(tree_console.LOG_LEVELS_KEY), {"power": "trace"})
+
     def test_module_entry_beats_the_wildcard(self):
         self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"*": "info", "buffer_test": "debug"})
         log = self.make()
