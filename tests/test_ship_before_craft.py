@@ -173,6 +173,43 @@ class FluidOnlySwitchTests(StubTestCase):
         self.assertEqual(oil_in.connected_id(), "")
         self.assertNotEqual(f.recipe, "craft_tar")
 
+    def tar_fab(self, oil_level):
+        w = self.world
+        w.notebook.set(production.FABRICATOR_STOCK_TARGETS_KEY, {"tar": 50})
+        self.tank = w.add_tank("liquid_tank_1", w.home, fluid="oil", level=oil_level, capacity=100)
+        f = w.add_fabricator("fabricator_1", w.home, RECIPES)
+        f.recipe = "craft_tar"
+        f.running = True
+        self.oil_in = FluidPort(w, connected="liquid_tank_1")
+        setattr(f, "oil_in", self.oil_in)
+        return f, fabricator.FabricatorController(f)
+
+    def test_low_oil_tanks_pause_fluid_only_recipe(self):
+        f, c = self.tar_fab(fabricator.FLUID_ONLY_PAUSE_BELOW * 100 - 1)
+        c.step()
+        self.assertEqual(self.oil_in.connected_id(), "")
+        self.assertNotEqual(f.recipe, "craft_tar")
+
+    def test_paused_fluid_only_recipe_resumes_at_resume_fill(self):
+        f, c = self.tar_fab(1)
+        c.step()
+        self.assertNotEqual(f.recipe, "craft_tar")
+        f.running = False
+        self.tank._level = (fabricator.FLUID_ONLY_PAUSE_BELOW + fabricator.FLUID_ONLY_RESUME_AT) / 2 * 100
+        self.world.clock.now += fabricator.FLUID_ONLY_RESERVE_REFRESH_TICKS
+        c.step()
+        self.assertNotEqual(f.recipe, "craft_tar")
+        self.tank._level = fabricator.FLUID_ONLY_RESUME_AT * 100
+        self.world.clock.now += fabricator.FLUID_ONLY_RESERVE_REFRESH_TICKS
+        c.step()
+        self.assertEqual(f.recipe, "craft_tar")
+
+    def test_buffered_oil_keeps_fluid_only_recipe(self):
+        f, c = self.tar_fab(fabricator.FLUID_ONLY_PAUSE_BELOW * 100 + 1)
+        c.step()
+        self.assertEqual(f.recipe, "craft_tar")
+        self.assertEqual(self.oil_in.connected_id(), "liquid_tank_1")
+
 
 if __name__ == "__main__":
     unittest.main()

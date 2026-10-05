@@ -25,11 +25,23 @@ Measured on the late save, `bulk_liquid_reservoir_9` (oil, outpost_4, 48 t/h in 
 
 This is CPU only: the game's tick result does not change, but the sim worker is single-threaded, so a slow tick slows the whole game once it can no longer keep up with the tick rate (10 ticks/s × game speed). Inferred from the code path; the in-game slowdown itself was not measured.
 
+### Who flips the signature on the late save
+
+Measured with a headless run that diffs consecutive signatures per machine (late save, 10 game minutes, `bulk_liquid_reservoir_9` set to 900 t at the start):
+- `bulk_liquid_reservoir_9`: 9,263 of 9,378 changes. Its drain is 6 Fabricators on `craft_tar` (outposts 1 and 5, ~8 t/h each while starved, far more while oil is plentiful) plus 5 Oil Generators, against 48 t/h from 5 Oil Pumps. The 900 t were gone within minutes, then the tank flipped every tick.
+- Item port rewiring: ~300 changes, about one rebuild every 20 ticks. `ioConnections` of every machine are in the signature, item ports included, so each `input`/`output` `connect()` to another Warehouse (Fabricators 11-16, `drone_station_lrg_6`/`_7` here) rebuilds every network once.
+- Nothing else. Inferred from the code, not seen in this save: a machine with a generic `gas_in`/`liquid_in` port (Refiner, Habitat) flips too when its input buffer reaches 0 every tick, because `gas_in_level`/`liquid_in_level > 1e-9` is in the signature.
+
+`FluidPort.connections()` also builds the signature (the connection index is cached under it), so every call costs one signature string over all machines and pipes, and a full rebuild while something is flipping. Prefer `connected_id()` on hot paths.
+
 ## What to do in game
 
 - Keep pass-through tanks and reservoirs **buffered**: supply must exceed the draw, or the consumer is throttled below the supply. A tank that sits at a few units with in ≈ out is the worst case.
+- When the draw can exceed the supply, the consumer, not the tank, has to give way: batch it with hysteresis (stop at a low fill, restart at a higher one). Throughput is the same, set by the supply, but the tank never sits at 0. Fluid-only Fabricator recipes (`craft_tar`) do this on their own ([production_logistics.md](../cheatsheet/production_logistics.md), "Fluid-only recipe"); the Oil Generator surplus burn already stops below 70 % ([power_fluids.md §1c-1](../cheatsheet/power_fluids.md)).
+- Size consumers to the supply: count wells × rate against the sum of the always-on draws (Oil Generators on last resort, Fabricator recipes with oil plus items). Those don't pause, so if they alone exceed the supply the tank still runs dry.
 - A buffer tank that only passes fluid through and is often empty is better removed from the line.
-- Other signature inputs change rarely (building, deploying, reconnecting); each such change costs one rebuild, which is fine.
+- Give every passive producer (Refiner, Liquifier, Steam Condenser) a tank of its output fluid in its own outpost and pipe that tank onward. A tank in another outpost that also feeds consumers over the pipes takes nothing from it while it holds stock (see "Remote (pipe) connections" below); the scripts then rank such a tank last.
+- Other signature inputs change rarely (building, deploying, reconnecting a fluid port); each such change costs one rebuild, which is fine. Frequent item port rewiring adds up (see above).
 
 ## Headless runs
 

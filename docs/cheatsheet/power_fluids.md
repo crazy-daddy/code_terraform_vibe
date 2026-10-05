@@ -114,8 +114,10 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
     sharing `PerEntryBlacklist`, `TickedDiscoveryCache` and `discover_network_buildings()`.
     `FluidOutputRouter` (Cap/Pump/Liquifier) rebalances among targets by `fill_pct()`. With
     `local_outpost_id` (Refiner, Liquifier, Steam Condenser; not Caps/Pumps/Taps) own-outpost targets
-    rank first, and a healthy cross-outpost target is left once an own-outpost one is below
-    `rebalance_fill_fraction - LOCAL_RETURN_MARGIN` (0.10); why: §1c-5.
+    rank first, another outpost's tank that feeds a cross-outpost route (`feeds_remote_route()`: a
+    `"ready"` peer on its `liquid_out`/`gas_out`) ranks last, and a healthy cross-outpost target is
+    left once an own-outpost one is below `rebalance_fill_fraction - LOCAL_RETURN_MARGIN` (0.10);
+    why: §1c-5.
     `FluidInputRouter` (Turbine, Fabricator, Biomass Mixer) ignores fill and only asks whether fluid
     arrives. Per `ensure()` call:
     0. Built with `reserve_fluid="water"` and `water_reserve_holds()` (Reactor water reservation,
@@ -288,5 +290,5 @@ How the game moves fluid along a `connect()`ed port pair. Planners and routers d
 - **Script sources** (`thermal_cap`, `water_pump`, `oil_pump`, `exotic_gas_cap`, `exotic_spring_tap`): delivered per route to the route's sink, capped by the sink's headroom and the network's throughput (`routeSourceToTarget`), whatever the sink holds. A tank filled by pumps over a pipe keeps filling while it feeds other machines over the same network.
 - **Every other cross-outpost pair** (Refiner, tanks, any building feeding through pipes): pooled per fluid network (`redistributePerFluidNetworks`). Providers = source endpoints holding > 0 t. Consumers = sink endpoints with headroom **that are not providers**. Consequences:
   - A tank that feeds machines over a pipe network (it is a route source there) and holds any stock is not a consumer on that network: cross-outpost Refiners (or tanks) cannot fill it. Their output goes only to the other sinks; with none taking (full inlet, unpowered machine = 0 headroom), the network stalls and producer outputs back up.
-  - Fix in the layout: give each producer a tank of its fluid **in its own outpost** (direct delivery), and pipe that tank onward. `FluidOutputRouter(local_outpost_id=...)` moves the producer's port to such a tank (§1b input vs output routers).
+  - Fix in the layout: give each producer a tank of its fluid **in its own outpost** (direct delivery), and pipe that tank onward. `FluidOutputRouter(local_outpost_id=...)` moves the producer's port to such a tank, and without one prefers a remote tank that feeds nothing over the network (§1b input vs output routers).
 - Unpowered non-tank machines have 0 headroom and supply 0 (`Kb`/`Gb`); tanks are read regardless of power.
