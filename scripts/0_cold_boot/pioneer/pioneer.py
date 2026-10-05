@@ -2,17 +2,15 @@
 #  PIONEER SCOUT  —  temporary standalone role for the 100k-150k TP window
 #  Explore every "?" contact with the (basic) sonar. No mining, no
 #  construction, no cargo hauling — those need lib/pioneer.py's full
-#  PioneerController, which cannot run until the real 150k TP Control Room
-#  migration stages lib/ (see tools/early_game.py's trigger_midgame_migration
-#  docstring — staging it earlier would leave Solar/Smelter grid supervision,
-#  now centralized in panel_1.py, with no Control Room process to drive it).
+#  PioneerController, which needs lib/ (deployed from 4_controlpanel on). The
+#  tier-4 pioneer/pioneer.py replaces this script once the save gets there.
 #
 #  Without this, a Pioneer commissioned at the 100k TP breakout just sits idle
 #  at base for however long it takes to reach 150k TP — wasted time when it
 #  could already be mapping the surrounding mineral/POI field so the real
 #  PioneerController has a head start once it takes over.
 #
-#  Loadout (mount_vehicle.py's TARGET_MODULES_PIONEER): nav + basic sonar_module
+#  Loadout (REQUIRED_MODULES + EXTRA_MODULES below): nav + basic sonar_module
 #  + 6x Battery Holder (max range). Deliberately NOT Wide Sonar or Constructor
 #  Module — confirmed live those aren't unlocked yet at the 100k TP breakout
 #  under this speedrun's Pressure/Heat Rush targets (Wide Sonar needs Pressure
@@ -29,6 +27,105 @@
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import pioneer as self
+
+REQUIRED_MODULES = ["nav_module", "sonar_module"]
+EXTRA_MODULES = ["battery_holder_small"] * 6
+
+# --- Module mounting -----------------------------------------------------------
+# No lib/ in this tier, so the same block sits in rover/rover.py and
+# pioneer/pioneer.py. Mounts REQUIRED_MODULES (then EXTRA_MODULES, best effort)
+# from base Inventory and fills container bays (Battery Holder -> Portable
+# Battery). Waits at home until every required module is mounted: solar.py's
+# buyer re-orders missing gear every evaluation (top_up_vehicle_gear), so it
+# may still be locked or in delivery.
+INTERNAL_ITEM_FOR = {
+    "battery_holder_small": "portable_battery",
+    "battery_holder_medium": "portable_battery",
+    "cargo_rack_small": "portable_bin",
+    "cargo_rack_medium": "portable_bin",
+}
+
+
+def mounted_counts():
+    counts = {}
+    for s in self.modules():
+        if s.module_id is not None:
+            counts[s.module_id] = counts.get(s.module_id, 0) + 1
+    return counts
+
+
+def mount_one(mod_id):
+    for s in self.modules():
+        if s.module_id is not None:
+            continue
+        res = self.mount(s.index, mod_id)
+        if res.status == "ok":
+            print(f"[mount] {self.id}: mounted {mod_id} into slot {s.index}.")
+            return True
+        if res.status in ("slot_not_compatible", "capability_already_mounted"):
+            continue
+        if res.status != "item_not_in_inventory":
+            print(f"[mount] {self.id}: mount {mod_id} -> {res.status}: {res.message}")
+        return False
+    return False
+
+
+def fill_bays():
+    for s in self.modules():
+        item_id = INTERNAL_ITEM_FOR.get(s.module_id or "")
+        if not item_id or not s.internal_count:
+            continue
+        bay = len(s.internal_items or [])
+        while bay < s.internal_count:
+            res = self.install(s.index, bay, item_id)
+            if res.status == "ok":
+                print(f"[mount] {self.id}: installed {item_id} into slot {s.index} bay {bay}.")
+            elif res.status != "internal_slot_occupied":
+                break
+            bay += 1
+
+
+def mount_modules():
+    """Mount what Inventory holds. Returns the required modules still missing."""
+    wanted = {}
+    for mod_id in REQUIRED_MODULES + EXTRA_MODULES:
+        wanted[mod_id] = wanted.get(mod_id, 0) + 1
+    for mod_id, count in wanted.items():
+        while mounted_counts().get(mod_id, 0) < count and mount_one(mod_id):
+            pass
+    fill_bays()
+    have = mounted_counts()
+    return [m for m in REQUIRED_MODULES if have.get(m, 0) < 1]
+
+
+missing = mount_modules()
+while missing:
+    print(f"[mount] {self.id}: waiting for {', '.join(missing)} in Inventory.")
+    sleep(10)
+    missing = mount_modules()
+
+inventory = get_component("inventory")
+
+
+def gear_waiting():
+    """True when Inventory holds an extra module or bay item this chassis still lacks.
+
+    EXTRA_MODULES are best effort at start: Battery Holders can unlock and
+    arrive after the Scout already left. The main loop mounts them on the
+    next stop at home.
+    """
+    if inventory is None:
+        return False
+    have = mounted_counts()
+    for mod_id in EXTRA_MODULES:
+        if have.get(mod_id, 0) < EXTRA_MODULES.count(mod_id) and inventory.count(mod_id) > 0:
+            return True
+    for s in self.modules():
+        item_id = INTERNAL_ITEM_FOR.get(s.module_id or "")
+        if item_id and len(s.internal_items or []) < s.internal_count and inventory.count(item_id) > 0:
+            return True
+    return False
+
 
 CRUISE = 0.6               # throttle; lower = more meters per Wh
 ARRIVE_M = 2                # "close enough" — brake happens after this
@@ -69,9 +166,6 @@ if station_pos is not None:
     print(f"[scout] home = charging station at {home_x}, {home_y}")
 else:
     print("[scout] no charging station at home — parking at the outpost; battery will not refill")
-
-if not self.sonar:
-    print("[scout] no Sonar Module mounted yet — waiting for mount_vehicle.py to finish...")
 
 skipped = []
 
@@ -239,6 +333,9 @@ while True:
         publish("rescued", self.rescue_status())
         sleep(5)
         continue
+
+    if at_home() and gear_waiting():
+        mount_modules()
 
     if at_home() and self.battery.level() < CHARGE_TO:
         publish("charging", str(round(self.battery.level(), 2)))

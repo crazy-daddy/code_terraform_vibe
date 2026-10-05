@@ -55,7 +55,6 @@ SELF_TYPE_OVERRIDES = {
     "contract": "ContractScript",
     "oxygen_sensor": "OxygenSensor",
     "pressure_sensor": "PressureSensor",
-    "mount_vehicle": "Rover | Pioneer",
     # Not a `self`: panel scripts get the injected global `panel` and import
     # it under its own name (`from user_stubs import panel`).
     "panel": "Panel",

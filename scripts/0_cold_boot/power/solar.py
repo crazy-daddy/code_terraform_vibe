@@ -24,6 +24,7 @@ home = need(get_component("outpost_home"))
 research = get_component("research")
 shop = need(get_component("shop"))
 nocturna = get_component("nocturna")
+inventory = get_component("inventory")
 
 pressure_sensor = get_component("pressure_sensor")
 oxygen_sensor = get_component("oxygen_sensor")
@@ -90,6 +91,55 @@ def count_vehicles(type_id):
         if v is not None:
             c += 1
     return c
+
+# Gear each chassis needs from base Inventory: modules plus the Portable
+# Batteries that fill Battery Holder bays. Must match REQUIRED_MODULES +
+# EXTRA_MODULES in rover/rover.py and pioneer/pioneer.py.
+VEHICLE_GEAR = {
+    "rover": {"nav_module": 1, "sonar_module": 1, "drill_module": 1},
+    "pioneer": {"nav_module": 1, "sonar_module": 1, "battery_holder_small": 6, "portable_battery": 6},
+}
+_GEAR_LAST_STATUS = {}
+
+
+def get_vehicle(component_id) -> "Rover | Pioneer | None":
+    return get_component(component_id)  # type: ignore[return-value]
+
+
+def top_up_vehicle_gear():
+    """Buy the gear the fleet still lacks: not mounted, not installed, not in Inventory.
+
+    Runs every evaluation, not once per chassis: a buy that fails (gear still
+    locked, credits short) is retried until it lands. A one-shot order left
+    the Pioneer without Battery Holders for good when they unlocked late.
+    """
+    want = {}
+    have = {}
+    for type_id, gear in VEHICLE_GEAR.items():
+        for i in range(1, 10):
+            vehicle = get_vehicle(f"{type_id}_{i}")
+            if vehicle is None:
+                continue
+            on_vehicle = {}
+            for slot in vehicle.modules():
+                if slot.module_id is not None:
+                    on_vehicle[slot.module_id] = on_vehicle.get(slot.module_id, 0) + 1
+                for item_id in slot.internal_items or []:
+                    on_vehicle[item_id] = on_vehicle.get(item_id, 0) + 1
+            for item_id, count in gear.items():
+                want[item_id] = want.get(item_id, 0) + count
+                have[item_id] = have.get(item_id, 0) + min(count, on_vehicle.get(item_id, 0))
+    for item_id, count in want.items():
+        short = count - have.get(item_id, 0) - (inventory.count(item_id) if inventory else 0)
+        if short <= 0:
+            continue
+        res = shop.buy(item_id, short)
+        if res.status == "ok":
+            print(f"[buyer] Ordered {short}x {item_id} for vehicle loadouts.")
+        elif _GEAR_LAST_STATUS.get(item_id) != res.status:
+            print(f"[buyer] Vehicle gear {short}x {item_id} -> {res.status}: {res.message} (retrying)")
+        _GEAR_LAST_STATUS[item_id] = res.status
+
 
 def get_free_base_slots():
     try:
@@ -293,17 +343,14 @@ while True:
             print("[buyer] Deploying Smelter 1 for Rover ore processing...")
             safe_buy_and_deploy(computer, "smelter", 1, "research_smelter")
 
-        # Deploy 2 Rovers and order modules (unlocked at 0.200 kPa Pressure)
+        # Deploy 2 Rovers (unlocked at 0.200 kPa Pressure). Their modules come
+        # from top_up_vehicle_gear() below.
         r_count = count_vehicles("rover")
         if r_count < 2 and is_tech_unlocked("research_rover") and is_tech_unlocked("research_deep_extraction"):
             needed_rovers = 2 - r_count
             print(f"[buyer] Deploying {needed_rovers}x Rover chassis...")
             for _ in range(needed_rovers):
-                if safe_buy_and_deploy(computer, "rover", 1, "research_rover"):
-                    shop.buy("nav_module", 1)
-                    shop.buy("sonar_module", 1)
-                    shop.buy("drill_module", 1)
-                    print("[buyer] Ordered Nav, Sonar, and Drill modules into base Inventory.")
+                safe_buy_and_deploy(computer, "rover", 1, "research_rover")
 
     # --------------------------------------------------------------------------
     # PHASE 3: Heat Rush to 12.0 HU (Strict 25/25 Base Slots, 0% Penalty)
@@ -355,18 +402,17 @@ while True:
     if total_tp >= 100000 and is_tech_unlocked("research_pioneer"):
         if count_vehicles("pioneer") == 0:
             print("[buyer] 100k TP Milestone: Deploying Pioneer Chassis...")
-            if safe_buy_and_deploy(computer, "pioneer", 1, "research_pioneer"):
-                # Scout loadout only (see mount_vehicle.py): Wide Sonar needs Pressure
-                # 6.0 kPa and Constructor Module needs Heat 10 HU, both confirmed live
-                # as not yet unlocked at the 100k TP Pioneer breakout under this
-                # speedrun's Pressure/Heat Rush targets (0.200 kPa / 12.0 HU) - buying
-                # them here was pure waste. No Cargo Rack either: a pure Scout has
-                # nothing to haul. Basic Sonar + 6x Battery Holder (max range) instead.
-                shop.buy("nav_module", 1)
-                shop.buy("sonar_module", 1)
-                shop.buy("battery_holder_small", 6)
-                shop.buy("portable_battery", 6)
-                print("[buyer] Ordered Pioneer Scout modules into base Inventory.")
+            # Scout loadout only (see pioneer/pioneer.py and VEHICLE_GEAR): Wide
+            # Sonar needs Pressure 6.0 kPa and Constructor Module needs Heat 10 HU,
+            # both confirmed live as not yet unlocked at the 100k TP Pioneer
+            # breakout under this speedrun's Pressure/Heat Rush targets (0.200 kPa
+            # / 12.0 HU) - buying them here was pure waste. No Cargo Rack either: a
+            # pure Scout has nothing to haul. Basic Sonar + 6x Battery Holder (max
+            # range) instead, ordered by top_up_vehicle_gear() below.
+            safe_buy_and_deploy(computer, "pioneer", 1, "research_pioneer")
+
+    # Vehicle loadouts: retried every evaluation until each chassis has its gear.
+    top_up_vehicle_gear()
 
     # --------------------------------------------------------------------------
     # PHASE 5: 150k TP Mid-Game Migration Signal
