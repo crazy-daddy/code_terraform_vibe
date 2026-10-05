@@ -14,19 +14,45 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 4;
+const SHIM_VERSION = 5;
 
-// Names below are the minified identifiers of the simworker build the shim was
-// written against. After a game update, re-find them next to the worker
-// bootstrap at the end of the file (the function that builds `new tCe(LB(seed))`
-// and the SimHost with loadState/serializeState/runTick).
-const SHIM = String.raw`
+// The shim reaches the simulation through minified names (core class, SimHost,
+// state load/serialize, command registry, ...) that change with every game
+// build. findBootstrapNames() reads them from the worker bootstrap (the
+// function that builds `new <Core>(<newState>(seed))` and the SimHost), anchored
+// on strings that survive a rebuild: `en`, initialState:, `SimHost readTick`,
+// serializeState:, produceSnapshot:, validateReplacementSnapshot:, script:,
+// .game.tickRate. A required name that is not found stops the load.
+const BOOTSTRAP_PATTERNS = {
+  i18n: [/\.i18nReady\) \{\s*(\w+)\((\w+), `en`\);/, ["setLang", "langTable"]],
+  core: [/let (\w+) = new (\w+)\((\w+)\(\w+\.seed\)\);\s*let (\w+) = new (\w+)\(\{\s*initialState: \1\.state/, [null, "Core", "newState", null, "SimHost"]],
+  load: [/let (\w+) = (\w+)\(e\);\s*\w+\(\1\.tickCount, `SimHost readTick`\)/, [null, "loadState"]],
+  serialize: [/serializeState: (\w+),/, ["serializeState"]],
+  snapshot: [/produceSnapshot: (\w+),/, ["produceSnapshot"]],
+  validate: [/validateReplacementSnapshot: \(e, t\) => (\w+)\(e, t\)/, ["validateSnapshot"]],
+  registry: [/(\w+)\(\w+, \{\s*script: (\w+)\(\w+\),\s*getTimers:/, ["registerCommands", "scriptCommands"]],
+  dt: [/const (\w+) = 1 \/ (\w+)\.game\.tickRate;/, ["tickDt", "config"]],
+};
+
+export function findBootstrapNames(src) {
+  const names = {};
+  const missing = [];
+  for (const [key, [re, slots]] of Object.entries(BOOTSTRAP_PATTERNS)) {
+    const m = re.exec(src);
+    if (!m) { missing.push(key); continue; }
+    slots.forEach((slot, i) => { if (slot) names[slot] = m[i + 1]; });
+  }
+  return { names, missing };
+}
+
+function shimSource(N) {
+  return String.raw`
 const __ctSystemMs = new Map();
 const __ctSkipSystems = new Set();
 let __ctStickyFluids = false;
 const __ctLastFluids = new Map();
 // An emptied tank also loses its per-fluid port keys, so the "*_capacity"
-// key list (t) is kept together with the fluid types (i).
+// key list is kept together with the fluid types.
 function __ctStickyFluid(id, caps, fluids) {
   if (fluids !== "[null,null,null]") __ctLastFluids.set(id, [caps, fluids]);
   return __ctLastFluids.get(id) ?? [caps, fluids];
@@ -39,25 +65,25 @@ function __ctTimedSystem(name, fn) {
   }
 }
 function __ctCreateHeadless(opts = {}) {
-  _e(mue, ${"`en`"});
-  const core = new tCe(LB(opts.seed ?? 1));
+  ${N.setLang}(${N.langTable}, ${"`en`"});
+  const core = new ${N.Core}(${N.newState}(opts.seed ?? 1));
   let nextId = 0;
-  const host = new _Ce({
+  const host = new ${N.SimHost}({
     initialState: core.state, initialStateInstalled: false, devModeEnabled: false,
-    createNewState: e => LB(e),
-    loadState: e => Kpe(e),
-    serializeState: qpe, produceSnapshot: Kbe,
-    validateReplacementSnapshot: (e, t) => MCe(e, t),
+    createNewState: e => ${N.newState}(e),
+    loadState: e => ${N.loadState}(e),
+    serializeState: ${N.serializeState}, produceSnapshot: ${N.produceSnapshot},
+    validateReplacementSnapshot: (e, t) => ${N.validateSnapshot}(e, t),
     readTick: e => e.tickCount,
     prepareStateReplacement: (e, t, k) => core.prepareStateReplacement(e, {
       isolateSource: e === t,
       restoreScripts: k.kind === "sim.load" || k.kind === "sim.rewind" || k.kind === "sim.import" || k.kind === "sim.init" && k.saveId !== undefined
     }),
-    runTick: e => ({ tick: e.tickCount, flushRequested: core.tick(UCe) }),
+    runTick: e => ({ tick: e.tickCount, flushRequested: core.tick(${N.tickDt}) }),
     deltaSnapshots: false
   });
-  sSe(host, {
-    script: nme(core), getTimers: () => core.timers,
+  ${N.registerCommands}(host, {
+    script: ${N.scriptCommands}(core), getTimers: () => core.timers,
     requestPresentationFlush: () => core.requestPresentationFlush(),
     getTransmissionSystem: () => core.transmissionSystem,
     retireScript: (e, t) => core.retireScript(e, t),
@@ -69,28 +95,77 @@ function __ctCreateHeadless(opts = {}) {
     command: (kind, payload = {}) => host.applyCommand({ v: 7, id: ++nextId, kind, payload }),
     control: (kind, extra = {}) => host.applyControl({ v: 7, id: ++nextId, kind, ...extra }),
     advance: () => host.advanceTick(),
-    serialize: () => qpe(core.state),
+    serialize: () => ${N.serializeState}(core.state),
     systemMs: __ctSystemMs,
     skipSystems: __ctSkipSystems,
     setStickyFluids: v => { __ctStickyFluids = !!v; },
-    config: n,
+    config: ${N.config},
   };
 }
 export { __ctCreateHeadless };
 `;
+}
 
-// Sticky fluids: gx() builds the fluid-network cache signature from each
-// machine's fluid type and "has content" flags. A tank that runs empty every
-// tick flips them and forces a full network rebuild twice per tick. With
-// sticky fluids on, an empty machine keeps its last fluid type in the
-// signature and the content flags are left out, so the cached analysis stays.
-const GX_FLAGS = "    let o = jx(e) ? +(Nx(e) > 1e-9) : ``;\n";
-const GX_STICKY = GX_FLAGS + "    if (__ctStickyFluids) {\n      [t, i] = __ctStickyFluid(e.id, t, i);\n      a = ``;\n      o = ``;\n    }\n";
+// Optional patches: a mismatch only loses the feature, with a warning.
+//
+// Per-system timing (and --skip-systems): the wrapper tCe.tick() runs every
+// system through, function <name>(e, t) { <trace>([`system`, e]); try { t(); } ...
+const SYSTEM_WRAPPER = /(function \w+\(e, t\) \{\n\s*\w+\(\[`system`, e\]\);\n\s*try \{\n\s*)t\(\);/g;
+//
+// Sticky fluids: the fluid-network cache signature (gx()) pushes one line per
+// machine, `m:${id}:...:${caps}:${io}:${fluids}:${levels}:${content}`. A tank
+// that runs empty every tick flips caps/fluids/levels/content and forces a
+// full network rebuild twice per tick. With sticky fluids on, an empty machine
+// keeps its last caps + fluid types and the content flags are left out, so the
+// cached analysis stays.
+const SIGNATURE_PUSH = /^( *)\w+\.push\(`m:\$\{(\w+)\.id\}.*`\);$/gm;
 
-// Per-system timing: v9(name, fn) wraps every system call in tCe.tick().
-const V9_HEAD = "function v9(e, t) {\n  nH([`system`, e]);\n  try {\n    t();\n  }";
-const V9_TIMED = "function v9(e, t) {\n  nH([`system`, e]);\n  try {\n    __ctTimedSystem(e, t);\n  }";
+function patchSignature(src) {
+  // Other systems push similar `m:` lines; keep the one whose last fields are
+  // the caps / io / fluids / levels / content variables declared just above.
+  const found = [];
+  for (const m of src.matchAll(SIGNATURE_PUSH)) {
+    const [line, indent, machine] = m;
+    const vars = [...line.matchAll(/\$\{(\w+)\}/g)].map(v => v[1]);
+    if (vars.length < 5) continue;
+    const [caps, , fluids, levels, content] = vars.slice(-5);
+    const before = src.slice(Math.max(0, m.index - 1500), m.index);
+    const declares = (v, needle) => new RegExp(`let ${v} = [^\\n]*${needle}`).test(before);
+    if (declares(caps, "_capacity") && declares(fluids, "stringData\\?\\.fluid") && declares(levels, "_in_level") && declares(content, "1e-9")) {
+      found.push({ at: m.index, indent, machine, caps, fluids, levels, content });
+    }
+  }
+  if (found.length !== 1) return { src, why: `fluid signature line found ${found.length}x (want 1)` };
+  const { at, indent, machine, caps, fluids, levels, content } = found[0];
+  const guard = `${indent}if (__ctStickyFluids) {\n${indent}  [${caps}, ${fluids}] = __ctStickyFluid(${machine}.id, ${caps}, ${fluids});\n` +
+    `${indent}  ${levels} = \`\`;\n${indent}  ${content} = \`\`;\n${indent}}\n`;
+  return { src: src.slice(0, at) + guard + src.slice(at) };
+}
 
+export function patchSimworker(src) {
+  const warnings = [];
+  const features = { systemTiming: false, stickyFluids: false };
+  const { names, missing } = findBootstrapNames(src);
+  if (missing.length) {
+    throw new Error(`simworker changed: bootstrap pattern(s) not found: ${missing.join(", ")}. ` +
+      "Update BOOTSTRAP_PATTERNS in devtools/headless/simhost.mjs against the worker bootstrap (search `SimHost readTick`).");
+  }
+  const wrappers = src.match(SYSTEM_WRAPPER) ?? [];
+  if (wrappers.length === 1) {
+    src = src.replace(SYSTEM_WRAPPER, "$1__ctTimedSystem(e, t);");
+    features.systemTiming = true;
+  } else {
+    warnings.push(`system wrapper found ${wrappers.length}x (want 1): per-system timing and --skip-systems are off`);
+  }
+  const sticky = patchSignature(src);
+  if (sticky.why) {
+    warnings.push(`${sticky.why}: --sticky-fluids is off`);
+  } else {
+    src = sticky.src;
+    features.stickyFluids = true;
+  }
+  return { src: src + "\n" + shimSource(names) + `export const __ctFeatures = ${JSON.stringify(features)};\n`, names, warnings, features };
+}
 
 // Control Room panels draw into OffscreenCanvas, which Node lacks. A no-op
 // canvas keeps panel scripts running; nothing is rendered.
@@ -126,18 +201,15 @@ export async function loadSimModule(simworkerPath = process.env.CT_SIMWORKER || 
     throw new Error(`simworker not found: ${simworkerPath}\n` +
       "Init the private submodule: git -c submodule.internals.update=checkout submodule update --init internals");
   }
-  const src = readFileSync(simworkerPath, "utf8");
-  const hash = createHash("sha1").update(src).update(SHIM).update(String(SHIM_VERSION)).digest("hex").slice(0, 12);
+  const raw = readFileSync(simworkerPath, "utf8");
+  const patched = patchSimworker(raw);
+  for (const w of patched.warnings) console.warn(`[headless] simworker changed: ${w}. Update simhost.mjs.`);
+  const hash = createHash("sha1").update(patched.src).update(String(SHIM_VERSION)).digest("hex").slice(0, 12);
   const cacheDir = join(HERE, ".cache");
   const out = join(cacheDir, `sim-${hash}.mjs`);
   if (!existsSync(out)) {
-    if (!src.includes(V9_HEAD)) throw new Error("simworker changed: system wrapper v9() not found, update simhost.mjs");
-    if (src.split(GX_FLAGS).length !== 2) throw new Error("simworker changed: gx() signature flags not found, update simhost.mjs");
-    for (const name of ["var tCe = class", "function LB(", "function Kpe(", "function qpe(", "function sSe(", "function nme(", "var _Ce", "const UCe", "const mue"]) {
-      if (!src.includes(name)) throw new Error(`simworker changed: '${name}' not found, update the shim in simhost.mjs`);
-    }
     mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(out, src.replace(V9_HEAD, V9_TIMED).replace(GX_FLAGS, GX_STICKY) + "\n" + SHIM);
+    writeFileSync(out, patched.src);
   }
   installCanvasStub();
   return import(pathToFileURL(out).href);
@@ -160,11 +232,15 @@ function clearDebugFlags(state) {
 export class Sim {
   // opts.skipSystems: names as tCe.tick() passes them to v9() (default
   // DEFAULT_SKIP_SYSTEMS); opts.keepDebug keeps per-script debug flags;
-  // opts.stickyFluids: see GX_STICKY.
+  // opts.stickyFluids: see patchSignature().
   static async create(opts = {}) {
     const mod = await loadSimModule(opts.simworker);
     const sim = new Sim(mod.__ctCreateHeadless(opts));
-    for (const name of opts.skipSystems ?? DEFAULT_SKIP_SYSTEMS) sim.h.skipSystems.add(name);
+    sim.features = mod.__ctFeatures;
+    if (opts.stickyFluids && !sim.features.stickyFluids) console.warn("[headless] --sticky-fluids requested but unavailable on this simworker build; running without it.");
+    const skip = opts.skipSystems ?? DEFAULT_SKIP_SYSTEMS;
+    if (skip.length && !sim.features.systemTiming) console.warn(`[headless] cannot skip systems (${skip.join(", ")}) on this simworker build; they run.`);
+    for (const name of skip) sim.h.skipSystems.add(name);
     sim.keepDebug = !!opts.keepDebug;
     sim.h.setStickyFluids(opts.stickyFluids);
     return sim;
@@ -180,7 +256,11 @@ export class Sim {
     for (const [method, level] of [["emitScriptOutput", "info"], ["emitScriptWarn", "warn"],
       ["emitScriptDebug", "debug"], ["emitScriptConsoleError", "error"], ["emitScriptError", "crash"]]) {
       const orig = sched[method];
-      if (!orig || orig.__ctTapped) continue;
+      if (!orig) {
+        console.warn(`[headless] simworker changed: scheduler.${method} not found; ${level} console lines are not captured. Update simhost.mjs.`);
+        continue;
+      }
+      if (orig.__ctTapped) continue;
       const tapped = function (scriptId, payload, ...rest) {
         const text = typeof payload === "string" ? payload : payload?.message ?? JSON.stringify(payload);
         for (const fn of sim.listeners) fn({ scriptId, level, text, tick: sim.state.tickCount });
