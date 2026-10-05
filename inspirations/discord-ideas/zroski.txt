@@ -1,0 +1,598 @@
+class Point:
+    def __init__(self, _pos):
+        if isinstance(_pos, (int, float)):
+            self.x = self.y = _pos
+        elif isinstance(_pos, (tuple, list)):
+            self.x, self.y = _pos
+        
+        
+        elif isinstance(_pos, str):
+            c = get_component(_pos)
+            if c:
+                self.x, self.y = c.coords()
+            else:
+                for site in get_component("journal").discovered_sites("nocturna"):
+                    if site.id == _pos:
+                        self.x, self.y = site.position()
+                        return
+                raise TypeError(f"Cannot create Point from {_pos}")
+        # if isinstance(_pos, str):
+        #     self.x = ord(_pos[0]) - ord("A")
+        #     self.y = int(_pos[1:])
+            #TODO: raise ValueError
+        elif hasattr(_pos, "x") and hasattr(_pos, "y"):
+            self.x = _pos.x
+            self.y = _pos.y
+        else:
+            raise TypeError(f"Cannot create Point from {type(_pos)}")
+
+
+    def nav_mul(self, nav_modules_count):
+        return 1 + 1.25 * nav_modules_count + 0.35 * nav_modules_count ** 2
+        
+    #TODO: ADD DRAW CALCS FOR GO TASK ENERGY SIMULATE AND RESOLVE
+    def calc_travel_power_static(self, from_pos:Point, 
+                                 to_pos:Point, 
+                                 throttle:float,
+                                 nav_modules_count:int, 
+                                 active_modules:int,
+                                 cargo:int,
+                                 speed:float
+                                ):
+        distance = from_pos.distance(to_pos)
+        if distance == 0:
+            return 0
+        nav_mul = self.nav_mul(nav_modules_count) 
+        
+
+        draw = (3 + 8 * active_modules + 0.04 * cargo) * (throttle ** 1.5) * nav_mul
+        pwr = draw/(speed/100)
+
+        
+        return distance/100 * pwr 
+
+    def calc_travel_throttle_static(self,
+                                    from_pos: Point,
+                                    to_pos: Point,
+                                    energy: float,
+                                    nav_modules_count: int,
+                                    active_modules: int,
+                                    cargo: int,
+                                ):
+        distance = from_pos.distance(to_pos)
+    
+        if distance == 0:
+            return 0.0  
+        base = 3 + 8 * active_modules + 0.04 * cargo
+        speed_mul = self.nav().speed_multiplier()
+        k = distance / 100 * base * self.nav_mul(nav_modules_count) / speed_mul
+        throttle = (energy / k) ** 2
+        return min(1.0, max(0.0, throttle))
+
+    def count_active_modules(self):
+        count = 0
+        for module in self.parent.modules():
+            if module.module_id and any(module.module_id.startswith(key) for key in ["nav_module", "drill_module", "sonar_module", "constructor_module"]):
+                count += 1
+        return count
+
+
+------------------
+from comms import typed_list, serializable_dataclass, typed_dict
+from dataclasses import dataclass, field, asdict
+
+@serializable_dataclass
+class InventoryEntity:
+    outposts:Dict[str, OutpostInventory] = field(default_factory = typed_dict(OutpostInventory))
+
+
+    def __getitem__(self, item):
+        if item in self.outposts:
+            return self.outposts[item]
+        if comp := get_component(item) and comp.type_id == "outpost":
+            pass
+
+    def add_outpost(self, outpost_id):
+        self.outposts[outpost_id] = OutpostInventory()
+        return self
+
+    def dump(self):
+        return asdict(self)
+
+
+class InventoryData:
+    notebook = get_component("notebook")
+    n_k = "inventory"
+
+    def __init__(self):
+        if not self.notebook.has("inventory"):
+            self.notebook.set(self.n_k, InventoryEntity().dump())
+
+    def transaction(self, callback:Callable):
+        self.notebook.transaction(self.n_k, InventoryEntity().dump(), callback)
+
+    def data(self) -> InventoryEntity:
+        return InventoryEntity(**self.notebook.get(self.n_k))
+
+    def AddOutpost(self, outpost_id) -> ActionResult|None:
+        if outpost_id in self.data().outposts:
+            return None
+        def transaction(entry):
+            return InventoryEntity(**entry).add_outpost(outpost_id).dump()
+        return self.transaction(transaction)
+
+    def FindOutpost(self, outpost_id) -> OutpostInventory | None:
+        return self.data().outposts.get(outpost_id, None)
+
+
+
+---------------
+from VehicleTask import VehicleTask
+
+class GoTask(VehicleTask):
+    name = "go"
+
+    def __init__(self, Rover:Vehicle, target):
+        super().__init__(Rover)
+        self.target = target
+
+    
+-----------------
+from __future__ import annotations
+if TYPE_CHECKING:
+    from Vehicle import Vehicle
+    
+
+class VehicleTask:
+    vehicle:Vehicle
+    registry = []
+    
+    def __init__(self, vehicle:Vehicle):
+        self.vehicle:Vehicle = vehicle
+        self.state:VehicleState = VehicleState(Point(0)) 
+
+
+    def simulate(self, last_state:VehicleState):
+        self.state = last_state.copy()
+      
+    def __init_subclass__(cls):
+        VehicleTask.registry.append(cls)
+
+
+---------------
+from VehicleTask import *
+
+class Vehicle(BaseMachine):
+    def analyze(self, tasks: List[VehicleTask], task_idx: int):
+        task:GoTask = tasks[task_idx]
+        
+        if not isinstance(task, GoTask):
+            return False, None
+        #FIRST BUG
+        target = P(task.target)   # 'target' is not an attribute of 'task'. Code Terraform
+      
+
+    task_idx = 0
+
+    while task_idx < len(tasks):
+        task = tasks[task_idx]
+        state = task.state
+        
+        if isinstance(task, GoTask) and task_idx != 0:
+            task_go = GoTask(self, outpost)
+            #SECOND BUG
+            task.simulate(task_go.state) #'task' has no method 'simulate'. Did you mean 'state'? Code Terraform
+
+            task = task_go
+
+
+
+--------------
+
+class RConsole:
+    console = get_component("console")
+    def __init__(self):
+        self.indentation_level = 0
+        self.current_color = "#FFFFFF"
+    
+    def color(self, color):
+        self.current_color = color
+        return self
+        
+    def print(self, msg):
+        out = "".join(["┃   "] * self.indentation_level) + msg
+        
+        self.console.print(out, level = "info", color=self.current_color, timestamp = True)
+        self.current_color = "#FFFFFF"
+        
+    def start(self, msg):
+        self.print("┏━ " + msg)
+        self.indentation_level += 1
+
+    def end(self, msg):
+        self.indentation_level -= 1
+        self.print("┗━ " + msg)
+
+
+----
+class RConsole:
+    console = get_component("console")
+    def __init__(self):
+        self.indentation_level = 0
+        self.indentation_colors: dict[int, str] = {}
+
+    def print(self, msg: str, color: Optional[str] = None):
+        out = "".join(["┃   "] * self.indentation_level) + msg
+        outColor = self.indentation_colors.get(self.indentation_level, "#FFFFFF") if color is None else color
+        self.console.print(out, level="info", color=outColor, timestamp=True)
+
+    def start(self, msg: str, color: str = "#FFFFFF"):
+        level = self.indentation_level
+        self.indentation_colors[level] = color
+        self.indentation_colors[level + 1] = color
+        self.print("┏━ " + msg)
+        self.indentation_level += 1
+
+    def end(self, msg: str, color: Optional[str] = None):
+        self.indentation_level -= 1
+        self.print("┗━ " + msg, color)
+        level = self.indentation_level
+        self.indentation_colors.pop(level + 1)
+        self.indentation_colors.pop(level)
+
+
+----
+
+class RConsole:
+  def print_array(self, array):
+      self.console.print(
+          pretty_format(
+              array, 
+              in_prefix = "         " + "".join(["┃   "] * self.indentation_level) 
+          ),
+          color=self.current_color
+      )
+      self.current_color = "#FFFFFF"
+
+def pretty_format(obj, indent=0, in_prefix = ""):
+    lines = []
+    prefix = in_prefix + " " * indent
+
+    if isinstance(obj, dict):
+        if len(obj) > 0:
+            lines.append(prefix + "{")
+
+            for key, value in obj.items():
+                if isinstance(value, (list, tuple, set, dict)):
+                    formatted = pretty_format(value, indent + 4, in_prefix = in_prefix)
+                    value_lines = formatted.split("\n")
+                    
+                    first_line = value_lines[0].strip()
+                    lines.append(prefix + f"    {key!r}: " + first_line)
+                    lines.extend(value_lines[1:])
+                else:
+                    lines.append(prefix + f"    {key!r}: {repr(value)}")
+
+            lines.append(prefix + "}")
+        else:
+            lines.append(prefix + "{ }")
+
+    elif isinstance(obj, (list, tuple, set)):
+        brackets = {
+            "list": ("[", "]"),
+            "tuple": ("(", ")"),
+            "set": ("{", "}"),
+        }[type(obj)]
+
+        if len(obj) > 0:
+            lines.append(prefix + brackets[0])
+
+            for value in obj:
+                lines.append(pretty_format(value, indent + 4, in_prefix = in_prefix))
+
+            lines.append(prefix + brackets[1])
+        else:
+            lines.append(prefix + brackets[0] + " " + brackets[1])
+
+    else:
+        lines.append(prefix + repr(obj))
+
+    return "\n".join(lines)
+
+
+----------
+
+
+import functools as _functools
+
+class RConsole:
+    # ... existing methods ...
+
+    def block(self, fn):
+        return self.block_as(lambda name, *args, **kwargs: name)(fn)
+
+    def block_as(self, make_label):
+        def decorator(fn):
+            @_functools.wraps(fn)
+            def wrapped(*args, **kwargs):
+                return self.run(
+                    make_label(fn.__name__, *args, **kwargs),
+                    lambda: fn(*args, **kwargs),
+                )
+            return wrapped
+        return decorator
+
+    def run(self, label: str, fn):
+        self.begin(label)
+        try:
+            ret = fn()
+        except Exception as e:
+            self.end(f"{label} !! {e!r}")
+            raise
+        self.end(label)
+        return ret
+
+-----------
+
+    @CommandStatusWrapper(
+        {
+            "ok":sonarScanGood,
+            ** (lambda f:({
+                k:f(k)
+                for k in ["too_hard", "tier_too_low", "research_required", "wrong_scanner"]
+            }))(sonarScanBad)
+        }, 
+        attach = ["sites", "blocked"]
+    )
+    def sonarScan(self):
+        return self.sonar().scan()
+
+
+
+
+for poi in sorted(get_component("nocturna").points_of_interest(), key = lambda poi: (P(poi.x, poi.y) - self.vehicle.pos()).length()):
+            if poi.scanned:
+                
+                self.vehicle.RC.print(f"{P(poi)}: SCANNED.")
+                continue
+            if f"{poi.x}, {poi.y}" in blocked.sites:
+                self.vehicle.RC.print(f"{P(poi)}: BLOCKED.")
+                continue
+            self.vehicle.RC.color("#00FF00").print(f"{P(poi)}: SELECTED.")
+            target_point = P(poi.x, poi.y)
+            target_point = target_point + (self.vehicle.pos() - target_point).normalize() * sonar_range
+            tasks = [
+                [GoTask, target_point, 0.25],
+                [ScanTask],
+                [ScanSurveyTask],
+                [GoTask, "outpost_home", 0.25],
+                [ChargeTask],
+                [ReturnToOldTasksTask],
+            ]
+            
+            if self.vehicle.CreateTasks(tasks):
+                self.vehicle.RC.color("#00FF00").end(f"Target search complete!")
+                return
+
+-----------
+
+from Vehicle import Vehicle
+from VehicleTasks import *
+
+class PioneerVehicle(Vehicle):
+    parent:Pioneer
+    SuppressExceptions = True
+
+    #TODO: ADD DRAW CALCS FOR GO TASK ENERGY SIMULATE AND RESOLVE
+    def calc_travel_power_static(self, from_pos:Point, 
+                                 to_pos:Point, 
+                                 throttle:float,
+                                 nav_modules_count:int, 
+                                 active_modules:int,
+                                 cargo:int,
+                                 speed:float
+                                ):
+        naw_mul = 1 + 1.25 * nav_modules_count + 0.35 * nav_modules_count ** 2
+
+        draw = (3 + 8 * active_modules + 0.04 * cargo) * (throttle ** 1.5) * naw_mul
+        pwr = draw/(speed/100)
+
+        distance = from_pos.distance(to_pos)
+        return distance/100 * pwr 
+  
+investigate_behaviour = [
+    [GoTask, "outpost_home", 1],
+    [ChargeTask],
+    [InvestigateTask],
+]
+
+PioneerVehicle(
+    self, investigate_behaviour
+)
+
+-----------------
+
+class Overload:
+
+    def __init__(self):
+        # print("init")
+        self.functions = {}
+
+    def add(self, *types):
+        # print(f"add {types}")
+        def decorator(function):
+            types_ingame = tuple(type.__name__ for type in types)
+            self.functions[types_ingame] = function
+            return function
+
+        return decorator
+
+    def call(self, instance, *args):
+        # print(f"call {instance} {args} self {self.functions}")
+        signature = tuple(type(x) for x in args)
+
+        function = self.functions.get(signature)
+
+        if function is None:
+            raise TypeError(
+                "No matching overload: " + str(signature)
+            )
+
+        return function(instance, *args)
+
+
+class Test:
+
+    _foo = Overload()
+
+    @_foo.add(int)
+    def foo_int(self, x):
+        print("int:", x)
+
+    @_foo.add(str, int)
+    def foo_str_int(self, x, y):
+        print("str, int:", x, y)
+
+    @_foo.add(float, float, float)
+    def foo_floats(self, x, y, z):
+        print("float, float, float:", x, y, z)
+
+    @_foo.add(int, int, int)
+    def foo_floats(self, x, y, z):
+        print("int, int, int:", x, y, z)
+
+    def foo(self, *args):
+        return self._foo.call(self, *args)
+
+        
+test = Test()
+
+test.foo(10)
+test.foo("hello", 20)
+test.foo(1.0, 2.0, 3.0)
+
+
+
+
+-------------
+
+class BaseMachine:
+
+    TickEnabled = True
+        
+    def __init__(self, machine:"Component"):
+        super().__init__()
+        get_component("console").clear()
+        self.machine:"Component" = machine
+        self.postInit()
+        self.loop()
+        
+        
+    def postInit(self): pass
+    def tick(self): pass
+    def InputCommandLoop(self): pass
+    def Ignore(self): pass
+    def get_id(self): 
+        return self.machine.id
+    def loop(self):
+        while True:
+            self.InputCommandLoop()
+            try:
+                if self.TickEnabled:
+                    self.tick()
+            # except UserException as e:
+            #     pass
+            except Exception as e:
+                print(str(e))
+
+
+-----------
+
+
+@dataclass()
+class BioExchangeOrder(comms_message):
+    requested_by:str
+    order_id:str
+    required:str
+    count:int
+    in_work:str = ""
+
+------
+
+def CommandStatusWrapper(callbacks:Dict[str, Callable] = {}):
+    def wrapper(fn:Callable):
+        def exec(machine:object ,*args, **kwargs):
+            res:ActionResult = fn(machine, *args, **kwargs)
+            if res.status == "ok":
+                return True
+            if res.status in callbacks:
+                return callbacks[res.status](machine, *args, **kwargs)
+            notify(f"{machine.get_id()} was failed called {fn}. result {res.status} with message {res.message}")
+            return False
+        return exec
+    return wrapper
+
+
+---------
+
+class BioExchangeMachine(BaseMachine):
+    machine:BioExchange
+    comms = comms("bio.orders", BioExchangeOrder)
+    inv = get_component("inventory")
+    
+    def __init__(self, machine:BioExchange):
+        super().__init__(machine)
+
+    @staticmethod
+    def CollectRequiresForOrder(order:BioOrder) -> Dict[str, int]:
+        requires = {}
+        for k,v in order.requires.items():
+            requires[k] = v
+        for k,v in order.delivered.items():
+            requires[k] -= v
+        for k,v in order.in_transit.items():
+            requires[k] -= v
+        return requires
+        
+    def CheckRequested(self, order:BioOrder):
+        queried:List[BioExchangeOrder] = [msg for msg in self.comms.search(lambda msg: msg.requested_by == self.machine.id and msg.order_id == order.id)]
+        
+        requires = BioExchangeMachine.CollectRequiresForOrder(order)
+        for k, v in requires.items(): 
+            if not any(k == q_one.required for q_one in queried):
+                self.comms.send(BioExchangeOrder(
+                    requested_by = self.machine.id,
+                    order_id = order.id,
+                    required = k,
+                    count = v
+                ))
+    def postInit(self):
+        self.machine.input.connect("inventory")
+        if order := self.machine.active_order():
+            self.CheckRequested(order)
+
+    def OrderWasCompletedCallback(self):
+        notify("Bio exchange complete order")
+        return True
+        #TODO: select order
+        
+    @CommandStatusWrapper({"complete":OrderWasCompletedCallback})
+    def Deliver(self):
+        return self.machine.deliver()
+
+    @CommandStatusWrapper({"complete":OrderWasCompletedCallback})
+    def test(self, st):
+        return {"status":st}
+        
+    def tick(self):
+        if order := self.machine.active_order():
+            req = self.CollectRequiresForOrder(order)
+            for k, v in req.items():
+                if self.inv.count(k) > 0:
+                    self.machine.input.take(k, 1)
+                    self.machine.deliver()
+                    return
+            sleep(1)
+        else:
+            #TODO: select order
+            self.machine.orders()
