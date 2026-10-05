@@ -46,6 +46,22 @@ What is left is the scripts: ~54 ms per tick for ~14,000 steps (3.8 µs per step
 
 Options 3 to 5 trade fidelity for speed and must report which were on, so a test result says what it verified.
 
+## Passive machines (`--park`, `passive.mjs`)
+
+Heater, O2 and pressure scripts stay in the scheduler as `waiting` (still counted in the step split, setpoints held) and run a real loop pass only on a trigger: O2 waste ≥ 50; pressure gauge in the sync window while unsynced, or a gauge wrap; heaters every 20 s; any of them on a power or tier change, an input port under half full, or after one game minute.
+
+A/B on the late save, 20 game minutes, both with `--sticky-fluids`:
+
+| | Full | Parked |
+| :--- | ---: | ---: |
+| TP gained | 712 | 710 |
+| Heat gained | 1,672.0 | 1,658.0 (−0.8 %) |
+| Pressure, O2 gained | 62.337, 2,013.98 | identical |
+| Script errors | 0 | 0 |
+| × real time | 1.36 | 1.69 |
+
+Remaining cost: scripts ~50 ms/tick (fabricators, panels, drones, smelters, the planners under test), FlowTransport ~13 ms/tick, CameraObservation ~2 ms/tick.
+
 ## Next steps
 
 1. The owner saves a game at 10k TP and puts the `save_<id>.json` where tests can read it (it holds the save's scripts, so not in this public repo; the private `internals/` repo or the project files).
