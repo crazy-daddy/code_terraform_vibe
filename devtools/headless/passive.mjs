@@ -5,6 +5,9 @@
 // Python code, so routing, feeds and edge cases stay the script's own.
 
 const REFRESH_TICKS = 600; // one game minute: every parked script runs at least this often
+// Heaters pick a setpoint per thermal state (weather, day phase); a 1-minute
+// refresh lost ~4 % heat in the A/B run, so they check more often.
+const HEATER_REFRESH_TICKS = 200;
 const FEED_LOW_FRACTION = 0.5;
 
 function feedLow(data) {
@@ -34,8 +37,8 @@ export const PASSIVE_TYPES = {
     return inWindow && !m.data.syncCalled;
   },
   // Setpoint per thermal state and day; the refresh catches changes.
-  temp_heater: () => false,
-  heat_generator: () => false,
+  temp_heater: (m, memo, tick) => tick - memo.lastWake >= HEATER_REFRESH_TICKS,
+  heat_generator: (m, memo, tick) => tick - memo.lastWake >= HEATER_REFRESH_TICKS,
 };
 
 export class Parker {
@@ -60,7 +63,7 @@ export class Parker {
       const changed = memo.powered !== undefined && (memo.powered !== m.powered || memo.tier !== m.data.tier);
       memo.powered = m.powered;
       memo.tier = m.data.tier;
-      const fire = trigger(m, memo) || changed || feedLow(m.data) || st.tickCount - memo.lastWake >= REFRESH_TICKS;
+      const fire = trigger(m, memo, st.tickCount) || changed || feedLow(m.data) || st.tickCount - memo.lastWake >= REFRESH_TICKS;
       if (entry.status !== "waiting" || entry.commsWait) continue;
       if (fire) {
         if (entry.waitTicks > 1) entry.waitTicks = 1;

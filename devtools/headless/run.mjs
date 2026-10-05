@@ -18,6 +18,8 @@
 // --profile              per-system wall time at the end
 // --skip-systems A,B     systems to leave out (default AchievementSystem; "" runs all)
 // --keep-debug           keep the save's per-script debug flags (slow)
+// --sticky-fluids        empty tanks keep their last fluid type for the network cache
+//                        (stops rebuilds when a tank runs dry every tick)
 // --park                 park passive machines' scripts (passive.mjs); wake on triggers
 // --set ID.KEY=VALUE     set machines[ID].data[KEY] after load (repeatable), e.g. to
 //                        buffer a reservoir that forces fluid-network rebuilds
@@ -48,13 +50,14 @@ const { values: a } = parseArgs({
     hours: { type: "string" }, "until-tp": { type: "string" }, "report-every": { type: "string" },
     out: { type: "string" }, profile: { type: "boolean" },
     "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" },
-    park: { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
+    park: { type: "boolean" }, "sticky-fluids": { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
   },
 });
 
 const sim = await Sim.create({
   skipSystems: a["skip-systems"] === undefined ? undefined : a["skip-systems"].split(",").filter(Boolean),
   keepDebug: a["keep-debug"],
+  stickyFluids: a["sticky-fluids"],
 });
 if (a.save) sim.load(readFileSync(a.save, "utf8"));
 else sim.newGame(Number(a.seed ?? 1));

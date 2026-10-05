@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 2;
+const SHIM_VERSION = 3;
 
 // Names below are the minified identifiers of the simworker build the shim was
 // written against. After a game update, re-find them next to the worker
@@ -23,6 +23,12 @@ const SHIM_VERSION = 2;
 const SHIM = String.raw`
 const __ctSystemMs = new Map();
 const __ctSkipSystems = new Set();
+let __ctStickyFluids = false;
+const __ctLastFluids = new Map();
+function __ctStickyFluid(id, fluids) {
+  if (fluids !== "[null,null,null]") __ctLastFluids.set(id, fluids);
+  return __ctLastFluids.get(id) ?? fluids;
+}
 function __ctTimedSystem(name, fn) {
   if (__ctSkipSystems.has(name)) return;
   const t0 = performance.now();
@@ -64,11 +70,20 @@ function __ctCreateHeadless(opts = {}) {
     serialize: () => qpe(core.state),
     systemMs: __ctSystemMs,
     skipSystems: __ctSkipSystems,
+    setStickyFluids: v => { __ctStickyFluids = !!v; },
     config: n,
   };
 }
 export { __ctCreateHeadless };
 `;
+
+// Sticky fluids: gx() builds the fluid-network cache signature from each
+// machine's fluid type and "has content" flags. A tank that runs empty every
+// tick flips them and forces a full network rebuild twice per tick. With
+// sticky fluids on, an empty machine keeps its last fluid type in the
+// signature and the content flags are left out, so the cached analysis stays.
+const GX_FLAGS = "    let o = jx(e) ? +(Nx(e) > 1e-9) : ``;\n";
+const GX_STICKY = GX_FLAGS + "    if (__ctStickyFluids) {\n      i = __ctStickyFluid(e.id, i);\n      a = ``;\n      o = ``;\n    }\n";
 
 // Per-system timing: v9(name, fn) wraps every system call in tCe.tick().
 const V9_HEAD = "function v9(e, t) {\n  nH([`system`, e]);\n  try {\n    t();\n  }";
@@ -115,11 +130,12 @@ export async function loadSimModule(simworkerPath = process.env.CT_SIMWORKER || 
   const out = join(cacheDir, `sim-${hash}.mjs`);
   if (!existsSync(out)) {
     if (!src.includes(V9_HEAD)) throw new Error("simworker changed: system wrapper v9() not found, update simhost.mjs");
+    if (src.split(GX_FLAGS).length !== 2) throw new Error("simworker changed: gx() signature flags not found, update simhost.mjs");
     for (const name of ["var tCe = class", "function LB(", "function Kpe(", "function qpe(", "function sSe(", "function nme(", "var _Ce", "const UCe", "const mue"]) {
       if (!src.includes(name)) throw new Error(`simworker changed: '${name}' not found, update the shim in simhost.mjs`);
     }
     mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(out, src.replace(V9_HEAD, V9_TIMED) + "\n" + SHIM);
+    writeFileSync(out, src.replace(V9_HEAD, V9_TIMED).replace(GX_FLAGS, GX_STICKY) + "\n" + SHIM);
   }
   installCanvasStub();
   return import(pathToFileURL(out).href);
@@ -141,12 +157,14 @@ function clearDebugFlags(state) {
 // bus, i18n, panel buffers), so two Sims in one process can interfere.
 export class Sim {
   // opts.skipSystems: names as tCe.tick() passes them to v9() (default
-  // DEFAULT_SKIP_SYSTEMS); opts.keepDebug keeps per-script debug flags.
+  // DEFAULT_SKIP_SYSTEMS); opts.keepDebug keeps per-script debug flags;
+  // opts.stickyFluids: see GX_STICKY.
   static async create(opts = {}) {
     const mod = await loadSimModule(opts.simworker);
     const sim = new Sim(mod.__ctCreateHeadless(opts));
     for (const name of opts.skipSystems ?? DEFAULT_SKIP_SYSTEMS) sim.h.skipSystems.add(name);
     sim.keepDebug = !!opts.keepDebug;
+    sim.h.setStickyFluids(opts.stickyFluids);
     return sim;
   }
 
