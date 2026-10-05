@@ -15,6 +15,8 @@
 // --report-every MIN     metrics line every MIN game minutes (default 10)
 // --out DIR              writes console.log, metrics.jsonl, final_save.json
 // --profile              per-system wall time at the end
+// --skip-systems A,B     systems to leave out (default AchievementSystem; "" runs all)
+// --keep-debug           keep the save's per-script debug flags (slow)
 // --fail-on-error        exit 1 when any script crashed
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
@@ -39,11 +41,15 @@ const { values: a } = parseArgs({
     save: { type: "string" }, seed: { type: "string" }, scripts: { type: "string" },
     "deploy-templates": { type: "string" }, "deploy-map": { type: "string" },
     hours: { type: "string" }, "until-tp": { type: "string" }, "report-every": { type: "string" },
-    out: { type: "string" }, profile: { type: "boolean" }, "fail-on-error": { type: "boolean" },
+    out: { type: "string" }, profile: { type: "boolean" },
+    "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" }, "fail-on-error": { type: "boolean" },
   },
 });
 
-const sim = await Sim.create();
+const sim = await Sim.create({
+  skipSystems: a["skip-systems"] === undefined ? undefined : a["skip-systems"].split(",").filter(Boolean),
+  keepDebug: a["keep-debug"],
+});
 if (a.save) sim.load(readFileSync(a.save, "utf8"));
 else sim.newGame(Number(a.seed ?? 1));
 

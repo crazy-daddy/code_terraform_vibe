@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 1;
+const SHIM_VERSION = 2;
 
 // Names below are the minified identifiers of the simworker build the shim was
 // written against. After a game update, re-find them next to the worker
@@ -22,7 +22,9 @@ const SHIM_VERSION = 1;
 // and the SimHost with loadState/serializeState/runTick).
 const SHIM = String.raw`
 const __ctSystemMs = new Map();
+const __ctSkipSystems = new Set();
 function __ctTimedSystem(name, fn) {
+  if (__ctSkipSystems.has(name)) return;
   const t0 = performance.now();
   try { fn(); } finally {
     __ctSystemMs.set(name, (__ctSystemMs.get(name) ?? 0) + performance.now() - t0);
@@ -61,6 +63,7 @@ function __ctCreateHeadless(opts = {}) {
     advance: () => host.advanceTick(),
     serialize: () => qpe(core.state),
     systemMs: __ctSystemMs,
+    skipSystems: __ctSkipSystems,
     config: n,
   };
 }
@@ -70,6 +73,36 @@ export { __ctCreateHeadless };
 // Per-system timing: v9(name, fn) wraps every system call in tCe.tick().
 const V9_HEAD = "function v9(e, t) {\n  nH([`system`, e]);\n  try {\n    t();\n  }";
 const V9_TIMED = "function v9(e, t) {\n  nH([`system`, e]);\n  try {\n    __ctTimedSystem(e, t);\n  }";
+
+
+// Control Room panels draw into OffscreenCanvas, which Node lacks. A no-op
+// canvas keeps panel scripts running; nothing is rendered.
+function installCanvasStub() {
+  if (globalThis.OffscreenCanvas) return;
+  const noop = () => {};
+  const gradient = { addColorStop: noop };
+  const special = {
+    measureText: text => ({ width: String(text).length * 6, actualBoundingBoxAscent: 8, actualBoundingBoxDescent: 2,
+      fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }),
+    getImageData: (x, y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(Math.max(0, w * h * 4)) }),
+    createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(Math.max(0, w * h * 4)) }),
+    createLinearGradient: () => gradient, createRadialGradient: () => gradient, createConicGradient: () => gradient,
+    createPattern: () => ({}), getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+    isPointInPath: () => false, isPointInStroke: () => false, getLineDash: () => [],
+  };
+  globalThis.OffscreenCanvas = class {
+    constructor(width, height) { this.width = width; this.height = height; }
+    getContext() {
+      const props = { canvas: this };
+      return new Proxy(props, {
+        get: (t, k) => (k in t ? t[k] : k in special ? special[k] : noop),
+        set: (t, k, v) => { t[k] = v; return true; },
+      });
+    }
+    transferToImageBitmap() { return { width: this.width, height: this.height, close: noop }; }
+    convertToBlob() { return Promise.resolve(new Blob()); }
+  };
+}
 
 export async function loadSimModule(simworkerPath = process.env.CT_SIMWORKER || DEFAULT_SIMWORKER) {
   if (!existsSync(simworkerPath)) {
@@ -88,15 +121,33 @@ export async function loadSimModule(simworkerPath = process.env.CT_SIMWORKER || 
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(out, src.replace(V9_HEAD, V9_TIMED) + "\n" + SHIM);
   }
+  installCanvasStub();
   return import(pathToFileURL(out).href);
+}
+
+// Bookkeeping only; no script or production reads them.
+export const DEFAULT_SKIP_SYSTEMS = ["AchievementSystem"];
+
+// A script or library with the debug flag on makes the scheduler build a
+// debug snapshot at every step boundary: measured 148 -> 60 ms per tick on a
+// late save with 15 flagged sources. Tests don't attach a debugger.
+function clearDebugFlags(state) {
+  for (const group of [state.scripts, state.libraryScripts]) {
+    for (const entry of Object.values(group ?? {})) entry.debug = false;
+  }
 }
 
 // One simulation per process: the simworker keeps module-level state (event
 // bus, i18n, panel buffers), so two Sims in one process can interfere.
 export class Sim {
+  // opts.skipSystems: names as tCe.tick() passes them to v9() (default
+  // DEFAULT_SKIP_SYSTEMS); opts.keepDebug keeps per-script debug flags.
   static async create(opts = {}) {
     const mod = await loadSimModule(opts.simworker);
-    return new Sim(mod.__ctCreateHeadless(opts));
+    const sim = new Sim(mod.__ctCreateHeadless(opts));
+    for (const name of opts.skipSystems ?? DEFAULT_SKIP_SYSTEMS) sim.h.skipSystems.add(name);
+    sim.keepDebug = !!opts.keepDebug;
+    return sim;
   }
 
   constructor(h) {
@@ -128,7 +179,9 @@ export class Sim {
 
   // Accepts the game's save_<id>.json text or object; running scripts resume.
   load(saveJson) {
-    const bytes = typeof saveJson === "string" ? saveJson : JSON.stringify(saveJson);
+    const save = typeof saveJson === "string" ? JSON.parse(saveJson) : structuredClone(saveJson);
+    if (!this.keepDebug) clearDebugFlags(save.state ?? save);
+    const bytes = JSON.stringify(save);
     return this.#ok(this.h.control("sim.load", { bytes, saveId: "headless" }), "sim.load");
   }
 
