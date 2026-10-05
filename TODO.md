@@ -31,7 +31,7 @@ Plan (done): [docs/plans/done/handler_unification.md](docs/plans/done/handler_un
 Round 2, plan: [docs/plans/controller_unification.md](docs/plans/controller_unification.md) (scan: `devtools/clone_scan.py`).
 
 - [ ] 1. `lib/game_clock.py` `now_tick()` replaces ~40 local tick readers.
-- [ ] 2. `archive.publish_status()` for the ~15 per-machine status dicts; one `STATUS_STALE_TICKS`; fix unpruned `plant.status`/`seed_maker.status`.
+- [ ] 2. `archive.publish_status()` for the ~15 per-machine status dicts; one `STATUS_STALE_TICKS`; fix unpruned `plant.status`/`seed_maker.status`; `archive_cleaner` prunes leftovers of every status key by building existence.
 - [ ] 3. `MachineControllerBase` mixin: `run()` template, `tick()`, `output_counts()`, `publish_status()`.
 - [ ] 4. `lib/fleet_unit.py` `FleetUnitMixin` (intent, telemetry, recall, mission) for Drone/Vehicle; shared panel helpers in `fleet_status.py`.
 - [ ] Optional, deferred: `storage.drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
