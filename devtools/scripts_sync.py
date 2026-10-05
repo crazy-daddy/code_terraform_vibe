@@ -37,6 +37,9 @@ differences documented in the plan this came from:
     python devtools/scripts_sync.py status          # show what maps to what
     python devtools/scripts_sync.py once             # one pass over what is there now
     python devtools/scripts_sync.py watch            # keep running and push changes as they happen
+    python devtools/scripts_sync.py watch --early    # fresh save: also onboarding, idle starts and the
+                                                     # speedrun advisor (devtools/early_game.py), then
+                                                     # --apply-libs once the lib tier is reached
 
 scripts/ is the only source of truth. Every save slot with a confident match
 (see below) is overwritten with its resolved source whenever the two differ
@@ -141,13 +144,14 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import typer
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
+import early_game
 import self_typing
 
 REPO = Path(__file__).resolve().parent.parent
@@ -220,6 +224,10 @@ class Options:
     apply_libs: bool = False
     include_autoplay: bool = False
     active_tier: str = field(default="", init=False)
+    # --early: sync only the slots this lets through (stem -> bool), None = all;
+    # and keep refused starts of unpowered machines out of the terminal.
+    slot_gate: Optional[Callable[[str], bool]] = field(default=None, init=False)
+    quiet_offline: bool = field(default=False, init=False)
     lib_index: dict = field(default_factory=dict, init=False)
     lib_closure: dict = field(default_factory=dict, init=False)
 
@@ -255,24 +263,33 @@ def log_line(level: str, msg: str) -> None:
         pass
 
 
+# Monotonic time of the last terminal line (early_game reprints its status block
+# once this output has gone quiet).
+LAST_OUTPUT = [0.0]
+
+
 def echo(msg: str) -> None:
     typer.echo(msg)
     log_line("info", msg)
+    LAST_OUTPUT[0] = time.monotonic()
 
 
 def err(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.RED, err=True)
     log_line("error", msg)
+    LAST_OUTPUT[0] = time.monotonic()
 
 
 def warn(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.YELLOW)
     log_line("warn", msg)
+    LAST_OUTPUT[0] = time.monotonic()
 
 
 def ok(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.GREEN)
     log_line("ok", msg)
+    LAST_OUTPUT[0] = time.monotonic()
 
 
 # ------------------------------------------------------------------ discovery
@@ -1383,12 +1400,14 @@ def resolve_placeholders(save_dir: Path, stem: str, placeholders: list, dry_run:
     return answers
 
 
-def restart_in_game(save_dir: Path, stem: str, body: str) -> bool:
+def restart_in_game(save_dir: Path, stem: str, body: str, quiet_offline: bool = False) -> bool:
     """(Re)start one script slot with body over the external-command channel
     (`"action": "run"`, same as VS Code's "Run Script in Game"): stops a
     running copy and starts body fresh. User-invoked automation (the operator
     runs this tool), not the assistant starting a live session on its own.
-    Retries briefly while the game hasn't registered a just-created slot."""
+    Retries briefly while the game hasn't registered a just-created slot.
+    quiet_offline: a refusal because the machine is unpowered ("offline") goes
+    to the sync log only (--early retries those)."""
     reason = None
     note_restart(save_dir, stem, body)
     for attempt, delay in enumerate((0.0,) + RESTART_RETRY_DELAYS_S):
@@ -1401,7 +1420,11 @@ def restart_in_game(save_dir: Path, stem: str, body: str) -> bool:
         reason = result.get("reason") or result.get("status") or result.get("message")
         if reason in ("no_session", "unconfirmed", "busy"):
             break  # game unreachable: retrying won't help
-    warn("  run   %-28s not restarted (%s) - is the game running with this save open?" % (stem + ".py", reason))
+    msg = "  run   %-28s not restarted (%s) - is the game running with this save open?" % (stem + ".py", reason)
+    if quiet_offline and reason == "offline":
+        log_line("warn", msg)
+    else:
+        warn(msg)
     return False
 
 
@@ -1494,6 +1517,8 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
     restart it in game (see module docstring). True if it was written."""
     if not is_candidate(path, opts.save_dir):
         return False
+    if opts.slot_gate is not None and not opts.slot_gate(path.stem):
+        return False
     text = read(path)
     if text is None:
         return False
@@ -1575,7 +1600,7 @@ def sync_file(path: Path, index: dict, opts: Options, quiet_skips: bool = True) 
         warn("  run   %-28s not restarted: reaches unapplied lib %s - %s"
              % (path.name, ", ".join(blockers), "applying" if opts.apply_libs else "Apply & restart all in game"))
     elif restart:
-        restart_in_game(opts.save_dir, path.stem, body)
+        restart_in_game(opts.save_dir, path.stem, body, quiet_offline=opts.quiet_offline)
     return True
 
 
@@ -2235,6 +2260,9 @@ ApplyLibsOpt = typer.Option(False, "--apply-libs",
                             help="Apply changed lib/ modules in game (restarts every running script importing them).")
 AutoplayOpt = typer.Option(False, "--include-autoplay",
                            help="Also deploy autoplay/ (infrastructure planner script + autoplay/lib modules).")
+EarlyOpt = typer.Option(False, "--early",
+                        help="Fresh save: drive First Contact onboarding, start idle tier-0 slots and print the speedrun "
+                             "advisor until the lib tier, then continue with --apply-libs (devtools/early_game.py).")
 
 
 def make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber,
@@ -2392,7 +2420,7 @@ def apply_libs_cmd(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = Scrip
 
 
 class Watcher:
-    def __init__(self, opts: Options, delay: float = 0.4):
+    def __init__(self, opts: Options, delay: float = 0.4, early: bool = False):
         self.opts, self.delay = opts, delay
         self.script_index, self.lib_index, self.conflicts = build_index(opts.scripts_dir, opts.active_tier, opts.autoplay_dir)
         report_conflicts(self.conflicts)
@@ -2400,6 +2428,55 @@ class Watcher:
         self.repo_due = None
         self.last_tier_check = time.monotonic()
         self.on_hold = False
+        self.early = None
+        if early:
+            if self.at_lib_tier():
+                self.end_early("save is already at tier %s" % opts.active_tier)
+            else:
+                self.early = early_game.EarlyGame(opts.save_dir, early_game.Hooks(
+                    slots=lambda: live_slot_scripts(self.opts.save_dir),
+                    matched_text=self.matched_text,
+                    restart=lambda stem, body: not self.opts.dry_run and self.opts.restart
+                    and restart_in_game(self.opts.save_dir, stem, body, quiet_offline=True),
+                    echo=echo,
+                    warn=warn,
+                    last_output=lambda: LAST_OUTPUT[0],
+                ))
+                opts.quiet_offline = True
+                opts.slot_gate = lambda stem: self.early is None or early_game.slot_allowed(stem, base_name(stem), self.early.onboarded)
+
+    def at_lib_tier(self) -> bool:
+        number = tier_number(self.opts.active_tier)
+        return number is not None and number >= LIB_UNLOCK_TIER_NUMBER
+
+    def end_early(self, reason):
+        """--early is done: from here on a normal watch that applies changed libs in game."""
+        self.early = None
+        self.opts.apply_libs = True
+        self.opts.slot_gate = None
+        self.opts.quiet_offline = False
+        ok("  early %s: early-game driver off, --apply-libs on" % reason)
+
+    def matched_text(self, stem: str, tiered_only: bool) -> Optional[str]:
+        """The slot file's text when scripts/ resolves a source for it (from a tier dir
+        only, when tiered_only); None otherwise. For early_game's starts."""
+        if self.opts.slot_gate is not None and not self.opts.slot_gate(stem):
+            return None  # held until onboarding is done: not pushed yet
+        path = self.opts.save_dir / ("%s.py" % stem)
+        text = read(path)
+        if text is None:
+            return None
+        source, _note = source_for(stem, text, self.script_index, self.opts.save_dir)
+        if source is None:
+            return None
+        if tiered_only:
+            try:
+                top = source.relative_to(self.opts.scripts_dir).parts[0]
+            except ValueError:
+                return None
+            if tier_number(top) is None:
+                return None
+        return text
 
     def held(self) -> bool:
         """True while SYNC_HOLD_FILE exists; reports hold/release once each."""
@@ -2455,7 +2532,14 @@ class Watcher:
                 self.opts.active_tier = new_tier
                 self.script_index, self.lib_index, self.conflicts = build_index(self.opts.scripts_dir, new_tier, self.opts.autoplay_dir)
                 report_conflicts(self.conflicts)
+                if self.early is not None and self.at_lib_tier():
+                    self.end_early("reached tier %s" % new_tier)
                 self.sweep()
+            if self.early is not None:
+                self.early.step()
+                if self.early.onboarded and self.opts.slot_gate is not None:
+                    self.opts.slot_gate = None  # onboarding done: fill every held slot now
+                    self.sweep()
             # The game rewrites the workspace file on its own cadence, so an
             # in-game "Apply & restart all", and a script that errored after
             # one, only show up here.
@@ -2514,12 +2598,12 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
           strict: bool = StrictOpt, dry_run: bool = DryOpt, verbose: bool = VerboseOpt,
           no_renumber: bool = NoRenumberOpt, force_tier: Optional[str] = ForceTierOpt,
           no_restart: bool = NoRestartOpt, apply_libs: bool = ApplyLibsOpt,
-          include_autoplay: bool = AutoplayOpt,
+          include_autoplay: bool = AutoplayOpt, early: bool = EarlyOpt,
           poll: bool = typer.Option(False, "--poll", help="Poll instead of using filesystem events.")):
     """Watch the save directory and scripts/, pushing and re-tiering as things change."""
     opts = make_opts(save_dir, scripts_dir, strict, dry_run, verbose, no_renumber, force_tier, no_restart, apply_libs,
                      include_autoplay)
-    watcher = Watcher(opts)
+    watcher = Watcher(opts, early=early)
 
     echo("Save     %s" % opts.save_dir)
     echo("Scripts  %s (tier %s)" % (opts.scripts_dir, opts.active_tier))
@@ -2527,7 +2611,9 @@ def watch(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
     echo("Staging  %s for game files with no match" % show(opts.unmatched_dir))
     echo("Push     every matched slot follows scripts/ (in-game edits are overwritten, backups in %s)" % show(BACKUP_DIR))
     echo("Restart  %s" % ("off (--no-restart)" if no_restart else "running and newly filled slots, unless an unapplied lib/ is reached"))
-    echo("Apply    %s" % ("changed lib/ modules in game (--apply-libs)" if apply_libs else "off, use the in-game Apply & restart all (or --apply-libs)"))
+    echo("Apply    %s" % ("changed lib/ modules in game (--apply-libs)" if opts.apply_libs else "off, use the in-game Apply & restart all (or --apply-libs)"))
+    if watcher.early is not None:
+        echo("Early    onboarding, idle tier-0 starts and advisor until the lib tier, then --apply-libs (devtools/early_game.py)")
     if dry_run:
         warn("Dry run: nothing will be written.")
     watcher.sweep()
