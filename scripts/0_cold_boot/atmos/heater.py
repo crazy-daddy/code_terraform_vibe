@@ -1,17 +1,23 @@
 # Self-contained early Heat Generator controller (no lib/ imports)
-# Discovers daily optimal power level (1-10) with dynamic night-battery protection
+# Learns the optimal power (1-10) per thermal state on this machine and
+# duty-cycles it against the outpost battery level.
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from user_stubs import heater as self, BatteryComponent
 
-clock = get_component("clock")
-assert clock is not None
-
 ORDER = (5, 6, 4, 7, 3, 8, 2, 9, 1, 10)
-optimal_power = None
-last_day = -1
-throttled = False
+POLL_S = 0.5            # thermal_state() changes only on a new day; this bounds the switch lag
+DUTY_PERIOD_S = 10.0
+# Battery throttle: duty 0 at or below DUTY_EMPTY, 1 at or above DUTY_FULL, linear between.
+# Heat output follows efficiency only, not watts, and efficiency drops steeply off the
+# optimum. So the heater runs at its optimum or at 0 (duty cycle), never at reduced watts.
+DUTY_EMPTY = 0.15
+DUTY_FULL = 0.35
+
+best = {}       # thermal_state -> optimal power; no archive or bus in this tier, so per machine
+power = -1      # last set_power() value
+mode = ""       # "full" | "throttled" | "off", for logging transitions only
 
 # No lib/ access in this tier: local stand-in for lib/swallow.py's swallowed().
 # Logs a caught-and-recovered error at debug level (repeats at one site once).
@@ -44,44 +50,47 @@ def get_battery_pct():
         return 1.0
     return (level / capacity) if capacity > 0 else 1.0
 
+
+def scan(state):
+    # Sweep powers outward from 5; stop at the first ~100 % reading.
+    global power
+    best_power = 5
+    best_eff = -1.0
+    for p in ORDER:
+        self.set_power(p)
+        sleep(0.2)
+        eff = self.efficiency()
+        if eff > best_eff:
+            best_eff = eff
+            best_power = p
+        if eff >= 99.0:
+            break
+    power = -1
+    print(f"[{self.id}] Learned {state}: power={best_power} eff={best_eff}%")
+    return best_power
+
+
+def optimal_power():
+    state = self.thermal_state()
+    if state not in best:
+        best[state] = scan(state)
+    return best[state]
+
+
 while True:
-    current_day = int(clock.get_day())
     bat_pct = get_battery_pct()
+    duty = min(1.0, max(0.0, (bat_pct - DUTY_EMPTY) / (DUTY_FULL - DUTY_EMPTY)))
+    new_mode = "full" if duty >= 1.0 else ("off" if duty <= 0.0 else "throttled")
+    if new_mode != mode:
+        print(f"[{self.id}] Battery {bat_pct*100:.1f}% -> {new_mode} (duty {duty*100:.0f}%)")
+        mode = new_mode
 
-    # Dynamic Battery Protection: Throttle heater if battery drops below 25%
-    if bat_pct < 0.25:
-        if not throttled:
-            self.set_power(1)
-            print(f"[{self.id}] Battery low ({bat_pct*100:.1f}% < 25%) -> Throttling heater to 1W to prevent brownout.")
-            throttled = True
-        sleep(5.0)
-        continue
-    elif throttled and bat_pct >= 0.35:
-        throttled = False
-        if optimal_power is not None:
-            self.set_power(optimal_power)
-            print(f"[{self.id}] Battery recovered ({bat_pct*100:.1f}%) -> Restored optimal power {optimal_power}W.")
-
-    # Thermal state changes daily: re-scan when a new day arrives
-    if current_day != last_day or optimal_power is None or self.efficiency() < 95.0:
-        last_day = current_day
-        best_power = 5
-        best_eff = 0.0
-        
-        for p in ORDER:
-            self.set_power(p)
-            sleep(0.2)
-            eff = self.efficiency()
-            if eff > best_eff:
-                best_eff = eff
-                best_power = p
-            if eff >= 99.0:
-                break
-                
-        optimal_power = best_power
-        if not throttled:
-            self.set_power(optimal_power)
-        print(f"[{self.id}] Calibrated day {current_day}: power={optimal_power} eff={self.efficiency()}%")
-
-    sleep(2.0)
-
+    on_s = duty * DUTY_PERIOD_S
+    elapsed = 0.0
+    while elapsed < DUTY_PERIOD_S:
+        target = optimal_power() if elapsed < on_s else 0
+        if target != power:
+            self.set_power(target)
+            power = target
+        sleep(POLL_S)
+        elapsed += POLL_S
