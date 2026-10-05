@@ -36,15 +36,14 @@
 #   - Idle (nothing short, or no uranium/plates): clears the recipe and parks.
 
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed, call_or
 from storage import take_item, takeable_stock, total_stock, drain_port_storage_first, push_to_targets, outpost_is_home, send_stack
 from production import get_manual_orders, consume_manual_order, blueprint_required_items, dock_delivery_targets, dock_owed_at, dock_remaining_requirements, set_upgrade_order
 from script_parking import ParkRequester
 import lead_cask
 import power
-from game_clock import now_tick
+from machine_controller import MachineController, port_counts
 
 ROD_RECIPE = "craft_fuel_rod"
 BATTERY_RECIPE = "craft_nuclear_battery"
@@ -75,8 +74,15 @@ IDLE_POLL_S = 20.0
 RECIPE_REFRESH_TICKS = 1200
 
 
-class FuelAssemblerController:
+class FuelAssemblerController(MachineController):
     """Crafts Fuel Rods to the local consumers' stock target, then Nuclear Batteries to open demand."""
+    LABEL = "Fuel Assembler"
+    STEP_DELAY = True
+    POLL_S = IDLE_POLL_S
+    PARK_IDLE_S = IDLE_POLL_S
+
+    def online_message(self):
+        return f"Fuel Assembler ({self.name}) online at '{self.outpost_id}'."
 
     def __init__(self, machine: "FuelAssembler"):
         self.machine = machine
@@ -90,9 +96,6 @@ class FuelAssemblerController:
         self._recipes_tick = None
         self._last_blocker = None
         self._last_cask_note = None
-
-    def tick(self):
-        return now_tick()
 
     def _call(self, method, default, *args):
         return call_or("fuel_assembler.FuelAssemblerController._call", self.machine, method, default, *args)
@@ -165,13 +168,7 @@ class FuelAssemblerController:
         return owed_total
 
     def output_counts(self):
-        out = {}
-        try:
-            for stack in self.machine.output.stacks():
-                out[stack.id] = out.get(stack.id, 0) + stack.count
-        except Exception as error:
-            swallowed("fuel_assembler.FuelAssemblerController.output_counts: output.stacks", error)
-        return out
+        return port_counts(getattr(self.machine, "output", None), "fuel_assembler.FuelAssemblerController.output_counts")
 
     # ------------------------------------------------------------- demand
 
@@ -399,7 +396,7 @@ class FuelAssemblerController:
 
     def step(self):
         """One poll. Returns the sleep before the next one."""
-        curr_tick = self.tick()
+        curr_tick = self.get_current_tick()
         recipes = self.recipes(curr_tick)
         casks = lead_cask.casks_at(self.outpost)
         rod_cask = self.tend_casks(casks)
@@ -445,17 +442,3 @@ class FuelAssemblerController:
             self._last_blocker = blocker
         busy = running or worked or (recipe_id is not None and blocker is None)
         return ACTIVE_POLL_S if busy or blocker == "low_reserve" else IDLE_POLL_S
-
-    def run(self):
-        self.log.print(f"Fuel Assembler ({self.name}) online at '{self.outpost_id}'.")
-        validate_game_version()
-        while True:
-            reset_all()
-            delay = IDLE_POLL_S
-            try:
-                delay = self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Fuel Assembler exception: {error}")
-            self.parker.update(delay == IDLE_POLL_S)
-            flush_all()
-            sleep(delay)

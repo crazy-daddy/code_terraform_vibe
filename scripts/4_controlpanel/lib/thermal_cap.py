@@ -1,9 +1,8 @@
 import fluid_routing
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # Shared Thermal Cap automation: keep the vent's steam chamber from
 # overpressurizing (which blows the whole chamber to atmosphere, losing
@@ -101,8 +100,19 @@ RESCAN_INTERVAL_TICKS = 300
 DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 
-class ThermalCapController:
+class ThermalCapController(MachineController):
     """Keeps a Thermal Cap's chamber pressure off the overpressure ceiling."""
+    LABEL = "Thermal Cap"
+    STEP_DELAY = True
+    POLL_S = POLL_SECONDS
+
+    def online_message(self):
+        return f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure."
+
+    def next_sleep(self, result, failed):
+        wake_ticks = None if failed else self.park_wake_ticks()
+        self.parker.update(wake_ticks is not None and wake_ticks > 0, wake_ticks)
+        return super().next_sleep(result, failed)
 
     def __init__(self, cap: "ThermalCap"):
         self.cap = cap
@@ -129,9 +139,6 @@ class ThermalCapController:
             fluid_id="steam",
             label=f"{self.name}.steam_out",
         )
-
-    def get_current_tick(self):
-        return now_tick()
 
     def ensure_output_connection(self):
         """
@@ -260,19 +267,3 @@ class ThermalCapController:
         headroom = max(0.0, PRESSURE_BAND_CRITICAL - pressure)
         seconds = headroom / max(self.max_rise_per_tick, rise) / 10.0 * CAP_WAKE_FRACTION
         return min(CAP_MAX_POLL_SECONDS, max(POLL_SECONDS, seconds))
-
-    def run(self, poll_interval=None):
-        self.log.print(f"Thermal Cap Controller ({self.name}) online. Guarding against overpressure.")
-        validate_game_version()
-        while True:
-            reset_all()
-            interval = POLL_SECONDS
-            wake_ticks = None
-            try:
-                interval = self.step()
-                wake_ticks = self.park_wake_ticks()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Thermal Cap exception: {error}")
-            self.parker.update(wake_ticks is not None and wake_ticks > 0, wake_ticks)
-            flush_all()
-            sleep(poll_interval if poll_interval is not None else interval)

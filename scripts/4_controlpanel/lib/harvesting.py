@@ -2,15 +2,22 @@
 # Handles grid mapping coordination, BFS shortest-path navigation,
 # safe heat management, surface item collection, crop harvesting, and inventory offloading.
 
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
+from machine_controller import MachineController
 
-class HarvesterController:
+class HarvesterController(MachineController):
     """
     Automated controller for the Harvester surface vehicle.
     Sweeps the local base grid (sectors A1..H24) to collect loose items and harvest mature crops.
     """
+    LABEL = "Harvester"
+    POLL_S = 0.5
+    ERROR_POLL_S = 5.0
+
+    def online_message(self):
+        return f"Harvester Controller ({self.name}) online. Base depot: {self.base_sector}."
+
     ROWS = "ABCDEFGH"
     NUM_ROWS = 8
     NUM_COLS = 24
@@ -319,18 +326,3 @@ class HarvesterController:
         self.cool_down(25.0)
         flush_all()
         sleep(5.0)
-
-    def run(self):
-        """Continuous harvesting and collection loop."""
-        self.log.print(f"Harvester Controller ({self.name}) online. Base depot: {self.base_sector}.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-                flush_all()
-                sleep(0.5)
-            except Exception as e:
-                self.log.level("error").print(f"[{self.name}] Exception in harvester loop: {e}")
-                flush_all()
-                sleep(5.0)

@@ -2,14 +2,13 @@
 from production import get_site_fabricator_targets, get_fabricator_active_recipe, get_fabricator_worker_count, get_fabricator_pipeline, can_source_item, can_source_fluid, find_dock_order_requiring, dock_delivery_targets, FABRICATOR_WANTS_KEY, WANTS_REFRESH_TICKS, WANTS_STALE_TICKS, get_manual_orders, get_manual_order_blocking_items, consume_manual_order, get_upgrade_orders, get_backlog_orders, get_fabricator_stock_targets, blueprint_demand_items, craft_prefill_units, discover_fluid_sources, FLUID_SOURCE_TYPE_IDS, FLUID_LATCH_IDS, SourceCache, machine_outpost_id, claim_site_id, discover_smelter_ids
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, method_block, reset_all
+from tree_console import TreeConsole, method_block
 from swallow import swallowed
 from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
 from recipe_claims import RecipeClaimMixin
 from hysteresis import HysteresisLatch
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # run() sleep between steps: short while the machine is running or moved
 # material this step, long when there is nothing to do.
@@ -62,7 +61,17 @@ FLUID_ONLY_RESUME_AT = 0.20
 FLUID_ONLY_RESERVE_REFRESH_TICKS = 100
 
 
-class FabricatorController(RecipeClaimMixin):
+class FabricatorController(RecipeClaimMixin, MachineController):
+    LABEL = "Fabricator"
+
+    def online_message(self):
+        return f"Fabricator Controller ({self.name}) online. Building stock targets enabled."
+
+    def next_sleep(self, result, failed):
+        active = failed or bool(result)
+        self.parker.update(not active)
+        return ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS
+
     RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
     CLAIM_OWNER_FIELD = "fabricator"
 
@@ -98,9 +107,6 @@ class FabricatorController(RecipeClaimMixin):
         self._wants = {}
         self._wants_published = None
         self._wants_tick = 0
-
-    def get_current_tick(self):
-        return now_tick()
 
     def _claim_machine(self):
         return self.machine
@@ -768,18 +774,3 @@ class FabricatorController(RecipeClaimMixin):
         if used < capacity:
             worked = self.load_inputs(recipe, active_remaining, capacity - used, cache) > 0 or worked
         return worked or self.machine.is_running()
-
-    def run(self, poll_interval=IDLE_POLL_SECONDS, active_poll_interval=ACTIVE_POLL_SECONDS):
-        self.log.print(f"Fabricator Controller ({self.name}) online. Building stock targets enabled.")
-        validate_game_version()
-        while True:
-            reset_all()
-            active = False
-            try:
-                active = self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Fabricator exception: {error}")
-                active = True
-            self.parker.update(not active)
-            flush_all()
-            sleep(active_poll_interval if active else poll_interval)

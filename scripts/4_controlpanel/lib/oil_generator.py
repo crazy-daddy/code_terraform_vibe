@@ -1,11 +1,10 @@
 import fluid_routing
 import power
 from hysteresis import HysteresisLatch
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # Oil Generator automation: last-resort power, and base load while oil is in
 # surplus.
@@ -111,8 +110,18 @@ def _notify(text, level="warn", duration=8.0):
 OIL_POLL_SECONDS = 4.0  # reserve and deficit change over minutes
 
 
-class OilGeneratorController:
+class OilGeneratorController(MachineController):
     """Burns oil as last-resort power (low combined reserve AND a deficit without oil) or as base load while oil is in surplus."""
+    LABEL = "Oil Generator"
+    POLL_S = OIL_POLL_SECONDS
+
+    def online_message(self):
+        return f"Oil Generator Controller ({self.name}) online. Burns below {OIL_START_RESERVE_FRACTION*100:.0f}% reserve with a deficit, or burns the oil inflow as base load while oil tanks are >= {OIL_SURPLUS_START_FRACTION*100:.0f}% full."
+
+    def next_sleep(self, result, failed):
+        # A standing deficit drains the battery back to the start line within hours; stay awake for it.
+        self.parker.update(not failed and not (self.burning or self.surplus) and self.deficit <= 0)
+        return self.POLL_S
 
     def __init__(self, generator):
         self.generator = generator
@@ -136,9 +145,6 @@ class OilGeneratorController:
             neutral_grace_steps=NEUTRAL_GRACE_STEPS,
             label=f"{self.name}.oil_in",
         )
-
-    def get_current_tick(self):
-        return now_tick()
 
     # ------------------------------------------------------------------
     # Oil input
@@ -348,19 +354,3 @@ class OilGeneratorController:
                 self.starved_warned = True
         else:
             self.starved_warned = False
-
-    def run(self, poll_interval=OIL_POLL_SECONDS):
-        self.log.print(f"Oil Generator Controller ({self.name}) online. Burns below {OIL_START_RESERVE_FRACTION*100:.0f}% reserve with a deficit, or burns the oil inflow as base load while oil tanks are >= {OIL_SURPLUS_START_FRACTION*100:.0f}% full.")
-        validate_game_version()
-        while True:
-            reset_all()
-            idle = False
-            try:
-                self.step()
-                # A standing deficit drains the battery back to the start line within hours; stay awake for it.
-                idle = not (self.burning or self.surplus) and self.deficit <= 0
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Oil Generator exception: {error}")
-            self.parker.update(idle)
-            flush_all()
-            sleep(poll_interval)

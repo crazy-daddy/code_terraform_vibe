@@ -31,14 +31,13 @@
 # Never crafts past the target; idle (no deficit or no inputs) -> parked.
 
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed, call_or
 from storage import take_item, drain_port_storage_first, push_to_targets, local_port_target, hit_slot_cap, eject_unneeded
 from script_parking import ParkRequester
 import logistics_requests
 import wildlife_common as wc
-from game_clock import now_tick
+from machine_controller import MachineController, port_counts
 
 ACTIVE_POLL_S = 2.0          # a craft takes 0.3 game h = 7.5 s (Mk II 5 s)
 # After a step that moved items: the call returns once its feeder transfer is
@@ -54,8 +53,15 @@ HABITAT_MAP_REFRESH_TICKS = 3000  # local Habitat ids re-listed at least this of
 MAX_MAKERS_PER_RECIPE = 2
 
 
-class FeedMakerController:
+class FeedMakerController(MachineController):
     """Crafts creature feed to the planner's home stock targets."""
+    LABEL = "Feed Maker"
+    STEP_DELAY = True
+    POLL_S = IDLE_POLL_S
+    PARK_IDLE_S = IDLE_POLL_S
+
+    def online_message(self):
+        return f"Feed Maker ({self.name}) online at '{self.outpost_id}'."
 
     def __init__(self, maker):
         self.maker = maker
@@ -73,9 +79,6 @@ class FeedMakerController:
         self._habitat_ids_tick = 0
         self._picked = None
         self._retire = ""
-
-    def tick(self):
-        return now_tick()
 
     def _call(self, method, default, *args):
         return call_or("feed_maker.FeedMakerController._call", self.maker, method, default, *args)
@@ -140,13 +143,7 @@ class FeedMakerController:
         return out
 
     def output_counts(self):
-        out = {}
-        try:
-            for stack in self.maker.output.stacks():
-                out[stack.id] = out.get(stack.id, 0) + stack.count
-        except Exception as error:
-            swallowed("feed_maker.FeedMakerController.output_counts: output.stacks", error)
-        return out
+        return port_counts(getattr(self.maker, "output", None), "feed_maker.FeedMakerController.output_counts")
 
     @staticmethod
     def has_inputs(inputs, loaded, stock):
@@ -339,7 +336,7 @@ class FeedMakerController:
         return self.name in (archive.get("power.shedded", []) or [])
 
     def step(self):
-        curr_tick = self.tick()
+        curr_tick = self.get_current_tick()
         recipes = self.recipes(curr_tick)
         if self.complete():
             self._picked = None
@@ -378,17 +375,3 @@ class FeedMakerController:
             return FAST_POLL_S
         busy = running or rid is not None
         return ACTIVE_POLL_S if busy else IDLE_POLL_S
-
-    def run(self):
-        self.log.print(f"Feed Maker ({self.name}) online at '{self.outpost_id}'.")
-        validate_game_version()
-        while True:
-            reset_all()
-            delay = IDLE_POLL_S
-            try:
-                delay = self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Feed Maker exception: {error}")
-            self.parker.update(delay == IDLE_POLL_S)
-            flush_all()
-            sleep(delay)

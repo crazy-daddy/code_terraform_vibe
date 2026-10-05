@@ -1,7 +1,5 @@
 import fluid_routing
-from fluid_pump import FluidPumpController, PUMP_POLL_SECONDS, LIQUID_TANK_REBALANCE_FILL_FRACTION, CONNECTION_GRACE_TICKS, RESCAN_INTERVAL_TICKS, DISCOVERY_CACHE_INTERVAL_TICKS
-from version_guard import validate_game_version
-from tree_console import flush_all, reset_all
+from fluid_pump import FluidPumpController, LIQUID_TANK_REBALANCE_FILL_FRACTION, CONNECTION_GRACE_TICKS, RESCAN_INTERVAL_TICKS, DISCOVERY_CACHE_INTERVAL_TICKS
 from script_parking import ParkRequester
 from swallow import swallowed
 
@@ -50,6 +48,14 @@ def deposit_active(cap: "ExoticGasCap | ExoticSpringTap"):
 
 class ExoticCapController(FluidPumpController):
     """Routes an Exotic Gas Cap / Spring Tap output to tanks of its deposit's fluid; parks through long dormant phases."""
+
+    def online_message(self):
+        return f"{self.label} Controller ({self.name}) online. Routing {self.fluid_id} to network {self.tank_label}."
+
+    def next_sleep(self, result, failed):
+        wake_ticks = None if failed else self.park_wake_ticks()
+        self.parker.update(wake_ticks is not None, wake_ticks)
+        return self.POLL_S
 
     def __init__(self, cap: "ExoticGasCap | ExoticSpringTap"):
         medium = "gas" if hasattr(cap, "gas_out") else "liquid"
@@ -109,18 +115,3 @@ class ExoticCapController(FluidPumpController):
             return None
         self.log.debug(f"[{self.name}] Deposit dormant for {minutes:.0f} more game-min; parking for {wake_after} ticks.")
         return wake_after
-
-    def run(self, poll_interval=PUMP_POLL_SECONDS):
-        self.log.print(f"{self.label} Controller ({self.name}) online. Routing {self.fluid_id} to network {self.tank_label}.")
-        validate_game_version()
-        while True:
-            reset_all()
-            wake_ticks = None
-            try:
-                self.step()
-                wake_ticks = self.park_wake_ticks()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] {self.label} exception: {error}")
-            self.parker.update(wake_ticks is not None, wake_ticks)
-            flush_all()
-            sleep(poll_interval)

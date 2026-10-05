@@ -57,9 +57,8 @@ from harvester_care import HarvesterCareMixin, CARE_BATCH_H
 from harvester_machines import HarvesterMachinesMixin
 from harvester_amplify import HarvesterAmplifyMixin
 from storage import total_stock, discover_storage_buildings, mark_busy, recently_busy, inventory_count
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole, flush_all
 from swallow import swallowed
-from version_guard import validate_game_version
 from game_clock import now_tick
 
 STATUS_KEY = "plant.status"
@@ -89,6 +88,12 @@ def _home_outpost_id():
 
 class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterPlantingMixin, HarvesterCareMixin, HarvesterMachinesMixin, HarvesterAmplifyMixin, HarvesterController):
     """Plants, tends and harvests the field layout; falls back to the loose-item sweep."""
+    LABEL = "Field Keeper"
+    POLL_S = LOOP_SLEEP_SECONDS
+    ERROR_POLL_S = 5.0
+
+    def online_message(self):
+        return f"Field Keeper ({self.name}) online."
 
     def __init__(self, harvester):
         super().__init__(harvester)
@@ -530,17 +535,3 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
         due = self.care_due(cell, rules, CARE_BATCH_H, here in self.kept_garden())
         if due:
             self.care_here(due)
-
-    def run(self):
-        self.log.print(f"Field Keeper ({self.name}) online.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-                flush_all()
-                sleep(LOOP_SLEEP_SECONDS)
-            except Exception as e:
-                self.log.level("error").print(f"[{self.name}] Field Keeper exception: {e}")
-                flush_all()
-                sleep(5.0)

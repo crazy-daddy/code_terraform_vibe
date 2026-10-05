@@ -1,10 +1,10 @@
 import fluid_routing
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from biomass_retire import biomass_complete
 from game_clock import now_tick
+from machine_controller import MachineController
 
 # Shared Biomass Mixer automation. Nothing to tune -- the Mixer picks its own
 # strongest balanced mix every tick (docs/components/biomass_mixer.md), and
@@ -126,8 +126,13 @@ class EssenceInputRouter:
         return event.kind
 
 
-class BiomassMixerController:
+class BiomassMixerController(MachineController):
     """Keeps every essence input of a Biomass Mixer connected; reports phase/diversity status."""
+    LABEL = "Biomass Mixer"
+    POLL_S = 5.0
+
+    def online_message(self):
+        return f"Biomass Mixer Controller ({self.name}) online (Mk {self._read('tier', 1)}, phase {self._read('phase', '?')})."
 
     def __init__(self, mixer):
         self.mixer = mixer
@@ -135,9 +140,6 @@ class BiomassMixerController:
         self.log = TreeConsole(module="biomass_mixer")
         self.routers = [EssenceInputRouter(mixer, biome, self.log) for biome in ESSENCE_BIOMES]
         self._was_stalled = False
-
-    def get_current_tick(self):
-        return now_tick()
 
     def _read(self, method, default):
         try:
@@ -199,15 +201,3 @@ class BiomassMixerController:
         results = self.ensure_input_connections()
         self.check_stall()
         self.publish_telemetry(results)
-
-    def run(self, poll_interval=5.0):
-        self.log.print(f"Biomass Mixer Controller ({self.name}) online (Mk {self._read('tier', 1)}, phase {self._read('phase', '?')}).")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Biomass Mixer exception: {error}")
-            flush_all()
-            sleep(poll_interval)

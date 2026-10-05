@@ -8,13 +8,18 @@
 # all_station_refs(), manage_docked() and manage_fleet_rescues() (both return
 # True while this station has work) and online_message().
 
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
-from version_guard import validate_game_version
+from machine_controller import MachineController
 
 
-class StationController:
+class StationController(MachineController):
+    LABEL = "Station"
+
+    def next_sleep(self, result, failed):
+        return self.ACTIVE_POLL_SECONDS if not failed and result else self.IDLE_POLL_SECONDS
+
     MODULE = ""          # TreeConsole module and swallowed() prefix
     PARK_KIND = ""       # lib/script_parking.py kind (the station's type id)
     DEFAULT_NAME = ""    # name when the station exposes no id
@@ -42,9 +47,6 @@ class StationController:
         raise NotImplementedError
 
     def manage_fleet_rescues(self):
-        raise NotImplementedError
-
-    def online_message(self):
         raise NotImplementedError
 
     def my_coords(self):
@@ -104,19 +106,3 @@ class StationController:
         busy = docked_busy or rescue_busy
         self.parker.update(not busy)
         return busy
-
-    def run(self, poll_interval=None, idle_poll_seconds=None):
-        """Continuous supervision loop."""
-        poll_interval = self.ACTIVE_POLL_SECONDS if poll_interval is None else poll_interval
-        idle_poll_seconds = self.IDLE_POLL_SECONDS if idle_poll_seconds is None else idle_poll_seconds
-        self.log.print(self.online_message())
-        validate_game_version()
-        while True:
-            reset_all()
-            busy = False
-            try:
-                busy = self.step()
-            except Exception as e:
-                self.log.level("error").print(f"[{self.name}] Error in supervision cycle: {e}")
-            flush_all()
-            sleep(poll_interval if busy else idle_poll_seconds)

@@ -1,9 +1,8 @@
 import fluid_routing
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # Shared well-pump automation (Water Pump, Oil Pump): keep <fluid>_out pointed
 # at a reachable Liquid Tank / Large Liquid Tank, load-balancing across
@@ -61,8 +60,20 @@ RESCAN_INTERVAL_TICKS = 300
 DISCOVERY_CACHE_INTERVAL_TICKS = 100
 
 
-class FluidPumpController:
+class FluidPumpController(MachineController):
     """Keeps a well pump's <fluid_id>_out pointed at a reachable, non-full Liquid Tank / Large Liquid Tank."""
+    POLL_S = PUMP_POLL_SECONDS
+
+    def error_label(self):
+        return self.label
+
+    def online_message(self):
+        return f"{self.label} Controller ({self.name}) online. Routing {self.fluid_id} to network Liquid Tanks."
+
+    def next_sleep(self, result, failed):
+        if self.parker is not None:
+            self.parker.update(self._was_dormant is True)
+        return self.POLL_S
 
     def __init__(self, pump, fluid_id):
         self.pump = pump
@@ -88,9 +99,6 @@ class FluidPumpController:
             fluid_id=fluid_id,
             label=f"{self.name}.{fluid_id}_out",
         )
-
-    def get_current_tick(self):
-        return now_tick()
 
     def well_dormant(self):
         """True only when the pump reports a dormant well (Oil Pump's well_active()). A Water Pump has no such method and is never dormant."""
@@ -160,17 +168,3 @@ class FluidPumpController:
 
         if hasattr(self.pump, "is_stalled") and self.pump.is_stalled():
             self.log.level("warn").print(f"[{self.name}] Stalled: valve open with {self.fluid_id} available but nothing downstream is accepting it. Check {self.port_name} connection / Liquid Tank / pipe route.")
-
-    def run(self, poll_interval=PUMP_POLL_SECONDS):
-        self.log.print(f"{self.label} Controller ({self.name}) online. Routing {self.fluid_id} to network Liquid Tanks.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] {self.label} exception: {error}")
-            if self.parker is not None:
-                self.parker.update(self._was_dormant is True)
-            flush_all()
-            sleep(poll_interval)

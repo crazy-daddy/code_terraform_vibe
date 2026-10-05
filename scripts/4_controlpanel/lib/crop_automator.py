@@ -63,11 +63,10 @@ from archive import archive
 import field_layout
 from storage import take_item, hit_slot_cap, eject_unneeded
 from seed_supply import seed_buffer
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
-from version_guard import validate_game_version
-from game_clock import now_tick
+from machine_controller import MachineController
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
@@ -95,8 +94,18 @@ def _position(ref):
     return getattr(ref, "position", None)
 
 
-class CropAutomatorController:
+class CropAutomatorController(MachineController):
     """Queues harvest and plant jobs for the full-layout cells this Crop Automator owns."""
+    LABEL = "Crop Automator"
+
+    def online_message(self):
+        return f"Crop Automator ({self.name}) online at {self.sector}."
+
+    def next_sleep(self, result, failed):
+        if failed:
+            self.parkable = False
+        self.parker.update(self.parkable)
+        return POLL_INTERVAL_S if failed or result else IDLE_POLL_SECONDS
 
     def __init__(self, machine: "CropAutomator"):
         self.machine = machine
@@ -115,9 +124,6 @@ class CropAutomatorController:
         self._mine = []
         self._ready = {}                   # {(sector, species): services_ready}
         self._harvest_yield = HARVEST_YIELD_DEFAULT  # learned Forage per harvest (learn_yield())
-
-    def get_current_tick(self):
-        return now_tick()
 
     def _read_sector(self):
         try:
@@ -571,18 +577,3 @@ class CropAutomatorController:
                  "mature": len(mature), "open": len(open_cells), "waiting_machines": len(waiting),
                  "forage": self.output_forage(), "harvest_yield": self._harvest_yield, "garden": self.in_garden()}
         archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
-
-    def run(self):
-        self.log.print(f"Crop Automator ({self.name}) online at {self.sector}.")
-        validate_game_version()
-        while True:
-            reset_all()
-            busy = True
-            try:
-                busy = self.step()
-            except Exception as e:
-                self.log.level("error").print(f"[{self.name}] Crop Automator exception: {e}")
-                self.parkable = False
-            self.parker.update(self.parkable)
-            flush_all()
-            sleep(POLL_INTERVAL_S if busy else IDLE_POLL_SECONDS)

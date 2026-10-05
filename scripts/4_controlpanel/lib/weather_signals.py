@@ -28,10 +28,10 @@
 #                      "ready_gh", "expires_gh", "decoded_gh"}} for the collector.
 
 from archive import archive
-from tree_console import TreeConsole, flush_all, reset_all
-from version_guard import validate_game_version
+from tree_console import TreeConsole
 from components import weather_station
 from swallow import swallowed
+from machine_controller import MachineController
 
 BIOMES = ("frozen", "coastal", "geothermal", "volcanic", "deep")
 BROADCAST_CHANNEL = "broadcast"
@@ -114,8 +114,17 @@ def leader_id(stations):
     return powered[0] if powered else None
 
 
-class WeatherController:
+class WeatherController(MachineController):
     """Leader-elected sweep of every Weather Station receiver; decodes aftermath coordinates into the archive."""
+    LABEL = "Weather sweep"
+
+    def online_message(self):
+        return f"Weather Controller ({self.name}) online."
+
+    def next_sleep(self, result, failed):
+        if not failed and not result:
+            return None
+        return self.sweep_seconds()
 
     def __init__(self, station: "WeatherStation"):
         self.station = station
@@ -296,17 +305,3 @@ class WeatherController:
             self.show_on_board(event_id, entry)
         self.log.end(f"{len(decoded)} decoded, {len(missed)} missed")
         return True
-
-    def run(self):
-        self.log.print(f"Weather Controller ({self.name}) online.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                if not self.step():
-                    flush_all()
-                    return
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Weather sweep exception: {error}")
-            flush_all()
-            sleep(self.sweep_seconds())

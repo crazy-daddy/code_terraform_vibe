@@ -3,8 +3,7 @@
 # Note: Solar Generators and Power Grid Management have been moved to lib/power.py.
 
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from production import discover_fluid_sources
 import fluid_routing
@@ -13,6 +12,7 @@ from hysteresis import HysteresisLatch
 import power
 import script_restart
 from game_clock import now_tick
+from machine_controller import MachineController
 
 # Mk III fluid feed (docs/components/heat_generator.md, pressure_generator.md,
 # oxygen_generator.md):
@@ -292,12 +292,18 @@ class Mk4RodFeed:
             self.log.level("warn").print(f"[{self.name}] Mk IV magazine has {staged} Fuel Rod(s) and no Lead Cask at '{getattr(outpost, 'id', '?')}' holds any.")
 
 
-class HeatController:
+class HeatController(MachineController):
     """
     Manages optimal power setpoint calibration for Heat Generators.
     Tracks day / weather condition changes, sweeps 1-10W to find 100% efficiency,
     and caches learned optimal setpoints per thermal state locally and in the Data Archive.
     """
+    LABEL = "Heat Generator"
+    POLL_S = 2.0
+
+    def online_message(self):
+        return f"Heat Generator ({self.name}) online via Shared Library."
+
     def __init__(self, machine: "TempHeater", clock: "Clock | None" = None):
         self.machine = machine
         self.clock = clock or get_component("clock")
@@ -347,15 +353,6 @@ class HeatController:
                 self.log.print(f"[{self.name}] Calibrated '{current_state}': {best_p} W ({best_eff:.0f}% eff, {self.machine.output():.3f} heat/h) [Saved to Data Archive]")
                 self.log.end(f"[{self.name}] Calibration done: {best_p} W")
 
-    def run(self, poll_interval=2.0):
-        self.log.print(f"Heat Generator ({self.name}) online via Shared Library.")
-        validate_game_version()
-        while True:
-            reset_all()
-            self.step()
-            flush_all()
-            sleep(poll_interval)
-
 
 # PressureController pacing: poll every tick only near the sync window, otherwise sleep most of the way
 # to it (the gauge rises a fixed amount per tick, measured from two reads).
@@ -365,26 +362,30 @@ PRESSURE_MAX_POLL_S = 5.0
 PRESSURE_WAKE_FRACTION = 0.7
 
 
-class PressureController:
+class PressureController(MachineController):
     """
     Manages resonance sweep gauge synchronization for Pressure Generators.
     Identifies the sync window [next_window_low, next_window_high] and triggers
     self.sync() inside the window for 100% compression efficiency.
     """
+    LABEL = "Pressure Generator"
+    STEP_DELAY = True
+    POLL_S = PRESSURE_MIN_POLL_S
+
+    def online_message(self):
+        return f"Pressure Generator ({self.name}) online via Shared Library."
+
     def __init__(self, machine: "PressureGenerator"):
         self.machine = machine
         self.name = getattr(machine, "id", "pressure")
         self.synced_this_sweep = False
         self.last_gauge = self.machine.gauge()
         self.clock = get_component("clock")
-        self.last_tick = self._tick()
+        self.last_tick = self.get_current_tick()
         self.gauge_per_tick = 0.0  # measured sweep speed (gauge units per tick), 0 until two reads a tick apart
         self.log = TreeConsole(module="terraforming")
         self.feed = Mk3FluidFeed(machine, "water_in", self.name, self.log)
         self.rods = Mk4RodFeed(machine, self.name, self.log)
-
-    def _tick(self):
-        return now_tick()
 
     def step(self):
         """One poll. Returns the seconds to sleep before the next one (see next_poll_seconds())."""
@@ -393,7 +394,7 @@ class PressureController:
         gauge = self.machine.gauge()
         low = self.machine.next_window_low()
         high = self.machine.next_window_high()
-        tick = self._tick()
+        tick = self.get_current_tick()
 
         # Gauge wrap detection (~100 to ~0) resets the sync flag for the new sweep
         if gauge < self.last_gauge and (self.last_gauge - gauge) > 20:
@@ -441,26 +442,19 @@ class PressureController:
         seconds = distance / rate / TICKS_PER_SECOND * PRESSURE_WAKE_FRACTION
         return min(PRESSURE_MAX_POLL_S, max(PRESSURE_MIN_POLL_S, seconds))
 
-    def run(self):
-        self.log.print(f"Pressure Generator ({self.name}) online via Shared Library.")
-        validate_game_version()
-        while True:
-            reset_all()
-            wait = PRESSURE_MIN_POLL_S
-            try:
-                wait = self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Pressure exception: {error}")
-            flush_all()
-            sleep(wait)
 
-
-class OxygenController:
+class OxygenController(MachineController):
     """
     Manages intake optimization and carbon waste dumping for Oxygen Generators.
     Sets intake to peak sweet spot (CO2 / 10), and dumps carbon waste inside the
     clean window (50-60 units) to avoid penalties or production stalling at 100.
     """
+    LABEL = "Oxygen Generator"
+    POLL_S = 1.0
+
+    def online_message(self):
+        return f"Oxygen Generator ({self.name}) online via Shared Library."
+
     def __init__(self, machine: "OxygenGenerator", atmo=None):
         self.machine = machine
         self.atmo = atmo or get_component("atmosphere")
@@ -485,12 +479,3 @@ class OxygenController:
             self.log.print(f"[{self.name}] Dumped waste at {current_waste:.1f}. Penalty: {penalty}")
         else:
             self.log.trace(f"[{self.name}] Waste at {current_waste:.1f}, below 50 dump threshold; no action.")
-
-    def run(self, poll_interval=1.0):
-        self.log.print(f"Oxygen Generator ({self.name}) online via Shared Library.")
-        validate_game_version()
-        while True:
-            reset_all()
-            self.step()
-            flush_all()
-            sleep(poll_interval)

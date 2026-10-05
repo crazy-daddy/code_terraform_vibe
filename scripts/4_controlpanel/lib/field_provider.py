@@ -23,11 +23,10 @@ import field_layout
 import fluid_routing
 from production import discover_fluid_sources, home_outpost_id
 from storage import take_item
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
-from version_guard import validate_game_version
 from script_parking import ParkRequester
-from game_clock import now_tick
+from machine_controller import MachineController
 
 LAYOUT_KEY = "plant.layout"        # same key as harvester_planting.LAYOUT_KEY
 RECIPES_KEY = "plant.recipes"      # same key as seed_supply.RECIPES_KEY
@@ -53,8 +52,18 @@ FLUID_DISCOVERY_CACHE_INTERVAL_TICKS = 100
 FLUID_NEUTRAL_GRACE_STEPS = 5
 
 
-class FieldProviderController:
+class FieldProviderController(MachineController):
     """Keeps one Grow Lamp / Sprinkler / Dispenser supplied and switched on only while needed."""
+    LABEL = "Field provider"
+    POLL_S = POLL_INTERVAL_S
+
+    def online_message(self):
+        return f"Field provider ({self.name}, {self.kind}) online at {self.sector()}."
+
+    def next_sleep(self, result, failed):
+        if failed:
+            self.parker.update(False)
+        return self.POLL_S
 
     def __init__(self, machine, kind):
         self.machine = machine
@@ -67,9 +76,6 @@ class FieldProviderController:
         self._last_enabled = None
         self._last_publish_tick = -PUBLISH_INTERVAL_TICKS
         self.parker = ParkRequester(self.name, "field_provider")
-
-    def get_current_tick(self):
-        return now_tick()
 
     def sector(self):
         try:
@@ -236,16 +242,3 @@ class FieldProviderController:
         entry = {"kind": self.kind, "sector": self.sector(), "status": status,
                  "buffer": buffer, "enabled": enabled}
         archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
-
-    def run(self):
-        self.log.print(f"Field provider ({self.name}, {self.kind}) online at {self.sector()}.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as e:
-                self.parker.update(False)
-                self.log.level("error").print(f"[{self.name}] Field provider exception: {e}")
-            flush_all()
-            sleep(POLL_INTERVAL_S)

@@ -3,10 +3,10 @@ import logistics_requests
 from archive import archive
 from storage import take_item, warehouse_stock, discover_storage_buildings, best_unload_target
 from biomass_retire import biomass_complete
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, method_block, reset_all
+from tree_console import TreeConsole, method_block
 from swallow import swallowed
 from game_clock import now_tick
+from machine_controller import MachineController
 
 # Shared Essence Liquifier automation. No production decisions to make -- the
 # machine turns whatever native life form sits in its input bin into its
@@ -57,8 +57,13 @@ OUTPUT_BLOCKED_STALL_REASONS = ("output_full", "unconnected")
 STATUS_KEY = "essence_liquifier.status"
 
 
-class EssenceLiquifierController:
+class EssenceLiquifierController(MachineController):
     """Feeds an Essence Liquifier from its outpost's Drone Depot and routes its essence to a Liquid Tank."""
+    LABEL = "Essence Liquifier"
+    POLL_S = 5.0
+
+    def online_message(self):
+        return f"Essence Liquifier Controller ({self.name}) online. Biome: {self.biome or 'unknown'}."
 
     def __init__(self, liquifier):
         self.liquifier = liquifier
@@ -98,9 +103,6 @@ class EssenceLiquifierController:
         )
         self.log.debug(f"[{self.name}] Host biome '{biome}' -> output port '{self.fluid_id}_out', routing to Liquid Tanks latched/assigned to '{self.fluid_id}'.")
         return True
-
-    def get_current_tick(self):
-        return now_tick()
 
     def stall_reason(self):
         try:
@@ -375,15 +377,3 @@ class EssenceLiquifierController:
         self.feed_from_warehouse()
         self.ensure_output_connection()
         self.publish_telemetry()
-
-    def run(self, poll_interval=5.0):
-        self.log.print(f"Essence Liquifier Controller ({self.name}) online. Biome: {self.biome or 'unknown'}.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Essence Liquifier exception: {error}")
-            flush_all()
-            sleep(poll_interval)

@@ -27,6 +27,8 @@ For the single-machine controllers (feed_maker, fuel_assembler, refiner, habitat
 - Attribute names differ (`self.maker`, `self.machine`, `self.pump`, `self.cap`): helpers take the port/machine as an argument instead of renaming attributes.
 - Migrate a few controllers first, then the rest; controllers with extra loop logic (harvester, field_keeper, supply_dock) keep their own `run()` if the template does not fit cleanly.
 
+Done as `lib/machine_controller.py` `MachineController` (base class, not a mixin): 27 controllers incl. station, pump, cap, oil generator, solar. Not done: a `publish_status()` forwarder (the archive call is already one line; Refiner has its own `publish_status`). Bio controllers (step owns timing), seed maker/supply, plant terraformer, bio exchange and mining drill keep their own `run()`. Heat/Oxygen/Solar loops now catch step exceptions like the rest.
+
 ## 4. Fleet: `FleetUnitMixin` + panel helpers
 Drone and Vehicle stay separate stacks (navigation, energy, cargo really differ). Shared, thin mixin in a new `lib/fleet_unit.py`, configured by class attributes (`MISSION_KEY`, `RECALL_KEY`, noun):
 - `set_intent`, `publish_telemetry` (same `fleet.status` shape; drone adds `unit`/`engine`, vehicle adds `home`: a hook for extra fields), `is_recalled`, `save_mission`/`load_mission` on top of `fleet_claims_common`.

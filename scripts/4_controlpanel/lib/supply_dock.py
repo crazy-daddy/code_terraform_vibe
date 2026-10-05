@@ -42,10 +42,10 @@ from storage import take_item, total_stock, warehouse_stock, local_port_target, 
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
+from machine_controller import MachineController
 
 log = TreeConsole(module="supply_dock")
 
@@ -486,12 +486,24 @@ def plan_dock_assignments(clock: "Clock | None" = None):
     return plan
 
 
-class SupplyDockController:
+class SupplyDockController(MachineController):
     """
     Automated controller for the Supply Dock.
     Prioritizes recipe/tech-unlocking campaign orders (Spire, Helios, Vestibule),
     loads materials from Inventory, and drives high-efficiency shipping to Earth.
     """
+    LABEL = "Supply Dock"
+    POLL_S = 3.0
+
+    def online_message(self):
+        return f"Supply Dock Controller ({self.name}) online. Initializing logistics loop..."
+
+    def next_sleep(self, result, failed):
+        if failed:
+            self.idle = False
+        self.parker.update(self.idle)
+        return self.POLL_S
+
     def __init__(self, dock):
         self.dock = dock
         self.name = getattr(dock, "id", "supply_dock_1")
@@ -803,17 +815,3 @@ class SupplyDockController:
             return
         self._last_report = key
         self.log.print(message)
-
-    def run(self, poll_interval=3.0):
-        self.log.print(f"Supply Dock Controller ({self.name}) online. Initializing logistics loop...")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as e:
-                self.log.level("error").print(f"[{self.name}] Exception in supply dock loop: {e}")
-                self.idle = False
-            self.parker.update(self.idle)
-            flush_all()
-            sleep(poll_interval)

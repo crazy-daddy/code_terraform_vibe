@@ -6,12 +6,11 @@
 from archive import archive
 from production import SourceCache, claim_site_id, craft_prefill_units, dock_delivery_targets, dock_remaining_requirements, fabricator_wants_for, home_outpost_id, site_ingot_refill, get_raw_material_reason, get_smelter_demands, site_smelter_demands, smelter_recipe_peers, machine_outpost_id
 from storage import take_item, drain_port_storage_first, push_to_targets, best_unload_target, local_port_target, outpost_is_home
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from script_parking import ParkRequester
 from recipe_claims import RecipeClaimMixin
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # Recipe claims (lib/recipe_claims.py): {outpost_id: {recipe_id: {"smelter": id, "tick": n}}}.
 RECIPE_CLAIMS_KEY = "smelter.recipe_claims"
@@ -51,7 +50,17 @@ SMELTER_PREFILL_SECONDS = 30
 # outcome "demand_covered_by_peers".
 
 
-class SmelterController(RecipeClaimMixin):
+class SmelterController(RecipeClaimMixin, MachineController):
+    LABEL = "Smelter"
+
+    def online_message(self):
+        return f"Smelter Controller ({self.name}) online."
+
+    def next_sleep(self, result, failed):
+        active = failed or bool(result)
+        self.parker.update(not active)
+        return ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS
+
     RECIPE_CLAIMS_KEY = RECIPE_CLAIMS_KEY
     CLAIM_OWNER_FIELD = "smelter"
 
@@ -102,9 +111,6 @@ class SmelterController(RecipeClaimMixin):
         self._select_miss_reason = "no_demand"
         self._claim_ticks = {}
         self.parker = ParkRequester(self.name, "smelter")  # recipe_id -> tick of the last archive-confirmed claim
-
-    def get_current_tick(self):
-        return now_tick()
 
     def _claim_machine(self):
         return self.smelter
@@ -667,18 +673,3 @@ class SmelterController(RecipeClaimMixin):
             self._select_miss_reason = "no_ore"
         self.log.debug(f"no demanded+sourceable ore found at all ({self._select_miss_reason}) -- returning None")
         return None, None
-
-    def run(self):
-        self.log.print(f"Smelter Controller ({self.name}) online.")
-        validate_game_version()
-        while True:
-            reset_all()
-            active = False
-            try:
-                active = self.step()
-            except Exception as e:
-                self.log.level("error").print(f"[{self.name}] Smelter exception: {e}")
-                active = True
-            self.parker.update(not active)
-            flush_all()
-            sleep(ACTIVE_POLL_SECONDS if active else IDLE_POLL_SECONDS)

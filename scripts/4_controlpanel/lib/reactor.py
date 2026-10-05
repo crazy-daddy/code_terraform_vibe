@@ -61,10 +61,9 @@ import lead_cask
 from hysteresis import HysteresisLatch
 from archive import archive
 from production import discover_fluid_sources
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # Simworker reactor constants (`reactor` block).
 TEMP_SCALE_C = 1200.0
@@ -150,8 +149,16 @@ def _notify(text, level="warn", duration=8.0):
         swallowed("reactor._notify: notify", error)
 
 
-class ReactorController:
+class ReactorController(MachineController):
     """Holds a Reactor just under full output with a measured gain, and keeps it fuelled and cooled."""
+    LABEL = "Reactor"
+
+    def online_message(self):
+        return f"Reactor Controller ({self.name}) online. Holds {TARGET_C:.0f} °C with a measured gain."
+
+    def next_sleep(self, result, failed):
+        poll_gh = POLL_GH if failed or result is None else result
+        return poll_gh * self.seconds_per_gh()
 
     def __init__(self, reactor):
         self.reactor = reactor
@@ -186,8 +193,6 @@ class ReactorController:
     # ------------------------------------------------------------------
     # Clock
     # ------------------------------------------------------------------
-    def tick(self):
-        return now_tick()
 
     def seconds_per_gh(self):
         if self.clock is None:
@@ -206,7 +211,7 @@ class ReactorController:
                 return float(self.clock.elapsed_game_hours())
             except Exception as error:
                 swallowed("reactor.ReactorController.game_hours: clock.elapsed_game_hours", error)
-        return self.tick() * 0.1 / FALLBACK_SECONDS_PER_GH
+        return self.get_current_tick() * 0.1 / FALLBACK_SECONDS_PER_GH
 
     # ------------------------------------------------------------------
     # Heat control
@@ -279,7 +284,7 @@ class ReactorController:
 
     def ensure_water(self):
         port = getattr(self.reactor, "water_in", None)
-        event = fluid_routing.ensure_input_logged(self.router, port, self.tick(), self.status == "no_coolant", self.log, self.name, "water_in")
+        event = fluid_routing.ensure_input_logged(self.router, port, self.get_current_tick(), self.status == "no_coolant", self.log, self.name, "water_in")
         if event.kind == "connected":
             self.water_warned = False
         elif event.kind in ("not_found", "exhausted") and not self.water_warned:
@@ -287,7 +292,7 @@ class ReactorController:
             self.log.level("warn").print(f"[{self.name}] No reachable water source for cooling (Water Pump, Steam Condenser or water tank).")
 
     def ensure_rods(self, force=False):
-        now = self.tick()
+        now = self.get_current_tick()
         if not force and self.last_rod_check is not None and 0 <= now - self.last_rod_check < ROD_CHECK_INTERVAL_TICKS:
             return
         self.last_rod_check = now
@@ -376,7 +381,7 @@ class ReactorController:
 
     def publish_water_reserve(self):
         """Leader only: writes the reservation verdict (fluid_routing.WATER_RESERVE_KEY)."""
-        now = self.tick()
+        now = self.get_current_tick()
         if self.reserve_tick is not None and 0 <= now - self.reserve_tick < WATER_RESERVE_PUBLISH_TICKS:
             return
         self.reserve_tick = now
@@ -457,16 +462,3 @@ class ReactorController:
         self.publish_water_reserve()
         settled = reason == "hold" and abs(temp - TARGET_C) <= STEADY_BAND_C
         return STEADY_POLL_GH if settled else POLL_GH
-
-    def run(self):
-        self.log.print(f"Reactor Controller ({self.name}) online. Holds {TARGET_C:.0f} °C with a measured gain.")
-        validate_game_version()
-        while True:
-            reset_all()
-            poll_gh = POLL_GH
-            try:
-                poll_gh = self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Reactor exception: {error}")
-            flush_all()
-            sleep(poll_gh * self.seconds_per_gh())

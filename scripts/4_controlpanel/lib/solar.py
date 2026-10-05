@@ -1,5 +1,5 @@
-from tree_console import TreeConsole, flush_all, reset_all
-from version_guard import validate_game_version
+from tree_console import TreeConsole
+from machine_controller import MachineController
 
 # Shared Library for Solar Generator Automation
 # Pure closed-loop sun tracking -- Power Grid supervision (brownout
@@ -15,8 +15,13 @@ SOLAR_NIGHT_POLL_SECONDS = 30.0  # output is 0 W at night, tilt only needs to be
 TILT_DEADBAND_DEG = 0.5          # skip set_tilt when the target moved less than this
 
 
-class SolarController:
+class SolarController(MachineController):
     """Tracks the sun for one solar generator. Nothing else -- see module docstring."""
+    LABEL = "Solar Tracker"
+    STEP_DELAY = True
+
+    def online_message(self):
+        return f"Solar Tracker ({self.name}) online via Shared Library."
 
     def __init__(self, machine: "SolarGenerator", clock: "Clock | None" = None):
         self.machine = machine
@@ -39,12 +44,3 @@ class SolarController:
     def step(self):
         elevation = self.track_sun()
         return SOLAR_NIGHT_POLL_SECONDS if elevation <= 0 else SOLAR_POLL_SECONDS
-
-    def run(self, poll_interval=None):
-        self.log.print(f"Solar Tracker ({self.name}) online via Shared Library.")
-        validate_game_version()
-        while True:
-            reset_all()
-            interval = self.step()
-            flush_all()
-            sleep(poll_interval if poll_interval is not None else interval)

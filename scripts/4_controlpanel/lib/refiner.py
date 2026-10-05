@@ -50,14 +50,13 @@
 #     left in its ports does not block undeploy (only items do).
 
 from archive import archive, STATUS_STALE_TICKS
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed, call_or
 from storage import take_item, local_port_target, eject_unneeded
 from script_parking import ParkRequester
 import fluid_routing
 import wildlife_common as wc
-from game_clock import now_tick
+from machine_controller import MachineController
 
 ACTIVE_POLL_S = 2.0   # a craft takes 0.3-0.4 game h = 7.5-10 s
 IDLE_POLL_S = 15.0
@@ -170,8 +169,15 @@ def choose_recipe(candidates, current, age_ticks):
     return current
 
 
-class RefinerController:
+class RefinerController(MachineController):
     """Refines raw exotic feedstock + tar into the creature-grade fluid whose tanks are emptiest."""
+    LABEL = "Refiner"
+    STEP_DELAY = True
+    POLL_S = IDLE_POLL_S
+    PARK_IDLE_S = IDLE_POLL_S
+
+    def online_message(self):
+        return f"Refiner Controller ({self.name}) online at '{self.outpost_id}'."
 
     def __init__(self, refiner):
         self.refiner = refiner
@@ -195,9 +201,6 @@ class RefinerController:
         self._last_status = None
         self._status_tick = -STATUS_REFRESH_TICKS
         self._retire = ""
-
-    def tick(self):
-        return now_tick()
 
     def _call(self, method, default, *args):
         return call_or("refiner.RefinerController._call", self.refiner, method, default, *args)
@@ -492,7 +495,7 @@ class RefinerController:
 
     def step(self):
         """One control pass; returns the sleep delay (IDLE_POLL_S = idle)."""
-        curr_tick = self.tick()
+        curr_tick = self.get_current_tick()
         self.process_commands()
         unlocked = self.unlocked_recipes(curr_tick)
         current = self._call("get_recipe", "") or None
@@ -536,17 +539,3 @@ class RefinerController:
         self.publish_status(current, blocker, curr_tick)
         busy = running or blocker in (None, "switching")
         return ACTIVE_POLL_S if busy else IDLE_POLL_S
-
-    def run(self):
-        self.log.print(f"Refiner Controller ({self.name}) online at '{self.outpost_id}'.")
-        validate_game_version()
-        while True:
-            reset_all()
-            delay = IDLE_POLL_S
-            try:
-                delay = self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Refiner exception: {error}")
-            self.parker.update(delay == IDLE_POLL_S)
-            flush_all()
-            sleep(delay)

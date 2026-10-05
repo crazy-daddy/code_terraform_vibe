@@ -1,10 +1,9 @@
 import fluid_routing
 import power
 from hysteresis import HysteresisLatch
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # Steam Condenser automation: turn banked steam into clean water (1:1 by
 # mass, 250 t/h and 150 W at throttle 1 -- docs/components/steam_condenser.md).
@@ -84,8 +83,13 @@ def _port_fill(port: "FluidPort"):
         return 0.0, 0.0
 
 
-class SteamCondenserController:
+class SteamCondenserController(MachineController):
     """Routes a Steam Condenser's steam_in/water_out and condenses only while steam and water room allow."""
+    LABEL = "Steam Condenser"
+    POLL_S = 2.0
+
+    def online_message(self):
+        return f"Steam Condenser Controller ({self.name}) online."
 
     def __init__(self, condenser):
         self.condenser = condenser
@@ -115,9 +119,6 @@ class SteamCondenserController:
             label=f"{self.name}.water_out",
             local_outpost_id=getattr(getattr(condenser, "outpost", None), "id", None),
         )
-
-    def get_current_tick(self):
-        return now_tick()
 
     # ------------------------------------------------------------------
     # Routing
@@ -295,15 +296,3 @@ class SteamCondenserController:
         except Exception as error:
             swallowed("steam_condenser.SteamCondenserController.rate: self.condenser.condensation_rate", error)
             return 0.0
-
-    def run(self, poll_interval=2.0):
-        self.log.print(f"Steam Condenser Controller ({self.name}) online.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Steam Condenser exception: {error}")
-            flush_all()
-            sleep(poll_interval)

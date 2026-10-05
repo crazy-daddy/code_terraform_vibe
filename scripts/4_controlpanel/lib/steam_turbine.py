@@ -1,9 +1,8 @@
 import fluid_routing
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, method_block, reset_all
+from tree_console import TreeConsole, method_block
 from swallow import swallowed
-from game_clock import now_tick
+from machine_controller import MachineController
 
 # Shared Steam Turbine automation: throttle for peak power while a healthy
 # steam buffer is available, ease off before the buffer runs dry (avoid
@@ -71,8 +70,13 @@ DISCOVERY_CACHE_INTERVAL_TICKS = 100
 NEUTRAL_GRACE_STEPS = 5
 
 
-class SteamTurbineController:
+class SteamTurbineController(MachineController):
     """Throttles a Steam Turbine based on its own steam buffer and grid state."""
+    LABEL = "Steam Turbine"
+    POLL_S = TURBINE_POLL_SECONDS
+
+    def online_message(self):
+        return f"Steam Turbine Controller ({self.name}) online."
 
     def __init__(self, turbine):
         self.turbine = turbine
@@ -92,9 +96,6 @@ class SteamTurbineController:
             neutral_grace_steps=NEUTRAL_GRACE_STEPS,
             label=f"{self.name}.steam_in",
         )
-
-    def get_current_tick(self):
-        return now_tick()
 
     def _discover_candidates(self):
         """
@@ -212,15 +213,3 @@ class SteamTurbineController:
 
         if hasattr(self.turbine, "is_stalled") and self.turbine.is_stalled():
             self.log.level("warn").print(f"[{self.name}] Stalled: throttle is up but no steam is arriving. Check the feeding Cap's vent phase and the steam_in connection.")
-
-    def run(self, poll_interval=TURBINE_POLL_SECONDS):
-        self.log.print(f"Steam Turbine Controller ({self.name}) online.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Steam Turbine exception: {error}")
-            flush_all()
-            sleep(poll_interval)

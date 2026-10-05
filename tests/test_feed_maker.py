@@ -261,7 +261,7 @@ class HabitatDirectFeedTests(harness.StubTestCase):
         self.maker = _FeedMakerWithOutput(w)
         self.maker.output_buffer[self.FEED] = 20
         self.ctrl = feed_maker.FeedMakerController(self.maker)
-        self.now = self.ctrl.tick()
+        self.now = self.ctrl.get_current_tick()
 
     def status(self, **entry):
         row = {"feed_item": self.FEED, "feed_level": 10.0, "parked": "", "tick": self.now}

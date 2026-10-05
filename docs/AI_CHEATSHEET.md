@@ -155,6 +155,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Per-script tick-cost profiling | `profiling.py` — see §1d |
 | Structured, indented console logging (`debug()`-level decision tracing) | `tree_console.py` (`TreeConsole`) — see §0a |
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
+| Run loop of a single-machine controller (`MachineController`: `LABEL`, `POLL_S`, `STEP_DELAY`, `ERROR_POLL_S`, `PARK_IDLE_S`, `next_sleep()` hook) and `port_counts(port, where)` | `machine_controller.py` — subclass it instead of writing a `run()` loop; bio controllers and loops with a start-up phase (seed maker, plant terraformer, bio exchange) keep their own |
 | Current simulation tick (`now_tick()`, 0 without a readable clock) | `game_clock.py` — imports only `swallow`; use it instead of a local `clock.tick()` wrapper |
 | Typed component lookups by runtime id (`tank(id)`, `battery(id)`, ...; `component(id)` = `get_component` with a swallowed() guard) | `components.py` — imports only `swallow`; accessors need their class in `COMPONENT_EXPORTS` (`devtools/self_typing.py`) |
 | Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_batched(fn, items, size, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |

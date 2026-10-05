@@ -8,6 +8,7 @@ from plant_terraformer_common import STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_C
 from plant_terraformer_water import PlantTerraformerWaterMixin
 from plant_terraformer_demand import PlantTerraformerDemandMixin
 from game_clock import now_tick
+from machine_controller import port_counts
 
 # Plant Terraformer: the only machine that turns harvested Forage into
 # permanent Plants km² (docs/components/plant_terraformer.md,
@@ -154,15 +155,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
 
     def onboard(self):
         """{item_id: units} currently in the input holders."""
-        held = {}
-        port = getattr(self.machine, "input", None)
-        if port and hasattr(port, "stacks"):
-            try:
-                for stack in port.stacks():
-                    held[stack.id] = held.get(stack.id, 0) + stack.count
-            except Exception as error:
-                self.log.debug(f"[{self.name}] input stacks read failed: {error}")
-        return held
+        return port_counts(getattr(self.machine, "input", None), "plant_terraformer.PlantTerraformerController.onboard")
 
     def _was_running(self):
         """Last published state said a batch was in flight (script restart recovery)."""

@@ -34,6 +34,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from version_guard import validate_game_version
 from game_clock import now_tick
+from machine_controller import port_counts
 
 TRIED_KEY = "seed.combos_tried"
 STATUS_KEY = "seed_maker.status"
@@ -95,14 +96,7 @@ class SeedMakerController:
 
     def _chamber(self):
         """{item_id: units} currently loaded in the reaction chamber."""
-        loaded = {}
-        try:
-            for stack in self.maker.input.stacks():
-                if stack.count > 0:
-                    loaded[stack.id] = loaded.get(stack.id, 0) + stack.count
-        except Exception as error:
-            swallowed("seed_maker.SeedMakerController._chamber: self.maker.input.stacks", error)
-        return loaded
+        return port_counts(getattr(self.maker, "input", None), "seed_maker.SeedMakerController._chamber")
 
     def _saturated_forms(self, recipes):
         counts = {}

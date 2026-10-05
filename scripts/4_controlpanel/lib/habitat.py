@@ -25,8 +25,7 @@
 # Publishes `wildlife.status[habitat_id]` (see docs/cheatsheet/wildlife.md §1l-2).
 
 from archive import archive
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed, call_or
 from storage import take_item, local_port_target
 from script_parking import ParkRequester
@@ -34,7 +33,7 @@ import fluid_routing
 import cash
 from wildlife_data import SPECIES, REVIVE_FEED_REQUIRED, REVIVAL_REAGENT_IDS, RARITY_REAGENTS, STAGE_CAPACITY, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H
 import wildlife_common as wc
-from game_clock import now_tick
+from machine_controller import MachineController, port_counts
 
 # Poll: established colonies wake in time for the next feed top-up, within these bounds (s).
 POLL_MIN_S = 5.0
@@ -80,8 +79,14 @@ def next_poll(feed_level, burn_per_h):
     return max(POLL_MIN_S, min(POLL_MAX_S, hours * SECONDS_PER_GAME_HOUR * 0.8))
 
 
-class HabitatController:
+class HabitatController(MachineController):
     """Runs one Habitat: revival, feeding, fluid bands, purchases, parking."""
+    LABEL = "Habitat"
+    STEP_DELAY = True
+    POLL_S = POLL_STAGING_S
+
+    def online_message(self):
+        return f"Habitat ({self.name}) online at '{self.outpost_id}'."
 
     def __init__(self, machine: "Habitat"):
         self.machine = machine
@@ -103,21 +108,12 @@ class HabitatController:
 
     # ------------------------------------------------------------ readings
 
-    def tick(self):
-        return now_tick()
-
     def _call(self, method, default, *args):
         return call_or("habitat.HabitatController._call", self.machine, method, default, *args)
 
     @staticmethod
     def held(port: "InputSlot"):
-        out = {}
-        try:
-            for stack in port.stacks():
-                out[stack.id] = out.get(stack.id, 0) + stack.count
-        except Exception as error:
-            swallowed("habitat.HabitatController.held: port.stacks", error)
-        return out
+        return port_counts(port, "habitat.HabitatController.held")
 
     def plan_entry(self):
         """(assignment, node slot to buy or None, [fluids the planner denies this Habitat], released species or "")."""
@@ -486,7 +482,7 @@ class HabitatController:
         archive.publish_status(wc.STATUS_KEY, self.name, entry, curr_tick, self.log)
 
     def step(self):
-        curr_tick = self.tick()
+        curr_tick = self.get_current_tick()
         assign, buy, denied, release = self.plan_entry()
         species = self._call("species", "")
         established = bool(self._call("is_established", False))
@@ -557,16 +553,3 @@ class HabitatController:
             if node_id:
                 out.append(node_id)
         return out
-
-    def run(self):
-        self.log.print(f"Habitat ({self.name}) online at '{self.outpost_id}'.")
-        validate_game_version()
-        while True:
-            reset_all()
-            poll = POLL_STAGING_S
-            try:
-                poll = self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Habitat exception: {error}")
-            flush_all()
-            sleep(poll)

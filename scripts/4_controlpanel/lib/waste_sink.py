@@ -1,9 +1,9 @@
 from archive import archive
 from storage import best_unload_target
-from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole
 from swallow import swallowed
 from game_clock import now_tick
+from machine_controller import MachineController
 
 # Waste Processor base controller. The processor only destroys while the
 # script that armed it keeps running (docs/components/waste_processor.md).
@@ -19,8 +19,13 @@ from game_clock import now_tick
 STATUS_KEY = "waste_sink.status"   # {processor_id: telemetry}
 
 
-class WasteSinkController:
+class WasteSinkController(MachineController):
     """Keeps a Waste Processor idle: disabled, input returned to local storage."""
+    LABEL = "Waste sink"
+    POLL_S = 10.0
+
+    def online_message(self):
+        return f"Waste Sink Controller ({self.name}) online at '{getattr(self._outpost(), 'id', '?')}'."
 
     def __init__(self, processor):
         self.processor = processor
@@ -83,15 +88,3 @@ class WasteSinkController:
     def step(self):
         self.idle()
         self.publish_telemetry()
-
-    def run(self, poll_interval=10.0):
-        self.log.print(f"Waste Sink Controller ({self.name}) online at '{getattr(self._outpost(), 'id', '?')}'.")
-        validate_game_version()
-        while True:
-            reset_all()
-            try:
-                self.step()
-            except Exception as error:
-                self.log.level("error").print(f"[{self.name}] Waste sink exception: {error}")
-            flush_all()
-            sleep(poll_interval)
