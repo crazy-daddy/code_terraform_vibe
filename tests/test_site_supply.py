@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from harness import StubTestCase, disable_ingot_buffer, production, smelter, fabricator, outpost_mining, logistics_requests, site_supply
-from game_stubs import Recipe, FABRICATOR_RECIPES, Journal
+from game_stubs import Recipe, FABRICATOR_RECIPES, Journal, Site
 import production_sites
 
 
@@ -253,33 +253,14 @@ class SiteSupplyTests(StubTestCase):
         self.assertEqual(site_requests(w, "outpost_2").get("forage"), (site_supply.SITE_STOCK_TARGETS["fabricator"]["forage"], 0))
 
 
-class _Site:
-    def __init__(self, kind, machine="", medium=None):
-        self._kind = kind
-        self._machine = machine
-        self._medium = medium
-
-    def kind(self):
-        return self._kind
-
-    def pump_id(self):
-        return self._machine
-
-    def cap_id(self):
-        return self._machine
-
-    def medium(self):
-        return self._medium
-
-
 class ConstructionStockTests(StubTestCase):
     def setUp(self):
         super().setUp()
         self.remote = self.world.add_outpost("outpost_2")
         disable_ingot_buffer(self.world)
         self.world.services["journal"] = Journal(
-            [_Site("water")] * 7 + [_Site("water", "wp1"), _Site("thermal"), _Site("exotic", medium="gas"),
-                                    _Site("exotic", "cap9", medium="liquid"), _Site("mineral")])
+            [Site("water")] * 7 + [Site("water", machine="wp1"), Site("thermal"), Site("exotic", medium="gas"),
+                                   Site("exotic", machine="cap9", medium="liquid"), Site("mineral")])
 
     def test_untapped_kits_capped(self):
         targets = site_supply.construction_stock_targets(production.SourceCache())
@@ -289,6 +270,12 @@ class ConstructionStockTests(StubTestCase):
         self.assertNotIn("exotic_spring_tap_kit", targets)
         self.assertNotIn("power_line_bridge", targets)
         self.assertEqual(targets["liquid_pipe_segment"], site_supply.CONSTRUCTION_STOCK_TARGETS["liquid_pipe_segment"])
+
+    def test_no_exotic_kits_once_wildlife_complete(self):
+        self.world.notebook.data["wildlife.plan"] = {"complete": True}
+        targets = site_supply.construction_stock_targets(production.SourceCache())
+        self.assertNotIn("exotic_gas_cap_kit", targets)
+        self.assertEqual(targets["thermal_cap_kit"], 1)
 
     def test_backlog_order_for_craftable_items_only(self):
         w = self.world

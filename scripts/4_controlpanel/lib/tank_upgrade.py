@@ -9,7 +9,8 @@
 # holding the same liquid at one outpost with ONE Large Liquid Tank (100 t each ->
 # 1,000 t): leftovers are swapped too, so 7 tanks end up as 2 Large Liquid Tanks.
 # A tank's liquid is its latch, else its fluid_routing.tank_assignments entry; a
-# tank with neither is left alone. Biggest group first.
+# tank with neither is left alone, and so is an exotic one once Wildlife is complete
+# (the Wildlife planner undeploys those). Biggest group first.
 #
 # Swap states and buy/deploy/sell steps: lib/building_swap_upgrade.py
 # (fleet.upgrade["tank_swap"]).
@@ -21,8 +22,8 @@
 #                is disconnected, undeployed, its kit sold and its entry dropped.
 #                Non-blocking: one check per pass.
 #
-# An old tank is undeployed only once is_empty(): undeploy() may refuse liquid as
-# cargo_present, or drop it. A drain that stops (new tank full, or a producer that
+# An old tank is undeployed only once is_empty(): undeploy() drops the liquid it
+# holds (fluid never blocks undeploy). A drain that stops (new tank full, or a producer that
 # can't reach the new tank still feeding the old one) just waits and says so in
 # the status line.
 
@@ -30,6 +31,8 @@ from archive import archive
 from fluid_routing import TANK_ASSIGNMENTS_KEY, RETIRING_ASSIGNMENT, get_tank_assignments, declared_connection_state, BROKEN_CONNECTION_STATES
 from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
 from swallow import call_or
+from wildlife_common import wildlife_complete
+from wildlife_data import EXOTIC_FLUIDS
 import cash
 
 SMALL_TYPE_ID = "liquid_tank"
@@ -78,6 +81,7 @@ class TankUpgrader(BuildingSwapUpgrader):
     def _groups(self):
         """[(count, outpost_id, liquid, [(level, tank_id), ...])] of replaceable Liquid Tanks, one per outpost and liquid."""
         assignments = get_tank_assignments()
+        skip = EXOTIC_FLUIDS if wildlife_complete() else ()
         groups = []
         for outpost in self._outposts():
             outpost_id = getattr(outpost, "id", "")
@@ -90,6 +94,8 @@ class TankUpgrader(BuildingSwapUpgrader):
                 liquid = call_or("tank_upgrade._groups", tank, "fluid", "") or assigned
                 if not liquid:
                     self.log.debug(f"[tank_upgrade] '{tank_id}' at '{outpost_id}': no latch, no assignment; skipped.")
+                    continue
+                if liquid in skip:
                     continue
                 by_liquid.setdefault(liquid, []).append((call_or("tank_upgrade._groups", tank, "level", 0.0), tank_id))
             for liquid, tanks in by_liquid.items():

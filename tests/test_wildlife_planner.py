@@ -446,6 +446,47 @@ class CompletionTests(harness.StubTestCase):
         tree_console.flush_all()
         self.assertIn("not_sellable", self.world.console.text())
 
+    def test_refiner_exotic_tanks_and_caps_retired(self):
+        w = self.world
+        w.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
+        self.statuses(1000, habitat_1=wc.RELEASE_READY)
+        w.add_building("refiner_1", w.home, wp.REFINER_TYPE_ID)
+        w.notebook.data[wp.refiner.STATUS_KEY] = {"refiner_1": {"retire": wc.RELEASE_READY, "tick": 1000}}
+        w.add_tank("liquid_tank_1", w.home, fluid="brine", level=80.0)
+        w.add_tank("gas_tank_1", w.home, type_id="gas_tank")
+        w.add_tank("liquid_tank_2", w.home, fluid="water", level=50.0)
+        w.add_tank("liquid_tank_3", w.home, fluid="cryofluid", level=10.0)
+        w.notebook.data["fluid_routing.tank_assignments"] = {"gas_tank_1": "chlorine", "liquid_tank_3": "retiring", "liquid_tank_2": "water"}
+        site = game_stubs.Site("exotic", 10.0, 20.0, machine="exotic_gas_cap_1", medium="gas")
+        w.services["journal"] = game_stubs.Journal([site, game_stubs.Site("exotic", 5.0, 5.0, medium="liquid")])
+        self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY + ", retiring 1")
+        for gone in ("habitat_1", "refiner_1", "liquid_tank_1", "gas_tank_1"):
+            self.assertNotIn(gone, w.components)
+        for kept in ("liquid_tank_2", "liquid_tank_3"):
+            self.assertIn(kept, w.components)
+        self.assertEqual(w.notebook.data["fluid_routing.tank_assignments"], {"liquid_tank_3": "retiring", "liquid_tank_2": "water"})
+        self.assertNotIn("refiner_1", w.notebook.data[wp.refiner.STATUS_KEY])
+        self.assertEqual(w.services["shop"].sold, {wc.HABITAT_KIT_ITEM_ID: 1, wp.REFINER_TYPE_ID: 1})
+        self.assertEqual((w.inventory.count("liquid_tank"), w.inventory.count("gas_tank")), (1, 1))
+        blueprints = w.services["construction_blueprint"]
+        self.assertEqual(blueprints.deconstructs, [(10.0, 20.0, "building", "exotic_gas_cap_1")])
+        self.assertEqual(self.pass_at(1000 + wp.PLAN_TICK_INTERVAL), wp.COMPLETE_SUMMARY + ", retiring 1")
+        tree_console.flush_all()
+        self.assertEqual(w.console.text().count("marked for Pioneer deconstruction"), 1)
+        site._machine = ""
+        w.inventory.add("exotic_gas_cap_kit", 1)
+        self.assertEqual(self.pass_at(1000 + 2 * wp.PLAN_TICK_INTERVAL), wp.COMPLETE_SUMMARY)
+        self.assertEqual(w.services["shop"].sold.get("exotic_gas_cap_kit"), 1)
+        self.assertTrue(wp.state["retired"])
+
+    def test_emptying_refiner_waits(self):
+        self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
+        self.statuses(1000, habitat_1=wc.RELEASE_READY)
+        self.world.add_building("refiner_1", self.world.home, wp.REFINER_TYPE_ID)
+        self.world.notebook.data[wp.refiner.STATUS_KEY] = {"refiner_1": {"retire": wc.RELEASE_EMPTYING, "tick": 1000}}
+        self.assertEqual(self.pass_at(1000), wp.COMPLETE_SUMMARY + ", retiring 1")
+        self.assertIn("refiner_1", self.world.components)
+
     def test_emptying_machines_wait(self):
         self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
         self.add_feed_maker()

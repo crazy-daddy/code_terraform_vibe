@@ -69,6 +69,7 @@ VALUE_TYPES = {
     "ShopItem": ["types.ShopItem"],
     "Construction": ["types.Construction"],
     "Position": ["types.Position"],
+    "Site": ["types.Site", "types.ExoticDeposit", "types.WaterWell", "types.OilWell", "types.ThermalVent"],
     "FluidConnection": ["types.FluidConnection"],
     "PowerGrid": ["types.PowerGrid"],
     "PowerGridMember": ["types.PowerGridMember"],

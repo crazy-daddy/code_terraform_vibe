@@ -31,9 +31,12 @@
 #   With the sensor at WILDLIFE_COMPLETE_POPULATION planning stops and each
 #   pass retires instead (see plan_if_due, _retire): life-form requests
 #   withdrawn, every Habitat released (`plan.release`, wc.RELEASE_NO_COLONY
-#   for one without an established colony) and every Feed Maker emptied
-#   (`plan.complete`), each undeployed once it reports ready, their kits sold
-#   (Mk II packs stay in Inventory), all feed dropped from Inventory.
+#   for one without an established colony), every Feed Maker and Refiner
+#   emptied (`plan.complete`), each undeployed once it reports ready, every
+#   tank holding or assigned an exotic fluid undeployed with its fluid, every
+#   Exotic Gas Cap / Spring Tap marked for Pioneer deconstruction, their kits
+#   sold (Mk II packs and tank kits stay in Inventory), all feed dropped from
+#   Inventory. Exotic fluids feed only Habitats (docs/database/fluids.md).
 #   Wildlife never decays and an unhoused colony keeps counting
 #   (docs/guide/wildlife_overview.md), so nothing is lost.
 #
@@ -54,10 +57,12 @@ from swallow import swallowed
 from tree_console import TreeConsole
 import logistics_requests
 from script_parking import wake_for_visit, wake_kind, parked_ids
-from wildlife_data import SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H, WILDLIFE_COMPLETE_POPULATION
+from wildlife_data import EXOTIC_FLUIDS, SPECIES, WILDLIFE_BOOTSTRAP, BONUS_TREES, ADAPTATION_COST, BREAKTHROUGH_COST, BREAKTHROUGH_POPULATION, REVIVE_FEED_REQUIRED, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR, FEED_PER_CRAFT, GAS_PER_BIRTH_T, LIQUID_PER_BIRTH_T, BUFFER_BLEED_T_PER_H, WILDLIFE_COMPLETE_POPULATION
 from wildlife_model import schedule_for, breeding_rate, breakthrough_effects, adaptation_effects
 from atomic import run_atomic, run_batched
 import fluid_routing
+import refiner
+from construction_plan import EXTRACTOR_KITS
 import wildlife_common as wc
 from storage import inventory_count, discover_storage_buildings, warehouse_stocks
 
@@ -66,8 +71,11 @@ PLAN_TICK_INTERVAL = 250            # one game hour
 TRANSIENT_UNDEPLOY_STATUSES = ("inventory_full", "cargo_present")
 DROP_ROUNDS = 3                     # Warehouse -> Inventory -> drop rounds per feed item and pass (Inventory room limits each pull)
 REQUESTER_ID = "feed_maker"         # life-form requests at home (logistics.requests)
-# Kits sold from Inventory at Wildlife complete. Mk II packs are not sellable (only droppable) and stay.
-RETIRE_SELL_ITEMS = (wc.HABITAT_KIT_ITEM_ID, wc.FEED_MAKER_TYPE_ID)
+REFINER_TYPE_ID = "refiner"
+EXOTIC_EXTRACTOR_TYPE_IDS = ("exotic_gas_cap", "exotic_spring_tap")
+# Kits sold from Inventory at Wildlife complete. Mk II packs are not sellable (only droppable) and
+# stay; tank kits stay for other fluids. A Pioneer brings cap/tap kits home in its cargo.
+RETIRE_SELL_ITEMS = (wc.HABITAT_KIT_ITEM_ID, wc.FEED_MAKER_TYPE_ID, REFINER_TYPE_ID) + tuple(EXTRACTOR_KITS[t] for t in EXOTIC_EXTRACTOR_TYPE_IDS)
 IDLE_SUMMARY = "wildlife idle"
 COMPLETE_SUMMARY = "Wildlife complete"
 MODEL_CHUNK = 4                     # colonies per atomic model slice (worst case ~2,300 steps, devtools/step_profile.py wildlife_ration)
@@ -1021,14 +1029,103 @@ def _sell_kits():
             log.level("warn").print(f"[WILDLIFE] sell {units}x {item} -> {getattr(res, 'status', '?')}: {getattr(res, 'message', '')}. Left in Inventory.")
 
 
+def _exotic_tanks():
+    """Ids of every network tank latched to an exotic fluid, or unlatched and assigned one. A
+    tank mid-swap (fluid_routing.RETIRING_ASSIGNMENT, lib/tank_upgrade.py) is left to its swap."""
+    assignments = fluid_routing.get_tank_assignments()
+    out = []
+    for tank, _outpost_id in fluid_routing.discover_network_buildings(fluid_routing.TANK_TYPE_IDS, resolve=True):
+        tank_id = getattr(tank, "id", None)
+        assigned = assignments.get(tank_id)
+        if not tank_id or assigned == fluid_routing.RETIRING_ASSIGNMENT:
+            continue
+        try:
+            fluid = tank.fluid() or assigned
+        except Exception as error:
+            swallowed("wildlife_planner._exotic_tanks: tank.fluid", error)
+            continue
+        if fluid in EXOTIC_FLUIDS:
+            out.append(tank_id)
+    return sorted(out)
+
+
+def _undeploy_tanks(tank_ids):
+    """Undeploys each exotic tank with its fluid (fluid never blocks undeploy) and drops its
+    tank_assignments entry. Returns the ids gone."""
+    computer = get_component("computer") if tank_ids else None
+    if computer is None:
+        return []
+    gone = []
+    for tank_id in tank_ids:
+        status = _undeploy(computer, tank_id)
+        if status not in ("ok", "not_found"):
+            continue
+        gone.append(tank_id)
+        state["undeploy_warned"].pop(tank_id, None)
+        if status == "ok":
+            log.print(f"[WILDLIFE] {tank_id}: exotic tank undeployed with its fluid; kit back in Inventory.")
+    if gone and not archive.transaction(fluid_routing.TANK_ASSIGNMENTS_KEY, {}, lambda stored: _without(stored, gone)):
+        log.level("warn").print(f"{fluid_routing.TANK_ASSIGNMENTS_KEY} write rejected; entries of {gone} left.")
+    return gone
+
+
+def _without(stored, ids):
+    """Copy of the `stored` dict without `ids` (a non-dict reads as empty)."""
+    return {k: v for k, v in stored.items() if k not in ids} if isinstance(stored, dict) else {}
+
+
+def _exotic_extractors():
+    """[(cap id, x, y)] of every Exotic Gas Cap / Spring Tap on a surveyed exotic deposit."""
+    journal = get_component("journal")
+    out = []
+    try:
+        sites = list(journal.surveyed_sites(wc.PLANET_ID)) if journal else []
+    except Exception as error:
+        swallowed("wildlife_planner._exotic_extractors: journal.surveyed_sites", error)
+        return out
+    for site in sites:
+        try:
+            if site.kind() != "exotic":
+                continue
+            cap_id = getattr(site, "cap_id")()   # an ExoticDeposit; journal types the list as Site
+        except Exception as error:
+            swallowed("wildlife_planner._exotic_extractors: site read", error)
+            continue
+        if cap_id:
+            out.append((cap_id, float(site.x), float(site.y)))
+    return sorted(out)
+
+
+def _deconstruct_extractors(extractors):
+    """Marks each cap/tap for deconstruction at its site coordinates (a field structure: a
+    Pioneer deconstructs it, its kit goes to the Pioneer's cargo). Already queued ones are left."""
+    blueprints = get_component("construction_blueprint") if extractors else None
+    if blueprints is None:
+        return
+    warned = state["undeploy_warned"]
+    for cap_id, x, y in extractors:
+        try:
+            res = blueprints.mark_deconstruct(x, y, "building", cap_id)
+        except Exception as error:
+            swallowed("wildlife_planner._deconstruct_extractors: mark_deconstruct", error)
+            continue
+        status = getattr(res, "status", "") or "?"
+        if status == "ok":
+            log.print(f"[WILDLIFE] {cap_id}: marked for Pioneer deconstruction (Wildlife complete).")
+        elif status != "already_queued" and warned.get(cap_id) != status:
+            warned[cap_id] = status
+            log.level("warn").print(f"[WILDLIFE] {cap_id}: mark_deconstruct -> {status}: {getattr(res, 'message', '')}")
+
+
 def _retire(now):
     """
     One pass after the Wildlife pillar is complete: withdraws the life-form
     requests (again while any is left), releases every Habitat and empties
-    every Feed Maker (`plan.release` / `plan.complete`), undeploys each that
-    reports ready, sells their kits, wakes the parked rest and drops all feed
-    from Inventory.
-    Returns the number of Habitats and Feed Makers still deployed.
+    every Feed Maker and Refiner (`plan.release` / `plan.complete`),
+    undeploys each that reports ready and every exotic tank, marks every
+    exotic cap/tap for deconstruction, sells their kits, wakes the parked rest
+    and drops all feed from Inventory.
+    Returns the number of those machines still standing.
     """
     if _own_requests_left():
         logistics_requests.clear_requests(REQUESTER_ID)
@@ -1038,6 +1135,7 @@ def _retire(now):
             log.print("[WILDLIFE] Life-form requests withdrawn.")
     habitat_ids, _home = _network_habitats()
     maker_ids, _home = _network_habitats(wc.FEED_MAKER_TYPE_ID)
+    refiner_ids, _home = _network_habitats(REFINER_TYPE_ID)
     statuses = archive.get(wc.STATUS_KEY, {}) or {}
     statuses = statuses if isinstance(statuses, dict) else {}
     feed = archive.get(wc.FEED_KEY, {}) or {}
@@ -1052,19 +1150,28 @@ def _retire(now):
     labels = {hid: ("no colony" if s == wc.RELEASE_NO_COLONY else s) + ", Wildlife complete" for hid, s in release.items()}
     gone = _undeploy_ready(labels, statuses, wc.STATUS_KEY, "release")
     gone += _undeploy_ready({m: "Feed Maker, Wildlife complete" for m in maker_ids}, feed, wc.FEED_KEY, "retire")
+    refiners = archive.get(refiner.STATUS_KEY, {}) or {}
+    refiners = refiners if isinstance(refiners, dict) else {}
+    gone += _undeploy_ready({r: "Refiner, Wildlife complete" for r in refiner_ids}, refiners, refiner.STATUS_KEY, "retire")
+    tank_ids = _exotic_tanks()
+    gone += _undeploy_tanks(tank_ids)
+    extractors = _exotic_extractors()
+    _deconstruct_extractors(extractors)
     _sell_kits()
     parked = parked_ids("habitat")
     for hid in habitat_ids:
         if hid in parked and hid not in gone:
             wake_for_visit(hid, "Wildlife complete", hold=False)
-    if len(gone) < len(habitat_ids) + len(maker_ids):
+    if set(maker_ids) - set(gone):
         wake_kind("feed_maker", "Wildlife complete")
+    if set(refiner_ids) - set(gone):
+        wake_kind(REFINER_TYPE_ID, "Wildlife complete")
     _drop_feed(SPECIES, "Wildlife complete")
-    return len(habitat_ids) + len(maker_ids) - len(gone)
+    return len(habitat_ids) + len(maker_ids) + len(refiner_ids) + len(tank_ids) + len(extractors) - len(gone)
 
 
 def _retire_pass(now):
-    """One _retire() pass; latches state["retired"] once no Habitat or Feed Maker is left."""
+    """One _retire() pass; latches state["retired"] once no Wildlife machine is left."""
     log.start("[WILDLIFE] retire pass", level="debug")
     left = _retire(now)
     if left:
@@ -1074,14 +1181,14 @@ def _retire_pass(now):
     state["retired"] = True
     state["summary"] = COMPLETE_SUMMARY
     log.end("none left")
-    log.print("[WILDLIFE] No Habitat or Feed Maker left; planner stops.")
+    log.print("[WILDLIFE] No Habitat, Feed Maker, Refiner, exotic tank or cap left; planner stops.")
 
 
 def plan_if_due(clock: "Clock | None"):
     """Every PLAN_TICK_INTERVAL: one pass. Returns the last summary.
 
     Once the sensor reads WILDLIFE_COMPLETE_POPULATION it is no longer read
-    (populations never decay): each pass retires Habitats and Feed Makers
+    (populations never decay): each pass retires the Wildlife machines
     instead (_retire), until none is left; then passes stop for the run."""
     now = _now(clock)
     if state["retired"]:
@@ -1095,6 +1202,6 @@ def plan_if_due(clock: "Clock | None"):
             return plan(clock)
         state["complete"] = True
         state["alerts"] = None
-        log.print(f"[WILDLIFE] Population reached {WILDLIFE_COMPLETE_POPULATION}: Wildlife pillar complete; Habitats and Feed Makers retire.")
+        log.print(f"[WILDLIFE] Population reached {WILDLIFE_COMPLETE_POPULATION}: Wildlife pillar complete; Habitats, Feed Makers, Refiners, exotic tanks and caps retire.")
     _retire_pass(now)
     return state["summary"]

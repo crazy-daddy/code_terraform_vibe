@@ -41,7 +41,8 @@
 #     also requests CONSTRUCTION_STOCK_TARGETS (pipe segments, power line
 #     segments, gas/liquid bridges) and, per extractor kind, one kit per
 #     untapped surveyed fluid site up to CONSTRUCTION_KIT_CAP
-#     (construction_stock_targets()), buffer tier like the stockpiles. The
+#     (construction_stock_targets(); exotic sites not once Wildlife is
+#     complete, their caps are deconstructed), buffer tier like the stockpiles. The
 #     same items, where a Fabricator can build them, are a backlog order
 #     (requester CONSTRUCTION_STOCK_REQUESTER, idle time only). So work that
 #     waits for stock before it is planned (the infrastructure planner's
@@ -96,6 +97,7 @@ from construction_plan import EXTRACTOR_KITS
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
+from wildlife_common import wildlife_complete
 
 log = TreeConsole(module="site_supply")
 
@@ -312,13 +314,15 @@ def stock_wants(outpost: "OutpostRef", targets, outposts, requests, tick, flying
 
 
 def untapped_kits(sites):
-    """{kit item: untapped surveyed fluid sites it fits} (EXTRACTOR_KITS), counting sites with no pump/cap on them."""
+    """{kit item: untapped surveyed fluid sites it fits} (EXTRACTOR_KITS), counting sites with no
+    pump/cap on them; exotic sites only until Wildlife is complete (only Habitats use exotics)."""
     counts = {}
+    skip_exotic = wildlife_complete()
     for site in sites:
         try:
             kind = site.kind()
             getter = _SITE_MACHINE_GETTERS.get(kind)
-            if getter is None or getattr(site, getter)():
+            if getter is None or (skip_exotic and kind == "exotic") or getattr(site, getter)():
                 continue
             structure = _EXOTIC_EXTRACTORS.get(site.medium()) if kind == "exotic" else _SITE_EXTRACTORS[kind]
         except Exception as error:

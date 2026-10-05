@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace as NS
 
 import harness
-from game_stubs import Journal
+from game_stubs import Journal, Site
 import outpost_sites as os_
 import autoplay_roles as roles
 from construction_plan import ATOMIC_STEP_BUDGET
@@ -261,19 +261,14 @@ class BudgetTests(unittest.TestCase):
         self.assertLess(ops(os_.value_rows, rows, ctx, want), ATOMIC_STEP_BUDGET)
 
 
-class _Site:
+class _Site(Site):
     def __init__(self, x, y, kind, surveyed, **fields):
+        super().__init__(kind, x, y)
         self.id = f"s{int(x)}_{int(y)}"
-        self.x = x
-        self.y = y
-        self._kind = kind
         self.surveyed = surveyed
         self._fluid = fields.pop("fluid", None)
         for name, value in fields.items():
             setattr(self, name, value)
-
-    def kind(self):
-        return self._kind
 
     def fluid(self):
         return self._fluid

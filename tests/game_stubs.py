@@ -800,9 +800,42 @@ class Construction:
         self.required_count = required_count
 
 
+class Site:
+    """Surveyed site (journal.surveyed_sites()): kind, coordinates and the pump/cap on it."""
+
+    def __init__(self, kind, x=0.0, y=0.0, machine="", medium=None):
+        self._kind = kind
+        self.x = x
+        self.y = y
+        self._machine = machine
+        self._medium = medium
+
+    def kind(self):
+        return self._kind
+
+    def pump_id(self):
+        return self._machine
+
+    def cap_id(self):
+        return self._machine
+
+    def medium(self):
+        return self._medium
+
+
 class ConstructionBlueprints:
+    """`deconstructs` records mark_deconstruct() targets; marking one twice answers already_queued."""
+
     def __init__(self):
         self.pending = []
+        self.deconstructs = []
+
+    def mark_deconstruct(self, x, y, layer="auto", target_id=""):
+        key = (x, y, layer, target_id)
+        if key in self.deconstructs:
+            return Result("already_queued")
+        self.deconstructs.append(key)
+        return Result("ok")
 
     def pending_constructions(self):
         return list(self.pending)
@@ -1416,8 +1449,8 @@ DEPLOYABLE_TANKS = ("liquid_tank", "bulk_liquid_reservoir")
 
 class Computer:
     """`computer` (ship computer): deploy() turns an Inventory kit into a
-    Drone (chassis ids), Pioneer, Warehouse or Liquid Tank (empty ones undeploy;
-    a loaded one answers cargo_present); undeploy() removes any machine and returns
+    Drone (chassis ids), Pioneer, Warehouse or Liquid Tank; undeploy() refuses a
+    loaded Warehouse (cargo_present), drops a tank's fluid, removes any machine and returns
     its kit (type_id), plus a unit's mounted modules and portables, to Inventory.
     `forced_status` makes every call answer that status instead."""
 
@@ -1461,9 +1494,6 @@ class Computer:
             return Result("not_found")
         if isinstance(unit, Store) and unit.type_id in DEPLOYABLE_STORES:
             if unit.total() > 0:
-                return Result("cargo_present")
-        elif isinstance(unit, Tank) and unit.type_id in DEPLOYABLE_TANKS:
-            if not unit.is_empty():
                 return Result("cargo_present")
         elif isinstance(unit, PassiveStore):
             return Result("not_undeployable")

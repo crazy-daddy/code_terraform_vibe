@@ -4,7 +4,7 @@ import unittest
 from typing import Any, cast
 
 import harness
-from game_stubs import Construction, ConstructionBlueprints, Journal, Position, PowerControl, PowerGrid, Result as BaseResult
+from game_stubs import Construction, ConstructionBlueprints, Journal, Position, PowerControl, PowerGrid, Result as BaseResult, Site as BaseSite
 import grid_geom as g
 import infra_topology as topo
 import power_plan as pp
@@ -44,29 +44,17 @@ class Grid(PowerGrid):
         return self._outpost_ids
 
 
-class Site:
+class Site(BaseSite):
     """Surveyed site fake (WaterWell / OilWell / ThermalVent / ExoticDeposit / MiningSite surface)."""
 
     def __init__(self, kind, x, y, machine="", fluid=None, rate=None, site_id=None, item=None, hardness=1, purity="standard"):
-        self._kind = kind
+        super().__init__(kind, x, y, machine)
         self.id = site_id or f"{kind}_{x}_{y}"
-        self.x = x
-        self.y = y
-        self._machine = machine
         self._fluid = fluid
         self._rate = rate
         self.item_id = item
         self.hardness = hardness
         self.purity = purity
-
-    def kind(self):
-        return self._kind
-
-    def pump_id(self):
-        return self._machine
-
-    def cap_id(self):
-        return self._machine
 
     def fluid(self):
         return self._fluid

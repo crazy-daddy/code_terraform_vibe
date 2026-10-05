@@ -9,6 +9,7 @@
 from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR
 from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
 from fluid_routing import LIQUID_TANK_TYPE_IDS
+from archive import archive
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).
 STATUS_KEY = "wildlife.status"
@@ -146,3 +147,9 @@ def forage_for(feed_units):
 
 def fresh(entry, curr_tick, stale_ticks=STATUS_STALE_TICKS):
     return isinstance(entry, dict) and curr_tick - (entry.get("tick") or 0) < stale_ticks
+
+
+def wildlife_complete():
+    """True once the planner marks the Wildlife pillar complete (`plan.complete`)."""
+    plan = archive.get(PLAN_KEY, {}) or {}
+    return bool(plan.get("complete")) if isinstance(plan, dict) else False

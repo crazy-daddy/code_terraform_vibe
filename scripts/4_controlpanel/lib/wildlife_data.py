@@ -112,6 +112,10 @@ FLUID_TIER = {
     "sulfur_gas": "refined", "cryofluid": "refined",
     "chlorine": "deep", "quicksilver": "deep",
 }
+# Every exotic fluid: the Habitat fluids above and the Refiner's raw feedstock.
+# Only Habitats consume them (docs/database/fluids.md).
+RAW_EXOTIC_FLUIDS = ("raw_sulfur_gas", "raw_cryofluid", "raw_chlorine", "raw_quicksilver")
+EXOTIC_FLUIDS = tuple(sorted(FLUID_TIER)) + RAW_EXOTIC_FLUIDS
 
 
 def _effect(kind, amount, condition=None, threshold=None, cap=None, per_other=False, resources=()):

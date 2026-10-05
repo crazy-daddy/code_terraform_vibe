@@ -43,14 +43,20 @@
 #     is set); staged tar and feedstock stay. The recipe is picked again after.
 #   - Commands: "recipe <id>" pins a recipe, "auto" unpins, "purge" vents inputs.
 #   - Parked (ParkRequester, kind "refiner") while idle.
+#   - Wildlife complete (`plan.complete`, wildlife_common.wildlife_complete()):
+#     refines nothing; disconnects its inputs, clears the recipe once the
+#     running craft ends, ejects its tar to local storage and publishes
+#     `retire` "ready" in refiner.status for the planner to undeploy it. Fluid
+#     left in its ports does not block undeploy (only items do).
 
 from archive import archive
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed, call_or
-from storage import take_item
+from storage import take_item, local_port_target, eject_unneeded
 from script_parking import ParkRequester
 import fluid_routing
+import wildlife_common as wc
 
 ACTIVE_POLL_S = 2.0   # a craft takes 0.3-0.4 game h = 7.5-10 s
 IDLE_POLL_S = 15.0
@@ -189,6 +195,7 @@ class RefinerController:
         self._raw_ok = None
         self._last_status = None
         self._status_tick = -STATUS_REFRESH_TICKS
+        self._retire = ""
 
     def tick(self):
         try:
@@ -428,6 +435,34 @@ class RefinerController:
             swallowed("refiner.tar_count: input.count", error)
             return 0
 
+    # ------------------------------------------------------------- retire
+
+    def retire_step(self):
+        """
+        Empties the Refiner once Wildlife is complete: disconnects its inputs
+        (first call), waits for the running craft, clears the recipe and ejects
+        the tar to local storage. Returns wc.RELEASE_READY once the tar bin is
+        empty, else wc.RELEASE_EMPTYING.
+        """
+        if not self._retire:
+            for name in ("gas_in", "liquid_in"):
+                port = self._port(name)
+                if port is not None and hasattr(port, "disconnect"):
+                    port.disconnect()
+        if self._call("is_running", False):
+            return wc.RELEASE_EMPTYING
+        if self._call("get_recipe", ""):
+            self._call("clear_recipe", None)
+        target = local_port_target(self.outpost)
+        if target and self.tar_count() > 0:
+            ejected = eject_unneeded(self.refiner.input, (), target)
+            self.log.debug(f"[{self.name}] retire: ejected {', '.join(ejected) or 'nothing'} to '{target}'.")
+        if self.tar_count() > 0:
+            return wc.RELEASE_EMPTYING
+        if self._retire != wc.RELEASE_READY:
+            self.log.print(f"[{self.name}] Wildlife complete: Refiner empty, waiting to be undeployed.")
+        return wc.RELEASE_READY
+
     # ------------------------------------------------------------- status
 
     def blocker(self, rid, spec):
@@ -448,14 +483,14 @@ class RefinerController:
         return None
 
     def publish_status(self, rid, blocker, curr_tick):
-        status = (rid, blocker, self._switch_to)
+        status = (rid, blocker, self._switch_to, self._retire)
         if status == self._last_status and curr_tick - self._status_tick < STATUS_REFRESH_TICKS:
             return
         if blocker != (self._last_status or (None, None))[1]:
             self.log.debug(f"[{self.name}] state: {blocker or 'refining'} (recipe {rid or '-'})")
         self._last_status = status
         self._status_tick = curr_tick
-        entry = {"recipe": rid or "", "switching_to": self._switch_to or "", "blocker": blocker, "outpost": self.outpost_id, "tick": curr_tick}
+        entry = {"recipe": rid or "", "switching_to": self._switch_to or "", "blocker": blocker, "outpost": self.outpost_id, "retire": self._retire, "tick": curr_tick}
 
         def updater(stored):
             if not isinstance(stored, dict):
@@ -477,6 +512,14 @@ class RefinerController:
         unlocked = self.unlocked_recipes(curr_tick)
         current = self._call("get_recipe", "") or None
         running = bool(self._call("is_running", False))
+
+        if wc.wildlife_complete():
+            self._switch_to = None
+            self._retire = self.retire_step()
+            emptying = self._retire == wc.RELEASE_EMPTYING
+            self.publish_status(self._call("get_recipe", "") or None, "retiring" if emptying else None, curr_tick)
+            return ACTIVE_POLL_S if emptying else IDLE_POLL_S
+        self._retire = ""
 
         if self.shed():
             self._switch_to = None

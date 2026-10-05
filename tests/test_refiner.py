@@ -290,6 +290,24 @@ class RefinerTestCase(harness.StubTestCase):
         finally:
             refiner.take_item = orig
 
+    def test_wildlife_complete_empties_then_reports_ready(self):
+        self.world.add_warehouse("warehouse_1", self.comp.outpost)
+        archive.set(refiner.wc.PLAN_KEY, {"complete": True})
+        self.comp.recipe = "refine_sulfur_gas"
+        self.comp.gas_in.connected = "gas_tank_1"
+        self.comp.running = True
+        self.ctrl.step()
+        self.assertEqual(self.comp.gas_in.connected, "")
+        self.assertEqual(self.comp.input_buffer.get("tar"), 40)
+        self.assertEqual(archive.get(refiner.STATUS_KEY)["refiner_1"]["retire"], refiner.wc.RELEASE_EMPTYING)
+        self.comp.running = False
+        self.assertEqual(self.ctrl.step(), refiner.IDLE_POLL_S)
+        self.assertEqual(self.comp.recipe, "")
+        self.assertEqual(self.comp.input_buffer.get("tar", 0), 0)
+        self.assertEqual(self.world.components["warehouse_1"].count("tar"), 40)
+        self.assertEqual(archive.get(refiner.STATUS_KEY)["refiner_1"]["retire"], refiner.wc.RELEASE_READY)
+        self.assertNotIn(("set_recipe", "refine_sulfur_gas"), self.comp.calls)
+
 
 if __name__ == "__main__":
     unittest.main()
