@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 6;
+const SHIM_VERSION = 7;
 
 // The shim reaches the simulation through minified names (core class, SimHost,
 // state load/serialize, command registry, ...) that change with every game
@@ -52,6 +52,7 @@ function shimSource(N) {
 const __ctSystemMs = new Map();
 const __ctSkipSystems = new Set();
 let __ctStickyFluids = false;
+let __ctFreeDebug = false;
 const __ctLastFluids = new Map();
 // An emptied tank also loses its per-fluid port keys, so the "*_capacity"
 // key list is kept together with the fluid types.
@@ -101,6 +102,7 @@ function __ctCreateHeadless(opts = {}) {
     systemMs: __ctSystemMs,
     skipSystems: __ctSkipSystems,
     setStickyFluids: v => { __ctStickyFluids = !!v; },
+    setFreeDebug: v => { __ctFreeDebug = !!v; },
     machineRevision: ${N.machineRevision ? `id => ${N.machineRevision}(core.state, id)` : "null"},
     config: ${N.config},
   };
@@ -128,6 +130,24 @@ const SIGNATURE_PUSH = /^( *)\w+\.push\(`m:\$\{(\w+)\.id\}.*`\);$/gm;
 // builds it is found by its hash tag `machine-destructive-v1`.
 const MACHINE_REVISION = /function (\w+)\(e, t\) \{\n  let n = e\.machines\[t\];\n  if \(!n\) \{\n    return null;\n  \}(?:(?!\nfunction )[\s\S])*?`machine-destructive-v1`/g;
 
+//
+// Free debug: the console component's print/info/warn/error/debug all end in
+// `<ctx>.onOutput(text, type, meta); return <flushYield>;`, and the flush yield
+// pauses the script until the next tick (the 0.1 s per console call). With
+// free debug on, a debug line returns None instead, so scripts can log at
+// debug or trace and pay only for their info/warn/error lines.
+const CONSOLE_OUTPUT = /(\w+)\.onOutput\((\w+), (\w+), (\w+)\);\n(\s*)return (\w+);/g;
+
+function patchFreeDebug(src) {
+  const found = [...src.matchAll(CONSOLE_OUTPUT)].filter(m =>
+    /type: `debug`/.test(src.slice(Math.max(0, m.index - 1500), m.index)));
+  if (found.length !== 1) return { src, why: `console output return found ${found.length}x (want 1)` };
+  const [line, ctx, text, type, meta, indent, flushYield] = found[0];
+  const patched = `${ctx}.onOutput(${text}, ${type}, ${meta});\n${indent}` +
+    `return __ctFreeDebug && ${type} === \`debug\` ? ${flushYield}.returnValue : ${flushYield};`;
+  return { src: src.slice(0, found[0].index) + patched + src.slice(found[0].index + line.length) };
+}
+
 function patchSignature(src) {
   // Other systems push similar `m:` lines; keep the one whose last fields are
   // the caps / io / fluids / levels / content variables declared just above.
@@ -152,7 +172,7 @@ function patchSignature(src) {
 
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false, machineRevision: false };
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false, freeDebug: false };
   const { names, missing } = findBootstrapNames(src);
   if (missing.length) {
     throw new Error(`simworker changed: bootstrap pattern(s) not found: ${missing.join(", ")}. ` +
@@ -178,6 +198,13 @@ export function patchSimworker(src) {
   } else {
     src = sticky.src;
     features.stickyFluids = true;
+  }
+  const freeDebug = patchFreeDebug(src);
+  if (freeDebug.why) {
+    warnings.push(`${freeDebug.why}: free debug lines are off`);
+  } else {
+    src = freeDebug.src;
+    features.freeDebug = true;
   }
   return { src: src + "\n" + shimSource(names) + `export const __ctFeatures = ${JSON.stringify(features)};\n`, names, warnings, features };
 }
@@ -255,12 +282,46 @@ function clearDebugFlags(state) {
   }
 }
 
+// TreeConsole's per-module minimum levels (lib/tree_console.py "Log levels").
+// Runs log debug for the console.log trail; free debug (patchFreeDebug())
+// keeps those lines from pausing the scripts.
+export const LOG_LEVELS_KEY = "console.log_levels";
+export const DEFAULT_LOG_LEVELS = { "*": "debug" };
+
+// Writes the archive entry the way notebook.set does (next revision above the high-water mark).
+function setLogLevels(state, levels) {
+  const nb = state.notebook ??= {};
+  if (!nb.entries || typeof nb.entries !== "object" || Array.isArray(nb.entries)) nb.entries = {};
+  const revs = Object.values(nb.entries).map(e => e?.revision).filter(Number.isSafeInteger);
+  const revision = Math.max(Number.isSafeInteger(nb.revisionHighWater) ? nb.revisionHighWater : 0, 0, ...revs) + 1;
+  nb.revisionHighWater = revision;
+  nb.entries[LOG_LEVELS_KEY] = { revision, value: structuredClone(levels), updatedBy: "headless", updatedTick: state.tickCount ?? 0 };
+}
+
+// Puts current lib/ code into a save, so an old save runs it. Only modules the
+// save already has are replaced: no script in the save imports a missing one.
+function replaceLibraries(state, libs) {
+  const entries = state.libraryScripts ?? {};
+  const replaced = [], missing = [];
+  for (const [name, source] of Object.entries(libs)) {
+    const entry = entries[name];
+    if (!entry) { missing.push(name); continue; }
+    entry.source = source;
+    if ("deployedSource" in entry) entry.deployedSource = source;
+    for (const v of entry.variants ?? []) if (v.name === entry.activeVariantName) v.source = source;
+    replaced.push(name);
+  }
+  return { replaced, missing };
+}
+
 // One simulation per process: the simworker keeps module-level state (event
 // bus, i18n, panel buffers), so two Sims in one process can interfere.
 export class Sim {
   // opts.skipSystems: names as tCe.tick() passes them to v9() (default
   // DEFAULT_SKIP_SYSTEMS); opts.keepDebug keeps per-script debug flags;
-  // opts.stickyFluids: see patchSignature().
+  // opts.stickyFluids: see patchSignature(); opts.paidDebug: debug lines pause
+  // the script as in game (see patchFreeDebug()); opts.logLevels: entries merged over
+  // DEFAULT_LOG_LEVELS into the console.log_levels archive dict (null keeps the save's).
   static async create(opts = {}) {
     const mod = await loadSimModule(opts.simworker);
     const sim = new Sim(mod.__ctCreateHeadless(opts));
@@ -270,7 +331,10 @@ export class Sim {
     if (skip.length && !sim.features.systemTiming) console.warn(`[headless] cannot skip systems (${skip.join(", ")}) on this simworker build; they run.`);
     for (const name of skip) sim.h.skipSystems.add(name);
     sim.keepDebug = !!opts.keepDebug;
+    sim.logLevels = opts.logLevels === null ? null : { ...DEFAULT_LOG_LEVELS, ...opts.logLevels };
     sim.h.setStickyFluids(opts.stickyFluids);
+    if (!opts.paidDebug && !sim.features.freeDebug) console.warn("[headless] free debug lines unavailable on this simworker build; debug lines pause scripts as in game.");
+    sim.h.setFreeDebug(!opts.paidDebug);
     return sim;
   }
 
@@ -303,12 +367,20 @@ export class Sim {
   get config() { return this.h.config; }
   onConsole(fn) { this.listeners.push(fn); }
 
-  newGame(seed = 1) { return this.#ok(this.h.control("sim.new", { seed }), "sim.new"); }
+  newGame(seed = 1) {
+    const r = this.#ok(this.h.control("sim.new", { seed }), "sim.new");
+    if (this.logLevels) setLogLevels(this.state, this.logLevels);
+    return r;
+  }
 
   // Accepts the game's save_<id>.json text or object; running scripts resume.
-  load(saveJson) {
+  // opts.libs: {module name: source} replacing the save's lib/ modules
+  // (replaceLibraries()); the outcome is kept in this.libraries.
+  load(saveJson, { libs } = {}) {
     const save = typeof saveJson === "string" ? JSON.parse(saveJson) : structuredClone(saveJson);
+    if (libs) this.libraries = replaceLibraries(save.state ?? save, libs);
     if (!this.keepDebug) clearDebugFlags(save.state ?? save);
+    if (this.logLevels) setLogLevels(save.state ?? save, this.logLevels);
     const bytes = JSON.stringify(save);
     return this.#ok(this.h.control("sim.load", { bytes, saveId: "headless" }), "sim.load");
   }

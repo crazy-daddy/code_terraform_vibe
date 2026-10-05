@@ -18,16 +18,24 @@ Three levels, same tree formatting:
   written as one multi-line message; see "Buffering" below.
 - `trace()` is for genuinely high-volume noise (method entry/exit, per-item
   loop detail) — a true no-op (no `console` call, no disk write) unless the
-  caller's `module` name is listed as `"verbose"` in the `console.log_levels`
-  archive dict (default `"normal"`). Checked once at construction, not
-  per-call — restart the script after changing the archive key. Pass
-  `module=` explicitly (the sandbox has no `inspect`/frame introspection to
-  auto-detect a caller), e.g. `TreeConsole(module="power")`. Still emits at
+  module's level is `"trace"` (see "Log levels"). Still emits at
   **debug** level, not a custom `"trace"` badge — per
   docs/components/console.md, only `info`/`warn`/`error`/`debug` feed the
   WARNINGS/ERRORS/debug-opt-in filters; any other string is just a colored
   badge shown in the normal ALL view, which would defeat the point of
   gating this as opt-in output.
+
+Log levels: the `console.log_levels` archive dict maps a `module` name to the
+lowest level it writes: `"trace"` < `"debug"` < `"info"` < `"warn"` < `"error"`.
+A module without an entry takes the `"*"` entry, else `"debug"` (everything but
+trace). A line below the module's level is dropped before it reaches
+`console`, and so is the header and END line of a block below it; lines logged
+inside still follow their own level. Levels other than these five (custom
+badges) count as info. Read once at construction, not per call: restart the
+script after changing the archive key. Pass `module=` explicitly (the sandbox
+has no `inspect`/frame introspection to auto-detect a caller), e.g.
+`TreeConsole(module="power")`. The headless simulation sets `"*"` to `"debug"`
+and makes debug lines free (dev_workflow.md §10b).
 
 Debug blocks: `start(msg, level="debug")` opens a block whose header is written
 only once something is logged inside it (an idle block prints nothing), and
@@ -89,6 +97,9 @@ _START = "┏━ "  # "┏━ "
 _END = "┗━ "  # "┗━ "
 
 LOG_LEVELS_KEY = "console.log_levels"
+DEFAULT_LOG_LEVEL = "debug"
+_LEVEL_RANKS = {"trace": 0, "debug": 1, "info": 2, "warn": 3, "error": 4}
+_INFO_RANK = 2  # custom badge levels
 
 MAX_BUFFER_CHARS = 20000  # largest single console.print measured to render (docs/BENCHMARK.md)
 FALLBACK_BUFFER_CHARS = 4000
@@ -243,7 +254,9 @@ class TreeConsole:
 
         levels = archive.get(LOG_LEVELS_KEY, {}) or {}
         self.module = module
-        self.verbose = levels.get(module, "normal") == "verbose"
+        min_level = levels.get(module, levels.get("*", DEFAULT_LOG_LEVEL))
+        self.min_rank = _LEVEL_RANKS.get(min_level, _LEVEL_RANKS[DEFAULT_LOG_LEVEL])
+        self.verbose = self.min_rank == 0  # trace() writes; callers also gate costly trace detail on it
         _INSTANCES.append(self)
 
     def color(self, color: str) -> "TreeConsole":
@@ -269,8 +282,7 @@ class TreeConsole:
         """Like `debug()` (same **debug** level -- console.print() only treats
         info/warn/error/debug as filter-feeding, everything else is a custom
         badge shown in the normal ALL view), but a true no-op (no disk write)
-        unless this module is `"verbose"` in the `console.log_levels` archive
-        dict. For high-volume noise (method entry/exit, per-item loop detail)
+        unless this module's level is `"trace"` (see "Log levels"). For high-volume noise (method entry/exit, per-item loop detail)
         safe to sprinkle liberally without a runtime cost by default."""
         if not self.verbose:
             return
@@ -320,6 +332,9 @@ class TreeConsole:
         """Write any buffered debug lines now (call before `sleep()` in run loops)."""
         flush_all()
 
+    def _shows(self, level: str) -> bool:
+        return _LEVEL_RANKS.get(level, _INFO_RANK) >= self.min_rank
+
     def _prefix(self) -> str:
         return _BRANCH * self._indent
 
@@ -336,7 +351,8 @@ class TreeConsole:
             if block[2]:
                 continue
             block[2] = True
-            _write(self.console, block[1], block[0], block[3], block[4], self.buffered, entry)
+            if self._shows(block[0]):
+                _write(self.console, block[1], block[0], block[3], block[4], self.buffered, entry)
             held = block[6]
             if held is not None:
                 block[6] = None
@@ -373,6 +389,8 @@ class TreeConsole:
         color = self._pending_color
         self._pending_color = ""
         self._pending_level = ""
+        if not self._shows(level):
+            return
         for other in list(_HOLDING):
             if other is not self:
                 other._expand_held()

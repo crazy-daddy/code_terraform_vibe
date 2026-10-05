@@ -19,6 +19,12 @@
 // --profile              per-system wall time at the end
 // --skip-systems A,B     systems to leave out (default AchievementSystem; "" runs all)
 // --keep-debug           keep the save's per-script debug flags (slow)
+// --log-levels JSON|FILE console.log_levels entries over the default {"*": "debug"},
+//                        e.g. '{"power": "trace"}'; "save" keeps the save's dict
+// --paid-debug           debug console lines pause the script as in game (default:
+//                        free, so only info/warn/error lines cost game time)
+// --libs DIR             replace the save's lib/ modules with DIR/*.py
+//                        (e.g. scripts/4_controlpanel/lib), so old saves run current libs
 // --sticky-fluids        empty tanks keep their last fluid type for the network cache
 //                        (stops rebuilds when a tank runs dry every tick)
 // --park                 park passive machines' scripts (passive.mjs); wake on triggers
@@ -54,19 +60,35 @@ const { values: a } = parseArgs({
     "deploy-templates": { type: "string" }, "deploy-map": { type: "string" },
     hours: { type: "string" }, "until-tp": { type: "string" }, "report-every": { type: "string" },
     out: { type: "string" }, profile: { type: "boolean" },
-    "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" },
+    "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" }, "log-levels": { type: "string" }, "paid-debug": { type: "boolean" }, libs: { type: "string" },
     park: { type: "boolean" }, "sticky-fluids": { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
     policy: { type: "string" }, "until-pioneer": { type: "boolean" },
   },
 });
 
+function parseLogLevels(arg) {
+  if (arg === undefined) return undefined;
+  if (arg === "save") return null;
+  return JSON.parse(arg.trimStart().startsWith("{") ? arg : readFileSync(arg, "utf8"));
+}
+
 const sim = await Sim.create({
   skipSystems: a["skip-systems"] === undefined ? undefined : a["skip-systems"].split(",").filter(Boolean),
   keepDebug: a["keep-debug"],
+  logLevels: parseLogLevels(a["log-levels"]),
+  paidDebug: a["paid-debug"],
   stickyFluids: a["sticky-fluids"],
 });
-if (a.save) sim.load(readFileSync(a.save, "utf8"));
-else sim.newGame(Number(a.seed ?? 1));
+const libs = a.libs ? Object.fromEntries(readdirSync(a.libs).filter(f => f.endsWith(".py"))
+  .map(f => [basename(f, ".py"), readFileSync(join(a.libs, f), "utf8")])) : undefined;
+if (a.save) {
+  sim.load(readFileSync(a.save, "utf8"), { libs });
+  if (sim.libraries) console.log(`libs: ${sim.libraries.replaced.length} replaced` +
+    (sim.libraries.missing.length ? `, not in save: ${sim.libraries.missing.join(", ")}` : ""));
+} else {
+  if (libs) console.warn("--libs needs --save: a new game has no lib/ modules");
+  sim.newGame(Number(a.seed ?? 1));
+}
 for (const spec of a.set ?? []) {
   const [, id, key, value] = /^([^.]+)\.([^=]+)=(.*)$/.exec(spec) ?? [];
   if (!sim.state.machines[id]) throw new Error(`--set: no machine ${id}`);

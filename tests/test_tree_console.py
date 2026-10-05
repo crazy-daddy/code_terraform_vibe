@@ -82,6 +82,39 @@ class BufferingTests(ConsoleCase):
         log.flush()
         self.assertEqual(self.lines(), [("debug", "noise")])
 
+    def test_module_level_trace_enables_trace(self):
+        self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"buffer_test": "trace"})
+        log = self.make()
+        log.trace("noise")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "noise")])
+
+    def test_info_level_drops_debug_lines_and_blocks(self):
+        self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"*": "info"})
+        log = self.make()
+        log.start("Plan", level="debug")
+        log.debug("why")
+        log.end("done")
+        log.print("outcome")
+        log.flush()
+        self.assertEqual(self.lines(), [("info", "outcome")])
+
+    def test_warn_level_drops_info_block_but_keeps_warn_inside(self):
+        self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"*": "warn"})
+        log = self.make()
+        log.start("Trip")
+        log.print("leg")
+        log.level("warn").print("low battery")
+        log.end("done")
+        self.assertEqual(self.lines(), [("warn", "low battery")])
+
+    def test_module_entry_beats_the_wildcard(self):
+        self.world.notebook.set(tree_console.LOG_LEVELS_KEY, {"*": "info", "buffer_test": "debug"})
+        log = self.make()
+        log.debug("why")
+        log.flush()
+        self.assertEqual(self.lines(), [("debug", "why")])
+
     def test_size_cap_flushes_before_overflow(self):
         log = self.make()
         cap = tree_console._buffer_cap()
