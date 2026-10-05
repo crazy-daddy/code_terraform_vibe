@@ -64,6 +64,7 @@ class ExoticCapController(FluidPumpController):
         self.port_name = media["port"]
         self.label = media["label"]
         self.tank_label = media["tank_label"]
+        self.clock = get_component("clock")
         self.parker = ParkRequester(self.name, "exotic_cap")
         self._router = fluid_routing.FluidOutputRouter(
             type_ids=media["tanks"],
@@ -83,10 +84,9 @@ class ExoticCapController(FluidPumpController):
 
     def _ticks_per_game_minute(self):
         seconds_per_hour = DEFAULT_REAL_SECONDS_PER_HOUR
-        clock = get_component("clock")
-        if clock and hasattr(clock, "real_seconds_per_hour"):
+        if self.clock and hasattr(self.clock, "real_seconds_per_hour"):
             try:
-                seconds_per_hour = float(clock.real_seconds_per_hour())
+                seconds_per_hour = float(self.clock.real_seconds_per_hour())
             except Exception as error:
                 swallowed("exotic_cap.ExoticCapController._ticks_per_game_minute: clock.real_seconds_per_hour", error)
         return seconds_per_hour / 60.0 * 10.0
