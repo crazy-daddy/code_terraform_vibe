@@ -38,9 +38,9 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 
 High-level workflows, progression roadmaps, automation orchestration → dedicated walkthrough guides:
 
-- **[`manual_walkthrough.md`](gameknowledge/manual_walkthrough.md)**: **Manual Progression Roadmap (0 $\rightarrow$ 1,000,000 TP Victory)**
+- **[`manual_walkthrough.md`](autoplay/manual_walkthrough.md)**: **Manual Progression Roadmap (0 $\rightarrow$ 1,000,000 TP Victory)**
   - Manual progression playbook: First Contact onboarding, Earth Clearance contract solvers (+3,750 cr & +22,500 cr), research prereqs, critical bottleneck matrix, chronological phases from Phase 0 (Cold Boot) to Phase 7 (Deep Biome, Nuclear Reactor Recovery & Endgame Victory).
-- **[`auto_walkthrough.md`](gameknowledge/auto_walkthrough.md)**: **Autonomous Architecture & Early Speedrunner (0 $\rightarrow$ 150,000 TP)**
+- **[`auto_walkthrough.md`](autoplay/auto_walkthrough.md)**: **Autonomous Architecture & Early Speedrunner (0 $\rightarrow$ 150,000 TP)**
   - Hands-off automation blueprint: Master Automation Architecture, revised 25-slot Nocturna Base speedrun, `solar_1.py` master building-buyer (auto buy/deploy/sell cycles), early-game speedrunner daemon & machine watcher (now `devtools/early_game.py`, run via `scripts_sync.py watch --early`), Earth Clearance contract solvers, 150k TP mid-game migration protocol to `lib/`.
 
 ## 🧱 0. Shared Library Module Map (`lib/`)

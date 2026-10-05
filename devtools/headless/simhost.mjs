@@ -7,14 +7,14 @@
 // time and caches the result under devtools/headless/.cache/ (gitignored).
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 5;
+const SHIM_VERSION = 6;
 
 // The shim reaches the simulation through minified names (core class, SimHost,
 // state load/serialize, command registry, ...) that change with every game
@@ -30,7 +30,9 @@ const BOOTSTRAP_PATTERNS = {
   serialize: [/serializeState: (\w+),/, ["serializeState"]],
   snapshot: [/produceSnapshot: (\w+),/, ["produceSnapshot"]],
   validate: [/validateReplacementSnapshot: \(e, t\) => (\w+)\(e, t\)/, ["validateSnapshot"]],
-  registry: [/(\w+)\(\w+, \{\s*script: (\w+)\(\w+\),\s*getTimers:/, ["registerCommands", "scriptCommands"]],
+  // The lookbehind keeps the scan linear: a bare leading (\w+) retries every
+  // offset inside long identifiers and base64 blobs (52 s instead of 60 ms).
+  registry: [/(?<![\w$])(\w+)\(\w+, \{\s*script: (\w+)\(\w+\),\s*getTimers:/, ["registerCommands", "scriptCommands"]],
   dt: [/const (\w+) = 1 \/ (\w+)\.game\.tickRate;/, ["tickDt", "config"]],
 };
 
@@ -99,6 +101,7 @@ function __ctCreateHeadless(opts = {}) {
     systemMs: __ctSystemMs,
     skipSystems: __ctSkipSystems,
     setStickyFluids: v => { __ctStickyFluids = !!v; },
+    machineRevision: ${N.machineRevision ? `id => ${N.machineRevision}(core.state, id)` : "null"},
     config: ${N.config},
   };
 }
@@ -119,6 +122,11 @@ const SYSTEM_WRAPPER = /(function \w+\(e, t\) \{\n\s*\w+\(\[`system`, e\]\);\n\s
 // keeps its last caps + fluid types and the content flags are left out, so the
 // cached analysis stays.
 const SIGNATURE_PUSH = /^( *)\w+\.push\(`m:\$\{(\w+)\.id\}.*`\);$/gm;
+//
+// Machine revision (Sim.undeploy()): machine.undeploy wants the target's
+// revision string, which the UI reads from its snapshot. The function that
+// builds it is found by its hash tag `machine-destructive-v1`.
+const MACHINE_REVISION = /function (\w+)\(e, t\) \{\n  let n = e\.machines\[t\];\n  if \(!n\) \{\n    return null;\n  \}(?:(?!\nfunction )[\s\S])*?`machine-destructive-v1`/g;
 
 function patchSignature(src) {
   // Other systems push similar `m:` lines; keep the one whose last fields are
@@ -144,7 +152,7 @@ function patchSignature(src) {
 
 export function patchSimworker(src) {
   const warnings = [];
-  const features = { systemTiming: false, stickyFluids: false };
+  const features = { systemTiming: false, stickyFluids: false, machineRevision: false };
   const { names, missing } = findBootstrapNames(src);
   if (missing.length) {
     throw new Error(`simworker changed: bootstrap pattern(s) not found: ${missing.join(", ")}. ` +
@@ -156,6 +164,13 @@ export function patchSimworker(src) {
     features.systemTiming = true;
   } else {
     warnings.push(`system wrapper found ${wrappers.length}x (want 1): per-system timing and --skip-systems are off`);
+  }
+  const revisions = [...src.matchAll(MACHINE_REVISION)];
+  if (revisions.length === 1) {
+    names.machineRevision = revisions[0][1];
+    features.machineRevision = true;
+  } else {
+    warnings.push(`machine revision function found ${revisions.length}x (want 1): Sim.undeploy() is off`);
   }
   const sticky = patchSignature(src);
   if (sticky.why) {
@@ -201,16 +216,29 @@ export async function loadSimModule(simworkerPath = process.env.CT_SIMWORKER || 
     throw new Error(`simworker not found: ${simworkerPath}\n` +
       "Init the private submodule: git -c submodule.internals.update=checkout submodule update --init internals");
   }
+  // Keyed on the raw simworker and this file (patterns, shim), so an unchanged
+  // build skips the pattern search and patching; the warnings are kept beside it.
   const raw = readFileSync(simworkerPath, "utf8");
-  const patched = patchSimworker(raw);
-  for (const w of patched.warnings) console.warn(`[headless] simworker changed: ${w}. Update simhost.mjs.`);
-  const hash = createHash("sha1").update(patched.src).update(String(SHIM_VERSION)).digest("hex").slice(0, 12);
+  const hash = createHash("sha1").update(raw).update(readFileSync(fileURLToPath(import.meta.url))).update(String(SHIM_VERSION)).digest("hex").slice(0, 12);
   const cacheDir = join(HERE, ".cache");
   const out = join(cacheDir, `sim-${hash}.mjs`);
-  if (!existsSync(out)) {
+  const meta = join(cacheDir, `sim-${hash}.json`);
+  let warnings;
+  if (existsSync(out) && existsSync(meta)) {
+    ({ warnings } = JSON.parse(readFileSync(meta, "utf8")));
+  } else {
+    const patched = patchSimworker(raw);
+    warnings = patched.warnings;
     mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(out, patched.src);
+    // Parallel runs may build the same entry: write aside, then rename, so no
+    // process imports a half-written module.
+    const tmp = `.${process.pid}.tmp`;
+    writeFileSync(out + tmp, patched.src);
+    writeFileSync(meta + tmp, JSON.stringify({ warnings, names: patched.names }));
+    renameSync(out + tmp, out);
+    renameSync(meta + tmp, meta);
   }
+  for (const w of warnings) console.warn(`[headless] simworker changed: ${w}. Update simhost.mjs.`);
   installCanvasStub();
   return import(pathToFileURL(out).href);
 }
@@ -299,6 +327,45 @@ export class Sim {
     const run_ = this.h.command("script.run", { scriptId });
     return { ok: !!run_.result?.ok, status: run_.result?.status ?? run_.error };
   }
+
+  // Player actions through the UI command protocol (as the Shop and Inventory
+  // pages send them). Each returns the command's result ({ok, reason, ...}).
+  buy(itemId, quantity = 1) { return this.#result(this.h.command("shop.buy", { itemId, quantity })); }
+
+  // Deploys one `itemId` from Inventory to the home outpost.
+  deploy(itemId) {
+    const slots = this.state.inventory.slots;
+    const slotIndex = slots.findIndex(s => s?.id === itemId);
+    if (slotIndex < 0) return { ok: false, reason: "not_in_inventory" };
+    return this.#result(this.h.command("inventory.deploy", { itemId, slotIndex, expectedSource: structuredClone(slots[slotIndex]) }));
+  }
+
+  // Moves a deployed machine back into Inventory.
+  undeploy(machineId) {
+    if (!this.h.machineRevision) return { ok: false, reason: "unsupported" };
+    const expectedRevision = this.h.machineRevision(machineId);
+    return this.#result(this.h.command("machine.undeploy", { machineId, expectedRevision }));
+  }
+
+  // Sells up to `count` units of `itemId` from Inventory.
+  sell(itemId, count = 1) { return this.#stackCommand("inventory.sell", itemId, count); }
+
+  // Drops up to `count` units of `itemId` from Inventory (for unsellable items).
+  drop(itemId, count = 1) { return this.#stackCommand("inventory.drop", itemId, count); }
+
+  #stackCommand(kind, itemId, count) {
+    const entries = [];
+    this.state.inventory.slots.forEach((s, slotIndex) => {
+      if (s?.id !== itemId || count <= 0) return;
+      const n = Math.min(count, s.count);
+      entries.push({ slotIndex, count: n, expectedSource: structuredClone(s) });
+      count -= n;
+    });
+    if (!entries.length) return { ok: false, reason: "not_in_inventory" };
+    return this.#result(this.h.command(kind, { entries, notify: "none" }));
+  }
+
+  #result(r) { return r.ok ? (r.result ?? { ok: true }) : { ok: false, reason: r.error ?? "command_failed" }; }
 
   tick(n = 1) {
     for (let i = 0; i < n; i++) {
