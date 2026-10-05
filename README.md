@@ -27,7 +27,6 @@ devtools/
   _migrate_from_root.py      # one-off migration script (kept for reference)
 
 docs/                        # authoritative game API reference (components, models, database)
-early_game_runner/           # git submodule: auto-deploy/DAP/early-game automation
 inspirations/                # git submodules: other players' Code: Terraform repos
 legacy/                      # archived / reference-only material
 

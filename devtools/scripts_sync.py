@@ -122,8 +122,7 @@ blank stub. Once materialized, the slot flows through the normal push
 pipeline like any other file.
 
 A source script may itself contain `${VAR}` / `${VAR:default}` placeholders
-(same syntax as `early_game_runner/auto_deploy.py`'s substitution, kept
-identical on purpose) for values only the operator knows at deploy time -
+for values only the operator knows at deploy time -
 e.g. `pioneer.py`'s destination outpost. `sync_file()` resolves each one
 per save slot from, in order: the value the slot's current code holds at
 the placeholder's position (see infer_placeholders()) - so an in-game edit
@@ -1138,9 +1137,8 @@ def write_atomic(path: Path, body: str) -> bool:
 
 
 # ---------------------------------------------------------- parameterized templates
-# A source script may contain `${VAR}` / `${VAR:default}` placeholders (same
-# syntax as early_game_runner/auto_deploy.py's substitute_placeholders(), kept
-# identical on purpose) for values that only the operator knows at deploy time
+# A source script may contain `${VAR}` / `${VAR:default}` placeholders for
+# values that only the operator knows at deploy time
 # -- e.g. pioneer.py's destination outpost. sync_file() prompts for these
 # interactively the first time a given save slot needs them, then remembers
 # the answer in PARAMS_CACHE (keyed by save dir + slot filename) so re-filling

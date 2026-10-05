@@ -37,9 +37,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT_ROOTS = (
     REPO / "scripts",
-    REPO / "early_game_runner" / "templates",
-    REPO / "early_game_runner" / "contracts",
-    REPO / "early_game_runner" / "onboarding",
 )
 SKIP_PARTS = {"lib", "_unmatched", "__pycache__"}
 CONTRACT_DIRS = {"contract", "contracts"}
@@ -90,7 +87,6 @@ COMPONENT_EXPORTS = (
 )
 # Script stems whose typed-self name differs from their slot-stripped stem.
 STEM_ALIASES = {
-    "pioneer_scout": "pioneer",
     "steam_turbine": "turbine",
 }
 
