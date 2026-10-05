@@ -17,14 +17,19 @@ STORE = "inventory"
 # Minimum stock per ingot. Order sizes aren't discoverable ahead of a Supply
 # Dock actually being assigned one, so this is a rough buffer sized to have
 # something on hand for the first few Earth Orders the moment
-# templates/early/supply_dock.py picks one up, not an exact requirement.
+# supply_dock/supply_dock.py picks one up, not an exact requirement.
 FLOORS = {"iron_ingot": 100, "silicon": 100}
 BATCH = 10                                   # units to commit to before re-choosing
 IDLE_SLEEP = 2
 POLL = 1
 
-research = get_component("research")
-inventory = get_component("inventory")
+def need(component):
+    # These core components always exist; fail loudly at start if not.
+    assert component is not None
+    return component
+
+research = need(get_component("research"))
+inventory = need(get_component("inventory"))
 comms = get_component("comms")
 
 if comms is None:
@@ -44,7 +49,7 @@ def demand():
     wanted = {}
     if comms is not None:
         needs = comms.latest("factory.needs")
-        if needs is not None:
+        if isinstance(needs, dict):
             for item in needs.keys():
                 wanted[item] = needs[item]
     for item in FLOORS.keys():
@@ -53,7 +58,7 @@ def demand():
             wanted[item] = short
     return wanted
 
-def ore_for(recipe):
+def ore_for(recipe: "Recipe"):
     for item in recipe.inputs.keys():
         pair = {}
         pair["item"] = item
@@ -119,7 +124,7 @@ def flush_input_to_store():
             ok = False
     return ok
 
-def select(recipe):
+def select(recipe: "Recipe"):
     if self.get_recipe() == recipe.id:
         return True
     if self.is_running():
@@ -136,8 +141,10 @@ def select(recipe):
     print("[smelter] recipe ->", recipe.name)
     return True
 
-def feed(recipe, units_left):
+def feed(recipe: "Recipe", units_left):
     ore = ore_for(recipe)
+    if ore is None:
+        return
     crafts_left = ceil(units_left / recipe.output_count)
     want_in = crafts_left * ore["per_craft"]
     room = self.input.capacity() - self.input.count()
@@ -198,8 +205,9 @@ while True:
         sleep(POLL)
         made = made + drain()
         if self.get_input_count() == 0 and not self.is_running():
-            if inventory.count(ore_for(recipe)["item"]) == 0:
-                print("[smelter] out of", ore_for(recipe)["item"], "after", made, "units")
+            ore = ore_for(recipe)
+            if ore is not None and inventory.count(ore["item"]) == 0:
+                print("[smelter] out of", ore["item"], "after", made, "units")
                 break
 
     made = made + drain()

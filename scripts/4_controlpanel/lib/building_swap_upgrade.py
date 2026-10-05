@@ -88,7 +88,7 @@ class BuildingSwapUpgrader:
     def _outpost(self, outpost_id):
         return next((o for o in self._outposts() if getattr(o, "id", "") == outpost_id), None)
 
-    def _ids_of(self, outpost, type_id):
+    def _ids_of(self, outpost: "OutpostRef", type_id):
         try:
             return sorted(getattr(ref, "id", "") for ref in outpost.buildings(type_id) if getattr(ref, "id", ""))
         except Exception as error:
@@ -195,7 +195,7 @@ class BuildingSwapUpgrader:
         """Picks the next group and calls _begin(); returns a status line, or None when nothing is left."""
         raise NotImplementedError
 
-    def _drain(self, swap, computer):
+    def _drain(self, swap, computer: "Computer"):
         """One "draining" pass; returns a status line."""
         raise NotImplementedError
 
@@ -257,7 +257,7 @@ class BuildingSwapUpgrader:
         self._patch(state="deploying", known=known)
         return f"{outpost_id}: deploying"
 
-    def _deploy(self, swap, outpost_id, computer):
+    def _deploy(self, swap, outpost_id, computer: "Computer"):
         outpost = self._outpost(outpost_id)
         known = set(swap.get("known") or [])
         adopted = next((i for i in (self._ids_of(outpost, self.LARGE_TYPE_ID) if outpost else []) if i not in known), None)

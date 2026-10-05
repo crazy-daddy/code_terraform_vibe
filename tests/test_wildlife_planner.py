@@ -424,6 +424,8 @@ class CompletionTests(harness.StubTestCase):
         self.assertNotIn("habitat_1", self.world.components)
         self.assertNotIn("feed_maker_1", self.world.components)
         self.assertNotIn("feed_maker_1", self.world.notebook.data[wc.FEED_KEY])
+        self.assertEqual(self.world.services["shop"].sold, {wc.HABITAT_KIT_ITEM_ID: 1, wc.FEED_MAKER_TYPE_ID: 1})
+        self.assertEqual(self.world.inventory.count(wc.HABITAT_KIT_ITEM_ID), 0)
         self.assertEqual(self.world.inventory.count(wc.feed_item_of("spire_drake")), 0)
         self.assertTrue(wp.state["retired"])
         sensor.broken = True
@@ -432,6 +434,17 @@ class CompletionTests(harness.StubTestCase):
         self.assertEqual(len(self.world.computer.calls), calls)
         tree_console.flush_all()
         self.assertEqual(self.world.console.text().count("Wildlife pillar complete"), 1)
+
+    def test_mk2_pack_kept_refused_sale_left_in_inventory(self):
+        self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)
+        self.statuses(1000, habitat_1=wc.RELEASE_READY)
+        self.world.inventory.add(wc.MK2_PACK_ITEM_ID, 1)
+        self.world.services["shop"].not_sellable = {wc.HABITAT_KIT_ITEM_ID}
+        self.pass_at(1000)
+        self.assertEqual(self.world.inventory.count(wc.MK2_PACK_ITEM_ID), 1)
+        self.assertEqual(self.world.inventory.count(wc.HABITAT_KIT_ITEM_ID), 1)
+        tree_console.flush_all()
+        self.assertIn("not_sellable", self.world.console.text())
 
     def test_emptying_machines_wait(self):
         self.world.add_wildlife_sensor(wp.WILDLIFE_COMPLETE_POPULATION)

@@ -27,8 +27,9 @@ class PioneerController(PioneerConstructionMixin, VehicleController, PioneerUpgr
         "miner": "drill",
     }
 
-    def __init__(self, vehicle, home_base=None):
+    def __init__(self, vehicle: "Pioneer", home_base=None):
         super().__init__(vehicle, home_base=home_base)
+        self.vehicle: "Pioneer" = vehicle
         # Blueprint progress (0-1) after the last constructor.execute() of the
         # latest execute_construction() call; 1.0 = finished.
         self.last_build_progress = 0.0

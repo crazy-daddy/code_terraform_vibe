@@ -1,4 +1,4 @@
-"""Stub tests for the Plant Terraformer's Fabricator orders (8_planting/lib/plant_terraformer.py)
+"""Stub tests for the Plant Terraformer's Fabricator orders (lib/plant_terraformer.py)
 and the Fabricator's backlog tier (lib/fabricator.py choose_recipe())."""
 import unittest
 

@@ -101,7 +101,7 @@ def is_upgrade_enabled():
 def upgrade_phase_reached():
     """
     True once the save is in the mining-drill phase (same condition as
-    scripts/7_miningdrills/.criteria: any mining drill deployed). Upgrading
+    scripts/4_controlpanel/.criteria: any mining drill deployed). Upgrading
     earlier would compete with expanding. Monotonic: the first positive check
     is stored as fleet.upgrade["phase_reached"], so later calls (drones, on
     every unload) are one archive read instead of a power-grid walk.

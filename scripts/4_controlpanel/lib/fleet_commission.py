@@ -64,6 +64,7 @@ from logistics_requests import in_flight, REQUEST_STALE_TICKS
 from outpost_mining import HOME_OUTPOST_ID
 import cash
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 from script_parking import start_script
 from storage import inventory_count
@@ -86,14 +87,6 @@ MAX_ADVANCES_PER_PASS = 5
 # Built kit parts that sat outside Inventory this long with nothing in flight
 # home get one warning per job: no hauler serves home.
 HAUL_HOME_WARN_TICKS = REQUEST_STALE_TICKS
-
-
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("fleet_commission._component: get_component", error)
-        return None
 
 
 def job_kind(job):
@@ -167,7 +160,7 @@ class FleetCommissionCoordinator:
     # ------------------------------------------------------------ lookups
 
     def _catalogue(self):
-        shop = _component("shop")
+        shop = component("shop")
         try:
             return {entry.id: entry.cost for entry in shop.get_catalogue()} if shop else {}
         except Exception as error:
@@ -175,7 +168,7 @@ class FleetCommissionCoordinator:
             return {}
 
     def _credits(self):
-        commander = _component("commander")
+        commander = component("commander")
         try:
             return int(commander.get_credits()) if commander else 0
         except Exception as error:
@@ -219,7 +212,7 @@ class FleetCommissionCoordinator:
 
     def _pioneers(self):
         """Sorted ids of every owned Pioneer, or None when the fleet can't be read."""
-        fleet = _component("fleet")
+        fleet = component("fleet")
         if not fleet:
             return None
         try:
@@ -230,7 +223,7 @@ class FleetCommissionCoordinator:
 
     def _drones(self):
         """{drone_id: chassis kind} of every owned drone, or None when the fleet can't be read."""
-        fleet = _component("fleet")
+        fleet = component("fleet")
         if not fleet:
             return None
         try:
@@ -274,7 +267,7 @@ class FleetCommissionCoordinator:
         if not cash.can_spend(consumer, cost, planned=cost * (1 + queued), label=label):
             self.log.debug(f"[fleet_commission] {label}: needs {cost}cr for {needed}, have {self._credits()}cr; cash manager holds it back.")
             return f"{label}: waiting for credits ({cost}cr)"
-        shop = _component("shop")
+        shop = component("shop")
         if not shop:
             return f"{label}: no Shop"
         self.log.start(f"[fleet_commission] {label}: buying {needed} for {cost}cr")
@@ -282,7 +275,7 @@ class FleetCommissionCoordinator:
         self.log.end(f"[fleet_commission] {label}: bought {needed} for {cost}cr." if failure is None else f"[fleet_commission] {label}: purchase incomplete ({failure})")
         return failure
 
-    def _buy_parts(self, shop, needed, catalogue, consumer, label):
+    def _buy_parts(self, shop: "Shop", needed, catalogue, consumer, label):
         """Buys each of needed {item_id: n}; books what was paid. None on success, else the waiting reason."""
         paid = 0
         for item, n in needed.items():
@@ -387,7 +380,7 @@ class FleetCommissionCoordinator:
             known = set(job.get("known") or [])
             new_id = next((p for p in pioneers if p not in known), None)
             if new_id is None:
-                computer = _component("computer")
+                computer = component("computer")
                 if not computer or not hasattr(computer, "deploy"):
                     self.log.end()
                     return f"{label}: no Ship Computer"
@@ -523,11 +516,15 @@ class FleetCommissionCoordinator:
             known = set(job.get("known") or [])
             new_id = next((d for d, kind in drones.items() if d not in known and kind == spec.get("kind")), None)
             if new_id is None:
-                computer = _component("computer")
+                kind = spec.get("kind")
+                if not kind:
+                    self.log.end()
+                    return f"{label}: spec has no kind"
+                computer = component("computer")
                 if not computer or not hasattr(computer, "deploy"):
                     self.log.end()
                     return f"{label}: no Ship Computer"
-                res = computer.deploy(spec.get("kind"), outpost_id)
+                res = computer.deploy(kind, outpost_id)
                 if res.status != "ok":
                     if res.status in DEPLOY_BLOCKING_STATUSES:
                         _ret = self._block(job, f"deploy {res.status}")

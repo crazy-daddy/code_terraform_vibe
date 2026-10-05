@@ -15,7 +15,7 @@ A drill needs no control. It extracts on its own; the only script surface is `dr
 - **Telemetry** `drill.status` (§4). Drills sit on mineral sites, not the outpost network, so `ArchiveCleaner.clean_machine_status()` can't prune them; each publish prunes other entries older than `STATUS_STALE_TICKS = 36000` instead.
 - **Pickup advert**: the `drill.status` entry's `items` is what the reverse hauler (§2i) reads as the drill's free stock; its position comes from `drill.positions`.
 
-### 1m. Weather Station Signal Decoding (`lib/weather_signals.py`, tier `7_miningdrills`)
+### 1m. Weather Station Signal Decoding (`lib/weather_signals.py`)
 
 Recovers storm aftermath coordinates (Raw Uranium from dust storms, Storm Glass from thunderstorms; docs/guide/weather_system.md) and publishes them for drone collection (collection: §2j-1 in `vehicles_drones.md`).
 
@@ -26,9 +26,9 @@ Recovers storm aftermath coordinates (Raw Uranium from dust storms, Storm Glass 
 - **Timing**: aftermath appears at storm end = `expires_at_gh − SIGNAL_GRACE_GH` (`ready_gh`) and lasts `AFTERMATH_WINDOW_GH` = uranium 48 h, storm_glass 96 h. The coordinate is usually known before `ready_gh`. Units: uranium 14–28, glass 2–4 (`AFTERMATH_UNITS`); one `collect()` takes at most 5.
 - **Archive** (§4): `weather.signals` (incomplete messages, kept across restarts; dropped when their window closes) and `weather.aftermaths` (decoded sites, pruned after `expires_gh`). The leader's Signal Board shows the newest decoded site via `resolve()`.
 
-### 1n. Fuel Assembler (`lib/fuel_assembler.py`, tier `10_nuclear`) and Lead Casks (`lib/lead_cask.py`)
+### 1n. Fuel Assembler (`lib/fuel_assembler.py`) and Lead Casks (`lib/lead_cask.py`)
 
-One script per Fuel Assembler (thin `nuclear/fuel_assembler.py`). Tier `10_nuclear` activates with the first deployed `fuel_assembler`. Recipes (simworker): `craft_fuel_rod` = 4 Raw Uranium + 2 Lead Plates, 6 game h, 1,800 W; `craft_nuclear_battery` = 4 Raw Uranium + 3 Lead Plates, 4 game h, 1,200 W. Stockpile 40 units mixed, output buffer 5.
+One script per Fuel Assembler (thin `nuclear/fuel_assembler.py`). Recipes (simworker): `craft_fuel_rod` = 4 Raw Uranium + 2 Lead Plates, 6 game h, 1,800 W; `craft_nuclear_battery` = 4 Raw Uranium + 3 Lead Plates, 4 game h, 1,200 W. Stockpile 40 units mixed, output buffer 5.
 
 - **Demand, Fuel Rods first**: target = local consumer reserve (`lead_cask.consumer_rod_reserve()`: `ROD_RESERVE = 1` + `RODS_PER_REACTOR = 2` × Reactors + `RODS_PER_MK4 = 1` × Mk IV `temp_heater`/`pressure_generator`/`oxygen_generator` (`tier() >= 4`), constants in `lib/lead_cask.py`) + rods owed to Supply Dock orders, all at this outpost. Supply Docks take only cask rods above that reserve less the rods staged in the consumers (`lead_cask.rods_for_orders()`), so an Earth order never drains a Reactor's buffer. Have = rods in this outpost's casks + those consumers' `input.count()` + output buffer + a craft in progress. **Nuclear Batteries** next: `fabricator.manual_orders` entry (counted down on delivery) + max(0, dock orders + blueprint need − network stock) − pending.
 - **Pick**: first short recipe whose one craft the stockpile plus local stock covers (uranium in this outpost's casks, plates via `storage.takeable_stock()`). Without a Fuel Rod cask only batteries are picked. A running craft or one with progress is never switched (`set_recipe()` answers `busy`). Both recipes share inputs, so a switch keeps the stockpile.
@@ -126,7 +126,7 @@ after cargo loaded (cargo not tracked here).
   `get_fabricator_targets()`, `get_fabricator_active_recipe()`, `get_material_demands()`,
   `_cascade_blueprint_demand()`, `_cascade_fabricator_output_demand()` all take optional `cache=None` (same behavior without).
 
-### 2a-0-6. Per-site demand and order trees (`lib/production_sites.py`, tier-5 `lib/site_plan.py`)
+### 2a-0-6. Per-site demand and order trees (`lib/production_sites.py`, `lib/site_plan.py`)
 
 A fab site = outpost with ≥ 1 Fabricator (`fab_site_counts(cache)` → `{site_id: Fabricators}`, site id = `claim_site_id()`). Each root target's whole tree builds at the sites planned for it; a site's stock counts only for its own trees.
 
@@ -317,7 +317,7 @@ Generic "bring X to outpost Y" demand. Requester publishes wants. Supply ("free 
 - **Water Pump salt** (`lib/pump_salt.py`): pumps are field structures on water wells, found via `journal.surveyed_sites("nocturna")` WaterWells with `has_pump()` → `pump_id()` + well `x`/`y` (cached `PUMP_CACHE_TICKS = 3000`). Salt read live from the pump's `output` (`PickupOutputSlot`). Added as `"kind": "pump"` sources only when `salt` is wanted, home pumps included; connect/take reuse `drill_sites.connect_to_drill()`/`take_from_drill()`, arrival precision `PUMP_ARRIVAL_PRECISION_M = 2.0`. Drones can't take it (`not_at_source`).
 - **Drones**: request score in miner target order (§2h). Biosites are permanent (35 fixed, 7 per biome, 1–3 forms each, refill at same coordinate after rarity cooldown — docs/guide/biosphere_biomass_tier.md), so a requested rare form is found deterministically via `journal.biomass_coords()`.
 
-### 2i-1. Factory Outpost Site Supply (`lib/site_supply.py`, tier `5_steampower`)
+### 2i-1. Factory Outpost Site Supply (`lib/site_supply.py`)
 
 `publish_site_requests(tick)` runs once per storage tick in headless `control_room_automation.py`, one `logistics.requests` entry set per outpost under requester `SITE_SUPPLY_REQUESTER = "site_supply"`; pull haulers homed there serve it (§2i). Roles come from the buildings at the outpost, no setting.
 

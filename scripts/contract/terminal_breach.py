@@ -67,5 +67,5 @@ else:
         print("[TERMINAL_BREACH] No Transmitter found!")
     else:
         transmitter.connect("earth")
-        t_res = transmitter.transmit(c.id, code)
+        t_res = transmitter.transmit(c.id, code)  # pyright: ignore[reportArgumentType]  # stub types value as invariant list[JsonValue]
         print("Transmission status:", t_res.status, "-", t_res.message)

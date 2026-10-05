@@ -33,10 +33,11 @@
 # from any dock. A dock takes only orders it covers at least one role-bound
 # item of; it ranks orders by the share it covers, and the rest of a mixed
 # order reaches its outpost as a site-supply consumer request
-# (5_steampower lib/site_supply.py). An empty dock leaves an order it covers
+# (lib/site_supply.py). An empty dock leaves an order it covers
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY
+from components import supply_dock
 from storage import take_item, total_stock, warehouse_stock, local_port_target, best_unload_target, outpost_is_home
 from outpost_mining import assigned_ores_by_outpost, RAW_ORE_ITEM_IDS
 import lead_cask
@@ -72,7 +73,7 @@ class DockRoles:
     """Per-pass memo of dock site roles and item kinds (module comment).
     Never held across passes: a new building changes a site's roles."""
 
-    def __init__(self, cache=None):
+    def __init__(self, cache: "SourceCache | None" = None):
         self.cache = cache if cache is not None else SourceCache()
         self._fab_items = None
         self._mine_items = None
@@ -93,7 +94,7 @@ class DockRoles:
             roles.add(ROLE_MINE)
         return roles
 
-    def site(self, outpost):
+    def site(self, outpost: "OutpostRef | None"):
         """(roles, marker ores) of the dock site `outpost` (None = home); (None, None) when the site can't be resolved."""
         if outpost is None:
             outpost = lead_cask.home_outpost()
@@ -113,7 +114,7 @@ class DockRoles:
             self._sites[site_id] = (roles, self._marker_ores.get(site_id, set()))
         return self._sites[site_id]
 
-    def covers(self, item_id, outpost):
+    def covers(self, item_id, outpost: "OutpostRef"):
         """Whether a dock at `outpost` ships item_id itself (no hauling needed)."""
         item_roles = self.item_roles(item_id)
         if not item_roles:
@@ -123,7 +124,7 @@ class DockRoles:
             return True
         return bool(item_roles & site_roles) or (ROLE_MINE in item_roles and item_id in ores)
 
-    def coverage(self, order, outpost):
+    def coverage(self, order: "Order", outpost: "OutpostRef"):
         """(covered, bound): still-owed role-bound items of order, and how many of them a dock at `outpost` covers."""
         requires = getattr(order, "requires", {}) or {}
         shipped = getattr(order, "shipped", {}) or {}
@@ -136,17 +137,17 @@ class DockRoles:
                 covered += 1
         return covered, bound
 
-    def serves(self, order, outpost):
+    def serves(self, order: "Order", outpost: "OutpostRef"):
         """Whether a dock at `outpost` may take order: no role-bound item, or it covers at least one."""
         covered, bound = self.coverage(order, outpost)
         return bound == 0 or covered > 0
 
-    def share(self, order, outpost):
+    def share(self, order: "Order", outpost: "OutpostRef"):
         """Covered fraction of order's role-bound items at `outpost` (1.0 with none)."""
         covered, bound = self.coverage(order, outpost)
         return 1.0 if bound == 0 else covered / bound
 
-    def describe(self, outpost):
+    def describe(self, outpost: "OutpostRef"):
         """Short role list of a site for debug lines."""
         site_roles, ores = self.site(outpost)
         if site_roles is None:
@@ -155,7 +156,7 @@ class DockRoles:
         return ", ".join(parts) if parts else "no roles"
 
 
-def _order_readiness(order, reserved, stock=total_stock, cask_stock=None):
+def _order_readiness(order: "Order", reserved, stock=total_stock, cask_stock=None):
     """(items_ready, total_needed) for order -- how much of its still-owed
     requirement is already coverable from current Inventory/Warehouse stock
     (Lead Casks for hot items), net of active Construction Blueprint
@@ -179,7 +180,7 @@ def _order_readiness(order, reserved, stock=total_stock, cask_stock=None):
     return items_ready, total_needed
 
 
-def _order_remaining_units(order):
+def _order_remaining_units(order: "Order"):
     """Total units still owed across every item of order, ignoring stock
     availability entirely -- used for the weekly deadline feasibility check,
     which cares about total shippable volume, not readiness."""
@@ -188,7 +189,7 @@ def _order_remaining_units(order):
     return sum(max(0, req_count - shipped.get(item_id, 0)) for item_id, req_count in requires.items())
 
 
-def _weekly_infeasible(order, current_day, dispatch_capacity_per_hour):
+def _weekly_infeasible(order: "Order", current_day, dispatch_capacity_per_hour):
     """
     True if order (a Weekly Earth Order) cannot possibly finish shipping its
     remaining amount before `order.expires_day`, given `dispatch_capacity_per_hour`
@@ -214,7 +215,7 @@ def _weekly_infeasible(order, current_day, dispatch_capacity_per_hour):
     return remaining > max_shippable
 
 
-def _score_campaign_order(order, reserved, stock=total_stock, cask_stock=None):
+def _score_campaign_order(order: "Order", reserved, stock=total_stock, cask_stock=None):
     prio = 10
     if getattr(order, "reward_kind", "") in ["recipe", "tech"]:
         prio += 50  # Strongly prioritize technology and recipe unlocks!
@@ -224,7 +225,7 @@ def _score_campaign_order(order, reserved, stock=total_stock, cask_stock=None):
     return prio
 
 
-def _score_weekly_order(order, reserved, stock=total_stock, cask_stock=None):
+def _score_weekly_order(order: "Order", reserved, stock=total_stock, cask_stock=None):
     prio = 5
     items_ready, total_needed = _order_readiness(order, reserved, stock, cask_stock)
     if total_needed > 0:
@@ -232,7 +233,7 @@ def _score_weekly_order(order, reserved, stock=total_stock, cask_stock=None):
     return prio
 
 
-def _servable_at(order, outpost, has_cask):
+def _servable_at(order: "Order", outpost: "OutpostRef", has_cask):
     """False for an order with hot items (Raw Uranium, Fuel Rods) at a dock whose outpost has no
     Lead Cask: hot cargo reaches a dock only from a cask at its own outpost. has_cask: {outpost_id: bool} memo."""
     if not any(item_id in lead_cask.HOT_ITEMS for item_id in (getattr(order, "requires", {}) or {})):
@@ -240,7 +241,7 @@ def _servable_at(order, outpost, has_cask):
     return _has_cask(outpost, has_cask)
 
 
-def _has_cask(outpost, has_cask):
+def _has_cask(outpost: "OutpostRef", has_cask):
     """Whether outpost has a Lead Cask. has_cask: {outpost_id: bool} memo."""
     key = getattr(outpost, "id", None)
     if key not in has_cask:
@@ -248,7 +249,7 @@ def _has_cask(outpost, has_cask):
     return has_cask[key]
 
 
-def _local_cask_units(order, outpost):
+def _local_cask_units(order: "Order", outpost: "OutpostRef"):
     """Still-owed hot units (Raw Uranium, Fuel Rods) of order that the Lead Casks at
     `outpost` hold right now. Hot cargo loads only from a cask at the dock's own
     outpost, so a dock beside a stocked cask is the one place that can ship it."""
@@ -263,7 +264,7 @@ def _local_cask_units(order, outpost):
     return units
 
 
-def _cask_order_ids(candidates, outpost, has_cask, memo):
+def _cask_order_ids(candidates, outpost: "OutpostRef", has_cask, memo):
     """Ids of candidate orders the Lead Casks at `outpost` can ship from right now
     (_local_cask_units() > 0); a dock there takes these first. Empty without a cask.
     memo: {(outpost_id, order_id): units}."""
@@ -292,7 +293,7 @@ def _dock_loaded(dock):
         return 0
 
 
-def _dock_affinity(order, outpost, cache=None, site_plan=None):
+def _dock_affinity(order: "Order", outpost: "OutpostRef", cache: "SourceCache | None" = None, site_plan=None):
     """How well a dock at `outpost` suits order: units of its still-owed items
     already stocked there, plus one per item whose tree the site plan builds
     there. Only breaks ties between equally ranked orders/docks. Without
@@ -341,7 +342,7 @@ def plan_signature():
     return (tuple(sorted(orders)), tuple(sorted(discover_supply_dock_ids())))
 
 
-def plan_dock_assignments(clock=None):
+def plan_dock_assignments(clock: "Clock | None" = None):
     """
     Central per-cycle decision, run once from control_room_automation.py's AUTOMATION section:
     which Earth Order (if any) each discovered Supply Dock should be working.
@@ -364,7 +365,7 @@ def plan_dock_assignments(clock=None):
 
     docks = {}
     for dock_id in discover_supply_dock_ids():
-        dock = get_component(dock_id)
+        dock = supply_dock(dock_id)
         if dock and hasattr(dock, "current_order"):
             docks[dock_id] = dock
     if not docks:
@@ -390,7 +391,7 @@ def plan_dock_assignments(clock=None):
     # {order_id: can_fulfill_order()} for every active order, so a dock's current order is not re-checked.
     fulfillable = {}
 
-    def check_order(order):
+    def check_order(order: "Order"):
         if order.id not in fulfillable:
             fulfillable[order.id] = can_fulfill_order(order, cache)
         return fulfillable[order.id]

@@ -68,7 +68,7 @@ FREIGHT_POLL_INTERVAL = 2.0
 WAITING_DRONE_FRESH_TICKS = 6000
 
 
-def slot_capacity(outpost):
+def slot_capacity(outpost: "OutpostRef"):
     """Units per Warehouse slot at `outpost` (first slot seen), else WAREHOUSE_SLOT_FALLBACK_UNITS."""
     for building in discover_storage_buildings(outpost):
         try:
@@ -81,7 +81,7 @@ def slot_capacity(outpost):
     return WAREHOUSE_SLOT_FALLBACK_UNITS
 
 
-def storage_layout(outpost):
+def storage_layout(outpost: "OutpostRef"):
     """[(warehouse_id, [slot, ...]), ...] for `outpost`'s storage buildings: one slots() read each,
     shareable across buffer_target() calls while nothing is staged in between."""
     layout = []
@@ -93,7 +93,7 @@ def storage_layout(outpost):
     return layout
 
 
-def buffer_target(item_id, outpost, layout=None):
+def buffer_target(item_id, outpost: "OutpostRef", layout=None):
     """
     (warehouse_id, room) to stage item_id into, else (None, 0). A Warehouse
     whose slot already holds item_id wins (tops that one stack up); an
@@ -115,7 +115,7 @@ def buffer_target(item_id, outpost, layout=None):
     return fallback
 
 
-def lifeform_buffer_cap(outpost):
+def lifeform_buffer_cap(outpost: "OutpostRef"):
     """Units of one life form kept in `outpost`'s Warehouses: LIFEFORM_BUFFER_SLOTS full slots."""
     return slot_capacity(outpost) * LIFEFORM_BUFFER_SLOTS
 
@@ -123,7 +123,7 @@ def lifeform_buffer_cap(outpost):
 class DroneDepotController:
     """Automates a Drone Depot: idempotent output wiring + periodic telemetry publish."""
 
-    def __init__(self, station):
+    def __init__(self, station: "DroneStation | DroneStationMedium | DroneStationLarge"):
         self.station = station
         self.name = getattr(station, "id", "drone_station")
         self._wired = False

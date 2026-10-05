@@ -5,11 +5,7 @@ session from a plain script instead of VS Code. See
 docs/AI_CHEATSHEET.md Section 8 for the full writeup, capabilities, and the
 attach-vs-launch gotcha this file's docstrings reference below.
 
-Vendored here (devtools/) rather than imported from early_game_runner/,
-which is meant to stay a fixed, standalone project of its own -- this repo
-owns its own copy instead of reaching across into that one. Keep in sync by
-hand if early_game_runner's copy ever gets a real fix; devtools/scripts_sync.py
-is this copy's only consumer.
+devtools/scripts_sync.py is its only consumer.
 
 SAFETY: a session opened with this tool runs against the real, live game
 save -- pausing a script at a breakpoint pauses real gameplay for that

@@ -51,7 +51,7 @@ def get_manual_orders():
     }
 
 
-def consume_manual_order(item_id, quantity, outpost=None):
+def consume_manual_order(item_id, quantity, outpost: "OutpostRef | None" = None):
     """Counts down an active manual build order (see get_manual_orders()) by quantity actually
     drained from a machine's output, dropping the entry entirely once it reaches zero. No-ops if
     item_id has no active manual order or quantity <= 0. Units drained off home (`outpost` given
@@ -141,7 +141,7 @@ def _parse_transit(stored):
     return entries
 
 
-def _settle_transit(entries, cache):
+def _settle_transit(entries, cache: "SourceCache"):
     """{item_id: (units, base)} with arrived units removed (see MANUAL_TRANSIT_KEY)."""
     settled = {}
     for item_id, (units, base) in entries.items():
@@ -151,7 +151,7 @@ def _settle_transit(entries, cache):
     return settled
 
 
-def manual_transit_wants(cache=None):
+def manual_transit_wants(cache: "SourceCache | None" = None):
     """{item_id: units wanted at home} for manual-order units still off home."""
     entries = _manual_transit_entries()
     if not entries:
@@ -160,7 +160,7 @@ def manual_transit_wants(cache=None):
     return {item_id: base + units for item_id, (units, base) in _settle_transit(entries, cache).items()}
 
 
-def reconcile_manual_transit(cache=None):
+def reconcile_manual_transit(cache: "SourceCache | None" = None):
     """Writes MANUAL_TRANSIT_KEY back without arrived units. Writes only on change."""
     stored = archive.get(MANUAL_TRANSIT_KEY, {})
     if not stored:
@@ -188,14 +188,14 @@ UPGRADE_ORDERS_KEY = "fabricator.upgrade_orders"
 # Requesters in UPGRADE_ORDERS_KEY that aren't drones. fleet_upgrade._prune()
 # drops every other entry whose drone no longer exists, so a standing order
 # from another script must be listed here. "field_keeper" = the Harvester's
-# field-machine kits (8_planting/lib/harvester_machines.py). "bio_caster" = the
+# field-machine kits (lib/harvester_machines.py). "bio_caster" = the
 # Bio Caster's forge materials for all open Volcanic bio orders (lib/bio_volcanic.py).
 # "fleet_commission" = a drone kit the COMMISSION card queued (lib/drone_commission.py).
 # "plant_terraformer" = the Plant Terraformers' next NEED_BATCHES batches of Fertilizer /
-# Growth Accelerant (8_planting/lib/plant_terraformer_demand.py). "fuel_assembler" = the
-# Fuel Assemblers' Lead Plates for their next crafts (10_nuclear/lib/fuel_assembler.py).
-# "field_amplifier" = the Harvester's Yield Amplifier doses (8_planting/lib/harvester_amplify.py).
-# "site_stock_need" = the need tier of the crafted site stockpiles (5_steampower/lib/site_supply.py).
+# Growth Accelerant (lib/plant_terraformer_demand.py). "fuel_assembler" = the
+# Fuel Assemblers' Lead Plates for their next crafts (lib/fuel_assembler.py).
+# "field_amplifier" = the Harvester's Yield Amplifier doses (lib/harvester_amplify.py).
+# "site_stock_need" = the need tier of the crafted site stockpiles (lib/site_supply.py).
 STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "plant_terraformer", "fuel_assembler", "field_amplifier", "site_stock_need")
 # Standing requesters whose order is a recurring consumable buffer, not a
 # one-off part a job waits on: their items are never hauled urgently
@@ -204,7 +204,7 @@ STANDING_ORDER_REQUESTERS = ("field_keeper", "bio_caster", "fleet_commission", "
 # keep a stockpile instead (site_supply.SITE_STOCK_TARGETS).
 RECURRING_ORDER_REQUESTERS = ("plant_terraformer", "field_amplifier", "site_stock_need")
 # Upgrade/backlog requesters whose items are consumed at the outposts that
-# request them through site supply (5_steampower/lib/site_supply.py
+# request them through site supply (lib/site_supply.py
 # SITE_STOCK_TARGETS), not at home: they raise the Fabricator targets but make
 # home no consumer (lib/production_cascade.py fabricator_root_targets()), so
 # home doesn't pull the stockpiles back.

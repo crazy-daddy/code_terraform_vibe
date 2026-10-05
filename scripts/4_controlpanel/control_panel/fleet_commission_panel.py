@@ -23,6 +23,10 @@
 # its own row.
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from pioneer_commission import PIONEER_PRESETS, commission_state, update_commission
 from drone_commission import DRONE_ROLES
 from drone_energy import DRONE_DEPOT_TYPE_IDS

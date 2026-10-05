@@ -11,6 +11,7 @@ import fluid_routing
 import lead_cask
 from hysteresis import HysteresisLatch
 import power
+import script_restart
 
 # Mk III fluid feed (docs/components/heat_generator.md, pressure_generator.md,
 # oxygen_generator.md):
@@ -28,15 +29,18 @@ import power
 # Steam guard (heater only): steam is the grid's main power source, and the
 # turbines need the pool to carry them through vent dormancy. Below
 # STEAM_POOL_STOP_FRACTION of the grid's banked steam (power.measure_grid(),
-# the number the tier-5 Power Guard reads) the heater disconnects steam_in
+# the number the Power Guard reads) the heater disconnects steam_in
 # and runs as Mk II; it reconnects at STEAM_POOL_START_FRACTION. A grid with
-# no measurable steam tank, or a power.py without measure_grid() (below tier
-# 5), leaves the guard open. Water has no guard: water is not a power reserve.
+# no measurable steam tank leaves the guard open. Water has no guard: water is not a power reserve.
+# The pool is read every STEAM_GUARD_INTERVAL_TICKS, not every feed pass: a
+# heater draws at most 12 t/h of steam, so a late guard costs it ~1 t per
+# 5 game minutes against a pool of thousands of tons.
 
 FLUID_CHECK_INTERVAL_TICKS = 20
 
 STEAM_POOL_STOP_FRACTION = 0.50
 STEAM_POOL_START_FRACTION = 0.70
+STEAM_GUARD_INTERVAL_TICKS = 3000
 
 # FluidInputRouter constants, same values as the Plant Terraformer's water router.
 FLUID_STALL_STREAK_BLACKLIST_THRESHOLD = 5
@@ -55,13 +59,56 @@ MK4_MAGAZINE_TARGET = 1
 MK4_CHECK_INTERVAL_TICKS = 600
 
 
-def _current_tick(clock):
+def _current_tick(clock: "Clock | None"):
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
         except Exception as error:
             swallowed("terraforming._current_tick: clock.tick", error)
     return 0
+
+
+MK3_PORT_RESTART_REASON = "mk3_port_unbound"
+MK4_INPUT_RESTART_REASON = "mk4_input_unbound"
+
+
+class UnboundPortRestart:
+    """
+    The game binds an upgrade's port (steam_in / water_in, Mk IV input) on
+    `self` only when the script starts, so a pack applied under a running
+    script leaves it missing. missing() asks control_room_automation.py for a
+    restart once per script run (lib/script_restart.py); present() drops this
+    machine's request once the port is there.
+    """
+
+    def __init__(self, name, port_name, reason, log: "TreeConsole"):
+        self.name = name
+        self.port_name = port_name
+        self.reason = reason
+        self.log = log
+        self.requested = False
+        self.cleared = False
+
+    def missing(self, tick):
+        if self.requested:
+            return
+        self.requested = True
+        state = script_restart.request_restart(self.name, self.reason, tick)
+        warn = self.log.level("warn")
+        if state == script_restart.STATE_GAVE_UP:
+            warn.print(f"[{self.name}] {self.port_name} still unbound after {script_restart.MAX_RESTARTS} restarts -- restart the script by hand.")
+        elif state == script_restart.STATE_REQUESTED:
+            warn.print(f"[{self.name}] {self.port_name} unbound (the game binds it at script start) -- restart requested from the Control Room automation.")
+        else:
+            warn.print(f"[{self.name}] {self.port_name} unbound and the restart request could not be written -- restart the script by hand.")
+
+    def present(self):
+        if self.cleared:
+            return
+        self.cleared = True
+        entry = script_restart.clear_restart(self.name, self.reason)
+        if entry:
+            self.log.print(f"[{self.name}] {self.port_name} bound after {entry.get('restarts', 0)} restart(s).")
 
 
 class Mk3FluidFeed:
@@ -72,7 +119,7 @@ class Mk3FluidFeed:
     transitions at info level.
     """
 
-    def __init__(self, machine, fluid_key, name, log, steam_guard=False):
+    def __init__(self, machine: "OxygenGenerator | TempHeater | PressureGenerator", fluid_key, name, log: "TreeConsole", steam_guard=False):
         self.machine = machine
         self.fluid_key = fluid_key
         self.name = name
@@ -83,7 +130,9 @@ class Mk3FluidFeed:
         # Active = guard closed (steam_in released to the turbines); an unreadable pool opens it.
         self.guard = HysteresisLatch(STEAM_POOL_STOP_FRACTION, STEAM_POOL_START_FRACTION, on_above=False)
         self.last_check_tick = None
+        self.last_guard_tick = None
         self.last_degraded = None
+        self.restart = UnboundPortRestart(name, fluid_key, MK3_PORT_RESTART_REASON, log)
         self.router = fluid_routing.FluidInputRouter(
             discover=self._discover_sources,
             rescan_interval_ticks=FLUID_RESCAN_INTERVAL_TICKS,
@@ -121,8 +170,7 @@ class Mk3FluidFeed:
     def _steam_pool_fraction(self):
         """Banked steam fraction of this machine's grid (0-1), or None when unreadable."""
         measure_grid = getattr(power, "measure_grid", None)
-        steam_tank_ids = getattr(power, "grid_steam_tank_ids", None)
-        if not measure_grid or not steam_tank_ids:
+        if not measure_grid:
             return None
         if not self.power or not hasattr(self.power, "grid"):
             return None
@@ -133,7 +181,7 @@ class Mk3FluidFeed:
             return None
         if not grid:
             return None
-        now = measure_grid(grid, steam_tank_ids(grid))
+        now = measure_grid(grid)
         if now["steam_cap"] <= 0:
             return None
         return now["steam_t"] / now["steam_cap"]
@@ -142,7 +190,7 @@ class Mk3FluidFeed:
     def guard_open(self):
         return not self.guard.active
 
-    def _update_guard(self, port):
+    def _update_guard(self, port: "FluidPort"):
         self.log.start(f"[{self.name}] _update_guard", level="debug")
         fraction = self._steam_pool_fraction()
         flip = self.guard.update(fraction)
@@ -157,7 +205,7 @@ class Mk3FluidFeed:
             self.log.debug(f"Steam pool {fraction*100:.0f}%, guard {'open' if self.guard_open else 'closed'} (stop < {STEAM_POOL_STOP_FRACTION*100:.0f}%, start >= {STEAM_POOL_START_FRACTION*100:.0f}%).")
         self.log.end()
 
-    def _disconnect(self, port):
+    def _disconnect(self, port: "FluidPort"):
         if not hasattr(port, "disconnect"):
             return
         try:
@@ -194,10 +242,14 @@ class Mk3FluidFeed:
         port = getattr(self.machine, self.fluid_key, None)
         if not port:
             self.log.debug(f"[{self.name}] Mk III but no {self.fluid_key} port.")
+            self.restart.missing(curr_tick)
             return
+        self.restart.present()
 
         if self.steam_guard:
-            self._update_guard(port)
+            if self.last_guard_tick is None or not curr_tick or not 0 <= curr_tick - self.last_guard_tick < STEAM_GUARD_INTERVAL_TICKS:
+                self.last_guard_tick = curr_tick
+                self._update_guard(port)
             if not self.guard_open:
                 self._report_degraded()
                 return
@@ -209,13 +261,14 @@ class Mk3FluidFeed:
 class Mk4RodFeed:
     """Keeps a Mk IV generator's Fuel Rod magazine stocked from the outpost's Lead Casks."""
 
-    def __init__(self, machine, name, log):
+    def __init__(self, machine: "OxygenGenerator | TempHeater | PressureGenerator", name, log: "TreeConsole"):
         self.machine = machine
         self.name = name
         self.log = log
         self.clock = get_component("clock")
         self.last_check = None
         self.warned = False
+        self.restart = UnboundPortRestart(name, "input", MK4_INPUT_RESTART_REASON, log)
 
     def step(self):
         now = _current_tick(self.clock)
@@ -225,7 +278,11 @@ class Mk4RodFeed:
         try:
             if int(self.machine.tier()) < MK4_TIER:
                 return
-            port = self.machine.input
+            port = getattr(self.machine, "input", None)
+            if port is None:
+                self.restart.missing(now)
+                return
+            self.restart.present()
             staged = int(port.count())
         except Exception as error:
             swallowed("terraforming.Mk4RodFeed.step: machine.tier", error)
@@ -249,7 +306,7 @@ class HeatController:
     Tracks day / weather condition changes, sweeps 1-10W to find 100% efficiency,
     and caches learned optimal setpoints per thermal state locally and in the Data Archive.
     """
-    def __init__(self, machine, clock=None):
+    def __init__(self, machine: "TempHeater", clock: "Clock | None" = None):
         self.machine = machine
         self.clock = clock or get_component("clock")
         self.name = getattr(machine, "id", "heater")
@@ -322,7 +379,7 @@ class PressureController:
     Identifies the sync window [next_window_low, next_window_high] and triggers
     self.sync() inside the window for 100% compression efficiency.
     """
-    def __init__(self, machine):
+    def __init__(self, machine: "PressureGenerator"):
         self.machine = machine
         self.name = getattr(machine, "id", "pressure")
         self.synced_this_sweep = False
@@ -416,7 +473,7 @@ class OxygenController:
     Sets intake to peak sweet spot (CO2 / 10), and dumps carbon waste inside the
     clean window (50-60 units) to avoid penalties or production stalling at 100.
     """
-    def __init__(self, machine, atmo=None):
+    def __init__(self, machine: "OxygenGenerator", atmo=None):
         self.machine = machine
         self.atmo = atmo or get_component("atmosphere")
         self.name = getattr(machine, "id", "o2gen")

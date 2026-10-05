@@ -36,7 +36,7 @@ def get_my_biome(machine):
         return getattr(machine.outpost, "biome", None)
     return None
 
-def local_sibling(outpost, type_id):
+def local_sibling(outpost: "OutpostRef", type_id):
     """
     First same-outpost sibling component of type_id (e.g. a Bio Lab's own Bio
     Collector, or a Bio Collector's own Bio Exchange/Bio Lab), discovered via
@@ -67,14 +67,14 @@ def local_sibling(outpost, type_id):
     log.end()
     return result
 
-def is_home_outpost(outpost):
+def is_home_outpost(outpost: "OutpostRef"):
     # outpost is an OutpostRef (see storage.discover_storage_buildings() /
     # outpost_mining.outpost_by_id() callers) -- .is_home is a plain bool
     # property there, not a method (docs/types/world_and_sites.md's
     # OutpostRef vs. Outpost component distinction), so this must NOT call it.
     return getattr(outpost, "is_home", True) if outpost else True
 
-def local_stock(item_id, outpost):
+def local_stock(item_id, outpost: "OutpostRef"):
     """
     How much of item_id this machine can actually reach locally: home Inventory (plus
     any Warehouse) at the home outpost, or Warehouse-only at a remote outpost.
@@ -117,7 +117,7 @@ def is_order_incomplete(ord_info):
 BIOME_PROCESSOR_TYPE_IDS = ["bio_luminizer", "bio_caster", "bio_conditioner", "dna_sequencer"]
 
 
-def local_biome_processor(outpost):
+def local_biome_processor(outpost: "OutpostRef"):
     """
     (component, type_id) for whichever biome-transform building is deployed at this
     outpost -- Bio Luminizer (Coastal), Bio Caster (Volcanic), Bio Conditioner (Deep),
@@ -219,7 +219,7 @@ def processor_fragment_preference(processor, processor_type, fragment_ids):
     return ordered
 
 
-def _local_sources(outpost):
+def _local_sources(outpost: "OutpostRef"):
     """[(source_id, component), ...] for every storage location this outpost can pull
     from: "inventory" first if home, then every discovered Warehouse at `outpost`."""
     sources = []
@@ -248,7 +248,7 @@ def _properties_key(properties):
     )
 
 
-def _local_stock_snapshot(outpost):
+def _local_stock_snapshot(outpost: "OutpostRef"):
     """
     One full walk of local storage (see _local_sources()), returning
     (totals, by_properties):
@@ -354,7 +354,7 @@ def _total_demanded_artifacts(snapshot, fragment_ids):
     return sum(_snapshot_stock(snapshot, f) for f in fragment_ids)
 
 
-def _find_matching_stack(exchange_machine, item_id, outpost):
+def _find_matching_stack(exchange_machine: "BioExchange", item_id, outpost: "OutpostRef"):
     """
     Scans every local storage source for a stack of item_id whose exact properties
     satisfy exchange_machine.matches_order() (glow/genes/Forged/Conditioned/plain-
@@ -390,7 +390,7 @@ def _find_matching_stack(exchange_machine, item_id, outpost):
     return None
 
 
-def _order_target_properties(order, fragment_id):
+def _order_target_properties(order: "BioOrder", fragment_id):
     """
     The `properties` dict a locally-staged fragment_id stack must exactly match to
     already satisfy `order` -- generalizes the old Coastal-only target_glow lookup to
@@ -410,7 +410,7 @@ def _order_target_properties(order, fragment_id):
     return None
 
 
-def _order_fragment_remaining(order, fragment_id, snapshot):
+def _order_fragment_remaining(order: "BioOrder", fragment_id, snapshot):
     """
     Units of fragment_id this order still genuinely needs, net of what's already
     delivered, in transit, or sitting locally already correctly processed for it
@@ -521,7 +521,7 @@ def _focus_local_order(orders, snapshot, my_biome, fragment_id=None):
     return candidates[0]
 
 
-def _bio_demand_totals(comms, exchange, my_biome):
+def _bio_demand_totals(comms: "Comms | None", exchange: "BioExchange | None", my_biome):
     """
     {fragment_id: count_needed} currently required by local, incomplete orders,
     NOT yet netted against local stock -- callers compare the returned count
@@ -551,7 +551,8 @@ def _bio_demand_totals(comms, exchange, my_biome):
         try:
             broadcast = comms.latest("bio_orders")
             if isinstance(broadcast, dict):
-                result = dict(broadcast.get("local_demands", {}) or {})
+                demands = broadcast.get("local_demands")
+                result = {k: v for k, v in demands.items() if isinstance(v, int)} if isinstance(demands, dict) else {}
                 log.trace(f"source=signal_bus, local_demands={result}")
                 log.end()
                 return result
@@ -583,7 +584,7 @@ class BioExchangeController:
     Broadcasting channel: 'bio_orders'
     Receiving channel: 'sample_ready'
     """
-    def __init__(self, machine, sweep_delay=10.0):
+    def __init__(self, machine: "BioExchange", sweep_delay=10.0):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_exchange")
         self.comms = get_component("comms")
@@ -598,6 +599,8 @@ class BioExchangeController:
             for stack in self.machine.input.stacks():
                 try:
                     destination = best_unload_target(stack.id, stack.count, outpost=self.machine.outpost)
+                    if destination is None:
+                        continue
                     self.machine.input.eject(destination, stack.id, stack.count)
                 except Exception as error:
                     swallowed("bio.BioExchangeController.clear_input: best_unload_target", error)
@@ -896,7 +899,7 @@ class BioLabController:
     pull requests, lib/outpost_reagents.py, for the Pioneer pull hauler homed there), and notifies
     the Signal Bus ('sample_ready') upon completing an extraction.
     """
-    def __init__(self, machine):
+    def __init__(self, machine: "BioLab"):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_lab")
         self.shop = get_component("shop")
@@ -1002,6 +1005,8 @@ class BioLabController:
                 for stack in self.machine.input.stacks():
                     try:
                         destination = best_unload_target(stack.id, stack.count, outpost=outpost)
+                        if destination is None:
+                            continue
                         self.machine.input.eject(destination, stack.id, stack.count)
                     except Exception as error:
                         swallowed("bio.BioLabController.step: best_unload_target", error)
@@ -1030,19 +1035,21 @@ class BioLabController:
             self.log.start(f"[{self.name}] Analyzing specimen...")
             a_res = self.machine.analyze()
             if a_res.status == "ok":
+                info = a_res.info
+                assert info is not None
                 try:
                     def update_recipes(curr):
                         d = dict(curr or {})
-                        d[a_res.info.fragment_id] = {
-                            "name": a_res.info.name,
-                            "recipe": a_res.info.required_recipe,
-                            "rarity": getattr(a_res.info, "rarity", "unknown")
+                        d[info.fragment_id] = {
+                            "name": info.name,
+                            "recipe": info.required_recipe,
+                            "rarity": getattr(info, "rarity", "unknown")
                         }
                         return d
                     archive.transaction("bio.fragment_recipes", {}, update_recipes)
                 except Exception as error:
                     swallowed("bio.BioLabController.step: archive.transaction", error)
-                self.log.end(f"[{self.name}] Analyzed: {a_res.info.name} ({a_res.info.fragment_id}). Recipe: {a_res.info.required_recipe}")
+                self.log.end(f"[{self.name}] Analyzed: {info.name} ({info.fragment_id}). Recipe: {info.required_recipe}")
             else:
                 self.log.end(f"[{self.name}] analyze() -> {a_res.status}")
             flush_all()
@@ -1052,6 +1059,7 @@ class BioLabController:
         # Stage 2: Extract
         if specimen.stage == "analyzed":
             fragment_id = specimen.fragment_id
+            assert fragment_id is not None  # set once analyze() succeeds
             loaded = self.machine.loaded_reagents or {}
 
             # Discard instead of extract when no order anywhere still needs
@@ -1094,6 +1102,8 @@ class BioLabController:
                     else:
                         try:
                             destination = best_unload_target(stack.id, stack.count, outpost=outpost)
+                            if destination is None:
+                                continue
                             self.machine.input.eject(destination, stack.id, stack.count)
                         except Exception as error:
                             swallowed("bio.BioLabController.step: best_unload_target #2", error)
@@ -1188,7 +1198,7 @@ class BioCollectorController:
     - Never harvests fragments already sufficient in local storage/deliveries.
     - Caps uncataloged harvests if local storage already holds ample samples.
     """
-    def __init__(self, machine):
+    def __init__(self, machine: "BioCollector"):
         self.machine = machine
         self.name = getattr(machine, "id", "bio_collector")
         self.comms = get_component("comms")

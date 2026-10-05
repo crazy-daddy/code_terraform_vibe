@@ -51,6 +51,10 @@ from construction_plan import DEFAULT_PRIORITY
 from drill_sites import known_positions
 import autoplay_roles
 import supply_tiers
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 PORT_STATUS_KEY = "autoplay.port_status"
 MAX_ROUTES_PER_PASS = 1   # fluid routes queued per pass
@@ -256,7 +260,7 @@ def _structures(outpost_xy, producers, ghosts=()):
 class FluidPlanner:
     """One fluid pass per planner tick; see the module header."""
 
-    def __init__(self, log):
+    def __init__(self, log: "TreeConsole"):
         self.log = log
         self.failed = set()   # (fluid, terminal name) the game rejected or no route reached this run; retried after restart
         self.buffers = {}     # storage_buffers() of the current pass

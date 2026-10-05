@@ -13,10 +13,7 @@ class _FakePower:
     def __init__(self, fraction):
         self.fraction = fraction
 
-    def grid_steam_tank_ids(self, grid):
-        return []
-
-    def measure_grid(self, grid, tank_ids):
+    def measure_grid(self, grid, tank_ids=None):
         return {"bat_wh": self.fraction * 100, "bat_cap": 100, "steam_t": 0, "steam_cap": 0}
 
     def reserve_fraction(self, now):
@@ -67,6 +64,25 @@ class ScriptParkingTests(StubTestCase):
         self.assertEqual(self.power.calls[-1], ("smelter_1", True))
         self.assertNotIn("smelter_1", self.world.notebook.data[PARKED_KEY])
         self.assertNotIn("smelter_1", self.world.notebook.data[PARK_REQUESTS_KEY])
+
+    def test_fast_pass_wakes_but_does_not_park(self):
+        self.parking.step(self.grids, 10.0, full=False)  # first pass is full anyway
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls, [])
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls, [("smelter_1", False)])
+        self.world.clock.now += WAKE_AFTER_TICKS["smelter"]
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", True))
+        self.assertNotIn("smelter_1", self.world.notebook.data[PARKED_KEY])
+
+    def test_fast_pass_keeps_a_parked_machine_its_stale_rows_read_powered(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)  # member rows read before the park: powered
+        self.parking.step(self.grids, 10.0, full=False)
+        self.assertIn("smelter_1", self.world.notebook.data[PARKED_KEY])
+        self.assertEqual(self.power.calls, [("smelter_1", False)])
 
     def test_machine_switched_on_by_hand_leaves_the_parked_list(self):
         self.request("smelter_1", "smelter")
@@ -181,6 +197,19 @@ class ScriptParkingTests(StubTestCase):
         # It worked after this wake (parked again later than the window): back to the default.
         self.assertNotIn("wake_after", self._recheck_cycle(script_parking.FRUITLESS_REPARK_TICKS + 50))
         self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 2, cap))
+
+    def test_backoff_counts_the_request_tick_not_a_late_park_pass(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        entry = self.world.notebook.data[PARKED_KEY]["smelter_1"]
+        self.world.clock.now += entry.get("wake_after", WAKE_AFTER_TICKS["smelter"])
+        self.parking.step(self.grids, 10.0)
+        self.world.clock.now += 50
+        self.request("smelter_1", "smelter")  # idle again soon after the wake
+        self.world.clock.now += script_parking.FRUITLESS_REPARK_TICKS  # the next pass runs late
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", False))
+        self.assertEqual(self.world.notebook.data[PARKED_KEY]["smelter_1"]["wake_after"], WAKE_AFTER_TICKS["smelter"] * 2)
 
     def test_event_wake_does_not_start_a_backoff(self):
         self.request("supply_dock_1", "supply_dock")

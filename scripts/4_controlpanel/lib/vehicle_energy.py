@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from vehicle import VehicleController
 
-def is_rover_chassis_for(vehicle):
+def is_rover_chassis_for(vehicle: "Rover | Pioneer | None"):
     """
     Standalone chassis-type probe for a raw get_component() object (no live
     VehicleController instance available) -- used by the module-level _for()
@@ -53,6 +53,7 @@ def is_rover_chassis_for(vehicle):
     return str(name).startswith("rover")
 
 from archive import archive
+from components import charging_station
 from swallow import swallowed
 from tree_console import flush_all
 from script_parking import wake_for_visit
@@ -129,7 +130,7 @@ DEFAULT_ORE_DIG_MINUTES = 15.0  # fallback for an unknown/undocumented item_id -
 DEFAULT_DRILL_POWER_W = 10.0  # fallback matching the basic drill
 
 
-def active_modules_count_for(vehicle):
+def active_modules_count_for(vehicle: "Rover | Pioneer"):
     """Standalone: count of mounted functional (power-drawing) modules for a live vehicle object."""
     if hasattr(vehicle, "modules"):
         try:
@@ -142,7 +143,7 @@ def active_modules_count_for(vehicle):
     return sum(1 for attr in ("nav", "drill", "sonar", "constructor") if hasattr(vehicle, attr))
 
 
-def cargo_units_count_for(vehicle):
+def cargo_units_count_for(vehicle: "Rover | Pioneer"):
     """Standalone: live cargo unit count for a live vehicle object."""
     if hasattr(vehicle, "cargo") and hasattr(vehicle.cargo, "count"):
         try:
@@ -152,7 +153,7 @@ def cargo_units_count_for(vehicle):
     return 0
 
 
-def nav_speed_multiplier_for(vehicle):
+def nav_speed_multiplier_for(vehicle: "Rover | Pioneer"):
     """Standalone: Sport Nav top-speed multiplier for a live vehicle object."""
     if hasattr(vehicle, "nav") and hasattr(vehicle.nav, "speed_multiplier"):
         try:
@@ -162,13 +163,13 @@ def nav_speed_multiplier_for(vehicle):
     return 1.0
 
 
-def nav_power_multiplier_for(vehicle):
+def nav_power_multiplier_for(vehicle: "Rover | Pioneer"):
     """Standalone: Sport Nav movement-power multiplier matching nav_speed_multiplier_for()."""
     speed_mult = nav_speed_multiplier_for(vehicle)
     return 1.0 + 1.6 * (speed_mult - 1.0)
 
 
-def travel_wh_per_meter_for(vehicle, throttle, cargo_units=None):
+def travel_wh_per_meter_for(vehicle: "Rover | Pioneer", throttle, cargo_units=None):
     """
     Standalone travel Wh/meter for a live vehicle object, for callers without a
     VehicleController instance. Branches by chassis (is_rover_chassis_for()) --
@@ -189,7 +190,7 @@ def travel_wh_per_meter_for(vehicle, throttle, cargo_units=None):
     return power / speed
 
 
-def mine_wh_per_unit_for(vehicle, item_id, purity=None):
+def mine_wh_per_unit_for(vehicle: "Rover | Pioneer", item_id, purity=None):
     """
     Standalone exact mining Wh/unit for a live vehicle object: 1 unit of
     item_id, at the vehicle's actually-mounted drill's real speed_multiplier()/
@@ -221,7 +222,7 @@ def mine_wh_per_unit_for(vehicle, item_id, purity=None):
     return time_hours * power_w
 
 
-def rescue_wh_per_meter_for(vehicle):
+def rescue_wh_per_meter_for(vehicle: "Rover | Pioneer | None"):
     """
     Standalone worst-case-safe travel Wh/meter for rescue-return budgeting, at
     the speedmode throttle floor (cheapest possible Wh/m). One-call entry
@@ -749,7 +750,7 @@ class VehicleEnergyMixin:
                 swallowed("vehicle_energy.VehicleEnergyMixin.get_outpost_ref: network.outposts", error)
         return None
 
-    def find_charging_station(self, outpost):
+    def find_charging_station(self, outpost: "OutpostRef | None"):
         """
         First Vehicle Charging Station building object at outpost (an
         already-resolved outpost object, not an id -- see get_outpost_ref()).
@@ -860,7 +861,7 @@ class VehicleEnergyMixin:
         else:
             station_coords = (float(station_coords[0]), float(station_coords[1]))
             if station_id:
-                cs = get_component(station_id)
+                cs = charging_station(station_id)
             if not cs:
                 for st in self.get_all_charging_stations():
                     if self._host.distance_between(st["coords"], station_coords) < 2.0:
@@ -871,7 +872,7 @@ class VehicleEnergyMixin:
 
         if not cs:
             if station_id:
-                cs = get_component(station_id)
+                cs = charging_station(station_id)
             if not cs:
                 stations = self.get_all_charging_stations()
                 if stations:
@@ -911,7 +912,7 @@ class VehicleEnergyMixin:
         docked_id = balanced["id"] if balanced else self.current_station()
         if docked_id and docked_id != station_id:
             station_id = docked_id
-            cs = balanced["component"] if balanced else (get_component(docked_id) or cs)
+            cs = balanced["component"] if balanced else (charging_station(docked_id) or cs)
             wake_for_visit(station_id, f"{self._host.name} coming to charge")
         self._host.publish_telemetry("CHARGING")
         self._host.log.print(f"[{self._host.name}] Docked at station '{station_id or 'station'}'. Waiting for charge ({lvl*100:.0f}% -> {target_level*100:.0f}%)...")

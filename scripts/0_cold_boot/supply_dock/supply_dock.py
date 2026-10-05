@@ -17,12 +17,18 @@ LOAD_CHUNK = 10   # units per take() call, keeps a single cycle cheap
 IDLE_SLEEP = 3.0
 POLL = 1.0
 
-orders = get_component("orders")
-inventory = get_component("inventory")
+def need(component):
+    # Core component this script cannot run without; fail loudly at start if missing.
+    assert component is not None
+    return component
+
+
+orders = need(get_component("orders"))
+inventory = need(get_component("inventory"))
 clock = get_component("clock")
 
 
-def order_readiness(order):
+def order_readiness(order: "Order"):
     # (ready, remaining) -- ready is how much of the still-owed requirement
     # Inventory can already cover; remaining ignores stock entirely.
     ready = 0
@@ -36,7 +42,7 @@ def order_readiness(order):
     return ready, remaining
 
 
-def weekly_infeasible(order, current_day, rate):
+def weekly_infeasible(order: "Order", current_day, rate):
     # Coarse dispatch-capacity ceiling: can this dock physically ship the
     # rest before expiry. Never blocks on missing data.
     if order.expires_day is None or current_day is None or rate <= 0:
@@ -48,7 +54,7 @@ def weekly_infeasible(order, current_day, rate):
     return remaining > rate * hours_left
 
 
-def score(order):
+def score(order: "Order"):
     prio = 5 if order.kind == "weekly" else 10
     if order.reward_kind in ("recipe", "tech"):
         prio += 50  # unlocking a recipe/tech beats plain credits

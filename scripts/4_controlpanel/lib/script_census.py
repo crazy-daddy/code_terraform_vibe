@@ -25,13 +25,13 @@ out of them.
 
 from tree_console import TreeConsole
 from swallow import swallowed
-from atomic import run_batched
+from atomic import run_atomic, run_batched
 
 log = TreeConsole(module="script_census")
 
 # Ticks between two counts.
 CENSUS_TICK_INTERVAL = 300
-# Ids per atomic is_running() batch (a few steps each).
+# Ids per atomic is_running() batch, refs per atomic row batch (a few steps each).
 CENSUS_CHUNK = 100
 # Game scheduler constants (§1d-1): total steps per tick shared by all scripts, cap per script.
 TOTAL_STEPS_PER_TICK = 50000
@@ -56,6 +56,27 @@ def allowance(running):
     return max(1, min(MAX_STEPS_PER_SCRIPT, TOTAL_STEPS_PER_TICK // running))
 
 
+def _ref_rows(refs, kind_attr, mobile):
+    """(id, kind, name, mobile) rows of one slice of refs; pure reads, run atomically."""
+    return [(getattr(ref, "id", ""), getattr(ref, kind_attr, ""), getattr(ref, "name", ""), mobile) for ref in refs]
+
+
+def _poi_member_rows(members):
+    """Rows of the POI extractors among one slice of grid members; pure reads, run atomically."""
+    return [(getattr(m, "id", ""), m.type_id, getattr(m, "name", ""), False) for m in members if getattr(m, "type_id", "") in POI_TYPE_IDS]
+
+
+def _unique_rows(rows):
+    """rows without empty ids and repeats, first one kept; run atomically."""
+    seen = set()
+    unique = []
+    for row in rows:
+        if row[0] and row[0] not in seen:
+            seen.add(row[0])
+            unique.append(row)
+    return unique
+
+
 def _poi_rows():
     """Rows of the POI extractors, from power_control grid members."""
     power = get_component("power_control")
@@ -64,12 +85,10 @@ def _poi_rows():
     except Exception as error:
         swallowed("script_census._poi_rows: power.grids", error)
         return []
-    rows = []
+    members = []
     for grid in grids:
-        for member in getattr(grid, "members", None) or []:
-            if getattr(member, "type_id", "") in POI_TYPE_IDS:
-                rows.append((getattr(member, "id", ""), member.type_id, getattr(member, "name", ""), False))
-    return rows
+        members.extend(getattr(grid, "members", None) or [])
+    return run_batched(_poi_member_rows, members, CENSUS_CHUNK)
 
 
 def _harvester_rows():
@@ -104,28 +123,24 @@ def machine_refs():
     except Exception as error:
         swallowed("script_census.machine_refs: network.outposts", error)
         outposts = []
+    refs = []
     for outpost in outposts:
         try:
-            rows.extend((getattr(ref, "id", ""), getattr(ref, "type_id", ""), getattr(ref, "name", ""), False) for ref in outpost.buildings())
+            refs.extend(outpost.buildings())
             if hasattr(outpost, "harvesting_machines"):
-                rows.extend((getattr(ref, "id", ""), getattr(ref, "type_id", ""), getattr(ref, "name", ""), False) for ref in outpost.harvesting_machines())
+                refs.extend(outpost.harvesting_machines())
         except Exception as error:
             swallowed("script_census.machine_refs: outpost.buildings", error)
+    rows.extend(run_batched(_ref_rows, refs, CENSUS_CHUNK, "type_id", False))
     fleet = get_component("fleet")
     try:
         if fleet:
-            rows.extend((getattr(ref, "id", ""), getattr(ref, "kind", ""), getattr(ref, "name", ""), True) for ref in fleet.mobile_units())
+            rows.extend(run_batched(_ref_rows, fleet.mobile_units(), CENSUS_CHUNK, "kind", True))
     except Exception as error:
         swallowed("script_census.machine_refs: fleet.mobile_units", error)
     rows.extend(_poi_rows())
     rows.extend(_harvester_rows())
-    seen = set()
-    unique = []
-    for row in rows:
-        if row[0] and row[0] not in seen:
-            seen.add(row[0])
-            unique.append(row)
-    return unique
+    return run_atomic(_unique_rows, rows)
 
 
 def machine_ids():
@@ -145,7 +160,8 @@ def snapshot():
         return None
     rows = machine_refs()
     ids = [row[0] for row in rows]
-    probes = [i for i in ui_script_ids() if i not in set(ids)]
+    known = set(ids)
+    probes = [i for i in ui_script_ids() if i not in known]
     try:
         running = run_batched(_running_rows, ids + probes, CENSUS_CHUNK, run)
     except Exception as error:

@@ -14,6 +14,10 @@
 # Recommended card size: 2 x 2 (1 x 2 works, the name column narrows).
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from machine_activity import CLASSES, group_rows, machine_rows, get
 from swallow import swallowed
 import fleet_status
@@ -117,7 +121,7 @@ def scroll_rows(key, rows, max_rows, x, y, label):
     return start, f"{start + 1}-{min(start + max_rows, len(rows))}/{len(rows)}"
 
 
-def hovered_row(mouse, top, count, width):
+def hovered_row(mouse: "PanelMouse", top, count, width):
     if not mouse.over or mouse.x < 16 or mouse.x > width - 16 or mouse.y < top:
         return None
     index = int((mouse.y - top) // ROW_H)
@@ -135,7 +139,7 @@ def clicked_row(clicks, top, count, width):
     return hit
 
 
-def draw_overview(state, width, height, mouse, clicks):
+def draw_overview(state, width, height, mouse: "PanelMouse", clicks):
     """Group rows; returns the clicked group or None."""
     global group_scroll_label
     groups = group_rows(state)
@@ -175,7 +179,7 @@ def draw_overview(state, width, height, mouse, clicks):
     return visible[index][0] if index is not None else None
 
 
-def draw_group(state, group, width, height, mouse, labels):
+def draw_group(state, group, width, height, mouse: "PanelMouse", labels):
     """Machine rows of one group; returns True when "back" is pressed."""
     global machine_scroll_label
     back = panel.button("activity_back", 24, 30, 56, 22, "back")

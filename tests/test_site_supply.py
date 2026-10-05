@@ -1,5 +1,5 @@
 """Stub tests for per-site recipe claims (E2), the global ore stock target (E3)
-and 5_steampower lib/site_supply.py site requests (E4)."""
+and lib/site_supply.py site requests (E4)."""
 import unittest
 from unittest import mock
 

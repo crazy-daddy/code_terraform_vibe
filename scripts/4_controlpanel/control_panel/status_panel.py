@@ -22,6 +22,10 @@
 # ct-panel marker on line 1 -- see docs/cheatsheet/panels.md §7.
 # Recommended card size: 2 columns x 2 rows -- see docs/AI_CHEATSHEET.md.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from archive import archive
 from archive_cleaner import ArchiveCleaner
 from unsupported_markers import update_unsupported_markers

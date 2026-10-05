@@ -105,7 +105,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
 
     # ------------------------------------------------------------ drain
 
-    def _drain(self, swap, computer):
+    def _drain(self, swap, computer: "Computer"):
         outpost_id = swap.get("outpost")
         new_id = swap.get("new_id")
         self._sell_kits()
@@ -123,7 +123,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         self.log.print(f"[warehouse_upgrade] Swap done at '{outpost_id}': {swap.get('old_ids')} -> '{new_id}'.")
         return f"{outpost_id}: {swap.get('old_ids')} -> {new_id} done"
 
-    def _drain_and_remove(self, old_id, new_id, outpost_id, computer):
+    def _drain_and_remove(self, old_id, new_id, outpost_id, computer: "Computer"):
         """Greedy drain + undeploy of one old Warehouse. None once it is gone, else a status line."""
         self.log.start(f"[warehouse_upgrade] Draining '{old_id}' ({self._total(old_id)} units) into '{new_id}'")
         moved = [0]
@@ -131,7 +131,7 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         self.log.end(f"[warehouse_upgrade] '{old_id}': {moved[0]} unit(s) moved this pass")
         return result
 
-    def _drain_loop(self, old_id, new_id, outpost_id, computer, moved):
+    def _drain_loop(self, old_id, new_id, outpost_id, computer: "Computer", moved):
         """Drain loop of _drain_and_remove(); moved[0] accumulates the units moved."""
         self.log.start("[warehouse_upgrade] _drain_loop", level="debug")
         idle_passes = 0

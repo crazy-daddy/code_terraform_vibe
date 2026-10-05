@@ -5,7 +5,7 @@ Every input is a game constant that is the same on every world (docs/cheatsheet/
 so the best order of revivals, Adaptations and Breakthroughs is solved here once instead of
 simulated in game. The in-game planner walks the resulting WILDLIFE_SCHEDULES entry.
 
-Model (scripts/9_wildlife/lib/wildlife_model.py, the same code the game loads):
+Model (scripts/4_controlpanel/lib/wildlife_model.py, the same code the game loads):
   - Both Commons (BOOTSTRAP) revive at t=0 without an Adaptation; every other revival buys its
     Adaptation first (1 Insight), then rears 12 h and establishes at 4 + founding bonuses.
   - Colonies grow by the simworker breeding rate with full support (momentum ramps over 24 h).
@@ -32,7 +32,7 @@ from multiprocessing import Pool
 
 sys.dont_write_bytecode = True
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "9_wildlife", "lib"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "4_controlpanel", "lib"))
 
 import wildlife_data as wd  # noqa: E402
 import wildlife_model as wm  # noqa: E402

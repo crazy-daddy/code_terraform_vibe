@@ -18,7 +18,7 @@ class RoverController(VehicleController):
     Specializes VehicleController with autonomous exploration cycles,
     unscanned POI targeting, and mineral site extraction.
     """
-    def __init__(self, vehicle, home_base=None):
+    def __init__(self, vehicle: "Rover | Pioneer", home_base=None):
         super().__init__(vehicle, home_base=home_base)
         self.role = "rover"
         self.last_target_diagnostics = {}

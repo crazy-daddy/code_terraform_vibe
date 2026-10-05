@@ -1,4 +1,4 @@
-"""Oil Generator surplus base load (5_steampower lib/oil_generator.py) and fluid_routing.fluid_reserve_fraction()."""
+"""Oil Generator surplus base load (lib/oil_generator.py) and fluid_routing.fluid_reserve_fraction()."""
 import unittest
 
 import harness

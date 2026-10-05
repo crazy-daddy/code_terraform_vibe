@@ -18,7 +18,7 @@ class DnaSequencerController(BioProcessorController):
     MODULE = "bio_geothermal"
     DISPLAY_NAME = "DNA Sequencer"
 
-    def __init__(self, machine):
+    def __init__(self, machine: "DnaSequencer"):
         BioProcessorController.__init__(self, machine)
         self._gene_catalog = None  # fixed hardware, read once
 

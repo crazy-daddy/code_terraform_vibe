@@ -44,7 +44,9 @@ class ScriptCensusTests(StubTestCase):
 
     def test_panels_and_automations_count_but_are_not_machines(self):
         self.world.run_control.running.update({"panel_1", "panel_20", "automation_2"})
-        rows, running, ui = snapshot()
+        result = snapshot()
+        assert result is not None
+        rows, running, ui = result
         self.assertEqual(ui, {"panel_1", "panel_20", "automation_2"})
         self.assertEqual(running, {"smelter_1", "solar_1"})
         self.assertFalse({"panel_1", "automation_2"} & {row[0] for row in rows})

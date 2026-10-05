@@ -14,6 +14,11 @@
 # comment for why a horizontal slider is repurposed as a scrollbar: there's
 # no vertical slider/scroll widget in the panel API).
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
+from components import supply_dock
 from production import discover_smelter_ids, discover_fabricator_ids, discover_supply_dock_ids
 
 ROLE_COLORS = {
@@ -52,7 +57,7 @@ def machine_row(machine_id, role):
 
 
 def dock_row(dock_id):
-    dock = get_component(dock_id)
+    dock = supply_dock(dock_id)
     if dock is None:
         return None
     order = dock.current_order() if hasattr(dock, "current_order") else None

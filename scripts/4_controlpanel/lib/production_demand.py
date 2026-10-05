@@ -3,8 +3,9 @@
 from archive import archive
 from storage import total_stock
 from logistics_requests import in_flight
+from components import component
 from swallow import swallowed
-from production_core import discover_fabricator_ids, discover_smelter_ids, log, machine_outpost_id, _add_demand, _ceil, _component, _default_fabricator, _default_smelter
+from production_core import discover_fabricator_ids, discover_smelter_ids, log, machine_outpost_id, _add_demand, _ceil, _default_fabricator, _default_smelter
 from production_docks import find_dock_order_requiring, _dock_order_remaining
 from production_source import SourceCache
 from production_cascade import get_fabricator_targets, _recipe_inputs_for, _stock_fn
@@ -26,7 +27,7 @@ def get_smelter_worker_count(recipe_id):
     """
     count = 0
     for smelter_id in discover_smelter_ids():
-        candidate = _component(smelter_id)
+        candidate = component(smelter_id)
         if not candidate or not hasattr(candidate, "get_recipe"):
             continue
         try:
@@ -37,7 +38,7 @@ def get_smelter_worker_count(recipe_id):
     return max(1, count)
 
 
-def get_material_demands(cache=None):
+def get_material_demands(cache: "SourceCache | None" = None):
     """Returns material quantities currently requested by production and shipping.
 
     NOTE: for Smelter outputs (ingots, glass, ...) this only sees the direct
@@ -72,7 +73,7 @@ def get_material_demands(cache=None):
     # counts here, like Smelter/Supply Dock discovery (production_core.py).
     fabricator_ids = discover_fabricator_ids() or ["fabricator_1"]
     for fabricator_id in fabricator_ids:
-        fabricator = _component(fabricator_id)
+        fabricator = component(fabricator_id)
         if not fabricator:
             continue
         recipe, crafts_remaining = get_fabricator_active_recipe(fabricator, cache)
@@ -104,7 +105,7 @@ def get_material_demands(cache=None):
     return demands
 
 
-def get_smelter_demands(cache=None):
+def get_smelter_demands(cache: "SourceCache | None" = None):
     """
     {smelter_output_item: units_still_to_refine} -- what lib/smelter.py
     should actually produce, following the WHOLE order tree down to Smelter
@@ -171,7 +172,7 @@ def get_smelter_demands(cache=None):
 
     staged = {}
     for fabricator_id in discover_fabricator_ids():
-        fabricator = _component(fabricator_id)
+        fabricator = component(fabricator_id)
         if not fabricator or not hasattr(fabricator, "get_stockpile"):
             continue
         try:
@@ -192,7 +193,7 @@ def get_smelter_demands(cache=None):
     return demands
 
 
-def site_smelter_demands(outpost, cache=None):
+def site_smelter_demands(outpost: "OutpostRef", cache: "SourceCache | None" = None):
     """
     {smelter_output: units} a site's own Fabricators still need
     (fab_site_gross_need()) minus that output's local stock and units in
@@ -266,7 +267,7 @@ def ingot_stock_levels(item_ids):
     return levels
 
 
-def fab_site_ingot_targets(outpost, cache):
+def fab_site_ingot_targets(outpost: "OutpostRef", cache: "SourceCache"):
     """{smelter_output: (target, need)} the ingot buffer this outpost keeps:
     every Smelter output some Fabricator recipe takes as input, {} when the
     outpost has no Fabricator."""
@@ -281,7 +282,7 @@ def fab_site_ingot_targets(outpost, cache):
     return ingot_stock_levels(items) if items else {}
 
 
-def site_ingot_refill(outpost, cache):
+def site_ingot_refill(outpost: "OutpostRef", cache: "SourceCache"):
     """{smelter_output: units} this fab site's ingot buffer still lacks:
     target - local stock - units in flight here. lib/smelter.py works it only
     when no real demand is sourceable."""
@@ -309,7 +310,7 @@ def smelter_recipe_peers(recipe_id, outpost_id=None):
     count = 0
     buffered = 0
     for smelter_id in discover_smelter_ids():
-        candidate = _component(smelter_id)
+        candidate = component(smelter_id)
         if not candidate or not hasattr(candidate, "get_recipe"):
             continue
         try:
@@ -324,7 +325,7 @@ def smelter_recipe_peers(recipe_id, outpost_id=None):
     return max(1, count), buffered
 
 
-def get_raw_material_reason(raw_item, smelter=None):
+def get_raw_material_reason(raw_item, smelter: "Smelter | None" = None):
     """Describes the active downstream consumer driving a raw-material demand."""
     fabricator = _default_fabricator()
 

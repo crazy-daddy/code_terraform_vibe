@@ -3,8 +3,9 @@
 from storage import crop_automator_forage_total, CROP_AUTOMATOR_ITEM_ID, discover_storage_buildings, outpost_is_home
 from outpost_mining import HOME_OUTPOST_ID
 from logistics_requests import aboard_units, DRONE_DEPOT_TYPE_IDS
+import components
 from swallow import swallowed
-from production_core import log, _all_outposts, _component, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
+from production_core import log, _all_outposts, _default_fabricator, _default_fuel_assembler, _default_smelter, _uranium_aftermath_pending
 from production_fluids import can_source_fluid
 import lead_cask
 
@@ -40,8 +41,8 @@ class SourceCache:
         self._sourcing_index = None  # {output_item: [recipes]}, sourcing_recipes() memo
         self._stock_map = None
         self._building_stock = None  # {source_id: {item_id: units}}, filled alongside _stock_map
-        self._fabricator_targets = None  # get_fabricator_targets() memo -- see its docstring
-        self._root_targets = None  # fabricator_root_targets() memo
+        self._fabricator_targets: "dict[str, int] | None" = None  # get_fabricator_targets() memo -- see its docstring
+        self._root_targets: "tuple[dict[str, int], dict[str, dict[str, int]], set[str]] | None" = None  # fabricator_root_targets() memo
         self._site_targets = {}  # {site_id: get_site_fabricator_targets()} memo
         self._site_base_targets = {}  # {site_id: _site_base_targets()} memo
         self._site_ship_plan = {}  # {site_id: {item_id: units}}, filled by get_site_fabricator_targets()
@@ -49,16 +50,16 @@ class SourceCache:
         self._spare_contribution = {}  # {"outpost_id|item_id": units}, one outpost's share of site_spare_elsewhere()
         self._network_stock = {}  # {item_id: units}, network_stock() memo
         self._site_machines = {}  # {"outpost_id|kind": bool}, _site_has_machine() memo
-        self._requests = None  # logistics_requests.active_requests() snapshot
-        self._fab_sites = None  # fab_site_counts() memo
-        self._pipeline_by_site = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
+        self._requests: "dict[str, dict] | None" = None  # logistics_requests.active_requests() snapshot
+        self._fab_sites: "dict[str, int] | None" = None  # fab_site_counts() memo
+        self._pipeline_by_site: "dict[str, dict[str, int]] | None" = None  # {site_id: {item_id: units}}, get_fabricator_pipeline() memo
         self._outpost_stock = {}  # {outpost_id: {item_id: units}} for non-home outposts, see local_stock()
         self._depot_stock = {}  # {outpost_id: {item_id: units}} in Drone Depot stockpiles, see held_stock()
         self._remote_outposts = None  # non-home OutpostRefs, see network_stock()
         self._aboard = None  # logistics_requests.aboard_units() snapshot, see network_stock()
-        self._blueprint_demand = None  # _cascade_blueprint_demand() memo
-        self._blueprint_seeds = None  # blueprint_required_items() memo
-        self._recipe_index = None  # _recipe_index() for this pass
+        self._blueprint_demand: "dict[str, int] | None" = None  # _cascade_blueprint_demand() memo
+        self._blueprint_seeds: "dict[str, int] | None" = None  # blueprint_required_items() memo
+        self._recipe_index: "dict[str, dict[str, float]] | None" = None  # _recipe_index() for this pass
         self._fuel_assembler_recipes = None
         self._cask_stock = {}  # {item_id: units in every Lead Cask}
 
@@ -78,7 +79,7 @@ class SourceCache:
         game calls."""
         totals = {}
         per_building = {}
-        sources = [("inventory", _component("inventory"))] + [(b["id"], b["component"]) for b in discover_storage_buildings()]
+        sources = [("inventory", components.component("inventory"))] + [(b["id"], b["component"]) for b in discover_storage_buildings()]
         for source_id, component in sources:
             if not component or not hasattr(component, "stacks"):
                 continue
@@ -123,7 +124,7 @@ class SourceCache:
             if held.get(item_id, 0) > 0
         ]
 
-    def local_stock(self, item_id, outpost=None):
+    def local_stock(self, item_id, outpost: "OutpostRef | None" = None):
         """Units of item_id a machine at `outpost` can reach: stock() at home
         (Inventory + home Warehouses), only that outpost's own Warehouses
         elsewhere (Inventory is home-only). One .stacks() sweep per remote
@@ -148,7 +149,7 @@ class SourceCache:
             self._outpost_stock[outpost_id] = held
         return held.get(item_id, 0)
 
-    def depot_stock(self, item_id, outpost=None):
+    def depot_stock(self, item_id, outpost: "OutpostRef | None" = None):
         """Units of item_id in the Drone Depot stockpiles at `outpost` (home
         when None). One .stacks() sweep per outpost per pass."""
         outpost_id = HOME_OUTPOST_ID if outpost_is_home(outpost) else getattr(outpost, "id", None)
@@ -169,7 +170,7 @@ class SourceCache:
             self._depot_stock[outpost_id] = held
         return held.get(item_id, 0)
 
-    def held_stock(self, item_id, outpost=None):
+    def held_stock(self, item_id, outpost: "OutpostRef | None" = None):
         """local_stock() plus the outpost's Drone Depot stockpiles: units
         already made and sitting at `outpost`. For netting demand; a loader
         uses local_stock(), since take_item() doesn't reach Depots."""
@@ -242,7 +243,7 @@ class SourceCache:
 
     def surveyed_sites(self):
         if self._surveyed_sites is None:
-            journal = _component("journal")
+            journal = components.component("journal")
             try:
                 self._surveyed_sites = list(journal.surveyed_sites("nocturna")) if journal and hasattr(journal, "surveyed_sites") else []
             except Exception as error:
@@ -265,11 +266,11 @@ class SourceCache:
         return self._surveyed_minerals
 
 
-def _has_surveyed_mineral(item_id, cache):
+def _has_surveyed_mineral(item_id, cache: "SourceCache"):
     return item_id in cache.surveyed_minerals()
 
 
-def can_source_item(item_id, cache=None):
+def can_source_item(item_id, cache: "SourceCache | None" = None):
     """Whether an item has storage (Inventory/Warehouse), surveyed-source, or unlocked recipe supply.
 
     Pass a shared `cache` (SourceCache) when checking several items/recipes/
@@ -322,7 +323,7 @@ def can_source_item(item_id, cache=None):
     return result
 
 
-def can_fulfill_order(order, cache=None):
+def can_fulfill_order(order: "Order", cache: "SourceCache | None" = None):
     """Checks whether every remaining order item has a currently known source.
 
     Pass a shared `cache` (SourceCache) when checking several orders in one

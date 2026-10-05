@@ -10,6 +10,10 @@
 # every helper collects notes and the caller logs them afterwards.
 
 from archive import archive
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 
 def is_flagged(key, name):
@@ -45,7 +49,7 @@ def clear_mission(key, name):
         archive.pop_entry(key, name)
 
 
-def read_mission(key, legacy_prefix, name, log):
+def read_mission(key, legacy_prefix, name, log: "TreeConsole"):
     """name's stored mission record, moving a pre-consolidation <legacy_prefix><name>
     key into the shared dict on first read. None when nothing is stored."""
     record = archive.get_entry(key, name)

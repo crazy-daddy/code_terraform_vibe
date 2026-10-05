@@ -20,9 +20,7 @@
 #     (lib/outpost_mining.py's reevaluate_unassigned_near_outpost()).
 #   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py), every
 #     MIXER_GATE_TICK_INTERVAL (a paused Mixer can't wake itself, so an
-#     always-on script must). Idles until a Mixer exists. The module lives in
-#     the 5_steampower lib, but scripts_sync deploys new-only lib modules at
-#     every tier from 2_libunlock on, so this one script serves every tier.
+#     always-on script must). Idles until a Mixer exists.
 #     Once biomass is complete (lib/biomass_retire.py) the gate stops and
 #     BiomassRetirement switches the Liquifier/Mixer chain off instead.
 #   - Supply Dock order-assignment planning across every discovered dock
@@ -41,17 +39,19 @@
 #   - Cash manager pass (lib/cash.py CashManager): balance history, income and
 #     reagent burn, dynamic floor, ask queue with ETAs for the CASH card. Runs
 #     first each storage pass so the consumers below see a fresh floor.
-#   - Factory outposts (5_steampower libs, deployed at every tier like the
-#     Mixer gate): lib/site_plan.py places each root Fabricator target at the
+#   - Factory outposts: lib/site_plan.py places each root Fabricator target at the
 #     fab sites that build its tree, then lib/site_supply.py publishes the
 #     ingots/ore/finished goods each outpost needs hauled in and evicts ore
 #     stranded at an outpost that lost its Smelters.
 #   - Home salt request (lib/pump_salt.py publish_home_salt_request()): the
 #     field's buffer plus what the Plant Terraformers still need to 5m km^2.
-#   - Plants completion (8_planting lib/plants_retire.py, deployed at every
-#     tier like the Mixer gate): undeploys each Plant Terraformer once it
+#   - Plants completion (lib/plants_retire.py): undeploys each Plant Terraformer once it
 #     reads "complete" and its own script has emptied its holders; retried
 #     every storage pass. Idles until a Terraformer reports "complete".
+#   - Script restarts (lib/script_restart.py): stops and starts each script
+#     that filed a restart request (an upgrade port the game left unbound),
+#     on the parking interval; names the ones that ran out of restarts on
+#     the AUTOMATION card.
 # lib/solar.py's SolarController and lib/smelter.py's SmelterController do
 # none of this themselves -- it's a hard dependency on this script running
 # (see legacy/README.md for pre-Control-Room saves). The manual
@@ -79,6 +79,7 @@ from mining_drill import publish_all_drills
 import wildlife_planner
 from fluid_routing import active_pipe_conflicts
 from script_parking import ScriptParking
+import script_restart
 from script_census import census_if_due
 import machine_activity
 from tree_console import flush_all, reset_all
@@ -112,8 +113,11 @@ DOCK_PLAN_MAX_TICK_INTERVAL = 600
 # Mining Drill telemetry for every drill (lib/mining_drill.py publish_all_drills()); drills need no
 # script of their own, and a stockpile fills over hours.
 DRILL_TELEMETRY_TICK_INTERVAL = 600
-# Script parking pass (lib/script_parking.py): parks idle machines, wakes them, stops solar at night.
+# Script parking pass (lib/script_parking.py): wakes parked machines every PARKING_TICK_INTERVAL; every
+# PARKING_FULL_TICK_INTERVAL the pass is full and also parks idle machines, stops solar at night and
+# tends strays. A full pass costs about three fast ones; requests stay fresh (REQUEST_FRESH_TICKS) in between.
 PARKING_TICK_INTERVAL = 50
+PARKING_FULL_TICK_INTERVAL = 150
 # Fleet commission pass while a head job is in a quick state (fleet_commission.commission_fast()):
 # checked at the top of every loop and between the storage pass's sub-steps, like dock planning.
 # The storage pass steps the coordinator regardless.
@@ -128,6 +132,7 @@ last_compact_tick = 0
 last_mixer_gate_tick = 0
 last_drill_tick = 0
 last_parking_tick = 0
+last_parking_full_tick = 0
 parking = None              # ScriptParking, created once power_control is available
 # signature = plan_signature() at the last plan; plan_tick = its tick
 dock_plan = {"last_tick": 0, "signature": None, "plan_tick": 0}
@@ -155,7 +160,7 @@ def card_items(summaries):
     return items or [QUIET_SUMMARY]
 
 
-def plan_docks_if_due(clock):
+def plan_docks_if_due(clock: "Clock | None"):
     """
     Every DOCK_PLAN_TICK_INTERVAL: runs supply_dock.plan_dock_assignments() when
     supply_dock.plan_signature() differs from the last plan's, or
@@ -185,7 +190,7 @@ def step_commission(now):
         report_error("Fleet commission", e)
 
 
-def commission_if_due(clock):
+def commission_if_due(clock: "Clock | None"):
     """Every COMMISSION_FAST_TICK_INTERVAL while fleet_commission.commission_fast(): one coordinator pass."""
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
     if now - commission["tick"] < COMMISSION_FAST_TICK_INTERVAL or not commission_fast():
@@ -193,7 +198,7 @@ def commission_if_due(clock):
     step_commission(now)
 
 
-def plan_wildlife_if_due(clock):
+def plan_wildlife_if_due(clock: "Clock | None"):
     """Wildlife planner pass when due; its summary goes on the AUTOMATION card."""
     try:
         wildlife_planner.plan_if_due(clock)
@@ -201,7 +206,7 @@ def plan_wildlife_if_due(clock):
         report_error("Wildlife planner", e)
 
 
-def supervise_grids_if_due(clock, power):
+def supervise_grids_if_due(clock: "Clock | None", power: "PowerControl | None"):
     """Every SOLAR_TICK_INTERVAL: PowerGridManager.supervise_grid() on every grid (Power Guard, turbine commitment)."""
     global last_solar_tick
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
@@ -232,11 +237,12 @@ def supervise_grids_if_due(clock, power):
         report_error("Grid supervision", e)
 
 
-def park_if_due(clock, power):
-    """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (parks idle machines, wakes due or triggered ones),
-    then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
+def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
+    """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (wakes due or triggered machines; every
+    PARKING_FULL_TICK_INTERVAL a full pass that also parks idle ones),
+    the requested script restarts (lib/script_restart.py), then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
     machine activity sample (lib/machine_activity.py)."""
-    global last_parking_tick, parking
+    global last_parking_tick, last_parking_full_tick, parking
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
     if last_parking_tick != 0 and now - last_parking_tick < PARKING_TICK_INTERVAL:
         return
@@ -245,13 +251,25 @@ def park_if_due(clock, power):
         if parking is None and power:
             parking = ScriptParking(power=power, clock=clock)
         if parking is not None:
+            full = last_parking_full_tick == 0 or now - last_parking_full_tick >= PARKING_FULL_TICK_INTERVAL
+            if full:
+                last_parking_full_tick = now
             parking.step(
                 power.grids() if power and hasattr(power, "grids") else [],
                 clock.get_elevation() if clock and hasattr(clock, "get_elevation") else None,
                 archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {},
+                full=full,
             )
     except Exception as e:
         report_error("Script parking", e)
+    try:
+        restarted, refused = script_restart.process_restart_requests(get_component("run_control"), now)
+        if restarted:
+            print(f"[AUTOMATION] Restarted on request: {', '.join(restarted)}.")
+        for machine_id, status in refused.items():
+            print(f"[AUTOMATION] Restart of {machine_id} refused ({status}); retrying next pass.")
+    except Exception as e:
+        report_error("Script restarts", e)
     try:
         taken = census_if_due(now)
     except Exception as e:
@@ -264,7 +282,7 @@ def park_if_due(clock, power):
             report_error("Machine activity", e)
 
 
-def between_steps(clock):
+def between_steps(clock: "Clock | None"):
     """Short-interval checks run between the storage pass's slow sub-steps. Grid supervision and
     parking wakes go first: the power reserve can drain within one full loop pass."""
     power = get_component("power_control")
@@ -426,6 +444,12 @@ while True:
                 conflict_items = [f"pipe conflict: {c}" for c in active_pipe_conflicts(current_tick)]
             except Exception as e:
                 report_error("Pipe conflicts", e)
+            try:
+                gave_up = script_restart.gave_up_ids()
+                if gave_up:
+                    conflict_items.append(f"restart gave up: {', '.join(gave_up)}")
+            except Exception as e:
+                report_error("Script restarts", e)
             archive.set(AUTOMATION_SUMMARY_KEY, SUMMARY_SEPARATOR.join(card_items(conflict_items + [plants_summary, upgrade_summary,commission["summary"], decommission_summary, wildlife_planner.state["summary"]])))
             errors.clear()
 

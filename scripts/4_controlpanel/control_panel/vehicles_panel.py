@@ -19,6 +19,10 @@
 # Pressed again while pending, it cancels. The battery bar is narrowed by the
 # button's width so the row still fits.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from archive import archive
 from vehicle_claims import is_vehicle_recalled, set_vehicle_recalled
 from vehicle_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK
@@ -81,7 +85,7 @@ def synced_switch(key, x, y, value, label):
     return on
 
 
-def vehicle_role(vehicle):
+def vehicle_role(vehicle: "VehicleRef"):
     """Role pill from VehicleRef.kind ("rover"/"pioneer"), so renamed vehicles keep theirs."""
     kind = str(getattr(vehicle, "kind", "") or "").lower()
     if kind == "rover":

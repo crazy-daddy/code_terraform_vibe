@@ -18,7 +18,7 @@ TILT_DEADBAND_DEG = 0.5          # skip set_tilt when the target moved less than
 class SolarController:
     """Tracks the sun for one solar generator. Nothing else -- see module docstring."""
 
-    def __init__(self, machine, clock=None):
+    def __init__(self, machine: "SolarGenerator", clock: "Clock | None" = None):
         self.machine = machine
         self.name = getattr(machine, "id", "solar")
         self.clock = clock or get_component("clock")

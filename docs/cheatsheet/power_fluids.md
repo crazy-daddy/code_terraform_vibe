@@ -2,18 +2,27 @@
 
 Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §1.
 
-### 1a. Brownout Load-Shedding Detail (`lib/power.py` `PowerGridManager`)
+### 1a. Power Guard: Phases and Load-Shedding Tiers (`lib/power.py` `PowerGridManager`)
 
+One `PowerGridManager` per grid (§1a-1). Each `supervise_grid(grid, elevation)` reads the grid's **power phase** (`grid_phase()`, from member `type_id`s) and picks the shedding strategy from it. The phase is re-read every pass. Phase changes are logged (`[POWER] Grid '<anchor>' phase X -> Y.`), and shed machines carry over to the new strategy's restore path.
+
+| Phase | Detected by | Shedding | Extra |
+| :--- | :--- | :--- | :--- |
+| `solar` | no turbine / oil generator / producing reactor | Solar night guard (`lib/power_solar.py`, below) | — |
+| `steam` | `steam_turbine` member | Combined-reserve guard (§1a-0) | — |
+| `oil` | `oil_generator` member | Combined-reserve guard | Solar-retire advisory |
+| `reactor` | `reactor` member with `generated > 0` | Combined-reserve guard | No oil surplus burn (§1c-1); solar-retire advisory |
+
+Turbine commitment (§1b) and the daily balance (§1a-0) run in every phase. A tripped or unfuelled Reactor (0 W) drops the grid back to `oil`/`steam`, so oil surplus burning resumes automatically.
+
+- **Solar-retire advisory**: at each day close on an `oil`/`reactor` grid, one `notify()` when solar made less than `SOLAR_RETIRE_SHARE = 0.05` of the day's generation (solar Wh integrated from `solar_generator` members' `generated`). Advisory only, nothing is sold.
 - Tiers configurable via `archive` key `power.shedding_tiers` (or per-grid override
   `power.shedding_tiers:<grid_anchor>`), fallback `DEFAULT_SHEDDING_TIERS` in `lib/power.py`:
   - **Tier 1 — passive background terraforming** (`heater_*`, `pressure_*`, `o2gen_*`,
-    `bio_collector_*`, `bio_lab_*`, `bio_exchange_*`, `bio_luminizer_*`; tier-5 copy also
-    `fuel_assembler_*`, hard-shed, §1n): shed **first**.
-  - **Tier 2 — critical active production** (`smelter_*`, `fabricator_*`, `feed_maker_*`, `refiner_*`): shed only under
-    severe deficit.
-  - **Tier 3 — Habitats** (`habitat_*`, tier-5 copy only, §1a-0): shed last. An unpowered Habitat
-    only pauses (no breeding, no rearing progress, no rearing failure). The tier-4 copy keeps two tiers
-    (Habitats come long after tier 5 replaces it).
+    `bio_collector_*`, `bio_lab_*`, `bio_exchange_*`, `bio_luminizer_*`) plus `fuel_assembler_*` (hard-shed, §1n): shed **first**.
+  - **Tier 2 — critical active production** (`smelter_*`, `fabricator_*`, `feed_maker_*`, `refiner_*`): soft-shed only.
+  - **Tier 3 — Habitats** (`habitat_*`): shed last. An unpowered Habitat
+    only pauses (no breeding, no rearing progress, no rearing failure).
   - Deliberately inverted from naive "protect terraforming": terraforming = background load,
     production = priority. Rationale: `DESIGN_HISTORY.md`.
   - Vehicle Charging Stations (`vehicle_charging_station*` / `charging_station_*`) are
@@ -21,23 +30,29 @@ Part of [`AI_CHEATSHEET.md`](../AI_CHEATSHEET.md). Formula summary table: hub §
     (`lib/charging.py` `manage_fleet_rescues()`); losing power there would lose rescue capability
     exactly when a vehicle is most likely to be stranded (`dispatch_rescue()` returns
     `"station_offline"` if the station itself is unpowered).
-- Shed thresholds = **inline literals in `manage_night_loads()`** (not named module constants — check function directly when retuning): Tier 1 sheds on deficit or `battery_pct < 0.20`; Tier 2 also sheds on severe deficit (`stored_wh < wh_needed * 0.50`) or `battery_pct < 0.15`.
-- Recovery = mirror image, in both `manage_night_loads()` (battery stabilizing) and `manage_day_recovery()` (solar surplus at dawn): Tier 2 (production/logistics) restored first, needs small surplus-watt / stored-Wh margin; Tier 1 (terraforming) restored last, needs larger margin.
-- **Tier 2 (`smelter_*`/`fabricator_*`/`feed_maker_*`/`refiner_*`) soft-shed via `SOFT_SHED_PATTERNS`, never powered off** — idle Smelter/Fabricator draw already 0 W (recipe draw only while crafting), so cutting breaker saves nothing beyond not starting new work. Power Guard still adds/removes machine from `power.shedded` (signal + recovery timing unchanged) but never calls `set_powered()` on it; `SmelterController.is_shedded()` / `FabricatorController.is_shedded()` check list each `step()`; if shedded, drain output/eject excess, never start or top up production. A Refiner crafts on its own while a recipe is set, so `RefinerController` `clear_recipe()`s once its running craft ends and picks a recipe again after (staged tar and feedstock stay). All other Tier 1 patterns (`heater_*`, `pressure_*`, `bio_*`, etc.) still hard-shed via `set_powered()`. **No cooperative auto-wake**: a Smelter the operator stopped/powered down stays that way on delivery; a running Smelter's own `step()` polls new ore each cycle.
-- **Night duration = fixed constant.** `NIGHT_DURATION_HOURS` (`SUNRISE_HOUR`/`SUNSET_HOUR`) computed once at module load from decompiled simworker's exact day-cycle schedule (`DAY_CYCLE_DURATION_SECONDS = 600`, `DAYLIGHT_FRACTIONS`): sunrise `0.25 * 24 = 6.0h`, sunset `0.83 * 24 = 19.92h`, so `NIGHT_DURATION_HOURS = 24 - 19.92 +
-  6.0 = 10.08` exactly, every night. `power.night_wh`/`power.night_wh:<grid_anchor>` (historical overnight Wh, blended with live draw when sizing `manage_night_loads()`'s shed threshold) is calibrated live.
-- `ArchiveCleaner.clean_power_grid_state()` (`lib/archive_cleaner.py`) retires dead legacy keys `power.night_duration`/`power.last_night_wh`, purges `power.shedded:<anchor>` / `power.night_wh:<anchor>` entries whose grid anchor gone — skipped entirely if grid discovery returns empty. Manual-button-triggered sweep (§7); `PowerGridManager.release_all()` (§1a-1) = automatic, immediate version of same cleanup for whatever vanished grid anchor still had shed.
+- **Tier 2 (`smelter_*`/`fabricator_*`/`feed_maker_*`/`refiner_*`) soft-shed via `SOFT_SHED_PATTERNS`, never powered off** — idle Smelter/Fabricator draw already 0 W (recipe draw only while crafting), so cutting breaker saves nothing beyond not starting new work. Power Guard still adds/removes machine from `power.shedded` but never calls `set_powered()` on it; `SmelterController.is_shedded()` / `FabricatorController.is_shedded()` check list each `step()`; if shedded, drain output/eject excess, never start or top up production. A Refiner crafts on its own while a recipe is set, so `RefinerController` `clear_recipe()`s once its running craft ends and picks a recipe again after (staged tar and feedstock stay). All other patterns still hard-shed via `set_powered()`. **No cooperative auto-wake**: a Smelter the operator stopped/powered down stays that way on delivery; a running Smelter's own `step()` polls new ore each cycle.
+- Shed/restore helpers shared by both strategies: `PowerGridManager.shed_tiers()` / `restore_tier()` (archive mirror `power.shedded` / `power.shedded:<anchor>` updated on change).
 
-### 1a-0. Simplified Power Guard (`5_steampower/lib/power.py`, overrides §1a from tier 5 up)
+#### Solar night guard (`lib/power_solar.py` `SolarNightGuard`, phase `solar`)
 
-Same import surface (`PowerGridManager.supervise_grid(grid, elevation)` / `release_all()`, `DAY_CYCLE_DURATION_SECONDS`), so control_room_automation.py drives it unchanged. No day/night logic — `elevation` ignored. Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbines can still cover load.
+Battery is the only store and the night is the dry spell. Skipped on a grid without battery capacity.
 
-- **Reserve = battery pool + steam pool.** Battery = `grid.stored + reserve_stored` (Lightning Rods included). Steam = every Gas Tank in `grid.members` (outpost walk fallback, throttled to every `TANK_FALLBACK_SCAN_INTERVAL_CALLS = 60` calls) latched to `"steam"`, or unlatched but reserved for steam in `fluid_routing.tank_assignments`. Steam→Wh at `STEAM_WH_PER_TON = 108/90 = 1.2` (turbine rate).
-- **Daily balance.** Start-of-day snapshot at each `clock.get_day()` rollover; generated/consumed Wh integrated over `elapsed_game_hours()`. Closing day appended to `power.daily_hist:<anchor>` (last `DAILY_HISTORY_LENGTH = 7`). One `notify()` per day if battery or steam pool lost more than `DAILY_LOSS_WARN_FRACTION = 0.20` of its capacity. Only a directly preceding day is closed (longer gap = discarded, no warning). Running state in `power.daily:<anchor>`, persisted on rollover + every `DAILY_STATE_PERSIST_INTERVAL_CALLS = 30` calls.
-- **Emergency guard** on combined reserve fraction (Wh): tier N sheds below `EMERGENCY_SHED_FRACTIONS[N-1]` = `(0.10, 0.05, 0.02)` (tiers past the list use the last value; `tiers_to_shed()`), everything restores at `EMERGENCY_RESTORE_FRACTION = 0.25`. Tiers 1–2 and soft-shed rules as §1a, plus tier 3 `habitat_*` (hard-shed, last). Archive overrides as §1a.
-- **Adopts existing shed list**: on construction, takes ids from `power.shedded` / `power.shedded:<anchor>` and releases them at the first cycle with reserve ≥ 25%.
-- `ArchiveCleaner.clean_power_grid_state()` also purges orphaned `power.daily:` / `power.daily_hist:` keys.
-- Reserve maths are module functions (`grid_steam_tank_ids()`, `steam_pool()`, `measure_grid()`, `reserve_totals()`, `reserve_fraction()`) so `oil_generator.py` (§1c-1) reads the exact same number as the guard.
+- **Night duration = fixed constant.** `NIGHT_DURATION_HOURS` (`SUNRISE_HOUR`/`SUNSET_HOUR`) computed at module load from the decompiled simworker's day-cycle schedule (`DAYLIGHT_FRACTIONS`; `DAY_CYCLE_DURATION_SECONDS = 600` stays in `lib/power.py` for `production_core.py`): sunrise `0.25 * 24 = 6.0h`, sunset `0.83 * 24 = 19.92h`, so `NIGHT_DURATION_HOURS = 24 - 19.92 + 6.0 = 10.08` exactly, every night.
+- **Night forecast**: need = effective rate × remaining night × `NIGHT_NEED_MARGIN = 1.15`; effective rate = 60% live draw + 40% historical (`power.night_wh` / `power.night_wh:<grid_anchor>`, EMA 0.7/0.3 updated at sunrise).
+- **Shedding**: tier 1 on a forecast deficit or battery `< NIGHT_EMERGENCY_FRACTION = 0.20`; every tier on a severe deficit (stored `<` half the need) or battery `< NIGHT_SEVERE_FRACTION = 0.15`.
+- **Recovery**: at night once stored ≥ need × (1.10 + 0.15 per step from the last tier) and battery ≥ 0.30 + 0.10 per step; by day while generation exceeds consumption by 10 W + 5 W per step and stored ≥ 25 Wh + 25 Wh per step. The last tier (most important loads) comes back first.
+- **Advisories** (once per day): at sunset when battery capacity can't carry the night baseline or batteries peaked below 90% that day (recommend Battery / Solar Generator); during the night on the first shed.
+
+### 1a-0. Combined-Reserve Guard and Daily Balance (`lib/power.py`, phases `steam` / `oil` / `reactor`)
+
+Counts Gas Tank steam as reserve, so it doesn't shed at night while Steam Turbines can still cover load. `elevation` ignored.
+
+- **Reserve = battery pool + steam pool.** Battery = `grid.stored + reserve_stored` (Lightning Rods included). Steam = every Gas Tank network-wide (`steam_tanks()`: `fluid_routing.network_buildings("gas_tank")`, the shared walk cached `NETWORK_WALK_INTERVAL_TICKS`, filtered by `eligible_targets(..., "steam")`) latched to `"steam"`, or unlatched but reserved for steam in `fluid_routing.tank_assignments`; one network per fluid and one grid, so network = grid. Steam→Wh at `STEAM_WH_PER_TON = 108/90 = 1.2` (turbine rate).
+- **Daily balance** (every phase). Start-of-day snapshot at each `clock.get_day()` rollover; generated/consumed (and solar) Wh integrated over `elapsed_game_hours()`. Closing day appended to `power.daily_hist:<anchor>` (last `DAILY_HISTORY_LENGTH = 7`). One `notify()` per day if battery or steam pool lost more than `DAILY_LOSS_WARN_FRACTION = 0.20` of its capacity. Only a directly preceding day is closed (longer gap = discarded, no warning). Running state in `power.daily:<anchor>`, persisted on rollover + every `DAILY_STATE_PERSIST_INTERVAL_CALLS = 30` calls.
+- **Emergency guard** on combined reserve fraction (Wh): tier N sheds below `EMERGENCY_SHED_FRACTIONS[N-1]` = `(0.10, 0.05, 0.02)` (tiers past the list use the last value; `tiers_to_shed()`), everything restores at `EMERGENCY_RESTORE_FRACTION = 0.25`.
+- **Adopts existing shed list**: on construction, takes ids from `power.shedded` / `power.shedded:<anchor>`; the guard releases them at the first cycle with reserve ≥ 25%, the solar night guard folds the grid's ones into its shed set.
+- `ArchiveCleaner.clean_power_grid_state()` (`lib/archive_cleaner.py`) retires dead legacy keys `power.night_duration`/`power.last_night_wh`, purges `power.shedded:<anchor>` / `power.night_wh:<anchor>` / `power.daily:` / `power.daily_hist:` entries whose grid anchor is gone — skipped entirely if grid discovery returns empty. Manual-button-triggered sweep (§7); `PowerGridManager.release_all()` (§1a-1) = automatic, immediate version for a vanished grid anchor.
+- Reserve maths are module functions (`steam_tanks()`, `steam_pool()`, `measure_grid()`, `reserve_totals()`, `reserve_fraction()`) so `oil_generator.py` (§1c-1) reads the exact same number as the guard.
 
 ### 1a-1. Centralized Grid Ownership (control_room_automation.py, no Master/Follower election)
 
@@ -45,12 +60,10 @@ Same import surface (`PowerGridManager.supervise_grid(grid, elevation)` / `relea
 
 - **`PowerGridManager.__init__(self, grid, clock=None, power=None)`** — no `machine` param.
   `grid` (initial snapshot) required, binds `self.grid_anchor` at construction — identity fixed for manager lifetime; only per-call snapshot (stored/capacity/consumed) must be fresh each call.
-- **`resolve_pattern_machines()`** fallback chain: grid snapshot's own `.machine_ids`/`.members`
-  (primary) → numbered-guess `get_component(f"{prefix}{i}")` last resort.
+- Shed patterns resolve against the grid snapshot's own `.machine_ids` only (`_resolve()`).
 - **`release_all()`** — called when grid's `anchor_id` no longer reported by
-  `power_control.grids()` (two grids merged via new power line). Restores anything still in manager's `shedded_machines` (guarded same as `manage_day_recovery()`), clears per-anchor `power.shedded:<anchor>` mirror.
-- **Battery-less grids skipped**: `if capacity_wh <= 0: return` near top of
-  `supervise_grid()` (avoids divide by zero on `battery_pct`). No strategy for battery-less grids yet.
+  `power_control.grids()` (two grids merged via new power line). Restores anything still in manager's `shedded_machines`, switches its parked turbines back on, clears per-anchor `power.shedded:<anchor>` mirror.
+- **Storage-less grids skipped**: no battery and no steam tank capacity → `supervise_grid()` returns before any strategy. A solar grid also needs battery capacity for the night guard.
 - **Poll pacing** (fewer steps per poll let the script react sooner; docs/BENCHMARK.md): `SolarController` polls every `SOLAR_POLL_SECONDS = 10.0` (`SOLAR_NIGHT_POLL_SECONDS = 30.0` at elevation ≤ 0) and calls `set_tilt` only when the target moved ≥ `TILT_DEADBAND_DEG = 0.5`; `FluidPumpController` `PUMP_POLL_SECONDS = 5.0`; `ThermalCapController` sleeps `CAP_WAKE_FRACTION = 0.5` of the time the fastest pressure rise seen so far (learned from successive reads) needs to reach `PRESSURE_BAND_CRITICAL`, clamped to `POLL_SECONDS = 1.0` … `CAP_MAX_POLL_SECONDS = 30.0`; before any rise is seen, 1 s at pressure ≥ `PRESSURE_BAND_MODERATE`, else `POLL_SECONDS_LOW = 3.0`. Breaker-parked while the vent is dormant and the chamber drained (dev_workflow.md §1d-2); `SteamTurbineController` `TURBINE_POLL_SECONDS = 4.0`; `OilGeneratorController` `OIL_POLL_SECONDS = 4.0`.
 - **`lib/solar.py`'s `SolarController` is pure sun-tracking** — `track_sun()`/`step()`/`run()`
   only, no `PowerGridManager`, no `power`/`run_ctrl` constructor params. **Hard
@@ -165,7 +178,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
   `THROTTLE_TRICKLE=0.3` (release below 30% pressure, into Gas Tank/Turbines, not lost). Relief valve (`set_relief()`, dumps to atmosphere) engages only once
   release valve wide open (`throttle==1.0`) and pressure still climbs past
   `PRESSURE_RELIEF_THRESHOLD=0.95`.
-- **Turbine commitment** (`lib/turbine_commit.py`, tier 5, `TurbineCommitment` owned by each `PowerGridManager`, `step()` every `supervise_grid()` before `_guard()`): runs just enough Steam Turbines at full output and switches the rest off at the breaker (`script.parked` entries `{"kind": "steam_turbine", "mode": "turbine", "since", "grid"}`; `ScriptParking` never touches mode `"turbine"`, the automation card counts them).
+- **Turbine commitment** (`lib/turbine_commit.py`, `TurbineCommitment` owned by each `PowerGridManager`, `step()` every `supervise_grid()` before `_guard()`): runs just enough Steam Turbines at full output and switches the rest off at the breaker (`script.parked` entries `{"kind": "steam_turbine", "mode": "turbine", "since", "grid"}`; `ScriptParking` never touches mode `"turbine"`, the automation card counts them).
   - **Managed**: the grid's `steam_turbine` members that are powered or parked here; one switched off by anything else stays off and out of the count (a hand-switched-on parked one drops its entry).
   - **Target** (`turbine_needed()`): `ceil((consumed - other generation + top-up) / TURBINE_FULL_W=108)` + spare, capped at the managed count. Other generation = `grid.generated` minus the running turbines' output, each `max(power_output(), throttle() × 108 W)` (0 if stalled): `power_output()` reports the previous power tick, so it reads 0 right after a restart or a new throttle. Top-up below `TURBINE_TOPUP_BELOW_FRACTION=0.98` battery: missing Wh / `TOPUP_HOURS=2`. Spare = `ceil(TURBINE_SPARE_FRACTION=0.10` × managed), at least `TURBINE_MIN_SPARE=1`. **All-on latch** (`hysteresis.HysteresisLatch`): battery below `TURBINE_EMERGENCY_BATTERY_FRACTION=0.50` → every managed turbine, until the battery is back at `TURBINE_EMERGENCY_RELEASE_FRACTION=0.70` (ahead of the Oil Generators' 30% last-resort line). **Steam surplus latch**: grid steam pool (`power.measure_grid()`, passed by `supervise_grid()`) `≥ TURBINE_SURPLUS_START_FRACTION=0.98` until `< TURBINE_SURPLUS_STOP_FRACTION=0.90` → other generation is not subtracted, the turbines cover the whole consumption (+ top-up) so Caps don't vent while solar/oil carry the grid; starts above the Condenser's 0.95 gate so the Condenser takes surplus first. No steam tank → off. Both latches live in the control room's memory (restart → both off).
   - **Which run** (`rank_turbines()`): per turbine, not per grid (a split steam network): able to deliver (own `steam_in` ≥ `TURBINE_CAPABLE_BUFFER_FRACTION=0.15`, not stalled) first, then own buffer fill, then the fill of the source `steam_in` is connected to (Gas Tank `fill_pct()`, Thermal Cap `pressure()`), then already running. The top `target` run; a dry running one is swapped for the best parked one. Fewer able turbines than the target → every managed turbine stays up.
@@ -188,7 +201,7 @@ Thermal Cap (`lib/thermal_cap.py` `ThermalCapController`) and Steam Turbine
 
 ### 1c. Fluid Pump (water/oil): Liquid Tank Routing (`lib/fluid_pump.py` `FluidPumpController`)
 
-One controller for Water Pump and Oil Pump — same API except port name (`water_out`/`oil_out`) and Oil Pump's `well_active()`. Entrypoints: `FluidPumpController(self, "water")` (`4_controlpanel/power/water_pump.py`), `FluidPumpController(self, "oil")` (`5_steampower/power/oil_pump.py`). `lib/water_pump.py` = shim (`WaterPumpController(pump)`) for save slots still importing the old name.
+One controller for Water Pump and Oil Pump — same API except port name (`water_out`/`oil_out`) and Oil Pump's `well_active()`. Entrypoints: `FluidPumpController(self, "water")` (`4_controlpanel/power/water_pump.py`), `FluidPumpController(self, "oil")` (`4_controlpanel/power/oil_pump.py`). `lib/water_pump.py` = shim (`WaterPumpController(pump)`) for save slots still importing the old name.
 
 Shares §1b's Thermal Cap → Gas Tank connection/load-balancing/blacklist machinery exactly — both
 build `lib/fluid_routing.py` `FluidOutputRouter` (Pump's own `LIQUID_TANK_TYPE_IDS`,
@@ -202,17 +215,18 @@ every cycle — delivery self-limits to what connected tank accepts.
   "bulk_liquid_reservoir")` — `discover_network_buildings()` takes iterable of type_ids (or
   single string), walks each outpost per type, dedupes by id.
 - **Water and oil never share a tank**: router passes `fluid_id`, so a tank latched to the other fluid is skipped and an empty tank qualifies only with a matching `fluid_routing.tank_assignments` entry (§4). **First oil tank must be assigned `"oil"` by the operator.**
-- **Water overflow** (`lib/water_sink.py` `WaterAwareWasteSinkController`, entrypoint `5_steampower/factory/garbage_disposal.py`): a stalled Water Pump makes no salt, but water is scarce, so draining is a last resort. Start: every water-eligible tank at the outpost (`tank_is_eligible_target()`, so an empty tank assigned to water counts as room) `>= WATER_SINK_HIGH_FILL = 0.90` AND some Water Pump on the network reports `is_stalled()`. Drains only the tank that was fullest at the start (locked) in `"liquid"` mode, down to `WATER_SINK_LOW_FILL = 0.80`. Otherwise it idles (`WasteSinkController.idle()`: `set_enabled(False)`, staged input `eject()`ed to local storage; no item destruction, §1h-1). Several processors at one outpost: only the lowest id drains water, the others idle. Same-outpost tanks only.
+- **Water overflow** (`lib/water_sink.py` `WaterAwareWasteSinkController`, entrypoint `4_controlpanel/factory/garbage_disposal.py`): a stalled Water Pump makes no salt, but water is scarce, so draining is a last resort. Start: every water-eligible tank at the outpost (`tank_is_eligible_target()`, so an empty tank assigned to water counts as room) `>= WATER_SINK_HIGH_FILL = 0.90` AND some Water Pump on the network reports `is_stalled()`. Drains only the tank that was fullest at the start (locked) in `"liquid"` mode, down to `WATER_SINK_LOW_FILL = 0.80`. Otherwise it idles (`WasteSinkController.idle()`: `set_enabled(False)`, staged input `eject()`ed to local storage; no item destruction, §1h-1). Several processors at one outpost: only the lowest id drains water, the others idle. Same-outpost tanks only.
 - **Oil well dormancy**: `well_active()` False → throttle `0` (saves 5 W), routing skipped. Water Pump has no `well_active()` → never dormant.
 - Output port (same shape as Thermal Cap's `steam_out`) holds one destination at a
   time. `is_stalled()` same semantics as Thermal Cap's, so same
   blacklist-and-reselect reaction applies unchanged.
 
-### 1c-1. Oil Generator: Last-Resort Power and Surplus Base Load (`5_steampower/lib/oil_generator.py` `OilGeneratorController`)
+### 1c-1. Oil Generator: Last-Resort Power and Surplus Base Load (`lib/oil_generator.py` `OilGeneratorController`)
 
 +700 W at throttle 1 for 8 t/h oil; burning emits CO2 and oil feeds Fabricator recipes, so it runs as last resort, or as base load while the oil tanks are full.
 
 - **Surplus base load**: network-wide oil tank fill (`fluid_routing.fluid_reserve_tons("oil")`: summed `level()` / `capacity()` of oil-eligible Liquid/Large Liquid Tanks, re-read every `OIL_RESERVE_REFRESH_TICKS = 100`) `≥ OIL_SURPLUS_START_FRACTION = 0.90` turns it on, below `OIL_SURPLUS_STOP_FRACTION = 0.70` (or no oil tank) off. While on, the generators burn the wells' gross inflow: each re-read takes a sample `max(0, Δlevel / Δh + Oil Generators' burn)` (burn = Σ oil member `generated` / 700 W × 8 t/h; `TICKS_PER_GAME_HOUR = 250`; a capacity change skips the sample), smoothed by EMA `OIL_INFLOW_EMA_ALPHA = 0.2`. Being net of every other oil consumer, it burns only oil nothing else takes. `burn = max(0, inflow + (level − OIL_SURPLUS_TARGET_FRACTION (0.80) × capacity) / OIL_SURPLUS_CORRECT_HOURS (24))` t/h, converted at 8 t/h = 700 W, capped at `consumed + OIL_RECHARGE_W (if battery < OIL_SURPLUS_TOPUP_BELOW = 0.98)`, shared over `count`, `throttle = min(1, W / 700)` (no minimum). Turbine commitment (§1a) parks the turbines that output replaces. The last-resort throttle below runs alongside; the higher of the two is set.
+- **No surplus on a Reactor grid**: while `power.reactor_carried(grid)` (phase `reactor`, §1a) the surplus latch is forced off and the surplus throttle is 0, so the idle generator parks; `ScriptParking` skips the "oil surplus" wake and stay-ready for generators on those grids (`_reactor_grids()`). The last resort and the low-reserve wake still apply.
 - **Parking** (`ParkRequester`, dev_workflow.md §1d-2): idle = neither mode burning AND deficit without oil `≤ 0`. A standing deficit refills the gap between the stop and start lines within a few game hours, so the generators stay awake for it.
 
 - **Start**: `min(battery fraction, combined reserve)` (§1a-0 `reserve_fraction()`, battery + steam) `< OIL_START_RESERVE_FRACTION = 0.30` AND deficit without oil `> 0`. Battery fraction matters because the deficit is measured after turbine output: banked steam can't cover it (turbines are rate-limited), only the battery buffers it. One `notify()` at start. No storage at all → burns only while deficit.
@@ -221,12 +235,12 @@ every cycle — delivery self-limits to what connected tank accepts.
 - **Oil input**: `FluidInputRouter` (steam-turbine constants: stall streak 5, rescan 150 ticks, discovery cache 100 ticks, neutral grace 5); candidates = oil-eligible Liquid/Large Liquid Tanks (own outpost first), then Oil Pumps. Starved = throttle > 0, `oil_in.level() == 0`, `oil_consumption() == 0`.
 - No archive state: game resets throttle to 0 on script stop; restart re-evaluates within one step.
 
-### 1c-2. Steam Condenser: Steam → Water (`5_steampower/lib/steam_condenser.py` `SteamCondenserController`)
+### 1c-2. Steam Condenser: Steam → Water (`lib/steam_condenser.py` `SteamCondenserController`)
 
 1 t steam → 1 t water, 250 t/h and 150 W at throttle 1. Draw follows throttle even when blocked, so throttle is 1.0 or 0.0.
 
-- **Steam guard**: grid steam pool (`power.measure_grid()` over `grid_steam_tank_ids()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.85` → idle; resumes at `>= STEAM_POOL_START_FRACTION = 0.95`. Steam is the main power source and the pool must carry the turbines through long vent dormancy, so the Condenser only takes the surplus of a nearly full pool (active vent phase). No measurable steam tank on the grid → guard open.
-- **Water guard**: pooled fill (Σ level / Σ capacity) of the reachable water tanks (router's discovered targets minus blacklisted) `>= WATER_POOL_STOP_FRACTION = 0.85` → idle; resumes at `< WATER_POOL_START_FRACTION = 0.50` (wide hysteresis: at 250 t/h the Condenser refills fast). The router moves `water_out` to the least-full tank at `WATER_TANK_SWITCH_FRACTION` (= pool stop line, not the pump's 0.98), so every reachable tank fills before the Condenser idles. `water_out` routing pauses while this guard is closed.
+- **Steam guard**: grid steam pool (`power.measure_grid()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.90` → idle; resumes at `>= STEAM_POOL_START_FRACTION = 0.95`. Steam is the main power source and the pool must carry the turbines through long vent dormancy, so the Condenser only takes the surplus of a nearly full pool (active vent phase). No measurable steam tank on the grid → guard open.
+- **Water guard**: fill of the least-full reachable water tank (router's discovered targets minus blacklisted) `>= WATER_TANK_STOP_FRACTION = 0.85` → idle, i.e. every reachable tank is full; resumes once any reachable tank is `< WATER_TANK_START_FRACTION = 0.50` (wide hysteresis: at 250 t/h the Condenser refills fast). Least-full, not pooled: a full tank nobody draws from must not hold the Condenser idle while the tank the consumers drain runs dry. The router moves `water_out` to the least-full tank at `WATER_TANK_SWITCH_FRACTION` (= tank stop line, not the pump's 0.98). `water_out` routing pauses while this guard is closed.
 - **Sink guard**: a Waste Processor (`garbage_disposal`) at the `water_out` tank's outpost is enabled, in `"liquid"` mode, with `liquid_in` on that tank → idle, so condensed water never feeds a drain. Read live from the processor (`is_enabled()` is False once the sink script stops), not from the `waste_sink.status` archive entry.
 - **Local**: `steam_in` empty or `water_out` buffer full → idle.
 - **steam_in**: `FluidInputRouter` with the Steam Turbine's candidates and constants (§1b); starved = `steam_in.level() == 0` while the steam guard is open.
@@ -241,14 +255,15 @@ every cycle — delivery self-limits to what connected tank accepts.
 
 - Routes only while `tier() == 3` (Mk IV burns Fuel Rods; below Mk III the port does nothing). At most every `FLUID_CHECK_INTERVAL_TICKS = 20` ticks.
 - **steam_in**: `FluidInputRouter`, steam Gas Tanks then Thermal Caps, own outpost first (Steam Turbine candidates, §1b). **water_in**: `FluidInputRouter` over `production.FLUID_SOURCE_TYPE_IDS["water_in"]` with `fluid_building_is_viable()`, own outpost first. Router constants = Plant Terraformer's water router (stall streak 5, rescan 150, discovery cache 100, neutral grace 5). Starved = `flow_rate() == 0` with room left.
-- **Steam guard (heater only)**: grid steam pool (`power.measure_grid()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.50` → `steam_in.disconnect()`, heater runs as Mk II; reconnects at `>= STEAM_POOL_START_FRACTION = 0.70`. Keeps the turbines' dormancy buffer. No measurable steam tank, or tier-4 `power.py` (no `measure_grid()`) → guard open. Water has no guard.
+- **Steam guard (heater only)**: grid steam pool (`power.measure_grid()`, §1a-0) `< STEAM_POOL_STOP_FRACTION = 0.50` → `steam_in.disconnect()`, heater runs as Mk II; reconnects at `>= STEAM_POOL_START_FRACTION = 0.70`. Pool read every `STEAM_GUARD_INTERVAL_TICKS = 3000` (5 game min; a heater draws at most 12 t/h). Keeps the turbines' dormancy buffer. No measurable steam tank, or tier-4 `power.py` (no `measure_grid()`) → guard open. Water has no guard.
 - `is_degraded()` transitions logged at info level (warn when starved).
-- No archive state.
+- **Unbound port** (`UnboundPortRestart`, also used by `Mk4RodFeed` for `input`): the game binds an upgrade port on `self` only at script start (simworker: `${fluid}_in` is set when `data["<port>_capacity"]` exists at bind time), so a pack applied under a running script leaves `steam_in`/`water_in` missing. The feed warns once per run and files a `script.restart_requests` entry (`lib/script_restart.py`, reason `mk3_port_unbound` / `mk4_input_unbound`); `control_room_automation.py` stops and starts the script on its parking pass, at most `MAX_RESTARTS = 2` times per reason. A later request after that is marked `gave_up` and named on the AUTOMATION card. Once the port is there the feed drops its own entry (same reason only), so the next fault starts from zero.
+- No other archive state.
 - **Mk IV rod magazine** (`Mk4RodFeed`, same three controllers): while `tier() >= 4`, every `MK4_CHECK_INTERVAL_TICKS = 600` ticks, tops `input` up to `MK4_MAGAZINE_TARGET = 1` Fuel Rod from the Lead Casks at the generator's own outpost (`lead_cask.take_from_casks()`; hot cargo never crosses outposts). A Mk IV burns 1 rod per 240 game h (simworker `0.1 / 24` per h) and stops without one. No rods: one warn until a load succeeds. The Fuel Assembler counts each Mk IV in its rod target (§1n).
 
-### 1c-4. Reactor: Measured-Gain Heat Control (`10_nuclear/lib/reactor.py` `ReactorController`)
+### 1c-4. Reactor: Measured-Gain Heat Control (`lib/reactor.py` `ReactorController`)
 
-Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `10_nuclear/nuclear/reactor.py`. Fuel use follows commanded heat (1 rod per 72 game h at heat 1.0), output follows core temperature, so the most energy per rod comes from holding the core just under 900 °C.
+Up to 5,000 W from Fuel Rods and cooling water. Thin entrypoint `4_controlpanel/nuclear/reactor.py`. Fuel use follows commanded heat (1 rod per 72 game h at heat 1.0), output follows core temperature, so the most energy per rod comes from holding the core just under 900 °C.
 
 - **Game model** (simworker reactor step): steady temperature = heat × gain, gain = `TEMP_SCALE_C = 1200` × hidden condition in [0.7, 1.25] (`GAIN_MIN_C = 840` … `GAIN_MAX_C = 1500`), redrawn every `CONDITION_PERIOD_GH = 12` game h at whole multiples of `clock.elapsed_game_hours()`. First-order lag at `LAG_PER_GH = 0.6`. Output: 0 below 300 °C, 50% at 600, 100% at exactly 900, back to 0 across 900-950; 950 overheats (cools to 600 and restarts by itself). Overheated, no rod or no water: no fuel used.
 - **Gain**: two running readings with the same heat at least `MIN_SAMPLE_GH = 0.03` apart give the temperature the core is heading to, `S = (T1 − T0·e^(−0.6·dt)) / (1 − e^(−0.6·dt))` (`steady_state()`); gain sample = S / heat (heat ≥ `MIN_HEAT_FOR_GAIN = 0.05`), clamped to the physical range, blended `GAIN_BLEND = 0.5`; a sample more than `GAIN_JUMP_FRACTION = 0.10` off replaces the gain. Forgotten at each 12 h boundary, on overheat and on a trip.

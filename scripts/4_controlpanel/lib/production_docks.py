@@ -1,7 +1,8 @@
 # Supply Dock orders: every active order across the dock fleet, the units each
 # still owes, and where each order is consumed.
+from components import component
 from swallow import swallowed
-from production_core import discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id, _add_demand, _component
+from production_core import discover_supply_dock_ids, home_outpost_id, log, machine_outpost_id, _add_demand
 
 
 def _all_dock_orders():
@@ -17,7 +18,7 @@ def _all_dock_orders():
         ids = ["supply_dock_1"]  # last-resort fallback if discovery finds nothing
     pairs = []
     for dock_id in ids:
-        dock = _component(dock_id)
+        dock = component(dock_id)
         if not dock or not hasattr(dock, "current_order"):
             continue
         try:
@@ -122,14 +123,14 @@ def dock_remaining_requirements(outpost_id=None):
     return remaining_by_item
 
 
-def dock_owed_at(item_id, outpost=None):
+def dock_owed_at(item_id, outpost: "OutpostRef | None" = None):
     """[(dock_id, units)] for every Supply Dock at `outpost` (None = home)
     whose active order still owes item_id: required - shipped - what this
     outpost's docks on that order already hold. Docks sharing an order each
     get the order's whole remainder; the dock input takes only what the
     order still needs, so a second dock is a fallback, not extra demand."""
     if outpost is None:
-        network = _component("outpost_network")
+        network = component("outpost_network")
         try:
             outpost = network.home() if network else None
         except Exception as error:
@@ -140,7 +141,7 @@ def dock_owed_at(item_id, outpost=None):
     rows = []
     loaded_by_order = {}
     for dock_id in discover_supply_dock_ids(outpost):
-        dock = _component(dock_id)
+        dock = component(dock_id)
         if dock is None:
             continue
         try:

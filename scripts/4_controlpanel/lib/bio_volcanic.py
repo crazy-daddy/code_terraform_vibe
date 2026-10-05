@@ -69,7 +69,7 @@ class BioCasterController(BioProcessorController):
     LOADED_SUFFIX = " into crucible."
     FINISHED_LABEL = "forged"
 
-    def __init__(self, machine):
+    def __init__(self, machine: "BioCaster"):
         BioProcessorController.__init__(self, machine)
         self.recipe_cache = {}
         self.last_publish_tick = None
@@ -92,7 +92,7 @@ class BioCasterController(BioProcessorController):
             return STACK_FINISHED, properties
         return STACK_RAW, None
 
-    def _candidate_fragments(self, order):
+    def _candidate_fragments(self, order: "BioOrder"):
         ranked = BioProcessorController._candidate_fragments(self, order)
         return [fragment_id for fragment_id in ranked if self.machine.find_recipe(fragment_id) is not None]
 
@@ -109,7 +109,7 @@ class BioCasterController(BioProcessorController):
         # (bio._processor_is_idle()), so leftovers here block the pipeline.
         self._return_staged_surplus({}, "chamber empty")
 
-    def _load_materials(self, required_materials, outpost):
+    def _load_materials(self, required_materials, outpost: "OutpostRef"):
         """Stages the first still-short fabricated material into self.input from
         local storage, one material per cycle (mirrors BioLabController's reagent
         loop) -- see the module header's live-verification note on how staged
@@ -344,7 +344,7 @@ class BioCasterController(BioProcessorController):
         return ids
 
     @staticmethod
-    def _port_level(port):
+    def _port_level(port: "FluidPort"):
         try:
             return port.level() if port and hasattr(port, "level") else 0
         except Exception as error:

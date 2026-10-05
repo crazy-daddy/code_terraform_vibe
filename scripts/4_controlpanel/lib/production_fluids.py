@@ -1,7 +1,8 @@
 # Fluid sourcing for recipe fluid_inputs: which building types feed each
 # FluidPort, the buffer-tank latch rule and the network-wide source check.
+from components import component
 from swallow import swallowed
-from production_core import log, _component
+from production_core import log
 from fluid_routing import rank_own_outpost_first
 
 
@@ -69,7 +70,7 @@ def fluid_building_is_viable(fluid_key, type_id, building):
         b_id = getattr(building, "id", None)
         if not b_id:
             return False
-        building = _component(b_id)
+        building = component(b_id)
         if not building:
             return False
     try:
@@ -89,7 +90,7 @@ def viable_fluid_source_pairs(fluid_key, type_ids=None):
     if type_ids is None:
         type_ids = FLUID_SOURCE_TYPE_IDS.get(fluid_key, ())
     pairs = []
-    network = _component("outpost_network")
+    network = component("outpost_network")
     if not network or not hasattr(network, "outposts"):
         return pairs
     try:
@@ -144,7 +145,7 @@ def can_source_fluid(fluid_key, cache=None):
         log.trace("unrecognized fluid key, not blocking")
     else:
         result = False
-        network = _component("outpost_network")
+        network = component("outpost_network")
         if network and hasattr(network, "outposts"):
             try:
                 for outpost in network.outposts():

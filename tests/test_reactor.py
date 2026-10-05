@@ -1,4 +1,4 @@
-"""Reactor controller (10_nuclear/lib/reactor.py) against a Reactor that steps like the simworker."""
+"""Reactor controller (lib/reactor.py) against a Reactor that steps like the simworker."""
 import math
 import unittest
 

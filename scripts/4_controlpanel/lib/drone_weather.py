@@ -2,8 +2,8 @@
 # mounted (DroneController.detect_role()); idle haulers also take Storm Glass
 # sites (try_aftermath_pickup(), called from drone_hauler.py).
 #
-# Sites come from weather.aftermaths, which lib/weather_signals.py (tier
-# 7_miningdrills) decodes from Weather Station transmissions. An aftermath
+# Sites come from weather.aftermaths, which lib/weather_signals.py
+# decodes from Weather Station transmissions. An aftermath
 # exists only from ready_gh (storm end) to expires_gh, and only at the exact
 # integer coordinate: go_to() lands exactly on it, and collect() returns
 # "nothing_here" for an early, nearby, expired or exhausted site alike
@@ -136,14 +136,14 @@ def hot_cargo_unlocked():
         return False
 
 
-def cask_room(outpost, item_id="raw_uranium"):
+def cask_room(outpost: "OutpostRef | None", item_id="raw_uranium"):
     """Free Lead Cask units for item_id at outpost (lead_cask.room_for(): casks reserved for Fuel Rods left out)."""
     if outpost is None:
         return 0
     return lead_cask.room_for(item_id, outpost)
 
 
-def uranium_want(outpost):
+def uranium_want(outpost: "OutpostRef | None"):
     """Raw Uranium still wanted in outpost's casks: lead_cask.URANIUM_STOCK_TARGET plus
     what Supply Dock orders there still owe, minus the cask stock."""
     from production import dock_remaining_requirements
@@ -457,7 +457,7 @@ class DroneWeatherMixin:
                 flush_all()
                 sleep(5.0)
 
-    def _next_aftermath_target(self, log, poll_interval):
+    def _next_aftermath_target(self, log: "TreeConsole", poll_interval):
         """
         Between trips: unloads cargo aboard, charges, then claims the next
         site. Returns the claimed target, or None after sleeping (the caller

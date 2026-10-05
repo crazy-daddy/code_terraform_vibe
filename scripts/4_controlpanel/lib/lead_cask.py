@@ -49,7 +49,7 @@ RODS_PER_MK4 = 1
 # week of rods for 3 Reactors at full heat. Drones collect no more past it.
 URANIUM_STOCK_TARGET = 100
 
-# Reactor fuel state (written by 10_nuclear/lib/reactor.py, read by the Status
+# Reactor fuel state (written by lib/reactor.py, read by the Status
 # panel): {reactor_id: {"outpost", "status", "spare", "hours", "alert", "level",
 # "tick"}}. `spare` = rods staged + in the outpost's casks, `hours` = game hours
 # of fuel left at the current heat, `alert` = "" when fine.
@@ -86,7 +86,7 @@ def roles():
     return stored if isinstance(stored, dict) else {}
 
 
-def casks_at(outpost):
+def casks_at(outpost: "OutpostRef | None"):
     """[{"id", "component", "material", "count", "capacity", "role"}] for the Lead Casks at
     outpost (None = home). `material` is "" for an empty cask."""
     if outpost is None:
@@ -114,13 +114,13 @@ def casks_at(outpost):
     return out
 
 
-def cask_stock(item_id, outpost=None, casks=None):
+def cask_stock(item_id, outpost: "OutpostRef | None" = None, casks=None):
     """Units of item_id in the Lead Casks at outpost (None = home)."""
     casks = casks_at(outpost) if casks is None else casks
     return sum(c["count"] for c in casks if c["material"] == item_id)
 
 
-def _components_at(outpost, type_id):
+def _components_at(outpost: "OutpostRef | None", type_id):
     if outpost is None or not hasattr(outpost, "buildings"):
         return []
     try:
@@ -136,7 +136,7 @@ def _components_at(outpost, type_id):
     return out
 
 
-def rod_consumers(outpost):
+def rod_consumers(outpost: "OutpostRef | None"):
     """(reactors, mk4 generators) components at outpost."""
     mk4 = []
     for type_id in MK4_TYPE_IDS:
@@ -168,7 +168,7 @@ def consumer_rod_reserve(reactors, mk4):
     return ROD_RESERVE + RODS_PER_REACTOR * len(reactors) + RODS_PER_MK4 * len(mk4)
 
 
-def rods_for_orders(outpost, casks=None):
+def rods_for_orders(outpost: "OutpostRef | None", casks=None):
     """(rods a Supply Dock may take from outpost's casks, rods held back): cask
     rods above the local consumers' reserve, less the rods already staged in them.
     None = home."""
@@ -180,13 +180,13 @@ def rods_for_orders(outpost, casks=None):
     return max(0, stock - held), min(stock, held)
 
 
-def _rods_to_hold(outpost):
+def _rods_to_hold(outpost: "OutpostRef | None"):
     """Rods the local consumers' reserve still wants beyond what they have staged."""
     reactors, mk4 = rod_consumers(outpost)
     return max(0, consumer_rod_reserve(reactors, mk4) - staged_rods(reactors + mk4))
 
 
-def rods_free_to_ship(outpost, in_hand, casks=None):
+def rods_free_to_ship(outpost: "OutpostRef | None", in_hand, casks=None):
     """Of `in_hand` fresh Fuel Rods (a Fuel Assembler's output), how many may go
     straight to a Supply Dock: cask rods + in_hand beyond the local consumers'
     reserve (the same floor rods_for_orders() leaves the docks). None = home."""
@@ -217,7 +217,7 @@ def network_cask_stock(item_id):
     return sum(cask_stock(item_id, outpost) for outpost in _all_outposts())
 
 
-def room_for(item_id, outpost=None, casks=None):
+def room_for(item_id, outpost: "OutpostRef | None" = None, casks=None):
     """Free units for item_id: casks latched to it or empty, minus casks reserved for the other item."""
     casks = casks_at(outpost) if casks is None else casks
     room = 0
@@ -287,7 +287,7 @@ def release_inbound(carrier):
     archive.transaction(INBOUND_KEY, {}, updater)
 
 
-def unload_target(item_id, outpost=None, casks=None):
+def unload_target(item_id, outpost: "OutpostRef | None" = None, casks=None):
     """Id of a cask that can take item_id (its role allows it, latched to it or empty, with room), else None."""
     casks = casks_at(outpost) if casks is None else casks
     fits = [c for c in casks if c["role"] in ("", item_id) and c["material"] in ("", item_id) and c["count"] < c["capacity"]]
@@ -295,7 +295,7 @@ def unload_target(item_id, outpost=None, casks=None):
     return fits[0]["id"] if fits else None
 
 
-def take_from_casks(port, item_id, amount, outpost=None, casks=None):
+def take_from_casks(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "OutpostRef | None" = None, casks=None):
     """Pulls up to amount of item_id into an input port (connect + take, one source at a time).
     Misfiled casks (role is the other item) first, then fullest first. Returns units moved."""
     casks = casks_at(outpost) if casks is None else casks
@@ -344,7 +344,7 @@ def _live_cask_ids():
     return ids
 
 
-def ensure_rod_cask(outpost, casks=None):
+def ensure_rod_cask(outpost: "OutpostRef", casks=None):
     """(cask_id, note): the outpost's "fuel_rod" cask, assigning one when none is set.
     Picks a cask holding rods, else an empty unassigned cask, else the least-full
     unassigned uranium cask (repair() then empties it). Needs two casks: one for
@@ -376,7 +376,7 @@ def ensure_rod_cask(outpost, casks=None):
     return pick["id"], f"assigned '{pick['id']}' to Fuel Rods"
 
 
-def repair(outpost, casks=None):
+def repair(outpost: "OutpostRef", casks=None):
     """Moves Raw Uranium out of "fuel_rod" casks into other casks with room. Returns units moved."""
     casks = casks_at(outpost) if casks is None else casks
     moved = 0

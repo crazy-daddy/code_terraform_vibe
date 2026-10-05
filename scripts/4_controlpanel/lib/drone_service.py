@@ -12,6 +12,7 @@
 # back (lib/drone_energy.py). This station watches and rescues.
 
 from drone_energy import discover_drone_services, drone_rescue_energy_per_meter, service_has_oil_feed, heli_capable_services, HELI_MIN_EMERGENCY_RESERVE_T
+from components import drone
 from swallow import swallowed
 from script_parking import parked_ids, parked_nearest, wake_for_visit
 from station_controller import StationController
@@ -39,33 +40,34 @@ class DroneServiceController(StationController):
     RETURN_EMERGENCY_RESERVE_T = HELI_MIN_EMERGENCY_RESERVE_T / 2.0
     RESCUE_EXTRA_RESERVE_T = HELI_MIN_EMERGENCY_RESERVE_T / 2.0
 
-    def __init__(self, station, target_charge_level=1.0):
+    def __init__(self, station: "DroneServiceStation", target_charge_level=1.0):
         super().__init__(station, target_charge_level)
+        self.station: "DroneServiceStation" = station
         self.last_rescued_drone = None
         self._oil_warned = False
 
     def all_station_refs(self):
         return discover_drone_services()
 
-    def station_refs_for(self, drone_ref):
+    def station_refs_for(self, drone_ref: "DroneRef"):
         """Stations that can serve drone_ref: all for electric, oil-holding ones for heli (heli_capable_services(), dry skipped)."""
         refs = self.all_station_refs()
         if getattr(drone_ref, "engine", "") == "heli":
             refs, _tier = heli_capable_services(refs)
         return refs
 
-    def station_coords(self, drone_ref=None):
+    def station_coords(self, drone_ref: "DroneRef | None" = None):
         refs = self.station_refs_for(drone_ref) if drone_ref is not None else self.all_station_refs()
         return [r["coords"] for r in refs]
 
     @staticmethod
-    def fuel_of(drone_ref):
+    def fuel_of(drone_ref: "DroneRef"):
         """(current, capacity, fraction) from a DroneRef in its own unit: Wh (electric) or t Oil (heli)."""
         if drone_ref.engine == "heli":
             return (drone_ref.oil_tons or 0.0, drone_ref.oil_capacity or 0.0, drone_ref.oil_level or 0.0)
         return (drone_ref.battery_wh or 0.0, drone_ref.battery_capacity or 0.0, drone_ref.battery_level or 0.0)
 
-    def return_floor_wh(self, drone_ref, distance=None):
+    def return_floor_wh(self, drone_ref: "DroneRef", distance=None):
         """
         Fuel (Wh, or t Oil for heli) a drone needs on board right now to
         safely self-navigate to the nearest drone_service -- mirrors
@@ -83,7 +85,7 @@ class DroneServiceController(StationController):
         reserve = self.RETURN_EMERGENCY_RESERVE_T if drone_ref.engine == "heli" else self.RETURN_EMERGENCY_RESERVE_WH
         return (distance * drone_rescue_energy_per_meter(drone_ref.engine) * self.RETURN_SAFETY_MARGIN) + reserve
 
-    def rescue_target_level(self, drone_ref, floor=None):
+    def rescue_target_level(self, drone_ref: "DroneRef", floor=None):
         """Charge/refuel target for a rescue: enough to reach the nearest station with a safety reserve. floor: precomputed return_floor_wh()."""
         current, capacity, _ = self.fuel_of(drone_ref)
         if not capacity or capacity <= 0:
@@ -131,7 +133,7 @@ class DroneServiceController(StationController):
 
         for d_id in docked_ids:
             try:
-                d = get_component(d_id)
+                d = drone(d_id)
                 if not d:
                     continue
                 # Probe, not hasattr(): drones expose both .battery and
@@ -160,7 +162,7 @@ class DroneServiceController(StationController):
         self.log.end()
         return busy
 
-    def _dispatch_rescue(self, d_ref, is_stranded, v_wh, target_level, floor):
+    def _dispatch_rescue(self, d_ref: "DroneRef", is_stranded, v_wh, target_level, floor):
         """Announces distress and dispatches the recovery vehicle; True when the loop over drones should stop."""
         unit = "t Oil" if d_ref.engine == "heli" else "Wh"
         reason = "STRANDED/SCRAMBLED" if is_stranded else f"CRITICAL FUEL ({v_wh:.1f} {unit}, below {floor:.1f} {unit} return floor)"

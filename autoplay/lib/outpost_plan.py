@@ -51,6 +51,10 @@ from outpost_sites import rank_sites, log_sites, read_world
 from infra_topology import Topology
 from grid_geom import tile_xy
 import survey_requests
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 PROPOSALS_KEY = "autoplay.outpost_proposals"
 MARKER_PREFIX = "autoplay.outpost."
@@ -288,7 +292,7 @@ def resolve(entry):
         entry["status"] = "approved" if entry.get("ok") and not blockers(entry) else "proposed"
 
 
-def pipe_tiles(log):
+def pipe_tiles(log: "TreeConsole"):
     """(tx, ty) of every gas and liquid pipe and pipe job on the map (infra_topology.Topology read)."""
     occ = Topology().read(log).occ
     return [tile_xy(tile) for layer in ("gas", "liquid") for tile in occ.get(layer, {})]
@@ -362,7 +366,7 @@ def open_entries(proposals):
     return [(pid, proposals[pid]) for pid in sorted(proposals) if proposals[pid].get("status") in OPEN]
 
 
-def log_events(log, events, proposals):
+def log_events(log: "TreeConsole", events, proposals):
     """Info lines for the operator's answers (inside the caller's block)."""
     for event, pid in events:
         if event == "rejected":
@@ -399,7 +403,7 @@ def save(proposals):
     archive.transaction(PROPOSALS_KEY, {}, updater)
 
 
-def read_markers(markers):
+def read_markers(markers: "Markers"):
     """{marker_id: {"x", "y", "label", "icon", "color", "note"}} of our family; None when unreadable."""
     try:
         rows = markers.list(MARKER_PREFIX) or []
@@ -454,7 +458,7 @@ class OutpostPlanner:
     markers (watch mode); due() says when a full pass is needed anyway.
     """
 
-    def __init__(self, log):
+    def __init__(self, log: "TreeConsole"):
         self.log = log
         self.ctx = None
         self.ranked = {}
@@ -588,7 +592,7 @@ class OutpostPlanner:
                 self.log.debug(f"Outposts: {pid} at ({entry['x']:.0f}, {entry['y']:.0f}) "
                                f"{'blocked: ' + entry['blocked'] if entry['blocked'] else 'passes placement'}.")
 
-    def _sync_markers(self, markers, proposals, listing, lines):
+    def _sync_markers(self, markers: "Markers", proposals, listing, lines):
         """
         Removes markers of proposals no longer open, places changed ones;
         returns the number of calls made. A first placement adds an info

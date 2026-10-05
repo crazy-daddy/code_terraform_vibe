@@ -30,13 +30,14 @@
 # player's manual edit is never silently clobbered by a background loop.
 
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 
 log = TreeConsole(module="outpost_mining")
 
 # One {ore_item_id: units} dict for every outpost: a mining outpost's
 # stockpile target, home's standing ore floor and a smelting site's ore
-# buffer (5_steampower lib/site_supply.py) all read the same number.
+# buffer (lib/site_supply.py) all read the same number.
 ORE_STOCK_TARGETS_KEY = "mining.ore_stock_targets"
 
 # One Warehouse slot's worth (docs/components/warehouse.md: 5 slots x 2000
@@ -70,25 +71,17 @@ RAW_ORE_ITEM_IDS = ("iron_ore", "silicon", "titanium", "cobalt", "rare_earth", "
 HOME_OUTPOST_ID = "outpost_home"
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("outpost_mining._component: get_component", error)
-        return None
-
-
 def _archive():
     from archive import archive
     return archive
 
 
 def _outpost_network():
-    return _component("outpost_network")
+    return component("outpost_network")
 
 
 def _markers():
-    return _component("markers")
+    return component("markers")
 
 
 def outpost_by_id(outpost_id):

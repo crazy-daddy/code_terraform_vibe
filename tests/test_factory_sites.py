@@ -1,5 +1,5 @@
 """Stub tests for per-site demand and order trees (E6: production site targets,
-5_steampower lib/site_plan.py, consumer hauling), the role switch drain (E5:
+lib/site_plan.py, consumer hauling), the role switch drain (E5:
 stranded ore eviction) and Supply Docks at fab outposts (E7)."""
 import unittest
 from unittest import mock

@@ -31,7 +31,7 @@ THROTTLE_DEMAND_MET = 0.3
 # generation no longer covers consumption, so "demand met" alone would flip the
 # turbine back to 1.0 on the next poll and the battery would refill within seconds.
 BATTERY_EASE_RESUME_FRACTION = 0.90
-# The tier-5 grid manager's turbine commitment (lib/turbine_commit.py) writes
+# The grid manager's turbine commitment (lib/turbine_commit.py) writes
 # {grid anchor id: tick} here each pass. While its entry for this turbine's grid is
 # younger than COMMIT_FRESH_TICKS, the commitment runs only the turbines needed and
 # parks the rest, so this turbine runs at 1.0 with a healthy buffer instead of easing.
@@ -153,7 +153,7 @@ class SteamTurbineController:
                 swallowed("steam_turbine.SteamTurbineController.is_night: self.clock.get_elevation", error)
         return False
 
-    def committed(self, grid):
+    def committed(self, grid: "PowerGrid"):
         """True while the grid manager's turbine commitment manages this turbine's grid (COMMIT_HEARTBEAT_KEY)."""
         beats = archive.get(COMMIT_HEARTBEAT_KEY, {}) or {}
         tick = beats.get(getattr(grid, "anchor_id", None)) if isinstance(beats, dict) else None

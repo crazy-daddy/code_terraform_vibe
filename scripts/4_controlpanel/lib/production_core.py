@@ -6,6 +6,7 @@ from archive import archive
 from outpost_mining import HOME_OUTPOST_ID, RAW_ORE_ITEM_IDS
 from power import DAY_CYCLE_DURATION_SECONDS
 from tree_console import TreeConsole
+from components import component, fabricator, smelter
 from swallow import swallowed
 import fleet_status
 
@@ -40,7 +41,7 @@ def _ceil(x):
     return i + 1 if x > i else i
 
 
-def craft_seconds(recipe):
+def craft_seconds(recipe: "Recipe"):
     """Real-world seconds per craft for `recipe`, converted from its
     `.duration_game_hours` via the fixed day-cycle schedule. Floors at 1
     second if the recipe reports a missing/zero duration, so dividing
@@ -51,7 +52,7 @@ def craft_seconds(recipe):
     return hours * SECONDS_PER_GAME_HOUR
 
 
-def craft_prefill_units(recipe, item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
+def craft_prefill_units(recipe: "Recipe", item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
     """
     How many units of `item_id` (one of recipe.inputs) a Smelter/Fabricator
     should keep staged to cover roughly the next `prefill_seconds` of real
@@ -78,7 +79,7 @@ def craft_prefill_units(recipe, item_id, prefill_seconds=INPUT_PREFILL_SECONDS):
 
 def _current_tick():
     """Module-level tick read (mirrors VehicleController.get_current_tick()) for callers with no vehicle instance."""
-    clock = _component("clock")
+    clock = component("clock")
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
@@ -87,21 +88,13 @@ def _current_tick():
     return 0
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("production_core._component: get_component", error)
-        return None
-
-
 SMELTER_TYPE_ID = "smelter"
 
 
 def _all_outposts():
     """Every owned OutpostRef (outpost_network.outposts()), or just home when
     the network can't be listed."""
-    network = _component("outpost_network")
+    network = component("outpost_network")
     if network and hasattr(network, "outposts"):
         try:
             return list(network.outposts())
@@ -120,7 +113,7 @@ DISCOVERY_TTL_TICKS = 20
 _DISCOVERY_MEMO = {}
 
 
-def _discover_building_ids(type_id, outpost=None):
+def _discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
     """Ids of every `type_id` building at `outpost`, or at every outpost when
     `outpost` is None (home first, then outpost_network order). Memoized for
     DISCOVERY_TTL_TICKS."""
@@ -134,7 +127,7 @@ def _discover_building_ids(type_id, outpost=None):
     return list(ids)
 
 
-def _scan_building_ids(type_id, outpost):
+def _scan_building_ids(type_id, outpost: "OutpostRef | None"):
     outposts = [outpost] if outpost is not None else _all_outposts()
     ids = []
     for candidate in outposts:
@@ -150,12 +143,12 @@ def _scan_building_ids(type_id, outpost):
     return ids
 
 
-def discover_building_ids(type_id, outpost=None):
+def discover_building_ids(type_id, outpost: "OutpostRef | None" = None):
     """Ids of every `type_id` building at `outpost`, or network-wide when omitted (memoized discovery)."""
     return _discover_building_ids(type_id, outpost)
 
 
-def discover_smelter_ids(outpost=None):
+def discover_smelter_ids(outpost: "OutpostRef | None" = None):
     """
     All Smelter building ids at `outpost`, or network-wide when omitted --
     a Smelter at a factory outpost is a peer like any home one. Recipe
@@ -167,13 +160,13 @@ def discover_smelter_ids(outpost=None):
     return _discover_building_ids(SMELTER_TYPE_ID, outpost)
 
 
-def machine_outpost_id(machine):
+def machine_outpost_id(machine: "Smelter | Fabricator | None"):
     """Id of the outpost a Smelter/Fabricator is deployed at (its .outpost
     OutpostRef), or None when the component doesn't expose one."""
     return getattr(getattr(machine, "outpost", None), "id", None)
 
 
-def claim_site_id(machine):
+def claim_site_id(machine: "Smelter | Fabricator | None"):
     """Outpost id a machine's recipe claim is filed under (smelter/fabricator
     .recipe_claims): its own outpost, HOME_OUTPOST_ID when not exposed."""
     return machine_outpost_id(machine) or HOME_OUTPOST_ID
@@ -223,7 +216,7 @@ def site_recipe_claims(claims, owner_field):
 
 
 def _home_outpost():
-    network = _component("outpost_network")
+    network = component("outpost_network")
     if network and hasattr(network, "home"):
         return network.home()
     return None
@@ -248,13 +241,13 @@ def construction_site_id():
     return site_id or home_outpost_id()
 
 
-def smelter_ores(outpost):
+def smelter_ores(outpost: "OutpostRef"):
     """{ore: output_item} for every raw ore a Smelter at `outpost` has an
     unlocked recipe for, {} without a Smelter there. list_recipes() is
     tech-gated and identical per Smelter, so the first one that answers
     stands in for all."""
     for smelter_id in discover_smelter_ids(outpost):
-        smelter = _component(smelter_id)
+        smelter = component(smelter_id)
         if not smelter or not hasattr(smelter, "list_recipes"):
             continue
         try:
@@ -276,14 +269,14 @@ def _default_smelter():
     """First discovered Smelter component (dynamic stand-in for the old hardcoded 'smelter_1')."""
     ids = discover_smelter_ids()
     if ids:
-        return _component(ids[0])
-    return _component("smelter_1")  # last-resort fallback if discovery finds nothing (e.g. outpost_network unavailable)
+        return smelter(ids[0])
+    return smelter("smelter_1")  # last-resort fallback if discovery finds nothing (e.g. outpost_network unavailable)
 
 
 FABRICATOR_TYPE_ID = "fabricator"
 
 
-def discover_fabricator_ids(outpost=None):
+def discover_fabricator_ids(outpost: "OutpostRef | None" = None):
     """All Fabricator building ids at `outpost`, or network-wide when omitted. Same shape/reasoning as discover_smelter_ids()."""
     return _discover_building_ids(FABRICATOR_TYPE_ID, outpost)
 
@@ -292,12 +285,12 @@ def _default_fabricator():
     """First discovered Fabricator component (dynamic stand-in for the old hardcoded 'fabricator_1')."""
     ids = discover_fabricator_ids()
     if ids:
-        return _component(ids[0])
-    return _component("fabricator_1")  # last-resort fallback if discovery finds nothing
+        return fabricator(ids[0])
+    return fabricator("fabricator_1")  # last-resort fallback if discovery finds nothing
 
 
 FUEL_ASSEMBLER_TYPE_ID = "fuel_assembler"
-# Fuel Assembler outputs (10_nuclear/lib/fuel_assembler.py builds them, not a Fabricator).
+# Fuel Assembler outputs (lib/fuel_assembler.py builds them, not a Fabricator).
 FUEL_ASSEMBLER_OUTPUTS = ("fuel_rod", "nuclear_battery")
 # weather.aftermaths (lib/weather_signals.py); a live uranium site makes Raw Uranium sourceable.
 AFTERMATHS_KEY = "weather.aftermaths"
@@ -305,7 +298,7 @@ AFTERMATHS_KEY = "weather.aftermaths"
 
 def _default_fuel_assembler():
     ids = _discover_building_ids(FUEL_ASSEMBLER_TYPE_ID)
-    return _component(ids[0]) if ids else None
+    return component(ids[0]) if ids else None
 
 
 def _uranium_aftermath_pending():
@@ -319,7 +312,7 @@ def _uranium_aftermath_pending():
 SUPPLY_DOCK_TYPE_ID = "supply_dock"
 
 
-def discover_supply_dock_ids(outpost=None):
+def discover_supply_dock_ids(outpost: "OutpostRef | None" = None):
     """
     All Supply Dock building ids at outpost (default: every outpost, like
     Smelter/Fabricator discovery -- a dock at a fab outpost ships what that

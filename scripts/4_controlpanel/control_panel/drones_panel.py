@@ -31,6 +31,10 @@
 # have more than ~6 drones -- same sizing guidance as vehicles_panel.py (FLEET).
 # New save: create an empty Custom Panel in-game -- see docs/cheatsheet/panels.md §7.
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from user_stubs import panel
+
 from archive import archive
 from drone_claims import is_drone_recalled, set_drone_recalled
 from drone_energy import DEFAULT_CRUISE_THROTTLE_KEY, DEFAULT_CRUISE_THROTTLE_FALLBACK

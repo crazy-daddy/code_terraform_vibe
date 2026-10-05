@@ -15,9 +15,14 @@
 
 from archive import archive
 from tree_console import TreeConsole
+import components
 from swallow import swallowed
 from script_parking import wake_for_visit
 from atomic import run_batched
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from production import SourceCache
 
 log = TreeConsole(module="storage")
 
@@ -63,16 +68,8 @@ INVENTORY_ONLY_ITEM_IDS = (
 )
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("storage._component: get_component", error)
-        return None
-
-
 def _home_outpost():
-    network = _component("outpost_network")
+    network = components.component("outpost_network")
     if network and hasattr(network, "home"):
         try:
             return network.home()
@@ -81,7 +78,7 @@ def _home_outpost():
     return None
 
 
-def outpost_is_home(outpost=None):
+def outpost_is_home(outpost: "OutpostRef | None" = None):
     """True for the home outpost. None counts as home, matching every helper
     here that defaults `outpost` to home. Reads OutpostRef.is_home (a plain
     bool) and tolerates the Outpost component's is_home() method."""
@@ -95,7 +92,7 @@ def outpost_is_home(outpost=None):
         return False
 
 
-def local_port_target(outpost=None):
+def local_port_target(outpost: "OutpostRef | None" = None):
     """
     Default endpoint for a machine port at `outpost`: "inventory" at home,
     else the first local Warehouse id (Inventory only connects at home,
@@ -120,7 +117,7 @@ _DISCOVERY_MEMO = {}
 STOCKS_CHUNK = 20
 
 
-def discover_storage_buildings(outpost=None, type_ids=STORAGE_TYPE_IDS):
+def discover_storage_buildings(outpost: "OutpostRef | None" = None, type_ids=STORAGE_TYPE_IDS):
     """
     [{"id": str, "component": obj}, ...] for every Warehouse/Large Warehouse
     at `outpost` (default: home outpost). Mirrors the existing
@@ -141,7 +138,7 @@ def discover_storage_buildings(outpost=None, type_ids=STORAGE_TYPE_IDS):
     return list(found)
 
 
-def _scan_storage_buildings(outpost, type_ids):
+def _scan_storage_buildings(outpost: "OutpostRef", type_ids):
     found = []
     seen_ids = set()
     for type_id in type_ids:
@@ -154,18 +151,18 @@ def _scan_storage_buildings(outpost, type_ids):
             b_id = getattr(b, "id", None)
             if not b_id or b_id in seen_ids:
                 continue
-            component = _component(b_id) or b
+            component = components.component(b_id) or b
             seen_ids.add(b_id)
             found.append({"id": b_id, "component": component})
     return found
 
 
-def total_stock(item_id, outpost=None):
+def total_stock(item_id, outpost: "OutpostRef | None" = None):
     """inventory.count(item_id) + sum of warehouse.count(item_id) across every
     discovered Warehouse -- the single source of truth for "how much of this
     item exists at all", including both home Inventory and remote Warehouses."""
     total = 0
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if inventory and hasattr(inventory, "count"):
         try:
             total += inventory.count(item_id)
@@ -183,7 +180,7 @@ def total_stock(item_id, outpost=None):
 
 def inventory_count(item_id):
     """inventory.count(item_id): units in home Inventory only, 0 if unreadable."""
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "count"):
         return 0
     try:
@@ -193,7 +190,7 @@ def inventory_count(item_id):
         return 0
 
 
-def warehouse_stock(item_id, outpost=None):
+def warehouse_stock(item_id, outpost: "OutpostRef | None" = None):
     """
     Sum of warehouse.count(item_id) across every discovered Warehouse at `outpost` --
     unlike total_stock(), this never adds home Inventory, regardless of `outpost`.
@@ -248,7 +245,7 @@ def _stacks_rows(buildings):
     return rows
 
 
-def warehouse_stocks(item_ids, outpost=None):
+def warehouse_stocks(item_ids, outpost: "OutpostRef | None" = None):
     """{item_id: warehouse_stock(item_id, outpost)} for every item, one stacks() read per Warehouse (atomic, STOCKS_CHUNK buildings per call)."""
     totals = {item_id: 0 for item_id in item_ids}
     if not totals:
@@ -329,12 +326,12 @@ def _fill_fraction(building):
         return 1.0
 
 
-def _inventory_first(item_id, min_amount, outpost):
+def _inventory_first(item_id, min_amount, outpost: "OutpostRef | None"):
     """True when item_id must stay in Inventory, Inventory has room for
     min_amount, and no active Supply Dock order at outpost owes it."""
     if not must_stay_in_inventory(item_id):
         return False
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "space_for"):
         return False
     try:
@@ -346,7 +343,7 @@ def _inventory_first(item_id, min_amount, outpost):
     return item_id not in _items_demanded_by_active_dock_orders(outpost)
 
 
-def best_unload_target(item_id, min_amount=1, outpost=None, exclude=()):
+def best_unload_target(item_id, min_amount=1, outpost: "OutpostRef | None" = None, exclude=()):
     """
     Destination id string for offloading item_id, else None if there is nowhere
     local to put it. Ranks every discovered Warehouse with space_for(item_id) >=
@@ -443,7 +440,7 @@ def recently_busy(source_id, now=None):
 
 
 def _now_tick():
-    clock = _component("clock")
+    clock = components.component("clock")
     if clock and hasattr(clock, "tick"):
         try:
             return clock.tick()
@@ -452,7 +449,7 @@ def _now_tick():
     return 0
 
 
-# Crop Automators (home Harvesting field, tier 8_planting) keep their Forage
+# Crop Automators (home Harvesting field) keep their Forage
 # in their output instead of draining it to Warehouses, so Forage consumers
 # take it from there (lib/crop_automator.py). Forage in Inventory or a
 # Warehouse drains first: it only takes slots there. Among the automators,
@@ -475,7 +472,7 @@ def crop_automator_wake_free(automator_id):
     return max(CROP_AUTOMATOR_WAKE_FREE_MIN, harvest_yield or 0)
 
 
-def crop_automator_forage(outpost=None):
+def crop_automator_forage(outpost: "OutpostRef | None" = None):
     """
     [(automator_id, forage, clogged, garden)] for every Crop Automator at
     `outpost` (default home; only home has a Harvesting field) holding
@@ -498,7 +495,7 @@ def crop_automator_forage(outpost=None):
         if getattr(ref, "type_id", CROP_AUTOMATOR_TYPE_ID) != CROP_AUTOMATOR_TYPE_ID:
             continue
         ca_id = getattr(ref, "id", None)
-        machine = _component(ca_id) if ca_id else None
+        machine = components.component(ca_id) if ca_id else None
         port = getattr(machine, "output", None)
         if not ca_id or not port or not hasattr(port, "stacks"):
             continue
@@ -523,7 +520,7 @@ def crop_automator_forage(outpost=None):
     return out
 
 
-def crop_automator_forage_total(outpost=None):
+def crop_automator_forage_total(outpost: "OutpostRef | None" = None):
     """Forage sitting in the Crop Automators' outputs at `outpost`."""
     return int(sum(e[1] for e in crop_automator_forage(outpost)))
 
@@ -532,7 +529,7 @@ def crop_automator_forage_total(outpost=None):
 BUSY_TARGET_RETRIES = 3
 
 
-def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
+def _holder_candidates(item_id, outpost: "OutpostRef | None" = None, cache: "SourceCache | None" = None, automators=None):
     """
     [(source_id, units)] for every storage endpoint holding item_id, in the
     order take_item() should try them:
@@ -570,7 +567,7 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
         holders += list(cache.building_stock(item_id))
     else:
         if is_home:
-            inventory = _component("inventory")
+            inventory = components.component("inventory")
             if inventory and hasattr(inventory, "count"):
                 try:
                     count = inventory.count(item_id)
@@ -601,12 +598,12 @@ def _holder_candidates(item_id, outpost=None, cache=None, automators=None):
     return [entry for _key, entry in ranked]
 
 
-def takeable_stock(item_id, outpost=None):
+def takeable_stock(item_id, outpost: "OutpostRef | None" = None):
     """Units of item_id that take_item() could pull at `outpost`: the sum over the same holders it tries."""
     return sum([units for _source_id, units in _holder_candidates(item_id, outpost)])
 
 
-def take_item(port, item_id, amount, outpost=None, cache=None, report=None):
+def take_item(port: "InputSlot | VehicleInputSlot", item_id, amount, outpost: "OutpostRef | None" = None, cache: "SourceCache | None" = None, report=None):
     """
     Pulls up to `amount` units of item_id into `port` (a machine/vehicle
     input port exposing .connect(id)/.connected_id()/.take(item_id, count)).
@@ -681,7 +678,7 @@ def hit_slot_cap(report):
     return any(status == "slots_full" for _source, status, _moved in (report or {}).get("sources", []))
 
 
-def eject_unneeded(port, keep, target):
+def eject_unneeded(port: "InputSlot", keep, target):
     """Ejects every stack in `port` whose item is not in `keep` to `target`,
     freeing its material slot. Returns ["item:status", ...] for the log."""
     out = []
@@ -702,7 +699,7 @@ def eject_unneeded(port, keep, target):
     return out
 
 
-def _take_from_current(port, item_id, remaining):
+def _take_from_current(port: "InputSlot | VehicleInputSlot", item_id, remaining):
     """take(item_id, remaining) off whatever port is currently connected to.
     Returns (units actually moved, status) -- (0, "exception") if the call
     raised. Split out of take_item() as a plain helper (not a nested closure)
@@ -717,7 +714,7 @@ def _take_from_current(port, item_id, remaining):
     return (getattr(res, "moved", 0) or 0), getattr(res, "status", None)
 
 
-def send_stack(port, item_id, count, target):
+def send_stack(port: "OutputSlot", item_id, count, target):
     """
     Points `port` (an OutputSlot) at `target` unless already connected there,
     then send(item_id, count). Returns (moved, status, message); a raising
@@ -733,7 +730,7 @@ def send_stack(port, item_id, count, target):
     return (getattr(res, "moved", 0) or 0), getattr(res, "status", None), getattr(res, "message", "")
 
 
-def push_to_targets(port, item_id, count, targets):
+def push_to_targets(port: "OutputSlot", item_id, count, targets):
     """
     Sends up to `count` units of item_id from `port` (an OutputSlot) straight
     into consumer machines, skipping the storage hop: `targets` is
@@ -768,7 +765,7 @@ def push_to_targets(port, item_id, count, targets):
     return delivered
 
 
-def _send_to_best_target(port, item_id, count, outpost, allow_partial):
+def _send_to_best_target(port: "OutputSlot", item_id, count, outpost: "OutpostRef | None", allow_partial):
     """Sends one stack to best_unload_target(); a Warehouse that answers "busy"
     (a material endpoint lock, e.g. the one a blend was just taken from) is
     skipped and the next-best one tried, up to BUSY_TARGET_RETRIES times.
@@ -787,7 +784,7 @@ def _send_to_best_target(port, item_id, count, outpost, allow_partial):
     return 0
 
 
-def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False):
+def drain_port_to_storage(port: "OutputSlot", outpost: "OutpostRef | None" = None, include=None, allow_partial=False):
     """
     Sends every stack currently staged in `port` (a machine output/byproduct slot
     exposing .stacks()/.connect(id)/.send(item_id, count)) to the best local
@@ -828,7 +825,7 @@ def drain_port_to_storage(port, outpost=None, include=None, allow_partial=False)
     return moved_total
 
 
-def drain_port_storage_first(port, outpost=None, include=None):
+def drain_port_storage_first(port: "OutputSlot", outpost: "OutpostRef | None" = None, include=None):
     """
     Sends every stack staged in `port` to a local Warehouse
     (drain_port_to_storage()), then whatever no Warehouse took to
@@ -861,7 +858,7 @@ def drain_port_storage_first(port, outpost=None, include=None):
 INVENTORY_FULL_STATUSES = ("partial", "target_full", "slots_full")
 
 
-def drain_port_inventory_first(port, outpost=None):
+def drain_port_inventory_first(port: "OutputSlot", outpost: "OutpostRef | None" = None):
     """
     Sends every stack staged in `port` (a Smelter/Fabricator output) to the
     home Inventory, and only when Inventory has no room (INVENTORY_FULL_STATUSES)
@@ -923,7 +920,7 @@ def drain_port_inventory_first(port, outpost=None):
     return results
 
 
-def consolidate_cross_warehouse_stock(outpost=None):
+def consolidate_cross_warehouse_stock(outpost: "OutpostRef | None" = None):
     """
     Calls `.compact()` on every discovered Warehouse/Large Warehouse at
     `outpost`. `.compact()` compacts only that one Warehouse's own slots (same
@@ -957,7 +954,7 @@ def consolidate_cross_warehouse_stock(outpost=None):
 
 def inventory_stack_size():
     """Current Inventory stack size per slot: 10, or 20 once Bigger Stacks is unlocked."""
-    research = _component("research")
+    research = components.component("research")
     if research and hasattr(research, "is_unlocked"):
         try:
             if research.is_unlocked(BIGGER_STACKS_TECH_ID):
@@ -974,7 +971,7 @@ def must_stay_in_inventory(item_id):
     inventory manager sweep must leave it alone."""
     if item_id in INVENTORY_ONLY_ITEM_IDS:
         return True
-    catalog = _component("item_catalog")
+    catalog = components.component("item_catalog")
     if not catalog or not hasattr(catalog, "lookup"):
         return False
     try:
@@ -989,7 +986,7 @@ def _occupied_stackable_slots_by_item():
     """{item_id: [count_per_occupied_slot, ...]} for Inventory, skipping empty,
     property-bearing (non-stackable), and Inventory-only-category slots
     (see must_stay_in_inventory)."""
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "get_slots"):
         return {}
     try:
@@ -1014,7 +1011,7 @@ def _occupied_stackable_slots_by_item():
     return per_item
 
 
-def _cheapest_warehouse_occupant(exclude_item_id, outpost=None):
+def _cheapest_warehouse_occupant(exclude_item_id, outpost: "OutpostRef | None" = None):
     """
     Across every discovered Warehouse's slots, the (warehouse_id, item_id,
     quantity) of the smallest-quantity occupant that isn't exclude_item_id --
@@ -1041,7 +1038,7 @@ def _cheapest_warehouse_occupant(exclude_item_id, outpost=None):
     return best
 
 
-def _warehouse_item_ids(outpost=None):
+def _warehouse_item_ids(outpost: "OutpostRef | None" = None):
     """
     Set of item ids currently held (count > 0) anywhere in ANY discovered
     Warehouse -- used by rebalance_inventory_to_warehouses() to also
@@ -1068,7 +1065,7 @@ def _warehouse_item_ids(outpost=None):
     return held
 
 
-def _items_demanded_by_active_dock_orders(outpost=None):
+def _items_demanded_by_active_dock_orders(outpost: "OutpostRef | None" = None):
     """
     Set of item_ids still owed (requires - shipped > 0) by any Supply Dock's
     current active order at `outpost` (default: home outpost). A campaign/
@@ -1099,7 +1096,7 @@ def _items_demanded_by_active_dock_orders(outpost=None):
         dock_id = getattr(ref, "id", None)
         if not dock_id:
             continue
-        dock = _component(dock_id)
+        dock = components.component(dock_id)
         if not dock or not hasattr(dock, "current_order"):
             continue
         try:
@@ -1117,7 +1114,7 @@ def _items_demanded_by_active_dock_orders(outpost=None):
     return demanded
 
 
-def reclaim_inventory_only_items_from_warehouses(outpost=None):
+def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = None):
     """
     Reverse of rebalance_inventory_to_warehouses(): sweeps every discovered
     Warehouse for stock in NON_WAREHOUSABLE_CATEGORIES (see
@@ -1144,7 +1141,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
     different variant of the same item_id.
     """
     log.start("reclaim_inventory_only_items_from_warehouses", level="debug")
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "transfer_to"):
         log.end()
         return
@@ -1188,7 +1185,7 @@ def reclaim_inventory_only_items_from_warehouses(outpost=None):
     return reclaimed_total
 
 
-def rebalance_inventory_to_warehouses(outpost=None):
+def rebalance_inventory_to_warehouses(outpost: "OutpostRef | None" = None):
     """
     "Inventory manager" sweep: moves a stackable (propertyless) item out to a
     Warehouse entirely (not just the excess -- a Warehouse is exactly as fast
@@ -1221,7 +1218,7 @@ def rebalance_inventory_to_warehouses(outpost=None):
     slots used (slots freed by the move > slots the evicted occupant would
     cost) -- never a wash or a net loss.
     """
-    inventory = _component("inventory")
+    inventory = components.component("inventory")
     if not inventory or not hasattr(inventory, "transfer_to"):
         return
 

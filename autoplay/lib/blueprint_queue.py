@@ -98,7 +98,7 @@ def cancel(ids):
     return len(cancelled)
 
 
-def _plan_power_leg(blueprints, leg):
+def _plan_power_leg(blueprints: "ConstructionBlueprint", leg):
     """(status, ids, message) of one plan_power_line() call."""
     try:
         result = blueprints.plan_power_line(leg[0], leg[1], leg[2], leg[3])

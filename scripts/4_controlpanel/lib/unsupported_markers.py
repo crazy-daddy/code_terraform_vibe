@@ -8,20 +8,13 @@
 
 from archive import archive
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 
 log = TreeConsole(module="unsupported_markers")
 
 # Prefix used for all markers created by this module
 MARKER_PREFIX = "unsupported."
-
-
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("unsupported_markers._component: get_component", error)
-        return None
 
 
 def resolve_coordinates(key, entry, journal_sites=None):
@@ -138,7 +131,7 @@ def clear_wrong_scanner_marker(x, y):
     the same contact. Only the marker is stale here, not the block itself.
     Safe to call for every scan; it is a no-op when nothing matches.
     """
-    markers = _component("markers")
+    markers = component("markers")
     if not markers or not archive or not archive.available:
         return False
 
@@ -170,7 +163,7 @@ def update_unsupported_markers(clear_previous=True):
     """
     Places map markers for all unsupported targets stored in the archive.
     """
-    markers = _component("markers")
+    markers = component("markers")
     if not markers:
         log.level("error").print("Map Markers component ('markers') is unavailable. Unlocked by Cartography research.")
         return 0
@@ -192,7 +185,7 @@ def update_unsupported_markers(clear_previous=True):
     log.start(f"Syncing {len(unsupported)} unsupported target entries to Planet Map markers...")
 
     # Load journal sites for site coordinate lookups
-    journal = _component("journal")
+    journal = component("journal")
     journal_sites = []
     if journal and hasattr(journal, "discovered_sites"):
         try:

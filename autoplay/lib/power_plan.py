@@ -32,6 +32,10 @@ from construction_plan import DEFAULT_PRIORITY
 from drill_sites import known_positions
 import autoplay_roles
 import supply_tiers
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 POWER_ITEM = "power_line_segment"
 MAX_LINKS_PER_PASS = 1   # power links (plan_power_line routes) queued per pass
@@ -68,7 +72,7 @@ def site_machines(sites, drill_positions):
     return out
 
 
-def grid_rows(grids):
+def grid_rows(grids: "list[PowerGrid]"):
     """Plain rows {anchor, outposts, machines} for power_control.grids()."""
     rows = []
     for grid in grids:
@@ -370,7 +374,7 @@ def _end_name(member, tile):
 class PowerPlanner:
     """One power pass per planner tick; see the module header."""
 
-    def __init__(self, log):
+    def __init__(self, log: "TreeConsole"):
         self.log = log
         self.failed = set()   # (anchor, anchor) links the game rejected this run; not retried until restart
 

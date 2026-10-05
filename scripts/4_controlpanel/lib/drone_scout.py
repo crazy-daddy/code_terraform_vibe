@@ -80,7 +80,7 @@ class DroneScoutMixin:
         self._host.log.end()
         return candidates
 
-    def _scout_poi(self, log, target):
+    def _scout_poi(self, log: "TreeConsole", target):
         """Flies to `target` and scans it; returns the outcome text for the enclosing log block."""
         log.start(f"[{self._host.name}] _scout_poi", level="debug")
         self._host.set_intent(f"scouting poi_{target[0]}_{target[1]}")

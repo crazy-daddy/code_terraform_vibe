@@ -1,7 +1,7 @@
 # Field Mining Drills as pull-hauler pickup sources (lib/vehicle_cargo.py
 # run_pull_loop()).
 #
-# Each drill's telemetry script (lib/mining_drill.py, tier 7_miningdrills)
+# Each drill's telemetry script (lib/mining_drill.py)
 # advertises its stockpile in drill.status. What no API gives is where the
 # drill stands: the component has no position, drills aren't on the outpost
 # network, PowerGridMember carries no coordinates, and MiningSite (unlike
@@ -14,9 +14,8 @@
 #     writing drill.positions directly).
 # A drill with no known position is skipped by the hauler.
 #
-# Lives in the 4_controlpanel lib (not 7_miningdrills) because the pull
-# hauler and the Pioneer constructor import it at every tier; with no drills
-# deployed, nothing here does anything.
+# The pull hauler and the Pioneer constructor import it whether or not drills
+# exist; with no drills deployed, nothing here does anything.
 #
 # Archive shape (one shared dict per concern, CODE_GUIDES.md#archive):
 #   drill.positions = {drill_id: {"pos": [x, y], "site": site_id | None}}
@@ -136,7 +135,7 @@ def site_at(coords, tolerance=SITE_MATCH_TOLERANCE_M):
     return best
 
 
-def record_built_drill(port, kind, coords):
+def record_built_drill(port: "InputSlot | VehicleInputSlot", kind, coords):
     """
     Called by a Pioneer parked at a just-finished mining_drill* blueprint:
     finds the new drill among this variant's drills with no known position
@@ -151,7 +150,7 @@ def record_built_drill(port, kind, coords):
     return drill_id
 
 
-def _locate_built_drill(port, kind, coords):
+def _locate_built_drill(port: "InputSlot | VehicleInputSlot", kind, coords):
     site_id = site_at(coords)
     unresolved = []
     for attempt in range(BUILT_DRILL_DISCOVERY_ATTEMPTS):
@@ -172,7 +171,7 @@ def _locate_built_drill(port, kind, coords):
     return None
 
 
-def connect_to_drill(port, drill_id):
+def connect_to_drill(port: "InputSlot | VehicleInputSlot", drill_id):
     """True when `port` (vehicle.input) is now connected to drill_id -- only possible inside its service area."""
     log.start(f"connect_to_drill({drill_id!r})", level="debug")
     try:
@@ -193,7 +192,7 @@ def connect_to_drill(port, drill_id):
     return status == "ok"
 
 
-def take_from_drill(port, item_id, amount):
+def take_from_drill(port: "InputSlot | VehicleInputSlot", item_id, amount):
     """take()s up to `amount` of item_id from the already-connected drill; returns units moved."""
     log.start("take_from_drill", level="debug")
     moved_total = 0

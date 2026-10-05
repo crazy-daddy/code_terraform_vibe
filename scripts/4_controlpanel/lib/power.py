@@ -1,19 +1,63 @@
-# Shared Library for Central Power Grid Management & Automated Load Shedding
-# Generic master controller that can oversee any power grid (solar, oil, reactor, turbine).
+# Power Guard: one PowerGridManager per grid, driven by control_room_automation.py.
+#
+# What a grid needs depends on its power phase (grid_phase(), from the
+# generator types among its members), not on the save's progression:
+#   - "solar":   only Solar Generators (and batteries). The night is the dry
+#                spell and its length is known: lib/power_solar.py's
+#                SolarNightGuard forecasts the night and sheds against it.
+#   - "steam":   Steam Turbines join. Night is no dry spell while Gas Tanks
+#                still hold steam, and the real dry spell (vent dormancy) has
+#                nothing to do with the sun, so a sun-based guard would shed
+#                every night with thousands of tons of steam banked.
+#   - "oil":     Oil Generators join. lib/oil_generator.py burns oil as last
+#                resort and as base load while oil is in surplus.
+#   - "reactor": a Reactor is producing. It outshines every other source, so
+#                oil surplus burning stops (oil_generator.py and
+#                script_parking.py read reactor_carried()); oil stays as the
+#                low-reserve last resort only.
+#
+# Steam, oil and reactor grids share one guard that treats both stores as one
+# energy reserve:
+#   - Battery pool: grid.stored/.capacity plus Lightning Rod reserve.
+#   - Steam pool:   every steam Gas Tank on the grid's outposts, converted to
+#                   Wh at the Steam Turbine's own rate (108 W per 90 t/h).
+# Every phase runs:
+#   0. Turbine commitment (lib/turbine_commit.py): runs just enough Steam
+#      Turbines at full output, plus spares, and parks the rest at the breaker
+#      (a no-op without turbines).
+#   1. Daily balance: snapshot both pools at each day rollover, record the
+#      net gain/loss per day (bounded history), and notify() once per day
+#      when either pool lost more than DAILY_LOSS_WARN_FRACTION of its
+#      capacity -- i.e. the grid is running a deficit and draining. On oil
+#      and reactor grids it also flags solar as retirable once its share of
+#      the day's generation is below SOLAR_RETIRE_SHARE.
+#   2. Shedding: the solar night guard, or the emergency guard that sheds
+#      DEFAULT_SHEDDING_TIERS only when the COMBINED reserve is nearly empty
+#      and restores once it has recovered.
 from archive import archive
 from patterns import is_wildcard_pattern, filter_wildcard_matches
 from tree_console import TreeConsole
+from components import gas_tank
 from swallow import swallowed
+import fluid_routing
+from turbine_commit import TurbineCommitment
+from power_solar import SolarNightGuard
 
-# Default shedding tiers (configurable via archive key 'power.shedding_tiers')
-# Tier 1: Passive background terraforming machinery (shed first)
-# Tier 2: Critical active production & logistics (shed only under severe deficit)
-#
-# Vehicle Charging Stations are deliberately never included here: they're also
-# what dispatches the fleet rescue drone (lib/charging.py manage_fleet_rescues()).
-# Shedding them "only under severe deficit" means losing rescue capability at
-# exactly the moment a vehicle is most likely to be stranded and need it --
-# dispatch_rescue() returns "station_offline" and the drone never launches.
+# lib/production.py imports this. Decompiled simworker's dayCycleDuration.
+DAY_CYCLE_DURATION_SECONDS = 600
+
+# Shedding tiers, shed first to last (archive overrides:
+# 'power.shedding_tiers' / 'power.shedding_tiers:<anchor>').
+# - Tier 1: passive terraforming machinery and Fuel Assemblers. A Fuel
+#   Assembler craft draws 1.2-1.8 kW just to build stock, and its progress
+#   survives the breaker cut.
+# - Tier 2: crafters, soft-shed only (SOFT_SHED_PATTERNS).
+# - Tier 3: Habitats. An unpowered Habitat only pauses (no breeding, no rearing
+#   progress, no failure; simworker skips unpowered Habitats), so they shed
+#   last, below their own lower threshold.
+# Vehicle Charging Stations are never shed: they also dispatch the fleet
+# rescue drone (lib/charging.py manage_fleet_rescues()), and a shed station
+# answers "station_offline" exactly when a stranded vehicle needs it.
 DEFAULT_SHEDDING_TIERS = [
     [
         "heater_*",
@@ -23,6 +67,7 @@ DEFAULT_SHEDDING_TIERS = [
         "bio_lab_*",
         "bio_exchange_*",
         "bio_luminizer_*",
+        "fuel_assembler_*",
     ],
     [
         "smelter_*",
@@ -30,484 +75,498 @@ DEFAULT_SHEDDING_TIERS = [
         "feed_maker_*",
         "refiner_*",
     ],
+    [
+        "habitat_*",
+    ],
 ]
-
-# Patterns that are tracked as shedded (added to power.shedded / the archive's
-# per-grid mirror) but never actually powered off. A Smelter/Fabricator only
-# draws its recipe's power_draw while a craft is actively running -- idle draw
-# is already 0 W (see lib/smelter.py's SmelterController docstring) -- so
-# cutting its breaker saves nothing it wasn't already going to save by simply
-# not starting new work, while ALSO losing leader-election status (the
-# "inventory manager" sweep) and needing external intervention to power it
-# back on and restart its script -- deliberately NOT automated (see
-# lib/vehicle_cargo.py's module docstring): if the operator stopped it
-# themselves, nothing should override that just because a delivery arrived.
-# Soft-shed instead: still listed in power.shedded so
-# SmelterController/FabricatorController's own step() can see it and pause
-# starting/topping-up production, but set_powered() is never called on it.
-# Feed Makers and Refiners are crafters too and are soft-shed the same way.
-# Only these crafters are soft-shed -- a Tier 1 pattern
-# like heater_*/pressure_* draws power continuously regardless of whether it's
-# "producing" anything, so cutting its breaker is the only way to actually
-# reduce its draw.
+# Crafters draw power only while a craft runs (idle draw is 0 W), so cutting
+# their breaker saves nothing that not starting new work doesn't, and needs
+# outside help to power the machine back on and restart its script. They are
+# only listed in power.shedded, which their controllers read to pause new
+# production; set_powered() is never called on them.
 SOFT_SHED_PATTERNS = {"smelter_*", "fabricator_*", "feed_maker_*", "refiner_*"}
 
-# Exact day/night cycle timings from the decompiled simworker (its
-# `dayCycleDuration: 600` / `daylight: {...}` schedule, fractions of a full
-# day mapped onto elapsed_game_hours()'s 0-24 scale by multiplying by 24).
-# Replaces the old empirically-calibrated `power.night_duration` archive value
-# (measured sunset->sunrise gap, EMA-smoothed) with the fixed real schedule --
-# the sun always sets/rises at the same hour every day, so there was never
-# anything to calibrate; the old approach only ever drifted toward this same
-# constant while being wrong immediately after every script restart. See
-# docs/AI_CHEATSHEET.md.
-DAY_CYCLE_DURATION_SECONDS = 600
-DAYLIGHT_FRACTIONS = {
-    "dawn_start": 0.25,
-    "dawn_end": 0.30,
-    "morning_peak_start": 0.38,
-    "peak_end": 0.54,
-    "afternoon_end": 0.71,
-    "day_end": 0.75,
-    "dusk_end": 0.83,
-}
-SUNRISE_HOUR = DAYLIGHT_FRACTIONS["dawn_start"] * 24.0  # 6.0 -- sun elevation goes > 0
-SUNSET_HOUR = DAYLIGHT_FRACTIONS["dusk_end"] * 24.0  # 19.92 -- sun elevation returns to 0
-NIGHT_DURATION_HOURS = 24.0 - SUNSET_HOUR + SUNRISE_HOUR  # 10.08, exact and constant
+# Power phase of a grid, from the generator types among its members.
+SOLAR_TYPE_ID = "solar_generator"
+STEAM_TURBINE_TYPE_ID = "steam_turbine"
+OIL_GENERATOR_TYPE_ID = "oil_generator"
+REACTOR_TYPE_ID = "reactor"
+PHASE_SOLAR = "solar"
+PHASE_STEAM = "steam"
+PHASE_OIL = "oil"
+PHASE_REACTOR = "reactor"
+
+# On oil and reactor grids, a day whose solar output is below this share of
+# the grid's generation notifies once that the solar panels can be retired.
+SOLAR_RETIRE_SHARE = 0.05
+
+# Steam Turbine: 108 W from 90 t/h (docs/components/steam_turbine.md).
+STEAM_WH_PER_TON = 108.0 / 90.0
+
+# Warn when a pool ends the day more than this fraction of its capacity
+# lower than it started.
+DAILY_LOSS_WARN_FRACTION = 0.20
+DAILY_HISTORY_LENGTH = 7
+
+# Emergency guard on the combined reserve fraction (battery + steam, in Wh).
+# Tier N sheds below the Nth value (tiers past the list use the last one);
+# everything restores once the reserve is back above RESTORE (hysteresis, so
+# a grid hovering at the threshold does not toggle breakers every second).
+EMERGENCY_SHED_FRACTIONS = (0.10, 0.05, 0.02)
+EMERGENCY_RESTORE_FRACTION = 0.25
+
+
+def tiers_to_shed(frac, tier_count):
+    """How many leading tiers to shed at reserve fraction `frac`."""
+    count = 0
+    for t_idx in range(tier_count):
+        if frac >= EMERGENCY_SHED_FRACTIONS[min(t_idx, len(EMERGENCY_SHED_FRACTIONS) - 1)]:
+            break
+        count += 1
+    return count
+
+# Today's running snapshot lives in memory; it is written to the archive on
+# day rollover and every this many supervise_grid() calls (~30s), so a restart
+# loses at most that much of the day's gen/con integral.
+DAILY_STATE_PERSIST_INTERVAL_CALLS = 30
+
+DAILY_STATE_KEY_PREFIX = "power.daily:"
+DAILY_HISTORY_KEY_PREFIX = "power.daily_hist:"
+
+
+def grid_phase(grid: "PowerGrid"):
+    """PHASE_SOLAR / PHASE_STEAM / PHASE_OIL / PHASE_REACTOR for a power_control grid
+    snapshot. A Reactor counts only while it produces: a tripped or unfuelled one
+    leaves the grid to oil and steam."""
+    types = set()
+    for member in getattr(grid, "members", None) or []:
+        type_id = getattr(member, "type_id", "")
+        if type_id == REACTOR_TYPE_ID and (getattr(member, "generated", 0.0) or 0.0) <= 0:
+            continue
+        types.add(type_id)
+    if REACTOR_TYPE_ID in types:
+        return PHASE_REACTOR
+    if OIL_GENERATOR_TYPE_ID in types:
+        return PHASE_OIL
+    if STEAM_TURBINE_TYPE_ID in types:
+        return PHASE_STEAM
+    return PHASE_SOLAR
+
+
+def reactor_carried(grid: "PowerGrid"):
+    """True while a producing Reactor is on grid: oil surplus burning is waste there."""
+    return grid is not None and grid_phase(grid) == PHASE_REACTOR
+
+
+def _member_generated(grid: "PowerGrid", type_id):
+    return sum(getattr(m, "generated", 0.0) or 0.0 for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == type_id)
+
+
+def _notify(text, level="warn", duration=8.0):
+    try:
+        notify(text, level=level, duration_seconds=duration)
+    except Exception as error:
+        swallowed("power._notify: notify", error)
+
+
+def _now_tick():
+    try:
+        clock = get_component("clock")
+        return clock.tick() if clock else 0
+    except Exception as error:
+        swallowed("power._now_tick: clock.tick", error)
+        return 0
+
+
+def steam_tanks():
+    """Resolved steam Gas Tanks network-wide (one network per fluid, one grid):
+    fluid_routing's shared network walk filtered by eligible_targets(), so a
+    drained tank that unlatched at 0 still counts while tank_assignments
+    reserves it for steam (dropping its capacity would hide the loss)."""
+    tick = _now_tick()
+    tanks = fluid_routing.eligible_targets(fluid_routing.network_buildings("gas_tank", tick), "steam")
+    if tanks is None:  # a walked tank stopped answering (removed): walk again
+        fluid_routing.invalidate_network_walk("gas_tank")
+        tanks = fluid_routing.eligible_targets(fluid_routing.network_buildings("gas_tank", tick), "steam")
+    return tanks or []
+
+
+def steam_pool(tank_ids=None):
+    """(stored_t, capacity_t, tank_count) over the steam Gas Tanks: steam_tanks()
+    when tank_ids is None, else the steam ones among tank_ids (same rule)."""
+    if tank_ids is None:
+        tanks = steam_tanks()
+    else:
+        tanks = []
+        for tank_id in tank_ids:
+            try:
+                tank = gas_tank(tank_id)
+            except Exception as error:
+                swallowed("power.steam_pool: get_component", error)
+                continue
+            if tank is not None:
+                tanks.append(tank)
+        tanks = fluid_routing.eligible_targets(tanks, "steam") or []
+    stored_t = 0.0
+    capacity_t = 0.0
+    for tank in tanks:
+        try:
+            stored_t += tank.level()
+            capacity_t += tank.capacity()
+        except Exception as error:
+            swallowed("power.steam_pool: tank.level", error)
+    return stored_t, capacity_t, len(tanks)
+
+
+def measure_grid(grid: "PowerGrid", tank_ids=None):
+    """Battery + steam snapshot of one grid, the shape reserve_fraction() reads.
+    tank_ids None: every steam tank on the network (steam_tanks())."""
+    bat_wh = getattr(grid, "stored", 0.0) + getattr(grid, "reserve_stored", 0.0)
+    bat_cap = getattr(grid, "capacity", 0.0) + getattr(grid, "reserve_capacity", 0.0)
+    steam_t, steam_cap, tanks = steam_pool(tank_ids)
+    return {
+        "bat_wh": round(bat_wh, 1),
+        "bat_cap": round(bat_cap, 1),
+        "steam_t": round(steam_t, 1),
+        "steam_cap": round(steam_cap, 1),
+        "tanks": tanks,
+    }
+
+
+def reserve_totals(now):
+    """(total_wh, total_cap_wh) of the combined reserve in a _measure()-shaped
+    dict: battery Wh plus banked steam converted at STEAM_WH_PER_TON."""
+    total_wh = now["bat_wh"] + now["steam_t"] * STEAM_WH_PER_TON
+    total_cap = now["bat_cap"] + now["steam_cap"] * STEAM_WH_PER_TON
+    return total_wh, total_cap
+
+
+def reserve_fraction(now):
+    """Combined reserve fraction (0-1), or None when the grid has no battery
+    or steam storage to measure. Shared by the emergency guard and
+    lib/oil_generator.py so both read the same number."""
+    total_wh, total_cap = reserve_totals(now)
+    if total_cap <= 0:
+        return None
+    return total_wh / total_cap
 
 
 class PowerGridManager:
-    """
-    Supervises a single power grid -- one instance per grid, owned centrally by
-    status_panel.py's AUTOMATION section (see docs/AI_CHEATSHEET.md) rather than by
-    any individual generator, so there's no Master/Follower election needed:
-    - Monitors generation, consumption, and battery storage directly via PowerGrid snapshot.
-    - Calibrates day/night cycles and historical overnight energy usage.
-    - Issues predictive battery and generation advisories at sunset and during nighttime deficits.
-    - Manages progressive multi-tier load shedding under deficit conditions.
-    - Restores shedded machinery progressively when battery/surplus recovers.
-    """
+    """Supervises one power grid: turbine commitment, daily reserve balance, and the
+    shedding strategy of the grid's power phase."""
 
-    def __init__(self, grid, clock=None, power=None):
+    def __init__(self, grid: "PowerGrid", clock: "Clock | None" = None, power: "PowerControl | None" = None):
         self.clock = clock or get_component("clock")
         self.power = power or get_component("power_control")
         self.log = TreeConsole(module="power")
-
-        # Identity is bound once, from the grid snapshot this manager was
-        # created for -- not left None until the first supervise_grid() call
-        # sets it as a side effect (this manager is 1:1 with one grid for its
-        # entire lifetime; the caller re-passes a fresh snapshot each call
-        # only because PowerGrid readings are point-in-time, not because the
-        # grid identity itself is expected to change).
         self.grid_anchor = getattr(grid, "anchor_id", None)
         self.shedded_machines = set()
+        self.last_sample_hours = None
+        self.day_state = None
+        self.calls_since_persist = 0
+        # Runs just enough Steam Turbines and parks the rest (lib/turbine_commit.py).
+        self.turbines = TurbineCommitment(self.power)
+        self.turbine_status = "no turbines"
+        self.phase = None
+        self.solar_guard = None  # SolarNightGuard, while the grid is in PHASE_SOLAR
 
-        # Day/Night cycle tracking
-        self.last_elevation = self.clock.get_elevation() if self.clock else 0.0
-        self.has_observed_day = (self.last_elevation > 0)
-        self.night_duration = NIGHT_DURATION_HOURS
-        self.sunset_hour = archive.get("power.sunset_hour", None)
-        self.peak_day_battery_wh = 0.0
-        self.last_advisory_day = self.clock.get_day() if self.clock else 1
-        self.last_night_battery_advisory_day = None
+        # A previous run may have left machines shed. Its in-memory set died
+        # with the script, but it mirrored it to the archive -- adopt those so
+        # the restore path releases them.
+        adopted = set(archive.get(f"power.shedded:{self.grid_anchor}", []) or []) if self.grid_anchor else set()
+        adopted |= set(archive.get("power.shedded", []) or [])
+        self.adopted_machines = adopted
+        if adopted:
+            self.log.debug(f"[POWER] Adopting {len(adopted)} previously shed machine(s) for release check: {sorted(adopted)}.")
 
-        # Overnight energy accounting
-        self.historical_night_wh = archive.get("power.night_wh", None)
-        self.night_wh_accumulated = 0.0
-        self.last_energy_sample_hour = None
+    # ------------------------------------------------------------------
+    # Reserve measurement
+    # ------------------------------------------------------------------
+    def _measure(self, grid: "PowerGrid"):
+        return measure_grid(grid)
 
-    def release_all(self):
-        """
-        Call when this manager's grid has stopped being reported by
-        power_control.grids() entirely (two grids merged into one via a new
-        power line, orphaning one of the two old anchor_ids). The caller is
-        about to drop this manager -- without this, anything still recorded
-        in shedded_machines would be stranded shed forever, since the merged
-        grid's own manager starts fresh with an empty shedded_machines and has
-        no way to know about it.
-        """
-        for m_id in list(self.shedded_machines):
-            try:
-                if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
-                    self.power.set_powered(m_id, True)
-            except Exception as error:
-                swallowed("power.PowerGridManager.release_all: self.power.can_power_off", error)
-            self.shedded_machines.discard(m_id)
-        self.update_archive_shedded()
+    # ------------------------------------------------------------------
+    # Daily balance
+    # ------------------------------------------------------------------
+    def _integrate(self, state, grid: "PowerGrid"):
+        """Adds this sample's generated/consumed energy to today's totals."""
+        hours = self.clock.elapsed_game_hours() if self.clock and hasattr(self.clock, "elapsed_game_hours") else None
+        if hours is None:
+            return
+        if self.last_sample_hours is not None:
+            dt = hours - self.last_sample_hours
+            if 0 < dt < 2.0:
+                state["gen_wh"] = round(state.get("gen_wh", 0.0) + getattr(grid, "generated", 0.0) * dt, 1)
+                state["con_wh"] = round(state.get("con_wh", 0.0) + getattr(grid, "consumed", 0.0) * dt, 1)
+                state["solar_wh"] = round(state.get("solar_wh", 0.0) + _member_generated(grid, SOLAR_TYPE_ID) * dt, 1)
+        self.last_sample_hours = hours
 
+    def _close_day(self, start, now, grid_id_str):
+        """Records the finished day's balance and warns on a >20% drain."""
+        self.log.start(f"[POWER] Closing day {start.get('day')} on '{grid_id_str}'")
+        bat_delta = now["bat_wh"] - start.get("bat_wh", 0.0)
+        steam_delta = now["steam_t"] - start.get("steam_t", 0.0)
+        bat_cap = max(now["bat_cap"], start.get("bat_cap", 0.0))
+        steam_cap = max(now["steam_cap"], start.get("steam_cap", 0.0))
+        bat_frac = bat_delta / bat_cap if bat_cap > 0 else 0.0
+        steam_frac = steam_delta / steam_cap if steam_cap > 0 else 0.0
+
+        summary = {
+            "day": start.get("day"),
+            "bat_delta_wh": round(bat_delta, 1),
+            "bat_delta_pct": round(bat_frac * 100, 1),
+            "steam_delta_t": round(steam_delta, 1),
+            "steam_delta_pct": round(steam_frac * 100, 1),
+            "gen_wh": start.get("gen_wh", 0.0),
+            "con_wh": start.get("con_wh", 0.0),
+        }
+        hist_key = f"{DAILY_HISTORY_KEY_PREFIX}{self.grid_anchor}"
+        history = archive.get(hist_key, []) or []
+        history.append(summary)
+        archive.set(hist_key, history[-DAILY_HISTORY_LENGTH:])
+
+        self.log.print(
+            f"[POWER] Day {summary['day']} balance on '{grid_id_str}': battery {bat_delta:+.0f} Wh ({bat_frac*100:+.0f}%), "
+            f"steam {steam_delta:+.0f} t ({steam_frac*100:+.0f}%), generated {summary['gen_wh']:.0f} Wh, consumed {summary['con_wh']:.0f} Wh."
+        )
+
+        draining = []
+        if bat_frac < -DAILY_LOSS_WARN_FRACTION:
+            draining.append(f"batteries {bat_frac*100:.0f}% ({bat_delta:+.0f} Wh)")
+        if steam_frac < -DAILY_LOSS_WARN_FRACTION:
+            draining.append(f"gas tanks {steam_frac*100:.0f}% ({steam_delta:+.0f} t steam)")
+        if draining:
+            msg = f"Grid '{grid_id_str}' is draining: {', '.join(draining)} over day {summary['day']}. Add generation or cut load."
+            self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
+            _notify(f"[Power Advisory] {msg}")
+        else:
+            self.log.debug(f"[POWER] Day {summary['day']} on '{grid_id_str}': no pool lost more than {DAILY_LOSS_WARN_FRACTION*100:.0f}% of capacity; no advisory.")
+        self._solar_retire_advisory(start, grid_id_str)
+        self.log.end(f"[POWER] Day {summary['day']} closed on '{grid_id_str}' ({'draining' if draining else 'no advisory'})")
+
+    def _solar_retire_advisory(self, day, grid_id_str):
+        """Once per closed day on an oil or reactor grid: notify when solar made less than
+        SOLAR_RETIRE_SHARE of the day's generation. Advisory only; nothing is sold."""
+        if self.phase not in (PHASE_OIL, PHASE_REACTOR):
+            return
+        solar_wh = day.get("solar_wh", 0.0) or 0.0
+        gen_wh = day.get("gen_wh", 0.0) or 0.0
+        if solar_wh <= 0 or gen_wh <= 0 or solar_wh / gen_wh >= SOLAR_RETIRE_SHARE:
+            return
+        msg = (f"Solar made {solar_wh / gen_wh * 100:.1f}% of '{grid_id_str}' generation on day {day.get('day')} "
+               f"({self.phase} phase). The solar panels can be retired to free building slots.")
+        self.log.print(f"[POWER ADVISORY] {msg}")
+        _notify(f"[Power Advisory] {msg}", level="info")
+
+    def _track_day(self, grid: "PowerGrid", now, grid_id_str):
+        self.log.start("[POWER] _track_day", level="debug")
+        current_day = self.clock.get_day() if self.clock else 1
+        key = f"{DAILY_STATE_KEY_PREFIX}{self.grid_anchor}"
+        state = self.day_state
+        if state is None:
+            state = archive.get(key, None)  # resume mid-day after a restart
+
+        day_changed = not isinstance(state, dict) or state.get("day") != current_day
+        if day_changed:
+            # Close only a directly preceding day. After a longer gap (script
+            # stopped for days) the delta spans an unknown period, so a warning
+            # from it would be misleading.
+            if isinstance(state, dict) and state.get("day") == current_day - 1:
+                self._close_day(state, now, grid_id_str)
+            elif isinstance(state, dict):
+                self.log.debug(f"Discarding stale day-{state.get('day')} snapshot on '{grid_id_str}' (now day {current_day}).")
+            state = dict(now)
+            state["day"] = current_day
+            state["gen_wh"] = 0.0
+            state["con_wh"] = 0.0
+            self.log.debug(f"Day {current_day} start snapshot on '{grid_id_str}': battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t ({now['tanks']} tank(s)).")
+
+        self._integrate(state, grid)
+        self.day_state = state
+        self.calls_since_persist += 1
+        if day_changed or self.calls_since_persist >= DAILY_STATE_PERSIST_INTERVAL_CALLS:
+            self.calls_since_persist = 0
+            archive.set(key, state)
+        self.log.end()
+
+    # ------------------------------------------------------------------
+    # Emergency guard
+    # ------------------------------------------------------------------
     def get_shedding_tiers(self):
-        """
-        Retrieves shedding tiers list-of-lists from archive ('power.shedding_tiers').
-        Supports per-grid override ('power.shedding_tiers:<grid_anchor>').
-        Falls back to DEFAULT_SHEDDING_TIERS.
-        """
         grid_key = f"power.shedding_tiers:{self.grid_anchor}" if self.grid_anchor else None
         tiers = archive.get(grid_key) if grid_key else None
         if not tiers:
             tiers = archive.get("power.shedding_tiers")
-        if isinstance(tiers, list) and len(tiers) > 0 and isinstance(tiers[0], list):
+        if isinstance(tiers, list) and tiers and isinstance(tiers[0], list):
             return tiers
         return DEFAULT_SHEDDING_TIERS
 
-    def resolve_pattern_machines(self, pattern, grid_machines):
-        """
-        Resolves a machine identifier or wildcard pattern (e.g. 'smelter_*') into machine IDs.
-        Matches against machines connected to this power grid via regex.
-        Falls back to a numbered-guess component lookup if grid_machines is not populated -- this manager
-        has no single "owning" machine/outpost of its own to fall back through first (it's centrally owned,
-        one instance per grid, not tied to any one generator), so grid_machines (the grid snapshot's own
-        machine_ids/members, always populated for a real grid) is the only real source; this is a last resort.
-        """
+    def _resolve(self, pattern, grid_machines):
         if not is_wildcard_pattern(pattern):
-            return [pattern]
-
-        candidates = set(grid_machines) if grid_machines is not None else set()
-        if not candidates:
-            prefix = pattern.split("*")[0]
-            for i in range(1, 9):
-                cand = f"{prefix}{i}"
-                try:
-                    if get_component(cand) is not None:
-                        candidates.add(cand)
-                except Exception as error:
-                    swallowed("power.PowerGridManager.resolve_pattern_machines: get_component", error)
-
-        return filter_wildcard_matches(pattern, candidates)
+            return [pattern] if pattern in grid_machines else []
+        return filter_wildcard_matches(pattern, grid_machines)
 
     def update_archive_shedded(self):
-        """Publishes currently shedded machines to the Data Archive for inter-process
-        coordination -- e.g. a soft-shed SmelterController/FabricatorController
-        (SOFT_SHED_PATTERNS above) checking it each step() to pause starting new
-        production (see ArchiveCleaner.clean_power_grid_state() for deprecated keys)."""
-        shed_list = sorted(list(self.shedded_machines))
+        shed_list = sorted(self.shedded_machines)
         archive.set("power.shedded", shed_list)
         if self.grid_anchor:
             archive.set(f"power.shedded:{self.grid_anchor}", shed_list)
 
-    def handle_sunset(self, current_day, current_hour, grid_id_str, capacity_wh, consumed_w):
-        """Handles sunset detection, night duration calibration, and daytime capacity advisories."""
-        self.log.start(f"[POWER] Sunset on '{grid_id_str}'")
-        self.sunset_hour = current_hour
-        self.night_wh_accumulated = 0.0
-        self.last_energy_sample_hour = current_hour
-        archive.set("power.sunset_hour", self.sunset_hour)
-        self.log.print(f"[POWER] Sunset detected on '{grid_id_str}' at day {current_day} (hour {current_hour:.1f}). Night mode active.")
-        self.log.debug(f"[POWER] Sunset calibration on '{grid_id_str}': elevation crossed 0 at hour {current_hour:.2f} (fixed sunset hour is {SUNSET_HOUR:.2f}); capacity={capacity_wh:.0f} Wh, consumed={consumed_w:.0f} W.")
+    def _shed(self, m_id, soft, reason, grid_id_str):
+        if m_id in self.shedded_machines:
+            return False
+        if soft:
+            self.shedded_machines.add(m_id)
+            self.log.level("warn").print(f"[POWER GUARD] Flagged {m_id} shedded on '{grid_id_str}' ({reason}) -- production paused, power stays on.")
+            return True
+        try:
+            if self.power and self.power.can_power_off(m_id) and self.power.is_powered(m_id):
+                if self.power.set_powered(m_id, False).status == "ok":
+                    self.shedded_machines.add(m_id)
+                    self.log.level("warn").print(f"[POWER GUARD] Shed {m_id} on '{grid_id_str}' ({reason}).")
+                    return True
+        except Exception as error:
+            swallowed("power.PowerGridManager._shed: self.power.can_power_off", error)
+        return False
 
-        if self.has_observed_day and current_day != self.last_advisory_day:
-            self.last_advisory_day = current_day
+    def _restore(self, m_id, soft):
+        """True once m_id is no longer held shed by this manager."""
+        if soft:
+            return True
+        try:
+            if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
+                return self.power.set_powered(m_id, True).status == "ok"
+        except Exception as error:
+            swallowed("power.PowerGridManager._restore: self.power.can_power_off", error)
+            return False
+        return True
 
-            hist_key = f"power.night_wh:{self.grid_anchor}" if self.grid_anchor else "power.night_wh"
-            hist_wh = archive.get(hist_key, archive.get("power.night_wh", None))
-            if hist_wh is not None and hist_wh > 50.0:
-                baseline_wh = hist_wh * 1.05
-                self.log.debug(f"[POWER] Baseline night draw for '{grid_id_str}' derived from history: {hist_wh:.0f} Wh x1.05 = {baseline_wh:.0f} Wh.")
-            else:
-                baseline_wh = max(consumed_w, 25.0) * self.night_duration
-                self.log.debug(f"[POWER] No usable history for '{grid_id_str}' (hist_wh={hist_wh}); baseline night draw estimated from current consumption: max({consumed_w:.0f}, 25.0) x {self.night_duration:.2f}h = {baseline_wh:.0f} Wh.")
-
-            if capacity_wh < baseline_wh:
-                shortfall = baseline_wh - capacity_wh
-                bats_needed = int(shortfall // 500) + 1
-                hist_tag = f" (Historical night: {hist_wh:.0f} Wh)" if hist_wh else ""
-                msg = f"Battery capacity ({capacity_wh:.0f} Wh) on '{grid_id_str}' insufficient for night loads ({baseline_wh:.0f} Wh needed{hist_tag}). Recommend {bats_needed}x Battery at Shop."
-                self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
-                try:
-                    notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
-                except Exception as error:
-                    swallowed("power.PowerGridManager.handle_sunset: notify", error)
-
-            if capacity_wh > 0 and self.peak_day_battery_wh < (capacity_wh * 0.90):
-                charge_pct = (self.peak_day_battery_wh / capacity_wh) * 100
-                msg = f"Solar generation deficit on '{grid_id_str}'! Batteries only reached {charge_pct:.0f}% charge. Recommend 1x Solar Generator (500 cr) at Shop."
-                self.log.level("warn").print(f"[POWER ADVISORY] {msg}")
-                try:
-                    notify(f"[Power Advisory - {grid_id_str}] {msg}", level="warn", duration_seconds=8.0)
-                except Exception as error:
-                    swallowed("power.PowerGridManager.handle_sunset: notify #2", error)
-        self.log.end(f"[POWER] Sunset handled on '{grid_id_str}' (night mode active)")
-
-    def handle_sunrise(self, current_hour, grid_id_str):
-        """Handles sunrise detection and historical overnight energy averaging.
-        Night duration itself is fixed (NIGHT_DURATION_HOURS); calibration tracks
-        the actual Wh consumed overnight."""
-        self.log.start(f"[POWER] Sunrise on '{grid_id_str}'")
-        if self.sunset_hour is not None and self.night_wh_accumulated > 10.0:
-            hist_key = f"power.night_wh:{self.grid_anchor}" if self.grid_anchor else "power.night_wh"
-            curr_hist = archive.get(hist_key, None)
-            if curr_hist is not None:
-                new_hist = (curr_hist * 0.70) + (self.night_wh_accumulated * 0.30)
-                self.log.debug(f"[POWER] Night-Wh EMA update for '{grid_id_str}': (prev {curr_hist:.0f} x0.70) + (observed {self.night_wh_accumulated:.0f} x0.30) = {new_hist:.0f} Wh.")
-            else:
-                new_hist = self.night_wh_accumulated
-                self.log.debug(f"[POWER] First night-Wh sample for '{grid_id_str}': seeding history at {new_hist:.0f} Wh.")
-            self.historical_night_wh = new_hist
-            archive.set(hist_key, round(new_hist, 1))
-
-        hist_str = f", {self.night_wh_accumulated:.0f} Wh used overnight" if self.night_wh_accumulated > 0 else ""
-        self.log.print(f"[POWER] Sunrise detected on '{grid_id_str}'. Night lasted {self.night_duration:.1f} game hours (fixed schedule){hist_str}.")
-
-        self.peak_day_battery_wh = 0.0
-        self.has_observed_day = True
-        self.night_wh_accumulated = 0.0
-        self.last_energy_sample_hour = None
-        self.log.end(f"[POWER] Sunrise handled on '{grid_id_str}' (day mode active)")
-
-    def manage_night_loads(self, current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w):
-        """Calculates night energy endurance and sheds loads as required."""
-        if self.last_energy_sample_hour is not None and current_hour > self.last_energy_sample_hour:
-            dt = current_hour - self.last_energy_sample_hour
-            if dt < 2.0:
-                self.night_wh_accumulated += consumed_w * dt
-        self.last_energy_sample_hour = current_hour
-
-        if self.sunset_hour is not None:
-            hours_into_night = max(0.0, current_hour - self.sunset_hour)
-            remaining_night = max(0.5, self.night_duration - hours_into_night)
-        else:
-            remaining_night = self.night_duration / 2.0
-
-        instant_rate = consumed_w
-        hist_key = f"power.night_wh:{self.grid_anchor}" if self.grid_anchor else "power.night_wh"
-        grid_hist_wh = archive.get(hist_key, self.historical_night_wh)
-        if grid_hist_wh is not None and self.night_duration > 0:
-            hist_rate = grid_hist_wh / self.night_duration
-            effective_rate = (instant_rate * 0.60) + (hist_rate * 0.40)
-        else:
-            effective_rate = instant_rate
-
-        wh_needed = effective_rate * remaining_night * 1.15
-        battery_pct = (stored_wh / capacity_wh) if capacity_wh > 0 else 0.0
-
-        deficit_detected = (stored_wh < wh_needed)
-        emergency_low = (battery_pct < 0.20)
-        severe_deficit = (stored_wh < (wh_needed * 0.50)) or (battery_pct < 0.15)
-
-        tiers = self.get_shedding_tiers()
-        num_tiers = len(tiers)
-
-        tier_to_shed = 0
-        if severe_deficit or battery_pct < 0.15:
-            tier_to_shed = num_tiers
-        elif deficit_detected or emergency_low:
-            tier_to_shed = 1 if num_tiers == 1 else max(1, num_tiers - 1)
-
-        self.log.debug(
-            f"[POWER] Night eval '{grid_id_str}': stored={stored_wh:.0f} Wh ({battery_pct*100:.0f}%), "
-            f"capacity={capacity_wh:.0f} Wh, instant_rate={instant_rate:.0f} W, effective_rate={effective_rate:.0f} W "
-            f"(hist_rate={'n/a' if grid_hist_wh is None else f'{grid_hist_wh / self.night_duration:.0f} W'}), "
-            f"remaining_night={remaining_night:.2f}h, wh_needed={wh_needed:.0f} Wh -> "
-            f"deficit={deficit_detected}, emergency_low={emergency_low}, severe_deficit={severe_deficit}, "
-            f"tier_to_shed={tier_to_shed}/{num_tiers}."
-        )
-
-        if tier_to_shed > 0:
-            self.log.start(f"[POWER GUARD] Load shedding on '{grid_id_str}' (tier {tier_to_shed}/{num_tiers})")
-            if self.last_night_battery_advisory_day != current_day:
-                self.last_night_battery_advisory_day = current_day
-                shortfall = wh_needed - stored_wh
-                bats_needed = max(1, int(shortfall // 500) + 1)
-                adv_msg = f"Night deficit on '{grid_id_str}'! Stored energy ({stored_wh:.0f} Wh) cannot survive remaining night ({wh_needed:.0f} Wh needed, {remaining_night:.1f}h left). Recommend {bats_needed}x Battery at Shop."
-                self.log.level("warn").print(f"[BATTERY ADVISORY] {adv_msg}")
-                try:
-                    notify(f"[Battery Advisory - {grid_id_str}] {adv_msg}", level="warn", duration_seconds=10.0)
-                except Exception as error:
-                    swallowed("power.PowerGridManager.manage_night_loads: notify", error)
-
-            shed_changed = False
-            for t_idx in range(tier_to_shed):
-                t_num = t_idx + 1
-                patterns = tiers[t_idx]
-                is_critical_tier = (t_num == num_tiers and num_tiers > 1)
-                for pattern in patterns:
-                    soft = pattern in SOFT_SHED_PATTERNS
-                    target_ids = self.resolve_pattern_machines(pattern, grid_machines)
-                    for m_id in target_ids:
-                        if grid_machines is not None and m_id not in grid_machines:
-                            continue
-
-                        if soft:
-                            # Never touches the breaker -- just flags m_id as
-                            # shedded so its own controller pauses starting
-                            # new production (see SOFT_SHED_PATTERNS above).
-                            if m_id not in self.shedded_machines:
-                                self.shedded_machines.add(m_id)
-                                shed_changed = True
-                                self.log.print(f"[POWER GUARD] Marked {m_id} shedded (Tier {t_num}) on '{grid_id_str}' -- production paused, power stays on.")
-                            else:
-                                self.log.debug(f"[POWER GUARD] {m_id} (Tier {t_num}, soft-shed) already flagged shedded on '{grid_id_str}'; skipping.")
-                            continue
-
-                        if m_id in self.shedded_machines:
-                            self.log.debug(f"[POWER GUARD] {m_id} (Tier {t_num}, hard-shed) already shedded on '{grid_id_str}'; skipping breaker toggle.")
-                            continue
-
-                        try:
-                            if self.power and self.power.can_power_off(m_id) and self.power.is_powered(m_id):
-                                res = self.power.set_powered(m_id, False)
-                                if res.status == "ok":
-                                    self.shedded_machines.add(m_id)
-                                    shed_changed = True
-                                    if is_critical_tier:
-                                        reason = f"Critical power deficit ({stored_wh:.0f} Wh, {battery_pct*100:.0f}% battery)"
-                                        self.log.level("error").print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
-                                        try:
-                                            notify(f"[Power Guard CRITICAL] Shed load ({m_id}) on {grid_id_str}: {reason}", level="error", duration_seconds=8.0)
-                                        except Exception as error:
-                                            swallowed("power.PowerGridManager.manage_night_loads: notify #2", error)
-                                    else:
-                                        reason = "Emergency reserve guard (<20%)" if emergency_low else f"Insufficient storage ({stored_wh:.1f} Wh < {wh_needed:.1f} Wh needed)"
-                                        self.log.level("warn").print(f"[POWER GUARD] Shed Tier {t_num} load ({m_id}) on '{grid_id_str}'. Reason: {reason}.")
-                                        try:
-                                            notify(f"[Power Guard] Shed load ({m_id}) on {grid_id_str}: {reason}", level="warn", duration_seconds=6.0)
-                                        except Exception as error:
-                                            swallowed("power.PowerGridManager.manage_night_loads: notify #3", error)
-                        except Exception as error:
-                            swallowed("power.PowerGridManager.manage_night_loads: self.power.can_power_off", error)
-
-            if shed_changed:
-                self.update_archive_shedded()
-            self.log.end(f"[POWER GUARD] Load shedding on '{grid_id_str}' done ({len(self.shedded_machines)} machine(s) shedded)")
-
-        # Nighttime partial recovery if battery stabilizes above requirement + safety margin
-        if self.shedded_machines and stored_wh >= (wh_needed * 1.10) and battery_pct >= 0.30:
-            recovered_any = False
-            for t_idx in reversed(range(num_tiers)):
-                t_num = t_idx + 1
-                margin = 1.10 + ((num_tiers - t_num) * 0.15)
-                min_bat = 0.30 + ((num_tiers - t_num) * 0.10)
-                if stored_wh < (wh_needed * margin) or battery_pct < min_bat:
-                    continue
-                patterns = tiers[t_idx]
-                for pattern in patterns:
-                    soft = pattern in SOFT_SHED_PATTERNS
-                    target_ids = self.resolve_pattern_machines(pattern, grid_machines)
-                    for m_id in target_ids:
-                        if m_id in self.shedded_machines:
-                            if grid_machines is not None and m_id not in grid_machines:
-                                continue
-                            if soft:
-                                self.shedded_machines.discard(m_id)
-                                recovered_any = True
-                                self.log.print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh), resuming production.")
-                                continue
-                            try:
-                                if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
-                                    res = self.power.set_powered(m_id, True)
-                                    if res.status == "ok":
-                                        self.shedded_machines.discard(m_id)
-                                        recovered_any = True
-                                        self.log.print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — battery pool recovered ({stored_wh:.0f} Wh).")
-                            except Exception as error:
-                                swallowed("power.PowerGridManager.manage_night_loads: self.power.can_power_off #2", error)
-            if recovered_any:
-                self.update_archive_shedded()
-
-    def manage_day_recovery(self, grid_id_str, grid_machines, generated_w, consumed_w, stored_wh):
-        """Restores shedded machinery progressively when surplus solar/generation is available."""
-        self.log.start("[POWER] manage_day_recovery", level="debug")
-        if not (self.shedded_machines and generated_w > (consumed_w + 10.0) and stored_wh > 25.0):
-            if self.shedded_machines:
-                self.log.debug(f"Day recovery skipped for '{grid_id_str}': generated={generated_w:.0f} W, consumed={consumed_w:.0f} W, stored={stored_wh:.0f} Wh -- surplus/reserve threshold not yet met for {len(self.shedded_machines)} shedded machine(s).")
-            self.log.end()
-            return
-
-        tiers = self.get_shedding_tiers()
-        num_tiers = len(tiers)
-        recovered_any = False
-        for t_idx in reversed(range(num_tiers)):
-            t_num = t_idx + 1
-            gen_surplus_needed = 10.0 + ((num_tiers - t_num) * 5.0)
-            stored_needed = 25.0 + ((num_tiers - t_num) * 25.0)
-            if generated_w < (consumed_w + gen_surplus_needed) or stored_wh < stored_needed:
-                self.log.debug(f"Day recovery: Tier {t_num}/{num_tiers} on '{grid_id_str}' not yet eligible (need gen>={consumed_w + gen_surplus_needed:.0f} W [have {generated_w:.0f}], stored>={stored_needed:.0f} Wh [have {stored_wh:.0f}]).")
-                continue
-            self.log.debug(f"Day recovery: Tier {t_num}/{num_tiers} on '{grid_id_str}' eligible for restoration (gen={generated_w:.0f} W >= {consumed_w + gen_surplus_needed:.0f} W, stored={stored_wh:.0f} Wh >= {stored_needed:.0f} Wh).")
-            patterns = tiers[t_idx]
+    def shed_tiers(self, tiers, grid_machines, reason, grid_id_str):
+        """Sheds every grid machine matching the patterns of `tiers` (a list of pattern
+        lists). Returns the newly shed ids; the archive mirror is updated when any."""
+        newly = []
+        for patterns in tiers:
             for pattern in patterns:
                 soft = pattern in SOFT_SHED_PATTERNS
-                target_ids = self.resolve_pattern_machines(pattern, grid_machines)
-                for m_id in target_ids:
-                    if m_id in self.shedded_machines:
-                        if grid_machines is not None and m_id not in grid_machines:
-                            continue
-                        if soft:
-                            self.shedded_machines.discard(m_id)
-                            recovered_any = True
-                            self.log.print(f"[POWER GUARD] Cleared shed flag on {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active, resuming production.")
-                            continue
-                        try:
-                            if self.power and self.power.can_power_off(m_id) and not self.power.is_powered(m_id):
-                                res = self.power.set_powered(m_id, True)
-                                if res.status == "ok":
-                                    self.shedded_machines.discard(m_id)
-                                    recovered_any = True
-                                    self.log.print(f"[POWER GUARD] Restored {m_id} (Tier {t_num}) on '{grid_id_str}' — solar surplus active ({generated_w:.0f} W gen vs {consumed_w:.0f} W con).")
-                        except Exception as error:
-                            swallowed("power.PowerGridManager.manage_day_recovery: self.power.can_power_off", error)
-        if recovered_any:
+                for m_id in self._resolve(pattern, grid_machines):
+                    if self._shed(m_id, soft, reason, grid_id_str):
+                        newly.append(m_id)
+        if newly:
+            self.update_archive_shedded()
+        return newly
+
+    def restore_tier(self, patterns, grid_machines, reason, grid_id_str):
+        """Restores the shed grid machines matching `patterns`. Returns the restored ids."""
+        restored = []
+        for pattern in patterns:
+            soft = pattern in SOFT_SHED_PATTERNS
+            for m_id in self._resolve(pattern, grid_machines):
+                if m_id in self.shedded_machines and self._restore(m_id, soft):
+                    self.shedded_machines.discard(m_id)
+                    restored.append(m_id)
+                    self.log.print(f"[POWER GUARD] Restored {m_id} on '{grid_id_str}' ({reason}).")
+        if restored:
+            self.update_archive_shedded()
+        return restored
+
+    def release_all(self):
+        """Grid vanished (merged into another) -- give back everything shed, and every turbine parked here."""
+        self.turbines.release_all()
+        for m_id in list(self.shedded_machines):
+            soft = any(filter_wildcard_matches(p, [m_id]) for p in SOFT_SHED_PATTERNS)
+            if self._restore(m_id, soft):
+                self.shedded_machines.discard(m_id)
+        self.update_archive_shedded()
+
+    def _guard(self, now, grid_machines, grid_id_str):
+        self.log.start("[POWER] _guard", level="debug")
+        total_wh, total_cap = reserve_totals(now)
+        frac = reserve_fraction(now)
+        if frac is None:
+            self.log.debug(f"Guard idle on '{grid_id_str}': no battery or steam storage to measure.")
+            self.log.end()
+            return
+        tiers = self.get_shedding_tiers()
+
+        shed_count = tiers_to_shed(frac, len(tiers))
+        self.log.trace(
+            f"[POWER] Guard '{grid_id_str}': reserve {total_wh:.0f}/{total_cap:.0f} Wh ({frac*100:.1f}%) "
+            f"[battery {now['bat_wh']:.0f} Wh + steam {now['steam_t']:.0f} t x{STEAM_WH_PER_TON:.2f}] -> shed {shed_count}/{len(tiers)} tier(s)."
+        )
+
+        changed = False
+        if shed_count:
+            newly = self.shed_tiers(tiers[:shed_count], grid_machines, f"combined reserve {frac*100:.0f}%", grid_id_str)
+            if newly:
+                _notify(f"[Power Guard] Reserve on '{grid_id_str}' at {frac*100:.0f}% -- shed {len(newly)} load(s): {', '.join(newly)}", level="error")
+
+        restore_ok = frac >= EMERGENCY_RESTORE_FRACTION
+        pending = (self.shedded_machines | self.adopted_machines) if restore_ok else set()
+        for m_id in sorted(pending):
+            if m_id not in grid_machines and m_id not in self.shedded_machines:
+                continue  # adopted id from another grid -- its own manager handles it
+            soft = any(filter_wildcard_matches(p, [m_id]) for p in SOFT_SHED_PATTERNS)
+            if self._restore(m_id, soft):
+                self.adopted_machines.discard(m_id)
+                if m_id in self.shedded_machines:
+                    self.shedded_machines.discard(m_id)
+                self.log.print(f"[POWER GUARD] Restored {m_id} on '{grid_id_str}' (reserve {frac*100:.0f}%).")
+                changed = True
+        if restore_ok and self.adopted_machines:
+            # Whatever is left belongs to other grids; stop tracking it here.
+            self.adopted_machines = set()
+        if changed:
             self.update_archive_shedded()
         self.log.end()
 
-    def supervise_grid(self, grid, elevation):
-        """Core supervision cycle for this grid."""
-        self.log.start("[POWER] supervise_grid", level="debug")
-        entry_tick = self.clock.tick() if self.clock and hasattr(self.clock, "tick") else 0
-        self.log.trace(f"supervise_grid() enter: anchor={self.grid_anchor}, elevation={elevation:.1f}, tick={entry_tick}.")
-        if grid:
-            self.grid_anchor = getattr(grid, "anchor_id", None)
+    # ------------------------------------------------------------------
+    def _update_phase(self, grid: "PowerGrid", elevation, grid_id_str):
+        """Re-reads the grid's phase; logs a change and creates or drops the solar night guard."""
+        phase = grid_phase(grid)
+        if phase != self.phase:
+            if self.phase is not None:
+                self.log.print(f"[POWER] Grid '{grid_id_str}' phase {self.phase} -> {phase}.")
+            self.phase = phase
+        if phase == PHASE_SOLAR and self.solar_guard is None:
+            self.solar_guard = SolarNightGuard(self, elevation or 0.0)
+        elif phase != PHASE_SOLAR:
+            self.solar_guard = None
 
+    def supervise_grid(self, grid: "PowerGrid", elevation=None):
+        """One supervision cycle. `elevation` (sun elevation) drives the solar night guard;
+        the other phases ignore it."""
+        if not grid:
+            return
+        self.grid_anchor = getattr(grid, "anchor_id", None) or self.grid_anchor
         grid_id_str = self.grid_anchor or "unknown_grid"
-        current_hour = self.clock.elapsed_game_hours() if self.clock and hasattr(self.clock, "elapsed_game_hours") else 0.0
-        current_day = self.clock.get_day() if self.clock else 1
+        grid_machines = set(getattr(grid, "machine_ids", None) or [])
 
-        # Use PowerGrid's native stored and capacity fields directly
-        stored_wh = getattr(grid, "stored", 0.0) if grid else 0.0
-        capacity_wh = getattr(grid, "capacity", 500.0) if grid else 500.0
-        consumed_w = getattr(grid, "consumed", 0.0) if grid else 0.0
-        generated_w = getattr(grid, "generated", 0.0) if grid else 0.0
-
-        # A grid with no battery at all (e.g. Steam Turbine-only, no Battery
-        # built) has nothing this class's night-shedding math can reason
-        # about -- battery_pct = stored_wh / capacity_wh would divide by a
-        # real zero and read as a permanent 0% "severe deficit" every single
-        # night. This never came up before centralizing supervision (only
-        # solar-paired grids -- which always have a battery, since solar needs
-        # night storage -- ever got supervised); now that every grid is
-        # covered, skip battery-less ones outright rather than guess at a
-        # generation-vs-consumption strategy this class doesn't implement.
-        if capacity_wh <= 0:
-            self.log.debug(f"supervise_grid() skipping '{grid_id_str}': capacity_wh={capacity_wh:.0f} (no battery on this grid, nothing to shed/restore against).")
-            self.log.end()
+        now = self._measure(grid)
+        self.log.trace(
+            f"[POWER] Grid '{grid_id_str}': gen={getattr(grid, 'generated', 0.0):.0f} W, con={getattr(grid, 'consumed', 0.0):.0f} W, "
+            f"battery {now['bat_wh']:.0f}/{now['bat_cap']:.0f} Wh, steam {now['steam_t']:.0f}/{now['steam_cap']:.0f} t in {now['tanks']} tank(s)."
+        )
+        if now["bat_cap"] <= 0 and now["steam_cap"] <= 0:
             return
 
-        self.log.debug(f"Grid snapshot '{grid_id_str}': generated={generated_w:.0f} W, consumed={consumed_w:.0f} W, stored={stored_wh:.0f} Wh / {capacity_wh:.0f} Wh, elevation={elevation:.1f}.")
-
-        grid_machines = None
-        if grid:
-            if hasattr(grid, "machine_ids") and grid.machine_ids:
-                grid_machines = set(grid.machine_ids)
-            elif hasattr(grid, "members") and grid.members:
-                grid_machines = {getattr(m, "id", "") for m in grid.members if hasattr(m, "id")}
-
-        if elevation > 0:
-            self.has_observed_day = True
-            self.peak_day_battery_wh = max(self.peak_day_battery_wh, stored_wh)
-
-        # Day/night transition checks
-        if self.last_elevation > 0 and elevation == 0:
-            self.handle_sunset(current_day, current_hour, grid_id_str, capacity_wh, consumed_w)
-        elif self.last_elevation == 0 and elevation > 0:
-            self.handle_sunrise(current_hour, grid_id_str)
-
-        self.last_elevation = elevation
-
-        # Load shedding at night vs recovery during day
-        if elevation == 0:
-            self.manage_night_loads(current_day, current_hour, grid_id_str, grid_machines, stored_wh, capacity_wh, consumed_w)
+        self._update_phase(grid, elevation, grid_id_str)
+        self._track_day(grid, now, grid_id_str)
+        # Turbines first: running more of them is the answer before shedding any load.
+        try:
+            steam_fraction = now["steam_t"] / now["steam_cap"] if now["steam_cap"] > 0 else None
+            self.turbine_status = self.turbines.step(grid, grid_id_str, steam_fraction)
+        except Exception as error:
+            swallowed("power.PowerGridManager.supervise_grid: self.turbines.step", error)
+        if self.solar_guard is not None:
+            self._adopt_into_shed(grid_machines)
+            self.solar_guard.step(grid, elevation, grid_id_str, grid_machines)
         else:
-            self.manage_day_recovery(grid_id_str, grid_machines, generated_w, consumed_w, stored_wh)
+            self._guard(now, grid_machines, grid_id_str)
 
-        exit_tick = self.clock.tick() if self.clock and hasattr(self.clock, "tick") else 0
-        self.log.trace(f"supervise_grid() exit: '{grid_id_str}', elapsed_ticks={exit_tick - entry_tick}, shedded_count={len(self.shedded_machines)}.")
-        self.log.end()
+    def _adopt_into_shed(self, grid_machines):
+        """Hands adopted ids on this grid to shedded_machines, so the solar guard's
+        restore paths release them (it has no adopted-id pass of its own)."""
+        if not self.adopted_machines:
+            return
+        self.shedded_machines |= {m_id for m_id in self.adopted_machines if m_id in grid_machines}
+        self.adopted_machines = set()

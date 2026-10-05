@@ -26,6 +26,10 @@ from grid_geom import tile_key, tile_xy
 from construction_plan import POWER_TILES_KEY, HOLD_KEY, DECONSTRUCT_KIND, POWER_LINE_KIND
 from construction_plan import clean_power_ledger, empty_power_ledger, power_rows_decode, power_rows_encode, mark_power_dirty
 from construction_plan import swap_power_ledger
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 TILE_M = 10
 MAP_MIN_TILE = -90           # world tile range on both axes (the game's 180 x 180 tile planet)
@@ -68,7 +72,7 @@ def ledger_tiles():
 class Prober:
     """mark_deconstruct probes with immediate cancel; remembers ids it could not cancel."""
 
-    def __init__(self, blueprints):
+    def __init__(self, blueprints: "ConstructionBlueprint"):
         self.blueprints = blueprints
         self.leftover = []
         self.cancelled = 0
@@ -113,7 +117,7 @@ class Prober:
         return self.leftover
 
 
-def run_full(log):
+def run_full(log: "TreeConsole"):
     """
     One-off survey of every map tile into the ledger. Returns "done", "locked"
     (no Constructor research; ledger untouched) or "error" (no construction_blueprint).
@@ -169,7 +173,7 @@ def run_full(log):
     return outcome
 
 
-def reprobe_dirty(log):
+def reprobe_dirty(log: "TreeConsole"):
     """Re-probes the ledger's dirty tiles; returns how many were probed."""
     dirty = [(d[0], d[1]) for d in ledger()["dirty"]]
     if not dirty:

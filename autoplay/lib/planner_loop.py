@@ -46,7 +46,7 @@ def _tick():
         return 0
 
 
-def _phase(log, started, what):
+def _phase(log: "TreeConsole", started, what):
     """Debug line naming a finished pass phase and its sim seconds since `started`; returns the current tick."""
     now = _tick()
     log.debug(f"Pass: {what} ({(now - started) / 10:.1f} s).")
@@ -54,7 +54,7 @@ def _phase(log, started, what):
     return now
 
 
-def _upkeep_ledger(log, survey_locked):
+def _upkeep_ledger(log: "TreeConsole", survey_locked):
     """Ledger upkeep before the power pass; returns True when the full survey is unavailable (locked)."""
     if not survey_locked and power_survey.ledger()["surveyed"] is None:
         survey_locked = power_survey.run_full(log) == "locked"
@@ -62,7 +62,7 @@ def _upkeep_ledger(log, survey_locked):
     return survey_locked
 
 
-def _founding(log, founding, infra_done):
+def _founding(log: "TreeConsole", founding, infra_done):
     """The founding pass; returns its outcome ("error" on failure)."""
     try:
         mark = _tick()

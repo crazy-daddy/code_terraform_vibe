@@ -34,6 +34,6 @@ else:
         print("[RELAY_HACK] No Transmitter found!")
     else:
         transmitter.connect("earth")
-        tx_res = transmitter.transmit(c.id, code)
+        tx_res = transmitter.transmit(c.id, code)  # pyright: ignore[reportArgumentType]  # stub types value as invariant list[JsonValue]
         print("Transmit result:", tx_res.status, "-", tx_res.message)
 

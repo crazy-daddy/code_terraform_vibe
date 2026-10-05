@@ -63,6 +63,10 @@ from autoplay_roles import role_flag, fluids_for, keeps_buffer, STORAGE_BUFFER_T
 from outpost_mining import RAW_ORE_ITEM_IDS
 from extractor_plan import DRILL_KINDS
 from survey_requests import read_known_biomass, read_blocked
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tree_console import TreeConsole
 
 OUTPOST_CLEARANCE_M = 40   # simworker plan.outpostClearanceM
 POI_CLEARANCE_M = 20       # simworker plan.outpostPoiClearanceM
@@ -695,7 +699,7 @@ def rank_sites(bundle, ctx, role_presets, count=REFINE_TOP, want=None):
     return out
 
 
-def log_sites(log, bundle, rows):
+def log_sites(log: "TreeConsole", bundle, rows):
     """Debug trail of one bundle's site search (CODE_GUIDES.md#logging)."""
     if not rows:
         log.debug(f"Sites for {bundle['roles']}: no anchor passes the placement checks.")

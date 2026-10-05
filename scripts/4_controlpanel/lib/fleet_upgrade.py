@@ -2,7 +2,7 @@
 # control-room calculator (automation/control_room_automation.py) every storage tick.
 #
 # Only once the save reaches the mining-drill phase (any mining drill
-# deployed, same condition as scripts/7_miningdrills/.criteria) and while the
+# deployed, same condition as scripts/4_controlpanel/.criteria) and while the
 # drones_panel.py switch is on -- earlier, expanding beats upgrading.
 #
 # Swaps, one at a time fleet-wide, Depots first:
@@ -40,6 +40,7 @@ from drone_commission import DRONE_CHASSIS_TIERS
 from fleet_decommission import decommission_state
 from production import set_upgrade_order, fabricator_unlocked_outputs, UPGRADE_ORDERS_KEY, STANDING_ORDER_REQUESTERS
 from tree_console import TreeConsole
+from components import component
 from swallow import swallowed
 from script_parking import start_script
 from storage import inventory_count
@@ -73,14 +74,6 @@ DEPOT_CANCELLABLE_STATES = ("ordered",)
 DRONE_CANCELLABLE_STATES = ("ordered", "requested", "ready", "announced")
 
 
-def _component(component_id):
-    try:
-        return get_component(component_id)
-    except Exception as error:
-        swallowed("fleet_upgrade._component: get_component", error)
-        return None
-
-
 class FleetUpgradeCoordinator:
     """Host-side state machine for Depot and drone chassis swaps. One instance, reused across cycles."""
 
@@ -96,7 +89,7 @@ class FleetUpgradeCoordinator:
     def _depots(self):
         """[{id, name, type_id, outpost_id}] for every Drone Depot of every size."""
         found = []
-        network = _component("outpost_network")
+        network = component("outpost_network")
         try:
             outposts = network.outposts() if network else []
         except Exception as error:
@@ -120,7 +113,7 @@ class FleetUpgradeCoordinator:
 
     def _drones(self):
         """{drone_id: DroneRef} for every owned drone."""
-        fleet = _component("fleet")
+        fleet = component("fleet")
         try:
             return {getattr(d, "id", ""): d for d in fleet.drones()} if fleet else {}
         except Exception as error:
@@ -128,7 +121,7 @@ class FleetUpgradeCoordinator:
             return {}
 
     def _stop_script(self, machine_id):
-        run = _component("run_control")
+        run = component("run_control")
         try:
             if run and run.is_running(machine_id):
                 run.stop(machine_id)
@@ -158,7 +151,7 @@ class FleetUpgradeCoordinator:
             return "fleet upgrade: waiting for mining drills"
         if not enabled:
             self._cancel_unstarted_swaps()
-        computer = _component("computer")
+        computer = component("computer")
         if not computer or not hasattr(computer, "deploy"):
             self._set_status("no Ship Computer")
             return "fleet upgrade: no Ship Computer"
@@ -278,7 +271,7 @@ class FleetUpgradeCoordinator:
 
     # ------------------------------------------------------------ Depot swap
 
-    def _advance_depot(self, old_id, entry, depots, computer, current_tick):
+    def _advance_depot(self, old_id, entry, depots, computer: "Computer", current_tick):
         self.log.start("[fleet_upgrade] _advance_depot", level="debug")
         state = entry.get("state")
         kit = entry.get("target_kit")
@@ -337,7 +330,7 @@ class FleetUpgradeCoordinator:
             return f"{old_id}: started {new_id}"
 
         if state == "draining":
-            old = _component(old_id)
+            old = component(old_id)
             bays, slots = 0, 0  # already gone: undeploy() then reports not_found, which counts as done
             if old is not None:
                 try:
@@ -402,7 +395,7 @@ class FleetUpgradeCoordinator:
 
     # ------------------------------------------------------------ drone swap
 
-    def _advance_drone(self, old_id, entry, drones, computer, current_tick):
+    def _advance_drone(self, old_id, entry, drones, computer: "Computer", current_tick):
         self.log.start("[fleet_upgrade] _advance_drone", level="debug")
         state = entry.get("state")
         kind = entry.get("target_kind")
@@ -482,14 +475,14 @@ class FleetUpgradeCoordinator:
         self.log.end()
         return f"{old_id}: unknown state {state!r}"
 
-    def _swap_drone(self, old_id, entry, drones, computer):
+    def _swap_drone(self, old_id, entry, drones, computer: "Computer"):
         kind = entry.get("target_kind")
         outpost_id = entry.get("outpost")
         new_id = entry.get("new_id")
 
         if old_id in drones and not new_id:
             ref = drones[old_id]
-            drone = _component(old_id)
+            drone = component(old_id)
             try:
                 cargo = drone.cargo.count() if drone else 0
             except Exception as error:

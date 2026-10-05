@@ -26,6 +26,7 @@
 from storage import discover_storage_buildings, total_stock
 import logistics_requests
 from tree_console import TreeConsole
+from components import water_pump
 from swallow import swallowed
 
 log = TreeConsole(module="pump_salt")
@@ -96,7 +97,7 @@ def pump_positions(curr_tick=None):
 
 def salt_at(pump_id):
     """Units of salt waiting in the pump's pickup output."""
-    pump = get_component(pump_id)
+    pump = water_pump(pump_id)
     port = getattr(pump, "output", None) if pump else None
     if port is None:
         return 0
@@ -117,7 +118,7 @@ def salt_sources(curr_tick=None):
     return out
 
 
-def _free_warehouse_units(outpost):
+def _free_warehouse_units(outpost: "OutpostRef"):
     free = 0
     for building in discover_storage_buildings(outpost):
         component = building["component"]
