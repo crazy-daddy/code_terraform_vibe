@@ -21,3 +21,4 @@ codeterraform-workspace.json
 /devtools/.sync-backups/
 /.pyright-resolved/
 docs/extracted
+/devtools/headless/.cache/
