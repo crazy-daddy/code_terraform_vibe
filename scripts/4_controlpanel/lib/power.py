@@ -38,8 +38,8 @@ from archive import archive
 from patterns import is_wildcard_pattern, filter_wildcard_matches
 from tree_console import TreeConsole
 from components import gas_tank
-import components
 from swallow import swallowed
+import fluid_routing
 from turbine_commit import TurbineCommitment
 from power_solar import SolarNightGuard
 
@@ -125,12 +125,6 @@ def tiers_to_shed(frac, tier_count):
         count += 1
     return count
 
-# Gas Tanks normally appear in grid.members (buildings at a connected outpost
-# are members with an empty roles list). The outpost walk below is only a
-# fallback for when they do not; throttle it, in supervise_grid() calls
-# (~1s each from control_room_automation.py).
-TANK_FALLBACK_SCAN_INTERVAL_CALLS = 60
-
 # Today's running snapshot lives in memory; it is written to the archive on
 # day rollover and every this many supervise_grid() calls (~30s), so a restart
 # loses at most that much of the day's gen/con integral.
@@ -175,40 +169,58 @@ def _notify(text, level="warn", duration=8.0):
         swallowed("power._notify: notify", error)
 
 
-def steam_pool(tank_ids):
-    """(stored_t, capacity_t, tank_count) over the steam Gas Tanks among
-    tank_ids. An unlatched (empty) tank counts only when fluid_routing's
-    tank_assignments reserves it for steam -- a drained steam tank unlatches
-    at 0, and dropping its capacity would hide the loss."""
-    assignments = archive.get("fluid_routing.tank_assignments", {}) or {}
+def _now_tick():
+    try:
+        clock = get_component("clock")
+        return clock.tick() if clock else 0
+    except Exception as error:
+        swallowed("power._now_tick: clock.tick", error)
+        return 0
+
+
+def steam_tanks():
+    """Resolved steam Gas Tanks network-wide (one network per fluid, one grid):
+    fluid_routing's shared network walk filtered by eligible_targets(), so a
+    drained tank that unlatched at 0 still counts while tank_assignments
+    reserves it for steam (dropping its capacity would hide the loss)."""
+    tick = _now_tick()
+    tanks = fluid_routing.eligible_targets(fluid_routing.network_buildings("gas_tank", tick), "steam")
+    if tanks is None:  # a walked tank stopped answering (removed): walk again
+        fluid_routing.invalidate_network_walk("gas_tank")
+        tanks = fluid_routing.eligible_targets(fluid_routing.network_buildings("gas_tank", tick), "steam")
+    return tanks or []
+
+
+def steam_pool(tank_ids=None):
+    """(stored_t, capacity_t, tank_count) over the steam Gas Tanks: steam_tanks()
+    when tank_ids is None, else the steam ones among tank_ids (same rule)."""
+    if tank_ids is None:
+        tanks = steam_tanks()
+    else:
+        tanks = []
+        for tank_id in tank_ids:
+            try:
+                tank = gas_tank(tank_id)
+            except Exception as error:
+                swallowed("power.steam_pool: get_component", error)
+                continue
+            if tank is not None:
+                tanks.append(tank)
+        tanks = fluid_routing.eligible_targets(tanks, "steam") or []
     stored_t = 0.0
     capacity_t = 0.0
-    count = 0
-    for tank_id in tank_ids:
+    for tank in tanks:
         try:
-            tank = gas_tank(tank_id)
-            if tank is None:
-                continue
-            fluid = tank.fluid()
-            if fluid != "steam" and not (fluid == "" and assignments.get(tank_id) == "steam"):
-                continue
             stored_t += tank.level()
             capacity_t += tank.capacity()
-            count += 1
         except Exception as error:
-            swallowed("power.steam_pool: get_component", error)
-    return stored_t, capacity_t, count
+            swallowed("power.steam_pool: tank.level", error)
+    return stored_t, capacity_t, len(tanks)
 
 
-def grid_steam_tank_ids(grid: "PowerGrid"):
-    """Gas Tank ids listed in grid.members (buildings at a connected outpost
-    are members with an empty roles list). PowerGridManager adds a throttled
-    outpost-walk fallback on top of this for grids where they are missing."""
-    return [m.id for m in (getattr(grid, "members", None) or []) if getattr(m, "type_id", "") == "gas_tank"]
-
-
-def measure_grid(grid: "PowerGrid", tank_ids):
-    """Battery + steam snapshot of one grid, the shape reserve_fraction() reads."""
+def measure_grid(grid: "PowerGrid", tank_ids=None):
+    """Battery + steam snapshot of one grid, the shape reserve_fraction() reads.
+    tank_ids None: every steam tank on the network (steam_tanks())."""
     bat_wh = getattr(grid, "stored", 0.0) + getattr(grid, "reserve_stored", 0.0)
     bat_cap = getattr(grid, "capacity", 0.0) + getattr(grid, "reserve_capacity", 0.0)
     steam_t, steam_cap, tanks = steam_pool(tank_ids)
@@ -250,8 +262,6 @@ class PowerGridManager:
         self.grid_anchor = getattr(grid, "anchor_id", None)
         self.shedded_machines = set()
         self.last_sample_hours = None
-        self.fallback_tank_ids = []
-        self.calls_since_tank_scan = TANK_FALLBACK_SCAN_INTERVAL_CALLS
         self.day_state = None
         self.calls_since_persist = 0
         # Runs just enough Steam Turbines and parks the rest (lib/turbine_commit.py).
@@ -272,29 +282,8 @@ class PowerGridManager:
     # ------------------------------------------------------------------
     # Reserve measurement
     # ------------------------------------------------------------------
-    def _steam_tank_ids(self, grid: "PowerGrid"):
-        ids = grid_steam_tank_ids(grid)
-        if ids:
-            return ids
-
-        self.calls_since_tank_scan += 1
-        if self.calls_since_tank_scan >= TANK_FALLBACK_SCAN_INTERVAL_CALLS:
-            self.calls_since_tank_scan = 0
-            outpost_ids = set(getattr(grid, "outpost_ids", None) or [])
-            found = []
-            for outpost_id in outpost_ids:
-                try:
-                    outpost = components.outpost(outpost_id)
-                    for ref in outpost.buildings("gas_tank") if outpost else []:
-                        found.append(ref.id)
-                except Exception as error:
-                    swallowed("power.PowerGridManager._steam_tank_ids: get_component", error)
-            self.fallback_tank_ids = found
-            self.log.debug(f"[POWER] Gas Tanks not in grid members for '{self.grid_anchor}'; outpost walk over {len(outpost_ids)} outpost(s) found {len(found)}.")
-        return self.fallback_tank_ids
-
     def _measure(self, grid: "PowerGrid"):
-        return measure_grid(grid, self._steam_tank_ids(grid))
+        return measure_grid(grid)
 
     # ------------------------------------------------------------------
     # Daily balance

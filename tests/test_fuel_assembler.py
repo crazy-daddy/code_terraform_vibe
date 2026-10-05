@@ -67,11 +67,8 @@ class _Power:
     def __init__(self):
         self.fraction = 1.0
 
-    def measure_grid(self, grid, tank_ids):
+    def measure_grid(self, grid, tank_ids=None):
         return {"bat_wh": self.fraction * 1000.0, "bat_cap": 1000.0, "steam_t": 0.0, "steam_cap": 0.0, "tanks": 0}
-
-    def grid_steam_tank_ids(self, grid):
-        return []
 
     def reserve_fraction(self, now):
         return now["bat_wh"] / now["bat_cap"]

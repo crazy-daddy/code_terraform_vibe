@@ -187,7 +187,7 @@ class SteamCondenserController:
             return None
         if not grid:
             return None
-        now = power.measure_grid(grid, power.grid_steam_tank_ids(grid))
+        now = power.measure_grid(grid)
         if now["steam_cap"] <= 0:
             return None
         self.log.trace(f"[{self.name}] Grid steam pool {now['steam_t']:.0f}/{now['steam_cap']:.0f} t over {now['tanks']} tank(s).")
