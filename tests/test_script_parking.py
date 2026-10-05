@@ -13,10 +13,7 @@ class _FakePower:
     def __init__(self, fraction):
         self.fraction = fraction
 
-    def grid_steam_tank_ids(self, grid):
-        return []
-
-    def measure_grid(self, grid, tank_ids):
+    def measure_grid(self, grid, tank_ids=None):
         return {"bat_wh": self.fraction * 100, "bat_cap": 100, "steam_t": 0, "steam_cap": 0}
 
     def reserve_fraction(self, now):

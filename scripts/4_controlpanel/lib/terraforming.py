@@ -32,11 +32,15 @@ import script_restart
 # the number the Power Guard reads) the heater disconnects steam_in
 # and runs as Mk II; it reconnects at STEAM_POOL_START_FRACTION. A grid with
 # no measurable steam tank leaves the guard open. Water has no guard: water is not a power reserve.
+# The pool is read every STEAM_GUARD_INTERVAL_TICKS, not every feed pass: a
+# heater draws at most 12 t/h of steam, so a late guard costs it ~1 t per
+# 5 game minutes against a pool of thousands of tons.
 
 FLUID_CHECK_INTERVAL_TICKS = 20
 
 STEAM_POOL_STOP_FRACTION = 0.50
 STEAM_POOL_START_FRACTION = 0.70
+STEAM_GUARD_INTERVAL_TICKS = 3000
 
 # FluidInputRouter constants, same values as the Plant Terraformer's water router.
 FLUID_STALL_STREAK_BLACKLIST_THRESHOLD = 5
@@ -126,6 +130,7 @@ class Mk3FluidFeed:
         # Active = guard closed (steam_in released to the turbines); an unreadable pool opens it.
         self.guard = HysteresisLatch(STEAM_POOL_STOP_FRACTION, STEAM_POOL_START_FRACTION, on_above=False)
         self.last_check_tick = None
+        self.last_guard_tick = None
         self.last_degraded = None
         self.restart = UnboundPortRestart(name, fluid_key, MK3_PORT_RESTART_REASON, log)
         self.router = fluid_routing.FluidInputRouter(
@@ -165,8 +170,7 @@ class Mk3FluidFeed:
     def _steam_pool_fraction(self):
         """Banked steam fraction of this machine's grid (0-1), or None when unreadable."""
         measure_grid = getattr(power, "measure_grid", None)
-        steam_tank_ids = getattr(power, "grid_steam_tank_ids", None)
-        if not measure_grid or not steam_tank_ids:
+        if not measure_grid:
             return None
         if not self.power or not hasattr(self.power, "grid"):
             return None
@@ -177,7 +181,7 @@ class Mk3FluidFeed:
             return None
         if not grid:
             return None
-        now = measure_grid(grid, steam_tank_ids(grid))
+        now = measure_grid(grid)
         if now["steam_cap"] <= 0:
             return None
         return now["steam_t"] / now["steam_cap"]
@@ -243,7 +247,9 @@ class Mk3FluidFeed:
         self.restart.present()
 
         if self.steam_guard:
-            self._update_guard(port)
+            if self.last_guard_tick is None or not curr_tick or not 0 <= curr_tick - self.last_guard_tick < STEAM_GUARD_INTERVAL_TICKS:
+                self.last_guard_tick = curr_tick
+                self._update_guard(port)
             if not self.guard_open:
                 self._report_degraded()
                 return

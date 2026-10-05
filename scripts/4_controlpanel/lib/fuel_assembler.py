@@ -226,7 +226,7 @@ class FuelAssemblerController:
         if grid is None or not hasattr(power, "measure_grid"):
             return True, None
         try:
-            now = power.measure_grid(grid, power.grid_steam_tank_ids(grid))
+            now = power.measure_grid(grid)
             fractions = [f for f in (power.reserve_fraction(now), now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None) if f is not None]
         except Exception as error:
             swallowed("fuel_assembler.FuelAssemblerController.reserve_ok: power.measure_grid", error)

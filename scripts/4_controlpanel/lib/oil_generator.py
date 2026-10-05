@@ -278,7 +278,7 @@ class OilGeneratorController:
             self.log.end()
             return 0.0
 
-        now = power.measure_grid(grid, power.grid_steam_tank_ids(grid))
+        now = power.measure_grid(grid)
         reserve = power.reserve_fraction(now)
         battery = now["bat_wh"] / now["bat_cap"] if now["bat_cap"] > 0 else None
         deficit, share, count, oil_w = self.oil_deficit_share(grid)
