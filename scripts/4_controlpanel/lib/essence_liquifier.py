@@ -4,7 +4,7 @@ from archive import archive
 from storage import take_item, warehouse_stock, discover_storage_buildings, best_unload_target
 from biomass_retire import biomass_complete
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole, flush_all, method_block, reset_all
 from swallow import swallowed
 from game_clock import now_tick
 
@@ -135,19 +135,17 @@ class EssenceLiquifierController:
             swallowed("essence_liquifier.EssenceLiquifierController._input_room: self.liquifier.input.capacity", error)
             return 0
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] feed_from_depot")
     def feed_from_depot(self):
         """Pulls native samples from the local Depot(s) into .input while there's at least FEED_MIN_ROOM_UNITS of room."""
-        self.log.start(f"[{self.name}] feed_from_depot", level="debug")
         room = self._input_room()
         if room < FEED_MIN_ROOM_UNITS:
             self.log.trace(f"feed: input room {room} < {FEED_MIN_ROOM_UNITS}; not topping up yet.")
-            self.log.end()
             return
 
         depots = logistics_requests.local_depots(getattr(self.liquifier, "outpost", None))
         if not depots:
             self.log.debug("feed: no Drone Depot at this outpost; nothing to take from.")
-            self.log.end()
             return
 
         input_slot = self.liquifier.input
@@ -202,22 +200,18 @@ class EssenceLiquifierController:
                     self._last_fed = item_id
                     room -= moved
                     if room < FEED_MIN_ROOM_UNITS:
-                        self.log.end()
                         return
                 elif status == "research_required":
                     if not self._warned_research:
                         self._warned_research = True
                         self.log.level("warn").print(f"[{self.name}] Cannot pull samples: {res.message} (Auto Feeders research).")
-                    self.log.end()
                     return
                 elif status == "busy":
                     self.log.debug("feed: input busy with another transfer; retrying next cycle.")
-                    self.log.end()
                     return
                 else:
                     # target_wrong_material / slots_full: bin still holds another species -- expected, try the next.
                     self.log.debug(f"feed: take('{item_id}', {want}) -> {status}: {getattr(res, 'message', '')}")
-        self.log.end()
 
     def feed_from_warehouse(self):
         """

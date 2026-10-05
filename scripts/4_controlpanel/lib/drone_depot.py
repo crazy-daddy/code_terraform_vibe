@@ -155,6 +155,7 @@ class DroneDepotController:
             return None
         return get_component(liquifiers[0].id)
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] wire_output_to_liquifier")
     def wire_output_to_liquifier(self):
         """
         One-time idempotent port wiring: connects this Depot's .output to
@@ -162,17 +163,13 @@ class DroneDepotController:
         (exactly one same-outpost Liquifier). Otherwise logs once and
         leaves it for manual wiring via the Control Panel.
         """
-        self.log.start(f"[{self.name}] wire_output_to_liquifier", level="debug")
         if self._wired or biomass_complete():
-            self.log.end()
             return
         if not hasattr(self.station, "output"):
             self.log.debug("Station has no .output port; skipping wiring check.")
-            self.log.end()
             return
         liquifier = self._find_local_liquifier()
         if liquifier is None:
-            self.log.end()
             return
 
         try:
@@ -180,7 +177,6 @@ class DroneDepotController:
             if connected_to == liquifier.id:
                 self.log.debug(f"Output already wired to '{liquifier.id}'; marking wired without reconnecting.")
                 self._wired = True
-                self.log.end()
                 return
             self.log.debug(f"Output not yet wired (currently connected_to={connected_to!r}); connecting to '{liquifier.id}'.")
             res = self.station.output.connect(liquifier.id)
@@ -191,7 +187,6 @@ class DroneDepotController:
                 self.log.level("warn").print(f"[{self.name}] Output wiring to '{liquifier.id}' notice: {res.status} - {res.message}")
         except Exception as e:
             self.log.level("error").print(f"[{self.name}] Could not wire output to Essence Liquifier: {e}")
-        self.log.end()
 
 
     def stage_life_forms(self):

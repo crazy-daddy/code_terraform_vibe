@@ -5,7 +5,7 @@ from swallow import swallowed
 
 
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 
 if TYPE_CHECKING:
     from vehicle import VehicleController
@@ -87,15 +87,14 @@ class VehicleNavigationMixin:
         self._host.log.end(f"[{self._host.name}] Drive leg {'arrived' if arrived else 'aborted'}")
         return arrived
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] _drive_leg")
     def _drive_leg(self, target_x, target_y, precision, timeout_ticks):
         """Body of drive_to(); returns True on arrival within precision."""
-        self._host.log.start(f"[{self._host.name}] _drive_leg", level="debug")
         entry_tick = self._host.get_current_tick()
         self._host.log.trace(f"drive_to(target=({target_x:.1f}, {target_y:.1f}), precision={precision}, timeout_ticks={timeout_ticks}) called at tick {entry_tick}.")
 
         if not hasattr(self._host.vehicle, "nav"):
             self._host.log.level("error").print(f"[{self._host.name}] Error: No NavModule mounted!")
-            self._host.log.end()
             return False
 
         start_pos = self.get_position()
@@ -126,7 +125,6 @@ class VehicleNavigationMixin:
         if res.status != "ok":
             self._host.log.level("warn").print(f"[{self._host.name}] Nav set_target rejected: {res.status} - {res.message}")
             self._host.log.trace(f"drive_to() -> False (set_target rejected), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-            self._host.log.end()
             return False
 
         t_res = self._host.vehicle.nav.set_throttle(throttle)
@@ -134,7 +132,6 @@ class VehicleNavigationMixin:
             self._host.log.level("warn").print(f"[{self._host.name}] Nav set_throttle rejected: {t_res.status} - {t_res.message}")
             self._host.vehicle.nav.brake()
             self._host.log.trace(f"drive_to() -> False (set_throttle rejected), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-            self._host.log.end()
             return False
 
         ticks = 0
@@ -147,7 +144,6 @@ class VehicleNavigationMixin:
                 self._host.vehicle.nav.brake()
                 self._host.log.level("warn").print(f"[{self._host.name}] Rescue in progress; navigation suspended.")
                 self._host.log.trace(f"drive_to() -> False (rescue in progress), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                self._host.log.end()
                 return False
 
             # Skipped when driving to the station/base itself, same reasoning as the
@@ -157,7 +153,6 @@ class VehicleNavigationMixin:
                 self._host.vehicle.nav.brake()
                 self._host.log.level("warn").print(f"[{self._host.name}] Recall requested mid-trip; aborting to return to base.")
                 self._host.log.trace(f"drive_to() -> False (recalled mid-trip), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                self._host.log.end()
                 return False
 
             curr_pos = self.get_position()
@@ -170,7 +165,6 @@ class VehicleNavigationMixin:
             if dist_remaining <= precision:
                 self._host.vehicle.nav.brake()
                 self._host.log.trace(f"drive_to() -> True (arrived, {dist_remaining:.2f}m <= precision {precision}), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                self._host.log.end()
                 return True
 
             # Skipped when the destination itself is the charging station/base slot
@@ -182,7 +176,6 @@ class VehicleNavigationMixin:
                     self._host.log.level("warn").print(f"[{self._host.name}] Battery threshold reached ({curr_wh:.1f} Wh left, {energy_needed:.1f} Wh required to reach nearest station at {nearest_cs}). Aborting trip!")
                     self._host.vehicle.nav.brake()
                     self._host.log.trace(f"drive_to() -> False (battery abort), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                    self._host.log.end()
                     return False
 
             # Stall detection: if vehicle hasn't moved >0.3m in 8 seconds. This
@@ -202,7 +195,6 @@ class VehicleNavigationMixin:
                         self._host.log.level("warn").print(f"[{self._host.name}] Stall recovery failed {stall_recoveries - 1} times at {curr_pos}; giving up to avoid draining the battery further.")
                         self._host.vehicle.nav.brake()
                         self._host.log.trace(f"drive_to() -> False (stall recovery exhausted), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                        self._host.log.end()
                         return False
                     # Drop to the floor throttle on retry to minimize further drain
                     # while stuck (and sometimes a gentler approach clears the obstacle).
@@ -225,15 +217,14 @@ class VehicleNavigationMixin:
         self._host.log.level("warn").print(f"[{self._host.name}] Navigation timed out after {timeout_ticks} ticks.")
         self._host.vehicle.nav.brake()
         self._host.log.trace(f"drive_to() -> False (timed out after {timeout_ticks} ticks), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-        self._host.log.end()
         return False
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] drive_with_recharge")
     def drive_with_recharge(self, target_x, target_y, precision=1.5, max_stops=5):
         """
         Drives to (target_x, target_y), planning intermediate stops at charging stations
         along the route if the direct trip exceeds available or single-charge battery range.
         """
-        self._host.log.start(f"[{self._host.name}] drive_with_recharge", level="debug")
         entry_tick = self._host.get_current_tick()
         self._host.log.trace(f"drive_with_recharge(target=({target_x:.1f}, {target_y:.1f}), precision={precision}, max_stops={max_stops}) called at tick {entry_tick}.")
         stops = 0
@@ -244,7 +235,6 @@ class VehicleNavigationMixin:
 
             if dist_to_target <= precision:
                 self._host.log.trace(f"drive_with_recharge() -> True (already within precision, {stops} stops made), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                self._host.log.end()
                 return True
 
             curr_wh, cap_wh, _ = self._host.get_battery()
@@ -257,7 +247,6 @@ class VehicleNavigationMixin:
             if curr_wh >= total_required:
                 reached = self.drive_to(target_x, target_y, precision=precision)
                 self._host.log.trace(f"drive_with_recharge() -> {reached} (direct leg, {stops} stops made), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                self._host.log.end()
                 return reached
 
             # Find an intermediate charging station closer to target that we can currently reach
@@ -296,7 +285,6 @@ class VehicleNavigationMixin:
                 if not reached:
                     self._host.log.level("warn").print(f"[{self._host.name}] Failed to reach intermediate station '{st_id}'.")
                     self._host.log.trace(f"drive_with_recharge() -> False (failed to reach intermediate station), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                    self._host.log.end()
                     return False
                 self._host.recharge_at_station(target_level=1.0, station_coords=st_coords, station_id=best_station.get("id"))
                 stops += 1
@@ -314,14 +302,10 @@ class VehicleNavigationMixin:
                         continue
 
                 self._host.log.trace(f"drive_with_recharge() -> falling through to direct drive_to() (no station option available, {stops} stops made), elapsed {self._host.get_current_tick() - entry_tick} ticks.")
-                _ret = self.drive_to(target_x, target_y, precision=precision)
-                self._host.log.end()
-                return _ret
+                return self.drive_to(target_x, target_y, precision=precision)
 
         self._host.log.debug(f"reached max_stops={max_stops}, attempting final direct drive_to() regardless of remaining budget.")
-        _ret = self.drive_to(target_x, target_y, precision=precision)
-        self._host.log.end()
-        return _ret
+        return self.drive_to(target_x, target_y, precision=precision)
 
     def return_to_base(self):
         """Safely drives back to the vehicle's assigned base staging slot, using intermediate charging if needed."""

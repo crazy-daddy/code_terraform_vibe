@@ -27,7 +27,7 @@ from archive import archive
 from pioneer_upgrade import SONAR_TIERS, DRILL_TIERS, BATTERY_HOLDER_TIERS, CARGO_RACK_TIERS, PORTABLE_BATTERY_TIERS, PORTABLE_BIN_TIERS, _BAY_COUNTS
 from swallow import swallowed
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 from storage import inventory_count
 
 if TYPE_CHECKING:
@@ -187,9 +187,9 @@ class PioneerFittingMixin:
             sleep(FIT_POLL_S)
         return check()
 
+    @method_block("_fit_pass")
     def _fit_pass(self, spec):
         """One pass over the loadout. Returns (result, missing): result "done" or a short reason."""
-        self._host.log.start("_fit_pass", level="debug")
         name = self._host.name
         vehicle = self._host.vehicle
         missing = {}
@@ -212,19 +212,16 @@ class PioneerFittingMixin:
             free = next((s.index for s in self._slots() if not s.module_id), None)
             if free is None:
                 self._host.log.level("warn").print(f"[{name}] No free slot for '{item}'; loadout {spec.get('modules')} does not fit.")
-                self._host.log.end()
                 return "no free slot", missing
             res = vehicle.mount(free, item)
             self._host.log.debug(f"[{name}] mount({free}, '{item}') -> {res.status}")
             if res.status == "not_at_service_point":
-                self._host.log.end()
                 return "not at a service point", missing
             if res.status == "capability_already_mounted":
                 mounted[item] = mounted.get(item, 0) + 1  # e.g. a nav already there
                 continue
             if res.status != "ok":
                 self._host.log.level("warn").print(f"[{name}] mount({free}, '{item}') refused: {res.status} - {res.message}")
-                self._host.log.end()
                 return f"mount {item}: {res.status}", missing
             self._wait_for(lambda: any(s.index == free and s.module_id == item for s in self._slots()))
             mounted[item] = mounted.get(item, 0) + 1
@@ -247,16 +244,12 @@ class PioneerFittingMixin:
                 res = vehicle.install(index, bay, fill)
                 self._host.log.debug(f"[{name}] install({index}, {bay}, '{fill}') -> {res.status}")
                 if res.status == "not_at_service_point":
-                    self._host.log.end()
                     return "not at a service point", missing
                 if res.status != "ok":
                     self._host.log.level("warn").print(f"[{name}] install({index}, {bay}, '{fill}') refused: {res.status} - {res.message}")
-                    self._host.log.end()
                     return f"install {fill}: {res.status}", missing
                 self._wait_for(lambda: any(s.index == index and len(s.internal_items or []) > bay and s.internal_items[bay] is not None for s in self._slots()))
 
         if missing:
-            self._host.log.end()
             return "waiting for parts", missing
-        self._host.log.end()
         return "done", missing

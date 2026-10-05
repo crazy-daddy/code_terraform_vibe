@@ -29,7 +29,7 @@
 # Warehouses have no script slot of their own.
 
 from building_swap_upgrade import BuildingSwapUpgrader, TRANSIENT_UNDEPLOY_STATUSES
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 from swallow import swallowed
 import cash
 
@@ -131,9 +131,9 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
         self.log.end(f"[warehouse_upgrade] '{old_id}': {moved[0]} unit(s) moved this pass")
         return result
 
+    @method_block("[warehouse_upgrade] _drain_loop")
     def _drain_loop(self, old_id, new_id, outpost_id, computer: "Computer", moved):
         """Drain loop of _drain_and_remove(); moved[0] accumulates the units moved."""
-        self.log.start("[warehouse_upgrade] _drain_loop", level="debug")
         idle_passes = 0
         while True:
             old = self._component(old_id)
@@ -151,20 +151,16 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
                     self._mark_removed(old_id, res.status)
                     self._sell_kits()
                     self.log.print(f"[warehouse_upgrade] '{old_id}' empty ({moved[0]} unit(s) moved) and undeployed.")
-                    self.log.end()
                     return None
                 self.log.debug(f"undeploy('{old_id}'): {res.status} - {res.message}")
                 if res.status in TRANSIENT_UNDEPLOY_STATUSES:
-                    self.log.end()
                     return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
                 if res.status == "cargo_present":
                     idle_passes += 1
                     if idle_passes < DRAIN_MAX_IDLE_PASSES:
                         self.log.debug(f"'{old_id}': something slipped in before undeploy; draining again.")
                         continue
-                _ret = self._refused(f"undeploy('{old_id}')", res, outpost_id)
-                self.log.end()
-                return _ret
+                return self._refused(f"undeploy('{old_id}')", res, outpost_id)
 
             moved_pass = 0
             for stack in stacks:
@@ -177,11 +173,9 @@ class WarehouseUpgrader(BuildingSwapUpgrader):
             if idle_passes >= DRAIN_MAX_IDLE_PASSES:
                 left = self._total(old_id)
                 self.log.level("warn").print(f"[warehouse_upgrade] '{old_id}': {left} unit(s) left and nowhere to move them; retrying later.")
-                self.log.end()
                 return f"{old_id}: stuck with {left} unit(s)"
             flush_all()
             sleep(BUSY_RETRY_S)
-        self.log.end()
 
     def _move_stack(self, old, old_id, new_id, outpost_id, stack):
         """Moves one stack out of old in DRAIN_CHUNK_UNITS calls. Returns units moved."""

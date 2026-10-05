@@ -16,7 +16,7 @@ from swallow import swallowed
 import construction_plan
 import logistics_requests
 from atomic import run_batched
-from tree_console import flush_all, reset_all
+from tree_console import flush_all, method_block, reset_all
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -209,13 +209,12 @@ class PioneerConstructionMixin:
         self._host.log.end(f"[{self._host.name}] Build '{blueprint_id}' {outcome}")
         return ok
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] _execute_construction")
     def _execute_construction(self, blueprint_id, coords, kind):
         """Body of execute_construction()."""
-        self._host.log.start(f"[{self._host.name}] _execute_construction", level="debug")
         self._host.log.trace(f"execute_construction() enter: blueprint_id={blueprint_id!r}, coords={coords}")
         if not hasattr(self._host.vehicle, "constructor"):
             self._host.log.level("error").print(f"[{self._host.name}] Error: No ConstructorModule mounted on this Pioneer!")
-            self._host.log.end()
             return False
 
         self._host.set_intent(fleet_intent.describe("building", [kind or "blueprint"], at=f"{coords[0]:.0f},{coords[1]:.0f}" if coords else None))
@@ -224,7 +223,6 @@ class PioneerConstructionMixin:
             if not self._host.drive_with_recharge(coords[0], coords[1], precision=2.0):
                 self._host.log.level("warn").print(f"[{self._host.name}] Could not reach construction site at {coords} safely.")
                 self._host.log.trace("execute_construction() exit: could not reach site")
-                self._host.log.end()
                 return False
 
         if hasattr(self._host.vehicle, "nav"):
@@ -259,17 +257,14 @@ class PioneerConstructionMixin:
                 except Exception as error:
                     swallowed("pioneer_construction.PioneerConstructionMixin._execute_construction: note_finished_power_job", error)
                 self._host.log.trace(f"execute_construction() exit: blueprint '{blueprint_id}' complete")
-                self._host.log.end()
                 return True
             if res.status not in ("paused_no_power", "paused"):
                 self._host.log.trace(f"execute_construction() exit: genuine rejection ({res.status})")
-                self._host.log.end()
                 return False  # genuine rejection, not a power issue -- don't keep retrying
 
             if progress_after <= progress_before:
                 self._host.log.level("warn").print(f"[{self._host.name}] No progress made this cycle ({res.status}); leaving paused for a later attempt.")
                 self._host.log.trace("execute_construction() exit: no progress made, leaving paused")
-                self._host.log.end()
                 return True
 
             self._host.log.print(f"[{self._host.name}] Construction paused ({res.status}) at {progress_after*100:.0f}% progress. Recharging nearby and resuming.")
@@ -277,20 +272,17 @@ class PioneerConstructionMixin:
             if not self._host.drive_to(nearest_cs[0], nearest_cs[1], precision=1.0):
                 self._host.log.level("warn").print(f"[{self._host.name}] Could not reach charging station to resume construction; leaving paused for a later attempt.")
                 self._host.log.trace("execute_construction() exit: could not reach charging station")
-                self._host.log.end()
                 return True
             self._host.recharge_at_station(target_level=1.0, station_coords=nearest_cs)
             if coords and not self._host.drive_with_recharge(coords[0], coords[1], precision=2.0):
                 self._host.log.level("warn").print(f"[{self._host.name}] Could not return to construction site after recharge; leaving paused for a later attempt.")
                 self._host.log.trace("execute_construction() exit: could not return to site after recharge")
-                self._host.log.end()
                 return True
             if hasattr(self._host.vehicle, "nav"):
                 try:
                     self._host.vehicle.nav.brake()
                 except Exception as exc:
                     swallowed("pioneer_construction.PioneerConstructionMixin.execute_construction: self._host.vehicle.nav.brake #2", exc)
-        self._host.log.end()
 
     def cargo_count(self, item_id):
         """Units of item_id currently sitting in the Pioneer's cargo, across all stacks."""

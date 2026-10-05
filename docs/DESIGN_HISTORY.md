@@ -738,4 +738,5 @@ author's console that TreeConsole grew from.
 - **Not taken**: per-indent colors (one `log.color()` call in the codebase) and `pretty_format` dumps
   (CODE_GUIDES prefers aggregates; dumps fight the buffer cap).
 - **Unverified in game at the time of writing**: no `lib/` used a custom decorator, `functools.wraps` or
-  `__name__` live before. `drone_depot.flush_surplus` is the pilot: it runs in the current save on every Drone Depot.
+  `__name__` live before. `drone_depot.flush_surplus` was the pilot: it ran every tick on all 7 Drone Depots of the main save without errors, so the
+  same day it was rolled out to the 21 methods whose debug block had 5+ bare `end()` exits (208 lines removed).

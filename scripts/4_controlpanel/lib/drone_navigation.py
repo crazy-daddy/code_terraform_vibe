@@ -11,7 +11,7 @@ from swallow import swallowed
 # mid-leg) without reusing any of its NavModule-specific implementation.
 
 from typing import TYPE_CHECKING
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 from script_parking import wake_for_visit
 
 if TYPE_CHECKING:
@@ -149,14 +149,13 @@ class DroneNavigationMixin:
         self._host.log.end(f"[{self._host.name}] Flight to ({target_x:.1f}, {target_y:.1f}): {outcome}")
         return arrived
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] _fly_leg")
     def _fly_leg(self, target_x, target_y, target_coords, precision, throttle, timeout_ticks, is_flying_to_service):
         """Issues go_to() and polls until arrival. Returns (arrived, outcome text)."""
-        self._host.log.start(f"[{self._host.name}] _fly_leg", level="debug")
         res = self._host.drone.go_to(target_x, target_y)
         if res.status != "ok":
             self._log_route_rejection(f"go_to({target_x:.1f}, {target_y:.1f})", res)
             self._host.log.trace(f"fly_to() exit: go_to() rejected ({res.status}).")
-            self._host.log.end()
             return False, f"go_to rejected ({res.status})"
         # go_to() only sets the route -- throttle is a separate axis that
         # resets to 0 on the prior stop/completion/error, so it must be
@@ -172,9 +171,7 @@ class DroneNavigationMixin:
             if self.is_stranded():
                 self._host.log.level("warn").print(f"[{self._host.name}] Drone {self.status()} mid-flight; awaiting drone_service rescue.")
                 self._host.log.trace(f"fly_to() exit: stranded ({self.status()}) after {ticks} ticks.")
-                _ret = False, f"stranded ({self.status()})"
-                self._host.log.end()
-                return _ret
+                return False, f"stranded ({self.status()})"
 
             if self._host.current_target_key:
                 self._host.refresh_biosite_claim(self._host.current_target_key)
@@ -187,7 +184,6 @@ class DroneNavigationMixin:
             if self.is_at(target_coords, precision=precision):
                 if self.status() != "traveling":
                     self._host.log.trace(f"fly_to() exit: arrived after {ticks} ticks.")
-                    self._host.log.end()
                     return True, f"arrived after {ticks} ticks"
                 self._host.log.debug(f"fly_to() within {precision}m of target but route still 'traveling'; waiting for hover.")
                 continue
@@ -206,14 +202,13 @@ class DroneNavigationMixin:
                 if curr_wh <= energy_needed:
                     self._host.log.level("warn").print(f"[{self._host.name}] Battery threshold reached ({curr_wh:.1f} {self._host.energy_unit()} left, {energy_needed:.1f} {self._host.energy_unit()} required to reach nearest drone_service). Aborting flight.")
                     self._host.log.trace(f"fly_to() exit: aborted on low battery after {ticks} ticks.")
-                    self._host.log.end()
                     return False, "aborted on low battery"
 
         self._host.log.level("warn").print(f"[{self._host.name}] Flight to ({target_x:.1f}, {target_y:.1f}) timed out after {timeout_ticks} ticks.")
         self._host.log.trace(f"fly_to() exit: timed out after {ticks} ticks.")
-        self._host.log.end()
         return False, "timed out"
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] fly_to_station")
     def fly_to_station(self, name, target_coords=None, timeout_ticks=None):
         """
         Flies to a named Drone Depot/Drone Service Station via
@@ -228,16 +223,13 @@ class DroneNavigationMixin:
         same reserve check as any other fly_to(). Falls back to the plain
         cruise_throttle baseline when coords aren't known.
         """
-        self._host.log.start(f"[{self._host.name}] fly_to_station", level="debug")
         if not name:
-            self._host.log.end()
             return False
         self._host.log.trace(f"fly_to_station('{name}') entry.")
         if self.current_station() == name:
             # Already there: skip the route call -- every go_to*() costs a
             # minimal burn even for a 0 m leg (observed live on heli).
             self._host.log.trace(f"fly_to_station('{name}') exit: already there.")
-            self._host.log.end()
             return True
         # A parked Depot / Drone Service Station (lib/script_parking.py) is switched
         # back on before we fly there; the hold is renewed on long flights below.
@@ -246,7 +238,6 @@ class DroneNavigationMixin:
         if res.status != "ok":
             self._log_route_rejection(f"go_to_station('{name}')", res)
             self._host.log.trace(f"fly_to_station('{name}') exit: rejected ({res.status}).")
-            self._host.log.end()
             return False
         if target_coords is not None:
             throttle = self._host.select_cruise_throttle(target_coords)
@@ -265,11 +256,9 @@ class DroneNavigationMixin:
             ticks += 10
             if self.is_stranded():
                 self._host.log.trace(f"fly_to_station('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
-                self._host.log.end()
                 return False
             if self.current_station():
                 self._host.log.trace(f"fly_to_station('{name}') exit: docked after {ticks} ticks.")
-                self._host.log.end()
                 return True
             if self.status() == "waiting_bay":
                 # Arrived but the bay is taken. Hand back to the caller
@@ -277,7 +266,6 @@ class DroneNavigationMixin:
                 # get_home_depot() can pick a free sibling depot on retry
                 # (same coords, local transfer, no flight cost).
                 self._host.log.trace(f"fly_to_station('{name}') exit: waiting_bay after {ticks} ticks.")
-                self._host.log.end()
                 return False
             if ticks % VISIT_HOLD_RENEW_TICKS == 0:
                 wake_for_visit(name, f"{self._host.name} on its way")
@@ -286,7 +274,6 @@ class DroneNavigationMixin:
 
         self._host.log.level("warn").print(f"[{self._host.name}] go_to_station('{name}') timed out after {timeout_ticks} ticks.")
         self._host.log.trace(f"fly_to_station('{name}') exit: timed out after {ticks} ticks.")
-        self._host.log.end()
         return False
 
     def leave_station(self):
@@ -333,28 +320,25 @@ class DroneNavigationMixin:
         self.leave_station()
         self._host.publish_telemetry(state, target_desc)
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] fly_to_drill")
     def fly_to_drill(self, name, target_coords=None, timeout_ticks=None):
         """
         Flies to a named field Mining Drill via go_to_drill() (the hauler
         role's pickup leg, lib/drone_hauler.py). Same
         target_coords/select_cruise_throttle() contract as fly_to_station().
         """
-        self._host.log.start(f"[{self._host.name}] fly_to_drill", level="debug")
         if not name:
-            self._host.log.end()
             return False
         self._host.log.trace(f"fly_to_drill('{name}') entry.")
         if self.current_drill() == name:
             # Already there: skip the route call -- every go_to*() costs a
             # minimal burn even for a 0 m leg (observed live on heli).
             self._host.log.trace(f"fly_to_drill('{name}') exit: already there.")
-            self._host.log.end()
             return True
         res = self._host.drone.go_to_drill(name)
         if res.status != "ok":
             self._log_route_rejection(f"go_to_drill('{name}')", res)
             self._host.log.trace(f"fly_to_drill('{name}') exit: rejected ({res.status}).")
-            self._host.log.end()
             return False
         if target_coords is not None:
             throttle = self._host.select_cruise_throttle(target_coords)
@@ -373,16 +357,13 @@ class DroneNavigationMixin:
             ticks += 10
             if self.is_stranded():
                 self._host.log.trace(f"fly_to_drill('{name}') exit: stranded ({self.status()}) after {ticks} ticks.")
-                self._host.log.end()
                 return False
             if self.current_drill():
                 self._host.log.trace(f"fly_to_drill('{name}') exit: arrived after {ticks} ticks.")
-                self._host.log.end()
                 return True
             if ticks % 100 == 0:
                 self._host.log.debug(f"fly_to_drill('{name}') arrival-poll retry: still not arrived after {ticks}/{timeout_ticks} ticks.")
 
         self._host.log.level("warn").print(f"[{self._host.name}] go_to_drill('{name}') timed out after {timeout_ticks} ticks.")
         self._host.log.trace(f"fly_to_drill('{name}') exit: timed out after {ticks} ticks.")
-        self._host.log.end()
         return False

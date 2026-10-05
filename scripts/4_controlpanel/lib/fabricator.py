@@ -3,7 +3,7 @@ from production import get_site_fabricator_targets, get_fabricator_active_recipe
 from archive import archive
 from storage import take_item, best_unload_target, drain_port_to_storage, drain_port_storage_first, push_to_targets, local_port_target, outpost_is_home
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole, flush_all, method_block, reset_all
 from swallow import swallowed
 from script_parking import ParkRequester, parked_ids, wake_for_visit
 import fluid_routing
@@ -299,10 +299,10 @@ class FabricatorController(RecipeClaimMixin):
         _, order = find_dock_order_requiring(item_id)
         return not order
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] choose_recipe")
     def choose_recipe(self, cache: "SourceCache | None" = None):
         # One snapshot for the whole pass (step() shares its own): targets, stock,
         # pipeline and the sourceability checks below all read it.
-        self.log.start(f"[{self.name}] choose_recipe", level="debug")
         cache = SourceCache() if cache is None else cache
         site_id = claim_site_id(self.machine)
         outpost = self.outpost()
@@ -318,7 +318,6 @@ class FabricatorController(RecipeClaimMixin):
             recipes = self.machine.list_recipes()
         except Exception as error:
             swallowed("fabricator.FabricatorController.choose_recipe: self.machine.list_recipes", error)
-            self.log.end()
             return None
 
         fabricator_outputs = {getattr(r, "output_item", None) for r in recipes} - {None}
@@ -425,13 +424,11 @@ class FabricatorController(RecipeClaimMixin):
             sticky = current is not None and recipe is not current and _priority_tier(current) == _priority_tier(recipe)
             if sticky and self.recipe_unsourceable_reason(current, cache) is None and self.fluid_low_reason(current) is None and self.claim_recipe(current_id):
                 self.log.debug(f"keeping '{current_id}' over '{recipe_id}' (same tier, still short)")
-                self.log.end()
                 return current
             if self.claim_recipe(recipe_id):
                 output_item = getattr(recipe, "output_item", None)
                 tier_reason = ("blocking a manual order's own input", "manual order", "blueprint demand", "fleet upgrade order", "biggest sourceable shortfall", "backlog order")[_priority_tier(recipe)]
                 self.log.debug(f"claimed '{recipe_id}' (missing={missing}, {tier_reason})")
-                self.log.end()
                 return recipe
             # another Fabricator already has a fresh claim on this one -- try
             # the next candidate first, rather than piling on immediately;
@@ -462,10 +459,8 @@ class FabricatorController(RecipeClaimMixin):
                 self.log.debug(f"not joining '{recipe_id}' -- {crafts_needed} craft(s) left, {workers} Fabricator(s) already on it")
                 continue
             self.log.print(f"[{self.name}] Joining '{recipe_id}' alongside {workers} other Fabricator(s) ({crafts_needed} crafts left, no unclaimed demanded recipe to work instead).")
-            self.log.end()
             return recipe
         self.log.debug("no candidates at all (target-met, unreachable, or empty demand) -- returning None")
-        self.log.end()
         return None
 
     def drain_output(self):

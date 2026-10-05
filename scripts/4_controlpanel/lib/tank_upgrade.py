@@ -34,6 +34,7 @@ from swallow import call_or
 from wildlife_common import wildlife_complete
 from wildlife_data import EXOTIC_FLUIDS
 import cash
+from tree_console import method_block
 
 SMALL_TYPE_ID = "liquid_tank"
 SWAP_RATIO = 5                            # at most this many Liquid Tanks per Large Liquid Tank
@@ -152,14 +153,13 @@ class TankUpgrader(BuildingSwapUpgrader):
         self.log.print(f"[tank_upgrade] Swap done at '{outpost_id}': {swap.get('old_ids')} -> '{new_id}' ({liquid}).")
         return f"{outpost_id}: {swap.get('old_ids')} -> {new_id} done"
 
+    @method_block("[tank_upgrade] _drain_one")
     def _drain_one(self, old_id, new_id, outpost_id, computer: "Computer"):
         """One check on one old tank: keep new.liquid_in pulling from it, or remove it once empty."""
-        self.log.start("[tank_upgrade] _drain_one", level="debug")
         old = self._component(old_id)
         new = self._component(new_id)
         port = getattr(new, "liquid_in", None) if new is not None else None
         if port is None:
-            self.log.end()
             return f"{outpost_id}: '{new_id}' not found"
         connected = call_or("tank_upgrade._drain_one", port, "connected_id", "")
 
@@ -169,22 +169,17 @@ class TankUpgrader(BuildingSwapUpgrader):
             if connected != old_id:
                 res = port.connect(old_id)
                 if res.status != "ok":
-                    _ret = self._refused(f"'{new_id}'.liquid_in.connect('{old_id}')", res, outpost_id)
-                    self.log.end()
-                    return _ret
+                    return self._refused(f"'{new_id}'.liquid_in.connect('{old_id}')", res, outpost_id)
                 self.log.debug(f"'{new_id}'.liquid_in -> '{old_id}' ({level:.0f} t left).")
             link = declared_connection_state(port)
             if link in BROKEN_CONNECTION_STATES:
                 self.log.debug(f"'{new_id}' <- '{old_id}' link state '{link}'.")
-                _ret = self._refused(f"link '{new_id}' <- '{old_id}'", None, outpost_id, reason=f"link_{link}")
-                self.log.end()
-                return _ret
+                return self._refused(f"link '{new_id}' <- '{old_id}'", None, outpost_id, reason=f"link_{link}")
             if int((self._swap() or {}).get("attempts") or 0):
                 self._patch(attempts=0)
             new_full = call_or("tank_upgrade._drain_one", new, "is_full", False)
             self.log.debug(f"'{old_id}': {level:.1f} t, inflow {inflow:.0f} t/h, link '{link}', '{new_id}' full={new_full}.")
             note = " (new tank full)" if new_full else (f" (still fed {inflow:.0f} t/h)" if inflow > 0 else "")
-            self.log.end()
             return f"{old_id}: draining, {level:.0f} t left{note}"
 
         if connected == old_id:
@@ -195,15 +190,10 @@ class TankUpgrader(BuildingSwapUpgrader):
             self._write_assignments({old_id: None})
             self._sell_kits()
             self.log.print(f"[tank_upgrade] '{old_id}' empty and undeployed.")
-            self.log.end()
             return f"{old_id}: removed"
         self.log.debug(f"undeploy('{old_id}'): {res.status} - {res.message}")
         if res.status in TRANSIENT_UNDEPLOY_STATUSES:
-            self.log.end()
             return f"{old_id}: empty, waiting for Inventory room to take its kit back ({res.status})"
         if res.status == "cargo_present":
-            self.log.end()
             return f"{old_id}: liquid slipped in before undeploy, draining again"
-        _ret = self._refused(f"undeploy('{old_id}')", res, outpost_id)
-        self.log.end()
-        return _ret
+        return self._refused(f"undeploy('{old_id}')", res, outpost_id)

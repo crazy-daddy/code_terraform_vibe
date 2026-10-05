@@ -4,7 +4,7 @@
 # bio_processor.py's BioProcessorController.
 from bio import get_my_biome, is_order_incomplete, is_local_order
 from bio_processor import BioProcessorController, STACK_RAW, STACK_FINISHED
-from tree_console import flush_all
+from tree_console import flush_all, method_block
 
 
 class BioLuminizerController(BioProcessorController):
@@ -96,39 +96,34 @@ class BioLuminizerController(BioProcessorController):
         outcome = self._solve_lamps(target)
         self.log.end(f"[{self.name}] Tint {outcome}")
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] _solve_lamps")
     def _solve_lamps(self, target):
         """Runs the lamp-mix solve; returns a short outcome string for the enclosing log block."""
-        self.log.start(f"[{self.name}] _solve_lamps", level="debug")
         self.log.trace(f"_solve_and_apply: entry, target={target}")
         matrix = self._lamp_matrix_cols()
         if not matrix:
             self.log.level("warn").print(f"[{self.name}] Lamp signature unavailable this cycle.")
-            self.log.end()
             return "skipped (lamp signature unavailable)"
 
         zero_res = self.machine.set_lamps(0, 0, 0)
         if zero_res.status != "ok":
             self.log.debug(f"set_lamps(0,0,0) -> {zero_res.status}: {getattr(zero_res, 'message', '')} -- aborting solve this cycle.")
-            self.log.end()
             return "aborted (lamps would not zero)"
         base = self.machine.glow()
         if base is None:
             self.log.debug("glow() returned None after zeroing lamps -- aborting solve this cycle.")
-            self.log.end()
             return "aborted (no glow reading)"
 
         delta = [target[i] - base[i] for i in range(3)]
         solved = _solve_3x3(matrix, delta)
         if solved is None:
             self.log.level("warn").print(f"[{self.name}] Could not solve lamp mix for target {target} (singular lamp matrix).")
-            self.log.end()
             return "failed (singular lamp matrix)"
 
         r, g, b = (max(0, min(40, round(v))) for v in solved)
         self.log.debug(f"Solved lamp mix base={base} delta={delta} -> raw_solve={solved}, rounded/clamped=({r},{g},{b}).")
         if self._try_lamps(r, g, b, target):
             self.log.trace(f"_solve_and_apply: exit, exact solve matched on first try ({r},{g},{b}).")
-            self.log.end()
             return f"matched exactly at lamps ({r},{g},{b})"
 
         # Bounded local search over the +/-1-per-channel neighborhood for rounding
@@ -142,12 +137,10 @@ class BioLuminizerController(BioProcessorController):
                         continue
                     if self._try_lamps(r + dr, g + dg, b + db, target):
                         self.log.trace(f"_solve_and_apply: exit, neighborhood search matched ({r+dr},{g+dg},{b+db}).")
-                        self.log.end()
                         return f"matched in neighborhood at lamps ({r+dr},{g+dg},{b+db})"
 
         self.log.level("warn").print(f"[{self.name}] WARNING: no exact lamp match found near ({r},{g},{b}) for target {target}.")
         self.log.trace("_solve_and_apply: exit, no match found.")
-        self.log.end()
         return "failed (no exact lamp match)"
 
     def step(self):

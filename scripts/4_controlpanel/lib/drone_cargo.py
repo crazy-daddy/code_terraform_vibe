@@ -10,6 +10,7 @@ from swallow import swallowed
 
 
 from typing import TYPE_CHECKING
+from tree_console import method_block
 
 if TYPE_CHECKING:
     from drone import DroneController
@@ -63,6 +64,7 @@ class DroneCargoMixin:
             swallowed("drone_cargo.DroneCargoMixin.space_for: self._host.drone.cargo.space_for", error)
             return 0
 
+    @method_block(lambda self, *_, **__: f"[{self._host.name}] is_home_biome_sample")
     def is_home_biome_sample(self, life_form_item_id):
         """
         True when life_form_item_id's native biome (nocturna.life_form_biome())
@@ -74,27 +76,21 @@ class DroneCargoMixin:
         lib/drone_mining.py); cross-outpost ferrying of foreign samples is a
         deferred TODO.
         """
-        self._host.log.start(f"[{self._host.name}] is_home_biome_sample", level="debug")
         if not life_form_item_id or not self._host.home_biome:
             self._host.log.trace(f"missing item_id ({life_form_item_id!r}) or home_biome ({self._host.home_biome!r}); rejecting.")
-            self._host.log.end()
             return False
         nocturna = get_component("nocturna")
         if not nocturna:
             self._host.log.trace(f"'nocturna' component unavailable; rejecting '{life_form_item_id}'.")
-            self._host.log.end()
             return False
         try:
             native_biome = nocturna.life_form_biome(life_form_item_id)
             accepted = native_biome == self._host.home_biome
             self._host.log.trace(f"'{life_form_item_id}' native biome '{native_biome}' vs home_biome '{self._host.home_biome}' -> {'accepted' if accepted else 'rejected'}.")
-            self._host.log.end()
             return accepted
         except Exception:
             self._host.log.trace(f"life_form_biome() lookup failed for '{life_form_item_id}'; rejecting.")
-            self._host.log.end()
             return False
-        self._host.log.end()
 
     def unload_cargo_at_depot(self):
         """

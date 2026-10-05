@@ -1,7 +1,7 @@
 import fluid_routing
 from archive import archive
 from version_guard import validate_game_version
-from tree_console import TreeConsole, flush_all, reset_all
+from tree_console import TreeConsole, flush_all, method_block, reset_all
 from swallow import swallowed
 from game_clock import now_tick
 
@@ -155,8 +155,8 @@ class SteamTurbineController:
         tick = beats.get(getattr(grid, "anchor_id", None)) if isinstance(beats, dict) else None
         return isinstance(tick, (int, float)) and 0 <= self.get_current_tick() - tick < COMMIT_FRESH_TICKS
 
+    @method_block(lambda self, *_, **__: f"[{self.name}] choose_throttle")
     def choose_throttle(self):
-        self.log.start(f"[{self.name}] choose_throttle", level="debug")
         fraction = self.buffer_fraction()
 
         # A thin buffer always wins -- running flat out against a near-empty
@@ -164,11 +164,9 @@ class SteamTurbineController:
         # or grid demand.
         if fraction < STEAM_BUFFER_LOW_FRACTION:
             self.log.debug(f"Buffer {fraction*100:.0f}% < low threshold {STEAM_BUFFER_LOW_FRACTION*100:.0f}%; easing to {THROTTLE_LOW_BUFFER} to avoid a dry stall.")
-            self.log.end()
             return THROTTLE_LOW_BUFFER
         if fraction < STEAM_BUFFER_HEALTHY_FRACTION:
             self.log.debug(f"Buffer {fraction*100:.0f}% below healthy threshold {STEAM_BUFFER_HEALTHY_FRACTION*100:.0f}%; moderate throttle {THROTTLE_MARGINAL_BUFFER} while rebuilding.")
-            self.log.end()
             return THROTTLE_MARGINAL_BUFFER
 
         # Buffer is healthy: steam is the only generator at night, so run flat
@@ -176,7 +174,6 @@ class SteamTurbineController:
         if self.is_night():
             self._eased = False
             self.log.debug(f"Buffer healthy ({fraction*100:.0f}%) and night -- full throttle 1.0 (only generation source overnight).")
-            self.log.end()
             return 1.0
 
         # Daytime with a healthy buffer: ease off once the battery is full and
@@ -186,7 +183,6 @@ class SteamTurbineController:
         if grid and self.committed(grid):
             self._eased = False
             self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, grid '{getattr(grid, 'anchor_id', '?')}' under turbine commitment; full throttle 1.0.")
-            self.log.end()
             return 1.0
         if grid:
             stored = getattr(grid, "stored", 0.0)
@@ -198,16 +194,13 @@ class SteamTurbineController:
             if battery_full and demand_met:
                 self._eased = True
                 self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, battery full ({stored:.0f}/{capacity:.0f} Wh) and demand met ({generated:.0f} W >= {consumed:.0f} W); easing to {THROTTLE_DEMAND_MET} to save steam for night.")
-                self.log.end()
                 return THROTTLE_DEMAND_MET
             if self._eased and capacity > 0 and stored >= capacity * BATTERY_EASE_RESUME_FRACTION:
                 self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, eased and battery still {stored / capacity * 100:.0f}% >= {BATTERY_EASE_RESUME_FRACTION * 100:.0f}% (gen={generated:.0f} W, con={consumed:.0f} W); staying at {THROTTLE_DEMAND_MET}.")
-                self.log.end()
                 return THROTTLE_DEMAND_MET
             self._eased = False
             self.log.debug(f"Buffer healthy ({fraction*100:.0f}%), daytime, but battery_full={battery_full} demand_met={demand_met} (stored={stored:.0f}/{capacity:.0f} Wh, gen={generated:.0f} W, con={consumed:.0f} W); full throttle 1.0.")
 
-        self.log.end()
         return 1.0
 
     def step(self):
