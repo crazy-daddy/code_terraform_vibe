@@ -34,3 +34,49 @@ This is CPU only: the game's tick result does not change, but the sim worker is 
 ## Headless runs
 
 `run.mjs --sticky-fluids` patches the signature (not the state): an empty machine keeps its last fluid type and the content flags are left out, so the cached analysis survives a tank running dry. Safe for our scripts, which route by the static tank assignment in the Data Archive, not by what an empty tank last held. Not safe for a test about tanks switching fluid.
+
+## Local vs remote tanks: source and sink roles
+
+Source: `FlowTransportSystem` in the decompiled sim worker (search `tickDirectConnections(`, `redistributePerFluidNetworks(`, `getFluidNetworkPlans(`, `routeSourceToTarget(`). Player-facing rules: [flow_networks_fluids.md](../guide/flow_networks_fluids.md) "Local versus remote".
+
+### Two separate transport paths
+
+Every declared `connect()` pair (from either side) is classified by its two **anchors**: an outpost machine's anchor is its outpost, a map machine (Water/Oil Pump, Thermal Cap, Exotic Cap/Tap) is its own anchor.
+- **Same anchor ("local")**: handled only by `tickDirectConnections`. No pipe is involved and the pair never shows up in a pipe network.
+- **Different anchors ("remote")**: becomes a *route* in the network analysis (`Ex`, routes are kept only when `sourceAnchorId !== sinkAnchorId`) and is moved by the pipe component it is assigned to.
+
+So a pump or cap never connects "locally": it always needs a pipe, even to a tank at the outpost next to it.
+
+### Local (direct) connections
+
+- Each source/sink/fluid pair is its own edge with its own cap: `flow.directMaxFlowPerGameHour` per pair (High Pressure tech does not raise it).
+- At the start of the tick the game snapshots every source's level and every sink's headroom, then solves one max-flow over all pairs of the same fluid (`a_e`: proportional first guess, then augmenting paths).
+- Sources and sinks are separate nodes in that graph. A tank that is the source of one pair and the sink of another is in both roles at once: it can give and take in the same tick.
+- Pump-type machines (`$w` set) are skipped here as sources.
+
+### Remote (pipe) connections
+
+`Ex` builds, per pipe component, `sourceEndpointIds` (every machine that is the source of a route on it) and `sinkEndpointIds` (every route sink). `getFluidNetworkPlans` keeps a source only if it can supply the component's fluid (a tank needs its latched `stringData.fluid` to match, so an empty, unlatched tank is not a source) and a sink only if it can accept it.
+
+Tanks and other passive sources are then moved by `redistributePerFluidNetworks` before power:
+- **Providers** are the source endpoints with level > 0 (pump-type machines excluded).
+- **Consumers** are the sink endpoints with headroom > 0, **minus every id that is already a provider** on that component. This is the rule behind the owner's observation: a remote tank that is both a route source and a route sink on the same component, and holds fluid, only gives; it receives nothing from other passive providers there.
+- An empty tank drops out of the providers (and out of the sources when its fluid unlatches), so it can be filled again. Inferred: such a tank alternates between "giving" and "taking" ticks, and each unlatch also rebuilds the analysis (see the trap above).
+- The fluid is **pooled per component**: all providers' levels form one pool that is split over all consumers by headroom. The declared pairs only decide who is on the component, not who feeds whom. Recorded pipe flows are a sorted id pairing for display.
+- A tank that is a source on component P and a sink on another component Q is not affected: the exclusion is per component. Inferred from the code path, not tested in game.
+
+Pumps, Thermal Caps and Exotic Caps/Taps run after power in `routeSourceToTarget`. They follow their own declared routes (sink by `sinkMachineId`) and check only sink headroom and the ledgers, not the provider list, so a pump **can** fill a remote tank that is also a provider on that component.
+
+### Capacity ledgers and ordering
+
+- Per component, per tick: `throughputLinks × pipe max` in total, and per endpoint `(pipe links it claims, min 1) × pipe max` on each side (`ensureNetworkCapacityLedgers`). The pipe max is the High Pressure value once unlocked.
+- Order in a tick: direct connections, then tank pooling (pre-power), then caps, then pumps (post-power). The ledger is shared, so tank pooling consumes component capacity first and pumps get what is left.
+- Pump-type sources on one component split the remaining capacity equally (`prepareScriptSourceFairness`). Within one source, sinks are filled in proportion to headroom, ordered by id.
+- An endpoint on several components of the same fluid has its level or headroom split between them by requested share (`B0`).
+
+### What this means for our scripts
+
+- A tank that should both receive and pass on fluid (a relay or buffer) works when its in-pair and out-pair are local. Across outposts, put its inflow and outflow on different pipe components, or feed it from a pump (pumps ignore the exclusion).
+- Never rely on a declared pair across a shared component: any passive provider on it can feed any consumer on it.
+- A local connection does not compete for pipe capacity; prefer a same-outpost tank where one exists (`rank_own_outpost_first` in `fluid_routing.py` already does).
+- Several tanks pooling on one component can use up its capacity before pumps get their turn: a stalled pump may mean a full pipe ledger, not a full tank.
