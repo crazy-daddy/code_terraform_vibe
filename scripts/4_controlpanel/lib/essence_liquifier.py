@@ -321,7 +321,7 @@ class EssenceLiquifierController:
         except Exception as error:
             swallowed("essence_liquifier.EssenceLiquifierController.publish_telemetry: port.connected_id", error)
             output_target = ""
-        archive.set_entry(STATUS_KEY, self.name, {
+        archive.publish_status(STATUS_KEY, self.name, {
             "name": self.name,
             "biome": self.biome,
             "fluid": self.fluid_id,
@@ -331,7 +331,7 @@ class EssenceLiquifierController:
             "last_fed": self._last_fed,
             "output_target": output_target,
             "retired": biomass_complete(),
-        })
+        }, now_tick(), self.log)
 
     # ---------------------------------------------------------------- retire
 

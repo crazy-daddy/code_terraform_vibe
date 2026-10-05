@@ -3,7 +3,7 @@
 # cleans stale claims, removes obsolete blacklist/unsupported entries,
 # deduplicates survey waypoints, and prunes stale telemetry.
 
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole
 from components import component
 from swallow import swallowed
@@ -76,6 +76,26 @@ MACHINE_STATUS_KEYS = {
     "wildlife.status": "habitat",
     "wildlife.feed": "feed_maker",
 }
+
+# Per-machine status dicts written through archive.publish_status(). Each publish
+# drops other entries older than STATUS_STALE_TICKS, but nothing runs that once
+# the last machine of a kind is gone, so the cleaner applies the same rule.
+# Covers field machines and drills too, which the network listing above can't see.
+# tests/test_archive_cleaner_status.py checks every publish_status() key is listed.
+STATUS_TICK_KEYS = (
+    "biomass_mixer.status",
+    "drill.status",
+    "essence_liquifier.status",
+    "plant.automators",
+    "plant.providers",
+    "plant.status",
+    "plant.terraformer",
+    "refiner.status",
+    "seed_maker.status",
+    "waste_sink.status",
+    "wildlife.feed",
+    "wildlife.status",
+)
 
 # Shared dicts {building_id: ...} spanning many building types, pruned of ids that are no
 # longer a building. Literal strings: script_parking / fluid_routing live in this tier, but
@@ -749,6 +769,34 @@ class ArchiveCleaner:
         self.stats["machine_status_removed"] += removed
         return f"{removed} stale machine status entr{'y' if removed == 1 else 'ies'} purged"
 
+    def clean_status_ticks(self, current_tick):
+        """Drops STATUS_TICK_KEYS entries that are not a dict or whose "tick" is
+        STATUS_STALE_TICKS or more behind current_tick (no tick counts as 0)."""
+        if not current_tick:
+            return "no clock; skipped"
+        removed = 0
+        for key in STATUS_TICK_KEYS:
+            status = self.archive.get(key, None)
+            if not isinstance(status, dict):
+                continue
+            stale = [mid for mid, entry in status.items()
+                     if not isinstance(entry, dict) or current_tick - (entry.get("tick") or 0) >= STATUS_STALE_TICKS]
+            for mid in stale:
+                self.log(f"  [DELETE STATUS] {key}['{mid}']: not refreshed for {STATUS_STALE_TICKS} ticks")
+            if stale and not self.dry_run:
+                def updater(current, stale=stale):
+                    if not isinstance(current, dict):
+                        return {}
+                    for mid in stale:
+                        entry = current.get(mid)
+                        if not isinstance(entry, dict) or current_tick - (entry.get("tick") or 0) >= STATUS_STALE_TICKS:
+                            current.pop(mid, None)
+                    return current
+                self.archive.transaction(key, {}, updater)
+            removed += len(stale)
+        self.stats["machine_status_removed"] += removed
+        return f"{removed} unrefreshed status entr{'y' if removed == 1 else 'ies'} purged"
+
     def get_live_building_ids(self):
         """Ids of every building on the outpost network (outpost.buildings() with no type
         filter). Empty when discovery fails or finds nothing."""
@@ -1040,6 +1088,7 @@ class ArchiveCleaner:
         self._stage("Purging retired key families", self.clean_retired_keys)
         self._stage("Checking resumable mission records", self.clean_missions, active_vehicles)
         self._stage("Checking machine status dicts", self.clean_machine_status)
+        self._stage("Checking unrefreshed status entries", self.clean_status_ticks, current_tick)
         self._stage("Checking per-building entries (parking, tank assignments)", self.clean_building_entries, self.get_live_building_ids())
         self._stage("Checking profiling entries", self.clean_profiling, current_tick)
         self._stage("Checking power & heating terraforming state", self.clean_power_and_heat)

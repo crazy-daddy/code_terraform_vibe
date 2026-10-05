@@ -483,17 +483,7 @@ class HabitatController:
     # ------------------------------------------------------------ loop
 
     def publish(self, entry, curr_tick):
-        def updater(status):
-            if not isinstance(status, dict):
-                status = {}
-            for other in list(status.keys()):
-                if other != self.name and not wc.fresh(status[other], curr_tick):
-                    del status[other]
-            status[self.name] = entry
-            return status
-
-        if not archive.transaction(wc.STATUS_KEY, {}, updater):
-            self.log.level("warn").print(f"[{self.name}] {wc.STATUS_KEY} write rejected.")
+        archive.publish_status(wc.STATUS_KEY, self.name, entry, curr_tick, self.log)
 
     def step(self):
         curr_tick = self.tick()
@@ -556,7 +546,6 @@ class HabitatController:
             "parked": self.parked,
             "release": released,
             "retries": self.retries,
-            "tick": curr_tick,
         }, curr_tick)
         self.parker.update(bool(self.parked))
         return poll

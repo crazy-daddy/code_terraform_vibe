@@ -4,7 +4,7 @@ from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
 from storage import take_item, best_unload_target
 import logistics_requests
-from plant_terraformer_common import STATUS_KEY, STATUS_STALE_TICKS, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, PLANTS_BANDS, ceil_int, remaining_forage
+from plant_terraformer_common import STATUS_KEY, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, PLANTS_BANDS, ceil_int, remaining_forage
 from plant_terraformer_water import PlantTerraformerWaterMixin
 from plant_terraformer_demand import PlantTerraformerDemandMixin
 from game_clock import now_tick
@@ -552,12 +552,7 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
         self._last_status = status
 
     def publish_telemetry(self, entry, curr_tick):
-        pruned = []
-        if not archive.set_entry_pruned(STATUS_KEY, self.name, entry, curr_tick, STATUS_STALE_TICKS, pruned):
-            self.log.level("warn").print(f"[{self.name}] {STATUS_KEY} write rejected; telemetry not published this cycle.")
-            return
-        for other_id in pruned:
-            self.log.debug(f"[{self.name}] pruned stale {STATUS_KEY}['{other_id}'].")
+        archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
 
     def step(self):
         """One poll. Returns True once Plants are complete and the holders are empty (the script can end)."""
@@ -634,7 +629,6 @@ class PlantTerraformerController(PlantTerraformerWaterMixin, PlantTerraformerDem
             "blocker": blocker,
             "supported_batch": supported,
             "in_flight": running or progress > 0,
-            "tick": curr_tick,
         }, curr_tick)
         return status == "complete" and not held
 

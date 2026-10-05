@@ -49,7 +49,7 @@
 #     `retire` "ready" in refiner.status for the planner to undeploy it. Fluid
 #     left in its ports does not block undeploy (only items do).
 
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed, call_or
@@ -78,7 +78,6 @@ TAR_REFILL_AT = 20
 
 STATUS_KEY = "refiner.status"
 STATUS_REFRESH_TICKS = 600
-STATUS_STALE_TICKS = 36000
 
 GAS_TANK_TYPE_IDS = ("gas_tank",)
 
@@ -144,7 +143,7 @@ def recipe_counts(status, exclude, curr_tick):
     if not isinstance(status, dict):
         return counts
     for name, entry in status.items():
-        if name == exclude or not isinstance(entry, dict) or curr_tick - entry.get("tick", 0) > STATUS_STALE_TICKS:
+        if name == exclude or not isinstance(entry, dict) or curr_tick - (entry.get("tick") or 0) >= STATUS_STALE_TICKS:
             continue
         for rid in {entry.get("recipe") or "", entry.get("switching_to") or ""}:
             if rid:
@@ -486,18 +485,8 @@ class RefinerController:
             self.log.debug(f"[{self.name}] state: {blocker or 'refining'} (recipe {rid or '-'})")
         self._last_status = status
         self._status_tick = curr_tick
-        entry = {"recipe": rid or "", "switching_to": self._switch_to or "", "blocker": blocker, "outpost": self.outpost_id, "retire": self._retire, "tick": curr_tick}
-
-        def updater(stored):
-            if not isinstance(stored, dict):
-                stored = {}
-            for other in [k for k, v in stored.items() if not isinstance(v, dict) or curr_tick - v.get("tick", 0) > STATUS_STALE_TICKS]:
-                del stored[other]
-            stored[self.name] = entry
-            return stored
-
-        if not archive.transaction(STATUS_KEY, {}, updater):
-            self.log.level("warn").print(f"[{self.name}] {STATUS_KEY} write rejected.")
+        entry = {"recipe": rid or "", "switching_to": self._switch_to or "", "blocker": blocker, "outpost": self.outpost_id, "retire": self._retire}
+        archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
 
     # --------------------------------------------------------------- loop
 

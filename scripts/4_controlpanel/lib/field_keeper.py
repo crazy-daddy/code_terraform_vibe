@@ -281,16 +281,8 @@ class FieldKeeperController(HarvesterHeatMixin, HarvesterPavingMixin, HarvesterP
             "amplifier_h": round(self.amplifier_hours(), 1),
             "last_action": self.last_action,
             "heat": self.heat_model(),
-            "tick": curr_tick,
         }
-
-        def updater(status):
-            if not isinstance(status, dict):
-                status = {}
-            status[self.name] = entry
-            return status
-
-        archive.transaction(STATUS_KEY, {}, updater)
+        archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
         self.log.debug(f"[{self.name}] demand now={now} rotation={len(rotation)} species; status={entry}")
 
     # ------------------------------------------------------ step profiling

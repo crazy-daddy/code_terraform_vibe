@@ -329,20 +329,8 @@ class FeedMakerController:
             "tier": int(self._call("tier", 1)),
             "blocker": blocker,
             "retire": self._retire,
-            "tick": curr_tick,
         }
-
-        def updater(status):
-            if not isinstance(status, dict):
-                status = {}
-            for other in list(status.keys()):
-                if other != self.name and not wc.fresh(status[other], curr_tick):
-                    del status[other]
-            status[self.name] = entry
-            return status
-
-        if not archive.transaction(wc.FEED_KEY, {}, updater):
-            self.log.level("warn").print(f"[{self.name}] {wc.FEED_KEY} write rejected.")
+        if not archive.publish_status(wc.FEED_KEY, self.name, entry, curr_tick, self.log):
             return
         self._published = key
         self._published_tick = curr_tick

@@ -12,7 +12,7 @@ A drill needs no control. It extracts on its own; the only script surface is `dr
 - **Near full**: fill ≥ `NEAR_FULL_FRACTION = 0.8` while drilling → one warning with time-to-full, re-armed once fill drops back under it.
 - **Time-to-full**: `(capacity − count) / drill_rate()`, assumes 1 stockpile unit = 1 t (unverified).
 - Thin script passes `drill_type` (published as `type`, used by `drill_sites.discover_drill_ids()`).
-- **Telemetry** `drill.status` (§4). Drills sit on mineral sites, not the outpost network, so `ArchiveCleaner.clean_machine_status()` can't prune them; each publish prunes other entries older than `STATUS_STALE_TICKS = 36000` instead.
+- **Telemetry** `drill.status` (§4). Drills sit on mineral sites, not the outpost network, so `ArchiveCleaner.clean_machine_status()` can't prune them; the age rule of `archive.publish_status()` (archive_ipc.md §4) does.
 - **Pickup advert**: the `drill.status` entry's `items` is what the reverse hauler (§2i) reads as the drill's free stock; its position comes from `drill.positions`.
 
 ### 1m. Weather Station Signal Decoding (`lib/weather_signals.py`)

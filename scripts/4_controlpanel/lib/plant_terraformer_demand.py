@@ -1,7 +1,7 @@
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 import logistics_requests
 from production import fabricator_unlocked_outputs, set_upgrade_order, set_backlog_order
-from plant_terraformer_common import STATUS_KEY, REQUESTER_ID, STATUS_STALE_TICKS, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
+from plant_terraformer_common import STATUS_KEY, REQUESTER_ID, STOP_STATUSES, SUPPORT_HOLDER_CAP, FERTILIZER_ITEM_IDS, SUPPORT_REQUEST_BATCHES, ceil_int, remaining_forage
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

@@ -1,5 +1,4 @@
-from waste_sink import WasteSinkController, STATUS_KEY
-from archive import archive
+from waste_sink import WasteSinkController
 import fluid_routing
 from swallow import swallowed
 
@@ -154,23 +153,20 @@ class WaterAwareWasteSinkController(WasteSinkController):
             self.log.level("error").print(f"[{self.name}] liquid arm failed: {e}")
         self.log.end()
 
-    def publish_telemetry(self):
-        super().publish_telemetry()
+    def telemetry_entry(self):
+        entry = super().telemetry_entry()
         try:
             rate = self.processor.liquid_throughput()
         except Exception as error:
-            swallowed("water_sink.WaterAwareWasteSinkController.publish_telemetry: liquid_throughput", error)
+            swallowed("water_sink.WaterAwareWasteSinkController.telemetry_entry: liquid_throughput", error)
             rate = 0.0
-        entry = archive.get(STATUS_KEY, {}).get(self.name, {})
-        if not isinstance(entry, dict):
-            entry = {}
         entry["water"] = {
             "draining": self._draining,
             "tank": self._tank_id,
             "fill": round(self._tank_fill, 3) if self._tank_fill is not None else None,
             "rate": rate,
         }
-        archive.set_entry(STATUS_KEY, self.name, entry)
+        return entry
 
     def step(self):
         self._update_draining(self._water_tanks())

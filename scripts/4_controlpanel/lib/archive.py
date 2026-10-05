@@ -13,7 +13,12 @@ from swallow import swallowed
 
 if TYPE_CHECKING:
     from typing import Any, TypeVar, overload
+    from tree_console import TreeConsole
     _T = TypeVar("_T")
+
+# A per-machine status dict entry not refreshed this long (~1 h) is dropped by
+# the next publish_status() into that dict.
+STATUS_STALE_TICKS = 36000
 
 
 class ArchiveClient:
@@ -124,25 +129,37 @@ class ArchiveClient:
             return entries
         return self.transaction(key, {}, updater)
 
-    def set_entry_pruned(self, key, entry_id, value, tick, stale_ticks, pruned):
+    def publish_status(self, key, name, entry, tick, log: "TreeConsole", stale_ticks=STATUS_STALE_TICKS):
         """
-        Atomically sets key[entry_id] = value and drops every other entry that is
-        not a dict or whose "tick" is stale_ticks or more behind tick. pruned
-        (a list) receives the dropped ids; log them after this returns, since a
-        log call inside the updater gets the transaction rejected.
+        Publishes a machine's entry in the per-machine status dict key: sets
+        entry["tick"] = tick and key[name] = entry in one transaction. Other
+        entries that are not a dict or whose "tick" is stale_ticks or more
+        behind are dropped; stale_ticks=None keeps them (a dict pruned by
+        building existence in ArchiveCleaner instead). Logs a rejected write
+        (warn) and each dropped id (debug). True when written.
         """
+        entry["tick"] = tick
+
         def updater(entries):
             del pruned[:]
             if not isinstance(entries, dict):
                 entries = {}
-            for other_id in list(entries.keys()):
-                other = entries[other_id]
-                if other_id != entry_id and (not isinstance(other, dict) or tick - other.get("tick", 0) >= stale_ticks):
-                    pruned.append(other_id)
-                    del entries[other_id]
-            entries[entry_id] = value
+            if stale_ticks is not None:
+                for other_id in list(entries.keys()):
+                    other = entries[other_id]
+                    if other_id != name and (not isinstance(other, dict) or tick - (other.get("tick") or 0) >= stale_ticks):
+                        pruned.append(other_id)
+                        del entries[other_id]
+            entries[name] = entry
             return entries
-        return self.transaction(key, {}, updater)
+
+        pruned = []
+        if not self.transaction(key, {}, updater):
+            log.level("warn").print(f"[{name}] {key} write rejected; status not published this cycle.")
+            return False
+        for other_id in pruned:
+            log.debug(f"[{name}] pruned stale {key}['{other_id}'].")
+        return True
 
     def pop_entry(self, key, entry_id):
         """Atomically removes key[entry_id] (no-op if absent)."""

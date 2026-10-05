@@ -22,7 +22,7 @@
 # Entries of drills no longer deployed (discover_drill_ids()) are pruned on
 # every write, unless discovery came back empty.
 
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from game_clock import now_tick
@@ -32,9 +32,7 @@ log = TreeConsole(module="drill_sites")
 STATUS_KEY = "drill.status"  # written by lib/mining_drill.py
 POSITIONS_KEY = "drill.positions"
 
-# Same window as lib/mining_drill.py STATUS_STALE_TICKS: a drill whose script
-# hasn't published for an hour isn't offered as a source.
-STATUS_STALE_TICKS = 36000
+# A drill whose script hasn't published within STATUS_STALE_TICKS isn't offered as a source.
 
 DRILL_TYPE_IDS = ("mining_drill", "mining_drill_industrial", "mining_drill_heavy")
 

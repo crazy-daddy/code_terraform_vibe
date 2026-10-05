@@ -38,7 +38,6 @@ SERVICE = {"grow_lamp": "light", "sprinkler": "water", "dispenser": "salt"}
 
 POLL_INTERVAL_S = 10.0
 PUBLISH_INTERVAL_TICKS = 600       # telemetry at most once a minute
-STATUS_STALE_TICKS = 36000         # a provider silent this long (~1 h) is dropped from telemetry
 
 # Dispenser: top the 50-unit buffer up to DISPENSER_FILL once it drops below
 # DISPENSER_REFILL_BELOW. Kept small so the Harvester's own salt (hand care
@@ -235,18 +234,8 @@ class FieldProviderController:
             swallowed("field_provider.FieldProviderController.publish: self.machine.buffer", error)
             buffer = None
         entry = {"kind": self.kind, "sector": self.sector(), "status": status,
-                 "buffer": buffer, "enabled": enabled, "tick": curr_tick}
-
-        def updater(state):
-            if not isinstance(state, dict):
-                state = {}
-            state[self.name] = entry
-            for k in [k for k, e in state.items()
-                      if k != self.name and (not isinstance(e, dict) or curr_tick - (e.get("tick") or 0) > STATUS_STALE_TICKS)]:
-                state.pop(k, None)
-            return state
-
-        archive.transaction(STATUS_KEY, {}, updater)
+                 "buffer": buffer, "enabled": enabled}
+        archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
 
     def run(self):
         self.log.print(f"Field provider ({self.name}, {self.kind}) online at {self.sector()}.")

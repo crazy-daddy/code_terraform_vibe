@@ -2,7 +2,8 @@ from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
 import fluid_routing
-from plant_terraformer_common import STATUS_KEY, STATUS_STALE_TICKS
+from plant_terraformer_common import STATUS_KEY
+from archive import STATUS_STALE_TICKS
 
 # Plants completion: undeploy the Plant Terraformers (Control Room
 # Automation, every storage pass). At 5,000,000 km² every Terraformer reads

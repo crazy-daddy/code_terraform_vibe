@@ -78,7 +78,6 @@ POLL_INTERVAL_S = 10.0             # while jobs are queued or being consumed
 IDLE_POLL_SECONDS = 30.0           # nothing queued, nothing to do: poll less often
 DEPLOYED_CACHE_TICKS = 600         # deployed-machine map, owned cells and service checks are reused this long (~1 min)
 PUBLISH_INTERVAL_TICKS = 600       # telemetry at most once a minute
-STATUS_STALE_TICKS = 36000         # an automator silent this long (~1 h) is dropped from telemetry
 QUEUE_LIMIT = 45                   # the machine takes 50; leave room for a manual job
 JOB_FAIL_COOLDOWN_TICKS = 3000     # a cell whose job failed is left alone this long (~5 min)
 MAX_RESULTS_PER_STEP = 50          # the inbox holds at most 50
@@ -570,18 +569,8 @@ class CropAutomatorController:
             status, queue = "?", None
         entry = {"sector": self.sector, "status": status, "queue": queue, "cells": len(mine),
                  "mature": len(mature), "open": len(open_cells), "waiting_machines": len(waiting),
-                 "forage": self.output_forage(), "harvest_yield": self._harvest_yield, "garden": self.in_garden(), "tick": curr_tick}
-
-        def updater(state):
-            if not isinstance(state, dict):
-                state = {}
-            state[self.name] = entry
-            for k in [k for k, e in state.items()
-                      if k != self.name and (not isinstance(e, dict) or curr_tick - (e.get("tick") or 0) > STATUS_STALE_TICKS)]:
-                state.pop(k, None)
-            return state
-
-        archive.transaction(STATUS_KEY, {}, updater)
+                 "forage": self.output_forage(), "harvest_yield": self._harvest_yield, "garden": self.in_garden()}
+        archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
 
     def run(self):
         self.log.print(f"Crop Automator ({self.name}) online at {self.sector}.")

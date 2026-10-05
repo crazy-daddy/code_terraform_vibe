@@ -180,7 +180,7 @@ class BiomassMixerController:
                 "route": results.get(router.biome),
                 "level": level,
             }
-        archive.set_entry(STATUS_KEY, self.name, {
+        archive.publish_status(STATUS_KEY, self.name, {
             "name": self.name,
             "tier": self._read("tier", 1),
             "phase": self._read("phase", 0),
@@ -190,7 +190,7 @@ class BiomassMixerController:
             "biomass_rate": self._read("biomass_rate", 0.0),
             "stalled": self._was_stalled,
             "inputs": inputs,
-        })
+        }, now_tick(), self.log)
 
     def step(self):
         if biomass_complete():

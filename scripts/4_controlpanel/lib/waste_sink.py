@@ -3,6 +3,7 @@ from storage import best_unload_target
 from version_guard import validate_game_version
 from tree_console import TreeConsole, flush_all, reset_all
 from swallow import swallowed
+from game_clock import now_tick
 
 # Waste Processor base controller. The processor only destroys while the
 # script that armed it keeps running (docs/components/waste_processor.md).
@@ -66,17 +67,18 @@ class WasteSinkController:
         self.log.end(f"returned {moved} unit(s)")
         return moved
 
-    def publish_telemetry(self):
+    def telemetry_entry(self):
+        """This processor's waste_sink.status entry (subclasses add their fields)."""
         try:
             status = self.processor.status()
             staged = self.processor.input.count()
         except Exception as error:
-            swallowed("waste_sink.WasteSinkController.publish_telemetry: self.processor.status", error)
+            swallowed("waste_sink.WasteSinkController.telemetry_entry: self.processor.status", error)
             status, staged = "unknown", 0
-        archive.set_entry(STATUS_KEY, self.name, {
-            "status": status,
-            "staged": staged,
-        })
+        return {"status": status, "staged": staged}
+
+    def publish_telemetry(self):
+        archive.publish_status(STATUS_KEY, self.name, self.telemetry_entry(), now_tick(), self.log)
 
     def step(self):
         self.idle()

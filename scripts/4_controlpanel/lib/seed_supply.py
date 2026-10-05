@@ -228,16 +228,8 @@ class SeedSupplyController(SeedMakerController):
             "state": state,
             "deficit": dict(deficits),
             "last": self._last_result,
-            "tick": now_tick(),
         }
-
-        def updater(status):
-            if not isinstance(status, dict):
-                status = {}
-            status[self.name] = entry
-            return status
-
-        archive.transaction(STATUS_KEY, {}, updater)
+        archive.publish_status(STATUS_KEY, self.name, entry, now_tick(), self.log)
 
     # ---------------------------------------------------------------- loop
 

@@ -26,10 +26,8 @@ from game_clock import now_tick
 
 # One shared dict {drill_id: telemetry} (not one key per drill, CODE_GUIDES.md
 # #archive). Drills live on mineral sites, not on the outpost network, so
-# ArchiveCleaner's network-based pruning can't see them; entries not
-# refreshed within STATUS_STALE_TICKS (10 ticks/s -> 1 h) are pruned here on
-# every publish instead.
-STATUS_STALE_TICKS = 36000
+# ArchiveCleaner's network-based pruning can't see them; archive.publish_status()
+# prunes entries older than STATUS_STALE_TICKS on every publish instead.
 
 # Stockpile fills in hours (Mk I: 2,000 units at 25 t/h = ~80 h; Heavy:
 # 5,000 at 200 t/h = ~25 h), so a minute between polls loses nothing.
@@ -118,12 +116,7 @@ class MiningDrillController:
         self.log.end()
 
     def publish_telemetry(self, entry, curr_tick):
-        pruned = []
-        if not archive.set_entry_pruned(STATUS_KEY, self.name, entry, curr_tick, STATUS_STALE_TICKS, pruned):
-            self.log.level("warn").print(f"[{self.name}] {STATUS_KEY} write rejected; telemetry not published this cycle.")
-            return
-        for other_id in pruned:
-            self.log.debug(f"[{self.name}] pruned stale {STATUS_KEY}['{other_id}'].")
+        archive.publish_status(STATUS_KEY, self.name, entry, curr_tick, self.log)
 
     def step(self):
         curr_tick = self.get_current_tick()
@@ -147,7 +140,6 @@ class MiningDrillController:
             "near_full": fill >= NEAR_FULL_FRACTION,
             "eta_h": None if eta_h is None else round(eta_h, 1),
             "items": items,
-            "tick": curr_tick,
         }, curr_tick)
 
     def run(self):

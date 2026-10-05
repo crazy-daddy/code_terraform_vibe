@@ -9,7 +9,7 @@
 from wildlife_data import SPECIES, FEED_PER_BIRTH, FEED_PER_CRAFT, FORAGE_PER_CRAFT, BONUS_CAPS, STAGE_CAPACITY, HABITAT_MK2_CAPACITY_FACTOR
 from wildlife_model import node_effects, static_bonuses, feed_factor, breakthrough_effects, adaptation_effects
 from fluid_routing import LIQUID_TANK_TYPE_IDS
-from archive import archive
+from archive import archive, STATUS_STALE_TICKS
 
 # {habitat_id: telemetry}, written by each Habitat (lib/habitat.py).
 STATUS_KEY = "wildlife.status"
@@ -37,8 +37,6 @@ HABITAT_KIT_ITEM_ID = "habitat"
 # undeployed, once the species' Breakthrough is bought.
 RELEASE_POPULATION = STAGE_CAPACITY[4] * HABITAT_MK2_CAPACITY_FACTOR
 
-# Entries of machines that stopped publishing (10 ticks/s: 1 h real).
-STATUS_STALE_TICKS = 36000
 
 # Feed staged in the Habitat's own bin before revive(): revive spends one,
 # rearing eats none (no births), the rest feeds the first births. Staging it
