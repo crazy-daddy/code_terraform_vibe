@@ -40,7 +40,7 @@ Measured with a headless run that diffs consecutive signatures per machine (late
 - When the draw can exceed the supply, the consumer, not the tank, has to give way: batch it with hysteresis (stop at a low fill, restart at a higher one). Throughput is the same, set by the supply, but the tank never sits at 0. Fluid-only Fabricator recipes (`craft_tar`) do this on their own ([production_logistics.md](../cheatsheet/production_logistics.md), "Fluid-only recipe"); the Oil Generator surplus burn already stops below 70 % ([power_fluids.md §1c-1](../cheatsheet/power_fluids.md)).
 - Size consumers to the supply: count wells × rate against the sum of the always-on draws (Oil Generators on last resort, Fabricator recipes with oil plus items). Those don't pause, so if they alone exceed the supply the tank still runs dry.
 - A buffer tank that only passes fluid through and is often empty is better removed from the line.
-- Give every passive producer (Refiner, Liquifier, Steam Condenser) a tank of its output fluid in its own outpost and pipe that tank onward, or use a storage outpost on split networks (see "Storage outpost" below). A tank in another outpost that also feeds consumers over the pipes takes nothing from it while it holds stock (see "Remote (pipe) connections" below); the scripts then rank such a tank last.
+- Give every passive producer (Refiner, Liquifier, Steam Condenser) a tank of its output fluid in its own outpost and pipe that tank onward, or use a storage outpost on split networks (see "Storage outpost" below). A tank in another outpost that also feeds consumers over the pipes takes nothing from it while it holds stock (see "Remote (pipe) connections" below); the scripts then rank such a tank last. Until the next game build only: see the note under "Local vs remote tanks".
 - Other signature inputs change rarely (building, deploying, reconnecting a fluid port); each such change costs one rebuild, which is fine. Frequent item port rewiring adds up (see above).
 
 ## Headless runs
@@ -48,6 +48,14 @@ Measured with a headless run that diffs consecutive signatures per machine (late
 `run.mjs --sticky-fluids` patches the signature (not the state): an empty machine keeps its last fluid type and the content flags are left out, so the cached analysis survives a tank running dry. Safe for our scripts, which route by the static tank assignment in the Data Archive, not by what an empty tank last held. Not safe for a test about tanks switching fluid.
 
 ## Local vs remote tanks: source and sink roles
+
+> **Changing in the next game build** (the game dev, relayed by the owner on 2026-10-05): on a shared pipe a tank will fill from its suppliers and feed its consumers at the same time, and fluid on a pipe will follow the declared connections exactly, as on separate pipes. Once that build lands, re-check against the new simworker. These parts of this page then no longer hold:
+> - the "consumers minus providers" rule (a remote tank that holds stock only gives) and the per-component pool ("declared pairs only decide who is on the component");
+> - the storage outpost needing two pipe networks: one shared network should work;
+> - the producer-tank-to-storage drain (a producer's local tank pulled empty every tick by an unrelated sink);
+> - in the scripts, `FluidOutputRouter` ranking a remote relay tank last (`feeds_remote_route()`, PR #24) and the "give every passive producer a local tank" rule. Both stay harmless until removed.
+>
+> Not affected: the empty-tank rebuild trap above (an empty tank still unlatches) and the fluid-only recipe pause (PR #24), the item port rewiring cost, local direct connections, and the pumps/caps path.
 
 Source: `FlowTransportSystem` in the decompiled sim worker (search `tickDirectConnections(`, `redistributePerFluidNetworks(`, `getFluidNetworkPlans(`, `routeSourceToTarget(`). Player-facing rules: [flow_networks_fluids.md](../guide/flow_networks_fluids.md) "Local versus remote".
 
@@ -79,7 +87,7 @@ Tanks and other passive sources are then moved by `redistributePerFluidNetworks`
 
 Pumps, Thermal Caps and Exotic Caps/Taps run after power in `routeSourceToTarget`. They follow their own declared routes (sink by `sinkMachineId`) and check only sink headroom and the ledgers, not the provider list, so a pump **can** fill a remote tank that is also a provider on that component.
 
-### Storage outpost: one network or two (tested)
+### Storage outpost: one network or two (tested on the current build)
 
 Headless test on a copy of the late save: three new outposts with one Large Liquid Tank each, a producer tank (1,000 t oil) connected to a storage tank, the storage tank connected to a consumer tank with 100 t room. Run 500 ticks.
 - **One pipe network through all three**: storage held ~22 t and never filled. Once the consumer was full, the producer stalled at 878 t. Storage feeds the consumer over the same network, so it is a provider there and takes nothing from the pool.
