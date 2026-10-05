@@ -28,6 +28,12 @@ Repo moved to a dev root (`C:\Users\<user>\Code_Terraform`) separate from the li
 
 Plan (done): [docs/plans/done/handler_unification.md](docs/plans/done/handler_unification.md); finished clusters are in [TODO_done.md](TODO_done.md).
 
+Round 2, plan: [docs/plans/controller_unification.md](docs/plans/controller_unification.md) (scan: `devtools/clone_scan.py`).
+
+- [ ] 1. `lib/game_clock.py` `now_tick()` replaces ~40 local tick readers.
+- [ ] 2. `archive.publish_status()` for the ~15 per-machine status dicts; one `STATUS_STALE_TICKS`; fix unpruned `plant.status`/`seed_maker.status`.
+- [ ] 3. `MachineControllerBase` mixin: `run()` template, `tick()`, `output_counts()`, `publish_status()`.
+- [ ] 4. `lib/fleet_unit.py` `FleetUnitMixin` (intent, telemetry, recall, mission) for Drone/Vehicle; shared panel helpers in `fleet_status.py`.
 - [ ] Optional, deferred: `storage.drain_and_report`. Smelter aggregates one line per drain; Fabricator and Fuel Assembler log per item and call `consume_manual_order()`, so a shared loop saves little.
 
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
