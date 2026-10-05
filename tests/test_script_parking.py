@@ -201,6 +201,19 @@ class ScriptParkingTests(StubTestCase):
         self.assertNotIn("wake_after", self._recheck_cycle(script_parking.FRUITLESS_REPARK_TICKS + 50))
         self.assertEqual(self._recheck_cycle(50)["wake_after"], min(base * 2, cap))
 
+    def test_backoff_counts_the_request_tick_not_a_late_park_pass(self):
+        self.request("smelter_1", "smelter")
+        self.parking.step(self.grids, 10.0)
+        entry = self.world.notebook.data[PARKED_KEY]["smelter_1"]
+        self.world.clock.now += entry.get("wake_after", WAKE_AFTER_TICKS["smelter"])
+        self.parking.step(self.grids, 10.0)
+        self.world.clock.now += 50
+        self.request("smelter_1", "smelter")  # idle again soon after the wake
+        self.world.clock.now += script_parking.FRUITLESS_REPARK_TICKS  # the next pass runs late
+        self.parking.step(self.grids, 10.0)
+        self.assertEqual(self.power.calls[-1], ("smelter_1", False))
+        self.assertEqual(self.world.notebook.data[PARKED_KEY]["smelter_1"]["wake_after"], WAKE_AFTER_TICKS["smelter"] * 2)
+
     def test_event_wake_does_not_start_a_backoff(self):
         self.request("supply_dock_1", "supply_dock")
         self.parking.step(self.grids, 10.0, {"supply_dock_1": None})

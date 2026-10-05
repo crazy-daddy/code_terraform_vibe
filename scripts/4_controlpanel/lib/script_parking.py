@@ -95,10 +95,11 @@ WAKE_AFTER_TICKS = {
     # (lib/habitat.py); the Wildlife planner wakes it when that changes or a node purchase is queued.
     "habitat": 6000,
 }
-# Timed re-checks that found nothing back off: a machine that parks again within
+# Timed re-checks that found nothing back off: a machine that files its next park request within
 # FRUITLESS_REPARK_TICKS of a "re-check due" wake gets its next wake_after doubled (base
-# WAKE_AFTER_TICKS << streak), up to the kind's cap here. A park that comes later than that
-# window (the machine did work in between) resets the streak. Kinds without an event wake pay
+# WAKE_AFTER_TICKS << streak), up to the kind's cap here. A request filed later than that
+# window (the machine did work in between) resets the streak. The request's own tick counts,
+# not the park: passes can run further apart than the window. Kinds without an event wake pay
 # at most the cap in extra latency for new work.
 WAKE_BACKOFF_MAX_TICKS = {
     "smelter": 1200,
@@ -106,8 +107,8 @@ WAKE_BACKOFF_MAX_TICKS = {
     "crop_automator": 1800,
     "supply_dock": 1800,
 }
-# A park filed this soon after a re-check wake means the machine woke, found no work and idled again
-# (its request is re-filed on its first idle step, parked on the next 50-tick pass).
+# A park request filed this soon after a re-check wake means the machine woke, found no work and
+# idled again (it re-files on its first idle streak, PARK_AFTER_IDLE_STEPS).
 FRUITLESS_REPARK_TICKS = 150
 # Kinds woken when the demand they work from rises (ScriptParking._demand_wakes()). A Fabricator
 # woken this way wakes the Smelters it lacks ingots from itself (fabricator.wake_local_smelters()).
@@ -555,7 +556,8 @@ class ScriptParking:
             if request.get("wake_after") is not None:
                 entry["wake_after"] = min(int(request["wake_after"]), MAX_WAKE_AFTER_TICKS)
             else:
-                backoff = self._backoff_wake_after(machine_id, kind, now)
+                filed = request.get("tick")
+                backoff = self._backoff_wake_after(machine_id, kind, filed if isinstance(filed, (int, float)) else now)
                 if backoff is not None:
                     entry["wake_after"] = backoff
                     log.debug(f"{machine_id} found no work after its last re-check, next one in {backoff} ticks")
@@ -629,14 +631,15 @@ class ScriptParking:
         streak = self._rechecks.get(machine_id, (0, 0))[1]
         self._rechecks[machine_id] = (now, streak)
 
-    def _backoff_wake_after(self, machine_id, kind, now):
-        """wake_after for a machine being parked, longer when its last re-check found no work; None for the kind default."""
+    def _backoff_wake_after(self, machine_id, kind, filed):
+        """wake_after for a machine being parked, longer when its last re-check found no work; None for the kind default.
+        `filed` = tick of its park request: the machine's own idle verdict, so the gap between parking passes does not count."""
         cap = WAKE_BACKOFF_MAX_TICKS.get(kind)
         recheck = self._rechecks.get(machine_id)
         if cap is None or recheck is None:
             return None
         woke, streak = recheck
-        if now - woke > FRUITLESS_REPARK_TICKS:
+        if filed - woke > FRUITLESS_REPARK_TICKS:
             self._rechecks.pop(machine_id, None)
             return None
         streak += 1

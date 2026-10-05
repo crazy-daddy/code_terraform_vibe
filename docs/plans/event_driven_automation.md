@@ -22,9 +22,9 @@ Most of the parking pass is polling. It re-reads every grid member, re-computes 
 - **A full pass stays as the backstop.** Every event path keeps a slow full pass that catches lost events (a producer crashed between its write and its signal, a script restart dropped state).
 - **Extra scripts add speed, not budget.** At 50 or more running scripts the base shares 50,000 steps per tick. An extra worker takes its share from every other script, and a script blocked in `wait()` or `sleep()` still counts. Workers scale cheaply only if they end when idle and something restarts them.
 
-## Phase 0: chore cost cut (done in the working tree, not deployed)
+## Phase 0: chore cost cut (deployed 2026-10-05 04:52 UTC, commit 1e419c6)
 
-Behavior is unchanged except for the parking split. Measured by replaying the live save's machines and parking archive through the stub harness (scratch profile on top of `devtools/step_profile.py`). The replay matched the live logs at about 43 ticks per parking pass before the change.
+Behavior is unchanged except for the parking split. Estimated by replaying the live save's machines and parking archive through the stub harness (scratch profile on top of `devtools/step_profile.py`). The replay matched the live logs at about 43 ticks per parking pass before the change.
 
 | Change | Before | After |
 |---|---|---|
@@ -40,6 +40,49 @@ The largest single atomic call is about 3.4k steps, under the 10,000-step cap.
 1. Run `python devtools/log_block_timing.py --script automation --since <deploy time UTC>`. Expected: `script parking` median about 28 ticks (full) and about 12 ticks (fast).
 2. Measure the storage pass period from the spacing of the `home salt request` debug lines in `automation_1.log`. It was 3,000–5,000 ticks.
 3. Compare the decommission delay: `Empty and docked; ready for undeploy` (drone log) to `[decommission] Retiring` (automation log).
+
+### Phase 0 live results (2026-10-05, about 11,000 ticks, 45 parking passes)
+
+The replay estimates did not hold. The replay modeled member reads; the live cost is wake and park events.
+
+| Metric | Estimate | Measured |
+|---|---|---|
+| Parking pass | full ~28, fast ~12 ticks | ~50–55 ticks: block median 36, plus ~15–20 ticks of pre-work before its first log line |
+| Pass with at most 2 wakes or parks | – | ~4 ticks inside the block |
+| Spacing between passes | 50 ticks | median 170, minimum 67 |
+| Storage pass period (`home salt request`) | – | 3,982 / 3,043 / 3,004 ticks (was 3,000–5,000) |
+| Parking share of Automation game time | – | ~22% |
+
+Findings:
+
+1. **The fast/full split has no effect.** Passes run about 170 ticks apart, more than `PARKING_FULL_TICK_INTERVAL = 150`, so almost every pass is full.
+2. **Pass cost follows events, not member reads.** Each wake or park costs about 2 ticks (`set_powered`, an archive transaction, a log line). Median 16 events per pass.
+3. **Re-check backoff almost never fired.** 332 of 346 wakes were `re-check due`. The backoff applied to only 20 of 283 re-check wakes of smelter, fabricator, crop_automator and supply_dock. `_backoff_wake_after()` measured wake-to-park, and the park came on the next pass, outside `FRUITLESS_REPARK_TICKS = 150`. The same machines woke about every 900 ticks and parked again. Each woken machine also counts as a running script until it parks.
+
+### Fixes after the measurement
+
+- **A (done in the working tree, not committed):** backoff measures wake-to-request using the tick in the machine's own park request, so pass spacing no longer matters. Test: `test_backoff_counts_the_request_tick_not_a_late_park_pass`.
+- **B (open):** choose the full pass by pass count (for example every 3rd pass) instead of by ticks. Check first: a request older than `REQUEST_FRESH_TICKS = 150` is not parked. Two skipped passes at 170-tick spacing could let requests go stale unless `ParkRequester` re-files often enough.
+- **C:** Phases 1–2 below replace timed re-checks with wakes at the cause, which removes most of the remaining churn.
+
+## Hand-off
+
+State on 2026-10-05:
+
+- Phase 0 is committed (1e419c6) and deployed. Fix A is uncommitted in `scripts/4_controlpanel/lib/script_parking.py`, `tests/test_script_parking.py` and `docs/cheatsheet/dev_workflow.md` §1d-2. The user deploys it and lets it run longer before the next measurement.
+- Next step: remeasure with `--since` set to the deploy time of fix A. Find the deploy time in `devtools/.sync-backups/sync.log` (`run automation_1.py restarted in game`).
+- Then decide on fix B, then Phase 1.
+
+How to measure (main save, read-only; the logs are in `%APPDATA%\io.codeterraform.game\save_mtzkzly3_4ww80o_scripts\logs\`):
+
+1. Block times: `python devtools/log_block_timing.py --script automation --since <ISO UTC>`. A debug block's header carries the clock of its first inner line, so the parking row misses the pass's pre-work. Add the gap between the line before `┏━ script parking` and that header.
+2. Events per pass: count `woke ` and `parked ` lines between `┏━ script parking` and `┗━ END script parking` in `automation_1.log`. Group wakes by the reason in parentheses.
+3. Pass spacing: the game-clock difference between consecutive `┏━ script parking` headers, divided by 14.4 s per tick.
+4. Backoff hits: `grep -c "found no work" automation_1.log` and `grep -o "next one in [0-9]* ticks" | sort | uniq -c`. Compare with the count of `re-check due` wakes per kind.
+5. Storage pass period: the tick difference between consecutive `home salt request` lines.
+6. Decommission delay: see "Verify after deploy", step 3.
+
+Success for fix A: backoff lines for most re-check wakes of the four backoff kinds, fewer than about 260 wake/park pairs per 11,000 ticks, fewer events per pass, and a shorter storage pass period.
 
 ## Phase 1: wakes at the cause
 
