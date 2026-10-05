@@ -200,7 +200,15 @@ export class Sim {
     return { ok: !!run_.result?.ok, status: run_.result?.status ?? run_.error };
   }
 
-  tick(n = 1) { for (let i = 0; i < n; i++) this.h.advance(); }
+  tick(n = 1) {
+    for (let i = 0; i < n; i++) {
+      this.parker?.pass();
+      this.h.advance();
+    }
+  }
+
+  // Park passive machines' scripts (devtools/headless/passive.mjs).
+  park(parker) { this.parker = parker; }
 
   terraformIndex() { return Number(this.state.researchRates?.terraform?.lastValue ?? 0); }
 

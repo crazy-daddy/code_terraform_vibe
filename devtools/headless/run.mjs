@@ -18,12 +18,16 @@
 // --profile              per-system wall time at the end
 // --skip-systems A,B     systems to leave out (default AchievementSystem; "" runs all)
 // --keep-debug           keep the save's per-script debug flags (slow)
+// --park                 park passive machines' scripts (passive.mjs); wake on triggers
+// --set ID.KEY=VALUE     set machines[ID].data[KEY] after load (repeatable), e.g. to
+//                        buffer a reservoir that forces fluid-network rebuilds
 // --fail-on-error        exit 1 when any script crashed
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { Sim } from "./simhost.mjs";
+import { Parker } from "./passive.mjs";
 
 // Mirrors resolve_machine_template_type() of the earlygame runner's early_game.py.
 export const EARLY_DEPLOY_MAP = {
@@ -43,7 +47,8 @@ const { values: a } = parseArgs({
     "deploy-templates": { type: "string" }, "deploy-map": { type: "string" },
     hours: { type: "string" }, "until-tp": { type: "string" }, "report-every": { type: "string" },
     out: { type: "string" }, profile: { type: "boolean" },
-    "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" }, "fail-on-error": { type: "boolean" },
+    "skip-systems": { type: "string" }, "keep-debug": { type: "boolean" },
+    park: { type: "boolean" }, set: { type: "string", multiple: true }, "fail-on-error": { type: "boolean" },
   },
 });
 
@@ -53,6 +58,13 @@ const sim = await Sim.create({
 });
 if (a.save) sim.load(readFileSync(a.save, "utf8"));
 else sim.newGame(Number(a.seed ?? 1));
+for (const spec of a.set ?? []) {
+  const [, id, key, value] = /^([^.]+)\.([^=]+)=(.*)$/.exec(spec) ?? [];
+  if (!sim.state.machines[id]) throw new Error(`--set: no machine ${id}`);
+  sim.state.machines[id].data[key] = Number(value);
+}
+const parker = a.park ? new Parker(sim) : null;
+if (parker) sim.park(parker);
 
 const out = a.out;
 if (out) mkdirSync(out, { recursive: true });
@@ -142,12 +154,14 @@ function metrics(wallStart, startTick) {
     tick: st.tickCount,
     gameHours: +(ticks / TICKS_PER_SECOND / 3600).toFixed(3),
     tp: Math.round(sim.terraformIndex()),
+    atmo: Object.fromEntries(Object.entries(st.researchRates ?? {}).map(([k, v]) => [k, +Number(v?.lastValue ?? 0).toFixed(3)])),
     credits: Math.round(st.player?.credits ?? 0),
     machines: Object.keys(st.machines).length,
     running: scripts.filter(s => s.status === "running").length,
     errored: scripts.filter(s => s.status === "error").length,
     wallS: +wall.toFixed(1),
-    speedup: Math.round(ticks / TICKS_PER_SECOND / Math.max(wall, 1e-9)),
+    speedup: +(ticks / TICKS_PER_SECOND / Math.max(wall, 1e-9)).toFixed(2),
+    ...(parker ? { wakes: parker.wakes } : {}),
   };
 }
 
