@@ -44,7 +44,7 @@ SPARE_QUANTILE of the samples. See docs/cheatsheet/dev_workflow.md §1d-3.
 from archive import archive
 from tree_console import TreeConsole
 from swallow import swallowed
-from atomic import run_batched
+from atomic import run_atomic, run_batched
 from fleet_status import FLEET_STATUS_KEY, IDLE_STATES
 from script_parking import PARKED_KEY, PARK_REQUESTS_KEY
 
@@ -57,8 +57,10 @@ HALF_LIFE_TICKS = 216000
 SPARE_QUANTILE = 0.9
 # Ticks between two debug summaries (one line per group).
 SUMMARY_LOG_TICKS = 36000
-# Machines per atomic batch (classify, accumulate).
-ACTIVITY_CHUNK = 50
+# Machines per atomic batch (classify, accumulate, tally; ~35 steps each at most).
+ACTIVITY_CHUNK = 100
+# Groups per atomic _group_entries() batch (a few hundred operations each).
+GROUP_CHUNK = 10
 # Decayed weights below this are dropped.
 MIN_WEIGHT = 0.01
 
@@ -146,17 +148,21 @@ def spare_quantile(spare, quantile=SPARE_QUANTILE):
     return 0
 
 
-def _update_groups(tracked, previous, factor, signal_groups):
-    """New groups dict from this sample's [(group, class)] and the decayed previous groups."""
-    now = {}
+def _tally(tracked, now):
+    """Adds one slice of this sample's [(group, class)] to `now` {group: {"n", "spare", "c"}}; run atomically."""
     for group, cls in tracked:
         entry = now.setdefault(group, {"n": 0, "spare": 0, "c": {}})
         entry["n"] += 1
         entry["c"][cls] = entry["c"].get(cls, 0) + 1
         if cls in SPARE_CLASSES:
             entry["spare"] += 1
-    groups = {}
-    for group, sample in now.items():
+    return []
+
+
+def _group_entries(samples, previous, factor, signal_groups):
+    """[(group, entry)] for one slice of _tally()'s (group, sample) items, merged with the decayed previous groups; run atomically."""
+    out = []
+    for group, sample in samples:
         old = previous.get(group)
         old = old if isinstance(old, dict) else {}
         counts = {k: v * factor for k, v in (old.get("c") or {}).items()}
@@ -169,7 +175,7 @@ def _update_groups(tracked, previous, factor, signal_groups):
         spare[sample["spare"]] = round(spare[sample["spare"]] + 1, 3)
         weight = round((old.get("w") or 0) * factor + 1, 3)
         machine_time = sum(counts.values()) or 1
-        groups[group] = {
+        out.append((group, {
             "n": sample["n"],
             "sig": group in signal_groups,
             "w": weight,
@@ -178,7 +184,21 @@ def _update_groups(tracked, previous, factor, signal_groups):
             "share": {k: round(100.0 * v / machine_time, 1) for k, v in counts.items()},
             "spare_mean": round(sum(counts.get(k, 0) for k in SPARE_CLASSES) / weight, 2),
             "retire": spare_quantile(spare),
-        }
+        }))
+    return out
+
+
+def _update_groups(tracked, previous, factor, signal_groups):
+    """New groups dict from this sample's [(group, class)] and the decayed previous groups."""
+    now = {}
+    run_batched(_tally, tracked, ACTIVITY_CHUNK, now)
+    return dict(run_batched(_group_entries, list(now.items()), GROUP_CHUNK, previous, factor, signal_groups))
+
+
+def _signal_groups(classified, previous_groups):
+    """Groups with an idle signal: in this sample or seen before; run atomically."""
+    groups = {group for _, group, _, signal in classified if signal}
+    groups.update(g for g, e in previous_groups.items() if isinstance(e, dict) and e.get("sig"))
     return groups
 
 
@@ -204,8 +224,7 @@ def record(snapshot, now):
     previous_machines = state.get("machines") or {}
 
     classified = run_batched(_classify, rows, ACTIVITY_CHUNK, running, _read_dict(FLEET_STATUS_KEY), _read_dict(PARKED_KEY), _read_dict(PARK_REQUESTS_KEY))
-    signal_groups = {group for _, group, _, signal in classified if signal}
-    signal_groups.update(g for g, e in previous_groups.items() if isinstance(e, dict) and e.get("sig"))
+    signal_groups = run_atomic(_signal_groups, classified, previous_groups)
     machines = {}
     tracked = run_batched(_accumulate, classified, ACTIVITY_CHUNK, machines, previous_machines, factor, signal_groups)
     state = {

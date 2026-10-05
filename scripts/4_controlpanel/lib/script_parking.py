@@ -46,9 +46,9 @@ from tree_console import TreeConsole
 from components import oil_pump
 from swallow import swallowed
 import fluid_routing
-from atomic import run_batched
+from atomic import run_atomic
 from retired_machines import retired_ids
-# lib/power.py is imported where it is used (_low_reserve_grids()): the tier-5 power.py imports
+# lib/power.py is imported where it is used (_power_module()): power.py imports
 # turbine_commit, which imports this module, so a module-level import would be a cycle.
 power = None
 
@@ -133,7 +133,8 @@ OIL_WAKE_RESERVE_FRACTION = 0.40
 RESERVE_CACHE_TICKS = 150
 # Oil Generators are woken (and not parked) while the network-wide oil tank fill is at or
 # above this: their script runs them as base load from oil_generator.OIL_SURPLUS_START_FRACTION
-# (same value; this tier-4 module cannot import the tier-5 one).
+# (same value; oil_generator imports this module, so it cannot be imported here). Not on a grid a
+# producing Reactor carries (power.reactor_carried()): their script burns no surplus there.
 OIL_SURPLUS_WAKE_FRACTION = 0.90
 
 SOLAR_TYPE_ID = "solar_generator"
@@ -276,18 +277,22 @@ def wake_kind(kind, reason):
     return woken
 
 
-# Grid members per atomic _member_rows() call (~15 operations each).
+# Grid members per atomic _member_rows() call (~25 operations each).
 MEMBER_CHUNK = 150
 
 
-def _member_rows(members, anchor):
-    """[(member id, (anchor, type_id, powered))] for one grid's members; pure reads, run atomically."""
-    rows = []
-    for member in members:
+def _member_rows(chunk, anchor, members, by_type, dark):
+    """Adds one slice of a grid's members to the pass's index: members {id: (anchor, type_id, powered)},
+    by_type {type_id: [ids]}, dark [ids switched off]. Pure reads, run atomically."""
+    for member in chunk:
         member_id = getattr(member, "id", None)
         if member_id:
-            rows.append((member_id, (anchor, getattr(member, "type_id", ""), bool(getattr(member, "powered", True)))))
-    return rows
+            type_id = getattr(member, "type_id", "")
+            powered = bool(getattr(member, "powered", True))
+            members[member_id] = (anchor, type_id, powered)
+            by_type.setdefault(type_id, []).append(member_id)
+            if not powered:
+                dark.append(member_id)
 
 
 def _held(machine_id, now):
@@ -446,13 +451,21 @@ class ScriptParking:
         self._reserve_cache = {}
         # {(kind, source key, item): amount} of the last pass's demand (_demand_signature()); None before the first pass.
         self._demand = None
+        # This pass's member index from _members(): {type_id: [ids]} and the ids switched off.
+        self._by_type = {}
+        self._dark = []
+        # Last full pass's members dict and oil surplus verdict, reused by fast passes; None before the first full pass.
+        self._members_seen = None
+        self._oil_seen = False
 
-    def step(self, grids: "list[PowerGrid]", elevation, dock_plan=None):
+    def step(self, grids: "list[PowerGrid]", elevation, dock_plan=None, full=True):
         """
         One pass: wake due or triggered machines, park fresh requests, stop/start
         solar scripts by `elevation`. `grids` = power_control.grids() of this tick;
-        `dock_plan` = supply_dock.order_plan ({dock_id: order_id or None}). Returns the
-        automation card items (one per parked kind).
+        `dock_plan` = supply_dock.order_plan ({dock_id: order_id or None}).
+        full=False is a fast pass: wakes only, on the last full pass's member rows and
+        oil surplus verdict. Parking, the powered-again and orphan checks, solar and
+        strays wait for the next full pass (the first pass is always full).
         """
         now = _now_tick()
         parked = archive.get(PARKED_KEY, {}) or {}
@@ -461,32 +474,38 @@ class ScriptParking:
         requests = archive.get(PARK_REQUESTS_KEY, {}) or {}
         requests = requests if isinstance(requests, dict) else {}
         shed = set(archive.get("power.shedded", []) or [])
-        members = self._members(grids)
+        full = full or self._members_seen is None
+        if full:
+            self._members_seen = self._members(grids)
+        members = self._members_seen or {}
         changed = False
         woken = {}  # {machine_id: parked-since tick}: their requests from before parking are cleared below
 
         log.start("script parking", level="debug")
         low_grids = self._low_reserve_grids(grids, parked, requests, members)
-        oil_surplus = self._oil_surplus(parked, requests)
+        if full:
+            self._oil_seen = self._oil_surplus(parked, requests)
+        oil_surplus = self._oil_seen
+        reactor_grids = self._reactor_grids(grids) if oil_surplus else set()
         demand_wakes = self._demand_wakes(dock_plan)
         for machine_id, entry in list(parked.items()):
             if entry.get("mode") != "breaker":
                 continue
-            member = members.get(machine_id)  # a grid member was read this pass: it exists and its powered flag is current
+            member = members.get(machine_id)  # read this full pass (or the last one): it exists; its powered flag is current on full passes
             if member is None and get_component(machine_id) is None:
                 log.debug(f"{machine_id} no longer exists, dropped from the parked list")
                 del parked[machine_id]
                 self._rechecks.pop(machine_id, None)
                 changed = True
                 continue
-            if member[2] if member is not None else self._is_powered(machine_id):
+            if full and (member[2] if member is not None else self._is_powered(machine_id)):
                 # Switched on by the player (or anything else): no longer parked here.
                 log.debug(f"{machine_id} is powered again, dropped from the parked list")
                 woken[machine_id] = entry.get("since", now)
                 del parked[machine_id]
                 changed = True
                 continue
-            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan, oil_surplus, demand_wakes)
+            reason = self._wake_reason(machine_id, entry, now, members, low_grids, dock_plan, oil_surplus, demand_wakes, reactor_grids)
             if reason and self._set_powered(machine_id, True):
                 log.debug(f"woke {machine_id} ({reason})")
                 woken[machine_id] = entry.get("since", now)
@@ -494,10 +513,23 @@ class ScriptParking:
                 self._note_wake(machine_id, reason, entry, now)
                 changed = True
 
-        awake = None  # {station kind: ids neither parked nor shed}, built on first use
         if woken:
             self._clear_requests(woken)
-        changed = self._adopt_orphans(parked, requests, woken, shed, members, now) or changed
+        if full:
+            changed = self._park_and_tend(parked, before, requests, woken, shed, members, now, elevation, dock_plan,
+                                          demand_wakes, oil_surplus, low_grids, reactor_grids) or changed
+        if changed:
+            self._commit(before, parked)
+        if full:
+            self._strays(members, parked, woken, shed, requests, now)
+        log.end()
+
+    def _park_and_tend(self, parked, before, requests, woken, shed, members, now, elevation, dock_plan,
+                       demand_wakes, oil_surplus, low_grids, reactor_grids):
+        """Full pass only: re-adopts orphans, parks fresh requests, stops/starts solar scripts. Returns True
+        when `parked` changed beyond the parks, which each commit on their own."""
+        awake = None  # {station kind: ids neither parked nor shed}, built on first use
+        changed = self._adopt_orphans(parked, requests, woken, shed, members, now)
         for machine_id, request in requests.items():
             if machine_id in parked or machine_id in woken or machine_id in shed or not isinstance(request, dict):
                 continue
@@ -510,11 +542,11 @@ class ScriptParking:
                 continue
             if kind in demand_wakes:
                 continue  # demand rose this pass: stay up one more pass to see it
-            if kind == "oil_generator" and (oil_surplus or members[machine_id][0] in low_grids):
+            if kind == "oil_generator" and ((oil_surplus and members[machine_id][0] not in reactor_grids) or members[machine_id][0] in low_grids):
                 continue  # reserve already low or oil in surplus: stay ready instead of parking and waking again
             if kind in STATION_KINDS:
                 if awake is None:
-                    awake = self._awake_stations(members, parked, shed)
+                    awake = self._awake_stations(self._by_type, parked, shed)
                 if awake[kind] <= {machine_id}:
                     continue  # last one awake of its kind
             if kind in HELD_KINDS and _held(machine_id, now):
@@ -539,12 +571,7 @@ class ScriptParking:
             else:
                 self._commit({machine_id: entry}, {})
 
-        changed = self._solar(elevation, members, parked, now) or changed
-        if changed:
-            self._commit(before, parked)
-        self._strays(members, parked, woken, shed, requests, now)
-        log.end()
-        return self._summary(parked)
+        return self._solar(elevation, members, parked, now) or changed
 
     @staticmethod
     def _commit(before, after):
@@ -634,7 +661,7 @@ class ScriptParking:
             log.debug(f"demand rose: {wakes}")
         return wakes
 
-    def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan, oil_surplus=False, demand_wakes=None):
+    def _wake_reason(self, machine_id, entry, now, members, low_grids, dock_plan, oil_surplus=False, demand_wakes=None, reactor_grids=None):
         kind = entry.get("kind")
         if demand_wakes and kind in demand_wakes:
             return f"demand changed: {demand_wakes[kind]}"
@@ -644,7 +671,7 @@ class ScriptParking:
             return "order assigned"
         if kind == "oil_generator" and members.get(machine_id, (None,))[0] in low_grids:
             return "grid reserve low"
-        if kind == "oil_generator" and oil_surplus:
+        if kind == "oil_generator" and oil_surplus and members.get(machine_id, (None,))[0] not in (reactor_grids or ()):
             return "oil surplus"
         if kind == "oil_pump" and self._well_active(machine_id):
             return "well active"
@@ -653,13 +680,9 @@ class ScriptParking:
         return None
 
     @staticmethod
-    def _awake_stations(members, parked, shed):
+    def _awake_stations(by_type, parked, shed):
         """{station kind: ids on the grids neither parked nor shed}, for every STATION_KINDS kind."""
-        awake = {kind: set() for kind in STATION_KINDS}
-        for machine_id, (_anchor, type_id, _powered) in members.items():
-            if type_id in awake and machine_id not in parked and machine_id not in shed:
-                awake[type_id].add(machine_id)
-        return awake
+        return {kind: {m for m in by_type.get(kind, ()) if m not in parked and m not in shed} for kind in STATION_KINDS}
 
     @staticmethod
     def _well_active(machine_id):
@@ -687,6 +710,15 @@ class ScriptParking:
             return True
 
     @staticmethod
+    def _reactor_grids(grids: "list[PowerGrid]"):
+        """Anchor ids of grids a producing Reactor carries (power.reactor_carried()): no oil surplus wake there."""
+        grid_power = _power_module()
+        carried = getattr(grid_power, "reactor_carried", None)
+        if carried is None:
+            return set()
+        return {getattr(grid, "anchor_id", None) for grid in grids or [] if carried(grid)}
+
+    @staticmethod
     def _oil_surplus(parked, requests):
         """True while an Oil Generator is parked or asks to be, and the network-wide oil tank fill is >= OIL_SURPLUS_WAKE_FRACTION."""
         entries = list(parked.values()) + [r for r in requests.values() if isinstance(r, dict)]
@@ -707,8 +739,9 @@ class ScriptParking:
             return low
         now_tick = _now_tick()
         tanks = {}  # {anchor: gas tank ids}, from the member rows already read this pass
-        for member_id, (anchor, type_id, _powered) in members.items():
-            if type_id == "gas_tank" and anchor in wanted:
+        for member_id in self._by_type.get("gas_tank", ()):
+            anchor = members[member_id][0]
+            if anchor in wanted:
                 tanks.setdefault(anchor, []).append(member_id)
         for grid in grids:
             anchor = getattr(grid, "anchor_id", None)
@@ -761,8 +794,7 @@ class ScriptParking:
             swallowed("script_parking._strays: archive.get", error)
             return
         strays = strays if isinstance(strays, dict) else {}
-        dark = [m for m, (_anchor, _type_id, powered) in members.items()
-                if not powered and m not in parked and m not in woken and m not in shed and m not in requests]
+        dark = [m for m in self._dark if m not in parked and m not in woken and m not in shed and m not in requests]
         if not dark and not strays:
             return
         if dark:
@@ -838,8 +870,8 @@ class ScriptParking:
         changed = False
         if elevation <= 0:
             stopped = []
-            for machine_id, (_anchor, type_id, _powered) in members.items():
-                if type_id != SOLAR_TYPE_ID or machine_id in parked or not self._is_running(machine_id):
+            for machine_id in self._by_type.get(SOLAR_TYPE_ID, ()):
+                if machine_id in parked or not self._is_running(machine_id):
                     continue
                 if self._run(machine_id, "stop"):
                     parked[machine_id] = {"kind": "solar", "mode": "stopped", "since": now}
@@ -862,15 +894,18 @@ class ScriptParking:
 
     # ------------------------------------------------------------------ game calls
 
-    @staticmethod
-    def _members(grids: "list[PowerGrid]"):
-        """{machine_id: (grid anchor id, type_id, powered)} over every grid. The member
-        attribute reads run in atomic batches (_member_rows())."""
-        out = {}
+    def _members(self, grids: "list[PowerGrid]"):
+        """{machine_id: (grid anchor id, type_id, powered)} over every grid; also sets
+        self._by_type and self._dark, so later steps walk only the members they need.
+        The member reads run in atomic batches (_member_rows())."""
+        members, by_type, dark = {}, {}, []
         for grid in grids:
-            rows = run_batched(_member_rows, getattr(grid, "members", []) or [], MEMBER_CHUNK, getattr(grid, "anchor_id", None))
-            out.update(rows)
-        return out
+            items = list(getattr(grid, "members", []) or [])
+            anchor = getattr(grid, "anchor_id", None)
+            for start in range(0, len(items), MEMBER_CHUNK):
+                run_atomic(_member_rows, items[start:start + MEMBER_CHUNK], anchor, members, by_type, dark)
+        self._by_type, self._dark = by_type, dark
+        return members
 
     def _is_powered(self, machine_id):
         """power_control.is_powered(); False on a read failure (the entry stays until its re-check)."""
@@ -913,14 +948,3 @@ class ScriptParking:
         if status not in ("ok", "already_running"):
             log.debug(f"run_control.{action}({machine_id}) -> {status}")
         return status in ("ok", "already_running")
-
-    @staticmethod
-    def _summary(parked):
-        """Automation card items: one "parked: N kind" per kind, or ["nothing parked"]."""
-        if not parked:
-            return ["nothing parked"]
-        counts = {}
-        for entry in parked.values():
-            kind = entry.get("kind", "?")
-            counts[kind] = counts.get(kind, 0) + 1
-        return [f"parked: {n} {kind}" for kind, n in sorted(counts.items())]

@@ -134,6 +134,18 @@ class ReactorOilTests(_GridWorld):
         self.assertEqual(controller.choose_throttle(), 0.0, self.debug_log())
         self.assertFalse(controller.surplus)
 
+    def test_parking_skips_oil_surplus_wake_on_reactor_grids(self):
+        self.add_reactor(4000.0)
+        grid = self.grid()
+        self.assertEqual(script_parking.ScriptParking._reactor_grids([grid]), {"battery_1"})
+        members = {"oil_generator_1": ("battery_1", "oil_generator", False)}
+        parking = script_parking.ScriptParking.__new__(script_parking.ScriptParking)
+        entry = {"kind": "oil_generator", "since": self.world.clock.now}
+        reason = parking._wake_reason("oil_generator_1", entry, self.world.clock.now, members, set(), {}, True, None, {"battery_1"})
+        self.assertIsNone(reason)
+        reason = parking._wake_reason("oil_generator_1", entry, self.world.clock.now, members, set(), {}, True, None, set())
+        self.assertEqual(reason, "oil surplus")
+
 
 if __name__ == "__main__":
     unittest.main()

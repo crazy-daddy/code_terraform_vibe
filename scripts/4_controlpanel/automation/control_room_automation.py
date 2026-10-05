@@ -113,8 +113,11 @@ DOCK_PLAN_MAX_TICK_INTERVAL = 600
 # Mining Drill telemetry for every drill (lib/mining_drill.py publish_all_drills()); drills need no
 # script of their own, and a stockpile fills over hours.
 DRILL_TELEMETRY_TICK_INTERVAL = 600
-# Script parking pass (lib/script_parking.py): parks idle machines, wakes them, stops solar at night.
+# Script parking pass (lib/script_parking.py): wakes parked machines every PARKING_TICK_INTERVAL; every
+# PARKING_FULL_TICK_INTERVAL the pass is full and also parks idle machines, stops solar at night and
+# tends strays. A full pass costs about three fast ones; requests stay fresh (REQUEST_FRESH_TICKS) in between.
 PARKING_TICK_INTERVAL = 50
+PARKING_FULL_TICK_INTERVAL = 150
 # Fleet commission pass while a head job is in a quick state (fleet_commission.commission_fast()):
 # checked at the top of every loop and between the storage pass's sub-steps, like dock planning.
 # The storage pass steps the coordinator regardless.
@@ -129,6 +132,7 @@ last_compact_tick = 0
 last_mixer_gate_tick = 0
 last_drill_tick = 0
 last_parking_tick = 0
+last_parking_full_tick = 0
 parking = None              # ScriptParking, created once power_control is available
 # signature = plan_signature() at the last plan; plan_tick = its tick
 dock_plan = {"last_tick": 0, "signature": None, "plan_tick": 0}
@@ -234,10 +238,11 @@ def supervise_grids_if_due(clock: "Clock | None", power: "PowerControl | None"):
 
 
 def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
-    """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (parks idle machines, wakes due or triggered ones),
+    """Every PARKING_TICK_INTERVAL: one ScriptParking.step() pass (wakes due or triggered machines; every
+    PARKING_FULL_TICK_INTERVAL a full pass that also parks idle ones),
     the requested script restarts (lib/script_restart.py), then the running-script census when due (script_census.census_if_due()), whose snapshot feeds the
     machine activity sample (lib/machine_activity.py)."""
-    global last_parking_tick, parking
+    global last_parking_tick, last_parking_full_tick, parking
     now = clock.tick() if clock and hasattr(clock, "tick") else 0
     if last_parking_tick != 0 and now - last_parking_tick < PARKING_TICK_INTERVAL:
         return
@@ -246,10 +251,14 @@ def park_if_due(clock: "Clock | None", power: "PowerControl | None"):
         if parking is None and power:
             parking = ScriptParking(power=power, clock=clock)
         if parking is not None:
+            full = last_parking_full_tick == 0 or now - last_parking_full_tick >= PARKING_FULL_TICK_INTERVAL
+            if full:
+                last_parking_full_tick = now
             parking.step(
                 power.grids() if power and hasattr(power, "grids") else [],
                 clock.get_elevation() if clock and hasattr(clock, "get_elevation") else None,
                 archive.get(supply_dock.ORDER_PLAN_ARCHIVE_KEY, {}) or {},
+                full=full,
             )
     except Exception as e:
         report_error("Script parking", e)
