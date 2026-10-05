@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 export const DEFAULT_SIMWORKER = join(REPO, "internals", "terraform_decompiled", "simworker", "deobfuscated.js");
-const SHIM_VERSION = 3;
+const SHIM_VERSION = 4;
 
 // Names below are the minified identifiers of the simworker build the shim was
 // written against. After a game update, re-find them next to the worker
@@ -25,9 +25,11 @@ const __ctSystemMs = new Map();
 const __ctSkipSystems = new Set();
 let __ctStickyFluids = false;
 const __ctLastFluids = new Map();
-function __ctStickyFluid(id, fluids) {
-  if (fluids !== "[null,null,null]") __ctLastFluids.set(id, fluids);
-  return __ctLastFluids.get(id) ?? fluids;
+// An emptied tank also loses its per-fluid port keys, so the "*_capacity"
+// key list (t) is kept together with the fluid types (i).
+function __ctStickyFluid(id, caps, fluids) {
+  if (fluids !== "[null,null,null]") __ctLastFluids.set(id, [caps, fluids]);
+  return __ctLastFluids.get(id) ?? [caps, fluids];
 }
 function __ctTimedSystem(name, fn) {
   if (__ctSkipSystems.has(name)) return;
@@ -83,7 +85,7 @@ export { __ctCreateHeadless };
 // sticky fluids on, an empty machine keeps its last fluid type in the
 // signature and the content flags are left out, so the cached analysis stays.
 const GX_FLAGS = "    let o = jx(e) ? +(Nx(e) > 1e-9) : ``;\n";
-const GX_STICKY = GX_FLAGS + "    if (__ctStickyFluids) {\n      i = __ctStickyFluid(e.id, i);\n      a = ``;\n      o = ``;\n    }\n";
+const GX_STICKY = GX_FLAGS + "    if (__ctStickyFluids) {\n      [t, i] = __ctStickyFluid(e.id, t, i);\n      a = ``;\n      o = ``;\n    }\n";
 
 // Per-system timing: v9(name, fn) wraps every system call in tCe.tick().
 const V9_HEAD = "function v9(e, t) {\n  nH([`system`, e]);\n  try {\n    t();\n  }";
