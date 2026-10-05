@@ -920,38 +920,6 @@ def drain_port_inventory_first(port: "OutputSlot", outpost: "OutpostRef | None" 
     return results
 
 
-def consolidate_cross_warehouse_stock(outpost: "OutpostRef | None" = None):
-    """
-    Calls `.compact()` on every discovered Warehouse/Large Warehouse at
-    `outpost`. `.compact()` compacts only that one Warehouse's own slots (same
-    item split across several of its slots), never stock held by other
-    buildings. It answers `already_compact` immediately when nothing would
-    move and locks the Warehouse as a material endpoint only while moving,
-    when concurrent take_item() calls against it get "busy". Returns total
-    units moved across every building.
-    """
-    log.start("consolidate_cross_warehouse_stock", level="debug")
-    moved_total = 0
-    for building in discover_storage_buildings(outpost):
-        component = building["component"]
-        if not component or not hasattr(component, "compact"):
-            continue
-        try:
-            res = component.compact()
-        except Exception as error:
-            swallowed("storage.consolidate_cross_warehouse_stock: component.compact", error)
-            continue
-        moved = getattr(res, "moved", 0) or 0
-        if moved > 0:
-            moved_total += moved
-            log.print(f"[storage] Compacted {moved} unit(s) into Warehouse '{building['id']}'.")
-        else:
-            log.trace(f"'{building['id']}' compact() moved 0 units ({getattr(res, 'status', '?')})")
-    log.debug(f"moved {moved_total} unit(s) total across every discovered Warehouse")
-    log.end()
-    return moved_total
-
-
 def inventory_stack_size():
     """Current Inventory stack size per slot: 10, or 20 once Bigger Stacks is unlocked."""
     research = components.component("research")
@@ -1124,10 +1092,9 @@ def reclaim_inventory_only_items_from_warehouses(outpost: "OutpostRef | None" = 
     codebase should ever *place* such an item into a Warehouse to begin with
     (rebalance_inventory_to_warehouses() itself skips them via
     _occupied_stackable_slots_by_item()), so any occurrence here means it
-    arrived some other way (e.g. a player manually stashing gear, or a
-    Warehouse compact()/consolidate operation moving a stack the sweep never
-    intended to touch). Left behind, it would be stranded with no way to
-    equip a Pioneer/Rover or place it as equipment.
+    arrived some other way (e.g. a player manually stashing gear). Left
+    behind, it would be stranded with no way to equip a Pioneer/Rover or
+    place it as equipment.
 
     Skips any item an active Supply Dock order still owes (see
     _items_demanded_by_active_dock_orders()) -- a bulk Earth Order contract

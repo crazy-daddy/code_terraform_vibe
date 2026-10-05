@@ -416,13 +416,19 @@ Warehouse one partial stack at a time. Fixed by preferring a Warehouse that alre
 `item_id` over ranking by fill percent, falling back to fill percent only when none already stocks
 it.
 
-`consolidate_cross_warehouse_stock()`'s `.compact()` call was confirmed, by observation, to
-genuinely pull stock from *other* Warehouse buildings into the one it's called on — not a purely
-intra-building operation, which its outcome vocabulary (shared with `transfer_to()`:
-`source_under_construction`/`source_changed`/`slots_full`/`target_full`) only makes sense under.
-This also matches why the game would expose it at all: with Auto Feeders, a single Warehouse
-already adds to / draws from its lowest-numbered occupied slot for a given item on its own, so a
-purely intra-building `.compact()` would have nothing to ever actually do.
+**The Warehouse `.compact()` sweep (`consolidate_cross_warehouse_stock()`) was removed.** An
+earlier note here claimed `.compact()` pulls stock from *other* Warehouses. That was wrong: the
+decompiled simworker runs it on the calling building's own slots only (source and target are the
+same building), and its outcome codes are just the shared transfer set. Inside one Warehouse the
+game already keeps stock packed: inserts top up an existing partial slot of the same exact variant
+before opening an empty one, and takes drain the smallest stack first, so each variant has at most
+one partial slot. The sweep moved nothing in an 8.4 h log window. Fragmentation can still come from
+non-exact property takes (index-order drain), but that has not shown up in play.
+
+Fragmentation *across* Warehouses is bounded by `best_unload_target()`: it prefers a Warehouse
+that already holds the item, so an item spreads over at most N full stacks plus one partial. If
+cross-Warehouse fragmentation ever shows up in game, the fix is a `transfer_to()`-based
+consolidation, not `.compact()`.
 
 ---
 
@@ -695,3 +701,23 @@ Mixins (vehicle, drone, pioneer, harvester, ...) need `self` typed as the compos
 - **Protocol, not built**: a `VehicleControllerLike(Protocol)` with the whole cross-mixin surface, used as a per-method `self:` annotation. It worked in a scratchpad test, but needed the full attribute surface of all mixins and an annotation on every method.
 - **Chosen**: one `_host` property per mixin returning `self` typed as the controller (one `# type: ignore[return-value]`), with methods going through `self._host`. A full Pyright pass at `lib/vehicle.py` showed 0 errors, 0 warnings.
 - **Lesson**: a single-file diagnostics check is not evidence that a typing pattern is safe for a multi-file composition. Verify at the composition site before rolling a pattern out.
+
+## §0 — Cold-Boot Heater: Per-State Cache and Duty-Cycle Throttle (2026-10-05)
+
+The tier-0 `heater.py` used to re-scan powers 1–10 at every day change and cut to 1 W when
+the battery fell below 25 %. Two findings from the simworker changed both parts:
+
+- `thermal_state()` comes from a seed on the day number and holds for the whole day. Each of
+  the four states has one fixed optimal power. So the script learns each state's optimum once
+  (four scans per machine lifetime) and switches instantly on later days. Tier 0 has no archive
+  or Signal Bus, so every machine learns on its own.
+- Heat output depends on efficiency only, not on watts, and grid draw equals the set power.
+  Efficiency is `0.1 + 0.9·exp(-(1.2·Δ)²)` for Δ steps from the optimum, so a lower setpoint
+  loses far more heat than it saves power: 1 W gives the 10 % floor in most states. Running at
+  the optimum for part of the time (duty cycle) keeps heat per watt at its maximum. The throttle
+  therefore maps battery level linearly to a duty fraction and alternates optimum and 0 W.
+
+The 93 % average heater efficiency in [autoplay/early_optimization.md](autoplay/early_optimization.md)
+was measured in the headless runner, which wakes parked heater scripts only every
+`HEATER_REFRESH_TICKS` (`devtools/headless/passive.mjs`). Part of that dip is the runner, not
+the script.
