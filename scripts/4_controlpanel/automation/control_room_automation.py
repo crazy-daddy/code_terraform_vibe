@@ -20,9 +20,7 @@
 #     (lib/outpost_mining.py's reevaluate_unassigned_near_outpost()).
 #   - Biomass Mixer duty-cycle gate (lib/biomass_mixer_gate.py), every
 #     MIXER_GATE_TICK_INTERVAL (a paused Mixer can't wake itself, so an
-#     always-on script must). Idles until a Mixer exists. The module lives in
-#     the 5_steampower lib, but scripts_sync deploys new-only lib modules at
-#     every tier from 2_libunlock on, so this one script serves every tier.
+#     always-on script must). Idles until a Mixer exists.
 #     Once biomass is complete (lib/biomass_retire.py) the gate stops and
 #     BiomassRetirement switches the Liquifier/Mixer chain off instead.
 #   - Supply Dock order-assignment planning across every discovered dock
@@ -41,15 +39,13 @@
 #   - Cash manager pass (lib/cash.py CashManager): balance history, income and
 #     reagent burn, dynamic floor, ask queue with ETAs for the CASH card. Runs
 #     first each storage pass so the consumers below see a fresh floor.
-#   - Factory outposts (5_steampower libs, deployed at every tier like the
-#     Mixer gate): lib/site_plan.py places each root Fabricator target at the
+#   - Factory outposts: lib/site_plan.py places each root Fabricator target at the
 #     fab sites that build its tree, then lib/site_supply.py publishes the
 #     ingots/ore/finished goods each outpost needs hauled in and evicts ore
 #     stranded at an outpost that lost its Smelters.
 #   - Home salt request (lib/pump_salt.py publish_home_salt_request()): the
 #     field's buffer plus what the Plant Terraformers still need to 5m km^2.
-#   - Plants completion (8_planting lib/plants_retire.py, deployed at every
-#     tier like the Mixer gate): undeploys each Plant Terraformer once it
+#   - Plants completion (lib/plants_retire.py): undeploys each Plant Terraformer once it
 #     reads "complete" and its own script has emptied its holders; retried
 #     every storage pass. Idles until a Terraformer reports "complete".
 #   - Script restarts (lib/script_restart.py): stops and starts each script

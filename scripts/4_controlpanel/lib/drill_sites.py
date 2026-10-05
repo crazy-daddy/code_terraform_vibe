@@ -1,7 +1,7 @@
 # Field Mining Drills as pull-hauler pickup sources (lib/vehicle_cargo.py
 # run_pull_loop()).
 #
-# Each drill's telemetry script (lib/mining_drill.py, tier 7_miningdrills)
+# Each drill's telemetry script (lib/mining_drill.py)
 # advertises its stockpile in drill.status. What no API gives is where the
 # drill stands: the component has no position, drills aren't on the outpost
 # network, PowerGridMember carries no coordinates, and MiningSite (unlike
@@ -14,9 +14,8 @@
 #     writing drill.positions directly).
 # A drill with no known position is skipped by the hauler.
 #
-# Lives in the 4_controlpanel lib (not 7_miningdrills) because the pull
-# hauler and the Pioneer constructor import it at every tier; with no drills
-# deployed, nothing here does anything.
+# The pull hauler and the Pioneer constructor import it whether or not drills
+# exist; with no drills deployed, nothing here does anything.
 #
 # Archive shape (one shared dict per concern, CODE_GUIDES.md#archive):
 #   drill.positions = {drill_id: {"pos": [x, y], "site": site_id | None}}

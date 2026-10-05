@@ -2,7 +2,7 @@
 # control-room calculator (automation/control_room_automation.py) every storage tick.
 #
 # Only once the save reaches the mining-drill phase (any mining drill
-# deployed, same condition as scripts/7_miningdrills/.criteria) and while the
+# deployed, same condition as scripts/4_controlpanel/.criteria) and while the
 # drones_panel.py switch is on -- earlier, expanding beats upgrading.
 #
 # Swaps, one at a time fleet-wide, Depots first:

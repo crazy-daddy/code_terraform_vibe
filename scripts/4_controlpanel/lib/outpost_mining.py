@@ -37,7 +37,7 @@ log = TreeConsole(module="outpost_mining")
 
 # One {ore_item_id: units} dict for every outpost: a mining outpost's
 # stockpile target, home's standing ore floor and a smelting site's ore
-# buffer (5_steampower lib/site_supply.py) all read the same number.
+# buffer (lib/site_supply.py) all read the same number.
 ORE_STOCK_TARGETS_KEY = "mining.ore_stock_targets"
 
 # One Warehouse slot's worth (docs/components/warehouse.md: 5 slots x 2000

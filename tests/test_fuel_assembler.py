@@ -1,4 +1,4 @@
-"""Fuel Assembler (10_nuclear/lib/fuel_assembler.py), Lead Cask roles (lib/lead_cask.py),
+"""Fuel Assembler (lib/fuel_assembler.py), Lead Cask roles (lib/lead_cask.py),
 the Mk IV rod feed (lib/terraforming.py) and the hot-cargo hooks in production/supply_dock."""
 import unittest
 

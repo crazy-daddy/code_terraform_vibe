@@ -1,6 +1,6 @@
-"""Stub tests for the Plants finish line (8_planting/lib/plant_terraformer.py:
+"""Stub tests for the Plants finish line (lib/plant_terraformer.py:
 no loading or requests once running batches reach 5,000,000 km², eject and end
-at "complete") and the Automation's undeploy pass (8_planting/lib/plants_retire.py)."""
+at "complete") and the Automation's undeploy pass (lib/plants_retire.py)."""
 import unittest
 
 from harness import StubTestCase

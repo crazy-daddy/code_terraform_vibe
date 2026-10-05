@@ -124,8 +124,8 @@ def get_fabricator_pipeline(cache: "SourceCache | None" = None, site_id=None):
 
 
 # Fab sites (outposts with >= 1 Fabricator) and the per-site plan of which
-# sites build each root target's tree -- written by the 5_steampower lib
-# site_plan.py planner, read here by every Fabricator.
+# sites build each root target's tree -- written by the lib/site_plan.py
+# planner, read here by every Fabricator.
 # Shape {root_item_id: [site_id, ...]}; a site listed first gets the remainder.
 SITE_PLAN_KEY = "fabricator.site_plan"
 

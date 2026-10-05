@@ -1,5 +1,5 @@
 """Stub tests for Crop Automator output room: harvests are only queued while
-the output holds their yield (8_planting/lib/crop_automator.py), and a
+the output holds their yield (lib/crop_automator.py), and a
 Forage pull wakes a parked automator only once it leaves room for one
 harvest (storage.take_item())."""
 import unittest

@@ -2,8 +2,8 @@
 # mounted (DroneController.detect_role()); idle haulers also take Storm Glass
 # sites (try_aftermath_pickup(), called from drone_hauler.py).
 #
-# Sites come from weather.aftermaths, which lib/weather_signals.py (tier
-# 7_miningdrills) decodes from Weather Station transmissions. An aftermath
+# Sites come from weather.aftermaths, which lib/weather_signals.py
+# decodes from Weather Station transmissions. An aftermath
 # exists only from ready_gh (storm end) to expires_gh, and only at the exact
 # integer coordinate: go_to() lands exactly on it, and collect() returns
 # "nothing_here" for an early, nearby, expired or exhausted site alike

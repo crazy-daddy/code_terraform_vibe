@@ -29,10 +29,9 @@ import script_restart
 # Steam guard (heater only): steam is the grid's main power source, and the
 # turbines need the pool to carry them through vent dormancy. Below
 # STEAM_POOL_STOP_FRACTION of the grid's banked steam (power.measure_grid(),
-# the number the tier-5 Power Guard reads) the heater disconnects steam_in
+# the number the Power Guard reads) the heater disconnects steam_in
 # and runs as Mk II; it reconnects at STEAM_POOL_START_FRACTION. A grid with
-# no measurable steam tank, or a power.py without measure_grid() (below tier
-# 5), leaves the guard open. Water has no guard: water is not a power reserve.
+# no measurable steam tank leaves the guard open. Water has no guard: water is not a power reserve.
 
 FLUID_CHECK_INTERVAL_TICKS = 20
 

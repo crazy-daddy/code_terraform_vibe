@@ -33,7 +33,7 @@
 # from any dock. A dock takes only orders it covers at least one role-bound
 # item of; it ranks orders by the share it covers, and the rest of a mixed
 # order reaches its outpost as a site-supply consumer request
-# (5_steampower lib/site_supply.py). An empty dock leaves an order it covers
+# (lib/site_supply.py). An empty dock leaves an order it covers
 # nothing of, so a dock at a nuclear site without Fabricators never waits on
 # a crafted-only order.
 from production import can_fulfill_order, get_construction_material_reservations, discover_supply_dock_ids, discover_fabricator_ids, discover_smelter_ids, machine_outpost_id, home_outpost_id, SourceCache, SITE_PLAN_KEY

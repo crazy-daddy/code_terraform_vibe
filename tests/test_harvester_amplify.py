@@ -1,4 +1,4 @@
-"""Stub tests for the Harvester's Yield Amplifier (8_planting/lib/harvester_amplify.py)."""
+"""Stub tests for the Harvester's Yield Amplifier (lib/harvester_amplify.py)."""
 import unittest
 
 import game_stubs

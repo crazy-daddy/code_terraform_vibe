@@ -13,7 +13,7 @@ Section numbers are stable; code comments cite them as `AI_CHEATSHEET.md §2c` e
 | :--- | :--- | :--- |
 | 0, 0a, 0b | `lib/` module map, runtime limits, `TreeConsole` logging, `swallowed()` | this file |
 | 1 | Terraforming formula table | this file |
-| 1a, 1a-0, 1a-1 | Brownout load-shedding, steam-aware Power Guard, grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
+| 1a, 1a-0, 1a-1 | Power phases and load-shedding (solar night guard, combined-reserve guard), grid ownership | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1b, 1c, 1c-1, 1c-2, 1c-3, 1c-4, 1c-5 | Steam loop, fluid routing, Fluid Pump, Oil Generator, Steam Condenser, Mk III terraforming fluid feed, Mk IV rod magazine, Reactor heat control, game fluid delivery rules (same-outpost / script source / pooled) | [`cheatsheet/power_fluids.md`](cheatsheet/power_fluids.md) |
 | 1d, 1d-1, 1d-2, 1d-3 | Tick-cost profiling, script cost model (cost scales with running-script count), script parking, machine activity (retire candidates) | [`cheatsheet/dev_workflow.md`](cheatsheet/dev_workflow.md) |
 | 1e–1h-1 | Bio pipeline (Luminizer, backlog gate, biomes, essence/Mixer, biomass-complete retirement) | [`cheatsheet/bio_seeds_planting.md`](cheatsheet/bio_seeds_planting.md) |
@@ -51,7 +51,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Concern | Module(s) |
 | :--- | :--- |
 | Terraforming (heat/pressure/O2) | `terraforming.py` (`HeatController`, `PressureController`, `OxygenController`; `Mk3FluidFeed` routes Mk III `steam_in`/`water_in`, §1c-3) |
-| Power grid & brownout | `power.py` (`PowerGridManager` — generic, solar/oil/reactor/turbine grids, owned centrally by control_room_automation.py, one instance per grid, no election — see §1a-1); `solar.py` (`SolarController` — pure sun tracking, no grid supervision) |
+| Power grid & brownout | `power.py` (`PowerGridManager` — per-grid power phase solar/steam/oil/reactor, see §1a; owned centrally by control_room_automation.py, one instance per grid, no election — see §1a-1); `power_solar.py` (`SolarNightGuard` — night forecast shedding for solar-only grids); `solar.py` (`SolarController` — pure sun tracking, no grid supervision) |
 | Vehicles (Rover/Pioneer base) | `vehicle.py` (`VehicleController`, composes mixins below) |
 | &nbsp;&nbsp;↳ driving / stall recovery | `vehicle_navigation.py` |
 | &nbsp;&nbsp;↳ battery accounting / trip budgeting / charging-station discovery | `vehicle_energy.py` |
@@ -114,22 +114,22 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Drone Depot (cargo logistics endpoint) | `drone_depot.py` — see §2h; drains freight to local storage, buffers life forms in a local Warehouse (two stacks per form), stages hauler pickups, flushes surplus |
 | Depot staging requests (hauler → source Depot) | `depot_stage.py` — see §2j; `depot.stage` archive dict |
 | Pull logistics (outpost item requests, need/buffer tiers, fair share, in-flight pickups, source retention) | `logistics_requests.py` — see §2i; reverse hauler lives in `vehicle_cargo.py` `run_pull_loop()` |
-| Factory outpost site supply (per-outpost ingot/ore/finished-root requests, stranded ore and ingot/intermediate eviction), run by the `control_room_automation.py` Automation | `site_supply.py` — see §2i-1 (tier 5 lib, deployed at every tier) |
-| Fab site plan (which fab outposts build each root target's tree), run by the `control_room_automation.py` Automation | `site_plan.py` — see §2a-0-6 (tier 5 lib, deployed at every tier) |
-| Seed Maker (fair recipe sweep, stage A) | `seed_maker.py` — see §1i (tier `6_seeds`) |
-| Seed Maker on-demand seed production (stage B, once all 15 recipes are known) | `seed_supply.py` — see §1k (tier `6_seeds`; `bio/seed_maker.py` dispatches on `len(recipes())`) |
-| Field layout (species rules, starter block, full-field layout in automator chunks, rarity-weighted expansion; pure logic) | `field_layout.py` — see §1k (tier `8_planting`) |
-| Plant Terraformer (feed Forage/Water/Salt/Fertilizer/Accelerant, batch run policy) | `plant_terraformer.py` composes `plant_terraformer_water.py` (`PlantTerraformerWaterMixin`: `water_in` router) + `plant_terraformer_demand.py` (`PlantTerraformerDemandMixin`: local stock requests, Fabricator need/backlog orders); shared keys and ladder math `plant_terraformer_common.py` — see §1k (tier `8_planting`) |
-| Plants completion: undeploy emptied Plant Terraformers | `plants_retire.py` — see §1k (tier `8_planting` lib, deployed from `2_libunlock` on like every new-only module; driven by `control_room_automation.py`, idles until a Terraformer reports `complete`) |
-| Planting Harvester (plant, tend, harvest the layout) | `field_keeper.py` composes `harvester_heat.py` (`HarvesterHeatMixin`: heat-cheapest routes, just-in-time rests, live heat calibration; overrides `move_to()`/`cool_down()`) + `harvester_paving.py` (`HarvesterPavingMixin`: items dropped on a path joining the plant patches) + `harvester_planting.py` (`HarvesterPlantingMixin`: layout, seed demand, plant, harvest) + `harvester_care.py` (`HarvesterCareMixin`: light/water/salt, salt request) + `harvester_machines.py` (`HarvesterMachinesMixin`: field-machine kits) + `harvesting.py` `HarvesterController` (movement, heat, loose-item sweep) — see §1k (tier `8_planting`) |
-| Field machines (kit orders/pre-orders + deploy on reserved cells; Grow Lamp / Sprinkler / Dispenser controller; Crop Automator job controller) | `harvester_machines.py` (`HarvesterMachinesMixin`, mixed into `field_keeper.py`) + `harvester_amplify.py` (`HarvesterAmplifyMixin`, Yield Amplifier apply + order) + `field_provider.py` (`FieldProviderController`, thin `harvesting/grow_lamp.py`/`sprinkler.py`/`dispenser.py`) + `crop_automator.py` (`CropAutomatorController`, thin `harvesting/crop_automator.py`) — see §1k (tier `8_planting`) |
-| Wildlife model (game constants, growth/Insight/bonus model, revival schedule; pure) | `wildlife_data.py` (constants, `WILDLIFE_SCHEDULES` per Habitat count) + `wildlife_model.py` (rate, stages, fluids, bonuses, Insight, `schedule_for()`); schedule solved offline by `devtools/wildlife_optimizer.py` — see §1l (tier `9_wildlife`) |
-| Wildlife automation (revival schedule walk, feed demand, Forage reserve, life-form requests; Habitat revival/feed/fluid bands/parking; demand-driven feed crafting) | `wildlife_planner.py` (run by `control_room_automation.py`) + `habitat.py` + `feed_maker.py` (thin `bio/habitat.py`, `bio/feed_maker.py`), shared keys/tunables `wildlife_common.py` — see §1l-2 (tier `9_wildlife`) |
+| Factory outpost site supply (per-outpost ingot/ore/finished-root requests, stranded ore and ingot/intermediate eviction), run by the `control_room_automation.py` Automation | `site_supply.py` — see §2i-1 |
+| Fab site plan (which fab outposts build each root target's tree), run by the `control_room_automation.py` Automation | `site_plan.py` — see §2a-0-6 |
+| Seed Maker (fair recipe sweep, stage A) | `seed_maker.py` — see §1i |
+| Seed Maker on-demand seed production (stage B, once all 15 recipes are known) | `seed_supply.py` — see §1k (`bio/seed_maker.py` dispatches on `len(recipes())`) |
+| Field layout (species rules, starter block, full-field layout in automator chunks, rarity-weighted expansion; pure logic) | `field_layout.py` — see §1k |
+| Plant Terraformer (feed Forage/Water/Salt/Fertilizer/Accelerant, batch run policy) | `plant_terraformer.py` composes `plant_terraformer_water.py` (`PlantTerraformerWaterMixin`: `water_in` router) + `plant_terraformer_demand.py` (`PlantTerraformerDemandMixin`: local stock requests, Fabricator need/backlog orders); shared keys and ladder math `plant_terraformer_common.py` — see §1k |
+| Plants completion: undeploy emptied Plant Terraformers | `plants_retire.py` — see §1k (driven by `control_room_automation.py`, idles until a Terraformer reports `complete`) |
+| Planting Harvester (plant, tend, harvest the layout) | `field_keeper.py` composes `harvester_heat.py` (`HarvesterHeatMixin`: heat-cheapest routes, just-in-time rests, live heat calibration; overrides `move_to()`/`cool_down()`) + `harvester_paving.py` (`HarvesterPavingMixin`: items dropped on a path joining the plant patches) + `harvester_planting.py` (`HarvesterPlantingMixin`: layout, seed demand, plant, harvest) + `harvester_care.py` (`HarvesterCareMixin`: light/water/salt, salt request) + `harvester_machines.py` (`HarvesterMachinesMixin`: field-machine kits) + `harvesting.py` `HarvesterController` (movement, heat, loose-item sweep) — see §1k |
+| Field machines (kit orders/pre-orders + deploy on reserved cells; Grow Lamp / Sprinkler / Dispenser controller; Crop Automator job controller) | `harvester_machines.py` (`HarvesterMachinesMixin`, mixed into `field_keeper.py`) + `harvester_amplify.py` (`HarvesterAmplifyMixin`, Yield Amplifier apply + order) + `field_provider.py` (`FieldProviderController`, thin `harvesting/grow_lamp.py`/`sprinkler.py`/`dispenser.py`) + `crop_automator.py` (`CropAutomatorController`, thin `harvesting/crop_automator.py`) — see §1k |
+| Wildlife model (game constants, growth/Insight/bonus model, revival schedule; pure) | `wildlife_data.py` (constants, `WILDLIFE_SCHEDULES` per Habitat count) + `wildlife_model.py` (rate, stages, fluids, bonuses, Insight, `schedule_for()`); schedule solved offline by `devtools/wildlife_optimizer.py` — see §1l |
+| Wildlife automation (revival schedule walk, feed demand, Forage reserve, life-form requests; Habitat revival/feed/fluid bands/parking; demand-driven feed crafting) | `wildlife_planner.py` (run by `control_room_automation.py`) + `habitat.py` + `feed_maker.py` (thin `bio/habitat.py`, `bio/feed_maker.py`), shared keys/tunables `wildlife_common.py` — see §1l-2 |
 | Water Pump byproduct salt as pull-hauler source; home salt request (field + Terraformers to 5m km²) | `pump_salt.py` — see §2i and §1k Salt budget (tier 4 lib, imported by `vehicle_cargo.py` and the Control Room Automation) |
-| Field Mining Drill telemetry (fill, time-to-full, stall warnings, pickup advert) | `mining_drill.py` — see §1j (tier `7_miningdrills`) |
-| Weather Station signal decoding (storm aftermath coordinates for Raw Uranium / Storm Glass) | `weather_signals.py` — see §1m (tier `7_miningdrills`) |
-| Fuel Assembler (Fuel Rods for local Reactors / Mk IV generators, then Nuclear Batteries; reserve-gated bursts) | `fuel_assembler.py` — see §1n (tier `10_nuclear`) |
-| Reactor (measured-gain heat control just under 900 °C, rod feed from local Lead Casks, cooling water routing, water reservation publisher) | `reactor.py` — see §1c-4 (tier `10_nuclear`) |
+| Field Mining Drill telemetry (fill, time-to-full, stall warnings, pickup advert) | `mining_drill.py` — see §1j |
+| Weather Station signal decoding (storm aftermath coordinates for Raw Uranium / Storm Glass) | `weather_signals.py` — see §1m |
+| Fuel Assembler (Fuel Rods for local Reactors / Mk IV generators, then Nuclear Batteries; reserve-gated bursts) | `fuel_assembler.py` — see §1n |
+| Reactor (measured-gain heat control just under 900 °C, rod feed from local Lead Casks, cooling water routing, water reservation publisher) | `reactor.py` — see §1c-4 |
 | Lead Cask roles (`lead_cask.roles`), hot-cargo stock/room/take, misfiled-uranium repair | `lead_cask.py` — see §1n (tier 4 lib; used by `drone_weather`, `supply_dock`, `terraforming`, `production`) |
 | Field Mining Drills as pull-hauler sources (recorded positions, connect/take) | `drill_sites.py` — see §2i (lives in tier 4 lib, since the hauler imports it at every tier) |
 | Fabrication | `fabricator.py` |
@@ -138,14 +138,14 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Water Pump / Oil Pump (route well output to network Liquid Tanks) | `fluid_pump.py` `FluidPumpController(pump, fluid_id)` — see §1c, simpler cousin of `thermal_cap.py` (no overpressure/relief); `water_pump.py` = compat shim for old save slots |
 | Exotic Gas Cap / Exotic Spring Tap (route deposit fluid to network tanks) | `exotic_cap.py` `ExoticCapController(cap)` (tier 9): `FluidPumpController` subclass, Gas Tanks for a Cap, Liquid Tanks / Large Liquid Tanks for a Tap, `fluid_id` = `deposit().fluid()`; valve always open; parks only through a long dormant phase (see dev_workflow.md §1d-2) |
 | Refiner (purify raw exotic gas/liquid + tar into creature-grade fluids) | `refiner.py` `RefinerController(refiner)` (tier 9): refines the fluid with the emptiest tanks among those with raw stock (dwell + margin against flip-flop), routes raw from and refined to network tanks, tar from local storage (stockpile via `site_supply`); soft-shed Tier 2 by `clear_recipe()`; parks when idle — see wildlife.md |
-| Oil Generator (last-resort power) | `oil_generator.py` — see §1c-1 (tier 5+) |
-| Steam Condenser (steam → water, steam-reserve and water-fill guards) | `steam_condenser.py` — see §1c-2 (tier 5+) |
-| Essence Liquifier (Depot → sample feed, essence → Liquid Tank) | `essence_liquifier.py` — see §1h (tier 5+) |
-| Biomass Mixer (keep all five essence inputs sourced) | `biomass_mixer.py` — see §1h (tier 5+) |
-| Biomass Mixer duty-cycle gate (breaker pause until all expected essences refilled) | `biomass_mixer_gate.py` — see §1h (lives in tier 5 lib, deployed from `2_libunlock` on like every new-only module; driven by the single `control_room_automation.py`, idles without Mixers) |
-| Biomass completion: retire Liquifiers/Mixers, sell button | `biomass_retire.py` — see §1h-1 (tier 5 lib; imported by `drone_mining.py`/`drone_depot.py`/`status_panel.py`/`control_room_automation.py`) |
-| Waste Processor base (idle: switched off, staged input returned; destroys no items) | `waste_sink.py` — see §1h-1 (tier 5) |
-| Waste Processor water overflow (last-resort drain when every Water tank at the outpost is full and a Water Pump stalls) | `water_sink.py` — see §1c (tier 5) |
+| Oil Generator (last-resort power) | `oil_generator.py` — see §1c-1 |
+| Steam Condenser (steam → water, steam-reserve and water-fill guards) | `steam_condenser.py` — see §1c-2 |
+| Essence Liquifier (Depot → sample feed, essence → Liquid Tank) | `essence_liquifier.py` — see §1h |
+| Biomass Mixer (keep all five essence inputs sourced) | `biomass_mixer.py` — see §1h |
+| Biomass Mixer duty-cycle gate (breaker pause until all expected essences refilled) | `biomass_mixer_gate.py` — see §1h (driven by the single `control_room_automation.py`, idles without Mixers) |
+| Biomass completion: retire Liquifiers/Mixers, sell button | `biomass_retire.py` — see §1h-1 (imported by `drone_mining.py`/`drone_depot.py`/`status_panel.py`/`control_room_automation.py`) |
+| Waste Processor base (idle: switched off, staged input returned; destroys no items) | `waste_sink.py` — see §1h-1 |
+| Waste Processor water overflow (last-resort drain when every Water tank at the outpost is full and a Water Pump stalls) | `water_sink.py` — see §1c |
 | Shared network-wide fluid-target discovery/blacklist/reconnect | `fluid_routing.py` — `FluidOutputRouter` (`thermal_cap.py`/`fluid_pump.py`/`essence_liquifier.py`/`steam_condenser.py`), `FluidInputRouter` (`steam_turbine.py`/`fabricator.py`/`biomass_mixer.py`/`oil_generator.py`/`steam_condenser.py`/`terraforming.py`); see §1b |
 | Two-threshold on/off latch (heater steam guard, Condenser steam/water gates, Oil Generator surplus, Reactor water reserve, turbine all-on and steam surplus) | `hysteresis.py` — `HysteresisLatch`; state in memory, kept across breaker parking/shedding, reset on script restart |
 | Storage management (Warehouse-aware sourcing/unloading, Inventory rebalancing) | `storage.py` — see §2c |
@@ -158,7 +158,7 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | Logging caught-and-recovered exceptions (`swallowed(where, error)`) | `swallow.py` — see §0b; imports nothing, so even `archive.py` uses it |
 | Typed component lookups by runtime id (`tank(id)`, `battery(id)`, ...; `component(id)` = `get_component` with a swallowed() guard) | `components.py` — imports only `swallow`; accessors need their class in `COMPONENT_EXPORTS` (`devtools/self_typing.py`) |
 | Heavy pure computations as one unit (`run_atomic(fn, *args)`, `run_batched(fn, items, size, *args)`, `run_chunked(step_fn, state)`, `ATOMIC_ENABLED` switch) | `atomic.py` — see `docs/cheatsheet/dev_workflow.md` §1d-1 |
-| Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` (tier 5) — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
+| Turbine commitment (runs just enough Steam Turbines, parks the rest; per-turbine steam aware; called from `PowerGridManager.supervise_grid()` before the guard) | `turbine_commit.py` — see `docs/cheatsheet/power_fluids.md` Steam Turbine |
 | Script parking (idle machines' breakers off, solar scripts stopped at night, stray dark machines warned about then switched on; `ParkRequester` machine side, `ScriptParking` in `control_room_automation.py`) | `script_parking.py` — see dev_workflow.md §1d-2 |
 | Retired machines registry (machines switched off for good by a retirement; script parking leaves them dark) | `retired_machines.py` — see dev_workflow.md §1d-2 |
 | Script restart requests (a machine whose upgrade port the game left unbound files a request; `control_room_automation.py` `park_if_due()` stops and starts it, at most `MAX_RESTARTS` per reason) | `script_restart.py` — see power_fluids.md §1c-3 |
@@ -246,7 +246,7 @@ except Exception as error:
   - inside an `archive.transaction()` updater: any log call there rejects the transaction;
   - `swallowed()` itself;
   - narrow handlers that fully handle their case, e.g. `except (TypeError, ValueError)` around a `float()` parse with a fallback, or `except IndexError` as a loop escape.
-- Tiers without `lib/` (`0_cold_boot`, `1_early`) use a local `_swallowed()` stand-in (debug only) defined in the script itself.
+- Tier `0_cold_boot` (no `lib/`) uses a local `_swallowed()` stand-in (debug only) defined in the script itself.
 
 ## ⚡ 1. Core Terraforming & Physics Formulas
 

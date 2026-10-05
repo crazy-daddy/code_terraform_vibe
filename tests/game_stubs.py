@@ -663,9 +663,17 @@ class Clock:
         self.now = 1000
         self.hours = 0.0
         self.seconds_per_hour = seconds_per_hour
+        self.day = 1
+        self.elevation = 0.0
 
     def tick(self):
         return self.now
+
+    def get_day(self):
+        return self.day
+
+    def get_elevation(self):
+        return self.elevation
 
     def elapsed_game_hours(self):
         return self.hours
@@ -967,7 +975,8 @@ class PowerGridMember:
         self.outpost_id = component.outpost.id if component.outpost else ""
         self.powered = powered
         self.consumed = 0.0
-        self.generated = getattr(component, "output", 0.0) if isinstance(component, SteamTurbine) else 0.0
+        power_output = getattr(component, "power_output", None)
+        self.generated = power_output() if callable(power_output) else 0.0
         self.stored = component.charge if isinstance(component, BatteryBank) else 0.0
         self.capacity = component.get_capacity() if isinstance(component, BatteryBank) else 0.0
         self.reserve_stored = 0.0

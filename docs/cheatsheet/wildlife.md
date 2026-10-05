@@ -98,7 +98,7 @@ Global caps on stacked bonuses (`xG`): breeding speed +150 %, brood yield +35 %,
 
 "Keeps base fluid" Adaptations skip the apex switch: `bone_walker` reaches full size on ammonia + brine (no Refiner), `tidal_cephalopod` never needs cryofluid, `vent_drifter` never needs sulfur_gas, `glacial_wyrm` never needs quicksilver.
 
-### 1l-1. Revival and Insight schedule (`9_wildlife`)
+### 1l-1. Revival and Insight schedule
 
 Constants and the model live in `lib/wildlife_data.py` / `lib/wildlife_model.py` (pure, shared with `devtools/wildlife_optimizer.py`). The goal is the Wildlife pillar, the *Wildlife Teeming* achievement at 5,000,000. The most possible is 16 x 350,000 = 5,600,000, so at most 600,000 can be missing: every species but about one must grow nearly full. That needs the Refiner (sulfur_gas/cryofluid) and Deep Exotics (chlorine/quicksilver for the Legendaries' later stages). Refined fluids are used by Habitats only; no other recipe or order consumes them.
 
@@ -131,7 +131,7 @@ What the runs show:
 
 Re-run by hand when an assumption changes: `python devtools/wildlife_optimizer.py --help`.
 
-### 1l-2. Wildlife automation (`9_wildlife`)
+### 1l-2. Wildlife automation
 
 Three parts. Habitat and Feed Maker methods are self-only, so each machine runs a thin script (`bio/habitat.py`, `bio/feed_maker.py`); the decisions are made once per game hour by the planner inside `control_room_automation.py`. Shared keys and tunables: `lib/wildlife_common.py`. Time: one game hour = 25 s of script time = 250 ticks.
 

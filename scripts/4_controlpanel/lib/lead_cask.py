@@ -49,7 +49,7 @@ RODS_PER_MK4 = 1
 # week of rods for 3 Reactors at full heat. Drones collect no more past it.
 URANIUM_STOCK_TARGET = 100
 
-# Reactor fuel state (written by 10_nuclear/lib/reactor.py, read by the Status
+# Reactor fuel state (written by lib/reactor.py, read by the Status
 # panel): {reactor_id: {"outpost", "status", "spare", "hours", "alert", "level",
 # "tick"}}. `spare` = rods staged + in the outpost's casks, `hours` = game hours
 # of fuel left at the current heat, `alert` = "" when fine.

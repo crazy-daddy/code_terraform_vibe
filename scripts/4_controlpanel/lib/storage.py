@@ -449,7 +449,7 @@ def _now_tick():
     return 0
 
 
-# Crop Automators (home Harvesting field, tier 8_planting) keep their Forage
+# Crop Automators (home Harvesting field) keep their Forage
 # in their output instead of draining it to Warehouses, so Forage consumers
 # take it from there (lib/crop_automator.py). Forage in Inventory or a
 # Warehouse drains first: it only takes slots there. Among the automators,

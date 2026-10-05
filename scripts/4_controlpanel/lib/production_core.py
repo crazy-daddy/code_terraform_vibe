@@ -290,7 +290,7 @@ def _default_fabricator():
 
 
 FUEL_ASSEMBLER_TYPE_ID = "fuel_assembler"
-# Fuel Assembler outputs (10_nuclear/lib/fuel_assembler.py builds them, not a Fabricator).
+# Fuel Assembler outputs (lib/fuel_assembler.py builds them, not a Fabricator).
 FUEL_ASSEMBLER_OUTPUTS = ("fuel_rod", "nuclear_battery")
 # weather.aftermaths (lib/weather_signals.py); a live uranium site makes Raw Uranium sourceable.
 AFTERMATHS_KEY = "weather.aftermaths"

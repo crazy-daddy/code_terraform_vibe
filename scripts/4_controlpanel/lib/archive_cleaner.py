@@ -824,7 +824,7 @@ class ArchiveCleaner:
         discovery failed (empty active_grid_anchors), same caution as
         clean_telemetry()'s active_vehicles check -- never purge everything
         just because detection came back empty. Also purges three obsolete keys:
-        power.night_duration (use lib/power.py's NIGHT_DURATION_HOURS instead),
+        power.night_duration (use lib/power_solar.py's NIGHT_DURATION_HOURS instead),
         power.last_night_wh, and power.shedded_machines. None of these are
         written by current code.
         """

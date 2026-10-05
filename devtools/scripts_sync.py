@@ -6,15 +6,15 @@ differences documented in the plan this came from:
 
   1. Instead of vakermit's per-category "variant" subdirectories chosen by a
      `.current` file or a marker, this project's scripts/ tree is split by
-     *global progression tier* first (`0_cold_boot`, `1_early`, `2_libunlock`,
-     `3_archiveunlock`, `4_controlpanel`, `5_steampower`, ...), with machine
+     *global progression tier* first (`0_cold_boot` for self-contained
+     pre-lib scripts, `4_controlpanel` for the full lib/ stack), with machine
      categories (bio/, power/, rover/, ...) nested underneath. Tiers are
      discovered by scanning scripts/ for `<N>_<anything>` dirs and sorting by
      `N` ascending (`discover_tiers()`/`tier_number()`) - only the leading
      number is load-bearing, so dropping in `scripts/6_derp/` with its own
      `.criteria` picks it up automatically as the new top tier, no code
-     change needed, and numbers may skip (`1_early`, `5_mid` today,
-     `3_inbetween` added later slots in between with no other change). A dir
+     change needed, and numbers may skip (`0_` and `4_` today, `2_inbetween`
+     added later slots in between with no other change). A dir
      whose name starts with a digit but isn't `<int>_...` (`1N3_DERP`) or two
      dirs claiming the same number (`10_hi`, `10_ho`) raise `TierNamingError`
      rather than being guessed past. The active tier is derived automatically,
@@ -639,12 +639,12 @@ def tier_number(dirname: str) -> Optional[int]:
 
 def discover_tiers(scripts_dir: Path) -> list:
     """Tier dirs directly under scripts_dir, ordered ascending by their
-    leading number - e.g. `0_cold_boot`, `1_early`, ... `10_endofworld` sorts
+    leading number - e.g. `0_cold_boot`, `4_controlpanel`, ... `10_endofworld` sorts
     after `9_...`, never between `1_` and `2_` (numeric key, not string
     compare). Only the number is load-bearing; the rest of the name is free
     text. Drop a new tier in as `scripts/<N>_<anything>/` with its own
     `.criteria` and it's picked up automatically, no code change needed.
-    Numbers may skip (`1_early`, `5_mid` today, `3_inbetween` added later
+    Numbers may skip (`0_` and `4_` today, `2_inbetween` added later
     slots in between and is picked up next run with no other change).
 
     Raises TierNamingError if two tier dirs claim the same number (e.g.
@@ -784,18 +784,19 @@ def tier_chain(scripts_dir: Path, active_tier: str) -> list:
 
 
 # Tier from which every lib module is deployed, not just the active tier's
-# chain (see lib_chain()). 2_libunlock = the game's Library research.
-LIB_UNLOCK_TIER_NUMBER = 2
+# chain (see lib_chain()). lib/, automations and panels all start at
+# 4_controlpanel; tier-0 scripts never import lib/.
+LIB_UNLOCK_TIER_NUMBER = 4
 
 
 def lib_chain(scripts_dir: Path, active_tier: str) -> list:
     """Search order for lib/ modules: the active tier's chain (active tier down
-    to 0_cold_boot), then - once the save is at 2_libunlock or later - every
-    HIGHER tier in ascending order.
+    to 0_cold_boot), then - once the save is at 4_controlpanel or later -
+    every HIGHER tier in ascending order.
 
     A module defined at or below the active tier resolves exactly as before,
-    so a higher tier's override of an existing module (today only
-    5_steampower/lib/power.py) stays gated behind its tier. A module that only
+    so a higher tier's override of an existing module (none today) stays
+    gated behind its tier. A module that only
     exists in a higher tier is deployed anyway, from the lowest tier defining
     it: it does nothing until its machines exist, and deploying it early lets
     one entrypoint (panel_4.py's Biomass Mixer gate) serve every tier instead
