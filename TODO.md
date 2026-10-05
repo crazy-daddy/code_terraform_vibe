@@ -53,6 +53,11 @@ Above 50 running scripts the game splits 50,000 steps per tick evenly: allowance
 - [ ] **Consider splitting `control_room_automation.py`** (grid supervision vs. storage sweeps/planning) if storage passes measurably delay grid supervision; costs one running script (~0.6% of everyone's allowance at N ≈ 165).
 - [ ] **Player decisions on script count**: retire solar trackers if steam covers power (19 scripts: 303 → 342 steps per tick, +13%); merge Control Room cards into tabs (8 cards); check whether all 20 steam turbines are needed.
 - [ ] **Panels**: heavy cards re-read the fleet and archive every frame; refresh data every 10–20 frames (only helps the card itself).
+- [ ] **Fluid network rebuild fix (game side)**: on 2026-10-05 the developer announced a fix for the "tank runs dry every tick" network rebuilds ([docs/gameknowledge/fluids.md](docs/gameknowledge/fluids.md), "The trap") in the next game version or the one after. Approach unknown. When it ships:
+  - [ ] Find the approach: changelog, then grep the new sim worker (`gx(` signature, `gre()` fluid clear on empty, `ux` cache). Does an empty tank keep its fluid type, do the content flags leave the signature, or is the cache keyed differently?
+  - [ ] Remeasure with the headless runner on the late save, without `--sticky-fluids` (cache misses, FlowTransport ms/tick against the 142 ms baseline).
+  - [ ] Revisit what depends on it: fluid-only recipe hysteresis in `lib/fabricator.py` (keep it if it still helps throughput, drop the CPU reason), the "What to do in game" guidance, `FluidPort.connections()` hot-path advice, `--sticky-fluids` in `devtools/headless/` (still needed? feature detection in `simhost.mjs` still matches?), and `production_logistics.md` "Fluid-only recipe". If an empty tank now keeps its fluid type, check `fluid_routing.py` tank eligibility and assignment logic against that.
+  - [ ] Update fluids.md (trap section, "Who flips the signature", headless note) and DESIGN_HISTORY.md if a workaround is removed.
 
 ---
 

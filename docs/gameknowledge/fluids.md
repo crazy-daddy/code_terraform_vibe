@@ -25,6 +25,8 @@ Measured on the late save, `bulk_liquid_reservoir_9` (oil, outpost_4, 48 t/h in 
 
 This is CPU only: the game's tick result does not change, but the sim worker is single-threaded, so a slow tick slows the whole game once it can no longer keep up with the tick rate (10 ticks/s × game speed). Inferred from the code path; the in-game slowdown itself was not measured.
 
+**Upstream fix announced (2026-10-05):** the developer said this will be fixed in the next game version or the one after. The fix approach is not known yet. Once it ships, re-check this section against the new sim worker and revisit the workarounds that depend on it (open item in [TODO.md](../../TODO.md), "Fluid network rebuild fix").
+
 ### Who flips the signature on the late save
 
 Measured with a headless run that diffs consecutive signatures per machine (late save, 10 game minutes, `bulk_liquid_reservoir_9` set to 900 t at the start):
