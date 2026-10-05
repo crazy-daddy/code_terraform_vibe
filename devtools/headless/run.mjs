@@ -8,7 +8,8 @@
 // --seed N               start a new game instead (default 1)
 // --scripts DIR          put every <scriptId>.py in DIR into its slot and run it
 // --deploy-templates DIR auto-deploy: give each idle/errored/unscripted machine
-//                        DIR/<template>.py, template picked by --deploy-map
+//                        DIR/<template>.py, template picked by --deploy-map;
+//                        rovers/pioneers run mount_vehicle.py first
 // --deploy-map FILE      JSON {typeId prefix: template}; default EARLY_DEPLOY_MAP
 // --hours H              game hours to run (default 1; 1 h = 36,000 ticks)
 // --until-tp N           stop once the Terraform Index reaches N
@@ -81,19 +82,54 @@ function templateFor(typeId) {
   const key = Object.keys(deployMap).find(k => typeId?.startsWith(k));
   return key ? deployMap[key] : null;
 }
+// Vehicles, as early_game.py: run mount_vehicle.py until the target modules
+// are mounted, then the operational template. Before lib/ exists (early run),
+// a Pioneer runs pioneer_scout.py instead of pioneer.py.
+const VEHICLE_MODULES = {
+  rover: ["nav_module", "sonar_module", "drill_module"],
+  pioneer: ["nav_module", "sonar_module", "battery_holder_small"],
+};
+const mounting = new Set();
+function readTemplate(name) {
+  const file = join(deployDir, `${name}.py`);
+  return existsSync(file) ? readFileSync(file, "utf8") : null;
+}
+function deploy(m, name, source) {
+  lastDeploy.set(m.id, sim.state.tickCount);
+  const r = sim.setScript(m.id, source);
+  writeLine(`[tick ${sim.state.tickCount}] [deploy] ${name} -> ${m.id}: ${r.status}`);
+}
 function deployPass() {
   const st = sim.state;
   for (const m of Object.values(st.machines)) {
-    const tpl = templateFor(m.typeId);
+    let tpl = templateFor(m.typeId);
     if (!tpl || !m.scriptSlots?.includes(m.id) || m.powered === false) continue;
-    const file = join(deployDir, `${tpl}.py`);
-    if (!existsSync(file)) continue;
     const s = st.scripts[m.id];
     const idle = !s || !s.source?.trim() || s.status === "idle" || s.status === "error";
-    if (!idle || st.tickCount - (lastDeploy.get(m.id) ?? -Infinity) < DEPLOY_COOLDOWN_TICKS) continue;
-    lastDeploy.set(m.id, st.tickCount);
-    const r = sim.setScript(m.id, readFileSync(file, "utf8"));
-    writeLine(`[tick ${st.tickCount}] [deploy] ${tpl} -> ${m.id}: ${r.status}`);
+    if (st.tickCount - (lastDeploy.get(m.id) ?? -Infinity) < DEPLOY_COOLDOWN_TICKS) continue;
+    const target = VEHICLE_MODULES[tpl];
+    if (target) {
+      const mounted = new Set(m.mountedModules ?? []);
+      if (!target.every(mod => mounted.has(mod))) {
+        // mount_vehicle.py ends once it has mounted what Inventory holds;
+        // rerun it while modules are still missing (the buyer may add them).
+        if ((!mounting.has(m.id) || s?.status !== "running") && readTemplate("mount_vehicle")) {
+          mounting.add(m.id);
+          deploy(m, "mount_vehicle", readTemplate("mount_vehicle"));
+        }
+        continue;
+      }
+      if (mounting.delete(m.id)) {
+        if (tpl === "pioneer") tpl = "pioneer_scout";
+        const src = readTemplate(tpl);
+        if (src) deploy(m, tpl, src);
+        continue;
+      }
+      if (tpl === "pioneer") tpl = "pioneer_scout";
+    }
+    if (!idle) continue;
+    const src = readTemplate(tpl);
+    if (src) deploy(m, tpl, src);
   }
 }
 
