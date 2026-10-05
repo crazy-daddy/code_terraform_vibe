@@ -1,0 +1,82 @@
+# Fluid networks: cache, rebuilds and CPU cost
+
+Source: the flow transport system in `internals/terraform_decompiled/simworker/deobfuscated.js` (search `tickPrePower(`, `function Ex(`, `function gx(`), measured with the headless runner ([dev_workflow.md §10b](../cheatsheet/dev_workflow.md), [plans/headless_sim.md](../plans/headless_sim.md)) on the owner's late save (887k TP, 274 machines).
+
+## How the game computes flows
+
+Every tick, `FlowTransportSystem` runs twice: before power (`tickPrePower`: tank port levels, network plans, pipe states, direct connections, per-fluid redistribution) and after power (`tickPostPower`: capacity ledgers, Thermal Caps, Exotic Caps and Taps, Fluid Pumps). Both start from the **network analysis** `Ex(state)`: pipes grouped by medium (gas, liquid), each segment sampled every 10 map units, union-find over the points, bridges and fluid route assignments, then which machine ports sit on which network.
+
+The analysis is cached per state object (`ux`, a WeakMap). The cache key is a **signature string** `gx()` rebuilt on every call from:
+- every outpost (id, position, under construction),
+- every pipe (id, type, complete) and every segment's end points,
+- every gas/liquid bridge, every fluid route assignment,
+- every machine: id, type, location, under construction, footprint/rotation for utility buildings, its `*_capacity` keys, its io connections, its **fluid types** (`stringData.fluid`, `gas_in_fluid`, `liquid_in_fluid`), and whether `gas_in_level`/`liquid_in_level` and, for tanks, the stored `level` are **above 1e-9**.
+
+When the string differs from the cached one, the whole analysis is rebuilt.
+
+## The trap: a tank that runs dry every tick
+
+An empty tank does not keep its fluid: when its level reaches 0 the game clears `stringData.fluid` and the per-fluid port keys (`gre()`), and they come back as soon as fluid flows in. A tank whose consumers draw at least as much as flows in therefore toggles every tick between "oil, has content" and "no fluid, empty". Each toggle changes the signature, so the analysis is rebuilt **twice per tick** (pre- and post-power), for every network on the planet, not just the tank's own.
+
+Measured on the late save, `bulk_liquid_reservoir_9` (oil, outpost_4, 48 t/h in and ~48 t/h out, ~0.2 of 1,000 stored):
+- 121 of 132 analysis calls missed the cache over 60 ticks (with the reservoir buffered: 13 of 131, from occasional machine changes).
+- FlowTransport cost 142 ms per tick, against 13 ms with the reservoir buffered. That was 43 % of all simulation CPU, twice the cost of all 146 running scripts together.
+- Filled to 500 by hand, the reservoir was empty again within ~2 game minutes (the outflow is a little higher than the inflow), and the rebuilds came back.
+
+This is CPU only: the game's tick result does not change, but the sim worker is single-threaded, so a slow tick slows the whole game once it can no longer keep up with the tick rate (10 ticks/s × game speed). Inferred from the code path; the in-game slowdown itself was not measured.
+
+## What to do in game
+
+- Keep pass-through tanks and reservoirs **buffered**: supply must exceed the draw, or the consumer is throttled below the supply. A tank that sits at a few units with in ≈ out is the worst case.
+- A buffer tank that only passes fluid through and is often empty is better removed from the line.
+- Other signature inputs change rarely (building, deploying, reconnecting); each such change costs one rebuild, which is fine.
+
+## Headless runs
+
+`run.mjs --sticky-fluids` patches the signature (not the state): an empty machine keeps its last fluid type and the content flags are left out, so the cached analysis survives a tank running dry. Safe for our scripts, which route by the static tank assignment in the Data Archive, not by what an empty tank last held. Not safe for a test about tanks switching fluid.
+
+## Local vs remote tanks: source and sink roles
+
+Source: `FlowTransportSystem` in the decompiled sim worker (search `tickDirectConnections(`, `redistributePerFluidNetworks(`, `getFluidNetworkPlans(`, `routeSourceToTarget(`). Player-facing rules: [flow_networks_fluids.md](../guide/flow_networks_fluids.md) "Local versus remote".
+
+### Two separate transport paths
+
+Every declared `connect()` pair (from either side) is classified by its two **anchors**: an outpost machine's anchor is its outpost, a map machine (Water/Oil Pump, Thermal Cap, Exotic Cap/Tap) is its own anchor.
+- **Same anchor ("local")**: handled only by `tickDirectConnections`. No pipe is involved and the pair never shows up in a pipe network.
+- **Different anchors ("remote")**: becomes a *route* in the network analysis (`Ex`, routes are kept only when `sourceAnchorId !== sinkAnchorId`) and is moved by the pipe component it is assigned to.
+
+So a pump or cap never connects "locally": it always needs a pipe, even to a tank at the outpost next to it.
+
+### Local (direct) connections
+
+- Each source/sink/fluid pair is its own edge with its own cap: `flow.directMaxFlowPerGameHour` per pair (High Pressure tech does not raise it).
+- At the start of the tick the game snapshots every source's level and every sink's headroom, then solves one max-flow over all pairs of the same fluid (`a_e`: proportional first guess, then augmenting paths).
+- Sources and sinks are separate nodes in that graph. A tank that is the source of one pair and the sink of another is in both roles at once: it can give and take in the same tick.
+- Pump-type machines (`$w` set) are skipped here as sources.
+
+### Remote (pipe) connections
+
+`Ex` builds, per pipe component, `sourceEndpointIds` (every machine that is the source of a route on it) and `sinkEndpointIds` (every route sink). `getFluidNetworkPlans` keeps a source only if it can supply the component's fluid (a tank needs its latched `stringData.fluid` to match, so an empty, unlatched tank is not a source) and a sink only if it can accept it.
+
+Tanks and other passive sources are then moved by `redistributePerFluidNetworks` before power:
+- **Providers** are the source endpoints with level > 0 (pump-type machines excluded).
+- **Consumers** are the sink endpoints with headroom > 0, **minus every id that is already a provider** on that component. This is the rule behind the owner's observation: a remote tank that is both a route source and a route sink on the same component, and holds fluid, only gives; it receives nothing from other passive providers there.
+- An empty tank drops out of the providers (and out of the sources when its fluid unlatches), so it can be filled again. Inferred: such a tank alternates between "giving" and "taking" ticks, and each unlatch also rebuilds the analysis (see the trap above).
+- The fluid is **pooled per component**: all providers' levels form one pool that is split over all consumers by headroom. The declared pairs only decide who is on the component, not who feeds whom. Recorded pipe flows are a sorted id pairing for display.
+- A tank that is a source on component P and a sink on another component Q is not affected: the exclusion is per component. Inferred from the code path, not tested in game.
+
+Pumps, Thermal Caps and Exotic Caps/Taps run after power in `routeSourceToTarget`. They follow their own declared routes (sink by `sinkMachineId`) and check only sink headroom and the ledgers, not the provider list, so a pump **can** fill a remote tank that is also a provider on that component.
+
+### Capacity ledgers and ordering
+
+- Per component, per tick: `throughputLinks × pipe max` in total, and per endpoint `(pipe links it claims, min 1) × pipe max` on each side (`ensureNetworkCapacityLedgers`). The pipe max is the High Pressure value once unlocked.
+- Order in a tick: direct connections, then tank pooling (pre-power), then caps, then pumps (post-power). The ledger is shared, so tank pooling consumes component capacity first and pumps get what is left.
+- Pump-type sources on one component split the remaining capacity equally (`prepareScriptSourceFairness`). Within one source, sinks are filled in proportion to headroom, ordered by id.
+- An endpoint on several components of the same fluid has its level or headroom split between them by requested share (`B0`).
+
+### What this means for our scripts
+
+- A tank that should both receive and pass on fluid (a relay or buffer) works when its in-pair and out-pair are local. Across outposts, put its inflow and outflow on different pipe components, or feed it from a pump (pumps ignore the exclusion).
+- Never rely on a declared pair across a shared component: any passive provider on it can feed any consumer on it.
+- A local connection does not compete for pipe capacity; prefer a same-outpost tank where one exists (`rank_own_outpost_first` in `fluid_routing.py` already does).
+- Several tanks pooling on one component can use up its capacity before pumps get their turn: a stalled pump may mean a full pipe ledger, not a full tank.
