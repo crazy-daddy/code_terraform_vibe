@@ -37,52 +37,8 @@ import fleet_status
 # the row's own role/home column already makes via its "home_x + 90 < controls_x" check.
 SPORT_NAV_BTN_MIN_WIDTH = 1100
 
-# Intent column: fleet_status.wrap_text(), INTENT_LINE_PX apart.
-INTENT_LINE_PX = fleet_status.INTENT_LINE_PX
-
 RETIRE_BTN_W = 64
 RETIRE_BTN_GAP = 8
-
-
-def draw_intent(x, y, text, width_px):
-    for index, line in enumerate(fleet_status.wrap_text(text, width_px)):
-        panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
-
-
-def outpost_names():
-    """{outpost id: display name} for the home column; empty without outpost_network."""
-    network = get_component("outpost_network")
-    if not network or not hasattr(network, "outposts"):
-        return {}
-    return {o.id: o.name for o in network.outposts()}
-
-
-def draw_assignment(x, y, status, names, width_px):
-    """Role and home outpost (fleet.status "role"/"home") on two lines; blank until the script publishes them."""
-    chars = max(0, int(width_px // fleet_status.INTENT_CHAR_PX))
-    role = status.get("role")
-    home = status.get("home")
-    if role:
-        panel.draw_text(x, y, str(role)[:chars], 10, "text-value")
-    if home:
-        panel.draw_text(x, y + INTENT_LINE_PX, str(names.get(home, home))[:chars], 10, "text-secondary")
-
-
-# A switch keeps its own stored state; default_on only seeds it once. Code
-# also changes a recall flag (retire request, blocked retirement), so the
-# switch is kept in step with the archive: a stored state that moved since
-# the last tick is a click, any other mismatch is overwritten from the archive.
-switch_seen = {}
-
-
-def synced_switch(key, x, y, value, label):
-    stored = panel.get_switch(key)
-    clicked = stored is not None and key in switch_seen and stored != switch_seen[key]
-    if not clicked and stored is not None and stored != value:
-        panel.set_switch(key, value)
-    on = panel.switch(key, x, y, value, label)
-    switch_seen[key] = on
-    return on
 
 
 def vehicle_role(vehicle: "VehicleRef"):
@@ -143,7 +99,7 @@ while True:
     wide = width >= 900
     recall_x = width - 115  # fixed right-margin anchor: never overflows the card, at any width
     telemetry = fleet_status.get_all()
-    names = outpost_names()
+    names = fleet_status.outpost_names()
     retiring = decommission_state()
     controls_x = recall_x - RETIRE_BTN_W - RETIRE_BTN_GAP  # left edge of the right-hand controls
 
@@ -217,22 +173,22 @@ while True:
             if wide:
                 home_x = status_x + 110
                 if home_x + 90 < controls_x:
-                    draw_assignment(home_x, y + 15, status_entry, names, 90)
+                    fleet_status.draw_assignment(panel, home_x, y + 15, status_entry, names, 90)
                 intent_x = home_x + 95
                 intent_right = controls_x - 12
                 if role_label == "PIONEER" and width >= SPORT_NAV_BTN_MIN_WIDTH:
                     intent_right -= 92  # Sport Nav button below
                 if intent:
-                    draw_intent(intent_x, y + 15, intent, intent_right - intent_x)
+                    fleet_status.draw_intent(panel, intent_x, y + 15, intent, intent_right - intent_x)
             else:
                 # Below the chassis pill, not overlapping it -- pill(40, y+22, ...)
                 # renders taller than a 16px gap allows, so this needs real
                 # clearance (see row_height's matching bump below).
-                draw_assignment(40, y + 46, status_entry, names, 90)
+                fleet_status.draw_assignment(panel, 40, y + 46, status_entry, names, 90)
                 if intent:
-                    draw_intent(135, y + 46, intent, width - 24 - 135)
+                    fleet_status.draw_intent(panel, 135, y + 46, intent, width - 24 - 135)
 
-            switch_on = synced_switch(f"recall_{vehicle_id}", recall_x, y + 6, recalled, "recall")
+            switch_on = fleet_status.synced_switch(panel, f"recall_{vehicle_id}", recall_x, y + 6, recalled, "recall")
             if switch_on != recalled:
                 set_vehicle_recalled(vehicle_id, switch_on)
                 if not switch_on and vehicle_id in retiring:

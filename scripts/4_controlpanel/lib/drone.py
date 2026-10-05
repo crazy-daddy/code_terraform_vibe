@@ -17,7 +17,6 @@
 # (drone_energy.py detect_engine()) and every energy figure is in that
 # engine's own unit (Wh / t Oil), so role loops never branch on it.
 
-import fleet_status
 from drone_navigation import DroneNavigationMixin
 from drone_energy import DroneEnergyMixin
 from drone_claims import DroneClaimsMixin
@@ -31,7 +30,7 @@ from drone_upgrade import DroneUpgradeMixin, inherited_params
 from tree_console import TreeConsole, flush_all
 from swallow import swallowed
 from version_guard import validate_game_version
-from game_clock import now_tick
+from fleet_unit import FleetUnitMixin
 
 
 class DroneController(
@@ -45,6 +44,7 @@ class DroneController(
     DroneHaulPlanMixin,
     DroneWeatherMixin,
     DroneUpgradeMixin,
+    FleetUnitMixin,
 ):
     """
     Unified base controller for autonomous electric drones. Resolves
@@ -165,42 +165,15 @@ class DroneController(
         self.home_biome = getattr(self.home_outpost, "biome", None)
         self.log.debug(f"[{self.name}] home_outpost resolved via {home_outpost_source or 'none (no depot/service/network home found)'}; home_depot={depot_info.get('id') or 'none'}, home_coords={self.home_coords}, home_biome={self.home_biome!r}.")
 
-    def get_current_tick(self):
-        return now_tick()
-
-    def set_intent(self, text):
-        """One-line job description (lib/fleet_intent.py describe()) carried
-        by every publish_telemetry() until replaced, cleared (None) or an
-        idle state (fleet_status.IDLE_STATES) ends the job."""
-        if text != self.intent:
-            self.log.debug(f"[{self.name}] intent: {text!r}.")
-        self.intent = text
-
-    def publish_telemetry(self, state, target_desc=None):
-        """Publishes live drone status to the shared fleet.status archive dict
-        (lib/fleet_status.py), same shape as VehicleController.publish_telemetry()."""
-        self.state = state
-        if state in fleet_status.IDLE_STATES:
-            self.intent = None
-        curr_wh, cap_wh, lvl = self.get_battery()
+    def _telemetry_extra(self):
         pos = self.position()
-        telemetry = {
-            "name": self.name,
-            "state": state,
+        return {
             "x": round(pos[0], 1),
             "y": round(pos[1], 1),
-            "wh": round(curr_wh, 1),  # in "unit": Wh (electric) or t Oil (heli)
-            "unit": self.energy_unit(),
+            "unit": self.energy_unit(),  # "wh" is Wh (electric) or t Oil (heli)
             "engine": self.engine,
-            "level": round(lvl, 2),
-            "target": target_desc or (self.current_target.get("name") if self.current_target else "none"),
-            "intent": self.intent,
-            "role": self.role,
             "home": getattr(self.home_outpost, "id", None),
-            "tick": self.get_current_tick(),
         }
-        wrote = fleet_status.publish(self.name, telemetry)
-        self.log.trace(f"[{self.name}] publish_telemetry() -> fleet.status[{self.name!r}] {'written' if wrote else 'unchanged, throttled'}.")
 
     def detect_role(self, role_override=None):
         """

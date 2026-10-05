@@ -65,6 +65,51 @@ def wrap_text(text, width_px, max_lines=INTENT_LINES):
 _last_published = {}
 
 
+# Drawing helpers shared by drones_panel.py and vehicles_panel.py; `panel` is the
+# script's injected panel global.
+
+def draw_intent(panel, x, y, text, width_px):
+    """Intent text wrapped by wrap_text(), INTENT_LINE_PX apart (Control Room fleet cards)."""
+    for index, line in enumerate(wrap_text(text, width_px)):
+        panel.draw_text(x, y + index * INTENT_LINE_PX, line, 10, "text-value")
+
+
+def outpost_names():
+    """{outpost id: display name} for the home column; empty without outpost_network."""
+    network = get_component("outpost_network")
+    if not network or not hasattr(network, "outposts"):
+        return {}
+    return {o.id: o.name for o in network.outposts()}
+
+
+def draw_assignment(panel, x, y, status, names, width_px):
+    """Role and home outpost (fleet.status "role"/"home") on two lines; blank until the script publishes them."""
+    chars = max(0, int(width_px // INTENT_CHAR_PX))
+    role = status.get("role")
+    home = status.get("home")
+    if role:
+        panel.draw_text(x, y, str(role)[:chars], 10, "text-value")
+    if home:
+        panel.draw_text(x, y + INTENT_LINE_PX, str(names.get(home, home))[:chars], 10, "text-secondary")
+
+
+# A switch keeps its own stored state; default_on only seeds it once. Code
+# also changes a recall flag (retire request, blocked retirement), so the
+# switch is kept in step with the archive: a stored state that moved since
+# the last tick is a click, any other mismatch is overwritten from the archive.
+_switch_seen = {}
+
+
+def synced_switch(panel, key, x, y, value, label):
+    stored = panel.get_switch(key)
+    clicked = stored is not None and key in _switch_seen and stored != _switch_seen[key]
+    if not clicked and stored is not None and stored != value:
+        panel.set_switch(key, value)
+    on = panel.switch(key, x, y, value, label)
+    _switch_seen[key] = on
+    return on
+
+
 def publish(name, telemetry):
     """
     Atomically stores telemetry under fleet.status[name], skipping the write

@@ -76,58 +76,12 @@ class DroneClaimsMixin:
         return self  # type: ignore[return-value]
 
     CLAIM_STALE_TICKS = CLAIM_STALE_TICKS
+    MISSION_KEY = MISSION_KEY
+    LEGACY_MISSION_KEY_PREFIX = LEGACY_MISSION_KEY_PREFIX
+    RECALL_KEY = DRONE_RECALL_KEY
 
-    def save_mission(self, kind, target):
-        """
-        Persists the in-progress target so a script reload mid-trip resumes
-        toward the same biosite instead of restarting target selection. A
-        drone's go_to() is fire-and-forget and IS cancelled by a script
-        restart (drone.md: "completing the script... cancels this route"),
-        unlike a rover's drive_to() loop -- so resuming here only restores
-        WHICH target to head back to; the flight leg itself must always be
-        re-issued (see drone_navigation.py/drone_mining.py).
-        """
-        if not self.current_target_key:
-            return
-        common.save_mission(MISSION_KEY, self._host.name, self.current_target_key, kind, target, self._host.get_current_tick())
-
-    def clear_mission(self):
-        common.clear_mission(MISSION_KEY, self._host.name)
-
-    def _read_mission(self) -> "dict | None":
-        """This drone's stored mission record (legacy drone.mission:<name> keys move in on first read)."""
-        return common.read_mission(MISSION_KEY, LEGACY_MISSION_KEY_PREFIX, self._host.name, self._host.log)
-
-    def load_mission(self):
-        """
-        Restores an in-progress target after a script reload, provided this
-        drone still owns that target's claim. Returns the mission record, or
-        None if there was nothing to resume.
-        """
-        record = self._read_mission()  # dict or None
-        if record is None or not record.get("target_key"):
-            return None
-
-        target_key = record["target_key"]
-        claim = self.get_biosite_claims().get(target_key)
-        if not claim or claim.get("drone") != self._host.name:
-            self._host.log.debug(f"[{self._host.name}] load_mission: saved mission for '{target_key}' found but claim no longer owned by this drone; discarding.")
-            self.clear_mission()
-            return None
-
-        self.current_target_key = target_key
-        self.current_target = record.get("target")
-        return record
-
-    def is_recalled(self):
-        """
-        True when the operator has set this drone's recall flag (the DRONE
-        FLEET card's toggle in drones_panel.py, or a direct set_drone_recalled()
-        call). Checked every loop cycle -- see handle_recall_if_active() --
-        so an active mission is abandoned promptly rather than only at the
-        next natural idle point.
-        """
-        return is_drone_recalled(self._host.name)
+    def _mission_claims(self):
+        return self.get_biosite_claims()
 
     def handle_recall_if_active(self):
         """
@@ -143,7 +97,7 @@ class DroneClaimsMixin:
                 sleep(5.0)
                 continue
         """
-        if not self.is_recalled():
+        if not self._host.is_recalled():
             return False
 
         if not self._host.get_all_drone_depots():
@@ -249,7 +203,7 @@ class DroneClaimsMixin:
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
-            self.clear_mission()
+            self._host.clear_mission()
 
     def cleanup_stale_biosite_claims(self):
         """Removes expired fleet biosite claims before selecting a new mission."""

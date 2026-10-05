@@ -40,6 +40,15 @@ Plan: [docs/plans/done/handler_unification.md](docs/plans/done/handler_unificati
   - [x] charging/drone_service base: `lib/station_controller.py` `StationController` (arbitration, power gate, step/run); unused `is_nearest_station_to()` dropped.
   - [x] Small exact duplicates: `drone_energy._nearest()`, `archive.set_entry_pruned()`, `script_parking.set_powered()`/`start_script()`, `fleet_status.wrap_text()`, `VehicleController.extract_coords()` via `construction_plan.coords_of()`.
 
+### Round 2: controller unification (2026-10-05)
+
+Plan: [docs/plans/done/controller_unification.md](docs/plans/done/controller_unification.md), found with `devtools/clone_scan.py`.
+
+- [x] 1. `lib/game_clock.py` `now_tick()` replaces ~50 local tick readers.
+- [x] 2. `archive.publish_status()` for the per-machine status dicts; one `STATUS_STALE_TICKS`; `plant.status`/`seed_maker.status` pruned; `ArchiveCleaner.clean_status_ticks()` ages out leftovers of every status key.
+- [x] 3. `lib/machine_controller.py` `MachineController`: shared `run()` loop with `next_sleep()` hook (27 controllers), `get_current_tick()`, `port_counts()`.
+- [x] 4. `lib/fleet_unit.py` `FleetUnitMixin` (intent, telemetry, recall, mission) for Drone/Vehicle; fleet card drawing helpers in `fleet_status.py`.
+
 ## ⏱️ Script Load (2026-09-30, see `docs/cheatsheet/dev_workflow.md` §1d-1)
 
 - [x] **Park Drone Service / Charging Stations** (dev_workflow.md §1d-2): vehicles and drones wake the station they head to (`wake_for_visit()`); awake stations hand a vehicle nearest to a parked one over by waking it; the last awake station per type stays up.

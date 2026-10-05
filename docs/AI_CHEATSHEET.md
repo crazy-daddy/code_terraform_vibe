@@ -59,7 +59,8 @@ High-level workflows, progression roadmaps, automation orchestration → dedicat
 | &nbsp;&nbsp;↳ sonar survey loop (POI discovery) | `vehicle_survey.py` |
 | &nbsp;&nbsp;↳ mineral-site discovery & drill execution | `vehicle_mining.py` — shared Rover + Pioneer; see §2b |
 | &nbsp;&nbsp;↳ in-flight mining yield reservation (non-exclusive, overmining guard) | `mining_reservations.py` — see §2b |
-| &nbsp;&nbsp;↳ shared live telemetry dict `fleet.status` (vehicles + drones) | `fleet_status.py` — see §4 |
+| &nbsp;&nbsp;↳ shared live telemetry dict `fleet.status` (vehicles + drones), plus the fleet cards' drawing helpers (`draw_intent`, `draw_assignment`, `synced_switch`, `outpost_names`; take `panel`) | `fleet_status.py` — see §4 |
+| &nbsp;&nbsp;↳ what Drone and Vehicle controllers share: intent, `fleet.status` telemetry, recall flag, mission save/load (`FleetUnitMixin`) | `fleet_unit.py` |
 | &nbsp;&nbsp;↳ job intent line + demand-root attribution ("hauling X from A to B for supply_dock_1") | `fleet_intent.py` — see §4 |
 | &nbsp;&nbsp;↳ auto Pioneer hardware tier upgrades (Sonar/Drill/Holder/Rack) + manual Sport Nav request | `pioneer_upgrade.py` — Pioneer-only, mixed into `PioneerController` only, never `VehicleController`; see §2b-1 |
 | &nbsp;&nbsp;↳ Constructor role: blueprint job selection, claims, restock, build (`run_construction_loop()`, one `construction_pass()` per tick) | `pioneer_construction.py` `PioneerConstructionMixin` — Pioneer-only; pure planning math in `construction_plan.py`; see §2a construction entries |

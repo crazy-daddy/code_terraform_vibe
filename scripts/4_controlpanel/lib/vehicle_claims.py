@@ -70,54 +70,12 @@ class VehicleClaimsMixin:
         return self  # type: ignore[return-value]
 
     CLAIM_STALE_TICKS = 36000
+    MISSION_KEY = MISSION_KEY
+    LEGACY_MISSION_KEY_PREFIX = LEGACY_MISSION_KEY_PREFIX
+    RECALL_KEY = RECALL_KEY
 
-    def save_mission(self, kind, target):
-        """
-        Persists the in-progress target (and its kind, e.g. "poi_survey" or
-        "mine") so a script reload mid-trip resumes toward the same
-        destination instead of restarting the mission search from base.
-        """
-        if not self.current_target_key:
-            return
-        common.save_mission(MISSION_KEY, self._host.name, self.current_target_key, kind, target, self._host.get_current_tick())
-
-    def clear_mission(self):
-        common.clear_mission(MISSION_KEY, self._host.name)
-
-    def _read_mission(self) -> "dict | None":
-        """This vehicle's stored mission record (legacy vehicle.mission:<name> keys move in on first read)."""
-        return common.read_mission(MISSION_KEY, LEGACY_MISSION_KEY_PREFIX, self._host.name, self._host.log)
-
-    def load_mission(self):
-        """
-        Restores an in-progress target after a script reload, provided this
-        vehicle still owns that target's claim (it wasn't reassigned or
-        expired while the script was down). Returns the mission record, or
-        None if there was nothing to resume.
-        """
-        record = self._read_mission()  # dict or None
-        if record is None or not record.get("target_key"):
-            return None
-
-        target_key = record["target_key"]
-        claim = self.get_claims().get(target_key)
-        if not claim or not self._owns(claim):
-            self.clear_mission()
-            return None
-
-        self.current_target_key = target_key
-        self.current_target = record.get("target")
-        return record
-
-    def is_recalled(self):
-        """
-        True when the operator has set this vehicle's recall flag (the Fleet
-        card's toggle in vehicles_panel.py, or a direct set_vehicle_recalled() call).
-        Checked every loop cycle -- see handle_recall_if_active() -- so an
-        active mission is abandoned promptly rather than only at the next
-        natural idle point.
-        """
-        return is_vehicle_recalled(self._host.name)
+    def _mission_claims(self):
+        return self.get_claims()
 
     def handle_recall_if_active(self):
         """
@@ -128,7 +86,7 @@ class VehicleClaimsMixin:
                 sleep(5.0)
                 continue
         """
-        if not self.is_recalled():
+        if not self._host.is_recalled():
             return False
 
         if self._host.is_at_base():
@@ -276,7 +234,7 @@ class VehicleClaimsMixin:
         if target_key == self.current_target_key or target_key is None:
             self.current_target = None
             self.current_target_key = None
-            self.clear_mission()
+            self._host.clear_mission()
 
     def get_claims(self):
         """Returns the unified map of active mission/target claims across the fleet."""

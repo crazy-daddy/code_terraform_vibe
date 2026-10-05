@@ -15,7 +15,6 @@
 #     rather than duplicated between rover.py and pioneer.py
 
 from tree_console import TreeConsole
-import fleet_status
 from vehicle_navigation import VehicleNavigationMixin
 from vehicle_energy import VehicleEnergyMixin
 from vehicle_claims import VehicleClaimsMixin
@@ -24,7 +23,7 @@ from vehicle_survey import VehicleSurveyMixin
 from vehicle_mining import VehicleMiningMixin
 from outpost_mining import HOME_OUTPOST_ID
 from construction_plan import coords_of
-from game_clock import now_tick
+from fleet_unit import FleetUnitMixin
 
 
 class VehicleController(
@@ -34,6 +33,7 @@ class VehicleController(
     VehicleCargoMixin,
     VehicleSurveyMixin,
     VehicleMiningMixin,
+    FleetUnitMixin,
 ):
     """
     Unified base controller for autonomous surface vehicles (Rover, Pioneer).
@@ -144,39 +144,6 @@ class VehicleController(
         """(x, y) floats from a tuple/list, dict or Position object, None if unreadable."""
         return coords_of(pos)
 
-    def get_current_tick(self):
-        return now_tick()
-
-    def set_intent(self, text):
-        """One-line job description (lib/fleet_intent.py describe()) carried
-        by every publish_telemetry() until replaced, cleared (None) or an
-        idle state (fleet_status.IDLE_STATES) ends the job."""
-        if text != self.intent:
-            self.log.debug(f"[{self.name}] intent: {text!r}.")
-        self.intent = text
-
-    def publish_telemetry(self, state, target_desc=None):
-        """Publishes live vehicle status to the shared fleet.status archive dict (lib/fleet_status.py)."""
-        self.log.start(f"[{self.name}] publish_telemetry", level="debug")
-        self.log.trace(f"publish_telemetry(state={state!r}, target_desc={target_desc!r}) called.")
-        self.state = state
-        if state in fleet_status.IDLE_STATES:
-            self.intent = None
-        curr_wh, cap_wh, lvl = self.get_battery()
+    def _telemetry_extra(self):
         pos = self.get_position()
-        telemetry = {
-            "name": self.name,
-            "state": state,
-            "x": round(pos[0], 1),
-            "y": round(pos[1], 1),
-            "wh": round(curr_wh, 1),
-            "level": round(lvl, 2),
-            "target": target_desc or (self.current_target["name"] if self.current_target else "none"),
-            "intent": self.intent,
-            "home": self.home_base,
-            "role": self.role,
-            "tick": self.get_current_tick()
-        }
-        wrote = fleet_status.publish(self.name, telemetry)
-        self.log.trace(f"publish_telemetry() -> fleet.status[{self.name!r}] {'written' if wrote else 'unchanged, throttled'}: {telemetry}.")
-        self.log.end()
+        return {"x": round(pos[0], 1), "y": round(pos[1], 1), "home": self.home_base}
