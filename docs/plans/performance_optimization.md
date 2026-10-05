@@ -24,7 +24,7 @@ The game is CPU-bound. Host CPU sits at about 30–40% (likely two cores at full
    - Debug lines carry the tick at which they were flushed, so only their clock time is exact.
    - The calibrated ratio is about 14.4 game seconds per tick.
    - Rank blocks within one window; different windows can have different N.
-5. Edit shared lib files with `devtools/.sync-backups/hold` in place, because the watcher auto-deploys. Worktree subagents (`isolation: worktree`) also work well. They keep half-finished edits away from the watcher; cherry-pick their commits afterwards.
+5. Edit shared lib files with a sync hold (`devtools/.sync-backups/holds/<session id>`) in place, because the watcher auto-deploys. Worktree subagents (`isolation: worktree`) also work well. They keep half-finished edits away from the watcher; cherry-pick their commits afterwards.
 
 ## Baseline (before the fixes)
 

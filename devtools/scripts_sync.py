@@ -157,9 +157,14 @@ REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SCRIPTS = REPO / "scripts"
 AUTOPLAY_DIR = REPO / "autoplay"   # extra source root, deployed only with --include-autoplay
 BACKUP_DIR = REPO / "devtools" / ".sync-backups"
-# While this file exists, watch queues changes instead of pushing them, so a
-# multi-file edit lands as one consistent state once the file is removed.
+# While any hold file exists, watch queues changes instead of pushing them, so a
+# multi-file edit lands as one consistent state once the last one is removed.
+# One file per holder (holds/<session id>), so parallel sessions never release
+# each other's hold; the single legacy file is still honored.
+SYNC_HOLDS_DIR = BACKUP_DIR / "holds"
 SYNC_HOLD_FILE = BACKUP_DIR / "hold"
+HOLD_STALE_S = 30 * 60   # older holds get a warning (still honored)
+HOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 # Every line ok()/warn()/err()/echo() prints, UTC-stamped, across runs.
 SYNC_LOG = BACKUP_DIR / "sync.log"
 SYNC_LOG_MAX_BYTES = 2_000_000
@@ -2370,6 +2375,46 @@ def once(save_dir: Optional[Path] = SaveOpt, scripts_dir: Path = ScriptsOpt,
         write_resolved_preview(opts.scripts_dir, opts.active_tier, opts.save_dir)
 
 
+def active_holds() -> dict:
+    """{holder: age in seconds} for every hold file: holds/<holder>, plus the legacy SYNC_HOLD_FILE as "hold"."""
+    paths = [SYNC_HOLD_FILE]
+    if SYNC_HOLDS_DIR.is_dir():
+        paths += sorted(SYNC_HOLDS_DIR.iterdir())
+    now, holds = time.time(), {}
+    for path in paths:
+        try:
+            if path.is_file():
+                holds["hold" if path == SYNC_HOLD_FILE else path.name] = now - path.stat().st_mtime
+        except OSError:
+            continue  # removed between listing and stat: no longer a hold
+    return holds
+
+
+def hold_path(holder: str) -> Path:
+    if not HOLDER_RE.match(holder):
+        err("Holder %r: use letters, digits, '.', '_' or '-' (your session id)." % holder)
+        raise typer.Exit(1)
+    return SYNC_HOLDS_DIR / holder
+
+
+@app.command()
+def hold(holder: str = typer.Argument(..., help="Your session id (unique per parallel session)."),
+         note: str = typer.Option("", help="What the hold is for, shown to whoever finds it.")):
+    """Make watch queue changes until `release HOLDER`. One file per holder, so sessions never release each other."""
+    path = hold_path(holder)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("%s %s\n" % (datetime.now(timezone.utc).isoformat(timespec="seconds"), note), encoding="utf-8")
+    echo("Hold %s set. Holds: %s" % (holder, ", ".join(sorted(active_holds()))))
+
+
+@app.command()
+def release(holder: str = typer.Argument(..., help="The session id given to `hold`.")):
+    """Remove this holder's hold. Watch pushes the queued changes once no hold is left."""
+    hold_path(holder).unlink(missing_ok=True)
+    left = sorted(active_holds())
+    echo("Hold %s released. %s" % (holder, ("Still held by: " + ", ".join(left)) if left else "No holds left."))
+
+
 @app.command(name="resolve-preview")
 def resolve_preview(scripts_dir: Path = ScriptsOpt, save_dir: Optional[Path] = SaveOpt,
                      force_tier: Optional[str] = ForceTierOpt):
@@ -2425,7 +2470,8 @@ class Watcher:
         self.pending: dict = {}
         self.repo_due = None
         self.last_tier_check = time.monotonic()
-        self.on_hold = False
+        self.holders: list = []
+        self.stale_warned: set = set()
         self.early = None
         if early:
             if self.at_lib_tier():
@@ -2477,15 +2523,23 @@ class Watcher:
         return text
 
     def held(self) -> bool:
-        """True while SYNC_HOLD_FILE exists; reports hold/release once each."""
-        on_hold = SYNC_HOLD_FILE.exists()
-        if on_hold != self.on_hold:
-            self.on_hold = on_hold
-            if on_hold:
-                warn("  hold  %s present, queueing changes" % show(SYNC_HOLD_FILE))
-            else:
+        """True while any hold file exists (active_holds()). Reports each change of the holder set, and each
+        hold older than HOLD_STALE_S once."""
+        holds = active_holds()
+        holders = sorted(holds)
+        if holders != self.holders:
+            if holders:
+                warn("  hold  %s, queueing changes" % ", ".join(holders))
+            elif self.holders:
                 ok("  hold  released, pushing queued changes")
-        return on_hold
+            self.holders = holders
+        for holder in holders:
+            if holds[holder] > HOLD_STALE_S and holder not in self.stale_warned:
+                self.stale_warned.add(holder)
+                warn("  hold  %s is %d min old, still queueing (release it if that session ended)"
+                     % (holder, holds[holder] // 60))
+        self.stale_warned &= set(holders)
+        return bool(holders)
 
     def note_save(self, raw_path):
         path = Path(str(raw_path))

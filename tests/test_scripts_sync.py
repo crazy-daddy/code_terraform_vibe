@@ -50,6 +50,7 @@ def _stub_cli_modules():
             super().__init__(code)
 
     _fill(typer, Typer=Typer, Exit=Exit, Option=lambda default=None, *a, **k: default,
+          Argument=lambda default=None, *a, **k: default,
           echo=lambda msg="", **k: None, secho=lambda msg="", **k: None, prompt=lambda *a, **k: k.get("default"),
           colors=types.SimpleNamespace(RED="red", YELLOW="yellow", GREEN="green"))
     sys.modules["typer"] = typer
@@ -269,6 +270,50 @@ class SyncLogTest(_SyncTest):
         self.assertEqual(len(lines), 3)
         self.assertRegex(lines[0], r"^\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\] \[warn\] first$")
         self.assertTrue(lines[2].endswith("[ok] third"))
+
+
+class HoldTest(_SyncTest):
+    def setUp(self):
+        super().setUp()
+        self._hold_saved = (ss.SYNC_HOLDS_DIR, ss.SYNC_HOLD_FILE)
+        ss.SYNC_HOLDS_DIR = self.tmp / "holds"
+        ss.SYNC_HOLD_FILE = self.tmp / "hold"
+        self.watcher = types.SimpleNamespace(holders=[], stale_warned=set())
+
+    def tearDown(self):
+        ss.SYNC_HOLDS_DIR, ss.SYNC_HOLD_FILE = self._hold_saved
+        super().tearDown()
+
+    def held(self):
+        return ss.Watcher.held(self.watcher)  # type: ignore[arg-type]
+
+    def test_release_keeps_another_sessions_hold(self):
+        ss.hold("session-a", note="")
+        ss.hold("session-b", note="")
+        self.assertTrue(self.held())
+        ss.release("session-a")
+        self.assertEqual(sorted(ss.active_holds()), ["session-b"])
+        self.assertTrue(self.held())
+        ss.release("session-b")
+        self.assertFalse(self.held())
+
+    def test_legacy_hold_file_still_holds(self):
+        ss.SYNC_HOLD_FILE.write_text("", encoding="utf-8")
+        self.assertEqual(sorted(ss.active_holds()), ["hold"])
+        self.assertTrue(self.held())
+
+    def test_stale_hold_is_warned_once_and_still_holds(self):
+        ss.hold("old", note="")
+        past = time.time() - ss.HOLD_STALE_S - 60
+        os.utime(ss.SYNC_HOLDS_DIR / "old", (past, past))
+        self.assertTrue(self.held())
+        self.assertTrue(self.held())
+        log = ss.SYNC_LOG.read_text(encoding="utf-8")
+        self.assertEqual(log.count("min old"), 1)
+
+    def test_bad_holder_name_is_refused(self):
+        with self.assertRaises(ss.typer.Exit):
+            ss.hold("../x", note="")
 
 
 if __name__ == "__main__":
