@@ -1,7 +1,7 @@
 # Unify duplicated handlers (requests, fluids, item I/O, clone pairs)
 
 ## Context
-After the bio_* load merge (`ee0fe49`, `b9f01d5`) the user wants other "similar method" families found and migrated to generalized handlers, especially relics from early development. Survey method: AST inventory + normalized-AST near-duplicate scan over `scripts/**` (1194 pairs >= 0.85 similarity; script inlined under Verification), then manual reading of the clusters. Tiers `0_cold_boot`/`1_early` cannot import `lib/` (unlock at tier 2), so their clones (pioneer_scout vs rover, bio_collector vs bio_lab) stay.
+After the bio_* load merge (`ee0fe49`, `b9f01d5`) the user wants other "similar method" families found and migrated to generalized handlers, especially relics from early development. Survey method: AST inventory + normalized-AST near-duplicate scan over `scripts/**` (1194 pairs >= 0.85 similarity; the scan is now `devtools/clone_scan.py`), then manual reading of the clusters. Tiers `0_cold_boot`/`1_early` cannot import `lib/` (unlock at tier 2), so their clones (pioneer_scout vs rover, bio_collector vs bio_lab) stay.
 
 Each cluster below = one commit (caveman-commit), sync hold (`devtools/.sync-backups/hold`) around multi-file edits, cheatsheet module map/§ updated in the same change.
 
@@ -58,29 +58,5 @@ All four clusters are in scope, one session each: R → F(1,2,3) → I(1–5) �
 ## Verification
 - `python -m pytest tests -q` after each cluster (incl. `test_game_imports.py`, `test_log_blocks_balanced.py`, `test_reset_in_run_loops.py`, `test_game_builtins.py`); add focused tests for `publish_requests` (unchanged → no write, foreign owner skipped, empty → clear), `discover_fluid_sources` ranking, `port_starved`, shared upgrade base via existing fakes.
 - `pyright` clean (pyrightconfig.json).
-- AST check: rerun the near-duplicate scan below; migrated pairs must drop out.
-
-```python
-# Normalized-AST near-duplicate scan (run from repo root).
-import ast, glob, difflib, itertools, copy
-class N(ast.NodeTransformer):
-    def visit_Name(s, n): return ast.copy_location(ast.Name(id='_', ctx=n.ctx), n)
-    def visit_arg(s, n): n.arg = '_'; n.annotation = None; return n
-    def visit_Constant(s, n): return ast.copy_location(ast.Constant(value=type(n.value).__name__), n)
-fns = []
-for f in sorted(glob.glob('scripts/**/*.py', recursive=True)):
-    if '__pycache__' in f: continue
-    for n in ast.walk(ast.parse(open(f, encoding='utf-8').read())):
-        if isinstance(n, ast.FunctionDef) and n.end_lineno - n.lineno >= 5:
-            s = ast.dump(N().visit(copy.deepcopy(ast.Module(body=n.body, type_ignores=[]))))
-            fns.append((f, n.lineno, n.name, n.end_lineno - n.lineno + 1, s.replace('(', ' ').replace(')', ' ').replace(',', ' ').split()))
-out = []
-for a, b in itertools.combinations(fns, 2):
-    if min(a[3], b[3]) / max(a[3], b[3]) < 0.6: continue
-    sm = difflib.SequenceMatcher(None, a[4], b[4], autojunk=False)
-    if sm.real_quick_ratio() >= 0.85 and sm.quick_ratio() >= 0.85 and sm.ratio() >= 0.85:
-        out.append((sm.ratio(), a, b))
-for r, a, b in sorted(out, key=lambda x: -x[0] * min(x[1][3], x[2][3]))[:150]:
-    print(f"{r:.2f} {a[0]}:{a[1]} {a[2]}({a[3]}L) ~ {b[0]}:{b[1]} {b[2]}({b[3]}L)")
-```
+- AST check: rerun the near-duplicate scan (now `devtools/clone_scan.py`); migrated pairs must drop out.
 - Live deploy only via `devtools/scripts_sync.py` after asking the user.

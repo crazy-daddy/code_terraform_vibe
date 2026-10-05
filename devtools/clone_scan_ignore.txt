@@ -1,0 +1,13 @@
+# Reviewed near-duplicate pairs that stay apart (same shape, different intent).
+# Format and matching: see devtools/clone_scan.py. One pair per line, reason after '#'.
+
+lib/drone_navigation.py::DroneNavigationMixin.fly_to_station ~ lib/drone_navigation.py::DroneNavigationMixin.fly_to_drill  # different arrival handling
+lib/drone_navigation.py::DroneNavigationMixin.flight_timeout_ticks ~ lib/vehicle_navigation.py::VehicleNavigationMixin.drive_timeout_ticks  # flight vs drive constants
+lib/vehicle_survey.py::VehicleSurveyMixin.unscanned_pois ~ lib/vehicle_survey.py::VehicleSurveyMixin.unsurveyed_known_sites  # different archive sources
+lib/production_source.py::SourceCache.local_stock ~ lib/production_source.py::SourceCache.depot_stock  # warehouses vs depot output ports
+lib/production_core.py::discover_smelter_ids ~ lib/production_core.py::discover_supply_dock_ids  # one-line wrappers over _discover_building_ids
+lib/production_core.py::_default_smelter ~ lib/production_core.py::_default_fabricator  # typed accessors differ
+lib/fluid_routing.py::ensure_input_logged ~ lib/fluid_routing.py::ensure_output_logged  # the shared helpers themselves
+lib/field_provider.py::FieldProviderController.ensure_water ~ lib/plant_terraformer_water.py::PlantTerraformerWaterMixin.ensure_water  # already thin glue over shared router helpers
+lib/field_provider.py::FieldProviderController._discover_water_sources ~ lib/plant_terraformer_water.py::PlantTerraformerWaterMixin._discover_water_sources  # home field vs own outpost
+lib/fluid_pump.py::FluidPumpController.ensure_output_connection ~ lib/thermal_cap.py::ThermalCapController.ensure_output_connection  # already on ensure_output_logged; only messages differ
